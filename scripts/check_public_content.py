@@ -8,7 +8,7 @@ ALLOWED_HOSTS={'github.com','raw.githubusercontent.com','chromium.googlesource.c
  'dl.frostwire.com','schemas.android.com','maven.apache.org','www.apache.org','www.boost.org',
  'www.unicode.org','unicode.org','opensource.org','jsoup.org','developer.mozilla.org',
  'perfectionkills.com','www.engr.mun.ca','android.git.kernel.org','fsf.org','www.gnu.org',
- 'gnu.org','www.fsf.org','127.0.0.1','localhost','…','x'}
+ 'gnu.org','www.fsf.org','barcode4j.sourceforge.net','127.0.0.1','localhost','…','x'}
 
 def paths():
     if (ROOT/'.git').exists():

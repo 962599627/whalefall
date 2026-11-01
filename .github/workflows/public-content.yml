@@ -35,3 +35,4 @@ jobs:
           python android/tests/run_favorites_checks.py
           python android/tests/run_live_checks.py
           python android/tests/run_decoder_checks.py
+          python android/tests/run_tv_input_checks.py

@@ -40,5 +40,12 @@
     "license": "Apache-2.0",
     "url": "https://repo.maven.apache.org/maven2/wang/harlon/quickjs/wrapper-java/3.2.3/wrapper-java-3.2.3.jar",
     "sha256": "2f795c28787ecf77b7081fdc9764ce75dc7f9d39402c56b09161625d3ce97de3"
+  },
+  {
+    "name": "ZXing core",
+    "version": "3.5.3",
+    "license": "Apache-2.0",
+    "url": "https://repo.maven.apache.org/maven2/com/google/zxing/core/3.5.3/core-3.5.3.jar",
+    "sha256": "8d8064c1636fdaef7189dd9055c7d59950a8940a12f2293956446ec3c109fd82"
   }
 ]
