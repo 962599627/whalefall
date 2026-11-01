@@ -57,3 +57,10 @@ adb shell am instrument -w -e base http://127.0.0.1:18765/ com.pilipala.marcomov
 ```
 
 后者会临时替换收藏测试内容，并在 finally 恢复原收藏和观看历史；仅在专用测试设备上运行。不要中断恢复过程。测试后关闭测试应用并移除 adb reverse。`run_decoder_checks.py` 和 `run_favorites_checks.py` 分别检查错误分类和收藏持久化；收藏检查先准备基础检查使用的 JSON 依赖。
+
+
+### 更新与界面适配回归
+
+`python android/tests/run_update_checks.py` 检查版本、URL、下载续传和分辨率比例；`python scripts/test_movie_mirror.py` 使用离线样本检查镜像发布顺序与校验拒绝。
+
+设备端 `UpdateProbe` 需要先运行 `python scripts/build_update_fixtures.py`，把 `android/build/update-fixtures/` 下四个已签名测试 APK（newer、older、foreign、wrong-signer）复制到应用外部文件目录的 `update-fixtures/`。这些文件仅供校验，严禁安装；测试签名必须与被测应用所用构建签名一致。当前版本的新版样本为 0.4.13/code26，仅用于 0.4.12 测试，不是发布包。`LayoutProbe` 会暂时调整界面大小并在结束时恢复，当前设备断言针对 1920×1080 测试电视；其他分辨率请使用比例测试并调整设备断言。

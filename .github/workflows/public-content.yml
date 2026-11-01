@@ -36,3 +36,5 @@ jobs:
           python android/tests/run_live_checks.py
           python android/tests/run_decoder_checks.py
           python android/tests/run_tv_input_checks.py
+          python android/tests/run_update_checks.py
+          python scripts/test_movie_mirror.py
