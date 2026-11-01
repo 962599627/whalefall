@@ -2,7 +2,7 @@
   <img src="docs/images/tv-banner-960x540.png" width="480" alt="Marco Movie — 银色场记板与播放标志" />
   <h1>Marco Movie</h1>
   <p>为遥控器和大屏幕设计的 Android 电视播放器。</p>
-  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.4.10 Preview · Android 6.0+ · ARM 32 位</p>
+  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.4.11 Preview · Android 6.0+ · ARM 32 位</p>
   <p><a href="https://github.com/Pilipala9919/MarcoMovie/releases">下载安装</a> · <a href="docs/USER_GUIDE.md">使用指南</a> · <a href="docs/BUILD.md">构建说明</a> · <a href="docs/PRIVACY.md">隐私说明</a></p>
 </div>
 
@@ -25,15 +25,15 @@ Marco Movie 希望让电视上的浏览、搜索和播放更简单：用大幅�
 | 继续观看 | 首页继续播放与右侧历史卡片保留集数和进度；先进入介绍选集页，手动确认后续播 |
 | 切换内容来源 | 点击首页“发现”标题紧邻的描边来源按钮打开选择弹窗 |
 | 全局搜索 | 在已导入、可搜索的配置项之间检索；输入停顿后自动搜索；内置遥控键盘，默认支持中文、全拼和首拼匹配；独立圆角来源筛选按钮、后台匹配、分批增量展示，返回保留结果与位置 |
-| 播放控制 | 确认键直接暂停／继续，上下键同步显示顶部片名与集数、独立进度条和紧凑圆角 Dock，中央显示播放状态，顶部显示当前视频实际分辨率；选集、线路、进度、倍速、字幕及更多控制 |
+| 播放控制 | 确认键直接暂停／继续，上下键同步显示顶部片名与集数、独立进度条和紧凑圆角 Dock，中央显示播放状态，顶部显示当前视频实际分辨率；选集、线路、进度、倍速、字幕及更多控制；无下一集时可点击“下集”查看气泡提示 |
 | 小屏继续观看 | 全屏返回缩小到介绍选集页，保留进度与暂停状态；确认小屏恢复全屏 |
 | 播放内核 | Media3 与 Android 系统播放器；内置 FFmpeg 音频、AV1 / VP9 视频软解码扩展（[范围与限制](docs/DECODERS.md)） |
 | 字幕与弹幕 | 外挂 SRT / VTT / ASS / TTML 字幕；可加载兼容的弹幕数据，不提供在线弹幕资源 |
-| 直播列表 | 读取用户提供的兼容列表与分组；不预装频道 |
+| 直播列表 | 读取用户提供的兼容列表与分组；工具条隐藏时上下键换台，支持数字键与频道键；不预装频道 |
 | 品牌开屏 | 约 3 秒原生品牌动画，高清原 Logo 与屏幕分辨率文字直接合成，结束淡入首页，确认或返回可跳过；支持关闭与减少动态效果 |
 | 个性化 | 海报配色柔光随焦点缓慢过渡，支持关闭；自定义壁纸优先，支持本地图片或图片地址、背景压暗、减少动态效果、音效和色彩档位 |
 | 账号入口 | 右侧网盘图标向左展开统一账号面板；在扩展支持时提供登录与配置入口，不内置账号 |
-| 配置管理 | 地址或本地文件导入、偏好设置、配置备份与还原 |
+| 配置管理 | 同一局域网手机扫码提交配置地址，保留遥控输入、本地文件导入、配置备份与还原 |
 
 全局搜索的范围是**用户已导入的配置**，不是互联网全网搜索。拼音匹配结合本地字词典和已浏览/搜索过的标题，首拼存在歧义时可改用完整中文。功能存在不代表任意配置或服务都兼容。
 
@@ -41,7 +41,7 @@ Marco Movie 希望让电视上的浏览、搜索和播放更简单：用大幅�
 
 1. 在 [Releases](https://github.com/Pilipala9919/MarcoMovie/releases) 下载预览 APK，并核对随附的 SHA-256 文件。
 2. 在兼容的 Android 电视或盒子上安装。当前发布包包含 `armeabi-v7a` 原生库，需要设备支持 32 位 ARM 应用；不是所有 ARM64 设备都支持。
-3. 打开应用，选择“导入我的配置”，导入自行合法获取的配置文件或地址。本项目不提供获取影视资源的方法或地址。
+3. 打开应用，选择“导入我的配置”，用同一局域网的手机扫码粘贴自行合法获取的配置地址；也可选择遥控输入或本地文件。本项目不提供获取影视资源的方法或地址。
 4. 如配置需要执行扩展，在了解并信任其来源后自行开启。进入首页后可用方向键和确认键浏览、搜索、选集与播放。
 5. 在“设置”中调整布局、壁纸和播放选项。需要网盘授权时，应由本人在服务提供方界面完成登录。
 
@@ -75,7 +75,7 @@ docs/                  产品、使用、构建、隐私与验证说明
 GitHub：[@Pilipala9919](https://github.com/Pilipala9919)  
 Copyright © 2026 Pilipala
 
-感谢 AndroidX Media3、OkHttp、Okio、Gson、QuickJS 及其 Java 包装库、jsoup、CryptoJS、JSONPath、libtorrent / jlibtorrent、Rime 与 Unicode 等项目。它们保留各自作者署名和许可，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。本项目的作者署名不替代第三方版权信息。
+感谢 AndroidX Media3、OkHttp、Okio、Gson、QuickJS 及其 Java 包装库、ZXing、jsoup、CryptoJS、JSONPath、libtorrent / jlibtorrent、Rime 与 Unicode 等项目。它们保留各自作者署名和许可，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。本项目的作者署名不替代第三方版权信息。
 
 原创代码、文档和项目品牌素材按 [GNU GPL v3（GPL-3.0-only）](LICENSE) 发布，另有声明的文件除外。修改与分发时请遵守许可证并保留署名；第三方组件继续适用各自许可。详见 [NOTICE](NOTICE)。
 
