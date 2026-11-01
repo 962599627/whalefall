@@ -48,6 +48,21 @@ public final class InteractionProbe extends Instrumentation {
             runOnMainSync(()->a.showControls(false));key(KeyEvent.KEYCODE_DPAD_UP);check("up_opens_progress",ui(()->a.controlsVisible&&a.getCurrentFocus()==a.playbackControls.timeline));
             runOnMainSync(()->a.showControls(false));key(KeyEvent.KEYCODE_DPAD_DOWN);check("down_opens_progress",ui(()->a.controlsVisible&&a.getCurrentFocus()==a.playbackControls.timeline));
             key(KeyEvent.KEYCODE_DPAD_DOWN);check("dock_buttons_reachable",ui(()->a.getCurrentFocus()==a.playbackControls.buttons.get("next-episode")));
+            for(boolean single:new boolean[]{false,true}){
+                String scenario=single?"single_movie":"last_episode";
+                runOnMainSync(()->{a.prefs.edit().putInt("repeat_mode",0).apply();if(single)testLine.episodes.remove(second);a.activeEpisode=single?ep:second;a.playbackControls.prepared();a.player.setRepeatOne(true);a.showControls(false);});SystemClock.sleep(250);
+                key(KeyEvent.KEYCODE_DPAD_DOWN);check(scenario+"_reveals_controls",ui(()->a.controlsVisible&&a.getCurrentFocus()==a.playbackControls.timeline));
+                key(KeyEvent.KEYCODE_DPAD_DOWN);check(scenario+"_next_focusable",ui(()->a.getCurrentFocus()==a.playbackControls.buttons.get("next-episode")&&a.getCurrentFocus().isEnabled()));
+                MoviePlayer unchanged=a.player;Cms.Episode unchangedEpisode=a.activeEpisode;
+                key(KeyEvent.KEYCODE_DPAD_CENTER);
+                check(scenario+"_no_next_bubble",ui(()->{if(a.playbackControls.activeDialog==null||a.playbackControls.activeDialog instanceof AlertDialog)return false;ArrayList<View> text=new ArrayList<>();a.playbackControls.activeDialog.getWindow().getDecorView().findViewsWithText(text,"无下集",View.FIND_VIEWS_WITH_TEXT);return a.playbackControls.dialogOpen&&!text.isEmpty()&&a.playbackControls.menuAnchor==a.playbackControls.buttons.get("next-episode");}));
+                check(scenario+"_playback_continues",ui(()->a.player==unchanged&&a.player.isPlaying()&&a.activeEpisode==unchangedEpisode&&!a.playbackControls.transitioning));
+                check(scenario+"_bubble_above_next",ui(()->{if(a.playbackControls.activeDialog==null)return false;int[] anchor=new int[2];a.playbackControls.buttons.get("next-episode").getLocationOnScreen(anchor);Window w=a.playbackControls.activeDialog.getWindow();return w.getAttributes().y+w.getDecorView().getHeight()<=anchor[1]&&w.getDecorView().getHeight()<a.dp(190);}));
+                if(single)key(KeyEvent.KEYCODE_BACK);else key(KeyEvent.KEYCODE_DPAD_CENTER);
+                check(scenario+"_dismiss_restores_next",ui(()->!a.playbackControls.dialogOpen&&a.getCurrentFocus()==a.playbackControls.buttons.get("next-episode")));
+                key(KeyEvent.KEYCODE_DPAD_UP);check(scenario+"_up_returns_to_timeline",ui(()->a.getCurrentFocus()==a.playbackControls.timeline));
+            }
+            runOnMainSync(()->{testLine.episodes.add(second);a.activeEpisode=ep;a.playbackControls.prepared();a.player.setRepeatOne(true);});
             runOnMainSync(()->a.playbackControls.buttons.get("speed").requestFocus());key(KeyEvent.KEYCODE_DPAD_CENTER);check("confirm_activates_focused_action",ui(()->a.playbackControls.dialogOpen));key(KeyEvent.KEYCODE_BACK);
             check("menu_focus_restored",ui(()->a.getCurrentFocus()==a.playbackControls.buttons.get("speed")));
             runOnMainSync(()->a.playbackControls.buttons.get("more").requestFocus());key(KeyEvent.KEYCODE_DPAD_CENTER);
