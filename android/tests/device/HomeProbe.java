@@ -13,7 +13,7 @@ import org.json.*;
 /** Synthetic source with a separate preference file; never writes user playback records. */
 public final class HomeProbe extends Instrumentation {
     MainActivity a;final CountDownLatch launched=new CountDownLatch(1);final JSONObject result=new JSONObject();
-    @Override public void callActivityOnCreate(Activity activity,Bundle state){super.callActivityOnCreate(activity,state);if(activity instanceof MainActivity){a=(MainActivity)activity;launched.countDown();}}
+    @Override public void callActivityOnCreate(Activity activity,Bundle state){super.callActivityOnCreate(activity,state);if(activity instanceof MainActivity){a=(MainActivity)activity;final MainActivity created=a;created.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);created.ui.post(new Runnable(){public void run(){if(created.isDestroyed())return;if(created.layoutReady)launched.countDown();else created.ui.postDelayed(this,16);}});}}
     @Override public void onCreate(Bundle args){super.onCreate(args);start();}
     boolean ui(Callable<Boolean> call){boolean[] out={false};runOnMainSync(()->{try{out[0]=call.call();}catch(Exception e){throw new RuntimeException(e);}});return out[0];}
     void check(String name,boolean value)throws Exception{result.put(name,value);if(!value)throw new AssertionError(name);}

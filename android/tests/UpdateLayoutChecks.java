@@ -20,6 +20,7 @@ public final class UpdateLayoutChecks {
         for(String range:new String[]{null,"bytes 0-99/100","bytes 50-98/100","bytes 50-99/101","bytes 50-999999999999999999999/100"}){boolean rejected=false;try{UpdatePolicy.resumeOffset(50,206,range,100);}catch(java.io.IOException expected){rejected=true;}check(rejected,"bad range");}
         for(int[] display:new int[][]{{1280,720},{1920,1080},{3840,2160},{7680,4320}}){int dpi=TvLayoutPolicy.densityDpi(display[0],display[1],100);float logical=display[0]*160f/dpi;check(Math.abs(logical-960)<2,"consistent logical width");check(TvLayoutPolicy.densityDpi(display[1],display[0],100)==dpi,"landscape orientation");check(TvLayoutPolicy.densityDpi(display[0],display[1],120)>dpi,"larger controls");}
         check(TvLayoutPolicy.densityDpi(1920,1080,100)==320,"1080 canvas");check(TvLayoutPolicy.densityDpi(3840,2160,100)==640,"4K canvas");check(TvLayoutPolicy.percent(300)==100,"invalid preference reset");
+        check(TvLayoutPolicy.searchColumns(614)==4,"standard search columns");check(TvLayoutPolicy.searchColumns(454)==3,"enlarged search columns");check(TvLayoutPolicy.homeColumns(960,5)==5,"standard home grid");check(TvLayoutPolicy.homeColumns(800,5)==4,"enlarged home grid");
         System.out.println("OK "+count+" update and display checks");
     }
 }

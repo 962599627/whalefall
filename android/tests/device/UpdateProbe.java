@@ -6,7 +6,7 @@ import java.io.*;import java.net.*;import java.util.*;import java.util.concurren
 public final class UpdateProbe extends Instrumentation {
  MainActivity a;final JSONObject report=new JSONObject();final CountDownLatch launched=new CountDownLatch(1);UpdateManager manager;
  @Override public void onCreate(Bundle b){super.onCreate(b);start();}
- @Override public void callActivityOnCreate(Activity x,Bundle b){super.callActivityOnCreate(x,b);if(x instanceof MainActivity){a=(MainActivity)x;launched.countDown();}}
+ @Override public void callActivityOnCreate(Activity x,Bundle b){super.callActivityOnCreate(x,b);if(x instanceof MainActivity){a=(MainActivity)x;final MainActivity created=a;created.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);created.ui.post(new Runnable(){public void run(){if(created.isDestroyed())return;if(created.layoutReady)launched.countDown();else created.ui.postDelayed(this,16);}});}}
  void check(String name,boolean value)throws Exception{report.put(name,value);if(!value)throw new AssertionError(name);}
  interface Work{void run()throws Exception;}
  void rejected(String name,Work work)throws Exception{boolean failed=false;try{work.run();}catch(Exception expected){failed=true;}check(name,failed);}
@@ -22,19 +22,19 @@ public final class UpdateProbe extends Instrumentation {
   public InputStream getInputStream(){return new ByteArrayInputStream(body);}
  }
  @Override public void onStart(){try{
-  Context context=getTargetContext();File fixture=new File(context.getExternalFilesDir(null),"update-fixtures");File newer=new File(fixture,"newer.apk");JSONObject json=metadata(newer,26,"0.4.13");UpdateManager.Release release=new UpdateManager.Release(json,"preview");
+  Context context=getTargetContext();final int nextCode=UpdateManager.installedCode(context)+1;String[] parts=UpdateManager.installedVersion(context).split("\\.");final String nextVersion=parts[0]+"."+parts[1]+"."+(Integer.parseInt(parts[2])+1);final String olderVersion=parts[0]+"."+parts[1]+"."+Math.max(0,Integer.parseInt(parts[2])-1);File fixture=new File(context.getExternalFilesDir(null),"update-fixtures");File newer=new File(fixture,"newer.apk");JSONObject json=metadata(newer,nextCode,nextVersion);UpdateManager.Release release=new UpdateManager.Release(json,"preview");
   UpdateManager.verifyApk(context,newer,release);check("same_signer_newer_verified",true);
-  rejected("wrong_package_rejected",()->{File f=new File(fixture,"foreign.apk");UpdateManager.verifyApk(context,f,new UpdateManager.Release(metadata(f,26,"0.4.13"),"preview"));});
-  rejected("wrong_signer_rejected",()->{File f=new File(fixture,"wrong-signer.apk");UpdateManager.verifyApk(context,f,new UpdateManager.Release(metadata(f,26,"0.4.13"),"preview"));});
-  rejected("downgrade_rejected",()->{File f=new File(fixture,"older.apk");UpdateManager.verifyApk(context,f,new UpdateManager.Release(metadata(f,24,"0.4.11"),"preview"));});
+  rejected("wrong_package_rejected",()->{File f=new File(fixture,"foreign.apk");UpdateManager.verifyApk(context,f,new UpdateManager.Release(metadata(f,nextCode,nextVersion),"preview"));});
+  rejected("wrong_signer_rejected",()->{File f=new File(fixture,"wrong-signer.apk");UpdateManager.verifyApk(context,f,new UpdateManager.Release(metadata(f,nextCode,nextVersion),"preview"));});
+  rejected("downgrade_rejected",()->{File f=new File(fixture,"older.apk");UpdateManager.verifyApk(context,f,new UpdateManager.Release(metadata(f,nextCode-2,olderVersion),"preview"));});
   JSONObject tampered=new JSONObject(json.toString()).put("sha256",new String(new char[64]).replace('\0','0'));
   rejected("tampered_hash_rejected",()->UpdateManager.verifyApk(context,newer,new UpdateManager.Release(tampered,"preview")));
-  rejected("metadata_version_mismatch_rejected",()->UpdateManager.verifyApk(context,newer,new UpdateManager.Release(new JSONObject(json.toString()).put("versionCode",27),"preview")));
+  rejected("metadata_version_mismatch_rejected",()->UpdateManager.verifyApk(context,newer,new UpdateManager.Release(new JSONObject(json.toString()).put("versionCode",nextCode+1),"preview")));
   final byte[] payload=read(newer),feed=json.toString().getBytes("UTF-8");final int[] feedCalls={0},apkCalls={0};final long[] resumed={-1};
   Context isolated=new ContextWrapper(context){public File getCacheDir(){File f=new File(super.getCacheDir(),"update-probe");f.mkdirs();return f;}};
   android.content.SharedPreferences prefs=context.getSharedPreferences("update_probe",0);prefs.edit().clear().commit();
   manager=new UpdateManager(isolated,prefs,(address,offset)->{if(address.endsWith(".json")){feedCalls[0]++;if(feedCalls[0]==1)throw new IOException("mirror fixture unavailable");return new Response(address,feed,200,null);}apkCalls[0]++;if(address.startsWith(UpdatePolicy.MIRROR))throw new IOException("mirror fixture unavailable");resumed[0]=offset;return new Response(address,Arrays.copyOfRange(payload,(int)offset,payload.length),offset>0?206:200,offset>0?"bytes "+offset+"-"+(payload.length-1)+"/"+payload.length:null);});
-  manager.check(true);idle();check("feed_fallback_finds_update",feedCalls[0]==2&&manager.available!=null&&manager.available.code==26);
+  manager.check(true);idle();check("feed_fallback_finds_update",feedCalls[0]==2&&manager.available!=null&&manager.available.code==nextCode);
   write(new File(manager.folder(),"release.part"),Arrays.copyOf(payload,100));prefs.edit().putString("partial_sha",release.sha).commit();manager.download();idle();
   check("apk_fallback_and_range_resume",apkCalls[0]>=3&&resumed[0]==100);check("download_verified_and_ready",manager.ready()&&UpdateManager.sha(manager.apk()).equals(release.sha));
   check("download_does_not_request_install",!prefs.contains("pending_code"));check("one_update_notice",manager.consumeNotice()&&!manager.consumeNotice());

@@ -29,7 +29,7 @@ final class PlayerChrome {
 
         progress=a.vertical();progress.setTag("player-progress");
         a.playClock=a.text("--:-- / --:--",12,MainActivity.WHITE);a.playClock.setGravity(Gravity.RIGHT);a.playClock.setPadding(0,0,a.dp(12),0);progress.addView(a.playClock);
-        int width=a.getResources().getDisplayMetrics().widthPixels;
+        int width=a.windowWidth();
         FrameLayout.LayoutParams track=new FrameLayout.LayoutParams(Math.min(a.dp(760),width-a.dp(88)),-2,Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);track.bottomMargin=a.dp(94);overlay.addView(progress,track);
 
         dock=a.vertical();dock.setTag("player-dock");dock.setPadding(a.dp(10),a.dp(5),a.dp(10),a.dp(5));dock.setClipChildren(false);

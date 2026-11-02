@@ -6,7 +6,7 @@ import java.io.*;import java.util.concurrent.*;import org.json.*;
 public final class LayoutProbe extends Instrumentation {
  volatile MainActivity a;volatile CountDownLatch launch=new CountDownLatch(1);final JSONObject result=new JSONObject();
  @Override public void onCreate(Bundle args){super.onCreate(args);start();}
- @Override public void callActivityOnCreate(Activity x,Bundle b){super.callActivityOnCreate(x,b);if(x instanceof MainActivity){a=(MainActivity)x;launch.countDown();}}
+ @Override public void callActivityOnCreate(Activity x,Bundle b){super.callActivityOnCreate(x,b);if(x instanceof MainActivity){a=(MainActivity)x;final MainActivity created=a;created.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);created.ui.post(new Runnable(){public void run(){if(created.isDestroyed())return;if(created.layoutReady)launch.countDown();else created.ui.postDelayed(this,16);}});}}
  void check(String key,boolean value)throws Exception{result.put(key,value);if(!value)throw new AssertionError(key);}
  boolean inside(View v){int[] pos=new int[2];v.getLocationOnScreen(pos);return pos[0]>=0&&pos[1]>=0&&pos[0]+v.getWidth()<=a.root.getWidth()+1&&pos[1]+v.getHeight()<=a.root.getHeight()+1;}
  void ready()throws Exception{if(!launch.await(15,TimeUnit.SECONDS))throw new AssertionError("recreate timeout");waitForIdleSync();SystemClock.sleep(400);runOnMainSync(()->{if(a.startupIntro!=null)a.startupIntro.cancel();});}

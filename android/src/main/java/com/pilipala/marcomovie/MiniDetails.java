@@ -11,11 +11,11 @@ final class MiniDetails {
         a=host;controls=a.playbackControls;Cms.Video video=controls.video;Cms.Site site=controls.site;
         page=new FrameLayout(a);page.setTag("mini-details");page.setBackgroundColor(MainActivity.DARK);
         ImmersivePoster cover=new ImmersivePoster(a,"mini-cover");page.addView(cover.backdrop,new FrameLayout.LayoutParams(-1,-1));cover.load(video.poster);
-        float height=a.getResources().getDisplayMetrics().heightPixels/a.getResources().getDisplayMetrics().density;
+        float height=a.windowHeight()/a.getResources().getDisplayMetrics().density;
         int posterWidth=Math.round(Math.min(300,Math.max(224,(height-132)/1.5f)));
         FrameLayout.LayoutParams posterSize=new FrameLayout.LayoutParams(a.dp(posterWidth),a.dp(posterWidth*1.5f),Gravity.TOP|Gravity.LEFT);posterSize.leftMargin=a.dp(34);posterSize.topMargin=a.dp(54);page.addView(cover,posterSize);
         TextView back=a.navButton("‹ 返回","mini-back",a::onBackPressed);FrameLayout.LayoutParams backSize=new FrameLayout.LayoutParams(a.dp(82),a.dp(32));backSize.leftMargin=a.dp(34);backSize.topMargin=a.dp(14);page.addView(back,backSize);
-        int left=a.dp(34+posterWidth+30),right=a.dp(40);int available=a.getResources().getDisplayMetrics().widthPixels-left-right;
+        int left=a.dp(34+posterWidth+30),right=a.dp(40);int available=a.windowWidth()-left-right;
         int width=Math.min(a.dp(360),available),videoTop=a.dp(108),videoHeight=width*9/16;
         LinearLayout copy=a.vertical();FrameLayout.LayoutParams copySize=new FrameLayout.LayoutParams(available,-2);copySize.leftMargin=left;copySize.topMargin=a.dp(38);page.addView(copy,copySize);
         TextView title=a.text(video.title,25,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);title.setSingleLine();title.setEllipsize(android.text.TextUtils.TruncateAt.END);copy.addView(title);a.gap(copy,7);TextView episode=a.text(controls.resolved.name,13,MainActivity.MUTED);episode.setSingleLine();episode.setEllipsize(android.text.TextUtils.TruncateAt.END);copy.addView(episode);

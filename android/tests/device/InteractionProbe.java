@@ -13,7 +13,7 @@ import org.json.*;
 /** Synthetic content only. Existing favorites and playback preferences are restored. */
 public final class InteractionProbe extends Instrumentation {
     Bundle args;MainActivity a;final CountDownLatch launched=new CountDownLatch(1);JSONObject result=new JSONObject();
-    @Override public void callActivityOnCreate(Activity activity,Bundle state){super.callActivityOnCreate(activity,state);if(activity instanceof MainActivity){a=(MainActivity)activity;launched.countDown();}}
+    @Override public void callActivityOnCreate(Activity activity,Bundle state){super.callActivityOnCreate(activity,state);if(activity instanceof MainActivity){a=(MainActivity)activity;final MainActivity created=a;created.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);created.ui.post(new Runnable(){public void run(){if(created.isDestroyed())return;if(created.layoutReady)launched.countDown();else created.ui.postDelayed(this,16);}});}}
     @Override public void onCreate(Bundle input){super.onCreate(input);args=input;start();}
     void check(String name,boolean pass)throws Exception{result.put(name,pass);if(!pass)throw new AssertionError(name);}
     boolean ui(java.util.concurrent.Callable<Boolean> action){boolean[] value={false};runOnMainSync(()->{try{value[0]=action.call();}catch(Exception e){throw new RuntimeException(e);}});return value[0];}
@@ -45,13 +45,13 @@ public final class InteractionProbe extends Instrumentation {
             check("center_pause_state",ui(()->a.playerChrome.state.getContentDescription().toString().startsWith("已暂停")&&Math.abs(a.playerChrome.state.getX()+a.playerChrome.state.getWidth()/2f-a.root.getWidth()/2f)<2));
             key(KeyEvent.KEYCODE_DPAD_CENTER);check("confirm_resumes",ui(()->a.player.isPlaying()));
             check("center_playing_state",ui(()->a.playerChrome.state.getContentDescription().toString().startsWith("正在播放")));
-            runOnMainSync(()->a.showControls(false));key(KeyEvent.KEYCODE_DPAD_UP);check("up_opens_progress",ui(()->a.controlsVisible&&a.getCurrentFocus()==a.playbackControls.timeline));
-            runOnMainSync(()->a.showControls(false));key(KeyEvent.KEYCODE_DPAD_DOWN);check("down_opens_progress",ui(()->a.controlsVisible&&a.getCurrentFocus()==a.playbackControls.timeline));
+            runOnMainSync(()->a.showControls(false));key(KeyEvent.KEYCODE_DPAD_UP);check("up_opens_first_action",ui(()->a.controlsVisible&&a.getCurrentFocus()==a.playbackControls.buttons.get("next-episode")));
+            runOnMainSync(()->a.showControls(false));key(KeyEvent.KEYCODE_DPAD_DOWN);check("down_opens_first_action",ui(()->a.controlsVisible&&a.getCurrentFocus()==a.playbackControls.buttons.get("next-episode")));
             key(KeyEvent.KEYCODE_DPAD_DOWN);check("dock_buttons_reachable",ui(()->a.getCurrentFocus()==a.playbackControls.buttons.get("next-episode")));
             for(boolean single:new boolean[]{false,true}){
                 String scenario=single?"single_movie":"last_episode";
                 runOnMainSync(()->{a.prefs.edit().putInt("repeat_mode",0).apply();if(single)testLine.episodes.remove(second);a.activeEpisode=single?ep:second;a.playbackControls.prepared();a.player.setRepeatOne(true);a.showControls(false);});SystemClock.sleep(250);
-                key(KeyEvent.KEYCODE_DPAD_DOWN);check(scenario+"_reveals_controls",ui(()->a.controlsVisible&&a.getCurrentFocus()==a.playbackControls.timeline));
+                key(KeyEvent.KEYCODE_DPAD_DOWN);check(scenario+"_reveals_controls",ui(()->a.controlsVisible&&a.getCurrentFocus()==a.playbackControls.buttons.get("next-episode")));
                 key(KeyEvent.KEYCODE_DPAD_DOWN);check(scenario+"_next_focusable",ui(()->a.getCurrentFocus()==a.playbackControls.buttons.get("next-episode")&&a.getCurrentFocus().isEnabled()));
                 MoviePlayer unchanged=a.player;Cms.Episode unchangedEpisode=a.activeEpisode;
                 key(KeyEvent.KEYCODE_DPAD_CENTER);

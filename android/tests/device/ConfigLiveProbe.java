@@ -6,7 +6,7 @@ import java.util.concurrent.*;import java.net.*;import java.io.*;import org.json
 public final class ConfigLiveProbe extends Instrumentation {
  MainActivity a;Bundle args;final CountDownLatch launched=new CountDownLatch(1);final JSONObject report=new JSONObject();
  @Override public void onCreate(Bundle b){super.onCreate(b);args=b;start();}
- @Override public void callActivityOnCreate(Activity x,Bundle b){super.callActivityOnCreate(x,b);if(x instanceof MainActivity){a=(MainActivity)x;launched.countDown();}}
+ @Override public void callActivityOnCreate(Activity x,Bundle b){super.callActivityOnCreate(x,b);if(x instanceof MainActivity){a=(MainActivity)x;final MainActivity created=a;created.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);created.ui.post(new Runnable(){public void run(){if(created.isDestroyed())return;if(created.layoutReady)launched.countDown();else created.ui.postDelayed(this,16);}});}}
  boolean ui(Callable<Boolean> f){boolean[] v={false};runOnMainSync(()->{try{v[0]=f.call();}catch(Exception e){throw new RuntimeException(e);}});return v[0];}
  void await(Callable<Boolean> f)throws Exception{long end=SystemClock.elapsedRealtime()+20000;while(SystemClock.elapsedRealtime()<end){if(ui(f))return;SystemClock.sleep(30);}throw new AssertionError("timeout");}
  void check(String key,boolean v)throws Exception{report.put(key,v);if(!v)throw new AssertionError(key);}

@@ -4,7 +4,7 @@ import android.app.*;import android.content.*;import android.os.*;import android
 public final class MotionProbe extends Instrumentation {
  MainActivity a;final CountDownLatch launched=new CountDownLatch(1);final JSONObject report=new JSONObject();
  @Override public void onCreate(Bundle b){super.onCreate(b);start();}
- @Override public void callActivityOnCreate(Activity activity,Bundle b){super.callActivityOnCreate(activity,b);if(activity instanceof MainActivity){a=(MainActivity)activity;launched.countDown();}}
+ @Override public void callActivityOnCreate(Activity activity,Bundle b){super.callActivityOnCreate(activity,b);if(activity instanceof MainActivity){a=(MainActivity)activity;final MainActivity created=a;created.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);created.ui.post(new Runnable(){public void run(){if(created.isDestroyed())return;if(created.layoutReady)launched.countDown();else created.ui.postDelayed(this,16);}});}}
  boolean ui(Callable<Boolean> fn){boolean[] v={false};runOnMainSync(()->{try{v[0]=fn.call();}catch(Exception e){throw new RuntimeException(e);}});return v[0];}
  void check(String key,boolean ok)throws Exception{report.put(key,ok);if(!ok)throw new AssertionError(key);}
  View tag(String key){return a.root.findViewWithTag(key);}FocusMotion.State state(View v){return (FocusMotion.State)v.getTag(R.id.focus_motion);}

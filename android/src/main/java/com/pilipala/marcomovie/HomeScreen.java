@@ -29,13 +29,13 @@ final class HomeScreen {
     }
     /** Navigation-entry state survives detail/back without changing the active category. */
     static final class State {String site,category="";List<Cms.Video> videos=new ArrayList<>();int page=1,pages=1;boolean ready,initialized;State(String key){site=key;}}
-    HomeScreen(MainActivity activity,Cms.Site selected){a=activity;site=selected;COLUMNS=Math.max(5,Math.min(8,a.prefs.getInt("home_columns",5)));}
+    HomeScreen(MainActivity activity,Cms.Site selected){a=activity;site=selected;COLUMNS=TvLayoutPolicy.homeColumns(a.windowWidth()/a.getResources().getDisplayMetrics().density,a.prefs.getInt("home_columns",5));}
     boolean active(){return ticket==a.generation&&!a.isFinishing();}
     void show(){
         a.renderPage("","",true);ambient=a.homeAmbient;ticket=a.generation;if(a.current!=null)a.current.home=true;
         state=a.current==null?null:a.current.homeState;if(state==null||!site.key.equals(state.site)){state=new State(site.key);if(a.current!=null)a.current.homeState=state;}
         a.body.setPadding(a.dp(34),a.dp(18),a.dp(100),a.dp(36));a.body.setClipChildren(false);a.body.setClipToPadding(false);a.scroll.setClipChildren(false);
-        float width=a.getResources().getDisplayMetrics().widthPixels/a.getResources().getDisplayMetrics().density;
+        float width=a.windowWidth()/a.getResources().getDisplayMetrics().density;
         posterWidth=Math.max(48,(int)((width-134-(COLUMNS-1)*14)/COLUMNS)-8);
         historySection();
         LinearLayout heading=a.row();heading.setPadding(0,a.dp(4),0,a.dp(4));TextView title=a.text("发现",22,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);heading.addView(title,new LinearLayout.LayoutParams(-2,-2));

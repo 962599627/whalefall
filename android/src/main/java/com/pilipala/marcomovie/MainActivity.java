@@ -47,10 +47,14 @@ public final class MainActivity extends Activity {
     interface Work<T>{T run()throws Exception;}
     interface Done<T>{void accept(T value)throws Exception;}
 
+    static int[] viewportHint;boolean layoutReady,layoutIntro;int usableWidth,usableHeight;
+    int windowWidth(){return usableWidth>0?usableWidth:getResources().getDisplayMetrics().widthPixels;}
+    int windowHeight(){return usableHeight>0?usableHeight:getResources().getDisplayMetrics().heightPixels;}
     @Override protected void attachBaseContext(Context base){
         android.util.DisplayMetrics screen=new android.util.DisplayMetrics();
-        ((WindowManager)base.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getRealMetrics(screen);
+        ((WindowManager)base.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getMetrics(screen);
         int percent=base.getSharedPreferences("movie",0).getInt("ui_scale_percent",100);
+        int[] hint=viewportHint;if(hint!=null&&hint[0]==screen.widthPixels&&hint[1]==screen.heightPixels){screen.widthPixels=hint[2];screen.heightPixels=hint[3];}
         android.content.res.Configuration layout=new android.content.res.Configuration(base.getResources().getConfiguration());
         layout.densityDpi=TvLayoutPolicy.densityDpi(screen.widthPixels,screen.heightPixels,percent);
         float density=layout.densityDpi/160f;
@@ -62,8 +66,16 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle b){super.onCreate(b);configStore=new ConfigStore(getFilesDir());getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("movie",MODE_PRIVATE);reduced=prefs.getBoolean("reduced",false);configOrigin=prefs.getString("origin","");
         try{File f=new File(getFilesDir(),"config.json");if(f.exists())try(InputStream i=new FileInputStream(f)){config=Cms.parseConfig(Cms.read(i,Cms.MAX_JSON),configOrigin);}}catch(Exception e){config=null;}
         worker.execute(()->{try{PhoneticSearchIndex index=new PhoneticSearchIndex(getAssets().open("search/pinyin-characters.tsv"),getAssets().open("search/pinyin-phrases.dict.yaml"),getAssets().open("search/title-phrases.txt"));try{org.json.JSONArray old=new org.json.JSONArray(prefs.getString("phonetic_titles","[]"));for(int i=0;i<old.length();i++)index.learn(old.optString(i));org.json.JSONArray history=new org.json.JSONArray(prefs.getString("global_search_history","[]"));for(int i=history.length()-1;i>=0;i--)index.prefer(history.optString(i));}catch(Exception ignored){}phonetic=index;}catch(Exception ignored){}finally{phoneticReady.countDown();}});
-        open(new Screen(()->home()),false);if(b==null)StartupIntro.show(this);
+        layoutIntro=b==null||b.getBoolean("layout_initial_launch",false);
+        root=new FrameLayout(this);root.setBackgroundColor(DARK);setContentView(root);
+        root.addOnLayoutChangeListener(new View.OnLayoutChangeListener(){public void onLayoutChange(View view,int l,int t,int r,int bottom,int ol,int ot,int or,int ob){
+            int width=r-l,height=bottom-t;if(width<=0||height<=0)return;view.removeOnLayoutChangeListener(this);usableWidth=width;usableHeight=height;
+            int expected=TvLayoutPolicy.densityDpi(width,height,prefs.getInt("ui_scale_percent",100));
+            if(expected!=getResources().getDisplayMetrics().densityDpi){android.util.DisplayMetrics display=new android.util.DisplayMetrics();getWindowManager().getDefaultDisplay().getMetrics(display);viewportHint=new int[]{display.widthPixels,display.heightPixels,width,height};recreate();return;}
+            ui.post(()->{if(isFinishing()||isDestroyed())return;open(new Screen(()->home()),false);layoutReady=true;if(layoutIntro)StartupIntro.show(MainActivity.this);});
+        }});
     }
+    @Override protected void onSaveInstanceState(Bundle out){out.putBoolean("layout_initial_launch",!layoutReady&&layoutIntro);super.onSaveInstanceState(out);}
     int dp(float x){return Math.round(x*getResources().getDisplayMetrics().density);}
     GradientDrawable bg(int color,float radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
     TextView text(String s,int size,int color){TextView t=new TextView(this);t.setText(s);t.setTextColor(color);t.setTextSize(size);t.setFontFeatureSettings("kern");return t;}
@@ -179,7 +191,7 @@ public final class MainActivity extends Activity {
         TextView backButton=navButton("‹ 返回","detail-back",this::onBackPressed);body.addView(backButton,new LinearLayout.LayoutParams(dp(82),dp(32)));gap(body,8);
         LinearLayout hero=row();hero.setTag("detail-hero");hero.setGravity(Gravity.TOP);body.addView(hero);
         ImmersivePoster cover=new ImmersivePoster(this,"detail-cover");root.addView(cover.backdrop,1,new FrameLayout.LayoutParams(-1,-1));
-        float screenHeight=getResources().getDisplayMetrics().heightPixels/getResources().getDisplayMetrics().density;
+        float screenHeight=windowHeight()/getResources().getDisplayMetrics().density;
         int coverWidth=Math.round(Math.min(300,Math.max(224,(screenHeight-132)/1.5f)));
         LinearLayout.LayoutParams coverSize=new LinearLayout.LayoutParams(dp(coverWidth),dp(coverWidth*1.5f));coverSize.setMargins(0,0,dp(30),dp(18));hero.addView(cover,coverSize);cover.load(listing.poster);
         LinearLayout info=vertical();hero.addView(info,new LinearLayout.LayoutParams(0,-2,1));
@@ -356,7 +368,7 @@ public final class MainActivity extends Activity {
                 if(down&&event.getRepeatCount()==0){togglePlayback();showControls(true);}return true;
             }
             if(!controlsVisible&&(key==KeyEvent.KEYCODE_DPAD_UP||key==KeyEvent.KEYCODE_DPAD_DOWN||key==KeyEvent.KEYCODE_MENU)){
-                if(down){showControls(true);if(playbackControls!=null)playbackControls.timeline.requestFocus();}return true;
+                if(down){showControls(true);if(playbackControls!=null)playbackControls.buttons.get("next-episode").requestFocus();}return true;
             }
             if(!controlsVisible&&(key==KeyEvent.KEYCODE_DPAD_LEFT||key==KeyEvent.KEYCODE_DPAD_RIGHT)){
                 if(down){seek(key==KeyEvent.KEYCODE_DPAD_LEFT?-10000:10000);showControls(true);}return true;

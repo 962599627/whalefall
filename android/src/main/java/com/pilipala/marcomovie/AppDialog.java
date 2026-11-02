@@ -22,8 +22,8 @@ final class AppDialog extends Dialog {
         if(spec.view!=null)content.addView(spec.view);
         View selected=null;
         if(spec.labels!=null)for(int i=0;i<spec.labels.length;i++){final int index=i;boolean checked=i==spec.selected;Button item=a.button((checked?"✓  ":"")+spec.labels[i],"dialog-option:"+i,()->{dismiss();if(spec.pick!=null)spec.pick.onClick(this,index);});item.setTextSize(15);item.setSingleLine(!spec.wrapChoices);item.setEllipsize(spec.wrapChoices?null:android.text.TextUtils.TruncateAt.END);if(spec.wrapChoices)item.setMaxLines(Integer.MAX_VALUE);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,spec.wrapChoices?-2:a.dp(46));lp.bottomMargin=a.dp(6);content.addView(item,lp);if(checked||selected==null)selected=item;}
-        int width=Math.min(a.dp(spec.view==null?500:680),a.getResources().getDisplayMetrics().widthPixels-a.dp(72));
-        int maxHeight=Math.max(a.dp(140),a.getResources().getDisplayMetrics().heightPixels-a.dp(200));
+        int width=Math.min(a.dp(spec.view==null?500:680),a.windowWidth()-a.dp(72));
+        int maxHeight=Math.max(a.dp(140),a.windowHeight()-a.dp(200));
         content.measure(View.MeasureSpec.makeMeasureSpec(width-a.dp(48),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
         ScrollView scroller=new TvScrollView(a);scroller.setVerticalScrollBarEnabled(false);scroller.addView(content);
         FrameLayout clip=new FrameLayout(a){protected void dispatchDraw(Canvas c){int save=c.save();c.clipRect(0,0,getWidth(),getHeight());super.dispatchDraw(c);c.restoreToCount(save);}};clip.addView(scroller,new FrameLayout.LayoutParams(-1,-1));panel.addView(clip,new LinearLayout.LayoutParams(-1,Math.min(maxHeight,content.getMeasuredHeight())));

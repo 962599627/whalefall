@@ -13,7 +13,7 @@ import org.json.JSONObject;
 public final class StartupProbe extends Instrumentation {
     MainActivity a;final CountDownLatch launched=new CountDownLatch(1);final JSONObject report=new JSONObject();
     @Override public void onCreate(Bundle args){super.onCreate(args);start();}
-    @Override public void callActivityOnCreate(Activity activity,Bundle state){super.callActivityOnCreate(activity,state);if(activity instanceof MainActivity){a=(MainActivity)activity;launched.countDown();}}
+    @Override public void callActivityOnCreate(Activity activity,Bundle state){super.callActivityOnCreate(activity,state);if(activity instanceof MainActivity){a=(MainActivity)activity;final MainActivity created=a;created.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);created.ui.post(new Runnable(){public void run(){if(created.isDestroyed())return;if(created.layoutReady)launched.countDown();else created.ui.postDelayed(this,16);}});}}
     boolean ui(Callable<Boolean> fn){boolean[] value={false};runOnMainSync(()->{try{value[0]=fn.call();}catch(Exception e){throw new RuntimeException(e);}});return value[0];}
     void check(String key,boolean ok)throws Exception{report.put(key,ok);if(!ok)throw new AssertionError(key);}
     void await(Callable<Boolean> fn,int ms)throws Exception{long end=SystemClock.elapsedRealtime()+ms;while(SystemClock.elapsedRealtime()<end){if(ui(fn))return;SystemClock.sleep(30);}throw new AssertionError("timeout");}
