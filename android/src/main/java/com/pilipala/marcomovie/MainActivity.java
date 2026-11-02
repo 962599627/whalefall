@@ -44,7 +44,7 @@ public final class MainActivity extends Activity {
     final Map<String,HomeScreen.Snapshot> homeData=new ConcurrentHashMap<>();
     AppDialog appDialog; FrameLayout playbackLayer; MiniDetails miniDetails;boolean miniMode;boolean changingMiniEpisode;FrameLayout playerOverlay; boolean controlsVisible=true;Runnable hideControls;
     PlayerChrome playerChrome; MoviePlayer player; String configOrigin=""; TextView playStatus,playClock;
-    static final class Screen {Runnable render;String focus,homeReturnFocus;int scroll;boolean player,home;HomeScreen.State homeState;Screen(Runnable r){render=r;}}
+    static final class Screen {Runnable render;String focus,homeReturnFocus;int scroll;int episodeFocus=-1;String episodeFocusLine="";boolean player,home;HomeScreen.State homeState;Screen(Runnable r){render=r;}}
     interface Work<T>{T run()throws Exception;}
     interface Done<T>{void accept(T value)throws Exception;}
 
@@ -191,19 +191,19 @@ public final class MainActivity extends Activity {
         renderPage("","",false);
         body.setPadding(dp(34),dp(14),dp(40),dp(30));
         TextView backButton=navButton("‹ 返回","detail-back",this::onBackPressed);body.addView(backButton,new LinearLayout.LayoutParams(dp(82),dp(32)));gap(body,8);
-        LinearLayout hero=row();hero.setTag("detail-hero");hero.setGravity(Gravity.TOP);body.addView(hero);
+        LinearLayout hero=row();hero.setTag("detail-hero");hero.setGravity(Gravity.TOP);body.addView(hero,new LinearLayout.LayoutParams(-1,dp(windowHeight()/getResources().getDisplayMetrics().density-84)));
         ImmersivePoster cover=new ImmersivePoster(this,"detail-cover");root.addView(cover.backdrop,1,new FrameLayout.LayoutParams(-1,-1));
         float screenHeight=windowHeight()/getResources().getDisplayMetrics().density;
         int coverWidth=Math.round(Math.min(300,Math.max(224,(screenHeight-132)/1.5f)));
         LinearLayout.LayoutParams coverSize=new LinearLayout.LayoutParams(dp(coverWidth),dp(coverWidth*1.5f));coverSize.setMargins(0,0,dp(30),dp(18));hero.addView(cover,coverSize);cover.load(listing.poster);
-        LinearLayout info=vertical();hero.addView(info,new LinearLayout.LayoutParams(0,-2,1));
+        ScrollView detailsScroll=new TvScrollView(this);detailsScroll.setTag("detail-scroll");detailsScroll.setClipToPadding(false);detailsScroll.setVerticalScrollBarEnabled(false);LinearLayout info=vertical();info.setClipChildren(false);detailsScroll.addView(info,new ScrollView.LayoutParams(-1,-2));hero.addView(detailsScroll,new LinearLayout.LayoutParams(0,-1,1));scroll=detailsScroll;
         TextView title=text(listing.title,32,WHITE);title.setTypeface(null,Typeface.BOLD);title.setMaxLines(2);title.setEllipsize(android.text.TextUtils.TruncateAt.END);info.setPadding(0,dp(22),0,0);info.addView(title);gap(info,14);
         TextView state=text("正在读取详情与剧集…",14,MUTED);state.setTag("detail-loading");info.addView(state);
         loadDetail(s,listing.id,v->{
             if(v.poster==null||v.poster.isEmpty())v.poster=listing.poster;
             if(v.title==null||v.title.isEmpty())v.title=listing.title;
             title.setText(v.title);if(!java.util.Objects.equals(v.poster,listing.poster))cover.load(v.poster);info.removeView(state);
-            TextView meta=text((v.year+"   "+v.area+"   "+v.remarks).trim(),14,MUTED);meta.setMaxLines(2);info.addView(meta);gap(info,12);
+            String metadata=(v.year+"   "+v.area+"   "+v.remarks).trim();if(!metadata.isEmpty()){TextView meta=text(metadata,14,MUTED);meta.setMaxLines(2);info.addView(meta);gap(info,12);}
             if(!v.description.isEmpty()){TextView synopsis=text(v.description,15,0xffceced3);synopsis.setLineSpacing(dp(4),1);synopsis.setMaxLines(3);synopsis.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(synopsis);addButton(info,navButton("展开简介","synopsis",()->new AppDialog.Builder(this).setTitle(v.title).setMessage(v.description).setPositiveButton("关闭",null).show()));}
             if(!v.actor.isEmpty()){TextView actor=text("演员  "+v.actor,13,MUTED);actor.setMaxLines(2);actor.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(actor);gap(info,8);}
             Button favorite=button(Favorites.contains(prefs.getString("favorites","[]"),s.key,v.id)?"已收藏":"加入收藏","detail-favorite",()->{});
@@ -214,33 +214,34 @@ public final class MainActivity extends Activity {
             Button play=button(remembered==null?"开始播放":"继续播放","detail-play",()->{if(remembered!=null)playBookmark(s,v,remembered);else resolvePlayer(s,v,v.lines.get(0),v.lines.get(0).episodes.get(0));});
             LinearLayout actions=row();info.removeView(favorite);addButton(actions,play);addButton(actions,favorite);info.addView(actions);
             if(remembered!=null){TextView last=text("上次观看 · "+historyLabel(remembered),13,MUTED);last.setTag("detail-history");last.setPadding(0,dp(12),0,0);info.addView(last);}
-            int rememberedLine=0,rememberedPage=0;if(remembered!=null)for(int i=0;i<v.lines.size();i++)if(v.lines.get(i).name.equals(remembered.line)){rememberedLine=i;for(int n=0;n<v.lines.get(i).episodes.size();n++)if(v.lines.get(i).episodes.get(n).name.equals(remembered.episode))rememberedPage=n/50;break;}
+            int rememberedLine=0,rememberedPage=0;if(remembered!=null)for(int i=0;i<v.lines.size();i++)if(v.lines.get(i).name.equals(remembered.line)){rememberedLine=i;for(int n=0;n<v.lines.get(i).episodes.size();n++)if(v.lines.get(i).episodes.get(n).name.equals(remembered.episode))rememberedPage=(prefs.getBoolean("episodes_descending",false)?v.lines.get(i).episodes.size()-1-n:n)/50;break;}
             LinearLayout episodePanel=vertical();episodePanel.setTag("detail-episodes");gap(info,12);info.addView(episodePanel);renderEpisodes(s,v,rememberedLine,rememberedPage,episodePanel);
             View saved=current!=null&&current.focus!=null?root.findViewWithTag(current.focus):null;View first=episodePanel.findViewWithTag("episode:"+v.lines.get(0).name+":0");if(saved!=null)saved.requestFocus();else play.requestFocus();
         });
     }
-    void renderEpisodes(Cms.Site site,Cms.Video video,int lineIndex,int page,LinearLayout panel){
-        panel.removeAllViews();Cms.Line line=video.lines.get(lineIndex);
+    void renderEpisodes(Cms.Site site,Cms.Video video,int lineIndex,int page,LinearLayout panel){renderEpisodes(site,video,lineIndex,page,panel,null);}
+    void renderEpisodes(Cms.Site site,Cms.Video video,int lineIndex,int page,LinearLayout panel,String focusTag){
+        panel.removeAllViews();Cms.Line line=video.lines.get(lineIndex);final boolean descending=prefs.getBoolean("episodes_descending",false);
         CategoryFlow sources=new CategoryFlow(this,()->{});sources.setTag("detail-line-buttons");sources.setPadding(dp(4),dp(4),dp(4),dp(8));panel.addView(sources,new LinearLayout.LayoutParams(-1,-2));
         for(int n=0;n<video.lines.size();n++){final int index=n;boolean selected=n==lineIndex;Button choice=button(video.lines.get(n).name,"detail-line:"+n,()->{renderEpisodes(site,video,index,0,panel);View play=root.findViewWithTag("detail-play");if(play instanceof Button){((Button)play).setText("开始播放");play.setOnClickListener(v->{resumeAt=0;resolvePlayer(site,video,video.lines.get(index),video.lines.get(index).episodes.get(0));});}View next=panel.findViewWithTag("detail-line:"+index);if(next!=null)next.requestFocus();});choice.setSelected(selected);choice.setTextSize(13);choice.setMinHeight(dp(36));choice.setMinimumHeight(dp(36));choice.setPadding(dp(14),dp(8),dp(14),dp(8));choice.setBackground(bg(selected?0xff465c76:0xff242429,18));choice.setOnFocusChangeListener((view,focus)->FocusMotion.style(this,choice,focus,selected?0xff465c76:0xff242429,WHITE,18,WHITE,DARK,false,1.025f));sources.addView(choice);}
-        TextView count=text(line.episodes.size()+" 集",13,MUTED);count.setPadding(dp(4),0,0,dp(6));panel.addView(count);
+        LinearLayout orderRow=row();TextView count=text(line.episodes.size()+" 集",13,MUTED);count.setPadding(dp(4),0,0,dp(6));orderRow.addView(count,new LinearLayout.LayoutParams(0,-2,1));Button order=navButton(descending?"↓ 倒序":"↑ 正序","episodes-order",()->{boolean next=!descending;prefs.edit().putBoolean("episodes_descending",next).apply();int index=current!=null&&line.name.equals(current.episodeFocusLine)?current.episodeFocus:-1;int nextPage=index<0?0:(next?line.episodes.size()-1-index:index)/50;renderEpisodes(site,video,lineIndex,nextPage,panel,index<0?"episodes-order":"episode:"+line.name+":"+index);});order.setSelected(descending);order.setContentDescription("选集排序："+(descending?"倒序，点击改为正序":"正序，点击改为倒序"));orderRow.addView(order);panel.addView(orderRow);
         TextView fullTitle=text("聚焦剧集可查看完整名称",14,WHITE);fullTitle.setTag("episode-full-title");fullTitle.setPadding(dp(6),dp(6),dp(6),dp(10));fullTitle.setLineSpacing(dp(3),1);panel.addView(fullTitle,new LinearLayout.LayoutParams(-1,-2));
         int start=page*50,end=Math.min(start+50,line.episodes.size());
         Object batchToken=new Object();panel.setTag(batchToken);LinearLayout cells=vertical();panel.addView(cells);
-        appendEpisodeCells(site,video,line,start,end,cells,panel,batchToken,generation);
-        if(line.episodes.size()>50){LinearLayout pages=row();if(page>0)addButton(pages,navButton("上一组","episodes-previous",()->renderEpisodes(site,video,lineIndex,page-1,panel)));if(end<line.episodes.size())addButton(pages,navButton("下一组","episodes-next",()->{renderEpisodes(site,video,lineIndex,page+1,panel);View first=panel.findViewWithTag("episode:"+line.name+":"+end);if(first!=null)first.requestFocus();}));addButton(pages,navButton("全部选集","episodes-all",()->{String[] labels=new String[line.episodes.size()];for(int n=0;n<labels.length;n++)labels[n]=line.episodes.get(n).name;new AppDialog.Builder(this).setTitle(line.name).setItems(labels,(dialog,n)->resolvePlayer(site,video,line,line.episodes.get(n))).setNegativeButton("取消",null).show();}));panel.addView(pages);}
+        appendEpisodeCells(site,video,line,start,end,cells,panel,batchToken,generation,descending,focusTag);if("episodes-order".equals(focusTag))order.requestFocus();
+        if(line.episodes.size()>50){LinearLayout pages=row();if(page>0)addButton(pages,navButton("上一组","episodes-previous",()->renderEpisodes(site,video,lineIndex,page-1,panel)));if(end<line.episodes.size())addButton(pages,navButton("下一组","episodes-next",()->{renderEpisodes(site,video,lineIndex,page+1,panel);View first=panel.findViewWithTag("episode:"+line.name+":"+(descending?line.episodes.size()-1-end:end));if(first!=null)first.requestFocus();}));addButton(pages,navButton("全部选集","episodes-all",()->{String[] labels=new String[line.episodes.size()];for(int n=0;n<labels.length;n++)labels[n]=line.episodes.get(descending?line.episodes.size()-1-n:n).name;new AppDialog.Builder(this).setTitle(line.name).setItems(labels,(dialog,n)->resolvePlayer(site,video,line,line.episodes.get(descending?line.episodes.size()-1-n:n))).setNegativeButton("取消",null).show();}));panel.addView(pages);}
     }
 
-    void appendEpisodeCells(Cms.Site site,Cms.Video video,Cms.Line line,int start,int end,LinearLayout cells,LinearLayout panel,Object token,int ticket){
+    void appendEpisodeCells(Cms.Site site,Cms.Video video,Cms.Line line,int start,int end,LinearLayout cells,LinearLayout panel,Object token,int ticket,boolean descending,String focusTag){
         if(ticket!=generation||panel.getTag()!=token)return;
         int stop=Math.min(end,start+12);LinearLayout row=null;
         for(int i=start;i<stop;i++){
             if((i-start)%3==0){row=row();row.setClipChildren(false);row.setClipToPadding(false);cells.addView(row);}
-            Cms.Episode episode=line.episodes.get(i);Button button=button(episode.name,"episode:"+line.name+":"+i,()->{resumeAt=0;resolvePlayer(site,video,line,episode);});
-            button.setContentDescription(episode.name);button.setOnFocusChangeListener((view,focus)->{FocusMotion.style(this,button,focus,0xff242429,WHITE,12,WHITE,DARK,false,1.025f);if(focus){TextView label=(TextView)panel.findViewWithTag("episode-full-title");if(label!=null)label.setText(episode.name);}});button.setSingleLine(true);button.setEllipsize(android.text.TextUtils.TruncateAt.END);button.setPadding(dp(8),dp(9),dp(8),dp(9));LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,dp(52),1);cell.setMargins(dp(3),dp(4),dp(5),dp(6));row.addView(button,cell);
+            int originalIndex=descending?line.episodes.size()-1-i:i;Cms.Episode episode=line.episodes.get(originalIndex);Button button=button(episode.name,"episode:"+line.name+":"+originalIndex,()->{resumeAt=0;resolvePlayer(site,video,line,episode);});
+            button.setContentDescription(episode.name);button.setOnFocusChangeListener((view,focus)->{FocusMotion.style(this,button,focus,0xff242429,WHITE,12,WHITE,DARK,false,1.025f);if(focus){if(current!=null){current.episodeFocus=originalIndex;current.episodeFocusLine=line.name;}TextView label=(TextView)panel.findViewWithTag("episode-full-title");if(label!=null)label.setText(episode.name);}});button.setSingleLine(true);button.setEllipsize(android.text.TextUtils.TruncateAt.END);button.setPadding(dp(8),dp(9),dp(8),dp(9));LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,dp(52),1);cell.setMargins(dp(3),dp(4),dp(5),dp(6));row.addView(button,cell);if(focusTag!=null&&focusTag.equals(button.getTag()))button.requestFocus();
         }
         if(row!=null)for(int n=(stop-start)%3;n>0&&n<3;n++)row.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));
-        if(stop<end)cells.postOnAnimation(()->appendEpisodeCells(site,video,line,stop,end,cells,panel,token,ticket));
+        if(stop<end)cells.postOnAnimation(()->appendEpisodeCells(site,video,line,stop,end,cells,panel,token,ticket,descending,focusTag));
         else if(current!=null&&current.focus!=null&&current.focus.startsWith("episode:")){View focus=getCurrentFocus();Object tag=focus==null?null:focus.getTag();if(focus==null||"detail-play".equals(tag)||"detail-back".equals(tag)){View saved=panel.findViewWithTag(current.focus);if(saved!=null)saved.requestFocus();}}
     }
 
