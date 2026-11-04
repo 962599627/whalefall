@@ -69,28 +69,76 @@ final class MobileShell {
     }
 
     static void showMobileImportDialog(MainActivity a) {
-        String[] options = {
-            "📋 从手机剪贴板一键粘贴导入（推荐）",
-            "🌐 输入 HTTP(S) 配置网址导入",
-            "📂 选择手机本地 JSON 配置文件",
-            "💻 开启局域网网页扫码/推送服务"
-        };
-        new AppDialog.Builder(a)
-                .setTitle("导入或更新配置")
-                .setItems(
-                        options,
-                        (d, which) -> {
-                            if (which == 0) pasteConfigFromClipboard(a);
-                            else if (which == 1) a.addressImportDialog();
-                            else if (which == 2) a.pickConfig();
-                            else {
-                                if (a.phoneConfig != null) a.phoneConfig.close();
-                                a.phoneConfig = new PhoneConfigDialog(a);
-                                a.phoneConfig.show();
-                            }
-                        })
-                .setNegativeButton("取消", null)
-                .show();
+        LinearLayout panel = a.vertical();
+        panel.setPadding(a.dp(4), a.dp(6), a.dp(4), a.dp(4));
+
+        TextView tip = a.text("在下方输入或粘贴配置网址（HTTP/HTTPS）或 JSON 文本：", 13, MainActivity.MUTED);
+        panel.addView(tip);
+        a.gap(panel, 10);
+
+        final EditText input = new EditText(a);
+        input.setHint("https://…/config.json");
+        input.setHintTextColor(0xff6b7280);
+        input.setTextColor(MainActivity.WHITE);
+        input.setTextSize(14);
+        input.setSingleLine(true);
+        input.setShowSoftInputOnFocus(true);
+        input.setLongClickable(true);
+        input.setTextIsSelectable(true);
+        input.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
+        input.setBackground(a.bg(0xff262834, 12));
+        String savedOrigin = a.prefs.getString(Prefs.ORIGIN, "");
+        if (!savedOrigin.isEmpty()) {
+            input.setText(savedOrigin);
+            input.setSelection(savedOrigin.length());
+        }
+        panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
+        a.gap(panel, 12);
+
+        TextView pasteBtn = a.text("📋 一键读取手机剪贴板并直接导入", 13, Color.WHITE);
+        pasteBtn.setTypeface(null, Typeface.BOLD);
+        pasteBtn.setGravity(Gravity.CENTER);
+        pasteBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
+        pasteBtn.setBackground(a.bg(0xff3b82f6, 12));
+        MobileDetailScreen.bindTouchFeedback(pasteBtn);
+        panel.addView(pasteBtn, new LinearLayout.LayoutParams(-1, -2));
+        a.gap(panel, 8);
+
+        TextView fileBtn = a.text("📂 选择手机本地 JSON 配置文件", 13, MainActivity.WHITE);
+        fileBtn.setGravity(Gravity.CENTER);
+        fileBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
+        fileBtn.setBackground(a.bg(0xff262834, 12));
+        MobileDetailScreen.bindTouchFeedback(fileBtn);
+        panel.addView(fileBtn, new LinearLayout.LayoutParams(-1, -2));
+
+        final AppDialog dialog =
+                new AppDialog.Builder(a)
+                        .setTitle("导入或更新配置")
+                        .setView(panel)
+                        .setNegativeButton("取消", null)
+                        .setPositiveButton(
+                                "导入输入内容",
+                                (d, w) -> {
+                                    String raw = input.getText().toString().trim();
+                                    if (raw.isEmpty()) {
+                                        a.toast("请输入配置网址或点击剪贴板导入");
+                                        return;
+                                    }
+                                    importTextOrUrl(a, raw);
+                                })
+                        .create();
+
+        pasteBtn.setOnClickListener(
+                v -> {
+                    dialog.dismiss();
+                    pasteConfigFromClipboard(a);
+                });
+        fileBtn.setOnClickListener(
+                v -> {
+                    dialog.dismiss();
+                    a.pickConfig();
+                });
+        dialog.show();
     }
 
     static void pasteConfigFromClipboard(MainActivity a) {
@@ -106,8 +154,16 @@ final class MobileShell {
             a.toast("剪贴板为空，请先复制配置网址或 JSON 内容");
             return;
         }
-        final String pasted = text;
-        a.toast("正在解析剪贴板配置…");
+        importTextOrUrl(a, text);
+    }
+
+    static void importTextOrUrl(MainActivity a, String rawInput) {
+        final String pasted = rawInput == null ? "" : rawInput.trim();
+        if (pasted.isEmpty()) {
+            a.toast("请输入有效的配置网址或 JSON 内容");
+            return;
+        }
+        a.toast("正在读取并解析配置…");
         a.worker.execute(
                 () -> {
                     try {
@@ -129,7 +185,7 @@ final class MobileShell {
                                     }
                                 });
                     } catch (Exception e) {
-                        a.ui.post(() -> a.toast("剪贴板内容无法识别为配置：" + a.message(e)));
+                        a.ui.post(() -> a.toast("配置读取失败：" + a.message(e)));
                     }
                 });
     }
@@ -693,19 +749,39 @@ final class MobileShell {
         card.addView(desc);
         a.gap(card, 20);
 
+        LinearLayout urlRow = a.row();
+        final EditText urlInput = new EditText(a);
+        urlInput.setHint("输入或长按粘贴配置网址 https://…");
+        urlInput.setHintTextColor(0xff6b7280);
+        urlInput.setTextColor(MainActivity.WHITE);
+        urlInput.setTextSize(13);
+        urlInput.setSingleLine(true);
+        urlInput.setShowSoftInputOnFocus(true);
+        urlInput.setLongClickable(true);
+        urlInput.setTextIsSelectable(true);
+        urlInput.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
+        urlInput.setBackground(a.bg(0xff252734, 12));
+        LinearLayout.LayoutParams urlLp = new LinearLayout.LayoutParams(0, -2, 1);
+        urlLp.rightMargin = a.dp(8);
+        urlRow.addView(urlInput, urlLp);
+
+        TextView goBtn = a.text("导入", 13, Color.WHITE);
+        goBtn.setTypeface(null, Typeface.BOLD);
+        goBtn.setGravity(Gravity.CENTER);
+        goBtn.setPadding(a.dp(16), a.dp(10), a.dp(16), a.dp(10));
+        goBtn.setBackground(a.bg(0xff3b82f6, 12));
+        MobileDetailScreen.bindTouchFeedback(goBtn);
+        goBtn.setOnClickListener(v -> importTextOrUrl(a, urlInput.getText().toString()));
+        urlRow.addView(goBtn);
+        card.addView(urlRow, new LinearLayout.LayoutParams(-1, -2));
+        a.gap(card, 12);
+
         addMobileActionBtn(
                 card,
-                "📋 一键粘贴剪贴板配置（支持网址或 JSON）",
+                "📋 一键读取手机剪贴板并导入",
                 0xff3b82f6,
                 Color.WHITE,
                 () -> pasteConfigFromClipboard(a));
-        a.gap(card, 10);
-        addMobileActionBtn(
-                card,
-                "🌐 手动输入配置网址 HTTP(S)",
-                0xff252734,
-                MainActivity.WHITE,
-                a::addressImportDialog);
         a.gap(card, 10);
         addMobileActionBtn(
                 card, "📂 选择手机本地 JSON 配置文件", 0xff252734, MainActivity.WHITE, a::pickConfig);
@@ -1419,9 +1495,9 @@ final class MobileShell {
                 body, "📋 从剪贴板一键粘贴配置", "直接读取你在手机上复制的配置网址或 JSON", () -> pasteConfigFromClipboard(a));
         addSettingCard(
                 body,
-                "🌐 输入 HTTP(S) 配置网址",
+                "🌐 输入或修改 HTTP(S) 配置网址",
                 a.configOrigin.isEmpty() ? "当前未设置远程配置网址" : a.configOrigin,
-                a::addressImportDialog);
+                () -> showMobileImportDialog(a));
         addSettingCard(body, "📂 选择手机本地 JSON 文件", "从手机存储导入兼容配置文件", a::pickConfig);
         addSettingCard(
                 body,

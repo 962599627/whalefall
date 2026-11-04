@@ -47,6 +47,10 @@ final class PhoneConfigDialog {
     }
 
     void show() {
+        if (!a.isTvDevice()) {
+            MobileShell.showMobileImportDialog(a);
+            return;
+        }
         try {
             String ip = lanAddress();
             server =

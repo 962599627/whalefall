@@ -270,7 +270,11 @@ final class SettingsScreen {
                 new String[] {"10 秒", "20 秒", "30 秒"},
                 new int[] {10, 20, 30},
                 20);
-        link("导入或更新配置源", "手机扫码、遥控输入或本地文件", "settings-import", a::importDialog);
+        link(
+                "导入或更新配置源",
+                a.isTvDevice() ? "手机扫码、遥控输入或本地文件" : "剪贴板粘贴、网址输入或本地文件",
+                "settings-import",
+                a::importDialog);
         toggle("启用来源扩展", Prefs.EXPERIMENTAL_CSP, false, a::closeEngines);
         link(
                 "备份配置与偏好",

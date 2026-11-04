@@ -23,7 +23,7 @@ final class AddressInput extends LinearLayout {
         input.setHintTextColor(MainActivity.MUTED);
         input.setHint(hint);
         input.setInputType(17);
-        input.setShowSoftInputOnFocus(false);
+        input.setShowSoftInputOnFocus(!a.isTvDevice());
         input.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
         input.setBackground(a.bg(0xff36363e, 16));
         input.setOnFocusChangeListener(
@@ -42,8 +42,8 @@ final class AddressInput extends LinearLayout {
         input.setText(value);
         input.setSelection(input.length());
         addView(input, new LinearLayout.LayoutParams(-1, a.dp(48)));
-        input.setLongClickable(false);
-        input.setTextIsSelectable(false);
+        input.setLongClickable(!a.isTvDevice());
+        input.setTextIsSelectable(!a.isTvDevice());
         error = a.text("", 12, 0xffffb4ad);
         addView(error);
         keys = a.vertical();
@@ -68,28 +68,32 @@ final class AddressInput extends LinearLayout {
 
     void rebuild() {
         keys.removeAllViews();
-        String chars =
-                upper
-                        ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:/.-_?=&%#+@"
-                        : "abcdefghijklmnopqrstuvwxyz0123456789:/.-_?=&%#+@";
-        for (int i = 0; i < chars.length(); i += 12) {
-            LinearLayout row = a.row();
-            keys.addView(row);
-            for (int j = i; j < Math.min(chars.length(), i + 12); j++) {
-                String c = chars.substring(j, j + 1);
-                key(row, c, () -> insert(c));
+        if (a.isTvDevice()) {
+            String chars =
+                    upper
+                            ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:/.-_?=&%#+@"
+                            : "abcdefghijklmnopqrstuvwxyz0123456789:/.-_?=&%#+@";
+            for (int i = 0; i < chars.length(); i += 12) {
+                LinearLayout row = a.row();
+                keys.addView(row);
+                for (int j = i; j < Math.min(chars.length(), i + 12); j++) {
+                    String c = chars.substring(j, j + 1);
+                    key(row, c, () -> insert(c));
+                }
             }
         }
         LinearLayout row = a.row();
         keys.addView(row);
-        key(
-                row,
-                "大小写",
-                () -> {
-                    upper = !upper;
-                    rebuild();
-                    keys.getChildAt(0).requestFocus();
-                });
+        if (a.isTvDevice()) {
+            key(
+                    row,
+                    "大小写",
+                    () -> {
+                        upper = !upper;
+                        rebuild();
+                        keys.getChildAt(0).requestFocus();
+                    });
+        }
         key(row, "https://", () -> insert("https://"));
         key(
                 row,
