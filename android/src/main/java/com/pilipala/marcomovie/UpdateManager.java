@@ -381,9 +381,12 @@ final class UpdateManager {
     static void verifyApk(Context c, File file, Release r) throws Exception {
         if (file.length() != r.size || !sha(file).equals(r.sha)) throw new IOException("digest");
         PackageManager pm = c.getPackageManager();
-        PackageInfo next =
-                pm.getPackageArchiveInfo(file.getAbsolutePath(), PackageManager.GET_SIGNATURES);
-        PackageInfo current = pm.getPackageInfo(c.getPackageName(), PackageManager.GET_SIGNATURES);
+        int flags =
+                Build.VERSION.SDK_INT >= 28
+                        ? PackageManager.GET_SIGNING_CERTIFICATES | PackageManager.GET_SIGNATURES
+                        : PackageManager.GET_SIGNATURES;
+        PackageInfo next = pm.getPackageArchiveInfo(file.getAbsolutePath(), flags);
+        PackageInfo current = pm.getPackageInfo(c.getPackageName(), flags);
         if (next == null
                 || !c.getPackageName().equals(next.packageName)
                 || next.versionCode != r.code
@@ -394,8 +397,22 @@ final class UpdateManager {
                         && (next.applicationInfo.minSdkVersion != r.minSdk
                                 || next.applicationInfo.minSdkVersion > Build.VERSION.SDK_INT)))
             throw new IOException("package identity or compatibility");
-        Set<String> a = signatures(current.signatures), b = signatures(next.signatures);
+        Set<String> a = packageSignatures(current), b = packageSignatures(next);
         if (a.isEmpty() || !a.equals(b)) throw new IOException("signer");
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Set<String> packageSignatures(PackageInfo info) {
+        if (info == null) return Collections.emptySet();
+        if (Build.VERSION.SDK_INT >= 28 && info.signingInfo != null) {
+            android.content.pm.Signature[] certs =
+                    info.signingInfo.hasMultipleSigners()
+                            ? info.signingInfo.getApkContentsSigners()
+                            : info.signingInfo.getSigningCertificateHistory();
+            Set<String> modern = signatures(certs);
+            if (!modern.isEmpty()) return modern;
+        }
+        return signatures(info.signatures);
     }
 
     private static Set<String> signatures(android.content.pm.Signature[] signatures) {

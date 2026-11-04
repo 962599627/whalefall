@@ -303,6 +303,7 @@ final class SettingsScreen {
                     a.homeData.clear();
                     a.toast("已清除首页缓存");
                 });
+        link("运行日志", "查看本机最近异常与诊断记录", "settings-logs", this::diagnostics);
         link(
                 "恢复播放与外观默认设置",
                 "保留来源配置和网盘登录",
@@ -326,6 +327,21 @@ final class SettingsScreen {
                 .setTitle(title)
                 .setNegativeButton("取消", null)
                 .setPositiveButton("确定", (d, i) -> action.run())
+                .show();
+    }
+
+    void diagnostics() {
+        String text = AppLog.dump();
+        new AppDialog.Builder(a)
+                .setTitle("运行日志")
+                .setMessage(text.isEmpty() ? "当前运行正常，暂无异常或告警记录。" : text)
+                .setNeutralButton(
+                        "清空记录",
+                        (d, i) -> {
+                            AppLog.clear();
+                            a.toast("已清空运行日志");
+                        })
+                .setPositiveButton("关闭", null)
                 .show();
     }
 

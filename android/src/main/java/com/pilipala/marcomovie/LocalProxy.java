@@ -12,6 +12,7 @@ public final class LocalProxy implements Closeable {
     final Application app;
     final Cms.Config config;
     final ServerSocket server;
+    final String token = UUID.randomUUID().toString().replace("-", "");
     final ThreadPoolExecutor requests =
             new ThreadPoolExecutor(0, 4, 30, TimeUnit.SECONDS, new SynchronousQueue<Runnable>());
     volatile boolean closed;
@@ -21,6 +22,7 @@ public final class LocalProxy implements Closeable {
         config = source;
         server = bind();
         ProxyAddress.port = server.getLocalPort();
+        ProxyAddress.token = token;
         Thread accept =
                 new Thread(
                         () -> {
@@ -69,7 +71,7 @@ public final class LocalProxy implements Closeable {
 
     /** Only the CSP host's reserved /proxy URLs are relocated, never arbitrary loopback services. */
     static String rewrite(String value) {
-        return ProxyAddress.rewrite(value, ProxyAddress.port);
+        return ProxyAddress.rewrite(value, ProxyAddress.port, ProxyAddress.token);
     }
 
     static String line(InputStream in, int limit) throws IOException {
@@ -85,6 +87,8 @@ public final class LocalProxy implements Closeable {
 
     void serve(Socket socket) {
         try (Socket connection = socket) {
+            if (connection.getInetAddress() == null
+                    || !connection.getInetAddress().isLoopbackAddress()) return;
             connection.setSoTimeout(10000);
             InputStream in = connection.getInputStream();
             OutputStream out = connection.getOutputStream();
@@ -119,13 +123,22 @@ public final class LocalProxy implements Closeable {
                             URLDecoder.decode(p[0], "UTF-8"),
                             p.length == 2 ? URLDecoder.decode(p[1], "UTF-8") : "");
                 }
+            String requestToken = params.remove("_mm_token");
+            boolean isJs = "js".equals(params.get("do"));
+            if (!ProxyAddress.isAllowedRequest(
+                    headers.get("host"),
+                    headers.get("origin"),
+                    headers.get("sec-fetch-site"),
+                    requestToken,
+                    token,
+                    isJs)) {
+                simple(out, 403, "Forbidden");
+                return;
+            }
             params.put("request-headers", new JSONObject(headers).toString());
             Object[] response;
             try {
-                response =
-                        "js".equals(params.get("do"))
-                                ? JsEngine.proxyFor(params)
-                                : CspEngine.proxy(app, config, params);
+                response = isJs ? JsEngine.proxyFor(params) : CspEngine.proxy(app, config, params);
             } catch (Throwable e) {
                 AppLog.w("LocalProxy", "source proxy failed", e);
                 simple(out, 502, "Source proxy failed");

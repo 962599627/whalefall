@@ -148,7 +148,10 @@ public final class JsEngine implements SourceEngine {
                 });
         global.setProperty(
                 "__proxyAddress",
-                ProxyAddress.base() + "/proxy?do=js&site=" + URLEncoder.encode(site.key, "UTF-8"));
+                ProxyAddress.base()
+                        + "/proxy?do=js&site="
+                        + URLEncoder.encode(site.key, "UTF-8")
+                        + (ProxyAddress.token.isEmpty() ? "" : "&_mm_token=" + ProxyAddress.token));
         context.evaluate(asset("js-host/bootstrap.js"), "host-bootstrap.js");
         context.evaluate(asset("js-host/crypto-js.js"), "crypto-js.js");
         context.setModuleLoader(

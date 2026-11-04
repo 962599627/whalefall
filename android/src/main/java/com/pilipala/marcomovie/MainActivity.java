@@ -31,33 +31,7 @@ public final class MainActivity extends Activity {
     final Runnable learnPendingTitles = this::learnPendingTitles;
 
     void learnPendingTitles() {
-        List<String> titles = new ArrayList<>(pendingTitles);
-        pendingTitles.clear();
-        final PhoneticSearchIndex index = phonetic;
-        final android.content.SharedPreferences target = prefs;
-        if (index == null || titles.isEmpty()) return;
-        phoneticWork.execute(
-                () -> {
-                    LinkedHashSet<String> values = new LinkedHashSet<>();
-                    try {
-                        org.json.JSONArray previous =
-                                new org.json.JSONArray(
-                                        target.getString(Prefs.PHONETIC_TITLES, "[]"));
-                        for (int i = 0; i < previous.length(); i++)
-                            values.add(previous.optString(i));
-                    } catch (Exception ignored) {
-                    }
-                    for (String title : titles) {
-                        index.learn(title);
-                        values.add(title);
-                    }
-                    while (values.size() > 400) values.remove(values.iterator().next());
-                    target.edit()
-                            .putString(
-                                    Prefs.PHONETIC_TITLES,
-                                    new org.json.JSONArray(values).toString())
-                            .apply();
-                });
+        SourceController.learnPendingTitles(this);
     }
 
     UpdateScreen updateScreen;
@@ -512,84 +486,21 @@ public final class MainActivity extends Activity {
     }
 
     boolean available(Cms.Site s) {
-        return s.supported()
-                || (prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, false)
-                        && (CspEngine.eligible(s) || JsEngine.eligible(s))
-                        && config != null
-                        && !config.spider.isEmpty());
+        return SourceController.available(this, s);
     }
 
     int engineEpoch;
 
     SourceEngine engine(Cms.Site s) throws Exception {
-        if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
-        final Cms.Config snapshot;
-        final int epoch;
-        synchronized (this) {
-            SourceEngine existing = engines.get(s.key);
-            if (existing != null) return existing;
-            snapshot = config;
-            epoch = engineEpoch;
-        }
-        return engineInitializations.get(
-                epoch + ":" + s.key,
-                () -> {
-                    synchronized (this) {
-                        if (epoch != engineEpoch) throw new IOException("配置已更改，请重新选择来源");
-                        SourceEngine existing = engines.get(s.key);
-                        if (existing != null) return existing;
-                    }
-                    SourceEngine raw;
-                    if (s.supported()) raw = new JsonCmsEngine(s);
-                    else if (prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, false)
-                            && CspEngine.eligible(s)
-                            && snapshot != null) {
-                        ensureProxy(snapshot);
-                        raw = new CspEngine(getApplication(), snapshot, s);
-                    } else if (prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, false)
-                            && JsEngine.eligible(s)
-                            && snapshot != null) {
-                        ensureProxy(snapshot);
-                        raw = new JsEngine(getApplication(), snapshot, s);
-                    } else throw new IOException("来源需要尚未启用的扩展引擎");
-                    SourceEngine created = new QueuedSourceEngine(raw);
-                    synchronized (this) {
-                        if (epoch == engineEpoch) {
-                            if (raw instanceof JsEngine) ((JsEngine) raw).activate();
-                            engines.put(s.key, created);
-                            return created;
-                        }
-                    }
-                    created.close();
-                    throw new IOException("配置已更改，请重新选择来源");
-                });
+        return SourceController.engine(this, s);
     }
 
     synchronized void ensureProxy(Cms.Config snapshot) throws IOException {
-        if (localProxy == null) localProxy = new LocalProxy(getApplication(), snapshot);
+        SourceController.ensureProxy(this, snapshot);
     }
 
     void closeEngines() {
-        liveSession = null;
-        detailCache.clear();
-        homeData.clear();
-        if (localProxy != null) {
-            localProxy.close();
-            localProxy = null;
-        }
-        final List<SourceEngine> old;
-        synchronized (this) {
-            engineEpoch++;
-            old = new ArrayList<>(engines.values());
-            engines.clear();
-        }
-        if (!old.isEmpty())
-            new Thread(
-                            () -> {
-                                for (SourceEngine e : old) e.close();
-                            },
-                            "close-source-engines")
-                    .start();
+        SourceController.closeEngines(this);
     }
 
     void open(Screen s, boolean history) {
@@ -729,112 +640,15 @@ public final class MainActivity extends Activity {
     }
 
     void loadDetail(Cms.Site site, String id, Done<Cms.Video> done) {
-        final int ticket = generation, epoch = engineEpoch;
-        final String key = epoch + ":" + site.key.length() + ":" + site.key + id;
-        final DetailRequest timing = new DetailRequest();
-        Future<?> request =
-                RequestScope.submit(
-                        details,
-                        () -> {
-                            try {
-                                timing.dispatched = SystemClock.elapsedRealtime();
-                                String raw = detailCache.get(key);
-                                timing.cached = raw != null;
-                                if (raw == null) {
-                                    SourceEngine source = engine(site);
-                                    timing.engineReady = SystemClock.elapsedRealtime();
-                                    long[] phases = new long[2];
-                                    raw = SourceGate.measured(phases, () -> source.detail(id));
-                                    timing.gateWaitNanos = phases[0];
-                                    timing.delegateNanos = phases[1];
-                                    timing.returned = SystemClock.elapsedRealtime();
-                                } else
-                                    timing.engineReady =
-                                            timing.returned = SystemClock.elapsedRealtime();
-                                if (Thread.currentThread().isInterrupted()) return;
-                                Cms.Listing listing = Cms.listing(raw);
-                                if (listing.videos.isEmpty()) throw new IOException("来源没有返回影片详情");
-                                timing.parsed = SystemClock.elapsedRealtime();
-                                if (!timing.cached && epoch == engineEpoch)
-                                    detailCache.put(key, raw);
-                                Cms.Video video = listing.videos.get(0);
-                                ui.post(
-                                        () -> {
-                                            if (isFinishing() || ticket != generation) return;
-                                            try {
-                                                done.accept(video);
-                                                root.postOnAnimation(timing::ready);
-                                            } catch (Exception error) {
-                                                paragraph("详情数据无法显示，请返回后重试。");
-                                            }
-                                        });
-                            } catch (Exception error) {
-                                if (Thread.currentThread().isInterrupted()) return;
-                                ui.post(
-                                        () -> {
-                                            if (isFinishing() || ticket != generation) return;
-                                            View state = root.findViewWithTag("detail-loading");
-                                            if (state instanceof TextView)
-                                                ((TextView) state).setText(message(error));
-                                            LinearLayout target =
-                                                    state != null
-                                                                    && state.getParent()
-                                                                            instanceof LinearLayout
-                                                            ? (LinearLayout) state.getParent()
-                                                            : body;
-                                            addButton(
-                                                    target, button("重试", "primary", this::refresh));
-                                        });
-                            }
-                        });
-        pageRequests.removeIf(Future::isDone);
-        pageRequests.add(request);
+        SourceController.loadDetail(this, site, id, done);
     }
 
     <T> void load(String label, Work<T> task, Done<T> done) {
-        final int ticket = generation;
-        TextView loading = text(label, 17, MUTED);
-        body.addView(loading);
-        submitPage(
-                () -> {
-                    try {
-                        T value = task.run();
-                        ui.post(
-                                () -> {
-                                    if (isFinishing() || ticket != generation) return;
-                                    body.removeView(loading);
-                                    try {
-                                        done.accept(value);
-                                    } catch (Exception e) {
-                                        notice("数据格式不符合此版本支持的格式。");
-                                    }
-                                });
-                    } catch (Exception e) {
-                        ui.post(
-                                () -> {
-                                    if (isFinishing() || ticket != generation) return;
-                                    body.removeView(loading);
-                                    paragraph(message(e));
-                                    addButton(body, button("重试", "primary", () -> refresh()));
-                                });
-                    }
-                });
+        SourceController.load(this, label, task, done);
     }
 
     String message(Exception e) {
-        String s = e.getMessage();
-        if (e instanceof CspEngine.EngineException) return s;
-        if (s != null
-                && (s.startsWith("配置")
-                        || s.startsWith("来源返回 HTTP")
-                        || s.startsWith("来源没有")
-                        || s.startsWith("来源重定向")
-                        || s.startsWith("单页超过")
-                        || s.startsWith("响应超过")
-                        || s.startsWith("剧集返回")
-                        || s.startsWith("媒体地址返回")
-                        || s.startsWith("此剧集"))) return s;
-        return "连接超时、来源不可达或数据格式不受支持。请检查配置与网络后重试。";
+        return SourceController.message(e);
     }
 
     void notice(String s) {
@@ -842,82 +656,19 @@ public final class MainActivity extends Activity {
     }
 
     void learnTitles(List<Cms.Video> videos) {
-        if (phonetic == null || videos == null || videos.isEmpty()) return;
-        for (Cms.Video video : videos)
-            if (video.title != null && !video.title.isEmpty()) pendingTitles.add(video.title);
-        while (pendingTitles.size() > 400) pendingTitles.remove(pendingTitles.iterator().next());
-        ui.removeCallbacks(learnPendingTitles);
-        ui.postDelayed(learnPendingTitles, 500);
+        SourceController.learnTitles(this, videos);
     }
 
     void sourceAction(Cms.Site site, String action) {
-        detailCache.clear();
-        final int ticket = generation;
-        worker.execute(
-                () -> {
-                    try {
-                        String response = engine(site).action(action);
-                        ui.post(
-                                () -> {
-                                    if (ticket != generation
-                                            || isFinishing()
-                                            || response == null
-                                            || response.trim().isEmpty()) return;
-                                    try {
-                                        org.json.JSONObject result =
-                                                new org.json.JSONObject(response);
-                                        if (result.has("list")) {
-                                            Cms.Listing list = Cms.listing(response);
-                                            new AppDialog.Builder(this)
-                                                    .setTitle(site.name)
-                                                    .setItems(
-                                                            list.videos.stream()
-                                                                    .map(v -> v.title)
-                                                                    .toArray(String[]::new),
-                                                            (dialog, index) ->
-                                                                    detail(
-                                                                            site,
-                                                                            list.videos.get(index)))
-                                                    .setNegativeButton("关闭", null)
-                                                    .show();
-                                        } else
-                                            notice(
-                                                    result.optString(
-                                                            "msg",
-                                                            result.optString("message", response)));
-                                    } catch (Exception ignored) {
-                                        notice(response);
-                                    }
-                                });
-                    } catch (Exception error) {
-                        ui.post(
-                                () -> {
-                                    if (ticket == generation) notice(message(error));
-                                });
-                    }
-                });
+        SourceController.sourceAction(this, site, action);
     }
 
     void pickDanmaku() {
-        try {
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("*/*");
-            startActivityForResult(intent, 43);
-        } catch (Exception error) {
-            notice("这台电视没有文件选择器。");
-        }
+        SourceController.pickDocument(this, 43, "这台电视没有文件选择器。");
     }
 
     void pickSubtitle() {
-        try {
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("*/*");
-            startActivityForResult(intent, 42);
-        } catch (Exception error) {
-            notice("这台电视没有文件选择器，可安装文件管理器后再导入字幕。");
-        }
+        SourceController.pickDocument(this, 42, "这台电视没有文件选择器，可安装文件管理器后再导入字幕。");
     }
 
     void home() {
@@ -970,166 +721,21 @@ public final class MainActivity extends Activity {
     }
 
     void addressImportDialog() {
-        AddressInput input =
-                new AddressInput(this, "https://…/config.json", prefs.getString("origin", ""));
-        AppDialog d =
-                new AppDialog.Builder(this)
-                        .setTitle("导入配置")
-                        .setView(input)
-                        .setNegativeButton("取消", null)
-                        .setNeutralButton("选择本地文件", (x, y) -> pickConfig())
-                        .setPositiveButton("导入地址", null)
-                        .create();
-        d.setOnShowListener(
-                x ->
-                        d.getButton(-1)
-                                .setOnClickListener(
-                                        view -> {
-                                            String address = input.value();
-                                            if (!Cms.isHttp(address)) {
-                                                input.invalid("请输入 HTTP(S) 配置地址");
-                                                return;
-                                            }
-                                            d.dismiss();
-                                            open(
-                                                    new Screen(
-                                                            () -> {
-                                                                renderPage(
-                                                                        "正在导入",
-                                                                        "IMPORT CONFIGURATION");
-                                                                load(
-                                                                        "连接配置并读取来源…",
-                                                                        () -> {
-                                                                            String raw =
-                                                                                    Cms.fetch(
-                                                                                            address,
-                                                                                            null);
-                                                                            return Cms.parseConfig(
-                                                                                    raw, address);
-                                                                        },
-                                                                        c ->
-                                                                                saveConfig(
-                                                                                        c,
-                                                                                        address));
-                                                            }),
-                                                    true);
-                                        }));
-        d.show();
+        SourceController.addressImportDialog(this);
     }
 
     void pickConfig() {
-        try {
-            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            i.setType("*/*");
-            i.addCategory(Intent.CATEGORY_OPENABLE);
-            startActivityForResult(i, 41);
-        } catch (Exception e) {
-            notice("这台电视没有系统文件选择器。请安装文件管理器，或使用配置地址导入。");
-        }
+        SourceController.pickDocument(this, 41, "这台电视没有系统文件选择器。请安装文件管理器，或使用配置地址导入。");
     }
 
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request == UpdateScreen.INSTALL) {
-            UpdateScreen.result(this);
-            return;
-        }
-        if (request >= 44 && request <= 46) {
-            if (result == RESULT_OK && data != null && data.getData() != null)
-                SettingsScreen.result(this, request, data.getData());
-            return;
-        }
-        if (request == 43 && result == RESULT_OK && data != null && data.getData() != null) {
-            final PlaybackControls controls = playbackControls;
-            if (controls != null) {
-                Uri file = data.getData();
-                worker.execute(
-                        () -> {
-                            try (InputStream in = getContentResolver().openInputStream(file)) {
-                                String text = Cms.read(in, 8 * 1024 * 1024);
-                                ui.post(
-                                        () -> {
-                                            if (controls == playbackControls) {
-                                                controls.danmaku.enabled(true);
-                                                controls.danmaku.loadText(
-                                                        text,
-                                                        new DanmakuView.Listener() {
-                                                            public void loaded(int count) {
-                                                                toast("已加载 " + count + " 条弹幕");
-                                                            }
-
-                                                            public void error(String message) {
-                                                                notice(message);
-                                                            }
-                                                        });
-                                            }
-                                        });
-                            } catch (Exception error) {
-                                ui.post(() -> notice("弹幕文件无法读取。"));
-                            }
-                        });
-            }
-            return;
-        }
-        if (request == 42 && result == RESULT_OK && data != null && data.getData() != null) {
-            Uri subtitle = data.getData();
-            if (player != null && prepared) {
-                String name = "外挂字幕";
-                try (android.database.Cursor cursor =
-                        getContentResolver()
-                                .query(
-                                        subtitle,
-                                        new String[] {
-                                            android.provider.OpenableColumns.DISPLAY_NAME
-                                        },
-                                        null,
-                                        null,
-                                        null)) {
-                    if (cursor != null && cursor.moveToFirst()) name = cursor.getString(0);
-                } catch (Exception ignored) {
-                }
-                try {
-                    player.addExternalSubtitle(subtitle, name, MediaOptions.subtitleMime(name, ""));
-                    toast("已导入字幕");
-                } catch (Exception error) {
-                    notice("字幕无法读取，请选择 SRT、VTT、ASS 或 TTML 文件。");
-                }
-            }
-            return;
-        }
-        if (request == 41 && result == RESULT_OK && data != null && data.getData() != null) {
-            Uri uri = data.getData();
-            open(
-                    new Screen(
-                            () -> {
-                                renderPage("正在读取文件", "IMPORT CONFIGURATION");
-                                load(
-                                        "读取本地配置…",
-                                        () -> {
-                                            try (InputStream i =
-                                                    getContentResolver().openInputStream(uri)) {
-                                                return Cms.parseConfig(
-                                                        Cms.read(i, Cms.MAX_JSON), null);
-                                            }
-                                        },
-                                        c -> saveConfig(c, ""));
-                            }),
-                    true);
-        }
+        SourceController.onActivityResult(this, request, result, data);
     }
 
     void saveConfig(Cms.Config c, String origin) throws Exception {
-        configStore.write(c.raw);
-        closeEngines();
-        config = c;
-        configOrigin = origin;
-        prefs.edit().putString("origin", origin).apply();
-        back.clear();
-        current = new Screen(() -> home());
-        current.render.run();
-        restore(current);
-        toast("已导入 " + c.sites.size() + " 个来源");
+        SourceController.saveConfig(this, c, origin);
     }
 
     void categories(Cms.Site s) {

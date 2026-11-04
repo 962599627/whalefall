@@ -199,6 +199,29 @@ public final class CompatChecks {
                 ProxyAddress.rewrite("https://media.test:9978/proxy?do=a", 42123)
                         .equals("https://media.test:9978/proxy?do=a"),
                 "remote proxy URLs left unchanged");
+        check(
+                ProxyAddress.rewrite("http://127.0.0.1:9978/proxy?do=a", 42123, "sec123")
+                        .equals("http://127.0.0.1:42123/proxy?do=a&_mm_token=sec123"),
+                "session token appended when rewriting local proxy URL");
+        check(
+                ProxyAddress.isAllowedRequest(
+                                "127.0.0.1:42123", null, null, "sec123", "sec123", true)
+                        && !ProxyAddress.isAllowedRequest(
+                                "evil.example:42123", null, null, "sec123", "sec123", false)
+                        && !ProxyAddress.isAllowedRequest(
+                                "127.0.0.1:42123",
+                                "https://evil.example",
+                                null,
+                                "sec123",
+                                "sec123",
+                                false)
+                        && !ProxyAddress.isAllowedRequest(
+                                "127.0.0.1:42123", null, "cross-site", "sec123", "sec123", false)
+                        && !ProxyAddress.isAllowedRequest(
+                                "127.0.0.1:42123", null, null, "wrong", "sec123", false)
+                        && !ProxyAddress.isAllowedRequest(
+                                "127.0.0.1:42123", null, null, null, "sec123", true),
+                "proxy request guard blocks DNS rebinding, browser CSRF, and bad tokens");
         response.remove("subt");
         response.put("subs", new JSONArray().put(new JSONObject().put("url", "caption.srt")));
         check(
