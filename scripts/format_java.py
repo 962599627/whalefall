@@ -57,6 +57,11 @@ def main():
     check = '--check' in sys.argv[1:]
     mode = ['--dry-run', '--set-exit-if-changed'] if check else ['--replace']
     files = sources()
+    if not check:
+        for path in files:
+            raw = path.read_bytes()
+            if b'\r' in raw:
+                path.write_bytes(raw.replace(b'\r\n', b'\n').replace(b'\r', b'\n'))
     result = subprocess.run([java(), *EXPORTS, '-jar', str(formatter()), *OPTIONS, *mode, *map(str, files)],
                             cwd=ROOT, text=True, encoding='utf-8', errors='replace', capture_output=True)
     if result.stderr:
