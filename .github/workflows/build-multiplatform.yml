@@ -48,10 +48,10 @@ jobs:
       - name: Generate platform runner & build Windows release
         working-directory: flutter
         run: |
-          python -c "import shutil; shutil.copytree('src', 'lib', dirs_exist_ok=True)"
+          python prepare_platform.py
           flutter config --enable-windows-desktop
           flutter create --platforms=windows --project-name=marco_movie .
-          python -c "import shutil; shutil.copytree('src', 'lib', dirs_exist_ok=True)"
+          python prepare_platform.py
           flutter pub get
           flutter test
           flutter build windows --release
@@ -71,22 +71,15 @@ jobs:
       - name: Generate platform runner & build macOS release
         working-directory: flutter
         run: |
-          python3 -c "import shutil; shutil.copytree('src', 'lib', dirs_exist_ok=True)"
+          python3 prepare_platform.py
           flutter config --enable-macos-desktop
           flutter create --platforms=macos --project-name=marco_movie .
-          python3 -c "import shutil; shutil.copytree('src', 'lib', dirs_exist_ok=True)"
-          python3 -c "
-          from pathlib import Path
-          for p in Path('macos/Runner').glob('*.entitlements'):
-              t = p.read_text()
-              if 'com.apple.security.network.client' not in t:
-                  p.write_text(t.replace('</dict>', '  <key>com.apple.security.network.client</key>\n  <true/>\n</dict>'))
-          "
+          python3 prepare_platform.py
           flutter pub get
           flutter test
           flutter build macos --release
           cd build/macos/Build/Products/Release
-          zip -r MarcoMovie-macOS.app.zip marco_movie.app
+          zip -r MarcoMovie-macOS.app.zip *.app
       - uses: actions/upload-artifact@v4
         with:
           name: MarcoMovie-macOS-App
@@ -103,16 +96,9 @@ jobs:
       - name: Generate platform runner & build iOS/iPadOS IPA
         working-directory: flutter
         run: |
-          python3 -c "import shutil; shutil.copytree('src', 'lib', dirs_exist_ok=True)"
+          python3 prepare_platform.py
           flutter create --platforms=ios --org com.pilipala --project-name=marco_movie .
-          python3 -c "import shutil; shutil.copytree('src', 'lib', dirs_exist_ok=True)"
-          python3 -c "
-          from pathlib import Path
-          plist = Path('ios/Runner/Info.plist')
-          t = plist.read_text()
-          if 'NSAppTransportSecurity' not in t:
-              plist.write_text(t.replace('</dict>', '  <key>NSAppTransportSecurity</key>\n  <dict>\n    <key>NSAllowsArbitraryLoads</key>\n    <true/>\n  </dict>\n</dict>', 1))
-          "
+          python3 prepare_platform.py
           flutter pub get
           flutter build ios --release --no-codesign
           mkdir -p build/ios/ipa/Payload
