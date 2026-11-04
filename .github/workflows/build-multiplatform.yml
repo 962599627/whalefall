@@ -3,6 +3,11 @@ name: Build Multiplatform (Android / Windows / macOS / iOS)
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
+    paths:
+      - "flutter/**"
+      - ".github/workflows/build-multiplatform.yml"
     tags:
       - "v*"
 
