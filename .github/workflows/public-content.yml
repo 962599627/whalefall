@@ -12,6 +12,20 @@ jobs:
           python-version: '3.12'
       - run: python scripts/check_public_content.py
 
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Java formatting (pinned google-java-format)
+        run: python scripts/format_java.py --check
+
   offline:
     runs-on: ubuntu-latest
     steps:

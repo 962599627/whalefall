@@ -20,7 +20,7 @@ python -X utf8 scripts/build_android.py
 
 ## 签名
 
-默认在 `android/private/development.p12` 生成本地开发密钥，开发口令为 `android`，不适合作为共享生产密钥。密钥文件被 Git 忽略。`MARCOMOVIE_SIGNING_KEY` 可指定本地已有的同格式密钥；当前脚本按开发签名流程使用，正式发行签名流程需自行配置。不要把密钥、口令或账号令牌提交到仓库。
+默认在 `android/private/development.p12` 生成本地开发密钥，开发口令为 `android`，不适合作为共享生产密钥。密钥文件被 Git 忽略。`MARCOMOVIE_SIGNING_KEY` 可指定本地已有的同格式密钥，`MARCOMOVIE_KEY_PASSWORD` 提供其口令（未设置时才使用开发口令）；当前脚本按开发签名流程使用，正式发行签名流程需自行配置。不要把密钥、口令或账号令牌提交到仓库。
 
 ## 本地功能检查
 
@@ -38,6 +38,19 @@ python -X utf8 android/tests/run_compat_checks.py
 发布前运行 `python scripts/check_public_content.py`。它检查公开文件范围、明显的凭据格式、个人目录、非允许的网络域名和资源二进制，不代替人工检查。只有 `git ls-files` 列出的文件会被提交；`private/`、`tools/`、构建结果和未脱敏的测试资料不得上传。
 
 为同一应用发布升级包时，设置 `MARCOMOVIE_SIGNING_KEY` 指向已妥善保管的原项目签名文件；不要每次换用新签名。默认仍使用本地开发签名。签名文件不得提交到仓库。
+
+## 代码格式
+
+Java 源码统一使用 google-java-format 1.24.0（AOSP 四空格缩进），版本与 SHA-256 固定在 `scripts/format_java.py`，首次运行时下载到 `tools/format/`。
+
+```powershell
+python -X utf8 scripts/format_java.py          # 原地格式化
+python -X utf8 scripts/format_java.py --check  # 只检查，CI 使用
+```
+
+范围为 `android/src/main/java/com/pilipala` 与 `android/tests`；`androidx.media3` 解码扩展与 catvod `Spider` 接口保持与参照源码一致，不参与格式化。脚本不调整 import 顺序、不删除 import、不拆分长字符串、不重排 Javadoc，因此格式化只改变空白，用 `javac -g:none` 编译前后的 class 文件逐字节一致。
+
+格式化提交记录在 `.git-blame-ignore-revs`，本地可执行 `git config blame.ignoreRevsFile .git-blame-ignore-revs` 让 `git blame` 跳过这些提交。
 
 ## 真机验收
 
