@@ -12,6 +12,41 @@ import org.json.*;
 
 /** Synthetic content only. Existing favorites and playback preferences are restored. */
 public final class InteractionProbe extends Instrumentation {
+    static final class SeekPlayer extends MoviePlayer {
+        int position=120000,calls;boolean running=true;
+        SeekPlayer(Context c){super(c,false);}
+        @Override public int getDuration(){return 3600000;}
+        @Override public int getCurrentPosition(){return position;}
+        @Override public void seekTo(int value){position=value;calls++;}
+        @Override public boolean isPlaying(){return running;}
+        @Override public void start(){running=true;}
+        @Override public void pause(){running=false;}
+        @Override public String videoResolution(){return "1920 × 1080";}
+        @Override public void release(){}
+    }
+    void arrow(int action,int key,int repeats,long began){runOnMainSync(()->a.dispatchKeyEvent(new KeyEvent(began,SystemClock.uptimeMillis(),action,key,repeats)));}
+    void seekChecks()throws Exception{
+        MoviePlayer original=a.player;SeekPlayer fake=new SeekPlayer(a);String status=a.playStatus.getText().toString();
+        try{
+            runOnMainSync(()->{original.pause();a.player=fake;a.prepared=true;a.playing=true;a.playbackControls.timeline.setMax(fake.getDuration());a.showControls(false);});
+            long began=SystemClock.uptimeMillis();arrow(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_RIGHT,0,began);arrow(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_DPAD_RIGHT,0,began);
+            check("hidden_right_tap_is_exactly_15s",fake.position==135000&&fake.calls==1&&!a.seekGesture.active);
+            began=SystemClock.uptimeMillis();arrow(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_LEFT,0,began);arrow(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_DPAD_LEFT,0,began);
+            check("timeline_left_tap_is_exactly_15s",fake.position==120000&&fake.calls==2);
+            final int before=fake.calls;began=SystemClock.uptimeMillis();arrow(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_RIGHT,0,began);
+            for(int repeat=1;repeat<=12;repeat++)arrow(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_RIGHT,repeat,began);
+            final long pressStarted=began;check("native_repeats_do_not_stack_tap_steps",ui(()->a.seekGesture.target>=135000&&a.seekGesture.target<=135000+Math.max(0,SystemClock.uptimeMillis()-pressStarted-500)*60&&fake.calls==before));
+            SystemClock.sleep(1100);check("held_seek_previews_without_network_seek",ui(()->a.seekGesture.target>135000&&fake.calls==before&&a.playbackControls.timeline.getProgress()==a.seekGesture.target));
+            SystemClock.sleep(2100);check("held_seek_accelerates_after_three_seconds",ui(()->a.seekGesture.accelerated(SystemClock.uptimeMillis())&&a.playStatus.getText().toString().contains("加速")));
+            arrow(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_DPAD_RIGHT,0,began);int committed=fake.position;
+            check("release_commits_only_once",fake.calls==before+1&&!a.seekGesture.active);
+            SystemClock.sleep(350);check("release_stops_all_preview_updates",fake.position==committed&&fake.calls==before+1&&!a.seekGesture.active);
+            began=SystemClock.uptimeMillis();arrow(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_LEFT,0,began);arrow(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BACK,0,SystemClock.uptimeMillis());arrow(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_BACK,0,SystemClock.uptimeMillis());
+            check("back_cancels_preview_without_seek",fake.calls==before+1&&!a.seekGesture.active);
+            runOnMainSync(()->{a.showControls(true);a.playbackControls.buttons.get("next-episode").requestFocus();});began=SystemClock.uptimeMillis();arrow(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_RIGHT,0,began);arrow(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_DPAD_RIGHT,0,began);
+            check("toolbar_arrows_keep_focus_navigation",!a.seekGesture.active&&fake.calls==before+1);
+        }finally{runOnMainSync(()->{a.finishSeek(false);a.player=original;a.prepared=true;a.playing=true;a.playStatus.setText(status);a.playbackControls.timeline.setMax(original.getDuration());original.start();a.showControls(false);});}
+    }
     Bundle args;MainActivity a;final CountDownLatch launched=new CountDownLatch(1);JSONObject result=new JSONObject();
     @Override public void callActivityOnCreate(Activity activity,Bundle state){if(activity instanceof MainActivity){try{Context base=activity.getBaseContext();java.lang.reflect.Field field=ContextWrapper.class.getDeclaredField("mBase");field.setAccessible(true);field.set(activity,new ContextWrapper(base){public SharedPreferences getSharedPreferences(String name,int mode){return super.getSharedPreferences(name.equals("movie")?"detail_layout_bootstrap":name,mode);}public java.io.File getFilesDir(){java.io.File file=new java.io.File(super.getCacheDir(),"detail-layout-empty");file.mkdirs();return file;}});}catch(Exception e){throw new RuntimeException(e);}}super.callActivityOnCreate(activity,state);if(activity instanceof MainActivity){a=(MainActivity)activity;final MainActivity created=a;created.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);created.ui.post(new Runnable(){public void run(){if(created.isDestroyed())return;if(created.layoutReady)launched.countDown();else created.ui.postDelayed(this,16);}});}}
     @Override public void onCreate(Bundle input){super.onCreate(input);args=input;start();}
@@ -34,6 +69,7 @@ public final class InteractionProbe extends Instrumentation {
             long until=SystemClock.elapsedRealtime()+25000;while(SystemClock.elapsedRealtime()<until&&!ui(()->a.prepared))SystemClock.sleep(100);
             check("real_video_prepared",ui(()->a.prepared));runOnMainSync(()->{a.player.setRepeatOne(true);a.showControls(false);});SystemClock.sleep(250);
             check("next_is_first",ui(()->a.playbackControls.buttons.keySet().iterator().next().equals("next-episode")));check("no_pause_button",ui(()->!a.playbackControls.buttons.containsKey("primary")));
+            seekChecks();
             key(KeyEvent.KEYCODE_DPAD_CENTER);check("confirm_pauses",ui(()->!a.player.isPlaying()&&a.controlsVisible));int pos=a.player.getCurrentPosition();SystemClock.sleep(450);check("paused_clock_stable",Math.abs(a.player.getCurrentPosition()-pos)<120);frame("dock");
             check("three_separate_regions",ui(()->a.playerChrome.dock.getParent()==a.playerOverlay&&a.playerChrome.progress.getParent()==a.playerOverlay&&a.playerChrome.heading.getParent()==a.playerOverlay));
             check("resolution_matches_media",ui(()->a.playerChrome.resolution.getText().toString().equals(a.player.videoResolution())&&!a.player.videoResolution().equals("分辨率未知")));
@@ -75,7 +111,7 @@ public final class InteractionProbe extends Instrumentation {
             runOnMainSync(()->a.playbackControls.activeDialog.findViewById(android.R.id.content).findViewWithTag("player-option:1").requestFocus());key(KeyEvent.KEYCODE_DPAD_CENTER);
             check("more_nested_custom_bubble",ui(()->a.playbackControls.dialogOpen&&!(a.playbackControls.activeDialog instanceof AlertDialog)));key(KeyEvent.KEYCODE_BACK);
             check("more_focus_restored",ui(()->a.getCurrentFocus()==a.playbackControls.buttons.get("more")));
-            MoviePlayer originalPlayer=a.player;TextureView originalSurface=a.playbackControls.surface;runOnMainSync(()->a.player.seekTo(2000));
+            MoviePlayer originalPlayer=a.player;VideoOutput originalSurface=a.playbackControls.surface;runOnMainSync(()->a.player.seekTo(2000));
             key(KeyEvent.KEYCODE_BACK);check("back_hides_controls_first",ui(()->!a.controlsVisible&&!a.miniMode&&a.player==originalPlayer));key(KeyEvent.KEYCODE_BACK);check("back_minimizes_to_details",ui(()->a.miniMode&&a.root.findViewWithTag("mini-details")!=null));SystemClock.sleep(220);
             check("all_regions_hidden_together",ui(()->a.playerOverlay.getVisibility()==View.GONE&&!a.playerChrome.heading.isShown()&&!a.playerChrome.progress.isShown()&&!a.playerChrome.state.isShown()));
             check("mini_reuses_player_and_surface",ui(()->a.player==originalPlayer&&a.playbackControls.surface==originalSurface&&a.prepared));

@@ -28,7 +28,7 @@ public final class JsEngine implements SourceEngine {
     public JsEngine(Application application,Cms.Config config,Cms.Site selected)throws Exception {
         app=application;site=selected;storage=app.getSharedPreferences("js-source-"+hash(site.key),0);
         if(!eligible(site))throw new IOException("这个来源不是支持的 JavaScript 模块地址");
-        try{execute(()->{initialize();return null;});ACTIVE.put(site.key,this);}catch(Exception e){close();throw e;}
+        try{execute(()->{initialize();return null;});}catch(Exception e){close();throw e;}
     }
     private <T>T execute(Callable<T> job)throws Exception {
         if(closed)throw new IOException("JavaScript 来源已关闭");
@@ -135,6 +135,7 @@ public final class JsEngine implements SourceEngine {
     }
     public boolean requiresExternalRuntime(){return true;}
     public Object[] proxy(Map<String,String> params)throws Exception {JSONArray r=new JSONArray(call("proxy",new JSONObject(params)));if(r.length()<3)throw new IOException("JS 代理返回格式错误");Object content=r.get(2);byte[]bytes=r.optInt(4,0)==1?Base64.decode(String.valueOf(content),Base64.DEFAULT):String.valueOf(content).getBytes("UTF-8");Map<String,String>headers=new LinkedHashMap<>();JSONObject h=r.optJSONObject(3);if(h!=null){Iterator<String>k=h.keys();while(k.hasNext()){String key=k.next();headers.put(key,h.optString(key));}}return new Object[]{r.getInt(0),r.getString(1),new ByteArrayInputStream(bytes),headers};}
+    void activate(){if(closed)throw new IllegalStateException("JS source closed");ACTIVE.put(site.key,this);}
     public static Object[] proxyFor(Map<String,String> params)throws Exception{JsEngine engine=ACTIVE.get(params.get("site"));if(engine==null)throw new IOException("JS 代理来源尚未打开");return engine.proxy(params);}
     public void close(){if(closed)return;closed=true;ACTIVE.remove(site.key,this);try{executor.execute(()->{if(context!=null){context.destroy();context=null;}});}catch(RejectedExecutionException ignored){}executor.shutdown();}
 }

@@ -16,6 +16,7 @@ final class PlaybackEffects implements AutoCloseable {
         }catch(Exception error){close();throw error;}
     }
     static void picture(View view,int preset){
+        if(view instanceof VideoOutput){((VideoOutput)view).picture(preset);return;}
         if(preset==0){view.setLayerPaint(null);return;}ColorMatrix color=new ColorMatrix();color.setSaturation(preset==1?1.08f:preset==2?1.16f:.82f);float contrast=preset==1?1.02f:preset==2?1.10f:.94f,brightness=preset==1?7:preset==2?-3:4;ColorMatrix exposure=new ColorMatrix(new float[]{contrast,0,0,0,brightness,0,contrast,0,0,brightness,0,0,contrast,0,brightness,0,0,0,1,0});color.postConcat(exposure);Paint paint=new Paint();paint.setColorFilter(new ColorMatrixColorFilter(color));view.setLayerPaint(paint);
     }
     @Override public void close(){if(bass!=null){try{bass.release();}catch(Exception ignored){}bass=null;}if(equalizer!=null){try{equalizer.release();}catch(Exception ignored){}equalizer=null;}}

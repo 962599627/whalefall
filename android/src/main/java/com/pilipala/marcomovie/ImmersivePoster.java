@@ -12,7 +12,7 @@ final class ImmersivePoster extends FrameLayout {
         TextView placeholder=a.text("暂无封面",14,MainActivity.MUTED);placeholder.setGravity(Gravity.CENTER);addView(placeholder,new LayoutParams(-1,-1));
         image=new Art();image.setScaleType(ImageView.ScaleType.FIT_CENTER);addView(image,new LayoutParams(-1,-1));
     }
-    void load(String address){a.poster(address,image);}
+    void load(String address){a.poster(address,image,true);}
     void soften(Bitmap bitmap){
         final int token=++revision;final int generation=a.generation;
         if(bitmap==null){backdrop.bitmap=null;backdrop.invalidate();return;}

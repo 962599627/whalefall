@@ -24,6 +24,15 @@ public final class CompatChecks {
         check(normalized.headers.get("User-Agent").equals("source-agent")&&!normalized.headers.containsKey("user-agent"),"player UA overrides inherited header case-insensitively");
         check(normalized.media.getJSONArray("subtitles").getJSONObject(0).getString("url").equals("https://media.test/subtitle.vtt"),"relative source subtitle normalized");check(normalized.media.getJSONObject("drm").getString("scheme").equals("widevine"),"DRM license declaration preserved without bypass");
         check(MediaOptions.subtitleMime("x.ASS?token=a","").equals("text/x-ssa"),"external ASS MIME recognized");
+        Cms.Episode file=new Cms.Episode();file.name="[7GB] sample HDR.MKV";
+        JSONObject relay=new JSONObject().put("url","http://127.0.0.1:9999/opaque").put("format","application/octet-stream");
+        check(MediaOptions.mime(MediaOptions.episode(site,file,relay).media)==null,"original MKV filename does not override opaque relay format");
+        relay.put("format","application/x-mpegURL");check("application/x-mpegURL".equals(MediaOptions.mime(MediaOptions.episode(site,file,relay).media)),"declared relay HLS retains Media3 canonical MIME case");
+        relay.put("type",0);check("application/x-mpegURL".equals(MediaOptions.mime(MediaOptions.episode(site,file,relay).media)),"numeric source type does not hide declared MIME format");
+        relay.put("mimeType","application/vnd.apple.mpegurl; charset=UTF-8");check("application/x-mpegURL".equals(MediaOptions.mime(MediaOptions.episode(site,file,relay).media)),"vendor HLS MIME normalizes with parameters");relay.remove("mimeType");
+        relay.put("format","application/octet-stream").put("url","http://127.0.0.1:9999/stream.m3u8");check(MediaOptions.mime(MediaOptions.episode(site,file,relay).media)==null,"generic source format preserves manifest URL inference");
+        relay.put("url","https://media.test/opaque");check(MediaOptions.mime(MediaOptions.episode(site,file,relay).media)==null,"remote opaque media retains format detection");
+        file.name="第1集";relay.put("url","http://127.0.0.1:9999/opaque");check(MediaOptions.mime(MediaOptions.episode(site,file,relay).media)==null,"unknown local file retains format detection");
         Cms.Video action=Cms.listing("{\"list\":[{\"vod_id\":\"0000\",\"vod_name\":\"登录\",\"action\":\"LoginShow\"},{\"vod_id\":\"huya_1\",\"vod_tag\":\"folder\"}]}").videos.get(0);check(action.action.equals("LoginShow"),"account action not discarded by CMS parser");
         List<DanmakuData.Comment> comments=DanmakuData.parse("<i><d p=\"1.5,1,25,16711680\">hello</d><d p=\"3,5,25,16777215\"><![CDATA[top & text]]></d></i>");check(comments.size()==2&&comments.get(0).time==1500&&comments.get(0).color==0xff0000,"Bili XML comment timing and color");check(comments.get(1).mode==5&&comments.get(1).text.equals("top & text"),"fixed comment mode and CDATA");
         comments=DanmakuData.parse("{\"danmuku\":[[2,1,16777215,\"text\"]]}");check(comments.size()==1&&comments.get(0).time==2000,"source JSON comments");

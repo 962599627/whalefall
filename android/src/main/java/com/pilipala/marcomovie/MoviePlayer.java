@@ -48,6 +48,7 @@ public class MoviePlayer {
     private boolean readySent,unsupportedVideo;
     private volatile boolean released;
     private int preparation;
+    private long prepareStarted,firstFrameMs=-1;
     private String lastError="";
     private String videoDecoder="",audioDecoder="";private int lastHttpStatus,lastErrorTrack;
     private org.json.JSONObject options=new org.json.JSONObject();
@@ -79,6 +80,7 @@ public class MoviePlayer {
             exo.addAnalyticsListener(new androidx.media3.exoplayer.analytics.AnalyticsListener(){
                 @Override public void onVideoDecoderInitialized(EventTime time,String name,long completed,long duration){videoDecoder=name;}
                 @Override public void onAudioDecoderInitialized(EventTime time,String name,long completed,long duration){audioDecoder=name;}
+                @Override public void onRenderedFirstFrame(EventTime time,Object output,long renderTimeMs){firstFrameMs=android.os.SystemClock.elapsedRealtime()-prepareStarted;}
             });
             exo.addListener(new Player.Listener(){
                 @Override public void onPlaybackStateChanged(int state){
@@ -120,7 +122,7 @@ public class MoviePlayer {
 
     public void prepareAsync(){onMain(()->{
         check();if(uri==null)throw new IllegalStateException("No media item");
-        final int ticket=++preparation;final Uri address=uri;final Map<String,String> requestHeaders=headers;readySent=false;
+        final int ticket=++preparation;final Uri address=uri;final Map<String,String> requestHeaders=headers;readySent=false;prepareStarted=android.os.SystemClock.elapsedRealtime();firstFrameMs=-1;
         // Local proxy and signed URLs often have no extension. Inspect a bounded
         // response prefix off the UI thread so HLS/DASH uses the correct parser.
         Thread sniff=new Thread(()->{
@@ -174,7 +176,9 @@ public class MoviePlayer {
         org.json.JSONObject info=new org.json.JSONObject().put("video_decoder",videoDecoder).put("audio_decoder",audioDecoder);
         if(released)return info;
         androidx.media3.common.Format vf=exo.getVideoFormat(),af=exo.getAudioFormat();
-        if(vf!=null)info.put("video_mime",vf.sampleMimeType).put("width",vf.width).put("height",vf.height);
+        if(vf!=null){info.put("video_mime",vf.sampleMimeType).put("width",vf.width).put("height",vf.height).put("frame_rate",vf.frameRate);
+            if(vf.colorInfo!=null)info.put("color_space",vf.colorInfo.colorSpace).put("color_transfer",vf.colorInfo.colorTransfer).put("color_range",vf.colorInfo.colorRange).put("luma_bitdepth",vf.colorInfo.lumaBitdepth).put("hdr",androidx.media3.common.ColorInfo.isTransferHdr(vf.colorInfo));}
+        info.put("first_frame_ms",firstFrameMs);
         if(af!=null)info.put("audio_mime",af.sampleMimeType).put("channels",af.channelCount);
         androidx.media3.exoplayer.DecoderCounters vc=exo.getVideoDecoderCounters(),ac=exo.getAudioDecoderCounters();
         if(vc!=null){vc.ensureUpdated();info.put("video_rendered",vc.renderedOutputBufferCount).put("video_dropped",vc.droppedBufferCount);}
