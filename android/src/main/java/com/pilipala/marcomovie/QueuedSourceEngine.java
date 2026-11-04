@@ -9,6 +9,10 @@ final class QueuedSourceEngine implements SourceEngine {
         delegate = source;
     }
 
+    boolean isWedged() {
+        return gate.isWedged();
+    }
+
     public String home() throws Exception {
         return gate.call(false, delegate::home);
     }
@@ -26,14 +30,17 @@ final class QueuedSourceEngine implements SourceEngine {
     }
 
     public String detail(String id) throws Exception {
+        if (!delegate.requiresExternalRuntime()) return delegate.detail(id);
         return gate.call(true, () -> delegate.detail(id));
     }
 
     public String player(String flag, String id) throws Exception {
+        if (!delegate.requiresExternalRuntime()) return delegate.player(flag, id);
         return gate.call(true, () -> delegate.player(flag, id));
     }
 
     public String action(String value) throws Exception {
+        if (!delegate.requiresExternalRuntime()) return delegate.action(value);
         return gate.call(true, () -> delegate.action(value));
     }
 

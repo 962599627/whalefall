@@ -1,6 +1,6 @@
 """Build the independent Marco Movie native preview using an existing Android SDK."""
 from pathlib import Path
-import hashlib, json, os, subprocess, zipfile, urllib.request
+import hashlib, json, os, re, subprocess, zipfile, urllib.request
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,7 +58,7 @@ def main():
                     for name in item['native_members']:
                         if not name.startswith('lib/armeabi-v7a/') or not name.endswith('.so'):raise RuntimeError('Unexpected native dependency member')
                         native_files[name]=z.read(name)
-    for p in (JDK/'bin/java.exe', SDK/'aapt2.exe', ANDROID):
+    for p in (exe(JDK/'bin','java'), exe(SDK,'aapt2'), ANDROID):
         if not p.exists(): raise RuntimeError(f'Required existing tool missing: {p}')
     for folder in (BUILD, BUILD/'classes', BUILD/'dex', DIST): folder.mkdir(parents=True, exist_ok=True)
     boundary = BUILD.resolve()
@@ -84,20 +84,37 @@ def main():
         for dex in (BUILD/'dex').glob('*.dex'):dest.write(dex,dex.name)
         for name,data in native_files.items():dest.writestr(name,data)
     run(exe(SDK,'zipalign'),'-f','4',BUILD/'unsigned.apk',BUILD/'aligned.apk')
+    release_mode = os.environ.get('MARCOMOVIE_RELEASE', '') == '1' or 'MARCOMOVIE_SIGNING_KEY' in os.environ
     key=Path(os.environ.get('MARCOMOVIE_SIGNING_KEY',str(ROOT/'android/private/development.p12')));key.parent.mkdir(parents=True,exist_ok=True)
     if not key.exists():
+        if release_mode:
+            raise RuntimeError(f'Release/explicit signing key missing; refusing to auto-generate: {key}')
         run(exe(JDK/'bin','keytool'),'-genkeypair','-keystore',key,'-storetype','PKCS12','-alias','marcomovie','-storepass:env','MARCOMOVIE_KEY_PASSWORD','-keypass:env','MARCOMOVIE_KEY_PASSWORD','-keyalg','RSA','-keysize','2048','-validity','10000','-dname','CN=Pilipala, OU=Marco Movie Preview')
-    version=ET.parse(SRC/'AndroidManifest.xml').getroot().get('{http://schemas.android.com/apk/res/android}versionName')
+    manifest_root=ET.parse(SRC/'AndroidManifest.xml').getroot()
+    version=manifest_root.get('{http://schemas.android.com/apk/res/android}versionName')
+    version_code=int(manifest_root.get('{http://schemas.android.com/apk/res/android}versionCode','0'))
     apk=DIST/f'MarcoMovie-{version}-preview.apk'
     run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','sign','--ks',key,'--ks-key-alias','marcomovie','--ks-pass','env:MARCOMOVIE_KEY_PASSWORD','--out',apk,BUILD/'aligned.apk')
     signature=run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','verify','--verbose','--print-certs',apk,capture=True)
+    cert_match=re.search(r'certificate SHA-256 digest:\s*([0-9a-fA-F]{64})',signature)
+    signer_sha256=cert_match.group(1).lower() if cert_match else ''
+    expected_signer=os.environ.get('MARCOMOVIE_EXPECTED_SIGNER_SHA256','2549f01e89c41201ea171847048228c6df79a7c57fff2ec9a439195c757a80de' if os.environ.get('MARCOMOVIE_RELEASE','')=='1' else '').strip().lower()
+    if expected_signer and signer_sha256!=expected_signer:
+        raise RuntimeError(f'APK signer certificate mismatch: got {signer_sha256}, expected {expected_signer}')
     alignment=run(exe(SDK,'zipalign'),'-c','4',apk,capture=True)
     badging=run(exe(SDK,'aapt'),'dump','badging',apk,capture=True)
     digest=hashlib.sha256(apk.read_bytes()).hexdigest()
+    git_commit='';git_dirty=False
+    if (ROOT/'.git').exists():
+        try:
+            git_commit=subprocess.run(['git','rev-parse','HEAD'],cwd=ROOT,capture_output=True,text=True,check=True).stdout.strip()
+            git_dirty=bool(subprocess.run(['git','status','--porcelain'],cwd=ROOT,capture_output=True,text=True,check=True).stdout.strip())
+        except Exception:
+            pass
     (DIST/(apk.name+'.sha256')).write_text(digest+'  '+apk.name+'\n',encoding='ascii')
     (BUILD/'apk-signature.txt').write_text(signature,encoding='utf-8')
     (BUILD/'apk-badging.txt').write_text(badging,encoding='utf-8')
-    result={'apk':apk.name,'sha256':digest,'bytes':apk.stat().st_size,'signature_verified':True,'zipalign_verified':True,'package':'com.pilipala.marcomovie','version':version,'min_sdk':23,'target_sdk':28,'device_install_tested':False,'device_playback_tested':False,'signing':'independent local development key; not a store release'}
+    result={'apk':apk.name,'sha256':digest,'bytes':apk.stat().st_size,'signature_verified':True,'signer_sha256':signer_sha256,'zipalign_verified':True,'package':'com.pilipala.marcomovie','version':version,'version_code':version_code,'git_commit':git_commit,'git_dirty':git_dirty,'min_sdk':23,'target_sdk':28,'device_install_tested':False,'device_playback_tested':False,'signing':'release-verified signing key' if expected_signer else 'independent local development key; not a store release'}
     (BUILD/'build-validation.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
     print(json.dumps(result,indent=2))
 

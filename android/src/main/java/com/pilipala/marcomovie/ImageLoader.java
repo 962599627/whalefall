@@ -25,9 +25,15 @@ import java.util.concurrent.ThreadPoolExecutor;
  * rendering extracted from {@link MainActivity}.
  */
 final class ImageLoader {
+    private static final java.util.Map<String, java.util.List<ImageView>> IN_FLIGHT =
+            new java.util.HashMap<>();
+
     private ImageLoader() {}
 
     static void cancel(MainActivity a) {
+        synchronized (IN_FLIGHT) {
+            IN_FLIGHT.clear();
+        }
         for (Future<?> request : a.artworkRequests) request.cancel(true);
         a.artworkRequests.clear();
         ((ThreadPoolExecutor) a.artwork).purge();
@@ -67,12 +73,26 @@ final class ImageLoader {
                                 || (preview.getWidth() >= width && preview.getHeight() >= height))
                             return;
                     }
+                    synchronized (IN_FLIGHT) {
+                        java.util.List<ImageView> waiters = IN_FLIGHT.get(key);
+                        if (waiters != null) {
+                            if (!waiters.contains(image)) waiters.add(image);
+                            return;
+                        }
+                        java.util.List<ImageView> created = new java.util.ArrayList<>(2);
+                        created.add(image);
+                        IN_FLIGHT.put(key, created);
+                    }
                     Future<?> request =
                             RequestScope.submit(
                                     a.artwork,
                                     () -> {
-                                        if (ticket != a.generation
-                                                || !address.equals(image.getTag())) return;
+                                        if (ticket != a.generation) {
+                                            synchronized (IN_FLIGHT) {
+                                                IN_FLIGHT.remove(key);
+                                            }
+                                            return;
+                                        }
                                         HttpURLConnection connection = null;
                                         try {
                                             Cms.ImageRequest source = Cms.imageRequest(address);
@@ -132,17 +152,35 @@ final class ImageLoader {
                                                     return;
                                                 }
                                                 a.images.put(key, bitmap);
+                                                final java.util.List<ImageView> targets;
+                                                synchronized (IN_FLIGHT) {
+                                                    java.util.List<ImageView> removed =
+                                                            IN_FLIGHT.remove(key);
+                                                    targets =
+                                                            removed == null
+                                                                    ? java.util.Collections
+                                                                            .singletonList(image)
+                                                                    : new java.util.ArrayList<>(
+                                                                            removed);
+                                                }
                                                 a.ui.post(
                                                         () -> {
-                                                            if (ticket == a.generation
-                                                                    && !a.isFinishing()
-                                                                    && address.equals(
-                                                                            image.getTag()))
-                                                                image.setImageBitmap(bitmap);
+                                                            if (ticket != a.generation
+                                                                    || a.isFinishing()) return;
+                                                            for (ImageView target : targets) {
+                                                                if (target != null
+                                                                        && address.equals(
+                                                                                target.getTag())) {
+                                                                    target.setImageBitmap(bitmap);
+                                                                }
+                                                            }
                                                         });
                                             }
                                         } catch (Exception ignored) {
                                         } finally {
+                                            synchronized (IN_FLIGHT) {
+                                                IN_FLIGHT.remove(key);
+                                            }
                                             if (connection != null) {
                                                 RequestScope.detach(connection);
                                                 connection.disconnect();

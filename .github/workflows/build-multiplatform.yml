@@ -6,7 +6,10 @@ on:
     branches:
       - main
     paths:
+      - "android/**"
+      - "lite/**"
       - "flutter/**"
+      - "scripts/**"
       - ".github/workflows/build-multiplatform.yml"
     tags:
       - "v*"
@@ -31,14 +34,44 @@ jobs:
       - name: Run pure-JVM regression checks
         run: |
           python android/tests/run_checks.py
+          python android/tests/run_global_search_checks.py
+          python android/tests/run_scheduling_checks.py
           python android/tests/run_live_checks.py
           python android/tests/run_seek_checks.py
           python android/tests/run_review_fix_checks.py
           python android/tests/run_update_checks.py
           python android/tests/run_tv_input_checks.py
+          python scripts/test_movie_mirror.py
+
+  build-android:
+    name: Build & Verify Android TV/Phone/Tablet APK
+    needs: [verify-and-checks]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+      - name: Locate Android SDK Build-Tools & build APK
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          export MARCOMOVIE_BUILD_TOOLS="$BUILD_TOOLS"
+          python scripts/build_android.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MarcoMovie-Android-APK
+          path: |
+            dist/*.apk
+            dist/*.sha256
+            android/build/build-validation.json
 
   build-windows:
     name: Build Windows Desktop (x64)
+    needs: [verify-and-checks]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,6 +95,7 @@ jobs:
 
   build-macos:
     name: Build macOS Desktop (Apple Silicon & Intel)
+    needs: [verify-and-checks]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,6 +121,7 @@ jobs:
 
   build-ios:
     name: Build iOS & iPadOS (.ipa unsigned)
+    needs: [verify-and-checks]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -100,6 +135,7 @@ jobs:
           flutter create --platforms=ios --org com.pilipala --project-name=marco_movie .
           python3 prepare_platform.py
           flutter pub get
+          flutter test
           flutter build ios --release --no-codesign
           mkdir -p build/ios/ipa/Payload
           cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/

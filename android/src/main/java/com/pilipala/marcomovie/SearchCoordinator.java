@@ -2,7 +2,7 @@ package com.pilipala.marcomovie;
 
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.*;
 
 /** Bounded global search. A late or cancelled native plugin can never post a new result. */
 public final class SearchCoordinator implements AutoCloseable {
@@ -22,6 +22,10 @@ public final class SearchCoordinator implements AutoCloseable {
         void source(Cms.Site site, List<Cms.Video> videos, Outcome outcome);
     }
 
+    private static int baseThreads = 6;
+    private static int wedgedWorkers = 0;
+    private static final ConcurrentHashMap<String, AtomicInteger> WEDGED_SITES =
+            new ConcurrentHashMap<>();
     private static final ThreadPoolExecutor NETWORK =
             new ThreadPoolExecutor(
                     6,
@@ -61,14 +65,45 @@ public final class SearchCoordinator implements AutoCloseable {
     }
 
     static synchronized void configureThreads(int count) {
-        int value = Math.max(2, Math.min(6, count));
-        if (value > NETWORK.getMaximumPoolSize()) {
-            NETWORK.setMaximumPoolSize(value);
-            NETWORK.setCorePoolSize(value);
+        baseThreads = Math.max(2, Math.min(6, count));
+        syncPoolCapacity();
+    }
+
+    private static synchronized void syncPoolCapacity() {
+        int target =
+                Math.max(2, Math.min(baseThreads + 24, baseThreads + Math.max(0, wedgedWorkers)));
+        if (target > NETWORK.getMaximumPoolSize()) {
+            NETWORK.setMaximumPoolSize(target);
+            NETWORK.setCorePoolSize(target);
         } else {
-            NETWORK.setCorePoolSize(value);
-            NETWORK.setMaximumPoolSize(value);
+            NETWORK.setCorePoolSize(target);
+            NETWORK.setMaximumPoolSize(target);
         }
+    }
+
+    private static synchronized void onJobWedged(String siteKey) {
+        wedgedWorkers++;
+        if (siteKey != null && !siteKey.isEmpty()) {
+            WEDGED_SITES.computeIfAbsent(siteKey, k -> new AtomicInteger()).incrementAndGet();
+        }
+        syncPoolCapacity();
+    }
+
+    private static synchronized void onWedgedJobExited(String siteKey) {
+        if (wedgedWorkers > 0) wedgedWorkers--;
+        if (siteKey != null && !siteKey.isEmpty()) {
+            AtomicInteger count = WEDGED_SITES.get(siteKey);
+            if (count != null && count.decrementAndGet() <= 0) {
+                WEDGED_SITES.remove(siteKey, count);
+            }
+        }
+        syncPoolCapacity();
+    }
+
+    static boolean isSiteWedged(String siteKey) {
+        if (siteKey == null || siteKey.isEmpty()) return false;
+        AtomicInteger count = WEDGED_SITES.get(siteKey);
+        return count != null && count.get() > 0;
     }
 
     public synchronized void start(List<Cms.Site> sites, String query) {
@@ -88,9 +123,13 @@ public final class SearchCoordinator implements AutoCloseable {
     }
 
     private synchronized void pump() {
-        while (!closed && inFlight < NETWORK.getMaximumPoolSize() && nextJob < jobs.size()) {
+        while (!closed && inFlight < baseThreads && nextJob < jobs.size()) {
             Job job = jobs.get(nextJob++);
             if (job.done.get()) continue;
+            if (isSiteWedged(job.site.key)) {
+                job.finish(Collections.emptyList(), Outcome.BUSY);
+                continue;
+            }
             job.allocated = true;
             inFlight++;
             try {
@@ -105,7 +144,10 @@ public final class SearchCoordinator implements AutoCloseable {
         final Cms.Site site;
         final String query;
         final AtomicBoolean done = new AtomicBoolean();
+        final AtomicBoolean exited = new AtomicBoolean();
+        final AtomicBoolean wedged = new AtomicBoolean();
         volatile boolean started;
+        volatile Thread runningThread;
         boolean allocated;
         volatile Future<?> future;
         volatile ScheduledFuture<?> timeout;
@@ -116,7 +158,16 @@ public final class SearchCoordinator implements AutoCloseable {
         }
 
         public void run() {
-            if (closed || done.get()) return;
+            if (closed || done.get()) {
+                exited.set(true);
+                return;
+            }
+            if (isSiteWedged(site.key)) {
+                exited.set(true);
+                finish(Collections.emptyList(), Outcome.BUSY);
+                return;
+            }
+            runningThread = Thread.currentThread();
             started = true;
             timeout =
                     TIMER.schedule(
@@ -142,14 +193,31 @@ public final class SearchCoordinator implements AutoCloseable {
                 finish(
                         Collections.emptyList(),
                         Thread.currentThread().isInterrupted() ? Outcome.TIMEOUT : Outcome.FAILED);
+            } finally {
+                exited.set(true);
+                runningThread = null;
+                if (wedged.compareAndSet(true, false)) {
+                    onWedgedJobExited(site.key);
+                }
+            }
+        }
+
+        void markWedgedIfRunning() {
+            if (started && !exited.get() && wedged.compareAndSet(false, true)) {
+                onJobWedged(site.key);
+                if (exited.get() && wedged.compareAndSet(true, false)) {
+                    onWedgedJobExited(site.key);
+                }
             }
         }
 
         void finish(List<Cms.Video> videos, Outcome outcome) {
             if (!done.compareAndSet(false, true)) return;
             if (timeout != null) timeout.cancel(false);
-            if ((outcome == Outcome.TIMEOUT || outcome == Outcome.BUSY) && future != null)
-                future.cancel(true);
+            if (outcome == Outcome.TIMEOUT || outcome == Outcome.BUSY) {
+                if (future != null) future.cancel(true);
+                markWedgedIfRunning();
+            }
             synchronized (SearchCoordinator.this) {
                 if (allocated) {
                     allocated = false;
@@ -166,6 +234,7 @@ public final class SearchCoordinator implements AutoCloseable {
             done.set(true);
             if (timeout != null) timeout.cancel(false);
             if (future != null) future.cancel(true);
+            markWedgedIfRunning();
         }
     }
 

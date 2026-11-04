@@ -254,6 +254,8 @@ final class PlaybackControls {
         activeDialog = holder[0];
     }
 
+    static final int EPISODE_GROUP_SIZE = 50;
+
     void chooseEpisodes() {
         int l = lineIndex();
         if (l < 0) {
@@ -261,13 +263,64 @@ final class PlaybackControls {
             return;
         }
         Cms.Line line = video.lines.get(l);
-        String[] labels = new String[line.episodes.size()];
-        for (int i = 0; i < labels.length; i++) labels[i] = line.episodes.get(i).name;
+        int total = line.episodes.size();
+        int current = episodeIndex();
+        if (total <= EPISODE_GROUP_SIZE) {
+            String[] labels = new String[total];
+            for (int i = 0; i < total; i++) labels[i] = line.episodes.get(i).name;
+            choose(
+                    line.name + " · 选集",
+                    labels,
+                    current,
+                    i -> a.changeEpisode(site, video, line, line.episodes.get(i), 0));
+            return;
+        }
+        int page = EpisodeSelection.pageFor(Math.max(0, current), total, false);
+        chooseEpisodePage(line, page);
+    }
+
+    void chooseEpisodePage(Cms.Line line, int page) {
+        int total = line.episodes.size();
+        int groups = Math.max(1, (total + EPISODE_GROUP_SIZE - 1) / EPISODE_GROUP_SIZE);
+        int safePage = Math.max(0, Math.min(page, groups - 1));
+        int start = safePage * EPISODE_GROUP_SIZE;
+        int end = Math.min(total, start + EPISODE_GROUP_SIZE);
+        int count = end - start;
+        String[] labels = new String[count + 1];
+        labels[0] = "切换选集分组（当前 " + (start + 1) + "-" + end + " / 共 " + total + " 集）";
+        int current = episodeIndex();
+        int selected = 0;
+        for (int i = 0; i < count; i++) {
+            int epIndex = start + i;
+            labels[i + 1] = line.episodes.get(epIndex).name;
+            if (epIndex == current) selected = i + 1;
+        }
         choose(
-                line.name + " · 选集",
+                line.name + " · 选集 (" + (start + 1) + "-" + end + ")",
                 labels,
-                episodeIndex(),
-                i -> a.changeEpisode(site, video, line, line.episodes.get(i), 0));
+                selected,
+                i -> {
+                    if (i == 0) {
+                        chooseEpisodeGroupList(line, safePage);
+                    } else {
+                        int target = start + (i - 1);
+                        if (target >= 0 && target < total) {
+                            a.changeEpisode(site, video, line, line.episodes.get(target), 0);
+                        }
+                    }
+                });
+    }
+
+    void chooseEpisodeGroupList(Cms.Line line, int currentGroup) {
+        int total = line.episodes.size();
+        int groups = Math.max(1, (total + EPISODE_GROUP_SIZE - 1) / EPISODE_GROUP_SIZE);
+        String[] groupLabels = new String[groups];
+        for (int g = 0; g < groups; g++) {
+            int gStart = g * EPISODE_GROUP_SIZE + 1;
+            int gEnd = Math.min(total, (g + 1) * EPISODE_GROUP_SIZE);
+            groupLabels[g] = "第 " + gStart + " - " + gEnd + " 集";
+        }
+        choose(line.name + " · 选择分组", groupLabels, currentGroup, g -> chooseEpisodePage(line, g));
     }
 
     void chooseLine() {

@@ -4,8 +4,10 @@ import 'package:http/http.dart' as http;
 import 'cms_parser.dart';
 import 'models.dart';
 
-/// HTTP CMS client with timeout isolation and concurrent multi-site search.
+/// HTTP CMS client with timeout isolation, response size bounds, and bounded concurrent multi-site search.
 class CmsClient {
+  static const int maxResponseBytes = 4 * 1024 * 1024;
+  static const int defaultSearchConcurrency = 6;
   final http.Client _http;
   final Duration timeout;
 
@@ -23,12 +25,20 @@ class CmsClient {
     };
   }
 
-  Future<String> _getText(String url, {Map<String, String> headers = const {}}) async {
+  Future<String> _getText(
+    String url, {
+    Map<String, String> headers = const {},
+    Duration? requestTimeout,
+  }) async {
     final uri = Uri.parse(url);
-    final response =
-        await _http.get(uri, headers: _buildHeaders(headers)).timeout(timeout);
+    final response = await _http
+        .get(uri, headers: _buildHeaders(headers))
+        .timeout(requestTimeout ?? timeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('HTTP ${response.statusCode}');
+    }
+    if (response.bodyBytes.length > maxResponseBytes) {
+      throw Exception('响应体超过大小上限（4 MB）');
     }
     return utf8.decode(response.bodyBytes, allowMalformed: true);
   }
@@ -126,30 +136,53 @@ class CmsClient {
 
   Stream<(CmsSite, List<CmsVideo>)> searchAcrossSites(
     List<CmsSite> sites,
-    String keyword,
-  ) {
-    final controller = StreamController<(CmsSite, List<CmsVideo>)>();
+    String keyword, {
+    int maxConcurrency = defaultSearchConcurrency,
+  }) {
+    late final StreamController<(CmsSite, List<CmsVideo>)> controller;
+    bool cancelled = false;
+    controller = StreamController<(CmsSite, List<CmsVideo>)>(
+      onCancel: () {
+        cancelled = true;
+      },
+    );
     final runnableSites =
         sites.where((s) => s.supported && s.searchable).toList(growable: false);
     if (runnableSites.isEmpty || keyword.trim().isEmpty) {
       controller.close();
       return controller.stream;
     }
-    int remaining = runnableSites.length;
-    for (final site in runnableSites) {
-      fetchSearch(site, keyword)
-          .timeout(const Duration(seconds: 12))
-          .then((listing) {
-        if (!controller.isClosed && listing.videos.isNotEmpty) {
-          controller.add((site, listing.videos));
-        }
-      }).catchError((_) {}).whenComplete(() {
-        remaining--;
-        if (remaining <= 0 && !controller.isClosed) {
-          controller.close();
-        }
-      });
+    final concurrency = maxConcurrency.clamp(1, 12);
+    int nextIndex = 0;
+    int inFlight = 0;
+
+    void pump() {
+      if (cancelled || controller.isClosed) return;
+      while (!cancelled &&
+          !controller.isClosed &&
+          inFlight < concurrency &&
+          nextIndex < runnableSites.length) {
+        final site = runnableSites[nextIndex++];
+        inFlight++;
+        fetchSearch(site, keyword)
+            .timeout(const Duration(seconds: 12))
+            .then((listing) {
+          if (!cancelled && !controller.isClosed && listing.videos.isNotEmpty) {
+            controller.add((site, listing.videos));
+          }
+        }).catchError((_) {}).whenComplete(() {
+          inFlight--;
+          if (cancelled || controller.isClosed) return;
+          if (nextIndex < runnableSites.length) {
+            pump();
+          } else if (inFlight <= 0 && !controller.isClosed) {
+            controller.close();
+          }
+        });
+      }
     }
+
+    pump();
     return controller.stream;
   }
 }

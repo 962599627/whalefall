@@ -153,6 +153,10 @@ class CmsParser {
   }
 
   static List<CmsCategory> parseCategories(String rawJson) {
+    final trimmed = rawJson.trimLeft();
+    if (trimmed.startsWith('<')) {
+      return _parseXmlCategories(trimmed);
+    }
     final decoded = jsonDecode(stripJsonComments(rawJson));
     if (decoded is! Map<String, dynamic>) return const [];
     final rawClass = decoded['class'];
@@ -169,7 +173,27 @@ class CmsParser {
     return categories;
   }
 
+  static List<CmsCategory> _parseXmlCategories(String xml) {
+    final categories = <CmsCategory>[];
+    final tagPattern = RegExp(
+      r'''<ty\b[^>]*\bid\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)</ty>''',
+      caseSensitive: false,
+    );
+    for (final match in tagPattern.allMatches(xml)) {
+      final id = (match.group(1) ?? '').trim();
+      final name = _cleanXmlText(match.group(2) ?? '');
+      if (id.isNotEmpty && name.isNotEmpty) {
+        categories.add(CmsCategory(id: id, name: name));
+      }
+    }
+    return categories;
+  }
+
   static CmsListing parseListing(String rawJson) {
+    final trimmed = rawJson.trimLeft();
+    if (trimmed.startsWith('<')) {
+      return _parseXmlListing(trimmed);
+    }
     final decoded = jsonDecode(stripJsonComments(rawJson));
     if (decoded is! Map<String, dynamic>) return const CmsListing();
     final page = int.tryParse((decoded['page'] ?? '1').toString()) ?? 1;
@@ -208,6 +232,91 @@ class CmsParser {
       pageCount: pageCount < 1 ? 1 : pageCount,
       videos: videos,
     );
+  }
+
+  static CmsListing _parseXmlListing(String xml) {
+    int page = 1;
+    int pageCount = 1;
+    final listOpen = RegExp(r'<list\b([^>]*)>', caseSensitive: false).firstMatch(xml);
+    if (listOpen != null) {
+      final attrs = listOpen.group(1) ?? '';
+      final pgMatch = RegExp(r'''\bpage\s*=\s*["']?(\d+)''', caseSensitive: false)
+          .firstMatch(attrs);
+      final pcMatch = RegExp(
+        r'''\bpagecount\s*=\s*["']?(\d+)''',
+        caseSensitive: false,
+      ).firstMatch(attrs);
+      if (pgMatch != null) page = int.tryParse(pgMatch.group(1) ?? '1') ?? 1;
+      if (pcMatch != null) {
+        pageCount = int.tryParse(pcMatch.group(1) ?? '1') ?? 1;
+      }
+    }
+    final videos = <CmsVideo>[];
+    final videoPattern = RegExp(
+      r'<video\b[^>]*>([\s\S]*?)</video>',
+      caseSensitive: false,
+    );
+    final ddPattern = RegExp(
+      r'''<dd\b([^>]*)>([\s\S]*?)</dd>''',
+      caseSensitive: false,
+    );
+    final flagPattern = RegExp(
+      r'''\bflag\s*=\s*["']([^"']*)["']''',
+      caseSensitive: false,
+    );
+    for (final vMatch in videoPattern.allMatches(xml)) {
+      final block = vMatch.group(1) ?? '';
+      final id = _extractXmlTag(block, 'id');
+      final title = _extractXmlTag(block, 'name');
+      if (id.isEmpty && title.isEmpty) continue;
+      final fromParts = <String>[];
+      final urlParts = <String>[];
+      for (final dd in ddPattern.allMatches(block)) {
+        final ddAttrs = dd.group(1) ?? '';
+        final flagMatch = flagPattern.firstMatch(ddAttrs);
+        final flag = (flagMatch?.group(1) ?? '').trim();
+        final body = _cleanXmlText(dd.group(2) ?? '');
+        if (body.isNotEmpty) {
+          fromParts.add(flag.isEmpty ? '线路 ${fromParts.length + 1}' : flag);
+          urlParts.add(body);
+        }
+      }
+      videos.add(
+        CmsVideo(
+          id: id,
+          title: title,
+          poster: _extractXmlTag(block, 'pic'),
+          remarks: _extractXmlTag(block, 'note'),
+          year: _extractXmlTag(block, 'year'),
+          area: _extractXmlTag(block, 'area'),
+          actor: _extractXmlTag(block, 'actor'),
+          description: _cleanHtml(_extractXmlTag(block, 'des')),
+          lines: _parseLines(fromParts.join(r'$$$'), urlParts.join(r'$$$')),
+        ),
+      );
+    }
+    return CmsListing(
+      page: page < 1 ? 1 : page,
+      pageCount: pageCount < 1 ? 1 : pageCount,
+      videos: videos,
+    );
+  }
+
+  static String _extractXmlTag(String block, String tag) {
+    final m = RegExp(
+      '<$tag\\b[^>]*>([\\s\\S]*?)</$tag>',
+      caseSensitive: false,
+    ).firstMatch(block);
+    return m == null ? '' : _cleanXmlText(m.group(1) ?? '');
+  }
+
+  static String _cleanXmlText(String raw) {
+    var s = raw.trim();
+    final cdata = RegExp(r'^<!\[CDATA\[([\s\S]*?)\]\]>$').firstMatch(s);
+    if (cdata != null) {
+      s = (cdata.group(1) ?? '').trim();
+    }
+    return s;
   }
 
   static String _cleanHtml(String html) {
@@ -348,5 +457,77 @@ class CmsParser {
       }
     }
     return result;
+  }
+
+  /// Encodes a cross-platform backup JSON string compatible with both Android (`format: MarcoMovie-1`)
+  /// and Flutter (`schema: marco-movie-backup`).
+  static String encodeBackupPayload({
+    required String origin,
+    required String rawConfig,
+    required Map<String, dynamic> settings,
+    int? exportedAt,
+  }) {
+    dynamic configValue;
+    if (rawConfig.trim().isNotEmpty) {
+      try {
+        configValue = jsonDecode(stripJsonComments(rawConfig));
+      } catch (_) {
+        configValue = rawConfig;
+      }
+    } else {
+      configValue = null;
+    }
+    final payload = <String, dynamic>{
+      'format': 'MarcoMovie-1',
+      'schema': 'marco-movie-backup',
+      'version': 1,
+      'exportedAt': exportedAt ?? DateTime.now().millisecondsSinceEpoch,
+      'origin': origin,
+      'config': configValue,
+      'settings': settings,
+    };
+    return const JsonEncoder.withIndent('  ').convert(payload);
+  }
+
+  /// Validates and decodes a backup JSON produced by either Android (`format: MarcoMovie-1`)
+  /// or Flutter (`schema: marco-movie-backup`). Throws [FormatException] before any state mutation
+  /// if the payload or embedded configuration is invalid.
+  static ({String origin, String rawConfig, CmsConfig? parsedConfig, Map<String, dynamic> settings})
+      decodeBackupPayload(String rawBackup) {
+    final decoded = jsonDecode(rawBackup);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('不是有效的 Marco Movie 备份文件');
+    }
+    final isAndroidFormat = decoded['format'] == 'MarcoMovie-1';
+    final isFlutterSchema = decoded['schema'] == 'marco-movie-backup';
+    if (!isAndroidFormat && !isFlutterSchema) {
+      throw const FormatException('不是有效的 Marco Movie 备份文件');
+    }
+    final origin = (decoded['origin'] ?? '').toString().trim();
+    final rawCfgField = decoded['config'];
+    String cfgText = '';
+    if (rawCfgField == null) {
+      cfgText = '';
+    } else if (rawCfgField is Map) {
+      cfgText = jsonEncode(rawCfgField);
+    } else if (rawCfgField is String) {
+      cfgText = rawCfgField.trim();
+    } else {
+      throw const FormatException('备份中的配置字段格式无效');
+    }
+    CmsConfig? parsedConfig;
+    if (cfgText.isNotEmpty) {
+      parsedConfig = parseConfig(cfgText, origin: origin);
+    }
+    final rawSettings = decoded['settings'];
+    final settings = rawSettings is Map
+        ? Map<String, dynamic>.from(rawSettings)
+        : <String, dynamic>{};
+    return (
+      origin: origin,
+      rawConfig: cfgText,
+      parsedConfig: parsedConfig,
+      settings: settings,
+    );
   }
 }

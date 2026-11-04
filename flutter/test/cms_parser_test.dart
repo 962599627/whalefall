@@ -94,4 +94,95 @@ void main() {
     expect(completed.complete, isTrue);
     expect(completed.resumePosition, 0);
   });
+
+  test('parses XML CMS type 0 categories and video listings and checks direct playability', () {
+    const xmlRaw = '''<?xml version="1.0" encoding="utf-8"?>
+    <rss version="5.1">
+      <class>
+        <ty id="1">电影</ty>
+        <ty id="2">剧集</ty>
+      </class>
+      <list page="1" pagecount="3" total="2">
+        <video>
+          <id>201</id>
+          <name><![CDATA[XML测试片]]></name>
+          <type>电影</type>
+          <pic>https://img.test/p.jpg</pic>
+          <note><![CDATA[HD]]></note>
+          <dl>
+            <dd flag="m3u8"><![CDATA[正片\$https://media.test/play.m3u8#花絮\$jx://custom/id]]></dd>
+          </dl>
+        </video>
+      </list>
+    </rss>''';
+    final categories = CmsParser.parseCategories(xmlRaw);
+    expect(categories.length, 2);
+    expect(categories.first.name, '电影');
+
+    final listing = CmsParser.parseListing(xmlRaw);
+    expect(listing.pageCount, 3);
+    expect(listing.videos.length, 1);
+    final video = listing.videos.first;
+    expect(video.title, 'XML测试片');
+    expect(video.lines.first.episodes.length, 2);
+    expect(video.lines.first.episodes[0].isDirectPlayable, isTrue);
+    expect(video.lines.first.episodes[1].isDirectPlayable, isFalse);
+  });
+
+  test('supports bidirectional Android and Flutter backup formats and rejects invalid backups', () {
+    const androidBackup = '''
+    {
+      "format": "MarcoMovie-1",
+      "exported": 1700000000000,
+      "origin": "https://mirror.example/config.json",
+      "config": {
+        "sites": [
+          {"key": "vod1", "name": "VOD 1", "type": 1, "api": "https://vod.example/api"}
+        ]
+      },
+      "settings": {
+        "selected_site": "vod1",
+        "play_speed": 1.25,
+        "scale_mode": "fit",
+        "auto_next": true,
+        "watch_history": [
+          {"site": "vod1", "id": "99", "title": "旧番", "position": 15000, "duration": 90000}
+        ],
+        "favorites": [
+          {"site": "vod1", "id": "99", "title": "旧番"}
+        ],
+        "global_search_history": ["星际", "流浪"]
+      }
+    }
+    ''';
+    final decoded = CmsParser.decodeBackupPayload(androidBackup);
+    expect(decoded.origin, 'https://mirror.example/config.json');
+    expect(decoded.selectedSiteKey, 'vod1');
+    expect(decoded.playSpeed, 1.25);
+    expect(decoded.history.length, 1);
+    expect(decoded.favorites.length, 1);
+    expect(decoded.searchHistory, ['星际', '流浪']);
+
+    final reEncoded = CmsParser.encodeBackupPayload(
+      configRaw: decoded.configRaw,
+      origin: decoded.origin,
+      selectedSiteKey: decoded.selectedSiteKey,
+      playSpeed: decoded.playSpeed,
+      scaleMode: decoded.scaleMode,
+      autoNext: decoded.autoNext,
+      history: decoded.history,
+      favorites: decoded.favorites,
+      searchHistory: decoded.searchHistory,
+      exportedAtMs: 1700000001000,
+    );
+    final roundTrip = CmsParser.decodeBackupPayload(reEncoded);
+    expect(roundTrip.selectedSiteKey, 'vod1');
+    expect(roundTrip.history.first.id, '99');
+    expect(roundTrip.favorites.first.id, '99');
+
+    expect(
+      () => CmsParser.decodeBackupPayload('{"format":"unknown","settings":{}}'),
+      throwsFormatException,
+    );
+  });
 }

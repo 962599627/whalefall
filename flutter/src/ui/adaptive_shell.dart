@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../core/cms_client.dart';
 import '../core/models.dart';
@@ -31,22 +32,34 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   int _pageCount = 1;
   bool _homeLoading = false;
   String? _homeError;
+  int _homeEpoch = 0;
+  int _categoryEpoch = 0;
 
   // Search state
   final TextEditingController _searchController = TextEditingController();
   final List<(CmsSite, CmsVideo)> _searchResults = [];
   bool _searching = false;
+  int _searchEpoch = 0;
+  StreamSubscription<(CmsSite, List<CmsVideo>)>? _searchSubscription;
 
   // Live state
   int _selectedLiveSource = 0;
   List<LiveGroup> _liveGroups = const [];
   bool _liveLoading = false;
   String? _liveError;
+  int _liveEpoch = 0;
 
   @override
   void initState() {
     super.initState();
     _reloadSavedConfig();
+  }
+
+  @override
+  void dispose() {
+    _searchSubscription?.cancel();
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _reloadSavedConfig() {
@@ -73,6 +86,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   Future<void> _loadSiteHome() async {
     final site = _activeSite;
     if (site == null) return;
+    final epoch = ++_homeEpoch;
+    ++_categoryEpoch;
     setState(() {
       _homeLoading = true;
       _homeError = null;
@@ -81,7 +96,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     });
     try {
       final (cats, listing) = await widget.client.fetchHome(site);
-      if (!mounted || _activeSite?.key != site.key) return;
+      if (!mounted || epoch != _homeEpoch || _activeSite?.key != site.key) {
+        return;
+      }
       setState(() {
         _categories = cats;
         _homeVideos = listing.videos;
@@ -90,7 +107,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         _homeLoading = false;
       });
     } catch (e) {
-      if (!mounted || _activeSite?.key != site.key) return;
+      if (!mounted || epoch != _homeEpoch || _activeSite?.key != site.key) {
+        return;
+      }
       setState(() {
         _homeLoading = false;
         _homeError = '加载片单失败：$e';
@@ -101,6 +120,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   Future<void> _loadCategory(String categoryId, {int page = 1}) async {
     final site = _activeSite;
     if (site == null) return;
+    final epoch = ++_categoryEpoch;
     setState(() {
       _homeLoading = true;
       _homeError = null;
@@ -109,7 +129,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     try {
       final listing =
           await widget.client.fetchCategory(site, categoryId, page);
-      if (!mounted) return;
+      if (!mounted ||
+          epoch != _categoryEpoch ||
+          _activeSite?.key != site.key ||
+          _selectedCategoryId != categoryId) {
+        return;
+      }
       setState(() {
         _homeVideos = page == 1
             ? listing.videos
@@ -119,7 +144,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         _homeLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted ||
+          epoch != _categoryEpoch ||
+          _activeSite?.key != site.key ||
+          _selectedCategoryId != categoryId) {
+        return;
+      }
       setState(() {
         _homeLoading = false;
         _homeError = '加载分类失败：$e';
@@ -130,16 +160,20 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   Future<void> _runGlobalSearch(String keyword) async {
     final trimmed = keyword.trim();
     if (trimmed.isEmpty || _config == null) return;
+    final epoch = ++_searchEpoch;
+    await _searchSubscription?.cancel();
+    _searchSubscription = null;
     await widget.storage.addSearchKeyword(trimmed);
+    if (!mounted || epoch != _searchEpoch) return;
     setState(() {
       _searching = true;
       _searchResults.clear();
     });
-    widget.client
+    _searchSubscription = widget.client
         .searchAcrossSites(_config!.supportedSites, trimmed)
         .listen(
           (batch) {
-            if (!mounted) return;
+            if (!mounted || epoch != _searchEpoch) return;
             final (site, videos) = batch;
             setState(() {
               for (final v in videos) {
@@ -147,8 +181,15 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               }
             });
           },
+          onError: (_) {
+            if (mounted && epoch == _searchEpoch) {
+              setState(() => _searching = false);
+            }
+          },
           onDone: () {
-            if (mounted) setState(() => _searching = false);
+            if (mounted && epoch == _searchEpoch) {
+              setState(() => _searching = false);
+            }
           },
         );
   }
@@ -156,6 +197,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   Future<void> _loadLivePlaylist(int sourceIndex) async {
     final lives = _config?.lives ?? const [];
     if (sourceIndex < 0 || sourceIndex >= lives.length) return;
+    final epoch = ++_liveEpoch;
     setState(() {
       _selectedLiveSource = sourceIndex;
       _liveLoading = true;
@@ -163,13 +205,21 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     });
     try {
       final groups = await widget.client.fetchLiveGroups(lives[sourceIndex]);
-      if (!mounted) return;
+      if (!mounted ||
+          epoch != _liveEpoch ||
+          _selectedLiveSource != sourceIndex) {
+        return;
+      }
       setState(() {
         _liveGroups = groups;
         _liveLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted ||
+          epoch != _liveEpoch ||
+          _selectedLiveSource != sourceIndex) {
+        return;
+      }
       setState(() {
         _liveLoading = false;
         _liveError = '读取直播列表失败：$e';

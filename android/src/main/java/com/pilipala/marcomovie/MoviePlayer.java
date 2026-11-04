@@ -60,6 +60,7 @@ public class MoviePlayer {
     private boolean readySent, unsupportedVideo;
     private volatile boolean released;
     private int preparation;
+    private volatile RequestScope probeScope;
     private long prepareStarted, firstFrameMs = -1;
     private String lastError = "";
     private String videoDecoder = "", audioDecoder = "";
@@ -358,12 +359,19 @@ public class MoviePlayer {
                 });
     }
 
+    static final int PROBE_BUDGET_MS = 3000;
+    static final int PROBE_MAX_BYTES = 512;
+
     public void prepareAsync() {
         onMain(
                 () -> {
                     check();
                     if (uri == null) throw new IllegalStateException("No media item");
                     final int ticket = ++preparation;
+                    RequestScope previousScope = probeScope;
+                    if (previousScope != null) previousScope.cancel();
+                    final RequestScope scope = new RequestScope();
+                    probeScope = scope;
                     final Uri address = uri;
                     final Map<String, String> requestHeaders = headers;
                     readySent = false;
@@ -374,14 +382,27 @@ public class MoviePlayer {
                     Thread sniff =
                             new Thread(
                                     () -> {
-                                        String declared = MediaOptions.mime(options);
-                                        String mime =
-                                                declared == null
-                                                        ? sniffMime(address, requestHeaders)
-                                                        : declared;
+                                        String mime = null;
+                                        try {
+                                            String declared = MediaOptions.mime(options);
+                                            mime =
+                                                    declared == null
+                                                            ? scope.call(
+                                                                    () ->
+                                                                            sniffMime(
+                                                                                    address,
+                                                                                    requestHeaders,
+                                                                                    scope))
+                                                            : declared;
+                                        } catch (Exception ignored) {
+                                        }
+                                        if (scope.cancelled) return;
+                                        final String resolvedMime = mime;
                                         main.post(
                                                 () -> {
-                                                    if (released || ticket != preparation) return;
+                                                    if (released
+                                                            || scope.cancelled
+                                                            || ticket != preparation) return;
                                                     try {
                                                         String userAgent = "MarcoMovie/0.2.0";
                                                         for (Map.Entry<String, String> header :
@@ -401,7 +422,7 @@ public class MoviePlayer {
                                                         DefaultDataSource.Factory data =
                                                                 new DefaultDataSource.Factory(
                                                                         context, http);
-                                                        mediaMime = mime;
+                                                        mediaMime = resolvedMime;
                                                         mediaSourceFactory =
                                                                 new DefaultMediaSourceFactory(data);
                                                         exo.setMediaSource(
@@ -429,7 +450,9 @@ public class MoviePlayer {
                 });
     }
 
-    private static String sniffMime(Uri address, Map<String, String> requestHeaders) {
+    private static String sniffMime(
+            Uri address, Map<String, String> requestHeaders, RequestScope scope) {
+        if (scope != null && scope.cancelled) return null;
         int type = Util.inferContentType(address);
         if (type == C.CONTENT_TYPE_HLS) return MimeTypes.APPLICATION_M3U8;
         if (type == C.CONTENT_TYPE_DASH) return MimeTypes.APPLICATION_MPD;
@@ -437,17 +460,24 @@ public class MoviePlayer {
         if (path != null
                 && path.toLowerCase(Locale.ROOT)
                         .matches(".*\\.(mp4|mkv|webm|mp3|aac|flac|ogg|ts|flv|mov)$")) return null;
+        String fullUri = address.toString().toLowerCase(Locale.ROOT);
+        if (fullUri.contains(".m3u8")) return MimeTypes.APPLICATION_M3U8;
+        if (fullUri.contains(".mpd")) return MimeTypes.APPLICATION_MPD;
         String scheme = address.getScheme();
         if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) return null;
+        long deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(PROBE_BUDGET_MS);
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(address.toString()).openConnection();
-            connection.setConnectTimeout(8000);
-            connection.setReadTimeout(8000);
+            RequestScope.attach(connection);
+            connection.setConnectTimeout(2500);
+            connection.setReadTimeout(2500);
             connection.setInstanceFollowRedirects(true);
             connection.setRequestProperty("User-Agent", "MarcoMovie/0.2.0");
+            connection.setRequestProperty("Range", "bytes=0-" + (PROBE_MAX_BYTES - 1));
             for (Map.Entry<String, String> header : requestHeaders.entrySet())
                 connection.setRequestProperty(header.getKey(), header.getValue());
+            if (scope != null && scope.cancelled) return null;
             String contentType = connection.getContentType();
             if (contentType != null) {
                 String lower = contentType.toLowerCase(Locale.ROOT);
@@ -455,10 +485,18 @@ public class MoviePlayer {
                 if (lower.contains("dash+xml")) return MimeTypes.APPLICATION_MPD;
                 if (lower.startsWith("video/") || lower.startsWith("audio/")) return null;
             }
-            byte[] prefix = new byte[1024];
+            byte[] prefix = new byte[PROBE_MAX_BYTES];
             int count = 0;
             try (InputStream stream = connection.getInputStream()) {
-                while (count < prefix.length) {
+                while (count < prefix.length && System.nanoTime() < deadlineNs) {
+                    if (scope != null && scope.cancelled) return null;
+                    int remainingMs =
+                            (int)
+                                    Math.max(
+                                            250L,
+                                            TimeUnit.NANOSECONDS.toMillis(
+                                                    deadlineNs - System.nanoTime()));
+                    connection.setReadTimeout(Math.min(2500, remainingMs));
                     int n = stream.read(prefix, count, prefix.length - count);
                     if (n < 0) break;
                     count += n;
@@ -477,6 +515,7 @@ public class MoviePlayer {
         } catch (Exception ignored) {
             /* The real loader reports transport failures. */
         } finally {
+            if (connection != null) RequestScope.detach(connection);
             if (connection != null) connection.disconnect();
         }
         return null;
@@ -784,11 +823,15 @@ public class MoviePlayer {
     }
 
     public void release() {
+        RequestScope activeScope = probeScope;
+        if (activeScope != null) activeScope.cancel();
         onMain(
                 () -> {
                     if (!released) {
                         released = true;
                         preparation++;
+                        RequestScope current = probeScope;
+                        if (current != null) current.cancel();
                         exo.release();
                     }
                     return null;

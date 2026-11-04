@@ -188,7 +188,50 @@ public final class CspEngine implements SourceEngine {
         return out.toString();
     }
 
-    static synchronized File obtain(Application app, String declaration) throws Exception {
+    private static final java.util.concurrent.ConcurrentHashMap<String, Object> ARTIFACT_LOCKS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.ConcurrentHashMap<String, VerifiedArtifact>
+            VERIFIED_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final class VerifiedArtifact {
+        final String path;
+        final long length;
+        final long lastModified;
+        final String sha256;
+        final String md5;
+
+        VerifiedArtifact(File file, String sha256, String md5) {
+            this.path = file.getAbsolutePath();
+            this.length = file.length();
+            this.lastModified = file.lastModified();
+            this.sha256 = sha256;
+            this.md5 = md5;
+        }
+
+        boolean matches(File file, String expectedSha, String expectedMd5) {
+            return file.exists()
+                    && path.equals(file.getAbsolutePath())
+                    && length == file.length()
+                    && lastModified == file.lastModified()
+                    && sha256.equals(expectedSha)
+                    && (expectedMd5.isEmpty() || expectedMd5.equals(md5));
+        }
+    }
+
+    static boolean verifyCachedArtifact(File cached, String sha, String expectedMd5)
+            throws Exception {
+        if (!cached.exists()) return false;
+        VerifiedArtifact v = VERIFIED_CACHE.get(sha);
+        if (v != null && v.matches(cached, sha, expectedMd5)) return true;
+        String actualSha = digest(cached, "SHA-256");
+        if (!sha.equals(actualSha)) return false;
+        String actualMd5 = expectedMd5.isEmpty() ? "" : digest(cached, "MD5");
+        if (!expectedMd5.isEmpty() && !expectedMd5.equals(actualMd5)) return false;
+        VERIFIED_CACHE.put(sha, new VerifiedArtifact(cached, actualSha, actualMd5));
+        return true;
+    }
+
+    static File obtain(Application app, String declaration) throws Exception {
         if (declaration == null || declaration.trim().isEmpty())
             throw new IOException("配置没有声明 spider 插件");
         String[] parts = declaration.split(";md5;", 2);
@@ -200,73 +243,86 @@ public final class CspEngine implements SourceEngine {
         File folder = new File(app.getFilesDir(), "csp");
         if (!folder.exists() && !folder.mkdirs()) throw new IOException("插件目录不可用");
         String key = hex(declaration.getBytes("UTF-8"));
-        File identity = new File(folder, "selection-" + key + ".txt");
-        if (identity.exists()) {
-            String sha;
-            try (InputStream in = new FileInputStream(identity)) {
-                sha = Cms.read(in, 128).trim();
-            }
-            if (sha.matches("[0-9a-f]{64}")) {
-                File cached = new File(folder, sha + ".jar");
-                if (cached.exists()
-                        && sha.equals(digest(cached, "SHA-256"))
-                        && (expected.isEmpty() || expected.equals(digest(cached, "MD5"))))
-                    return cached;
-            }
-        }
-        File temp = File.createTempFile("incoming-", ".tmp", folder);
-        try {
-            URL next = new URL(Cms.normalizeHttp(address));
-            boolean done = false;
-            for (int redirect = 0; redirect < 5 && !done; redirect++) {
-                HttpURLConnection c = (HttpURLConnection) next.openConnection();
-                c.setConnectTimeout(12000);
-                c.setReadTimeout(20000);
-                c.setInstanceFollowRedirects(false);
-                c.setRequestProperty("User-Agent", Cms.USER_AGENT);
-                try {
-                    int code = c.getResponseCode();
-                    if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
-                        String loc = c.getHeaderField("Location");
-                        if (loc == null) throw new IOException("插件重定向无地址");
-                        next = new URL(next, loc);
-                        if (!Cms.isHttp(next.toString())) throw new IOException("插件重定向协议不受支持");
-                        continue;
-                    }
-                    if (code < 200 || code >= 300) throw new IOException("插件下载失败 HTTP " + code);
-                    try (InputStream in = c.getInputStream();
-                            OutputStream out = new FileOutputStream(temp)) {
-                        byte[] b = new byte[8192];
-                        int n, total = 0;
-                        while ((n = in.read(b)) != -1) {
-                            total += n;
-                            if (total > 20 * 1024 * 1024) throw new IOException("插件超过 20 MB 限制");
-                            out.write(b, 0, n);
-                        }
-                    }
-                    done = true;
-                } finally {
-                    c.disconnect();
+        Object lock = ARTIFACT_LOCKS.computeIfAbsent(key, k -> new Object());
+        synchronized (lock) {
+            File identity = new File(folder, "selection-" + key + ".txt");
+            if (identity.exists()) {
+                String sha;
+                try (InputStream in = new FileInputStream(identity)) {
+                    sha = Cms.read(in, 128).trim();
+                }
+                if (sha.matches("[0-9a-f]{64}")) {
+                    File cached = new File(folder, sha + ".jar");
+                    if (verifyCachedArtifact(cached, sha, expected)) return cached;
                 }
             }
-            if (!done) throw new IOException("插件重定向次数过多");
-            if (!expected.isEmpty() && !expected.equals(digest(temp, "MD5")))
-                throw new IOException("插件 MD5 与配置不一致，已拒绝加载");
-            try (ZipFile zip = new ZipFile(temp)) {
-                if (zip.getEntry("classes.dex") == null) throw new IOException("插件不含 classes.dex");
+            File temp = File.createTempFile("incoming-", ".tmp", folder);
+            try {
+                URL next = new URL(Cms.normalizeHttp(address));
+                boolean done = false;
+                for (int redirect = 0; redirect < 5 && !done; redirect++) {
+                    RequestScope.current().check();
+                    HttpURLConnection c = (HttpURLConnection) next.openConnection();
+                    c.setConnectTimeout(12000);
+                    c.setReadTimeout(20000);
+                    c.setInstanceFollowRedirects(false);
+                    c.setRequestProperty("User-Agent", Cms.USER_AGENT);
+                    RequestScope.attach(c);
+                    try {
+                        int code = c.getResponseCode();
+                        if (code == 301
+                                || code == 302
+                                || code == 303
+                                || code == 307
+                                || code == 308) {
+                            String loc = c.getHeaderField("Location");
+                            if (loc == null) throw new IOException("插件重定向无地址");
+                            next = new URL(next, loc);
+                            if (!Cms.isHttp(next.toString())) throw new IOException("插件重定向协议不受支持");
+                            continue;
+                        }
+                        if (code < 200 || code >= 300) throw new IOException("插件下载失败 HTTP " + code);
+                        try (InputStream in = c.getInputStream();
+                                OutputStream out = new FileOutputStream(temp)) {
+                            byte[] b = new byte[8192];
+                            int n, total = 0;
+                            while ((n = in.read(b)) != -1) {
+                                RequestScope.current().check();
+                                total += n;
+                                if (total > 20 * 1024 * 1024)
+                                    throw new IOException("插件超过 20 MB 限制");
+                                out.write(b, 0, n);
+                            }
+                        }
+                        done = true;
+                    } finally {
+                        RequestScope.detach(c);
+                        c.disconnect();
+                    }
+                }
+                if (!done) throw new IOException("插件重定向次数过多");
+                String actualMd5 = expected.isEmpty() ? "" : digest(temp, "MD5");
+                if (!expected.isEmpty() && !expected.equals(actualMd5))
+                    throw new IOException("插件 MD5 与配置不一致，已拒绝加载");
+                try (ZipFile zip = new ZipFile(temp)) {
+                    if (zip.getEntry("classes.dex") == null)
+                        throw new IOException("插件不含 classes.dex");
+                }
+                String sha = digest(temp, "SHA-256");
+                File artifact = new File(folder, sha + ".jar");
+                if (artifact.exists()) {
+                    if (!verifyCachedArtifact(artifact, sha, expected))
+                        throw new IOException("缓存插件摘要不一致");
+                } else if (!temp.renameTo(artifact)) throw new IOException("无法保存插件");
+                artifact.setReadOnly();
+                VERIFIED_CACHE.put(sha, new VerifiedArtifact(artifact, sha, actualMd5));
+                try (OutputStream out = new FileOutputStream(identity)) {
+                    out.write(sha.getBytes("UTF-8"));
+                }
+                return artifact;
+            } finally {
+                temp.delete();
             }
-            String sha = digest(temp, "SHA-256");
-            File artifact = new File(folder, sha + ".jar");
-            if (artifact.exists()) {
-                if (!sha.equals(digest(artifact, "SHA-256"))) throw new IOException("缓存插件摘要不一致");
-            } else if (!temp.renameTo(artifact)) throw new IOException("无法保存插件");
-            artifact.setReadOnly();
-            try (OutputStream out = new FileOutputStream(identity)) {
-                out.write(sha.getBytes("UTF-8"));
-            }
-            return artifact;
-        } finally {
-            temp.delete();
         }
     }
 

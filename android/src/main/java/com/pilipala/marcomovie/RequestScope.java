@@ -18,10 +18,28 @@ final class RequestScope {
                         return t;
                     });
     final Set<HttpURLConnection> connections = ConcurrentHashMap.newKeySet();
+    final Set<Runnable> cancelListeners = ConcurrentHashMap.newKeySet();
     volatile boolean cancelled;
 
     static RequestScope current() {
         return CURRENT.get();
+    }
+
+    static void onCancel(Runnable listener) {
+        RequestScope scope = CURRENT.get();
+        if (scope != null && listener != null) {
+            scope.cancelListeners.add(listener);
+            if (scope.cancelled && scope.cancelListeners.remove(listener)) {
+                listener.run();
+            }
+        }
+    }
+
+    static void offCancel(Runnable listener) {
+        RequestScope scope = CURRENT.get();
+        if (scope != null && listener != null) {
+            scope.cancelListeners.remove(listener);
+        }
     }
 
     <T> T call(Callable<T> work) throws Exception {
@@ -63,6 +81,13 @@ final class RequestScope {
         cancelled = true;
         for (HttpURLConnection connection : connections)
             if (connections.remove(connection)) CLOSER.execute(connection::disconnect);
+        for (Runnable listener : cancelListeners)
+            if (cancelListeners.remove(listener)) {
+                try {
+                    listener.run();
+                } catch (Exception ignored) {
+                }
+            }
     }
 
     static Future<?> submit(ExecutorService executor, Runnable work) {

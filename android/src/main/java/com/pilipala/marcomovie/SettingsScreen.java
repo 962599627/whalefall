@@ -498,6 +498,8 @@ final class SettingsScreen {
                             org.json.JSONObject backup =
                                     new org.json.JSONObject()
                                             .put("format", "MarcoMovie-1")
+                                            .put("schema", "marco-movie-backup")
+                                            .put("version", 1)
                                             .put("origin", a.configOrigin)
                                             .put(
                                                     "config",
@@ -509,6 +511,17 @@ final class SettingsScreen {
                             for (String key : KEYS)
                                 if (a.prefs.contains(key))
                                     settings.put(key, a.prefs.getAll().get(key));
+                            for (String dataKey :
+                                    new String[] {
+                                        Prefs.SELECTED_SITE,
+                                        Prefs.WATCH_HISTORY,
+                                        Prefs.FAVORITES,
+                                        Prefs.GLOBAL_SEARCH_HISTORY
+                                    }) {
+                                if (a.prefs.contains(dataKey)) {
+                                    settings.put(dataKey, a.prefs.getString(dataKey, ""));
+                                }
+                            }
                             backup.put("settings", settings);
                             try (OutputStream output =
                                     a.getContentResolver().openOutputStream(uri, "wt")) {
@@ -519,15 +532,22 @@ final class SettingsScreen {
                             try (InputStream input = a.getContentResolver().openInputStream(uri)) {
                                 backup = new org.json.JSONObject(Cms.read(input, Cms.MAX_JSON));
                             }
-                            if (!"MarcoMovie-1".equals(backup.optString("format")))
+                            if (!Prefs.isBackupObject(
+                                    backup.optString("format", null),
+                                    backup.optString("schema", null),
+                                    backup.optInt("version", 0)))
                                 throw new IOException("Invalid backup");
                             final String origin = backup.optString("origin", "");
+                            final String configJson;
+                            if (!backup.has("config") || backup.isNull("config")) {
+                                configJson = null;
+                            } else {
+                                configJson = Prefs.extractBackupConfigJson(backup.opt("config"));
+                                if (configJson == null)
+                                    throw new IOException("Invalid backup config");
+                            }
                             final Cms.Config config =
-                                    backup.isNull("config")
-                                            ? null
-                                            : Cms.parseConfig(
-                                                    backup.getJSONObject("config").toString(),
-                                                    origin);
+                                    configJson == null ? null : Cms.parseConfig(configJson, origin);
                             final org.json.JSONObject settings = backup.optJSONObject("settings");
                             a.ui.post(
                                     () ->
@@ -586,6 +606,18 @@ final class SettingsScreen {
             if (clean instanceof Boolean) edit.putBoolean(key, (Boolean) clean);
             else if (clean instanceof Float) edit.putFloat(key, (Float) clean);
             else if (clean instanceof Integer) edit.putInt(key, (Integer) clean);
+        }
+        for (String dataKey :
+                new String[] {
+                    Prefs.SELECTED_SITE,
+                    Prefs.WATCH_HISTORY,
+                    Prefs.FAVORITES,
+                    Prefs.GLOBAL_SEARCH_HISTORY
+                }) {
+            if (settings.has(dataKey)) {
+                String cleanData = Prefs.sanitizeUserData(dataKey, settings.opt(dataKey));
+                if (cleanData != null) edit.putString(dataKey, cleanData);
+            }
         }
         edit.apply();
         a.reduced = a.prefs.getBoolean(Prefs.REDUCED, false);

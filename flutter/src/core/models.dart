@@ -20,9 +20,16 @@ class CmsSite {
     this.headers = const {},
   });
 
-  bool get supported =>
+  bool get canBrowse =>
       (type == 1 || type == 0) &&
       (api.startsWith('http://') || api.startsWith('https://'));
+
+  bool get requiresPluginRuntime =>
+      type == 3 ||
+      api.startsWith('csp_') ||
+      api.toLowerCase().endsWith('.js');
+
+  bool get supported => canBrowse && !requiresPluginRuntime;
 }
 
 class LiveSource {
@@ -67,6 +74,21 @@ class CmsEpisode {
     required this.url,
     this.headers = const {},
   });
+
+  bool get isDirectPlayable {
+    final u = url.trim().toLowerCase();
+    if (!u.startsWith('http://') &&
+        !u.startsWith('https://') &&
+        !u.startsWith('rtmp://') &&
+        !u.startsWith('rtsp://')) {
+      return false;
+    }
+    final pathOnly = u.split('?').first.split('#').first;
+    if (pathOnly.endsWith('.html') || pathOnly.endsWith('.htm')) {
+      return false;
+    }
+    return true;
+  }
 }
 
 class CmsLine {

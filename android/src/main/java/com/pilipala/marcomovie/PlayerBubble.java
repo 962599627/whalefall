@@ -79,6 +79,11 @@ final class PlayerBubble {
             description.setFocusable(true);
             items.addView(description);
         }
+        final String defaultHint = "上下选择 · 返回关闭";
+        TextView hint = a.text(defaultHint, 11, MainActivity.MUTED);
+        hint.setSingleLine(false);
+        hint.setMaxLines(2);
+        hint.setEllipsize(android.text.TextUtils.TruncateAt.END);
         for (int i = 0; i < labels.length; i++) {
             final int index = i;
             Button item =
@@ -99,6 +104,18 @@ final class PlayerBubble {
             item.setBackground(a.bg(i == selected ? 0x30ffffff : 0x00ffffff, 16));
             item.setOnFocusChangeListener(
                     (v, f) -> {
+                        item.setSelected(f);
+                        item.setEllipsize(
+                                f
+                                        ? android.text.TextUtils.TruncateAt.MARQUEE
+                                        : android.text.TextUtils.TruncateAt.END);
+                        if (f && labels[index] != null && labels[index].length() > 14) {
+                            hint.setText(labels[index]);
+                            hint.setTextColor(0xffdddddf);
+                        } else if (f) {
+                            hint.setText(defaultHint);
+                            hint.setTextColor(MainActivity.MUTED);
+                        }
                         FocusMotion.style(
                                 a,
                                 item,
@@ -115,9 +132,8 @@ final class PlayerBubble {
             lp.setMargins(a.dp(2), a.dp(2), a.dp(2), a.dp(2));
             items.addView(item, lp);
         }
-        TextView hint = a.text("上下选择 · 返回关闭", 11, MainActivity.MUTED);
         hint.setGravity(Gravity.CENTER);
-        hint.setPadding(0, a.dp(10), 0, 0);
+        hint.setPadding(a.dp(8), a.dp(10), a.dp(8), 0);
         panel.addView(hint);
         shell.addView(panel);
         int width = Math.min(a.dp(310), a.root.getWidth() - a.dp(32));

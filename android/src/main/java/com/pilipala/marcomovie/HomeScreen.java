@@ -17,6 +17,7 @@ import org.json.JSONObject;
 
 /** Compact continue-watching cards above one category-based, vertically browsed library. */
 final class HomeScreen {
+    static final int MAX_RETAINED_CARDS = 120;
     final MainActivity a;
     final Cms.Site site;
     final int COLUMNS;
@@ -510,18 +511,35 @@ final class HomeScreen {
                                     boolean focusMore = more.hasFocus();
                                     Set<String> ids = new HashSet<>();
                                     for (Cms.Video v : state.videos) ids.add(v.id);
+                                    int added = 0;
                                     for (Cms.Video v : list.videos)
-                                        if (ids.add(v.id)) state.videos.add(v);
+                                        if (ids.add(v.id)) {
+                                            state.videos.add(v);
+                                            added++;
+                                        }
+                                    boolean trimmedWindow = false;
+                                    int focusIndex = previous;
+                                    if (state.videos.size() > MAX_RETAINED_CARDS) {
+                                        int overflow = state.videos.size() - MAX_RETAINED_CARDS;
+                                        int drop = ((overflow + COLUMNS - 1) / COLUMNS) * COLUMNS;
+                                        drop =
+                                                Math.min(
+                                                        drop,
+                                                        Math.max(0, state.videos.size() - added));
+                                        if (drop > 0) {
+                                            state.videos.subList(0, drop).clear();
+                                            focusIndex = Math.max(0, previous - drop);
+                                            trimmedWindow = true;
+                                        }
+                                    }
                                     state.page = page;
                                     state.pages =
-                                            state.videos.size() == previous
-                                                    ? page
-                                                    : Math.max(page, list.pageCount);
+                                            added == 0 ? page : Math.max(page, list.pageCount);
                                     state.ready = true;
-                                    drawGrid(!first);
+                                    drawGrid(!first && !trimmedWindow);
                                     if (!first && focusMore) {
                                         View next =
-                                                a.root.findViewWithTag("home-video:" + previous);
+                                                a.root.findViewWithTag("home-video:" + focusIndex);
                                         if (next != null) next.requestFocus();
                                         else if (!rows.isEmpty())
                                             rows.get(rows.size() - 1).get(0).requestFocus();

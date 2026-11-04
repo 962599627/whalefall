@@ -218,6 +218,58 @@ public final class SchedulingChecks {
         for (int i = 0; i < 9; i++) s30.step(1f / 30);
         for (int i = 0; i < 18; i++) s60.step(1f / 60);
         check(Math.abs(s30.value - s60.value) < .001f, "same motion timing across frame rates");
+
+        // R01 regression: wedged background call on SourceGate unblocks waiting foreground call
+        SourceGate wedgedGate = new SourceGate();
+        CountDownLatch bgEntered = new CountDownLatch(1);
+        CountDownLatch releaseBg = new CountDownLatch(1);
+        CountDownLatch fgCompleted = new CountDownLatch(1);
+        AtomicReference<Thread> bgHolder = new AtomicReference<>();
+        Thread bgThread =
+                new Thread(
+                        () -> {
+                            try {
+                                wedgedGate.call(
+                                        false,
+                                        () -> {
+                                            bgHolder.set(Thread.currentThread());
+                                            bgEntered.countDown();
+                                            while (releaseBg.getCount() > 0) {
+                                                try {
+                                                    releaseBg.await(50, TimeUnit.MILLISECONDS);
+                                                } catch (InterruptedException ignored) {
+                                                }
+                                            }
+                                            return null;
+                                        });
+                            } catch (Exception ignored) {
+                            }
+                        });
+        bgThread.start();
+        check(bgEntered.await(1, TimeUnit.SECONDS), "background source call entered gate");
+        Thread fgThread =
+                new Thread(
+                        () -> {
+                            try {
+                                wedgedGate.call(
+                                        true,
+                                        () -> {
+                                            fgCompleted.countDown();
+                                            return null;
+                                        });
+                            } catch (Exception ignored) {
+                            }
+                        });
+        fgThread.start();
+        waiting(fgThread);
+        SourceGate.markWedged(bgHolder.get());
+        check(
+                fgCompleted.await(1, TimeUnit.SECONDS),
+                "foreground call unblocks when background gate holder is marked wedged");
+        releaseBg.countDown();
+        bgThread.join(1000);
+        fgThread.join(1000);
+
         System.out.println(checks + " scheduling/cache/motion checks passed");
     }
 }

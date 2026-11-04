@@ -88,9 +88,18 @@ public final class MainActivity extends Activity {
     android.content.SharedPreferences prefs;
     boolean reduced, prepared, playing, foreground;
     int generation;
+    static final int MAX_HOME_SNAPSHOTS = 8;
     final Map<String, SourceEngine> engines = new HashMap<>();
     final SingleFlight<SourceEngine> engineInitializations = new SingleFlight<>();
-    final Map<String, HomeScreen.Snapshot> homeData = new ConcurrentHashMap<>();
+    final Map<String, HomeScreen.Snapshot> homeData =
+            Collections.synchronizedMap(
+                    new LinkedHashMap<String, HomeScreen.Snapshot>(16, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(
+                                Map.Entry<String, HomeScreen.Snapshot> eldest) {
+                            return size() > MAX_HOME_SNAPSHOTS;
+                        }
+                    });
     AppDialog appDialog;
     FrameLayout playbackLayer;
     MiniDetails miniDetails;

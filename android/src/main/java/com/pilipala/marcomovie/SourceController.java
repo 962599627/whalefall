@@ -35,6 +35,11 @@ final class SourceController {
         final int epoch;
         synchronized (a) {
             SourceEngine existing = a.engines.get(s.key);
+            if (existing instanceof QueuedSourceEngine
+                    && ((QueuedSourceEngine) existing).isWedged()) {
+                a.engines.remove(s.key);
+                existing = null;
+            }
             if (existing != null) return existing;
             snapshot = a.config;
             epoch = a.engineEpoch;

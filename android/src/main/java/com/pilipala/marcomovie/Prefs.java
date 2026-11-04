@@ -163,4 +163,35 @@ final class Prefs {
     static int clampSearchTimeoutSeconds(int seconds) {
         return Math.max(10, Math.min(30, seconds));
     }
+
+    static boolean isBackupObject(String format, String schema, int version) {
+        return "MarcoMovie-1".equals(format)
+                || ("marco-movie-backup".equals(schema) && (version == 0 || version == 1));
+    }
+
+    static String extractBackupConfigJson(Object raw) {
+        if (raw == null) return null;
+        String text = raw instanceof String ? ((String) raw).trim() : String.valueOf(raw).trim();
+        if (text.isEmpty() || "null".equals(text)) return null;
+        if (text.startsWith("{") && text.endsWith("}")) return text;
+        return null;
+    }
+
+    static String sanitizeUserData(String key, Object value) {
+        if (key == null || value == null) return null;
+        String text =
+                value instanceof String ? ((String) value).trim() : String.valueOf(value).trim();
+        if ("null".equals(text)) return null;
+        if (SELECTED_SITE.equals(key)) {
+            return text.length() <= 256 ? text : null;
+        }
+        if (WATCH_HISTORY.equals(key)
+                || FAVORITES.equals(key)
+                || GLOBAL_SEARCH_HISTORY.equals(key)) {
+            if (text.isEmpty()) return "[]";
+            if (text.startsWith("[") && text.endsWith("]")) return text;
+            return null;
+        }
+        return null;
+    }
 }

@@ -221,6 +221,21 @@ public final class ReviewFixChecks {
                         && Prefs.clampSearchTimeoutSeconds(1) == 10
                         && Prefs.clampSearchTimeoutSeconds(99) == 30,
                 "preference range clamp helpers bound out-of-range values");
+        check(
+                Prefs.isBackupObject("MarcoMovie-1", null, 0)
+                        && Prefs.isBackupObject(null, "marco-movie-backup", 1)
+                        && !Prefs.isBackupObject("other", "other", 2),
+                "backup format validator accepts Android and Flutter backup envelopes");
+        check(
+                "{\"sites\":[]}".equals(Prefs.extractBackupConfigJson("  {\"sites\":[]}  "))
+                        && Prefs.extractBackupConfigJson("not-json") == null
+                        && Prefs.extractBackupConfigJson("") == null,
+                "backup config extractor accepts raw JSON string or object and rejects invalid text");
+        check(
+                "[\"a\"]".equals(Prefs.sanitizeUserData(Prefs.WATCH_HISTORY, " [\"a\"] "))
+                        && "vod1".equals(Prefs.sanitizeUserData(Prefs.SELECTED_SITE, " vod1 "))
+                        && Prefs.sanitizeUserData(Prefs.WATCH_HISTORY, "{bad}") == null,
+                "backup user data sanitizer preserves cross-platform history, favorites, and selected site");
 
         AppLog.clear();
         AppLog.w("ReviewCheck", "sample warning", new IOException("disk full"));

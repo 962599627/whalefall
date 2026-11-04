@@ -179,6 +179,64 @@ public final class GlobalSearchChecks {
                 all.await(5, TimeUnit.SECONDS) && missed.get() == 0,
                 "100 sources are scheduled without queue-overflow omissions");
         large.close();
+
+        // R01 regression: 6 uninterruptible jobs time out and hold their threads;
+        // subsequent healthy queries must still run while wedged sites are isolated.
+        CountDownLatch sixEntered = new CountDownLatch(6);
+        CountDownLatch sixTimedOut = new CountDownLatch(6);
+        CountDownLatch releaseSix = new CountDownLatch(1);
+        List<Cms.Site> sixStuck = new ArrayList<>();
+        for (int i = 0; i < 6; i++) sixStuck.add(site("stuck-" + i));
+        SearchCoordinator stuckCoord =
+                new SearchCoordinator(
+                        (s, q) -> {
+                            sixEntered.countDown();
+                            while (releaseSix.getCount() > 0) {
+                                try {
+                                    releaseSix.await(50, TimeUnit.MILLISECONDS);
+                                } catch (InterruptedException ignored) {
+                                }
+                            }
+                            return Collections.emptyList();
+                        },
+                        (s, v, o) -> {
+                            if (o == SearchCoordinator.Outcome.TIMEOUT) sixTimedOut.countDown();
+                        },
+                        80,
+                        1000);
+        stuckCoord.start(sixStuck, "old-query");
+        check(sixEntered.await(1, TimeUnit.SECONDS), "all six uninterruptible workers entered");
+        check(
+                sixTimedOut.await(1, TimeUnit.SECONDS),
+                "all six uninterruptible workers reported timeout");
+        CountDownLatch followUpDone = new CountDownLatch(2);
+        Map<String, SearchCoordinator.Outcome> followUpOutcomes = new ConcurrentHashMap<>();
+        SearchCoordinator healthyCoord =
+                new SearchCoordinator(
+                        (s, q) -> Collections.singletonList(video("ok-" + s.key)),
+                        (s, v, o) -> {
+                            followUpOutcomes.put(s.key, o);
+                            followUpDone.countDown();
+                        },
+                        300,
+                        1000);
+        healthyCoord.start(
+                Arrays.asList(site("stuck-0"), site("healthy-after-stuck")), "new-query");
+        check(
+                followUpDone.await(1, TimeUnit.SECONDS)
+                        && followUpOutcomes.get("healthy-after-stuck")
+                                == SearchCoordinator.Outcome.RESULT
+                        && followUpOutcomes.get("stuck-0") == SearchCoordinator.Outcome.BUSY,
+                "healthy source executes while wedged uninterruptible sources are isolated");
+        healthyCoord.close();
+        stuckCoord.close();
+        releaseSix.countDown();
+        long recoverDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (SearchCoordinator.isSiteWedged("stuck-0") && System.nanoTime() < recoverDeadline) {
+            Thread.sleep(10);
+        }
+        check(!SearchCoordinator.isSiteWedged("stuck-0"), "wedged site recovers once call exits");
+
         System.out.println(
                 "OK "
                         + checks

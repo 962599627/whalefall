@@ -47,6 +47,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _loading = true;
   bool _buffering = false;
   double _dragStartPosMs = 0;
+  int _playSession = 0;
+  int _pendingResumeMs = 0;
 
   CmsLine get _currentLine => widget.video.lines[_lineIndex];
   CmsEpisode get _currentEpisode => _currentLine.episodes[_episodeIndex];
@@ -79,6 +81,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
             _loading = false;
           }
         });
+        if (dur > Duration.zero && _pendingResumeMs > 0) {
+          final targetMs = _pendingResumeMs.clamp(0, dur.inMilliseconds);
+          _pendingResumeMs = 0;
+          _player.seek(Duration(milliseconds: targetMs));
+        }
       }
     });
     _player.stream.playing.listen((playing) {
@@ -106,6 +113,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _openCurrentEpisode({int resumeMs = 0}) async {
+    final session = ++_playSession;
+    _pendingResumeMs = resumeMs > 0 ? resumeMs : 0;
+    if (!_currentEpisode.isDirectPlayable) {
+      _pendingResumeMs = 0;
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _playing = false;
+          _position = Duration.zero;
+          _duration = Duration.zero;
+          _hudText = '当前剧集地址需专用插件解析，无法直接播放';
+        });
+      }
+      return;
+    }
     if (mounted) {
       setState(() {
         _loading = true;
@@ -121,12 +143,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
       Media(_currentEpisode.url, httpHeaders: headers),
       play: true,
     );
+    if (!mounted || session != _playSession) return;
     await _player.setRate(_normalSpeed);
-    if (resumeMs > 0) {
+    if (!mounted || session != _playSession) return;
+    if (_pendingResumeMs > 0) {
       Future.delayed(const Duration(milliseconds: 600), () {
-        if (mounted) {
-          _player.seek(Duration(milliseconds: resumeMs));
+        if (!mounted || session != _playSession || _pendingResumeMs <= 0) {
+          return;
         }
+        final targetMs = _pendingResumeMs;
+        _pendingResumeMs = 0;
+        _player.seek(Duration(milliseconds: targetMs));
       });
     }
     _scheduleHide();
