@@ -14,6 +14,10 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify-and-checks:
     name: Public Guardrails & Offline Java Checks
@@ -102,7 +106,7 @@ jobs:
   build-macos:
     name: Build macOS Desktop (Apple Silicon & Intel)
     needs: [verify-and-checks]
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -130,7 +134,7 @@ jobs:
   build-ios:
     name: Build iOS & iPadOS (.ipa unsigned)
     needs: [verify-and-checks]
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
