@@ -138,12 +138,17 @@ def sync(output):
             raise ValueError('Refusing to replace a published version')
     escaped = html.escape
     page = f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Marco Movie · Pilipala</title><style>body{{margin:0;background:#101013;color:#f5f5f7;font:16px/1.8 system-ui,sans-serif}}main{{max-width:900px;margin:auto;padding:64px 24px}}h1{{font-size:48px;letter-spacing:-2px}}.muted{{color:#a1a1aa}}.card{{background:#232329;border:1px solid #37373f;border-radius:28px;padding:28px;margin:24px 0}}a{{color:#9ac6ff}}.button{{display:inline-block;background:#f5f5f7;color:#111;padding:12px 24px;border-radius:18px;text-decoration:none;margin:6px 12px 6px 0}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}}code{{overflow-wrap:anywhere}}</style>
-<main><p class="muted">PILIPALA · ANDROID TV</p><h1>Marco Movie</h1><p>为遥控器和大屏幕设计的播放器。</p>
-<div class="card"><h2>{version} Preview</h2><p>Android 6.0+ · ARM 32 位 · {len(apk)/1024/1024:.1f} MB</p>
-<a class="button" href="{apk_name}">下载安装包</a><a class="button" href="{source_name}">下载同版本源码</a>
-<p><a href="{apk_name}.sha256">校验文件</a> · <a href="https://github.com/{REPO}/releases/tag/{release['tag_name']}">GitHub 发布页</a></p>
+<title>Marco Movie · 多端自适应播放器 · Pilipala</title><style>body{{margin:0;background:#101013;color:#f5f5f7;font:16px/1.8 system-ui,sans-serif}}main{{max-width:920px;margin:auto;padding:56px 24px}}h1{{font-size:48px;letter-spacing:-2px;margin:10px 0 8px}}h2{{margin-top:0}}h3{{margin:0 0 8px;color:#fff}}.muted{{color:#a1a1aa}}.card{{background:#232329;border:1px solid #37373f;border-radius:28px;padding:28px;margin:24px 0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin:24px 0}}.box{{background:#1a1b22;border:1px solid #31333d;border-radius:22px;padding:22px}}a{{color:#9ac6ff}}.button{{display:inline-block;background:#f5f5f7;color:#111;padding:12px 24px;border-radius:18px;text-decoration:none;font-weight:600;margin:6px 12px 6px 0}}.button-ghost{{display:inline-block;border:1px solid #52525b;color:#f5f5f7;padding:11px 22px;border-radius:18px;text-decoration:none;margin:6px 12px 6px 0}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:0}}code{{overflow-wrap:anywhere}}</style>
+<main><p class="muted">PILIPALA · ANDROID 电视 / 手机 / 平板 · WINDOWS · APPLE</p><h1>Marco Movie</h1><p>支持 Android 电视大屏遥控、手机与平板专属触控，以及 Windows / macOS / iOS 多端自适应的开源播放器。</p>
+<div class="card"><h2>{version} Preview</h2><p>Android 6.0+（电视 / 手机 / 平板三合一通用安装包）· ARM 32 位 · {len(apk)/1024/1024:.1f} MB</p>
+<a class="button" href="{apk_name}">下载 Android 安装包</a><a class="button-ghost" href="{source_name}">下载同版本源码</a><a class="button-ghost" href="https://github.com/{REPO}/releases/tag/{release['tag_name']}">Windows / macOS / iOS 多平台下载</a>
+<p><a href="{apk_name}.sha256">校验文件</a> · <a href="https://github.com/{REPO}/releases/tag/{release['tag_name']}">GitHub 发布页</a> · <a href="https://github.com/{REPO}/blob/main/docs/USER_GUIDE.md">使用指南</a></p>
 <p class="muted">SHA-256<br><code>{sha}</code></p></div>
+<div class="grid">
+<div class="box"><h3>📺 Android 电视端</h3><p class="muted">专为遥控器与 10 英尺大屏打造：5–8 列 2:3 海报墙、右侧悬浮图标 Dock、内置遥控全拼/首拼搜索、左固定海报 + 右独立滚动选集、小屏返回续播、局域网扫码导入配置。</p></div>
+<div class="box"><h3>📱 Android 手机 / 平板端</h3><p class="muted">完全独立的移动端触控 UI：底部固定 5 栏导航（首页、搜索、直播、我的、设置；平板横屏自动变左侧导航栏），保留系统状态栏、去除遥控白框；首页直接支持剪贴板一键粘贴与原生输入法导入（无需扫码）；支持 50 集分组触控选集与全屏横屏手势播放（双击暂停、左右滑快进、左半屏亮度、右半屏音量、长按 2 倍速）。</p></div>
+<div class="box"><h3>💻 Windows &amp; Apple 端</h3><p class="muted">提供跨平台客户端工程（覆盖 Windows x64、macOS、iPhone 与 iPad），自适应桌面侧边导航与移动端底部导航，内置硬件加速播放内核，支持与 Android 端互通备份文件。</p></div>
+</div>
 <div class="card"><h2>本次更新</h2><pre>{escaped(feed['notes'])}</pre></div>
 <p>本产品仅为工具，不内置、不提供、不托管任何影视资源或配置地址。内容与配置请自行合法获取。</p>
 <p>作者：Pilipala · <a href="LICENSE">GPL-3.0-only</a> · <a href="NOTICE">署名与许可</a> · <a href="/">Marco TV</a></p></main></html>'''

@@ -16,7 +16,25 @@ python -X utf8 scripts/build_android.py
 
 依赖来自四个 JSON 清单，每项固定版本与 SHA-256。首次构建需要联网获取软件依赖，缓存位于 `tools/`。构建生成资源、Java 字节码、DEX 和 ARM 32 位原生库，再对齐、签名和校验。
 
-输出：`dist/MarcoMovie-0.3.5-preview.apk` 及 `.sha256`；构建记录在 `android/build/build-validation.json`。生成记录中的“设备测试”字段不会因编译成功而自动改为通过。
+输出：`dist/MarcoMovie-0.4.16-preview.apk` 及 `.sha256`；构建记录在 `android/build/build-validation.json`。生成记录中的“设备测试”字段不会因编译成功而自动改为通过。
+
+## 构建 Windows / macOS / iOS 跨平台客户端
+
+跨平台工程位于 `flutter/` 目录（使用 Flutter 3.x + `media_kit` 硬件加速播放内核）。在对应平台上运行：
+
+```powershell
+cd flutter
+python prepare_platform.py
+flutter create --platforms=windows,macos,ios --org com.pilipala --project-name=marco_movie .
+python prepare_platform.py
+flutter pub get
+flutter test
+flutter build windows --release   # Windows x64
+# macOS 上可执行：flutter build macos --release
+# macOS 上构建 iOS 无签名包：flutter build ios --release --no-codesign
+```
+
+仓库也已内置 `.github/workflows/build-multiplatform.yml`，推送或手动触发后可在 GitHub Actions 云端自动生成 Windows、macOS 与 iOS 构建产物。
 
 ## 签名
 

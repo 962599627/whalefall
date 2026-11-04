@@ -1046,7 +1046,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         ),
         const SizedBox(height: 24),
         const Text(
-          '关于 Marco Movie (0.4.15 Multiplatform)\n'
+          '关于 Marco Movie (0.4.16 Multiplatform)\n'
           '本产品仅为播放工具，不内置、不提供、不托管任何影视资源或配置地址。',
           style: TextStyle(color: Color(0xFF71717A), fontSize: 12, height: 1.5),
         ),
