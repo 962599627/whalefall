@@ -62,9 +62,10 @@ Marco Movie 希望让电视上的浏览、搜索和播放更简单：用大幅�
 ## 项目结构与开发
 
 ```text
-android/src/main/       原生应用代码、界面资源、输入词典与第三方许可
+android/src/main/       原生 Android 应用代码（手机 / 平板 / 电视三合一自适应）、输入词典与第三方许可
 android/tests/          本地模拟数据测试，不包含真实影视配置
 android/*dependencies.json  固定版本依赖及校验摘要
+flutter/                跨平台客户端工程（覆盖 Windows / macOS / iPhone / iPad，与安卓端互通备份）
 scripts/               构建、依赖准备、公开内容检查
 docs/                  产品、使用、构建、隐私与验证说明
 ```

@@ -240,6 +240,26 @@ public final class ReviewFixChecks {
                 "AppLog ring buffer evicts oldest entries beyond capacity");
         AppLog.clear();
 
+        check(
+                TvLayoutPolicy.formFactor(true, true, 360) == TvLayoutPolicy.FORM_TV
+                        && TvLayoutPolicy.formFactor(false, false, 800) == TvLayoutPolicy.FORM_TV
+                        && TvLayoutPolicy.formFactor(false, true, 720) == TvLayoutPolicy.FORM_TABLET
+                        && TvLayoutPolicy.formFactor(false, true, 390) == TvLayoutPolicy.FORM_PHONE,
+                "form factor distinguishes TV, tablet, and phone");
+        check(
+                TvLayoutPolicy.useBottomDock(1080, 2400, TvLayoutPolicy.FORM_PHONE)
+                        && !TvLayoutPolicy.useBottomDock(2400, 1080, TvLayoutPolicy.FORM_PHONE)
+                        && !TvLayoutPolicy.useBottomDock(1920, 1080, TvLayoutPolicy.FORM_TV),
+                "bottom navigation dock activates in portrait mode on touch devices");
+        check(
+                TvLayoutPolicy.responsiveHomeColumns(390, 5, TvLayoutPolicy.FORM_PHONE, true) == 3
+                        && TvLayoutPolicy.responsiveHomeColumns(
+                                        960, 5, TvLayoutPolicy.FORM_TV, false)
+                                == 5
+                        && TvLayoutPolicy.catalogColumns(390, TvLayoutPolicy.FORM_PHONE, true) == 3
+                        && TvLayoutPolicy.catalogColumns(960, TvLayoutPolicy.FORM_TV, false) == 4,
+                "responsive home and catalog grids adapt column count across phone, tablet, and TV");
+
         System.out.println(
                 "OK " + checks + " review regression checks; no device performance claim.");
     }

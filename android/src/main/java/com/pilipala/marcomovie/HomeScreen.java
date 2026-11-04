@@ -64,9 +64,11 @@ final class HomeScreen {
         a = activity;
         site = selected;
         COLUMNS =
-                TvLayoutPolicy.homeColumns(
+                TvLayoutPolicy.responsiveHomeColumns(
                         a.windowWidth() / a.getResources().getDisplayMetrics().density,
-                        a.prefs.getInt(Prefs.HOME_COLUMNS, 5));
+                        a.prefs.getInt(Prefs.HOME_COLUMNS, 5),
+                        a.formFactor,
+                        a.isPortrait());
     }
 
     boolean active() {
@@ -83,12 +85,18 @@ final class HomeScreen {
             state = new State(site.key);
             if (a.current != null) a.current.homeState = state;
         }
-        a.body.setPadding(a.dp(34), a.dp(18), a.dp(100), a.dp(36));
+        boolean bottomDock = a.useBottomDock();
+        if (bottomDock) {
+            a.body.setPadding(a.dp(18), a.dp(16), a.dp(18), a.dp(86));
+        } else {
+            a.body.setPadding(a.dp(34), a.dp(18), a.dp(100), a.dp(36));
+        }
         a.body.setClipChildren(false);
         a.body.setClipToPadding(false);
         a.scroll.setClipChildren(false);
         float width = a.windowWidth() / a.getResources().getDisplayMetrics().density;
-        posterWidth = Math.max(48, (int) ((width - 134 - (COLUMNS - 1) * 14) / COLUMNS) - 8);
+        int marginDp = bottomDock ? 36 : 134;
+        posterWidth = Math.max(48, (int) ((width - marginDp - (COLUMNS - 1) * 14) / COLUMNS) - 8);
         historySection();
         LinearLayout heading = a.row();
         heading.setPadding(0, a.dp(4), 0, a.dp(4));
@@ -199,7 +207,8 @@ final class HomeScreen {
     void historySection() {
         List<WatchHistory.Entry> entries = a.watchHistory();
         if (entries.isEmpty()) return;
-        LinearLayout section = a.row();
+        boolean compactStack = a.useBottomDock();
+        LinearLayout section = compactStack ? a.vertical() : a.row();
         section.setTag("home-history-section");
         section.setGravity(Gravity.TOP);
         section.setClipChildren(false);
@@ -210,10 +219,17 @@ final class HomeScreen {
         past.setClipChildren(false);
         past.setClipToPadding(false);
         section.setClipToPadding(false);
-        LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, -2, 1);
-        left.rightMargin = a.dp(20);
-        section.addView(resume, left);
-        section.addView(past, new LinearLayout.LayoutParams(0, -2, 3));
+        if (compactStack) {
+            LinearLayout.LayoutParams top = new LinearLayout.LayoutParams(-1, -2);
+            top.bottomMargin = a.dp(10);
+            section.addView(resume, top);
+            section.addView(past, new LinearLayout.LayoutParams(-1, -2));
+        } else {
+            LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, -2, 1);
+            left.rightMargin = a.dp(20);
+            section.addView(resume, left);
+            section.addView(past, new LinearLayout.LayoutParams(0, -2, 3));
+        }
         TextView title = a.text("继续播放", 17, MainActivity.WHITE);
         title.setTypeface(null, Typeface.BOLD);
         title.setGravity(Gravity.CENTER_VERTICAL);

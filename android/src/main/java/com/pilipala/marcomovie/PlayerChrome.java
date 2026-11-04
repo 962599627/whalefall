@@ -32,7 +32,22 @@ final class PlayerChrome {
         overlay.addView(bottomShade, new FrameLayout.LayoutParams(-1, a.dp(210), Gravity.BOTTOM));
         heading = a.vertical();
         heading.setTag("player-heading");
-        TextView title = a.text(video.title, 26, MainActivity.WHITE);
+        if (!a.isTvDevice()) {
+            LinearLayout topActions = a.row();
+            topActions.setPadding(0, 0, 0, a.dp(8));
+            Button backBtn = a.navButton("‹ 返回", "player-back", a::leavePlayback);
+            backBtn.setTextColor(MainActivity.WHITE);
+            backBtn.setBackground(a.bg(0x44000000, 16));
+            topActions.addView(backBtn, new LinearLayout.LayoutParams(-2, a.dp(34)));
+            View spacer = new View(a);
+            topActions.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
+            Button rotateBtn = a.navButton("旋转屏幕", "player-rotate", a::togglePlayerOrientation);
+            rotateBtn.setTextColor(MainActivity.WHITE);
+            rotateBtn.setBackground(a.bg(0x44000000, 16));
+            topActions.addView(rotateBtn, new LinearLayout.LayoutParams(-2, a.dp(34)));
+            heading.addView(topActions, new LinearLayout.LayoutParams(-1, -2));
+        }
+        TextView title = a.text(video.title, a.isPortrait() ? 20 : 26, MainActivity.WHITE);
         title.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         title.getPaint().setFakeBoldText(true);
         title.setSingleLine();
@@ -55,7 +70,8 @@ final class PlayerChrome {
         a.playStatus.setPadding(0, a.dp(6), 0, 0);
         heading.addView(a.playStatus);
         FrameLayout.LayoutParams top = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
-        top.setMargins(a.dp(44), a.dp(30), a.dp(44), 0);
+        int sideMargin = a.isPortrait() ? a.dp(20) : a.dp(44);
+        top.setMargins(sideMargin, a.dp(24), sideMargin, 0);
         overlay.addView(heading, top);
 
         progress = a.vertical();
@@ -67,7 +83,7 @@ final class PlayerChrome {
         int width = a.windowWidth();
         FrameLayout.LayoutParams track =
                 new FrameLayout.LayoutParams(
-                        Math.min(a.dp(760), width - a.dp(88)),
+                        Math.min(a.dp(760), Math.max(a.dp(220), width - a.dp(48))),
                         -2,
                         Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         track.bottomMargin = a.dp(94);
@@ -83,7 +99,7 @@ final class PlayerChrome {
         dock.setElevation(a.dp(10));
         FrameLayout.LayoutParams bottom =
                 new FrameLayout.LayoutParams(
-                        Math.min(a.dp(552), width - a.dp(64)),
+                        Math.min(a.dp(552), Math.max(a.dp(240), width - a.dp(32))),
                         -2,
                         Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         bottom.bottomMargin = a.dp(16);
@@ -101,6 +117,20 @@ final class PlayerChrome {
         a.playbackLayer.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         a.playerOverlay = overlay;
         a.controlsVisible = true;
+    }
+
+    void relayout() {
+        int width = a.windowWidth();
+        ViewGroup.LayoutParams p = progress.getLayoutParams();
+        if (p != null) {
+            p.width = Math.min(a.dp(760), Math.max(a.dp(220), width - a.dp(48)));
+            progress.setLayoutParams(p);
+        }
+        ViewGroup.LayoutParams d = dock.getLayoutParams();
+        if (d != null) {
+            d.width = Math.min(a.dp(552), Math.max(a.dp(240), width - a.dp(32)));
+            dock.setLayoutParams(d);
+        }
     }
 
     void resolution(int width, int height) {

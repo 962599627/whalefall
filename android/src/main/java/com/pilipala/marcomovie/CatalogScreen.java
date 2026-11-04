@@ -74,9 +74,14 @@ final class CatalogScreen {
                 },
                 list -> {
                     if (list.videos.isEmpty()) a.paragraph("这一页没有影片。");
+                    int cols =
+                            TvLayoutPolicy.catalogColumns(
+                                    a.windowWidth() / a.getResources().getDisplayMetrics().density,
+                                    a.formFactor,
+                                    a.isPortrait());
                     LinearLayout cards = null;
                     for (int i = 0; i < list.videos.size(); i++) {
-                        if (i % 4 == 0) {
+                        if (i % cols == 0) {
                             cards = a.row();
                             cards.setGravity(Gravity.TOP);
                             cards.setClipChildren(false);
@@ -133,9 +138,9 @@ final class CatalogScreen {
                                                 1.035f));
                     }
                     if (cards != null) {
-                        int remainder = list.videos.size() % 4;
+                        int remainder = list.videos.size() % cols;
                         if (remainder > 0)
-                            for (int i = remainder; i < 4; i++) {
+                            for (int i = remainder; i < cols; i++) {
                                 LinearLayout.LayoutParams blank =
                                         new LinearLayout.LayoutParams(0, 1, 1);
                                 blank.setMargins(a.dp(5), a.dp(5), a.dp(14), a.dp(19));

@@ -15,20 +15,31 @@ final class HomeDock {
         "nav-home", "nav-search", "nav-live", "nav-favorites", "nav-accounts", "nav-settings"
     };
 
+    final boolean bottomMode;
+
     HomeDock(MainActivity host) {
         a = host;
-        rail = a.vertical();
+        bottomMode = a.useBottomDock();
+        rail = bottomMode ? a.row() : a.vertical();
         rail.setTag("home-dock");
         rail.setGravity(Gravity.CENTER);
-        rail.setPadding(a.dp(6), a.dp(8), a.dp(6), a.dp(8));
+        rail.setPadding(
+                a.dp(bottomMode ? 10 : 6),
+                a.dp(bottomMode ? 6 : 8),
+                a.dp(bottomMode ? 10 : 6),
+                a.dp(bottomMode ? 6 : 8));
         android.graphics.drawable.GradientDrawable background = a.bg(0xee242429, 25);
         background.setStroke(a.dp(1), 0x16ffffff);
         rail.setBackground(background);
         rail.setElevation(a.dp(8));
         FrameLayout.LayoutParams size =
-                new FrameLayout.LayoutParams(
-                        a.dp(50), a.dp(292), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        size.rightMargin = a.dp(20);
+                bottomMode
+                        ? new FrameLayout.LayoutParams(
+                                a.dp(296), a.dp(50), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL)
+                        : new FrameLayout.LayoutParams(
+                                a.dp(50), a.dp(292), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        if (bottomMode) size.bottomMargin = a.dp(14);
+        else size.rightMargin = a.dp(20);
         a.root.addView(rail, size);
         hint = a.text("", 12, MainActivity.WHITE);
         hint.setTag("home-dock-label");
@@ -68,8 +79,13 @@ final class HomeDock {
             icon.setSelected(i == 0);
             a.pressFeedback(icon);
             LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(a.dp(38), a.dp(38));
-            cell.topMargin = a.dp(4);
-            cell.bottomMargin = a.dp(4);
+            if (bottomMode) {
+                cell.leftMargin = a.dp(4);
+                cell.rightMargin = a.dp(4);
+            } else {
+                cell.topMargin = a.dp(4);
+                cell.bottomMargin = a.dp(4);
+            }
             rail.addView(icon, cell);
             icon.setOnClickListener(v -> actions[index].run());
             icon.setOnFocusChangeListener(
@@ -86,7 +102,7 @@ final class HomeDock {
                                 MainActivity.DARK,
                                 false,
                                 1.045f);
-                        if (focused) showLabel(index);
+                        if (focused && !bottomMode) showLabel(index);
                         else {
                             hint.animate().cancel();
                             hint.animate()
@@ -102,9 +118,14 @@ final class HomeDock {
                     });
         }
         for (int i = 0; i < items.length; i++) {
-            items[i].setNextFocusUpId(items[Math.max(0, i - 1)].getId());
-            items[i].setNextFocusDownId(items[Math.min(5, i + 1)].getId());
-            items[i].setNextFocusRightId(items[i].getId());
+            if (bottomMode) {
+                items[i].setNextFocusLeftId(items[Math.max(0, i - 1)].getId());
+                items[i].setNextFocusRightId(items[Math.min(5, i + 1)].getId());
+            } else {
+                items[i].setNextFocusUpId(items[Math.max(0, i - 1)].getId());
+                items[i].setNextFocusDownId(items[Math.min(5, i + 1)].getId());
+                items[i].setNextFocusRightId(items[i].getId());
+            }
         }
         a.root.getViewTreeObserver()
                 .addOnGlobalFocusChangeListener(

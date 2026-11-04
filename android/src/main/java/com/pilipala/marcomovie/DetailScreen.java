@@ -34,47 +34,74 @@ final class DetailScreen {
             return;
         }
         a.renderPage("", "", false);
-        a.body.setPadding(a.dp(34), a.dp(14), a.dp(40), a.dp(30));
+        boolean portraitLayout = a.isPortrait() && !a.isTvDevice();
+        if (portraitLayout) {
+            a.body.setPadding(a.dp(18), a.dp(14), a.dp(18), a.dp(32));
+        } else {
+            a.body.setPadding(a.dp(34), a.dp(14), a.dp(40), a.dp(30));
+        }
         TextView backButton = a.navButton("‹ 返回", "detail-back", a::onBackPressed);
         a.body.addView(backButton, new LinearLayout.LayoutParams(a.dp(82), a.dp(32)));
         a.gap(a.body, 8);
-        LinearLayout hero = a.row();
+        LinearLayout hero = portraitLayout ? a.vertical() : a.row();
         hero.setTag("detail-hero");
         hero.setGravity(Gravity.TOP);
-        a.body.addView(
-                hero,
-                new LinearLayout.LayoutParams(
-                        -1,
-                        a.dp(
-                                a.windowHeight() / a.getResources().getDisplayMetrics().density
-                                        - 84)));
+        if (portraitLayout) {
+            a.body.addView(hero, new LinearLayout.LayoutParams(-1, -2));
+        } else {
+            a.body.addView(
+                    hero,
+                    new LinearLayout.LayoutParams(
+                            -1,
+                            a.dp(
+                                    a.windowHeight() / a.getResources().getDisplayMetrics().density
+                                            - 84)));
+        }
         ImmersivePoster cover = new ImmersivePoster(a, "detail-cover");
         a.root.addView(cover.backdrop, 1, new FrameLayout.LayoutParams(-1, -1));
         float screenHeight = a.windowHeight() / a.getResources().getDisplayMetrics().density;
-        int coverWidth = Math.round(Math.min(300, Math.max(224, (screenHeight - 132) / 1.5f)));
+        int coverWidth =
+                portraitLayout
+                        ? 148
+                        : Math.round(Math.min(300, Math.max(224, (screenHeight - 132) / 1.5f)));
         LinearLayout posterColumn = a.vertical();
         posterColumn.setTag("detail-poster-column");
-        LinearLayout.LayoutParams columnSize = new LinearLayout.LayoutParams(a.dp(coverWidth), -1);
-        columnSize.rightMargin = a.dp(30);
-        hero.addView(posterColumn, columnSize);
-        TextView title = a.text(listing.title, 26, MainActivity.WHITE);
+        if (portraitLayout) {
+            LinearLayout.LayoutParams columnSize = new LinearLayout.LayoutParams(-1, -2);
+            columnSize.bottomMargin = a.dp(14);
+            hero.addView(posterColumn, columnSize);
+        } else {
+            LinearLayout.LayoutParams columnSize =
+                    new LinearLayout.LayoutParams(a.dp(coverWidth), -1);
+            columnSize.rightMargin = a.dp(30);
+            hero.addView(posterColumn, columnSize);
+        }
+        TextView title = a.text(listing.title, portraitLayout ? 22 : 26, MainActivity.WHITE);
         title.setTag("detail-title");
         title.setTypeface(null, Typeface.BOLD);
         title.setMaxLines(2);
         title.setEllipsize(TextUtils.TruncateAt.END);
         posterColumn.addView(title);
         a.gap(posterColumn, 10);
-        posterColumn.addView(cover, new LinearLayout.LayoutParams(-1, 0, 1));
+        if (portraitLayout) {
+            posterColumn.addView(cover, new LinearLayout.LayoutParams(a.dp(148), a.dp(220)));
+        } else {
+            posterColumn.addView(cover, new LinearLayout.LayoutParams(-1, 0, 1));
+        }
         cover.load(listing.poster);
-        ScrollView detailsScroll = new TvScrollView(a);
-        detailsScroll.setTag("detail-scroll");
-        detailsScroll.setClipToPadding(false);
-        detailsScroll.setVerticalScrollBarEnabled(false);
         LinearLayout info = a.vertical();
         info.setClipChildren(false);
-        detailsScroll.addView(info, new ScrollView.LayoutParams(-1, -2));
-        hero.addView(detailsScroll, new LinearLayout.LayoutParams(0, -1, 1));
-        a.scroll = detailsScroll;
+        if (portraitLayout) {
+            hero.addView(info, new LinearLayout.LayoutParams(-1, -2));
+        } else {
+            ScrollView detailsScroll = new TvScrollView(a);
+            detailsScroll.setTag("detail-scroll");
+            detailsScroll.setClipToPadding(false);
+            detailsScroll.setVerticalScrollBarEnabled(false);
+            detailsScroll.addView(info, new ScrollView.LayoutParams(-1, -2));
+            hero.addView(detailsScroll, new LinearLayout.LayoutParams(0, -1, 1));
+            a.scroll = detailsScroll;
+        }
         info.setPadding(0, a.dp(4), 0, 0);
         TextView state = a.text("正在读取详情与剧集…", 14, MainActivity.MUTED);
         state.setTag("detail-loading");

@@ -306,6 +306,9 @@ final class PlaybackController {
 
     static void showEpisodeDetails(MainActivity a, Cms.Site site, Cms.Video video) {
         releasePlayer(a);
+        if (!a.isTvDevice()) {
+            a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
+        }
         if (a.current != null && a.current.player)
             a.current =
                     a.back.isEmpty()
@@ -318,6 +321,9 @@ final class PlaybackController {
     }
 
     static void leavePlayback(MainActivity a) {
+        if (!a.isTvDevice()) {
+            a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
+        }
         if (!a.back.isEmpty()) {
             releasePlayer(a);
             a.current = a.back.pop();
@@ -402,6 +408,7 @@ final class PlaybackController {
         a.playbackControls =
                 new PlaybackControls(
                         a, a.playerChrome.dock, a.playerChrome.progress, surface, s, v, ep);
+        TouchPlayerGesture.attach(a, surface);
         final PlaybackControls controls = a.playbackControls;
         a.setContentView(a.root);
         surface.listen(

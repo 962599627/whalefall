@@ -151,6 +151,54 @@ public final class MainActivity extends Activity {
     static int[] viewportHint;
     boolean layoutReady, layoutIntro;
     int usableWidth, usableHeight;
+    int formFactor = TvLayoutPolicy.FORM_TV;
+
+    static int detectFormFactor(Context base, int widthPixels, int heightPixels, int densityDpi) {
+        boolean tvMode = false;
+        try {
+            UiModeManager uiMode = (UiModeManager) base.getSystemService(Context.UI_MODE_SERVICE);
+            tvMode =
+                    uiMode != null
+                            && uiMode.getCurrentModeType()
+                                    == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION;
+        } catch (Exception ignored) {
+        }
+        boolean hasTouch = false;
+        try {
+            hasTouch =
+                    base.getPackageManager()
+                            .hasSystemFeature(
+                                    android.content.pm.PackageManager.FEATURE_TOUCHSCREEN);
+        } catch (Exception ignored) {
+        }
+        int smallestDp =
+                densityDpi > 0
+                        ? Math.round(Math.min(widthPixels, heightPixels) * 160f / densityDpi)
+                        : 360;
+        return TvLayoutPolicy.formFactor(tvMode, hasTouch, smallestDp);
+    }
+
+    boolean isTvDevice() {
+        return formFactor == TvLayoutPolicy.FORM_TV;
+    }
+
+    boolean isPortrait() {
+        return TvLayoutPolicy.isPortrait(windowWidth(), windowHeight());
+    }
+
+    boolean useBottomDock() {
+        return TvLayoutPolicy.useBottomDock(windowWidth(), windowHeight(), formFactor);
+    }
+
+    void togglePlayerOrientation() {
+        if (isTvDevice()) return;
+        if (isPortrait()) {
+            setRequestedOrientation(
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        } else {
+            setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        }
+    }
 
     int windowWidth() {
         return usableWidth > 0 ? usableWidth : getResources().getDisplayMetrics().widthPixels;
@@ -166,6 +214,8 @@ public final class MainActivity extends Activity {
         ((WindowManager) base.getSystemService(Context.WINDOW_SERVICE))
                 .getDefaultDisplay()
                 .getMetrics(screen);
+        int detectedForm =
+                detectFormFactor(base, screen.widthPixels, screen.heightPixels, screen.densityDpi);
         int percent = base.getSharedPreferences(Prefs.FILE, 0).getInt(Prefs.UI_SCALE_PERCENT, 100);
         int[] hint = viewportHint;
         if (hint != null && hint[0] == screen.widthPixels && hint[1] == screen.heightPixels) {
@@ -175,12 +225,18 @@ public final class MainActivity extends Activity {
         android.content.res.Configuration layout =
                 new android.content.res.Configuration(base.getResources().getConfiguration());
         layout.densityDpi =
-                TvLayoutPolicy.densityDpi(screen.widthPixels, screen.heightPixels, percent);
+                TvLayoutPolicy.deviceDensityDpi(
+                        screen.widthPixels, screen.heightPixels, percent, detectedForm);
         float density = layout.densityDpi / 160f;
-        layout.screenWidthDp =
-                Math.round(Math.max(screen.widthPixels, screen.heightPixels) / density);
-        layout.screenHeightDp =
-                Math.round(Math.min(screen.widthPixels, screen.heightPixels) / density);
+        if (detectedForm == TvLayoutPolicy.FORM_TV) {
+            layout.screenWidthDp =
+                    Math.round(Math.max(screen.widthPixels, screen.heightPixels) / density);
+            layout.screenHeightDp =
+                    Math.round(Math.min(screen.widthPixels, screen.heightPixels) / density);
+        } else {
+            layout.screenWidthDp = Math.round(screen.widthPixels / density);
+            layout.screenHeightDp = Math.round(screen.heightPixels / density);
+        }
         layout.smallestScreenWidthDp = Math.min(layout.screenWidthDp, layout.screenHeightDp);
         super.attachBaseContext(base.createConfigurationContext(layout));
     }
@@ -188,6 +244,15 @@ public final class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle b) {
         super.onCreate(b);
+        android.util.DisplayMetrics rawScreen = new android.util.DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getMetrics(rawScreen);
+        formFactor =
+                detectFormFactor(
+                        this, rawScreen.widthPixels, rawScreen.heightPixels, rawScreen.densityDpi);
+        setRequestedOrientation(
+                isTvDevice()
+                        ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                        : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
         configStore = new ConfigStore(getFilesDir());
         getWindow().getDecorView().setSystemUiVisibility(5894);
         prefs = getSharedPreferences(Prefs.FILE, MODE_PRIVATE);
@@ -256,8 +321,11 @@ public final class MainActivity extends Activity {
                         usableWidth = width;
                         usableHeight = height;
                         int expected =
-                                TvLayoutPolicy.densityDpi(
-                                        width, height, prefs.getInt(Prefs.UI_SCALE_PERCENT, 100));
+                                TvLayoutPolicy.deviceDensityDpi(
+                                        width,
+                                        height,
+                                        prefs.getInt(Prefs.UI_SCALE_PERCENT, 100),
+                                        formFactor);
                         if (expected != getResources().getDisplayMetrics().densityDpi) {
                             android.util.DisplayMetrics display = new android.util.DisplayMetrics();
                             getWindowManager().getDefaultDisplay().getMetrics(display);
@@ -275,6 +343,29 @@ public final class MainActivity extends Activity {
                                     layoutReady = true;
                                     if (layoutIntro) StartupIntro.show(MainActivity.this);
                                 });
+                    }
+                });
+    }
+
+    @Override
+    public void onConfigurationChanged(android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (!layoutReady || root == null) return;
+        root.post(
+                () -> {
+                    if (isFinishing() || isDestroyed() || root == null) return;
+                    int w = root.getWidth(), h = root.getHeight();
+                    if (w > 0 && h > 0 && (w != usableWidth || h != usableHeight)) {
+                        usableWidth = w;
+                        usableHeight = h;
+                        if (current != null && current.player) {
+                            if (playerChrome != null) playerChrome.relayout();
+                            if (playbackControls != null)
+                                playbackControls.resize(
+                                        playbackControls.videoWidth, playbackControls.videoHeight);
+                        } else if (current != null) {
+                            refresh();
+                        }
                     }
                 });
     }
@@ -443,13 +534,21 @@ public final class MainActivity extends Activity {
         body = vertical();
         body.setClipChildren(false);
         body.setClipToPadding(false);
-        body.setPadding(dp(46), dp(26), dp(46), dp(44));
+        if (isPortrait() && !isTvDevice()) {
+            body.setPadding(dp(18), dp(18), dp(18), dp(36));
+        } else {
+            body.setPadding(dp(46), dp(26), dp(46), dp(44));
+        }
         scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
         root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         setContentView(root);
         homeDock = null;
         if (navigation) {
-            body.setPadding(dp(34), dp(18), dp(100), dp(36));
+            if (useBottomDock()) {
+                body.setPadding(dp(18), dp(16), dp(18), dp(86));
+            } else {
+                body.setPadding(dp(34), dp(18), dp(100), dp(36));
+            }
             LinearLayout brandRow = row();
             brandRow.setTag("home-brand");
             ImageView brandMark = new ImageView(this);
