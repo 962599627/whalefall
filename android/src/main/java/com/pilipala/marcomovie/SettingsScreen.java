@@ -277,6 +277,11 @@ final class SettingsScreen {
                 a::importDialog);
         toggle("启用来源扩展", Prefs.EXPERIMENTAL_CSP, false, a::closeEngines);
         link(
+                "网盘与账号",
+                "网盘扫码登录、凭据与网盘顺序（由配置提供）",
+                "settings-accounts",
+                () -> AccountPanel.show(a, null));
+        link(
                 "备份配置与偏好",
                 "导出配置与偏好，请妥善保管；不含插件单独保存的登录状态",
                 "settings-backup",
@@ -323,7 +328,7 @@ final class SettingsScreen {
                                     a.recreate();
                                 }));
         a.paragraph(
-                "Marco Movie 0.4.17 · 作者 Pilipala · github.com/Pilipala9919/MarcoMovie。本产品仅为工具，不含任何影视资源；内容与配置请自行合法获取。播放能力取决于服务授权和设备支持。");
+                "Marco Movie 0.4.20 · 作者 Pilipala · github.com/Pilipala9919/MarcoMovie。本产品仅为工具，不含任何影视资源；内容与配置请自行合法获取。播放能力取决于服务授权和设备支持。");
     }
 
     void confirm(String title, Runnable action) {

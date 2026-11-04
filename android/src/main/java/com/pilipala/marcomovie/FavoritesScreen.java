@@ -98,7 +98,7 @@ final class FavoritesScreen {
             return;
         }
         Cms.Site selected = found;
-        a.open(new MainActivity.Screen(() -> a.detail(selected, e.video())), true);
+        a.openListing(selected, e.video());
     }
 
     void manage(Favorites.Entry e) {

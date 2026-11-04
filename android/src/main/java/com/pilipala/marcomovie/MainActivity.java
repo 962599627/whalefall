@@ -144,9 +144,98 @@ public final class MainActivity extends Activity {
         boolean player, home;
         HomeScreen.State homeState;
 
+        /** True while a listing redirect (folder / action / cross-search) has not drawn a page. */
+        boolean redirect;
+
         Screen(Runnable r) {
             render = r;
         }
+    }
+
+    /** Foreground activity that source extensions may need for dialogs; cleared on destroy. */
+    static volatile MainActivity activeActivity;
+
+    /**
+     * Extension background threads must never take the whole app down. Main-thread errors and
+     * crashes without extension frames still reach the system handler unchanged.
+     */
+    static boolean isPluginBackgroundCrash(Thread thread, Throwable error, Thread mainThread) {
+        return ListingRoute.isPluginBackgroundCrash(thread, error, mainThread);
+    }
+
+    private static volatile boolean crashGuardInstalled;
+
+    static void installPluginCrashGuard() {
+        if (crashGuardInstalled) return;
+        crashGuardInstalled = true;
+        final Thread.UncaughtExceptionHandler previous =
+                Thread.getDefaultUncaughtExceptionHandler();
+        final Thread main = android.os.Looper.getMainLooper().getThread();
+        Thread.setDefaultUncaughtExceptionHandler(
+                (thread, error) -> {
+                    if (isPluginBackgroundCrash(thread, error, main)) {
+                        AppLog.w(
+                                "PluginGuard",
+                                "extension thread failed: " + thread.getName(),
+                                error);
+                        MainActivity activity = activeActivity;
+                        if (activity != null)
+                            activity.ui.post(
+                                    () -> {
+                                        if (!activity.isFinishing())
+                                            activity.toast("来源扩展出错，已拦截，应用继续运行");
+                                    });
+                        return;
+                    }
+                    if (previous != null) previous.uncaughtException(thread, error);
+                });
+    }
+
+    /** Opens a list card without leaving an invisible redirect page in the back stack. */
+    void openListing(Cms.Site s, Cms.Video v) {
+        if (v == null) return;
+        if (v.action != null && !v.action.isEmpty()) {
+            sourceAction(s, v.action);
+            return;
+        }
+        if ("folder".equalsIgnoreCase(v.tag)) {
+            open(new Screen(() -> videos(s, v.id, v.title, 1, null)), true);
+            return;
+        }
+        if (v.id != null && v.id.startsWith("msearch:")) {
+            crossSearch(Cms.searchTitle(v));
+            return;
+        }
+        open(new Screen(() -> detail(s, v)), true);
+    }
+
+    /**
+     * Called by a detail redirect that will not draw its own page. Restores the page underneath
+     * so Back never re-runs the redirect forever.
+     */
+    void dropRedirect() {
+        if (current != null && current.redirect && !back.isEmpty()) current = back.pop();
+    }
+
+    static boolean isRedirectListing(Cms.Video v) {
+        return v != null && ListingRoute.isRedirect(v.tag, v.action, v.id);
+    }
+
+    /**
+     * Detail pages reached for a folder, action or cross-search card hand over to the real page.
+     * The invisible detail screen is removed first, so Back returns to the list instead of
+     * re-opening the folder in a loop.
+     */
+    boolean redirectListing(Cms.Site s, Cms.Video v) {
+        if (!isRedirectListing(v)) return false;
+        if (current != null) current.redirect = true;
+        if (back.isEmpty() && "folder".equalsIgnoreCase(v.tag)) {
+            open(new Screen(() -> videos(s, v.id, v.title, 1, null)), false);
+            return true;
+        }
+        dropRedirect();
+        openListing(s, v);
+        return true;
     }
 
     interface Work<T> {
@@ -253,6 +342,8 @@ public final class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle b) {
         super.onCreate(b);
+        activeActivity = this;
+        installPluginCrashGuard();
         android.util.DisplayMetrics rawScreen = new android.util.DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(rawScreen);
         formFactor =
@@ -1172,6 +1263,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onStart() {
         super.onStart();
+        activeActivity = this;
         foreground = true;
         UpdateManager.get(this)
                 .listen(
@@ -1220,6 +1312,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (activeActivity == this) activeActivity = null;
         clearPlaybackLoading();
         if (phoneConfig != null) phoneConfig.close();
         if (startupIntro != null) startupIntro.cancel();

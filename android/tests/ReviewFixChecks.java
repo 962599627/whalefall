@@ -275,6 +275,36 @@ public final class ReviewFixChecks {
                         && TvLayoutPolicy.catalogColumns(960, TvLayoutPolicy.FORM_TV, false) == 4,
                 "responsive home and catalog grids adapt column count across phone, tablet, and TV");
 
+        check(
+                ListingRoute.isRedirect("folder", null, "a")
+                        && ListingRoute.isRedirect("FOLDER", "", "a")
+                        && ListingRoute.isRedirect(null, "{\"action\":\"x\"}", "a")
+                        && ListingRoute.isRedirect(null, null, "msearch:title")
+                        && !ListingRoute.isRedirect(null, null, "vod-1")
+                        && !ListingRoute.isRedirect("", "", null),
+                "folder, action and cross-search cards route away from detail pages");
+        Thread main = Thread.currentThread();
+        Thread worker = new Thread(() -> {}, "pool-1-thread-1");
+        RuntimeException pluginError = new NullPointerException("context");
+        pluginError.setStackTrace(
+                new StackTraceElement[] {
+                    new StackTraceElement("com.github.catvod.spider.merge.yP", "yq", null, 1),
+                    new StackTraceElement("java.lang.Thread", "run", null, 764)
+                });
+        RuntimeException appError = new IllegalStateException("app");
+        appError.setStackTrace(
+                new StackTraceElement[] {
+                    new StackTraceElement("com.pilipala.marcomovie.HomeScreen", "show", null, 1)
+                });
+        check(
+                ListingRoute.isPluginBackgroundCrash(worker, pluginError, main)
+                        && ListingRoute.isPluginBackgroundCrash(
+                                worker, new RuntimeException("wrap", pluginError), main)
+                        && !ListingRoute.isPluginBackgroundCrash(main, pluginError, main)
+                        && !ListingRoute.isPluginBackgroundCrash(worker, appError, main)
+                        && !ListingRoute.isPluginBackgroundCrash(null, pluginError, main),
+                "only extension crashes on background threads are contained");
+
         System.out.println(
                 "OK " + checks + " review regression checks; no device performance claim.");
     }

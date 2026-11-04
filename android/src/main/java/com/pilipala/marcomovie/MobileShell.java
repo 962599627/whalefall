@@ -669,8 +669,7 @@ final class MobileShell {
             LinearLayout card = a.vertical();
             card.setTag(i == 0 ? "primary" : "video:" + v.id);
             MobileDetailScreen.bindTouchFeedback(card);
-            card.setOnClickListener(
-                    view -> a.open(new MainActivity.Screen(() -> a.detail(site, v)), true));
+            card.setOnClickListener(view -> a.openListing(site, v));
 
             FrameLayout art = new FrameLayout(a);
             art.setBackground(a.bg(0xff1e2230, 10));
@@ -1045,8 +1044,7 @@ final class MobileShell {
         row.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
         row.setBackground(a.bg(0xff181922, 14));
         MobileDetailScreen.bindTouchFeedback(row);
-        row.setOnClickListener(
-                view -> a.open(new MainActivity.Screen(() -> a.detail(site, v)), true));
+        row.setOnClickListener(view -> a.openListing(site, v));
 
         ImageView poster = new ImageView(a);
         poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -1440,10 +1438,7 @@ final class MobileShell {
                                             }
                                             final Cms.Site resolvedSite = targetSite;
                                             Cms.Video video = f.video();
-                                            a.open(
-                                                    new MainActivity.Screen(
-                                                            () -> a.detail(resolvedSite, video)),
-                                                    true);
+                                            a.openListing(resolvedSite, video);
                                         });
 
                                 LinearLayout.LayoutParams lp =
@@ -1515,6 +1510,7 @@ final class MobileShell {
                     renderSettingsTab();
                     a.toast(!cspEnabled ? "已开启扩展片源支持" : "已关闭扩展片源支持");
                 });
+        addSettingCard(body, "☁ 网盘与账号", "网盘扫码登录、凭据与网盘顺序（由配置提供）", () -> AccountPanel.show(a, null));
 
         a.gap(body, 12);
         addSectionHeader(body, "播放与解码偏好");

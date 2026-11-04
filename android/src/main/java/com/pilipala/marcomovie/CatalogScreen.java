@@ -18,9 +18,18 @@ import java.util.List;
 final class CatalogScreen {
     private CatalogScreen() {}
 
+    /** Visible back entry so remote and touch users can always leave a library page. */
+    static void addBack(MainActivity a, String tag) {
+        a.body.addView(
+                a.navButton("‹ 返回", tag, a::onBackPressed),
+                new LinearLayout.LayoutParams(a.dp(82), a.dp(32)));
+        a.gap(a.body, 8);
+    }
+
     static void categories(MainActivity a, Cms.Site s) {
         a.prefs.edit().putString(Prefs.SELECTED_SITE, s.key).apply();
         a.renderPage(s.name, "CHOOSE A CATEGORY");
+        addBack(a, "catalog-back");
         LinearLayout actions = a.row();
         a.addButton(actions, a.button("全局搜索", "search", a::globalSearchDialog));
         a.addButton(
@@ -62,6 +71,7 @@ final class CatalogScreen {
     static void videos(
             MainActivity a, Cms.Site s, String cat, String title, int page, String search) {
         a.renderPage(title, "EXPLORE THE LIBRARY");
+        addBack(a, "catalog-back");
         a.paragraph(s.name + " · 第 " + page + " 页");
         a.load(
                 "正在读取影片…",
@@ -118,11 +128,7 @@ final class CatalogScreen {
                         card.setFocusableInTouchMode(true);
                         card.setClickable(true);
                         card.setTag(i == 0 ? "primary" : "video:" + v.id);
-                        card.setOnClickListener(
-                                view ->
-                                        a.open(
-                                                new MainActivity.Screen(() -> a.detail(s, v)),
-                                                true));
+                        card.setOnClickListener(view -> a.openListing(s, v));
                         card.setOnFocusChangeListener(
                                 (view, focus) ->
                                         FocusMotion.style(
@@ -161,7 +167,7 @@ final class CatalogScreen {
                                                                         videos(
                                                                                 a, s, cat, title,
                                                                                 page - 1, search)),
-                                                        true)));
+                                                        false)));
                     if (page < list.pageCount)
                         a.addButton(
                                 paging,
@@ -175,7 +181,7 @@ final class CatalogScreen {
                                                                         videos(
                                                                                 a, s, cat, title,
                                                                                 page + 1, search)),
-                                                        true)));
+                                                        false)));
                     a.body.addView(paging);
                     a.restore(a.current);
                 });

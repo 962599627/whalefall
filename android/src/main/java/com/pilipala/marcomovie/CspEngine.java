@@ -62,11 +62,82 @@ public final class CspEngine implements SourceEngine {
                         optimized.getAbsolutePath(),
                         null,
                         app.getClassLoader());
+        prepareHostStorage(app);
+        List<Object> before = lifecycleCallbacks(app);
         loader.loadClass("com.github.catvod.spider.Init")
                 .getMethod("init", Context.class)
                 .invoke(null, app);
+        replayForegroundActivity(app, before);
         LOADERS.put(sha, loader);
         return loader;
+    }
+
+    /**
+     * Extensions written for TVBox-style hosts expect the usual private folders and a "tv"
+     * database to exist. Missing ones made the extension's own setup stop half way.
+     */
+    static void prepareHostStorage(Application app) {
+        try {
+            File files = app.getFilesDir(), cache = app.getCacheDir();
+            if (files != null && !files.exists()) files.mkdirs();
+            if (cache != null && !cache.exists()) cache.mkdirs();
+            File database = app.getDatabasePath("tv");
+            File folder = database.getParentFile();
+            if (folder != null && !folder.exists()) folder.mkdirs();
+            if (!database.exists())
+                app.openOrCreateDatabase("tv", Context.MODE_PRIVATE, null).close();
+        } catch (Throwable error) {
+            AppLog.w("CspEngine", "prepare host storage failed", error);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static List<Object> lifecycleCallbacks(Application app) {
+        try {
+            Field field = Application.class.getDeclaredField("mActivityLifecycleCallbacks");
+            field.setAccessible(true);
+            Object value = field.get(app);
+            if (value instanceof List)
+                synchronized (value) {
+                    return new ArrayList<>((List<Object>) value);
+                }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * The extension registers lifecycle callbacks when it is first loaded, which is after the
+     * app screen is already open. Tell only those new callbacks about the visible screen, so
+     * login dialogs have a window to attach to instead of crashing on a missing activity.
+     */
+    static void replayForegroundActivity(Application app, List<Object> before) {
+        if (before == null) return;
+        List<Object> after = lifecycleCallbacks(app);
+        if (after == null) return;
+        final List<Application.ActivityLifecycleCallbacks> added = new ArrayList<>();
+        for (Object callback : after)
+            if (!before.contains(callback)
+                    && callback instanceof Application.ActivityLifecycleCallbacks)
+                added.add((Application.ActivityLifecycleCallbacks) callback);
+        if (added.isEmpty()) return;
+        new android.os.Handler(android.os.Looper.getMainLooper())
+                .post(
+                        () -> {
+                            MainActivity activity = MainActivity.activeActivity;
+                            if (activity == null || activity.isFinishing()) return;
+                            for (Application.ActivityLifecycleCallbacks callback : added)
+                                try {
+                                    callback.onActivityCreated(activity, null);
+                                    callback.onActivityStarted(activity);
+                                    if (activity.foreground) callback.onActivityResumed(activity);
+                                } catch (Throwable error) {
+                                    AppLog.w(
+                                            "CspEngine",
+                                            "extension lifecycle replay failed",
+                                            error);
+                                }
+                        });
     }
 
     public static boolean eligible(Cms.Site s) {

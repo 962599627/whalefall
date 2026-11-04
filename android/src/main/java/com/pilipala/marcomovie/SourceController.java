@@ -283,7 +283,7 @@ final class SourceController {
                                                                     .map(v -> v.title)
                                                                     .toArray(String[]::new),
                                                             (dialog, index) ->
-                                                                    a.detail(
+                                                                    a.openListing(
                                                                             site,
                                                                             list.videos.get(index)))
                                                     .setNegativeButton("关闭", null)

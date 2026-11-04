@@ -40,20 +40,7 @@ final class MobileDetailScreen {
     }
 
     static void show(MainActivity a, Cms.Site s, Cms.Video listing, Cms.Video ready) {
-        if ("folder".equalsIgnoreCase(listing.tag)) {
-            a.open(
-                    new MainActivity.Screen(() -> a.videos(s, listing.id, listing.title, 1, null)),
-                    true);
-            return;
-        }
-        if (listing.action != null && !listing.action.isEmpty()) {
-            a.sourceAction(s, listing.action);
-            return;
-        }
-        if (listing.id.startsWith("msearch:")) {
-            a.crossSearch(Cms.searchTitle(listing));
-            return;
-        }
+        if (a.redirectListing(s, listing)) return;
 
         a.clearPlaybackLoading();
         a.cancelArtwork();

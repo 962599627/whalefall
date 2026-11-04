@@ -682,8 +682,7 @@ final class HomeScreen {
         focusable(card, "home-video:" + index);
         outline(card, false, 13, Color.TRANSPARENT);
         card.setContentDescription(video.title);
-        card.setOnClickListener(
-                v -> a.open(new MainActivity.Screen(() -> a.detail(site, video)), true));
+        card.setOnClickListener(v -> a.openListing(site, video));
         card.setOnFocusChangeListener(
                 (v, f) -> {
                     outline(card, f, 13, Color.TRANSPARENT);

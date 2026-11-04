@@ -887,7 +887,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         card.setOnClickListener(
                 view -> {
                     saveHistory(query);
-                    a.open(new MainActivity.Screen(() -> a.detail(source.site, video)), true);
+                    a.openListing(source.site, video);
                 });
         card.setOnFocusChangeListener(
                 (view, selected) -> {
