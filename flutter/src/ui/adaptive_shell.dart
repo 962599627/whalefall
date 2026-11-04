@@ -1990,7 +1990,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           const SizedBox(height: 18),
           AppleGroupedSection(
             header: '片源与仓库管理',
-            footer: '支持单仓/多仓 HTTP(S) 接口、中文域名、Base64/图片隐写及 $# 加密配置。',
+            footer: '支持单仓/多仓 HTTP(S) 接口、中文域名、Base64/图片隐写及加密配置。',
             children: [
               AppleGroupedTile(
                 icon: CupertinoIcons.link,
