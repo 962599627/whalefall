@@ -127,6 +127,7 @@ public final class LocalProxy implements Closeable {
                                 ? JsEngine.proxyFor(params)
                                 : CspEngine.proxy(app, config, params);
             } catch (Throwable e) {
+                AppLog.w("LocalProxy", "source proxy failed", e);
                 simple(out, 502, "Source proxy failed");
                 return;
             }

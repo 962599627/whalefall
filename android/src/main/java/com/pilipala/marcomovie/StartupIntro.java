@@ -15,8 +15,9 @@ final class StartupIntro extends FrameLayout {
     final Runnable timeout = () -> finish(false);
 
     static void show(MainActivity a) {
-        if (a.reduced || !a.prefs.getBoolean("startup_animation", true) || a.startupIntro != null)
-            return;
+        if (a.reduced
+                || !a.prefs.getBoolean(Prefs.STARTUP_ANIMATION, true)
+                || a.startupIntro != null) return;
         StartupIntro intro = new StartupIntro(a);
         a.startupIntro = intro;
         ((FrameLayout) a.findViewById(android.R.id.content))

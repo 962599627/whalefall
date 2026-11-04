@@ -77,7 +77,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         moreResults = null;
         pageTicket = a.generation;
         a.root.setBackgroundColor(0xff101013);
-        if (a.root.getChildAt(0) instanceof MainActivity.Atmosphere) a.root.removeViewAt(0);
+        if (a.root.getChildAt(0) instanceof ImageLoader.Atmosphere) a.root.removeViewAt(0);
         a.body.setPadding(a.dp(32), a.dp(14), a.dp(32), a.dp(16));
         try {
             keyboard = new PinyinKeyboardModel(a.getAssets().open("search/pinyin-characters.tsv"));
@@ -493,7 +493,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
             for (Cms.Site site : a.config.sites)
                 if (site.searchable && a.available(site)) sources.add(site);
         // Only changes scheduling order; every available searchable source participates.
-        final String selected = a.prefs.getString("selected_site", "");
+        final String selected = a.prefs.getString(Prefs.SELECTED_SITE, "");
         Collections.sort(
                 sources,
                 (x, y) -> Boolean.compare(!x.key.equals(selected), !y.key.equals(selected)));
@@ -537,7 +537,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
                             + " 个来源 · 自动匹配 "
                             + String.join(
                                     " / ", variants.subList(0, Math.min(2, variants.size()))));
-        SearchCoordinator.configureThreads(a.prefs.getInt("search_threads", 6));
+        SearchCoordinator.configureThreads(a.prefs.getInt(Prefs.SEARCH_THREADS, 6));
         coordinator =
                 new SearchCoordinator(
                         (site, keyword) -> searchSource(site, query, variants),
@@ -560,7 +560,8 @@ public final class GlobalSearchScreen implements AutoCloseable {
                                             updateStatus(total);
                                             scheduleRender();
                                         }),
-                        Math.max(10, Math.min(30, a.prefs.getInt("search_timeout", 20))) * 1000L,
+                        Prefs.clampSearchTimeoutSeconds(a.prefs.getInt(Prefs.SEARCH_TIMEOUT, 20))
+                                * 1000L,
                         90000L);
         coordinator.start(sources, query);
     }
@@ -619,7 +620,8 @@ public final class GlobalSearchScreen implements AutoCloseable {
                                             updateStatus(sourceCount);
                                             scheduleRender();
                                         }),
-                        Math.max(10, Math.min(30, a.prefs.getInt("search_timeout", 20))) * 1000L,
+                        Prefs.clampSearchTimeoutSeconds(a.prefs.getInt(Prefs.SEARCH_TIMEOUT, 20))
+                                * 1000L,
                         40000L);
         retryCoordinator.start(Collections.singletonList(selected.site), submitted);
     }
@@ -954,7 +956,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
                         "清除搜索记录",
                         "search-clear-history",
                         () -> {
-                            a.prefs.edit().remove("global_search_history").apply();
+                            a.prefs.edit().remove(Prefs.GLOBAL_SEARCH_HISTORY).apply();
                             showHistory();
                         });
         a.addButton(resultBody, clear);
@@ -963,7 +965,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
     List<String> history() {
         List<String> out = new ArrayList<>();
         try {
-            JSONArray list = new JSONArray(a.prefs.getString("global_search_history", "[]"));
+            JSONArray list = new JSONArray(a.prefs.getString(Prefs.GLOBAL_SEARCH_HISTORY, "[]"));
             for (int i = 0; i < Math.min(8, list.length()); i++) {
                 String text = list.optString(i);
                 if (!text.isEmpty()) out.add(text);
@@ -979,7 +981,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         previous.add(0, query);
         JSONArray list = new JSONArray();
         for (int i = 0; i < Math.min(8, previous.size()); i++) list.put(previous.get(i));
-        a.prefs.edit().putString("global_search_history", list.toString()).apply();
+        a.prefs.edit().putString(Prefs.GLOBAL_SEARCH_HISTORY, list.toString()).apply();
     }
 
     @Override

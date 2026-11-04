@@ -18,8 +18,35 @@ final class ImageDecodePolicy {
                 && height / (sample * 2) >= desiredHeight) sample *= 2;
         long maxPixels = detail ? 2L * 1024 * 1024 : 800L * 1024;
         while (sample <= 16384
-                && (long) Math.max(1, width / sample) * Math.max(1, height / sample) > maxPixels)
-            sample *= 2;
+                && (long) Math.max(1, width / sample) * (long) Math.max(1, height / sample)
+                        > maxPixels) sample *= 2;
         return sample;
+    }
+
+    static int targetWidth(int viewWidth, boolean detail) {
+        return Math.max(
+                1, Math.min(detail ? 1080 : 480, viewWidth > 0 ? viewWidth : detail ? 720 : 320));
+    }
+
+    static int targetHeight(int viewHeight, boolean detail) {
+        return Math.max(
+                1,
+                Math.min(detail ? 1620 : 720, viewHeight > 0 ? viewHeight : detail ? 1080 : 480));
+    }
+
+    static String cacheKey(String address, int width, int height, boolean crop, boolean detail) {
+        return address
+                + "|"
+                + width
+                + "x"
+                + height
+                + "|"
+                + (crop ? "crop" : "fit")
+                + (detail ? "|detail" : "");
+    }
+
+    static int cacheBytes(int memoryClassMb) {
+        int mb = Math.max(10, Math.min(32, memoryClassMb / 8));
+        return mb * 1024 * 1024;
     }
 }

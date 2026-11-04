@@ -38,7 +38,7 @@ final class SourcePicker {
         grid.setPadding(a.dp(5), a.dp(5), a.dp(5), a.dp(5));
         scrolling.addView(grid);
         panel.addView(scrolling, new LinearLayout.LayoutParams(-1, a.dp(286)));
-        String selected = a.prefs.getString("selected_site", "");
+        String selected = a.prefs.getString(Prefs.SELECTED_SITE, "");
         Button selectedButton = null;
         LinearLayout row = null;
         int index = 0;
@@ -58,7 +58,7 @@ final class SourcePicker {
                                     a.notice("这个片源需要启用来源扩展，或仍有接口待适配。可以在设置中查看。");
                                     return;
                                 }
-                                a.prefs.edit().putString("selected_site", site.key).apply();
+                                a.prefs.edit().putString(Prefs.SELECTED_SITE, site.key).apply();
                                 dialog.dismiss();
                                 a.back.clear();
                                 a.open(new MainActivity.Screen(a::home), false);

@@ -201,6 +201,7 @@ public final class MagnetStream implements Closeable {
                                     metadata.countDown();
                                 }
                             } catch (Throwable error) {
+                                AppLog.w("MagnetStream", "alert callback failed", error);
                                 nativeFailure = error.getClass().getSimpleName();
                                 added.countDown();
                                 metadata.countDown();
@@ -273,6 +274,7 @@ public final class MagnetStream implements Closeable {
             Thread.currentThread().interrupt();
             if (!closed.get()) fail("磁力播放已取消");
         } catch (Throwable error) {
+            AppLog.w("MagnetStream", "magnet session failed", error);
             if (!closed.get())
                 fail(
                         error instanceof IOException

@@ -55,7 +55,7 @@ final class PlaybackControls {
         danmaku.enabled(false);
         subtitle = new androidx.media3.ui.SubtitleView(a);
         subtitle.setFractionalTextSize(
-                Math.max(25, Math.min(65, a.prefs.getInt("subtitle_size", 45))) / 1000f);
+                Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45)) / 1000f);
         subtitle.setUserDefaultStyle();
         subtitle.setPadding(a.dp(40), 0, a.dp(40), a.dp(24));
         FrameLayout.LayoutParams caption = new FrameLayout.LayoutParams(-1, -1, Gravity.BOTTOM);
@@ -295,7 +295,7 @@ final class PlaybackControls {
         if (l < 0 || i < 0) return false;
         Cms.Line line = video.lines.get(l);
         int next = i + direction;
-        if (a.prefs.getInt("repeat_mode", 0) == 2)
+        if (a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 2)
             next = (next + line.episodes.size()) % line.episodes.size();
         if (next < 0 || next >= line.episodes.size()) return false;
         transitioning = true;
@@ -326,7 +326,7 @@ final class PlaybackControls {
                 current,
                 i -> {
                     if (a.player != null) a.player.setSpeed(speeds[i]);
-                    a.prefs.edit().putFloat("play_speed", speeds[i]).apply();
+                    a.prefs.edit().putFloat(Prefs.PLAY_SPEED, speeds[i]).apply();
                     updateLabels();
                 });
     }
@@ -336,9 +336,9 @@ final class PlaybackControls {
         choose(
                 "画面比例",
                 labels,
-                a.prefs.getInt("aspect", 0),
+                a.prefs.getInt(Prefs.ASPECT, 0),
                 i -> {
-                    a.prefs.edit().putInt("aspect", i).apply();
+                    a.prefs.edit().putInt(Prefs.ASPECT, i).apply();
                     resize(videoWidth, videoHeight);
                     updateLabels();
                 });
@@ -348,9 +348,9 @@ final class PlaybackControls {
         choose(
                 "选择播放器",
                 new String[] {"Media3 · 网络与字幕优先", "系统播放器"},
-                a.prefs.getInt("player_engine", 0),
+                a.prefs.getInt(Prefs.PLAYER_ENGINE, 0),
                 i -> {
-                    a.prefs.edit().putInt("player_engine", i).apply();
+                    a.prefs.edit().putInt(Prefs.PLAYER_ENGINE, i).apply();
                     reload(true);
                 });
     }
@@ -359,9 +359,9 @@ final class PlaybackControls {
         choose(
                 "画面输出",
                 new String[] {"保真输出 · HDR 与流畅度优先", "兼容输出 · 支持应用内调色"},
-                a.prefs.getInt("video_output", 0),
+                a.prefs.getInt(Prefs.VIDEO_OUTPUT, 0),
                 i -> {
-                    a.prefs.edit().putInt("video_output", i).apply();
+                    a.prefs.edit().putInt(Prefs.VIDEO_OUTPUT, i).apply();
                     reload(true);
                 });
     }
@@ -370,9 +370,9 @@ final class PlaybackControls {
         choose(
                 "选择解码方式",
                 new String[] {"自动选择（默认）", "设备硬件解码", "软件解码优先（高分辨率可能较慢）"},
-                a.prefs.getInt("decoder_mode", 0),
+                a.prefs.getInt(Prefs.DECODER_MODE, 0),
                 i -> {
-                    a.prefs.edit().putInt("decoder_mode", i).apply();
+                    a.prefs.edit().putInt(Prefs.DECODER_MODE, i).apply();
                     reload(true);
                 });
     }
@@ -416,12 +416,12 @@ final class PlaybackControls {
         choose(
                 "音效",
                 new String[] {"原声", "影院", "人声清晰", "柔和低音"},
-                a.prefs.getInt("audio_effect", 0),
+                a.prefs.getInt(Prefs.AUDIO_EFFECT, 0),
                 i -> {
                     try {
                         if (a.player == null) throw new IllegalStateException();
                         effects.audio(a.player.getAudioSessionId(), i);
-                        a.prefs.edit().putInt("audio_effect", i).apply();
+                        a.prefs.edit().putInt(Prefs.AUDIO_EFFECT, i).apply();
                     } catch (Exception error) {
                         message("这台设备当前音轨未提供可用音效接口。");
                     }
@@ -432,14 +432,14 @@ final class PlaybackControls {
         choose(
                 "画面色彩",
                 new String[] {"原始画面", "明亮", "影院", "柔和"},
-                a.prefs.getInt("picture_effect", 0),
+                a.prefs.getInt(Prefs.PICTURE_EFFECT, 0),
                 i -> {
                     if (i > 0 && !surface.supportsPicture()) {
                         message("当前使用保真输出，保留原始色彩。需要应用内调色时，可在“播放器与解码”选择兼容输出；HDR 内容建议保持保真输出。");
                         return;
                     }
                     PlaybackEffects.picture(surface, i);
-                    a.prefs.edit().putInt("picture_effect", i).apply();
+                    a.prefs.edit().putInt(Prefs.PICTURE_EFFECT, i).apply();
                 });
     }
 
@@ -480,7 +480,7 @@ final class PlaybackControls {
     void skip(boolean intro) {
         int[] seconds = {0, 15, 30, 60, 90, 120, 180};
         String[] labels = {"关闭", "15 秒", "30 秒", "1 分钟", "1 分 30 秒", "2 分钟", "3 分钟"};
-        String key = intro ? "skip_intro" : "skip_outro";
+        String key = intro ? Prefs.SKIP_INTRO : Prefs.SKIP_OUTRO;
         int selected = 0;
         for (int i = 0; i < seconds.length; i++)
             if (seconds[i] == a.prefs.getInt(key, 0)) selected = i;
@@ -498,11 +498,11 @@ final class PlaybackControls {
         choose(
                 "循环播放",
                 new String[] {"关闭", "单集循环", "列表循环"},
-                a.prefs.getInt("repeat_mode", 0),
+                a.prefs.getInt(Prefs.REPEAT_MODE, 0),
                 i -> {
-                    a.prefs.edit().putInt("repeat_mode", i).apply();
+                    a.prefs.edit().putInt(Prefs.REPEAT_MODE, i).apply();
                     if (a.player != null)
-                        a.player.setRepeatOne(i == 1 && a.prefs.getInt("skip_outro", 0) == 0);
+                        a.player.setRepeatOne(i == 1 && a.prefs.getInt(Prefs.SKIP_OUTRO, 0) == 0);
                     updateLabels();
                 });
     }
@@ -565,7 +565,7 @@ final class PlaybackControls {
             "音效",
             "画面色彩",
             "循环播放",
-            "自动播放下集：" + (a.prefs.getBoolean("auto_next", true) ? "开启" : "关闭"),
+            "自动播放下集：" + (a.prefs.getBoolean(Prefs.AUTO_NEXT, true) ? "开启" : "关闭"),
             "播放信息",
             "返回详情"
         };
@@ -606,8 +606,8 @@ final class PlaybackControls {
                             choose(
                                     "自动跳过",
                                     new String[] {
-                                        "片头 · " + skipLabel(a.prefs.getInt("skip_intro", 0)),
-                                        "片尾 · " + skipLabel(a.prefs.getInt("skip_outro", 0))
+                                        "片头 · " + skipLabel(a.prefs.getInt(Prefs.SKIP_INTRO, 0)),
+                                        "片尾 · " + skipLabel(a.prefs.getInt(Prefs.SKIP_OUTRO, 0))
                                     },
                                     -1,
                                     n -> skip(n == 0));
@@ -627,7 +627,9 @@ final class PlaybackControls {
                         case 10:
                             a.prefs
                                     .edit()
-                                    .putBoolean("auto_next", !a.prefs.getBoolean("auto_next", true))
+                                    .putBoolean(
+                                            Prefs.AUTO_NEXT,
+                                            !a.prefs.getBoolean(Prefs.AUTO_NEXT, true))
                                     .apply();
                             break;
                         case 11:
@@ -646,7 +648,7 @@ final class PlaybackControls {
     }
 
     void updateLabels() {
-        buttons.get("speed").setText(a.prefs.getFloat("play_speed", 1) + "×");
+        buttons.get("speed").setText(a.prefs.getFloat(Prefs.PLAY_SPEED, 1) + "×");
     }
 
     String skipLabel(int seconds) {
@@ -655,7 +657,7 @@ final class PlaybackControls {
 
     void prepared() {
         if (a.player == null) return;
-        if (a.prefs.getBoolean("danmaku_default", false)
+        if (a.prefs.getBoolean(Prefs.DANMAKU_DEFAULT, false)
                 && !danmakuLoaded
                 && !resolved.media.optString("danmaku").isEmpty()) {
             danmakuLoaded = true;
@@ -669,9 +671,9 @@ final class PlaybackControls {
                         public void error(String message) {}
                     });
         }
-        PlaybackEffects.picture(surface, a.prefs.getInt("picture_effect", 0));
+        PlaybackEffects.picture(surface, a.prefs.getInt(Prefs.PICTURE_EFFECT, 0));
         try {
-            effects.audio(a.player.getAudioSessionId(), a.prefs.getInt("audio_effect", 0));
+            effects.audio(a.player.getAudioSessionId(), a.prefs.getInt(Prefs.AUDIO_EFFECT, 0));
         } catch (Exception ignored) {
         }
         int duration = a.player.getDuration();
@@ -681,12 +683,13 @@ final class PlaybackControls {
         int seek =
                 "live".equals(site.key)
                         ? 0
-                        : a.resumeAt > 0 ? a.resumeAt : a.prefs.getInt("skip_intro", 0) * 1000;
+                        : a.resumeAt > 0 ? a.resumeAt : a.prefs.getInt(Prefs.SKIP_INTRO, 0) * 1000;
         a.resumeAt = 0;
         if (duration > 0 && seek > 0 && seek < duration - 1000) a.player.seekTo(seek);
-        a.player.setSpeed(a.prefs.getFloat("play_speed", 1));
+        a.player.setSpeed(a.prefs.getFloat(Prefs.PLAY_SPEED, 1));
         a.player.setRepeatOne(
-                a.prefs.getInt("repeat_mode", 0) == 1 && a.prefs.getInt("skip_outro", 0) == 0);
+                a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 1
+                        && a.prefs.getInt(Prefs.SKIP_OUTRO, 0) == 0);
     }
 
     void tick() {
@@ -695,15 +698,15 @@ final class PlaybackControls {
         int duration = a.player.getDuration(), position = a.player.getCurrentPosition();
         timeline.setMax(Math.max(1, duration));
         timeline.setProgress(position);
-        int tail = a.prefs.getInt("skip_outro", 0) * 1000;
+        int tail = a.prefs.getInt(Prefs.SKIP_OUTRO, 0) * 1000;
         if (!transitioning
                 && a.playing
                 && duration > 0
                 && tail > 0
                 && tail < duration
                 && position >= duration - tail) {
-            if (a.prefs.getInt("repeat_mode", 0) == 1)
-                a.player.seekTo(a.prefs.getInt("skip_intro", 0) * 1000);
+            if (a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 1)
+                a.player.seekTo(a.prefs.getInt(Prefs.SKIP_INTRO, 0) * 1000);
             else if (!step(1)) {
                 transitioning = true;
                 a.player.pause();
@@ -716,7 +719,8 @@ final class PlaybackControls {
 
     void completed() {
         if (!transitioning
-                && (a.prefs.getBoolean("auto_next", true) || a.prefs.getInt("repeat_mode", 0) == 2)
+                && (a.prefs.getBoolean(Prefs.AUTO_NEXT, true)
+                        || a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 2)
                 && step(1)) return;
         a.showControls(true);
         a.playStatus.setText("播放结束 · 按确认重播");
@@ -729,7 +733,7 @@ final class PlaybackControls {
         if (width <= 0 || height <= 0 || a.playbackLayer.getWidth() == 0) return;
         int w = a.playbackLayer.getWidth(),
                 h = a.playbackLayer.getHeight(),
-                mode = a.prefs.getInt("aspect", 0);
+                mode = a.prefs.getInt(Prefs.ASPECT, 0);
         float ratio = mode == 2 ? 16f / 9 : mode == 3 ? 4f / 3 : (float) width / height;
         if (mode != 1) {
             if (mode == 4) {

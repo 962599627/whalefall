@@ -100,8 +100,8 @@ public class MoviePlayer {
                     int decoderMode =
                             requestedDecoder < 0
                                     ? this.context
-                                            .getSharedPreferences("movie", 0)
-                                            .getInt("decoder_mode", 0)
+                                            .getSharedPreferences(Prefs.FILE, 0)
+                                            .getInt(Prefs.DECODER_MODE, 0)
                                     : requestedDecoder;
                     DefaultRenderersFactory renderers =
                             new DecoderRenderersFactory(this.context, decoderMode);
@@ -128,8 +128,8 @@ public class MoviePlayer {
                                             Math.min(
                                                     50,
                                                     this.context
-                                                            .getSharedPreferences("movie", 0)
-                                                            .getInt("buffer_seconds", 30)))
+                                                            .getSharedPreferences(Prefs.FILE, 0)
+                                                            .getInt(Prefs.BUFFER_SECONDS, 30)))
                                     * 1000;
                     exo =
                             new ExoPlayer.Builder(this.context, renderers)
@@ -143,8 +143,8 @@ public class MoviePlayer {
                                     .setLooper(Looper.getMainLooper())
                                     .build();
                     if (this.context
-                            .getSharedPreferences("movie", 0)
-                            .getBoolean("prefer_aac", false))
+                            .getSharedPreferences(Prefs.FILE, 0)
+                            .getBoolean(Prefs.PREFER_AAC, false))
                         exo.setTrackSelectionParameters(
                                 exo.getTrackSelectionParameters()
                                         .buildUpon()

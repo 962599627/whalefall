@@ -57,7 +57,10 @@ final class MiniDetails {
         copy.addView(episode);
         Button favorite =
                 a.button(
-                        Favorites.contains(a.prefs.getString("favorites", "[]"), site.key, video.id)
+                        Favorites.contains(
+                                        a.prefs.getString(Prefs.FAVORITES, "[]"),
+                                        site.key,
+                                        video.id)
                                 ? "已收藏"
                                 : "加入收藏",
                         "mini-favorite",
@@ -68,13 +71,15 @@ final class MiniDetails {
                     a.prefs
                             .edit()
                             .putString(
-                                    "favorites",
+                                    Prefs.FAVORITES,
                                     Favorites.toggle(
-                                            a.prefs.getString("favorites", "[]"), site.key, video))
+                                            a.prefs.getString(Prefs.FAVORITES, "[]"),
+                                            site.key,
+                                            video))
                             .apply();
                     favorite.setText(
                             Favorites.contains(
-                                            a.prefs.getString("favorites", "[]"),
+                                            a.prefs.getString(Prefs.FAVORITES, "[]"),
                                             site.key,
                                             video.id)
                                     ? "已收藏"
@@ -107,7 +112,7 @@ final class MiniDetails {
                     EpisodeSelection.pageFor(
                             index,
                             video.lines.get(line).episodes.size(),
-                            a.prefs.getBoolean("episodes_descending", false)),
+                            a.prefs.getBoolean(Prefs.EPISODES_DESCENDING, false)),
                     episodes);
         } else episodes.addView(a.text("当前内容没有可选择的剧集。", 15, MainActivity.MUTED));
         if (!beside) a.addButton(episodes, favorite);

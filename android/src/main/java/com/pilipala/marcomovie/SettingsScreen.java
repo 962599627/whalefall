@@ -99,7 +99,7 @@ final class SettingsScreen {
         page("首页与壁纸", "界面按屏幕分辨率自动适配，海报保持 2:3 比例。");
         link(
                 "界面大小",
-                TvLayoutPolicy.percent(a.prefs.getInt("ui_scale_percent", 100))
+                TvLayoutPolicy.percent(a.prefs.getInt(Prefs.UI_SCALE_PERCENT, 100))
                         + "% · 按钮、文字与图标一起调整",
                 "setting-ui_scale_percent",
                 () ->
@@ -108,16 +108,16 @@ final class SettingsScreen {
                                 .setMessage("标准会自动适配屏幕分辨率。观看距离较远时可放大；选择后界面重新载入。")
                                 .setSingleChoiceItems(
                                         new String[] {"标准 · 自动适配", "放大 · 110%", "更大 · 120%"},
-                                        a.prefs.getInt("ui_scale_percent", 100) == 120
+                                        a.prefs.getInt(Prefs.UI_SCALE_PERCENT, 100) == 120
                                                 ? 2
-                                                : a.prefs.getInt("ui_scale_percent", 100) == 110
+                                                : a.prefs.getInt(Prefs.UI_SCALE_PERCENT, 100) == 110
                                                         ? 1
                                                         : 0,
                                         (d, n) -> {
                                             a.prefs
                                                     .edit()
                                                     .putInt(
-                                                            "ui_scale_percent",
+                                                            Prefs.UI_SCALE_PERCENT,
                                                             new int[] {100, 110, 120}[n])
                                                     .commit();
                                             a.recreate();
@@ -126,20 +126,24 @@ final class SettingsScreen {
                                 .show());
         ints(
                 "每行海报",
-                "home_columns",
+                Prefs.HOME_COLUMNS,
                 new String[] {"最多 5 张 · 舒展", "最多 6 张", "最多 7 张", "最多 8 张"},
                 new int[] {5, 6, 7, 8},
                 5);
         link(
                 "首页壁纸",
-                a.prefs.getBoolean("wallpaper_enabled", false)
+                a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)
                         ? "自定义壁纸"
-                        : a.prefs.getBoolean("home_ambient", true) ? "海报配色柔光" : "纯深色",
+                        : a.prefs.getBoolean(Prefs.HOME_AMBIENT, true) ? "海报配色柔光" : "纯深色",
                 "settings-wallpaper",
                 () -> open(this::wallpaper));
-        toggle("开屏动画", "startup_animation", true, null);
-        toggle("海报配色柔光", "home_ambient", true, null);
-        toggle("减少动态效果", "reduced", false, () -> a.reduced = a.prefs.getBoolean("reduced", false));
+        toggle("开屏动画", Prefs.STARTUP_ANIMATION, true, null);
+        toggle("海报配色柔光", Prefs.HOME_AMBIENT, true, null);
+        toggle(
+                "减少动态效果",
+                Prefs.REDUCED,
+                false,
+                () -> a.reduced = a.prefs.getBoolean(Prefs.REDUCED, false));
     }
 
     void wallpaper() {
@@ -148,7 +152,7 @@ final class SettingsScreen {
         link("从图片地址导入", "输入你自己的 HTTP / HTTPS 图片地址", "wallpaper-url", this::wallpaperUrl);
         ints(
                 "背景压暗",
-                "wallpaper_dim",
+                Prefs.WALLPAPER_DIM,
                 new String[] {"轻 · 40%", "适中 · 60%", "深 · 80%"},
                 new int[] {40, 60, 80},
                 60);
@@ -157,7 +161,7 @@ final class SettingsScreen {
                 "保留图片文件，随时可以重新启用",
                 "wallpaper-reset",
                 () -> {
-                    a.prefs.edit().putBoolean("wallpaper_enabled", false).apply();
+                    a.prefs.edit().putBoolean(Prefs.WALLPAPER_ENABLED, false).apply();
                     a.refresh();
                 });
         if (new File(a.getFilesDir(), "wallpaper.jpg").exists())
@@ -166,7 +170,7 @@ final class SettingsScreen {
                     "使用上次导入的图片",
                     "wallpaper-enable",
                     () -> {
-                        a.prefs.edit().putBoolean("wallpaper_enabled", true).apply();
+                        a.prefs.edit().putBoolean(Prefs.WALLPAPER_ENABLED, true).apply();
                         a.refresh();
                     });
     }
@@ -175,30 +179,35 @@ final class SettingsScreen {
         page("播放与字幕", "作为之后播放的默认设置；播放界面中仍可随时调整。");
         ints(
                 "画面输出",
-                "video_output",
+                Prefs.VIDEO_OUTPUT,
                 new String[] {"保真输出 · HDR 与流畅度优先", "兼容输出 · 支持应用内调色"},
                 new int[] {0, 1},
                 0);
-        ints("播放器", "player_engine", new String[] {"Media3", "系统播放器"}, new int[] {0, 1}, 0);
-        ints("解码方式", "decoder_mode", new String[] {"自动", "硬件解码", "软件解码优先"}, new int[] {0, 1, 2}, 0);
-        toggle("优先使用兼容音频解码", "software_audio", false, null);
-        toggle("优先选择 AAC 音轨", "prefer_aac", false, null);
+        ints("播放器", Prefs.PLAYER_ENGINE, new String[] {"Media3", "系统播放器"}, new int[] {0, 1}, 0);
+        ints(
+                "解码方式",
+                Prefs.DECODER_MODE,
+                new String[] {"自动", "硬件解码", "软件解码优先"},
+                new int[] {0, 1, 2},
+                0);
+        toggle("优先使用兼容音频解码", Prefs.SOFTWARE_AUDIO, false, null);
+        toggle("优先选择 AAC 音轨", Prefs.PREFER_AAC, false, null);
         link("解码组件", "查看本机已加载的音频与视频扩展", "settings-decoders", () -> open(this::decoders));
         ints(
                 "画面比例",
-                "aspect",
+                Prefs.ASPECT,
                 new String[] {"适应", "铺满", "16:9", "4:3", "裁切填充"},
                 new int[] {0, 1, 2, 3, 4},
                 0);
         ints(
                 "网络缓冲",
-                "buffer_seconds",
+                Prefs.BUFFER_SECONDS,
                 new String[] {"15 秒 · 节省内存", "30 秒 · 均衡", "50 秒 · 网络波动"},
                 new int[] {15, 30, 50},
                 30);
         link(
                 "默认速度",
-                a.prefs.getFloat("play_speed", 1) + "×",
+                a.prefs.getFloat(Prefs.PLAY_SPEED, 1) + "×",
                 "setting-play_speed",
                 () ->
                         new AppDialog.Builder(a)
@@ -209,7 +218,7 @@ final class SettingsScreen {
                                             a.prefs
                                                     .edit()
                                                     .putFloat(
-                                                            "play_speed",
+                                                            Prefs.PLAY_SPEED,
                                                             new float[] {
                                                                         .5f, .75f, 1, 1.25f, 1.5f, 2
                                                                     }
@@ -218,23 +227,28 @@ final class SettingsScreen {
                                             a.refresh();
                                         })
                                 .show());
-        toggle("自动播放下一集", "auto_next", true, null);
-        ints("循环", "repeat_mode", new String[] {"关闭", "单集循环", "列表循环"}, new int[] {0, 1, 2}, 0);
+        toggle("自动播放下一集", Prefs.AUTO_NEXT, true, null);
+        ints("循环", Prefs.REPEAT_MODE, new String[] {"关闭", "单集循环", "列表循环"}, new int[] {0, 1, 2}, 0);
         String[] times = {"关闭", "15 秒", "30 秒", "60 秒", "90 秒", "120 秒", "180 秒"};
         int[] seconds = {0, 15, 30, 60, 90, 120, 180};
-        ints("跳过片头", "skip_intro", times, seconds, 0);
-        ints("跳过片尾", "skip_outro", times, seconds, 0);
-        ints("字幕大小", "subtitle_size", new String[] {"小", "标准", "大"}, new int[] {35, 45, 55}, 45);
-        toggle("自动加载来源弹幕", "danmaku_default", false, null);
+        ints("跳过片头", Prefs.SKIP_INTRO, times, seconds, 0);
+        ints("跳过片尾", Prefs.SKIP_OUTRO, times, seconds, 0);
+        ints(
+                "字幕大小",
+                Prefs.SUBTITLE_SIZE,
+                new String[] {"小", "标准", "大"},
+                new int[] {35, 45, 55},
+                45);
+        toggle("自动加载来源弹幕", Prefs.DANMAKU_DEFAULT, false, null);
         ints(
                 "画面色彩",
-                "picture_effect",
+                Prefs.PICTURE_EFFECT,
                 new String[] {"原始", "明亮", "影院", "柔和"},
                 new int[] {0, 1, 2, 3},
                 0);
         ints(
                 "音效",
-                "audio_effect",
+                Prefs.AUDIO_EFFECT,
                 new String[] {"原声", "影院", "人声清晰", "柔和低音"},
                 new int[] {0, 1, 2, 3},
                 0);
@@ -246,18 +260,18 @@ final class SettingsScreen {
         page("搜索与数据", "搜索默认识别首拼和全拼，并检索配置中全部可搜索来源。");
         ints(
                 "同时搜索的来源数",
-                "search_threads",
+                Prefs.SEARCH_THREADS,
                 new String[] {"2 个 · 轻量", "4 个 · 均衡", "6 个 · 快速"},
                 new int[] {2, 4, 6},
                 6);
         ints(
                 "单个来源等待时间",
-                "search_timeout",
+                Prefs.SEARCH_TIMEOUT,
                 new String[] {"10 秒", "20 秒", "30 秒"},
                 new int[] {10, 20, 30},
                 20);
         link("导入或更新配置源", "手机扫码、遥控输入或本地文件", "settings-import", a::importDialog);
-        toggle("启用来源扩展", "experimental_csp", false, a::closeEngines);
+        toggle("启用来源扩展", Prefs.EXPERIMENTAL_CSP, false, a::closeEngines);
         link(
                 "备份配置与偏好",
                 "导出配置与偏好，请妥善保管；不含插件单独保存的登录状态",
@@ -277,7 +291,7 @@ final class SettingsScreen {
                         confirm(
                                 "清除搜索记录？",
                                 () -> {
-                                    a.prefs.edit().remove("global_search_history").apply();
+                                    a.prefs.edit().remove(Prefs.GLOBAL_SEARCH_HISTORY).apply();
                                     a.refresh();
                                 }));
         link(
@@ -330,7 +344,7 @@ final class SettingsScreen {
                                 if (after != null) after.run();
                                 a.refresh();
                             };
-                    if (key.equals("experimental_csp") && !a.prefs.getBoolean(key, false))
+                    if (key.equals(Prefs.EXPERIMENTAL_CSP) && !a.prefs.getBoolean(key, false))
                         confirm("运行配置源提供的扩展？请仅使用你信任的配置。", change);
                     else change.run();
                 });
@@ -447,39 +461,10 @@ final class SettingsScreen {
             image.recycle();
             temporary.delete();
         }
-        a.prefs.edit().putBoolean("wallpaper_enabled", true).apply();
+        a.prefs.edit().putBoolean(Prefs.WALLPAPER_ENABLED, true).apply();
     }
 
-    static final String[] KEYS = {
-        "ui_scale_percent",
-        "startup_animation",
-        "home_ambient",
-        "home_columns",
-        "home_rows",
-        "home_sections",
-        "wallpaper_enabled",
-        "wallpaper_dim",
-        "reduced",
-        "player_engine",
-        "video_output",
-        "decoder_mode",
-        "software_audio",
-        "prefer_aac",
-        "aspect",
-        "buffer_seconds",
-        "play_speed",
-        "auto_next",
-        "repeat_mode",
-        "skip_intro",
-        "skip_outro",
-        "subtitle_size",
-        "danmaku_default",
-        "picture_effect",
-        "audio_effect",
-        "search_threads",
-        "search_timeout",
-        "episodes_descending"
-    };
+    static final String[] KEYS = Prefs.KEYS;
 
     static void result(MainActivity a, int request, Uri uri) {
         a.worker.execute(
@@ -536,7 +521,8 @@ final class SettingsScreen {
                                                                 try {
                                                                     int oldScale =
                                                                             a.prefs.getInt(
-                                                                                    "ui_scale_percent",
+                                                                                    Prefs
+                                                                                            .UI_SCALE_PERCENT,
                                                                                     100);
                                                                     restoreSettings(a, settings);
                                                                     if (config != null)
@@ -545,10 +531,15 @@ final class SettingsScreen {
                                                                     else a.refresh();
                                                                     if (oldScale
                                                                             != a.prefs.getInt(
-                                                                                    "ui_scale_percent",
+                                                                                    Prefs
+                                                                                            .UI_SCALE_PERCENT,
                                                                                     100))
                                                                         a.recreate();
                                                                 } catch (Exception error) {
+                                                                    AppLog.w(
+                                                                            "Settings",
+                                                                            "restoreSettings failed",
+                                                                            error);
                                                                     a.notice("备份无法还原。");
                                                                 }
                                                             })
@@ -561,6 +552,7 @@ final class SettingsScreen {
                                     a.toast(request == 45 ? "备份已保存" : "壁纸已更新");
                                 });
                     } catch (Exception error) {
+                        AppLog.w("Settings", "file result " + request + " failed", error);
                         a.ui.post(() -> a.notice("文件无法处理。请检查文件格式与可用存储空间。"));
                     }
                 });
@@ -570,93 +562,12 @@ final class SettingsScreen {
         if (settings == null) return;
         android.content.SharedPreferences.Editor edit = a.prefs.edit();
         for (String key : KEYS) {
-            Object value = settings.opt(key);
-            if (value == null) continue;
-            if (key.equals("ui_scale_percent")) {
-                if (value instanceof Number)
-                    edit.putInt(key, TvLayoutPolicy.percent(((Number) value).intValue()));
-                continue;
-            }
-            if (key.equals("play_speed")) {
-                if (value instanceof Number) {
-                    float speed = ((Number) value).floatValue();
-                    if (speed >= .5f && speed <= 2) edit.putFloat(key, speed);
-                }
-                continue;
-            }
-            if (java.util.Arrays.asList(
-                            "startup_animation",
-                            "home_ambient",
-                            "wallpaper_enabled",
-                            "reduced",
-                            "auto_next",
-                            "danmaku_default",
-                            "software_audio",
-                            "prefer_aac",
-                            "episodes_descending")
-                    .contains(key)) {
-                if (value instanceof Boolean) edit.putBoolean(key, (Boolean) value);
-                continue;
-            }
-            if (!(value instanceof Number)) continue;
-            int n = ((Number) value).intValue();
-            int min = 0, max = 0;
-            switch (key) {
-                case "home_columns":
-                    min = 5;
-                    max = 8;
-                    break;
-                case "home_rows":
-                    min = 1;
-                    max = 4;
-                    break;
-                case "home_sections":
-                    max = 5;
-                    break;
-                case "wallpaper_dim":
-                    max = 100;
-                    break;
-                case "player_engine":
-                case "video_output":
-                    max = 1;
-                    break;
-                case "decoder_mode":
-                case "repeat_mode":
-                    max = 2;
-                    break;
-                case "aspect":
-                    max = 4;
-                    break;
-                case "buffer_seconds":
-                    min = 15;
-                    max = 50;
-                    break;
-                case "skip_intro":
-                case "skip_outro":
-                    max = 180;
-                    break;
-                case "subtitle_size":
-                    min = 25;
-                    max = 65;
-                    break;
-                case "picture_effect":
-                case "audio_effect":
-                    max = 3;
-                    break;
-                case "search_threads":
-                    min = 2;
-                    max = 6;
-                    break;
-                case "search_timeout":
-                    min = 10;
-                    max = 30;
-                    break;
-                default:
-                    continue;
-            }
-            if (n >= min && n <= max) edit.putInt(key, n);
+            Object clean = Prefs.sanitizeSetting(key, settings.opt(key));
+            if (clean instanceof Boolean) edit.putBoolean(key, (Boolean) clean);
+            else if (clean instanceof Float) edit.putFloat(key, (Float) clean);
+            else if (clean instanceof Integer) edit.putInt(key, (Integer) clean);
         }
         edit.apply();
-        a.reduced = a.prefs.getBoolean("reduced", false);
+        a.reduced = a.prefs.getBoolean(Prefs.REDUCED, false);
     }
 }

@@ -20,8 +20,8 @@ final class DecoderRenderersFactory extends DefaultRenderersFactory {
         setExtensionRendererMode(
                 (mode == 2
                                 || mode == 3
-                                || context.getSharedPreferences("movie", 0)
-                                        .getBoolean("software_audio", false))
+                                || context.getSharedPreferences(Prefs.FILE, 0)
+                                        .getBoolean(Prefs.SOFTWARE_AUDIO, false))
                         ? EXTENSION_RENDERER_MODE_PREFER
                         : EXTENSION_RENDERER_MODE_ON);
     }

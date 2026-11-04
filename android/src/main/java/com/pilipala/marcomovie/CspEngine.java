@@ -163,7 +163,8 @@ public final class CspEngine implements SourceEngine {
         synchronized (pluginLock) {
             try {
                 spider.destroy();
-            } catch (Throwable ignored) {
+            } catch (Throwable e) {
+                AppLog.w("CspEngine", "destroy failed: " + site.api, e);
             }
         }
     }
@@ -277,6 +278,7 @@ public final class CspEngine implements SourceEngine {
     }
 
     void diagnostic(String state, String className, Throwable error) {
+        if (error != null) AppLog.w("CspEngine", state + ":" + className, error);
         try {
             JSONObject j = new JSONObject();
             j.put("state", state);

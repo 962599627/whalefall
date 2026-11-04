@@ -150,6 +150,96 @@ public final class ReviewFixChecks {
         check(
                 (long) (12000 / bounded) * (18000 / bounded) <= 2L * 1024 * 1024,
                 "very large poster decode remains bounded");
+        check(
+                ImageDecodePolicy.targetWidth(0, false) == 320
+                        && ImageDecodePolicy.targetHeight(0, false) == 480
+                        && ImageDecodePolicy.targetWidth(0, true) == 720
+                        && ImageDecodePolicy.targetHeight(0, true) == 1080
+                        && ImageDecodePolicy.targetWidth(280, false) == 280
+                        && ImageDecodePolicy.targetWidth(9999, false) == 480
+                        && ImageDecodePolicy.targetHeight(9999, true) == 1620,
+                "image decode target dimensions fallback and bound measured size");
+        check(
+                !ImageDecodePolicy.cacheKey("https://example.test/a.jpg", 320, 480, false, false)
+                                .equals(
+                                        ImageDecodePolicy.cacheKey(
+                                                "https://example.test/a.jpg",
+                                                720,
+                                                1080,
+                                                false,
+                                                true))
+                        && !ImageDecodePolicy.cacheKey(
+                                        "https://example.test/a.jpg", 320, 480, false, false)
+                                .equals(
+                                        ImageDecodePolicy.cacheKey(
+                                                "https://example.test/a.jpg",
+                                                320,
+                                                480,
+                                                true,
+                                                false)),
+                "image cache key distinguishes size, crop, and detail mode");
+        check(
+                ImageDecodePolicy.cacheBytes(32) == 10 * 1024 * 1024
+                        && ImageDecodePolicy.cacheBytes(128) == 16 * 1024 * 1024
+                        && ImageDecodePolicy.cacheBytes(512) == 32 * 1024 * 1024,
+                "image memory cache budget scales within 10MB..32MB bounds");
+
+        check(Prefs.KEYS.length == 28, "backup settings key table has 28 entries");
+        check(
+                Boolean.TRUE.equals(Prefs.sanitizeSetting(Prefs.AUTO_NEXT, true))
+                        && Prefs.sanitizeSetting(Prefs.AUTO_NEXT, "true") == null
+                        && Prefs.sanitizeSetting(Prefs.EXPERIMENTAL_CSP, true) == null
+                        && Prefs.sanitizeSetting(null, true) == null,
+                "boolean settings validate type and never restore experimental_csp");
+        check(
+                Integer.valueOf(120).equals(Prefs.sanitizeSetting(Prefs.UI_SCALE_PERCENT, 120))
+                        && Integer.valueOf(100)
+                                .equals(Prefs.sanitizeSetting(Prefs.UI_SCALE_PERCENT, 999))
+                        && Prefs.sanitizeSetting(Prefs.UI_SCALE_PERCENT, "100") == null,
+                "ui_scale_percent normalizes to supported TV percentages");
+        check(
+                Integer.valueOf(5).equals(Prefs.sanitizeSetting(Prefs.HOME_COLUMNS, 5))
+                        && Prefs.sanitizeSetting(Prefs.HOME_COLUMNS, 4) == null
+                        && Prefs.sanitizeSetting(Prefs.HOME_COLUMNS, 9) == null
+                        && Integer.valueOf(30).equals(Prefs.sanitizeSetting(Prefs.SKIP_INTRO, 30))
+                        && Prefs.sanitizeSetting(Prefs.SKIP_INTRO, -1) == null
+                        && Prefs.sanitizeSetting(Prefs.SKIP_INTRO, 181) == null
+                        && Integer.valueOf(20)
+                                .equals(Prefs.sanitizeSetting(Prefs.SEARCH_TIMEOUT, 20))
+                        && Prefs.sanitizeSetting(Prefs.SEARCH_TIMEOUT, 9) == null,
+                "integer settings enforce configured bounds");
+        check(
+                Float.valueOf(1.5f).equals(Prefs.sanitizeSetting(Prefs.PLAY_SPEED, 1.5))
+                        && Prefs.sanitizeSetting(Prefs.PLAY_SPEED, 3.0) == null
+                        && Prefs.sanitizeSetting(Prefs.PLAY_SPEED, Double.NaN) == null,
+                "play_speed validates speed range");
+        check(
+                Prefs.clampWallpaperDim(-5) == 0
+                        && Prefs.clampWallpaperDim(120) == 100
+                        && Prefs.clampSubtitleSize(10) == 25
+                        && Prefs.clampSubtitleSize(90) == 65
+                        && Prefs.clampSearchTimeoutSeconds(1) == 10
+                        && Prefs.clampSearchTimeoutSeconds(99) == 30,
+                "preference range clamp helpers bound out-of-range values");
+
+        AppLog.clear();
+        AppLog.w("ReviewCheck", "sample warning", new IOException("disk full"));
+        List<String> logs = AppLog.entries();
+        check(
+                logs.size() == 1
+                        && logs.get(0).contains("W/ReviewCheck: sample warning")
+                        && logs.get(0).contains("IOException: disk full"),
+                "AppLog records structured warning with exception summary");
+        for (int i = 0; i < 240; i++) AppLog.i("RingCheck", "item-" + i);
+        List<String> boundedLogs = AppLog.entries();
+        check(
+                boundedLogs.size() == AppLog.CAPACITY
+                        && boundedLogs.get(0).contains("item-40")
+                        && boundedLogs.get(AppLog.CAPACITY - 1).contains("item-239")
+                        && AppLog.dump().contains("item-239"),
+                "AppLog ring buffer evicts oldest entries beyond capacity");
+        AppLog.clear();
+
         System.out.println(
                 "OK " + checks + " review regression checks; no device performance claim.");
     }

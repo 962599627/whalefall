@@ -235,9 +235,7 @@ final class UpdateManager {
                         message = cancel ? "已取消，当前版本不受影响" : "网络连接超时；若已有下载进度，再次下载可继续";
                     } catch (Exception e) {
                         message = "检查或下载失败，请检查网络后重试；现有版本仍可使用";
-                        android.util.Log.w(
-                                "MarcoMovieUpdate",
-                                "Check failed: " + e.getClass().getSimpleName());
+                        AppLog.w("UpdateManager", "Check failed", e);
                     } finally {
                         busy = false;
                         percent = -1;
@@ -260,9 +258,7 @@ final class UpdateManager {
                         message = cancel ? "下载已取消" : "下载超时，已保留进度，可再次下载继续";
                     } catch (Exception e) {
                         message = "下载或校验失败，未安装。请重试或从官方发布页下载";
-                        android.util.Log.w(
-                                "MarcoMovieUpdate",
-                                "Download failed: " + e.getClass().getSimpleName());
+                        AppLog.w("UpdateManager", "Download failed", e);
                     } finally {
                         busy = false;
                         percent = -1;

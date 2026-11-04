@@ -66,7 +66,7 @@ final class HomeScreen {
         COLUMNS =
                 TvLayoutPolicy.homeColumns(
                         a.windowWidth() / a.getResources().getDisplayMetrics().density,
-                        a.prefs.getInt("home_columns", 5));
+                        a.prefs.getInt(Prefs.HOME_COLUMNS, 5));
     }
 
     boolean active() {

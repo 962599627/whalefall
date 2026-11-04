@@ -13,14 +13,14 @@ final class FavoritesScreen {
 
     void show() {
         a.renderPage("我的收藏", "YOUR COLLECTION");
-        List<Favorites.Entry> entries = Favorites.read(a.prefs.getString("favorites", "[]"));
+        List<Favorites.Entry> entries = Favorites.read(a.prefs.getString(Prefs.FAVORITES, "[]"));
         if (entries.isEmpty()) {
             a.paragraph("把喜欢的内容留在这里。打开影片详情，选择“加入收藏”。");
             return;
         }
         a.paragraph(entries.size() + " 部收藏 · 确认打开详情，长按确认或按菜单键管理");
         float screen = a.windowWidth() / a.getResources().getDisplayMetrics().density;
-        int columns = Math.max(4, Math.min(6, a.prefs.getInt("home_columns", 6)));
+        int columns = Math.max(4, Math.min(6, a.prefs.getInt(Prefs.HOME_COLUMNS, 6)));
         int width = (int) ((screen - 92) / columns) - 20;
         LinearLayout row = null;
         for (int i = 0; i < entries.size(); i++) {
@@ -112,9 +112,9 @@ final class FavoritesScreen {
                                 a.prefs
                                         .edit()
                                         .putString(
-                                                "favorites",
+                                                Prefs.FAVORITES,
                                                 Favorites.toggle(
-                                                        a.prefs.getString("favorites", "[]"),
+                                                        a.prefs.getString(Prefs.FAVORITES, "[]"),
                                                         e.site,
                                                         e.video()))
                                         .apply();
