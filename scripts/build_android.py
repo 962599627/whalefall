@@ -10,7 +10,10 @@ DIST = ROOT / 'dist'
 JDK = Path(os.environ.get('MARCOMOVIE_JDK', os.environ.get('JAVA_HOME', 'missing-jdk')))
 SDK = Path(os.environ.get('MARCOMOVIE_BUILD_TOOLS', 'missing-build-tools'))
 ANDROID = Path(os.environ.get('MARCOMOVIE_ANDROID_JAR', str(ROOT/'tools/android-35/android.jar')))
-ENV = dict(os.environ, JAVA_HOME=str(JDK), PATH=str(JDK/'bin')+os.pathsep+os.environ.get('PATH',''), MARCOMOVIE_KEY_PASSWORD='android')
+ENV = dict(os.environ, JAVA_HOME=str(JDK), PATH=str(JDK/'bin')+os.pathsep+os.environ.get('PATH',''))
+# Development default only. A release key must supply its own password through
+# MARCOMOVIE_KEY_PASSWORD; an externally provided value is never overridden.
+ENV.setdefault('MARCOMOVIE_KEY_PASSWORD', 'android')
 
 def exe(parent,name):
     return parent / (name + ('.exe' if os.name=='nt' else ''))
