@@ -18,7 +18,15 @@ final class PlaybackLoading extends FrameLayout {
         pill.setPadding(a.dp(24), a.dp(18), a.dp(24), a.dp(18));
         pill.setBackground(a.bg(0xf529292e, 24));
         pill.addView(new Ring(a), new LinearLayout.LayoutParams(a.dp(26), a.dp(26)));
-        TextView text = a.text("正在加载播放信息…  返回取消", 14, MainActivity.WHITE);
+        boolean inPlayer = a.current != null && a.current.player && !a.miniMode;
+        String label =
+                inPlayer
+                                && a.activeEpisode != null
+                                && a.activeEpisode.name != null
+                                && !a.activeEpisode.name.isEmpty()
+                        ? "正在加载 " + a.activeEpisode.name + "…"
+                        : (a.isTvDevice() ? "正在加载播放信息…  返回取消" : "正在加载中…");
+        TextView text = a.text(label, 14, MainActivity.WHITE);
         text.setPadding(a.dp(16), 0, 0, 0);
         pill.addView(text);
         addView(pill, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));

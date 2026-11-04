@@ -10,8 +10,11 @@ final class PlayerChrome {
     final MainActivity a;
     final FrameLayout overlay;
     final LinearLayout dock, progress, heading;
+    final LinearLayout loadingPill;
+    final TextView loadingText, episodeLabel;
     final StateGlyph state;
     final TextView resolution;
+    boolean loading = true;
 
     PlayerChrome(MainActivity host, Cms.Video video, Cms.Episode episode) {
         a = host;
@@ -55,7 +58,7 @@ final class PlayerChrome {
         title.setShadowLayer(a.dp(4), 0, a.dp(2), 0xdd000000);
         heading.addView(title);
         String line = a.activeLine == null ? "" : a.activeLine.name;
-        TextView episodeLabel =
+        episodeLabel =
                 a.text(episode.name + (line.isEmpty() ? "" : "  ·  " + line), 14, 0xffdddddf);
         episodeLabel.setTag("player-episode");
         episodeLabel.setSingleLine();
@@ -66,7 +69,7 @@ final class PlayerChrome {
         resolution.setTag("player-resolution");
         resolution.setPadding(0, a.dp(6), 0, 0);
         heading.addView(resolution);
-        a.playStatus = a.text("正在连接所选剧集…", 12, MainActivity.MUTED);
+        a.playStatus = a.text("正在加载所选剧集…", 12, MainActivity.MUTED);
         a.playStatus.setPadding(0, a.dp(6), 0, 0);
         heading.addView(a.playStatus);
         FrameLayout.LayoutParams top = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
@@ -108,6 +111,7 @@ final class PlayerChrome {
         state = new StateGlyph();
         state.setTag("player-state");
         state.setFocusable(false);
+        state.setVisibility(View.GONE);
         state.setOnClickListener(
                 v -> {
                     a.togglePlayback();
@@ -115,6 +119,26 @@ final class PlayerChrome {
                 });
         overlay.addView(state, new FrameLayout.LayoutParams(a.dp(72), a.dp(72), Gravity.CENTER));
         a.playbackLayer.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+
+        loadingPill = a.row();
+        loadingPill.setTag("player-loading");
+        loadingPill.setGravity(Gravity.CENTER_VERTICAL);
+        loadingPill.setPadding(a.dp(24), a.dp(16), a.dp(24), a.dp(16));
+        GradientDrawable loadingBg = a.bg(0xf022232a, 24);
+        loadingBg.setStroke(a.dp(1), 0x26ffffff);
+        loadingPill.setBackground(loadingBg);
+        loadingPill.setElevation(a.dp(10));
+        loadingPill.addView(
+                new PlaybackLoading.Ring(a), new LinearLayout.LayoutParams(a.dp(26), a.dp(26)));
+        String epTitle =
+                episode != null && episode.name != null && !episode.name.isEmpty()
+                        ? " " + episode.name
+                        : "";
+        loadingText = a.text("正在加载" + epTitle + "…", 14, MainActivity.WHITE);
+        loadingText.setPadding(a.dp(14), 0, 0, 0);
+        loadingPill.addView(loadingText);
+        a.playbackLayer.addView(loadingPill, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+
         a.playerOverlay = overlay;
         a.controlsVisible = true;
     }
@@ -137,8 +161,29 @@ final class PlayerChrome {
         resolution.setText(width > 0 && height > 0 ? width + " × " + height : "分辨率未知");
     }
 
+    void setLoading(boolean value) {
+        loading = value;
+        update();
+    }
+
+    void switchEpisode(Cms.Episode episode, Cms.Line line) {
+        String lineName = line == null || line.name == null ? "" : line.name;
+        String epName = episode == null || episode.name == null ? "" : episode.name;
+        episodeLabel.setText(epName + (lineName.isEmpty() ? "" : "  ·  " + lineName));
+        resolution.setText("分辨率读取中");
+        String statusMsg = "正在加载" + (epName.isEmpty() ? "" : " " + epName) + "…";
+        if (a.playStatus != null) a.playStatus.setText(statusMsg);
+        loadingText.setText(statusMsg);
+        loading = true;
+        update();
+    }
+
     void update() {
+        if (a.prepared) loading = false;
         if (a.player != null && a.prepared) resolution.setText(a.player.videoResolution());
+        boolean showSpinner = loading && !a.prepared && a.playbackLoading == null && !a.miniMode;
+        loadingPill.setVisibility(showSpinner ? View.VISIBLE : View.GONE);
+        state.setVisibility(showSpinner ? View.GONE : View.VISIBLE);
         state.setContentDescription(!a.prepared ? "正在准备" : a.playing ? "正在播放，确认暂停" : "已暂停，确认继续");
         state.invalidate();
     }

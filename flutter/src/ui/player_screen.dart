@@ -44,6 +44,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   bool _playing = false;
+  bool _loading = true;
+  bool _buffering = false;
   double _dragStartPosMs = 0;
 
   CmsLine get _currentLine => widget.video.lines[_lineIndex];
@@ -60,13 +62,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _controller = VideoController(_player);
 
     _player.stream.position.listen((pos) {
-      if (mounted) setState(() => _position = pos);
+      if (mounted) {
+        setState(() {
+          _position = pos;
+          if (pos > Duration.zero && _loading) {
+            _loading = false;
+          }
+        });
+      }
     });
     _player.stream.duration.listen((dur) {
-      if (mounted) setState(() => _duration = dur);
+      if (mounted) {
+        setState(() {
+          _duration = dur;
+          if (dur > Duration.zero && _loading) {
+            _loading = false;
+          }
+        });
+      }
     });
     _player.stream.playing.listen((playing) {
-      if (mounted) setState(() => _playing = playing);
+      if (mounted) {
+        setState(() {
+          _playing = playing;
+          if (playing) _loading = false;
+        });
+      }
+    });
+    _player.stream.buffering.listen((buffering) {
+      if (mounted) setState(() => _buffering = buffering);
     });
     _player.stream.completed.listen((completed) {
       if (completed && mounted && widget.storage.autoNext) {
@@ -82,6 +106,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _openCurrentEpisode({int resumeMs = 0}) async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _position = Duration.zero;
+        _duration = Duration.zero;
+      });
+    }
     final headers = <String, String>{
       ...widget.site.headers,
       ..._currentEpisode.headers,
@@ -286,6 +317,47 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
               if (_controlsVisible) _buildChromeOverlay(context),
+              if (_loading || _buffering)
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xF022232A),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: const Color(0x26FFFFFF),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Text(
+                          '正在加载 ${_currentEpisode.name}…',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

@@ -682,6 +682,11 @@ public final class MainActivity extends Activity {
             clearPlaybackLoading();
             cancelPageRequests();
             stopWeb();
+            if (current != null && current.player && !prepared) {
+                if (playerChrome != null) playerChrome.setLoading(false);
+                if (playStatus != null) playStatus.setText("已取消加载");
+                showControls(true);
+            }
             return;
         }
         if (current != null && current.player) {

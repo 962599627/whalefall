@@ -55,7 +55,7 @@ final class PlaybackController {
         if (!Cms.isHttp(address)) {
             a.changingMiniEpisode = false;
             clearPlaybackLoading(a);
-            a.toast("解析页面地址不受支持。");
+            failInPlaceSwitch(a, "解析页面地址不受支持。");
             return;
         }
         final int ticket = a.generation;
@@ -86,7 +86,7 @@ final class PlaybackController {
                                         a.changingMiniEpisode = false;
                                         clearPlaybackLoading(a);
                                         stopWeb(a);
-                                        a.toast(reason);
+                                        failInPlaceSwitch(a, reason);
                                     }
                                 }
                             });
@@ -95,8 +95,17 @@ final class PlaybackController {
             AppLog.w("PlaybackController", "WebResolver init failed", error);
             a.changingMiniEpisode = false;
             clearPlaybackLoading(a);
-            a.toast("这台电视无法打开网页播放组件。");
+            failInPlaceSwitch(a, "这台设备无法打开网页播放组件。");
         }
+    }
+
+    static void failInPlaceSwitch(MainActivity a, String message) {
+        if (a.playerChrome != null) a.playerChrome.setLoading(false);
+        if (a.current != null && a.current.player) {
+            if (a.playStatus != null) a.playStatus.setText(message);
+            showControls(a, true);
+        }
+        a.toast(message);
     }
 
     static void resolvePlayer(
@@ -144,7 +153,7 @@ final class PlaybackController {
                                                 if (!Cms.isMedia(url)
                                                         && !url.startsWith("magnet:?")) {
                                                     a.changingMiniEpisode = false;
-                                                    a.toast("来源返回的播放协议暂不支持");
+                                                    failInPlaceSwitch(a, "来源返回的播放协议暂不支持");
                                                     return;
                                                 }
                                                 openPlayer(a, s, v, resolved);
@@ -155,7 +164,7 @@ final class PlaybackController {
                                                         error);
                                                 a.changingMiniEpisode = false;
                                                 clearPlaybackLoading(a);
-                                                a.toast("播放信息无法读取，请重试");
+                                                failInPlaceSwitch(a, "播放信息无法读取，请重试");
                                             }
                                         });
                             } catch (Exception error) {
@@ -166,7 +175,7 @@ final class PlaybackController {
                                                     || ticket != a.generation) return;
                                             a.changingMiniEpisode = false;
                                             clearPlaybackLoading(a);
-                                            a.toast(a.message(error));
+                                            failInPlaceSwitch(a, a.message(error));
                                         });
                             }
                         });
@@ -177,6 +186,7 @@ final class PlaybackController {
         a.playbackLoadingFocus = a.getCurrentFocus();
         a.playbackLoading = new PlaybackLoading(a);
         a.root.addView(a.playbackLoading, new FrameLayout.LayoutParams(-1, -1));
+        if (a.playerChrome != null) a.playerChrome.update();
         a.playbackLoading.requestFocus();
     }
 
@@ -186,6 +196,7 @@ final class PlaybackController {
             if (a.playbackLoading.getParent() instanceof ViewGroup)
                 ((ViewGroup) a.playbackLoading.getParent()).removeView(a.playbackLoading);
             a.playbackLoading = null;
+            if (a.playerChrome != null) a.playerChrome.update();
             if (a.playbackLoadingFocus != null && a.playbackLoadingFocus.isAttachedToWindow())
                 a.playbackLoadingFocus.requestFocus();
             a.playbackLoadingFocus = null;
@@ -198,12 +209,13 @@ final class PlaybackController {
             return;
         }
         if (!Cms.isMedia(e.url)) {
+            if (a.playerChrome != null) a.playerChrome.setLoading(false);
             a.notice("这条剧集需要解析或使用了特殊协议，基础版尚未支持。");
             return;
         }
         MainActivity.Screen screen = new MainActivity.Screen(() -> playerPage(a, s, v, e));
         screen.player = true;
-        a.open(screen, true);
+        a.open(screen, a.current == null || !a.current.player);
     }
 
     static void magnetPlayer(MainActivity a, Cms.Site site, Cms.Video video, Cms.Episode episode) {
@@ -300,8 +312,50 @@ final class PlaybackController {
             int position) {
         a.changingMiniEpisode = a.miniMode;
         a.resumeAt = position;
-        showEpisodeDetails(a, site, video);
+        if (a.miniMode) {
+            showEpisodeDetails(a, site, video);
+        } else {
+            rememberEpisodeOnBackStack(a, line, episode);
+            if (a.current != null && a.current.player) {
+                prepareInPlaceSwitch(a, line, episode);
+            }
+        }
         resolvePlayer(a, site, video, line, episode);
+    }
+
+    static void rememberEpisodeOnBackStack(MainActivity a, Cms.Line line, Cms.Episode episode) {
+        if (a.back.isEmpty() || line == null || episode == null) return;
+        MainActivity.Screen prev = a.back.peek();
+        if (prev == null) return;
+        int epIdx = line.episodes.indexOf(episode);
+        if (epIdx >= 0) {
+            boolean desc = a.prefs.getBoolean(Prefs.EPISODES_DESCENDING, false);
+            int page = EpisodeSelection.pageFor(epIdx, line.episodes.size(), desc);
+            prev.selection.select(line.name, page, line.episodes.size());
+            prev.focus = "episode:" + line.name + ":" + epIdx;
+            prev.episodeFocus = epIdx;
+            prev.episodeFocusLine = line.name;
+        }
+    }
+
+    static void prepareInPlaceSwitch(MainActivity a, Cms.Line line, Cms.Episode episode) {
+        finishSeek(a, false);
+        savePlaybackHistory(a, true);
+        stopWeb(a);
+        stopMagnet(a);
+        if (a.player != null) {
+            try {
+                a.player.release();
+            } catch (Exception error) {
+                AppLog.w("PlaybackController", "player.release failed", error);
+            }
+            a.player = null;
+        }
+        a.prepared = false;
+        a.playing = false;
+        if (a.playerChrome != null) {
+            a.playerChrome.switchEpisode(episode, line);
+        }
     }
 
     static void showEpisodeDetails(MainActivity a, Cms.Site site, Cms.Video video) {
@@ -495,7 +549,11 @@ final class PlaybackController {
                                                             mp -> {
                                                                 if (ticket != a.generation) return;
                                                                 a.prepared = true;
+                                                                if (a.playerChrome != null)
+                                                                    a.playerChrome.setLoading(
+                                                                            false);
                                                                 controls.prepared();
+                                                                savePlaybackHistoryOnPrepared(a);
                                                                 a.playing = a.foreground;
                                                                 if (a.foreground) mp.start();
                                                                 else mp.pause();
@@ -591,6 +649,9 @@ final class PlaybackController {
                                                                 }
                                                                 a.prepared = false;
                                                                 a.playing = false;
+                                                                if (a.playerChrome != null)
+                                                                    a.playerChrome.setLoading(
+                                                                            false);
                                                                 a.playStatus.setText(
                                                                         mp.getFailureMessage(what)
                                                                                 + "（"
@@ -599,7 +660,7 @@ final class PlaybackController {
                                                                 showControls(a, true);
                                                                 return true;
                                                             });
-                                                    a.playStatus.setText("正在准备播放…");
+                                                    a.playStatus.setText("正在加载播放…");
                                                     ready.prepareAsync();
                                                 });
                                     } catch (Exception ex) {
@@ -607,8 +668,12 @@ final class PlaybackController {
                                         if (candidate != null) candidate.release();
                                         a.ui.post(
                                                 () -> {
-                                                    if (ticket == a.generation)
+                                                    if (ticket == a.generation) {
+                                                        if (a.playerChrome != null)
+                                                            a.playerChrome.setLoading(false);
                                                         a.playStatus.setText(a.message(ex));
+                                                        showControls(a, true);
+                                                    }
                                                 });
                                     }
                                 });
@@ -760,6 +825,26 @@ final class PlaybackController {
             a.playClock.setText(formatTime(position) + " / " + formatTime(a.player.getDuration()));
         }
         if (commit) scheduleHide(a);
+    }
+
+    static void savePlaybackHistoryOnPrepared(MainActivity a) {
+        if (a.player == null || !a.prepared || a.playingBookmark == null) return;
+        try {
+            a.playingBookmark.position = Math.max(0, a.player.getCurrentPosition());
+            a.playingBookmark.duration = Math.max(0, a.player.getDuration());
+            a.playingBookmark.updated = System.currentTimeMillis();
+            a.prefs
+                    .edit()
+                    .putString(
+                            Prefs.WATCH_HISTORY,
+                            WatchHistory.upsert(
+                                    a.prefs.getString(Prefs.WATCH_HISTORY, "[]"),
+                                    a.playingBookmark))
+                    .apply();
+            a.lastBookmarkSave = a.playingBookmark.updated;
+        } catch (Exception error) {
+            AppLog.w("PlaybackController", "savePlaybackHistoryOnPrepared failed", error);
+        }
     }
 
     static void savePlaybackHistory(MainActivity a, boolean force) {
