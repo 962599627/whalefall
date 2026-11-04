@@ -116,6 +116,15 @@ class MirrorTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.sync()
         self.assertFalse(self.out.exists())
 
+    def test_large_platform_package_links_github_not_copied(self):
+        self.add_asset('MarcoMovie-0.4.12-windows-x64.zip', b'windows fixture')
+        big = [a for a in self.release['assets'] if a['name'] == 'MarcoMovie-0.4.12-windows-x64.zip'][0]
+        big['size'] = m.LIMIT + 1
+        self.sync()
+        self.assertFalse((self.out/'MarcoMovie-0.4.12-windows-x64.zip').exists())
+        page = (self.out/'index.html').read_text(encoding='utf-8')
+        self.assertIn(f'https://github.com/{m.REPO}/releases/download/v0.4.12-preview/MarcoMovie-0.4.12-windows-x64.zip', page)
+
     def test_without_platform_packages_links_release_page(self):
         self.sync()
         self.assertIn('Windows / macOS / iOS 多平台下载', (self.out/'index.html').read_text(encoding='utf-8'))

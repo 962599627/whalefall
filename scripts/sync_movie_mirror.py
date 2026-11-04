@@ -18,8 +18,9 @@ import zipfile
 REPO = 'Pilipala9919/MarcoMovie'
 BASE = 'https://marcotv.wlj9919.top/movie/'
 LIMIT = 25 * 1024 * 1024
-# Desktop and Apple packages are larger; GitHub Pages rejects files of 100 MB or more.
-PLATFORM_LIMIT = 95 * 1024 * 1024
+# Desktop and Apple packages may exceed the 25 MiB per-file limit of the Cloudflare Pages host.
+# Those are listed on the mirror page but downloaded from the official GitHub release asset.
+PLATFORM_LIMIT = 300 * 1024 * 1024
 # (file name pattern, button label, short note). Mirrored only when the release carries the
 # package together with its official .sha256 file.
 PLATFORMS = (
@@ -122,6 +123,30 @@ def asset(release, name, output, limit=LIMIT):
     return body, digest
 
 
+def platform_asset(release, name, output):
+    """Return (href, size, sha256, body-or-None). Large packages stay on GitHub, never on Pages."""
+    info = [a for a in release['assets'] if a['name'] == name and a['state'] == 'uploaded']
+    if len(info) != 1:
+        raise ValueError('Missing or duplicate asset: ' + name)
+    size = info[0]['size']
+    if size <= LIMIT:
+        body, digest = asset(release, name, output)
+        return name, size, digest, body
+    expected = f'https://github.com/{REPO}/releases/download/{release["tag_name"]}/{name}'
+    if info[0]['browser_download_url'] != expected or size > PLATFORM_LIMIT:
+        raise ValueError('Unexpected asset URL or size')
+    sha_url = expected + '.sha256'
+    if len([a for a in release['assets'] if a['name'] == name + '.sha256' and a['state'] == 'uploaded'
+            and a['browser_download_url'] == sha_url]) != 1:
+        raise ValueError('Missing official checksum')
+    checksum = fetch(sha_url, 4096).decode('ascii').strip().split()
+    if len(checksum) != 2 or checksum[1].lstrip('*') != name or not re.fullmatch('[0-9a-f]{64}', checksum[0]):
+        raise ValueError('Invalid checksum file')
+    if info[0].get('digest') not in (None, 'sha256:' + checksum[0]):
+        raise ValueError('Release digest mismatch: ' + name)
+    return expected, size, checksum[0], None
+
+
 def sync(output):
     release = choose(json.loads(fetch(f'https://api.github.com/repos/{REPO}/releases?per_page=100', 4 * 1024 * 1024)))
     version = release['tag_name'][1:-8]
@@ -132,8 +157,8 @@ def sync(output):
     for pattern, label, note in PLATFORMS:
         name = pattern.format(version=version)
         if any(a['name'] == name for a in release['assets']):
-            body, digest = asset(release, name, output, PLATFORM_LIMIT)
-            platforms.append((name, label, note, body, digest))
+            href, size, digest, body = platform_asset(release, name, output)
+            platforms.append((name, label, note, href, size, digest, body))
     identity = apk_identity(apk)
     if identity['versionName'] != version:
         raise ValueError('APK version does not match release')
@@ -155,10 +180,10 @@ def sync(output):
     platform_card = ''
     if platforms:
         rows = ''.join(
-            f'<div class="box"><h3>{escaped(label)}</h3><p class="muted">{escaped(note)} · {len(body)/1024/1024:.1f} MB</p>'
-            f'<a class="button" href="{escaped(name)}">下载{escaped(label)}</a>'
-            f'<p class="muted"><a href="{escaped(name)}.sha256">校验文件</a> · SHA-256<br><code>{digest}</code></p></div>'
-            for name, label, note, body, digest in platforms)
+            f'<div class="box"><h3>{escaped(label)}</h3><p class="muted">{escaped(note)} · {size/1024/1024:.1f} MB</p>'
+            f'<a class="button" href="{escaped(href)}">下载{escaped(label)}</a>'
+            f'<p class="muted"><a href="{escaped(href)}.sha256">校验文件</a> · SHA-256<br><code>{digest}</code></p></div>'
+            for name, label, note, href, size, digest, body in platforms)
         platform_card = ('<div class="card"><h2>其他平台</h2><p class="muted">与 Android 版同一版本，由 GitHub Actions 云端构建；'
                          '尚未在每台设备上实机验证。</p><div class="grid">' + rows + '</div></div>\n')
     page = f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -179,7 +204,9 @@ def sync(output):
     files = {apk_name: apk, apk_name + '.sha256': (sha + '  ' + apk_name + '\n').encode(),
              source_name: source, source_name + '.sha256': (source_sha + '  ' + source_name + '\n').encode(),
              'LICENSE': license_text, 'NOTICE': notice, 'index.html': page.encode()}
-    for name, _, _, body, digest in platforms:
+    for name, _, _, _, _, digest, body in platforms:
+        if body is None:
+            continue
         files[name] = body
         files[name + '.sha256'] = (digest + '  ' + name + '\n').encode()
     # Versions are immutable and written before the channel pointer; Git/Pages publishes one complete snapshot.
