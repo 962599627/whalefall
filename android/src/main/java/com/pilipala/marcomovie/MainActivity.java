@@ -254,7 +254,16 @@ public final class MainActivity extends Activity {
                         ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                         : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
         configStore = new ConfigStore(getFilesDir());
-        getWindow().getDecorView().setSystemUiVisibility(5894);
+        if (isTvDevice()) {
+            getWindow().getDecorView().setSystemUiVisibility(5894);
+        } else {
+            getWindow().getDecorView().setSystemUiVisibility(0);
+            try {
+                getWindow().setStatusBarColor(0xff12131a);
+                getWindow().setNavigationBarColor(0xff161720);
+            } catch (Exception ignored) {
+            }
+        }
         prefs = getSharedPreferences(Prefs.FILE, MODE_PRIVATE);
         reduced = prefs.getBoolean(Prefs.REDUCED, false);
         configOrigin = prefs.getString("origin", "");
@@ -341,7 +350,8 @@ public final class MainActivity extends Activity {
                                     if (isFinishing() || isDestroyed()) return;
                                     open(new Screen(() -> home()), false);
                                     layoutReady = true;
-                                    if (layoutIntro) StartupIntro.show(MainActivity.this);
+                                    if (layoutIntro && isTvDevice())
+                                        StartupIntro.show(MainActivity.this);
                                 });
                     }
                 });
@@ -436,7 +446,7 @@ public final class MainActivity extends Activity {
         b.setBackground(bg(0xff242429, 12));
         b.setTag(key);
         b.setFocusable(true);
-        b.setFocusableInTouchMode(true);
+        b.setFocusableInTouchMode(isTvDevice());
         b.setOnClickListener(v -> action.run());
         pressFeedback(b);
         b.setOnFocusChangeListener(
@@ -449,6 +459,15 @@ public final class MainActivity extends Activity {
     void pressFeedback(View view) {
         view.setOnTouchListener(
                 (v, event) -> {
+                    if (!isTvDevice()) {
+                        if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                            v.setAlpha(0.75f);
+                        } else if (event.getAction() == android.view.MotionEvent.ACTION_UP
+                                || event.getAction() == android.view.MotionEvent.ACTION_CANCEL) {
+                            v.setAlpha(1.0f);
+                        }
+                        return false;
+                    }
                     if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
                         v.requestFocus();
                         FocusMotion.press(this, v, true);
@@ -626,6 +645,7 @@ public final class MainActivity extends Activity {
                 () -> {
                     if (current != s) return;
                     if (scroll != null) scroll.scrollTo(0, s.scroll);
+                    if (!isTvDevice()) return;
                     View target = s.focus == null ? null : root.findViewWithTag(s.focus);
                     if (target != null) {
                         target.requestFocus();
@@ -667,7 +687,7 @@ public final class MainActivity extends Activity {
         if (current != null && current.player) {
             if (!miniMode && playbackControls != null) {
                 if (controlsVisible) showControls(false);
-                else if (isLive()) leavePlayback();
+                else if (isLive() || !isTvDevice()) leavePlayback();
                 else minimizePlayback();
                 return;
             }
@@ -686,6 +706,11 @@ public final class MainActivity extends Activity {
             }
         }
         if (current != null && current.home) {
+            if (!isTvDevice() && MobileShell.activeTab != 0) {
+                MobileShell.activeTab = 0;
+                MobileShell.show(this);
+                return;
+            }
             releasePlayer();
             finish();
             return;
@@ -772,6 +797,10 @@ public final class MainActivity extends Activity {
 
     void home() {
         if (current != null) current.home = true;
+        if (!isTvDevice()) {
+            MobileShell.show(this);
+            return;
+        }
         Cms.Site selected = null;
         if (config != null)
             for (Cms.Site s : config.sites)
@@ -806,6 +835,10 @@ public final class MainActivity extends Activity {
     }
 
     void contentHome(Cms.Site site) {
+        if (!isTvDevice()) {
+            MobileShell.show(this);
+            return;
+        }
         new HomeScreen(this, site).show();
     }
 
@@ -814,6 +847,10 @@ public final class MainActivity extends Activity {
     }
 
     void importDialog() {
+        if (!isTvDevice()) {
+            MobileShell.showMobileImportDialog(this);
+            return;
+        }
         if (phoneConfig != null) phoneConfig.close();
         phoneConfig = new PhoneConfigDialog(this);
         phoneConfig.show();
@@ -866,6 +903,10 @@ public final class MainActivity extends Activity {
     }
 
     void detail(Cms.Site s, Cms.Video listing, Cms.Video ready) {
+        if (!isTvDevice()) {
+            MobileDetailScreen.show(this, s, listing, ready);
+            return;
+        }
         DetailScreen.show(this, s, listing, ready);
     }
 
@@ -875,6 +916,11 @@ public final class MainActivity extends Activity {
     }
 
     void liveSources() {
+        if (!isTvDevice()) {
+            MobileShell.activeTab = 2;
+            open(new Screen(this::home), false);
+            return;
+        }
         LiveController.liveSources(this);
     }
 
@@ -918,6 +964,10 @@ public final class MainActivity extends Activity {
     void openSearch(String initial) {
         if (config == null) {
             importDialog();
+            return;
+        }
+        if (!isTvDevice()) {
+            MobileShell.openSearchTab(this, initial);
             return;
         }
         GlobalSearchScreen screen = new GlobalSearchScreen(this, initial);

@@ -307,6 +307,7 @@ final class PlaybackController {
     static void showEpisodeDetails(MainActivity a, Cms.Site site, Cms.Video video) {
         releasePlayer(a);
         if (!a.isTvDevice()) {
+            a.getWindow().getDecorView().setSystemUiVisibility(0);
             a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
         }
         if (a.current != null && a.current.player)
@@ -322,6 +323,7 @@ final class PlaybackController {
 
     static void leavePlayback(MainActivity a) {
         if (!a.isTvDevice()) {
+            a.getWindow().getDecorView().setSystemUiVisibility(0);
             a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
         }
         if (!a.back.isEmpty()) {
@@ -393,6 +395,11 @@ final class PlaybackController {
         a.generation++;
         final int ticket = a.generation;
         a.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        if (!a.isTvDevice()) {
+            a.getWindow().getDecorView().setSystemUiVisibility(5894);
+            a.setRequestedOrientation(
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        }
         a.root = new FrameLayout(a);
         a.root.setBackgroundColor(Color.BLACK);
         a.root.setFocusable(true);
@@ -497,9 +504,17 @@ final class PlaybackController {
                                                                                 ? ("live"
                                                                                                 .equals(
                                                                                                         s.key)
-                                                                                        ? "正在直播 · 上下换台 · 菜单键工具条"
-                                                                                        : "正在播放 · 确认暂停 · 上下键显示工具条")
-                                                                                : "已暂停 · 按确认继续");
+                                                                                        ? (a
+                                                                                                        .isTvDevice()
+                                                                                                ? "正在直播 · 上下换台 · 菜单键工具条"
+                                                                                                : "正在直播 · 单击显示选台工具栏")
+                                                                                        : (a
+                                                                                                        .isTvDevice()
+                                                                                                ? "正在播放 · 确认暂停 · 上下键显示工具条"
+                                                                                                : "正在播放 · 双击暂停 · 左右滑快进 · 上下滑调亮度音量"))
+                                                                                : (a.isTvDevice()
+                                                                                        ? "已暂停 · 按确认继续"
+                                                                                        : "已暂停 · 双击继续"));
                                                                 clock(a, ticket);
                                                                 if (a.changingMiniEpisode) {
                                                                     a.changingMiniEpisode = false;
@@ -689,14 +704,17 @@ final class PlaybackController {
             if (a.player.isPlaying()) {
                 a.player.pause();
                 a.playing = false;
-                a.playStatus.setText("已暂停 · 按确认继续");
+                a.playStatus.setText(a.isTvDevice() ? "已暂停 · 按确认继续" : "已暂停 · 双击继续");
             } else {
                 if (a.player.getDuration() > 0
                         && a.player.getCurrentPosition() >= a.player.getDuration() - 300)
                     a.player.seekTo(0);
                 a.player.start();
                 a.playing = true;
-                a.playStatus.setText("正在播放 · 确认暂停 · 上下键显示工具条");
+                a.playStatus.setText(
+                        a.isTvDevice()
+                                ? "正在播放 · 确认暂停 · 上下键显示工具条"
+                                : "正在播放 · 双击暂停 · 左右滑快进 · 上下滑调亮度音量");
             }
             if (a.playerChrome != null) a.playerChrome.update();
         } catch (Exception error) {
