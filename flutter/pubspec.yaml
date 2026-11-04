@@ -1,7 +1,7 @@
 name: marco_movie
 description: Marco Movie cross-platform player for Windows, macOS, iOS, iPadOS, and Android.
 publish_to: "none"
-version: 0.4.20+33
+version: 0.4.21+34
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

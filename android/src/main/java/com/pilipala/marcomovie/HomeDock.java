@@ -97,7 +97,8 @@ final class HomeDock {
                                 focused,
                                 Color.TRANSPARENT,
                                 MainActivity.WHITE,
-                                16,
+                                // Half of the 38dp cell or more: a true circle, not a squircle.
+                                24,
                                 MainActivity.WHITE,
                                 MainActivity.DARK,
                                 false,

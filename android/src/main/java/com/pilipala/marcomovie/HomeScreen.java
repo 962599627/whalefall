@@ -30,6 +30,10 @@ final class HomeScreen {
     TextView status, source, more, allHistory;
     int ticket, request, posterWidth, gridEpoch;
     Runnable pendingGrid;
+
+    /** Tag of the card that should take focus once drawn after "加载更多". */
+    String pendingFocus;
+
     boolean busy;
     Snapshot snapshot;
     State state;
@@ -464,6 +468,7 @@ final class HomeScreen {
         state.videos.clear();
         state.page = 1;
         state.pages = 1;
+        pendingFocus = null;
         cancelGrid();
         clearGrid();
         more.setVisibility(View.GONE);
@@ -536,14 +541,11 @@ final class HomeScreen {
                                     state.pages =
                                             added == 0 ? page : Math.max(page, list.pageCount);
                                     state.ready = true;
+                                    // Keep focus on the button until the first new card exists,
+                                    // so focus never falls back to the category tabs at the top.
+                                    pendingFocus =
+                                            !first && focusMore ? "home-video:" + focusIndex : null;
                                     drawGrid(!first && !trimmedWindow);
-                                    if (!first && focusMore) {
-                                        View next =
-                                                a.root.findViewWithTag("home-video:" + focusIndex);
-                                        if (next != null) next.requestFocus();
-                                        else if (!rows.isEmpty())
-                                            rows.get(rows.size() - 1).get(0).requestFocus();
-                                    }
                                     if (first
                                             && a.current != null
                                             && a.current.focus != null
@@ -604,8 +606,48 @@ final class HomeScreen {
             a.learnTitles(state.videos.subList(existing, state.videos.size()));
         status.setText("这个分类暂无内容，可切换其他分类或使用全局搜索。");
         status.setVisibility(state.videos.isEmpty() ? View.VISIBLE : View.GONE);
-        more.setVisibility(View.GONE);
+        // Hiding the focused button would hand focus to the first tab and jump to the top.
+        if (pendingFocus == null || !more.hasFocus()) more.setVisibility(View.GONE);
         appendCards(existing, gridEpoch, !append);
+    }
+
+    /** Moves focus to the card awaited after "加载更多", once it is laid out. */
+    void resolvePendingFocus(boolean finished) {
+        if (pendingFocus == null) return;
+        View target = a.root.findViewWithTag(pendingFocus);
+        if (target == null && finished && !rows.isEmpty()) {
+            List<View> last = rows.get(rows.size() - 1);
+            target = last.isEmpty() ? null : last.get(0);
+        }
+        if (target == null) return;
+        pendingFocus = null;
+        final View card = target;
+        if (card.isLaidOut()) card.requestFocus();
+        else
+            card.addOnLayoutChangeListener(
+                    new View.OnLayoutChangeListener() {
+                        public void onLayoutChange(
+                                View v,
+                                int l,
+                                int t,
+                                int r,
+                                int b,
+                                int ol,
+                                int ot,
+                                int or,
+                                int ob) {
+                            v.removeOnLayoutChangeListener(this);
+                            if (active() && v.isAttachedToWindow()) v.requestFocus();
+                            if (pendingGrid == null) updateMore();
+                        }
+                    });
+    }
+
+    /** Shows or hides "加载更多" without ever hiding it while it still holds focus. */
+    void updateMore() {
+        more.setText("加载更多");
+        boolean hasMore = state.page < state.pages;
+        if (hasMore || !more.hasFocus()) more.setVisibility(hasMore ? View.VISIBLE : View.GONE);
     }
 
     void appendCards(int start, int epoch, boolean restore) {
@@ -644,6 +686,7 @@ final class HomeScreen {
             if (System.nanoTime() - batchStarted >= 3000000L) break;
         }
         wireNavigation(Math.max(0, start / COLUMNS - 1));
+        resolvePendingFocus(false);
         if (end < state.videos.size()) {
             final int next = end;
             pendingGrid = () -> appendCards(next, epoch, restore);
@@ -653,8 +696,8 @@ final class HomeScreen {
                         if (active() && epoch == gridEpoch) a.ui.post(nextBatch);
                     });
         } else {
-            more.setText("加载更多");
-            more.setVisibility(state.page < state.pages ? View.VISIBLE : View.GONE);
+            resolvePendingFocus(true);
+            updateMore();
             wireNavigation(Math.max(0, rows.size() - 1));
             if (restore
                     && a.current != null
@@ -863,7 +906,8 @@ final class HomeScreen {
                 focused,
                 0x66344352,
                 0xff344452,
-                10,
+                // Fully rounded capsule: the radius is clamped to half the 30dp height.
+                24,
                 0xffd7e2ed,
                 Color.WHITE,
                 true,

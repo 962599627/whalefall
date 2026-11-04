@@ -647,6 +647,7 @@ public final class MainActivity extends Activity {
             homeAmbient = new HomeAmbient(this);
             root.addView(homeAmbient, new FrameLayout.LayoutParams(-1, -1));
         }
+        if (navigation) root.addView(homeGradient(), new FrameLayout.LayoutParams(-1, -1));
         scroll = new TvScrollView(this);
         scroll.setClipToPadding(false);
         scroll.setFillViewport(true);
@@ -701,6 +702,28 @@ public final class MainActivity extends Activity {
                     .setInterpolator(new DecelerateInterpolator())
                     .start();
         }
+    }
+
+    /**
+     * Soft home backdrop: a cool light from the top, deepening toward the bottom, with gentle
+     * side shading. Sits above the poster colors or wallpaper and below all content.
+     */
+    View homeGradient() {
+        GradientDrawable vertical =
+                new GradientDrawable(
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[] {0x3a3b5a80, 0x0d1a2233, 0x00101013, 0x8c0a0a0d, 0xe60a0a0d});
+        GradientDrawable sides =
+                new GradientDrawable(
+                        GradientDrawable.Orientation.LEFT_RIGHT,
+                        new int[] {0x47000000, 0x00000000, 0x00000000, 0x38000000});
+        View scrim = new View(this);
+        scrim.setTag("home-gradient");
+        scrim.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        scrim.setBackground(
+                new android.graphics.drawable.LayerDrawable(
+                        new android.graphics.drawable.Drawable[] {vertical, sides}));
+        return scrim;
     }
 
     boolean available(Cms.Site s) {
