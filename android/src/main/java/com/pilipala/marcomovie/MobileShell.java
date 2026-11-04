@@ -1559,7 +1559,7 @@ final class MobileShell {
         addSettingCard(
                 body,
                 "🔄 检查软件更新",
-                "当前版本：0.4.16 Preview",
+                "当前版本：0.4.17 Preview",
                 () -> a.open(new MainActivity.Screen(() -> new UpdateScreen(a).show()), true));
         addSettingCard(
                 body, "📋 查看运行诊断日志", "排查片源网络请求与播放解码报错", () -> new SettingsScreen(a).diagnostics());
