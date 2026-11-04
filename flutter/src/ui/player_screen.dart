@@ -1,12 +1,14 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../core/models.dart';
 import '../core/storage_service.dart';
-
-/// Cross-platform video player supporting Windows/macOS keyboard shortcuts and iOS/iPadOS touch gestures.
+import 'apple_theme.dart';
+/// Apple AVPlayerViewController / Apple TV+ inspired video player with frosted-glass
+/// floating HUD, keyboard shortcuts (macOS/Windows), and touch gestures (iOS/iPadOS).
 class PlayerScreen extends StatefulWidget {
   final CmsSite site;
   final CmsVideo video;
@@ -14,7 +16,6 @@ class PlayerScreen extends StatefulWidget {
   final int initialEpisodeIndex;
   final int initialPositionMs;
   final StorageService storage;
-
   const PlayerScreen({
     super.key,
     required this.site,
@@ -24,11 +25,9 @@ class PlayerScreen extends StatefulWidget {
     required this.storage,
     this.initialPositionMs = 0,
   });
-
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
-
 class _PlayerScreenState extends State<PlayerScreen> {
   late final Player _player;
   late final VideoController _controller;
@@ -49,20 +48,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
   double _dragStartPosMs = 0;
   int _playSession = 0;
   int _pendingResumeMs = 0;
-
   CmsLine get _currentLine => widget.video.lines[_lineIndex];
   CmsEpisode get _currentEpisode => _currentLine.episodes[_episodeIndex];
-
   @override
   void initState() {
     super.initState();
-    _lineIndex = widget.initialLineIndex.clamp(0, widget.video.lines.length - 1);
+    _lineIndex =
+        widget.initialLineIndex.clamp(0, widget.video.lines.length - 1);
     _episodeIndex = widget.initialEpisodeIndex
         .clamp(0, _currentLine.episodes.length - 1);
     _normalSpeed = widget.storage.playSpeed;
     _player = Player();
     _controller = VideoController(_player);
-
     _player.stream.position.listen((pos) {
       if (mounted) {
         setState(() {
@@ -104,14 +101,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _stepEpisode(1);
       }
     });
-
     _openCurrentEpisode(resumeMs: widget.initialPositionMs);
     _historyTimer = Timer.periodic(
       const Duration(seconds: 5),
       (_) => _saveProgress(),
     );
   }
-
   Future<void> _openCurrentEpisode({int resumeMs = 0}) async {
     final session = ++_playSession;
     _pendingResumeMs = resumeMs > 0 ? resumeMs : 0;
@@ -158,7 +153,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
     _scheduleHide();
   }
-
   Future<void> _saveProgress() async {
     if (widget.site.key == 'live' || _duration.inMilliseconds <= 0) return;
     await widget.storage.upsertWatchHistory(
@@ -176,7 +170,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ),
     );
   }
-
   void _scheduleHide() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 4), () {
@@ -185,12 +178,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     });
   }
-
   void _toggleControls() {
     setState(() => _controlsVisible = !_controlsVisible);
     if (_controlsVisible) _scheduleHide();
   }
-
   void _stepEpisode(int delta) {
     final next = _episodeIndex + delta;
     if (next < 0 || next >= _currentLine.episodes.length) return;
@@ -198,16 +189,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
     setState(() => _episodeIndex = next);
     _openCurrentEpisode();
   }
-
   void _seekRelative(int seconds) {
     if (_duration.inMilliseconds <= 0) return;
     final targetMs = (_position.inMilliseconds + seconds * 1000)
         .clamp(0, _duration.inMilliseconds);
     _player.seek(Duration(milliseconds: targetMs));
-    _showHud('${seconds >= 0 ? "快进" : "快退"} ${_formatDuration(Duration(milliseconds: targetMs))}');
+    _showHud(
+      '${seconds >= 0 ? "快进" : "快退"} ${_formatDuration(Duration(milliseconds: targetMs))}',
+    );
     _scheduleHide();
   }
-
   void _showHud(String text) {
     setState(() => _hudText = text);
     Future.delayed(const Duration(milliseconds: 1100), () {
@@ -216,7 +207,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     });
   }
-
   String _formatDuration(Duration d) {
     final totalSeconds = d.inSeconds < 0 ? 0 : d.inSeconds;
     final h = totalSeconds ~/ 3600;
@@ -227,7 +217,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
-
   @override
   void dispose() {
     _hideTimer?.cancel();
@@ -236,7 +225,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _player.dispose();
     super.dispose();
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -323,60 +311,41 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ),
               if (_hudText.isNotEmpty)
                 Align(
-                  alignment: const Alignment(0, -0.75),
-                  child: Container(
+                  alignment: const Alignment(0, -0.74),
+                  child: AppleGlassSurface(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 18,
                       vertical: 10,
                     ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xD8202026),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+                    borderRadius: BorderRadius.circular(999),
                     child: Text(
                       _hudText,
                       style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
+                        color: AppleColors.labelPrimary,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ),
-              if (_controlsVisible) _buildChromeOverlay(context),
+              if (_controlsVisible) _buildAppleChromeOverlay(context),
               if (_loading || _buffering)
                 Center(
-                  child: Container(
+                  child: AppleGlassSurface(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 16,
+                      horizontal: 22,
+                      vertical: 15,
                     ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xF022232A),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: const Color(0x26FFFFFF),
-                        width: 1,
-                      ),
-                    ),
+                    borderRadius: BorderRadius.circular(999),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
+                        const CupertinoActivityIndicator(radius: 11),
+                        const SizedBox(width: 12),
                         Text(
                           '正在加载 ${_currentEpisode.name}…',
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: AppleColors.labelPrimary,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
@@ -391,39 +360,63 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ),
     );
   }
-
-  Widget _buildChromeOverlay(BuildContext context) {
+  Widget _buildAppleChromeOverlay(BuildContext context) {
     final maxMs = _duration.inMilliseconds > 0
         ? _duration.inMilliseconds.toDouble()
         : 1.0;
     final curMs = _position.inMilliseconds.toDouble().clamp(0.0, maxMs);
-
+    final remaining = _duration > _position
+        ? _duration - _position
+        : Duration.zero;
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Color(0xCC000000),
+            Color(0xB8000000),
             Color(0x00000000),
             Color(0x00000000),
-            Color(0xDD000000),
+            Color(0xD8000000),
           ],
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       child: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Top Frosted Header Pill
             Row(
               children: [
-                IconButton(
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  minSize: 38,
                   onPressed: () => Navigator.of(context).maybePop(),
-                  icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
-                  tooltip: '返回',
+                  child: const AppleGlassSurface(
+                    padding: EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+                    borderRadius: BorderRadius.all(Radius.circular(999)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          CupertinoIcons.chevron_back,
+                          color: AppleColors.labelPrimary,
+                          size: 16,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          '返回',
+                          style: TextStyle(
+                            color: AppleColors.labelPrimary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -433,19 +426,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+                          color: AppleColors.labelPrimary,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.3,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${_currentEpisode.name}  ·  ${_currentLine.name}',
+                        '${_currentEpisode.name} · ${_currentLine.name}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Color(0xFFDDDDDF),
-                          fontSize: 13,
+                          color: AppleColors.labelSecondary,
+                          fontSize: 12,
                         ),
                       ),
                     ],
@@ -454,64 +448,98 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ],
             ),
             const Spacer(),
-            Row(
-              children: [
-                Text(
-                  _formatDuration(_position),
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: curMs,
-                    min: 0,
-                    max: maxMs,
-                    activeColor: Colors.white,
-                    inactiveColor: Colors.white24,
-                    onChanged: (value) {
-                      _player.seek(Duration(milliseconds: value.round()));
-                      _scheduleHide();
-                    },
-                  ),
-                ),
-                Text(
-                  _duration.inMilliseconds > 0
-                      ? _formatDuration(_duration)
-                      : '直播',
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xED262629),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: const Color(0x30FFFFFF)),
-                ),
-                child: Wrap(
-                  spacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+            // Bottom Floating Apple Glass Console
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 680),
+              child: AppleGlassSurface(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+                borderRadius: BorderRadius.circular(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    IconButton(
-                      onPressed: () {
-                        _player.playOrPause();
-                        _scheduleHide();
-                      },
-                      icon: Icon(
-                        _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                        color: Colors.white,
-                      ),
-                      tooltip: _playing ? '暂停' : '播放',
+                    Row(
+                      children: [
+                        Text(
+                          _formatDuration(_position),
+                          style: const TextStyle(
+                            color: AppleColors.labelSecondary,
+                            fontSize: 12,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        Expanded(
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 4,
+                              thumbShape: const RoundSliderThumbShape(
+                                enabledThumbRadius: 6,
+                              ),
+                              overlayShape: const RoundSliderOverlayShape(
+                                overlayRadius: 12,
+                              ),
+                              activeTrackColor: AppleColors.labelPrimary,
+                              inactiveTrackColor: const Color(0x44FFFFFF),
+                              thumbColor: AppleColors.labelPrimary,
+                            ),
+                            child: Slider(
+                              value: curMs,
+                              min: 0,
+                              max: maxMs,
+                              onChanged: (value) {
+                                _player.seek(
+                                  Duration(milliseconds: value.round()),
+                                );
+                                _scheduleHide();
+                              },
+                            ),
+                          ),
+                        ),
+                        Text(
+                          _duration.inMilliseconds > 0
+                              ? '-${_formatDuration(remaining)}'
+                              : 'LIVE',
+                          style: const TextStyle(
+                            color: AppleColors.labelSecondary,
+                            fontSize: 12,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
                     ),
-                    if (_episodeIndex < _currentLine.episodes.length - 1)
-                      _dockButton('下集', () => _stepEpisode(1)),
-                    _dockButton('选集', _showEpisodesSheet),
-                    if (widget.video.lines.length > 1)
-                      _dockButton('线路', _showLinesSheet),
-                    _dockButton('${_normalSpeed}×', _showSpeedSheet),
-                    _dockButton('画面', _cycleAspect),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _buildIconControl(
+                          CupertinoIcons.gobackward_15,
+                          () => _seekRelative(-15),
+                        ),
+                        _buildIconControl(
+                          _playing
+                              ? CupertinoIcons.pause_fill
+                              : CupertinoIcons.play_fill,
+                          () {
+                            _player.playOrPause();
+                            _scheduleHide();
+                          },
+                          large: true,
+                        ),
+                        _buildIconControl(
+                          CupertinoIcons.goforward_15,
+                          () => _seekRelative(15),
+                        ),
+                        if (_episodeIndex < _currentLine.episodes.length - 1)
+                          _dockButton('下集', () => _stepEpisode(1)),
+                        _dockButton('选集', _showEpisodesSheet),
+                        if (widget.video.lines.length > 1)
+                          _dockButton('线路', _showLinesSheet),
+                        _dockButton('${_normalSpeed}×', _showSpeedSheet),
+                        _dockButton('画面', _cycleAspect),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -521,23 +549,60 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ),
     );
   }
-
+  Widget _buildIconControl(
+    IconData icon,
+    VoidCallback onTap, {
+    bool large = false,
+  }) {
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      minSize: large ? 42 : 34,
+      onPressed: () {
+        _scheduleHide();
+        onTap();
+      },
+      child: Container(
+        width: large ? 42 : 34,
+        height: large ? 42 : 34,
+        decoration: BoxDecoration(
+          color: large ? AppleColors.labelPrimary : const Color(0x22FFFFFF),
+          shape: BoxShape.circle,
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          icon,
+          color: large ? Colors.black : AppleColors.labelPrimary,
+          size: large ? 20 : 16,
+        ),
+      ),
+    );
+  }
   Widget _dockButton(String label, VoidCallback onPressed) {
-    return TextButton(
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      minSize: 32,
       onPressed: () {
         _scheduleHide();
         onPressed();
       },
-      style: TextButton.styleFrom(
-        foregroundColor: Colors.white,
-        backgroundColor: const Color(0x18FFFFFF),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+        decoration: BoxDecoration(
+          color: const Color(0x22FFFFFF),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AppleColors.glassBorder, width: 0.5),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: AppleColors.labelPrimary,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
-      child: Text(label, style: const TextStyle(fontSize: 13)),
     );
   }
-
   void _cycleAspect() {
     setState(() {
       if (_fit == BoxFit.contain) {
@@ -552,111 +617,132 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     });
   }
-
   void _showSpeedSheet() {
     const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-    showModalBottomSheet<void>(
+    showAppleModalSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF1C1C22),
-      builder: (ctx) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: speeds
-              .map(
-                (s) => ListTile(
-                  title: Text(
-                    '$s×',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                  trailing: _normalSpeed == s
-                      ? const Icon(Icons.check, color: Colors.white)
-                      : null,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    setState(() => _normalSpeed = s);
-                    _player.setRate(s);
-                    widget.storage.setPlaySpeed(s);
-                  },
-                ),
-              )
-              .toList(),
-        ),
-      ),
-    );
-  }
-
-  void _showLinesSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: const Color(0xFF1C1C22),
-      builder: (ctx) => SafeArea(
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: widget.video.lines.length,
-          itemBuilder: (ctx, i) => ListTile(
-            title: Text(
-              widget.video.lines[i].name,
-              style: const TextStyle(color: Colors.white),
-            ),
-            trailing: i == _lineIndex
-                ? const Icon(Icons.check, color: Colors.white)
-                : null,
-            onTap: () {
-              Navigator.pop(ctx);
-              setState(() {
-                _lineIndex = i;
-                _episodeIndex = _episodeIndex.clamp(
-                  0,
-                  widget.video.lines[i].episodes.length - 1,
-                );
-              });
-              _openCurrentEpisode();
-            },
+      title: '播放倍速',
+      builder: (ctx) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.all(16),
+        children: [
+          AppleGroupedSection(
+            children: speeds.map((s) {
+              final selected = _normalSpeed == s;
+              return AppleGroupedTile(
+                icon: CupertinoIcons.speedometer,
+                iconBgColor: selected
+                    ? AppleColors.systemBlue
+                    : AppleColors.groupedTertiary,
+                title: '$s× 倍速',
+                trailing: selected
+                    ? const Icon(
+                        CupertinoIcons.checkmark_alt,
+                        color: AppleColors.systemBlue,
+                        size: 18,
+                      )
+                    : null,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  setState(() => _normalSpeed = s);
+                  _player.setRate(s);
+                  widget.storage.setPlaySpeed(s);
+                },
+              );
+            }).toList(),
           ),
-        ),
+        ],
       ),
     );
   }
-
-  void _showEpisodesSheet() {
-    showModalBottomSheet<void>(
+  void _showLinesSheet() {
+    showAppleModalSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF1C1C22),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: GridView.builder(
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 140,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 2.6,
-            ),
-            itemCount: _currentLine.episodes.length,
-            itemBuilder: (ctx, i) {
-              final ep = _currentLine.episodes[i];
-              final selected = i == _episodeIndex;
-              return FilledButton.tonal(
-                style: FilledButton.styleFrom(
-                  backgroundColor: selected
-                      ? const Color(0xFF465C76)
-                      : const Color(0xFF282830),
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  setState(() => _episodeIndex = i);
+      title: '切换播放线路',
+      builder: (ctx) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.all(16),
+        children: [
+          AppleGroupedSection(
+            children: List.generate(widget.video.lines.length, (i) {
+              final selected = i == _lineIndex;
+              return AppleGroupedTile(
+                icon: CupertinoIcons.layers_alt_fill,
+                iconBgColor: selected
+                    ? AppleColors.systemBlue
+                    : AppleColors.groupedTertiary,
+                title: widget.video.lines[i].name,
+                subtitle: '${widget.video.lines[i].episodes.length} 集',
+                trailing: selected
+                    ? const Icon(
+                        CupertinoIcons.checkmark_alt,
+                        color: AppleColors.systemBlue,
+                        size: 18,
+                      )
+                    : null,
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  setState(() {
+                    _lineIndex = i;
+                    _episodeIndex = _episodeIndex.clamp(
+                      0,
+                      widget.video.lines[i].episodes.length - 1,
+                    );
+                  });
                   _openCurrentEpisode();
                 },
-                child: Text(
-                  ep.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
               );
-            },
+            }),
           ),
+        ],
+      ),
+    );
+  }
+  void _showEpisodesSheet() {
+    showAppleModalSheet<void>(
+      context: context,
+      title: '切换剧集 (${_currentLine.episodes.length})',
+      builder: (ctx) => GridView.builder(
+        shrinkWrap: true,
+        padding: const EdgeInsets.all(16),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 148,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 2.7,
         ),
+        itemCount: _currentLine.episodes.length,
+        itemBuilder: (ctx, i) {
+          final ep = _currentLine.episodes[i];
+          final selected = i == _episodeIndex;
+          return GestureDetector(
+            onTap: () {
+              Navigator.of(ctx).pop();
+              setState(() => _episodeIndex = i);
+              _openCurrentEpisode();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: selected
+                    ? AppleColors.systemBlue
+                    : AppleColors.groupedSecondary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                ep.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppleColors.labelPrimary,
+                  fontSize: 13,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

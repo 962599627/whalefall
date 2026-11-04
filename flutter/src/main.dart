@@ -1,27 +1,34 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'core/cms_client.dart';
 import 'core/storage_service.dart';
 import 'ui/adaptive_shell.dart';
-
+import 'ui/apple_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarBrightness: Brightness.dark,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: AppleColors.background,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
   final storage = await StorageService.init();
   final client = CmsClient();
   runApp(MarcoMovieApp(storage: storage, client: client));
 }
-
 class MarcoMovieApp extends StatelessWidget {
   final StorageService storage;
   final CmsClient client;
-
   const MarcoMovieApp({
     super.key,
     required this.storage,
     required this.client,
   });
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -30,12 +37,34 @@ class MarcoMovieApp extends StatelessWidget {
       themeMode: ThemeMode.dark,
       darkTheme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF101013),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF465C76),
+        scaffoldBackgroundColor: AppleColors.background,
+        canvasColor: AppleColors.groupedPrimary,
+        primaryColor: AppleColors.systemBlue,
+        cupertinoOverrideTheme: const CupertinoThemeData(
           brightness: Brightness.dark,
-          surface: const Color(0xFF18181E),
+          primaryColor: AppleColors.systemBlue,
+          scaffoldBackgroundColor: AppleColors.background,
+          barBackgroundColor: Color(0xB81C1C1E),
+          textTheme: CupertinoTextThemeData(
+            primaryColor: AppleColors.labelPrimary,
+          ),
         ),
+        colorScheme: const ColorScheme.dark(
+          primary: AppleColors.systemBlue,
+          secondary: AppleColors.systemIndigo,
+          surface: AppleColors.groupedPrimary,
+          error: AppleColors.systemRed,
+        ),
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          },
+        ),
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: Colors.white10,
         useMaterial3: true,
       ),
       home: AdaptiveShell(storage: storage, client: client),

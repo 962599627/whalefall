@@ -1,7 +1,7 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marco_movie/core/cms_parser.dart';
 import 'package:marco_movie/core/models.dart';
-
 void main() {
   test('parses CMS config with relative URLs and strips JSON comments', () {
     const raw = '''
@@ -25,7 +25,45 @@ void main() {
     expect(config.lives.length, 1);
     expect(config.lives.first.url, 'https://config.example/root/live/channels.m3u');
   });
-
+  test('handles trailing commas, string/bool fields, Base64 steganography, IDN URLs, and multi-depot configs', () {
+    const lenientJson = '''
+    \uFEFF{
+      "urls": [
+        {"name": "主力仓", "url": "https://depot.example/main.json",},
+      ],
+      "sites": [
+        {
+          "key": "s1",
+          "name": "站点一",
+          "type": "1",
+          "searchable": true,
+          "api": "https://cms.example/api.php",
+          "header": "{\\"Referer\\":\\"https://cms.example\\"}",
+        },
+      ],
+    }
+    ''';
+    final parsed = CmsParser.parseConfig(lenientJson);
+    expect(parsed.depots.length, 1);
+    expect(parsed.depots.first.name, '主力仓');
+    expect(parsed.supportedSites.length, 1);
+    expect(parsed.supportedSites.first.type, 1);
+    expect(parsed.supportedSites.first.searchable, isTrue);
+    expect(parsed.supportedSites.first.headers['Referer'], 'https://cms.example');
+    // Test JPEG + ** + Base64 steganography
+    final b64Payload = base64Encode(utf8.encode(lenientJson));
+    final fakeJpegBytes = <int>[
+      0xFF, 0xD8, 0xFF, 0xD9, 0x2A, 0x2A, // **
+      ...ascii.encode(b64Payload),
+    ];
+    final unpackedDoc = CmsParser.decodeConfigDocument(fakeJpegBytes);
+    final fromStego = CmsParser.parseConfig(unpackedDoc);
+    expect(fromStego.supportedSites.length, 1);
+    expect(fromStego.supportedSites.first.key, 's1');
+    // Test Chinese IDN domain normalization and messy text URL extraction
+    final normalizedIdn = CmsParser.extractAndNormalizeUrl('最新接口：http://肥猫.example/tv 欢迎使用');
+    expect(normalizedIdn, 'http://xn--z7x900a.example/tv');
+  });
   test('parses multi-line and multi-episode vod_play_url', () {
     const raw = '''
     {
@@ -50,7 +88,6 @@ void main() {
     expect(video.lines[0].episodes[1].url, 'https://media.test/a2.m3u8');
     expect(video.lines[1].name, '线路B');
   });
-
   test('parses M3U and TXT live playlists', () {
     const playlist = '''
     #EXTM3U
@@ -66,7 +103,6 @@ void main() {
     expect(groups[1].name, '电影频道');
     expect(groups[1].channels.first.urls.length, 2);
   });
-
   test('enforces 60-entry watch history cap and 95% completion reset', () {
     var history = <WatchHistoryEntry>[];
     for (int i = 0; i < 65; i++) {
@@ -83,7 +119,6 @@ void main() {
     }
     expect(history.length, 60);
     expect(history.first.id, 'id_64');
-
     const completed = WatchHistoryEntry(
       site: 's',
       id: 'done',
@@ -94,7 +129,6 @@ void main() {
     expect(completed.complete, isTrue);
     expect(completed.resumePosition, 0);
   });
-
   test('parses XML CMS type 0 categories and video listings and checks direct playability', () {
     const xmlRaw = '''<?xml version="1.0" encoding="utf-8"?>
     <rss version="5.1">
@@ -118,7 +152,6 @@ void main() {
     final categories = CmsParser.parseCategories(xmlRaw);
     expect(categories.length, 2);
     expect(categories.first.name, '电影');
-
     final listing = CmsParser.parseListing(xmlRaw);
     expect(listing.pageCount, 3);
     expect(listing.videos.length, 1);
@@ -128,7 +161,6 @@ void main() {
     expect(video.lines.first.episodes[0].isDirectPlayable, isTrue);
     expect(video.lines.first.episodes[1].isDirectPlayable, isFalse);
   });
-
   test('supports bidirectional Android and Flutter backup formats and rejects invalid backups', () {
     const androidBackup = '''
     {
@@ -164,7 +196,6 @@ void main() {
     expect((decoded.settings['watch_history'] as List).length, 1);
     expect((decoded.settings['favorites'] as List).length, 1);
     expect(decoded.settings['global_search_history'], ['星际', '流浪']);
-
     final reEncoded = CmsParser.encodeBackupPayload(
       origin: decoded.origin,
       rawConfig: decoded.rawConfig,
@@ -177,7 +208,6 @@ void main() {
     expect(roundTrip.settings['selected_site'], 'vod1');
     expect((roundTrip.settings['watch_history'] as List).first['id'], '99');
     expect((roundTrip.settings['favorites'] as List).first['id'], '99');
-
     expect(
       () => CmsParser.decodeBackupPayload('{"format":"unknown","settings":{}}'),
       throwsFormatException,

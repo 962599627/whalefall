@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'cms_parser.dart';
 import 'models.dart';
-
 /// Persistent preferences and backup serializer compatible with Android `Prefs.java`.
 class StorageService {
   static const String keyOrigin = 'origin';
@@ -14,60 +13,101 @@ class StorageService {
   static const String keyEpisodesDescending = 'episodes_descending';
   static const String keyPlaySpeed = 'play_speed';
   static const String keyAutoNext = 'auto_next';
-
+  static const String keyDepots = 'saved_depots';
+  static const String keyActiveDepotName = 'active_depot_name';
   final SharedPreferences _prefs;
-
   StorageService(this._prefs);
-
   static Future<StorageService> init() async {
     final prefs = await SharedPreferences.getInstance();
     return StorageService(prefs);
   }
-
   String get configOrigin => _prefs.getString(keyOrigin) ?? '';
   String get rawConfig => _prefs.getString(keyRawConfig) ?? '';
   String get selectedSiteKey => _prefs.getString(keySelectedSite) ?? '';
+  String get activeDepotName => _prefs.getString(keyActiveDepotName) ?? '';
   bool get episodesDescending => _prefs.getBool(keyEpisodesDescending) ?? false;
-  double get playSpeed => (_prefs.getDouble(keyPlaySpeed) ?? 1.0).clamp(0.5, 2.0);
+  double get playSpeed =>
+      (_prefs.getDouble(keyPlaySpeed) ?? 1.0).clamp(0.5, 2.0);
   bool get autoNext => _prefs.getBool(keyAutoNext) ?? true;
-
+  List<CmsDepot> getSavedDepots() {
+    final raw = _prefs.getString(keyDepots) ?? '[]';
+    try {
+      final list = jsonDecode(raw);
+      if (list is! List) return const [];
+      return list
+          .whereType<Map>()
+          .map((m) => CmsDepot.fromJson(Map<String, dynamic>.from(m)))
+          .where((d) => d.url.isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
   CmsConfig? loadSavedConfig() {
     final raw = rawConfig;
     if (raw.trim().isEmpty) return null;
     try {
-      return CmsParser.parseConfig(raw, origin: configOrigin);
+      final parsed = CmsParser.parseConfig(raw, origin: configOrigin);
+      final savedDepots = getSavedDepots();
+      if (parsed.depots.isEmpty && savedDepots.isNotEmpty) {
+        return CmsConfig(
+          sites: parsed.sites,
+          lives: parsed.lives,
+          depots: savedDepots,
+          spider: parsed.spider,
+        );
+      }
+      return parsed;
     } catch (_) {
       return null;
     }
   }
-
-  Future<CmsConfig> saveConfig(String rawJson, {String origin = ''}) async {
+  Future<CmsConfig> saveConfig(
+    String rawJson, {
+    String origin = '',
+    List<CmsDepot>? depots,
+    String? activeDepotName,
+  }) async {
     final parsed = CmsParser.parseConfig(rawJson, origin: origin);
     await _prefs.setString(keyRawConfig, rawJson);
     await _prefs.setString(keyOrigin, origin.trim());
+    final effectiveDepots = depots ?? parsed.depots;
+    if (effectiveDepots.isNotEmpty) {
+      await _prefs.setString(
+        keyDepots,
+        jsonEncode(effectiveDepots.map((d) => d.toJson()).toList()),
+      );
+    } else if (depots != null && depots.isEmpty) {
+      await _prefs.setString(keyDepots, '[]');
+    }
+    if (activeDepotName != null) {
+      await _prefs.setString(keyActiveDepotName, activeDepotName);
+    }
     if (parsed.supportedSites.isNotEmpty &&
         !parsed.supportedSites.any((s) => s.key == selectedSiteKey)) {
       await _prefs.setString(keySelectedSite, parsed.supportedSites.first.key);
+    } else if (parsed.supportedSites.isEmpty && parsed.sites.isNotEmpty) {
+      await _prefs.setString(keySelectedSite, parsed.sites.first.key);
     }
-    return parsed;
+    return CmsConfig(
+      sites: parsed.sites,
+      lives: parsed.lives,
+      depots: effectiveDepots,
+      spider: parsed.spider,
+    );
   }
-
   Future<void> setSelectedSiteKey(String key) async {
     await _prefs.setString(keySelectedSite, key);
   }
-
   Future<void> setEpisodesDescending(bool value) async {
     await _prefs.setBool(keyEpisodesDescending, value);
   }
-
   Future<void> setPlaySpeed(double speed) async {
     await _prefs.setDouble(keyPlaySpeed, speed.clamp(0.5, 2.0));
   }
-
   Future<void> setAutoNext(bool value) async {
     await _prefs.setBool(keyAutoNext, value);
   }
-
   List<WatchHistoryEntry> getWatchHistory() {
     final raw = _prefs.getString(keyWatchHistory) ?? '[]';
     try {
@@ -81,7 +121,6 @@ class StorageService {
       return const [];
     }
   }
-
   Future<void> upsertWatchHistory(WatchHistoryEntry entry) async {
     final updated = CmsParser.upsertHistory(getWatchHistory(), entry);
     await _prefs.setString(
@@ -89,11 +128,9 @@ class StorageService {
       jsonEncode(updated.map((e) => e.toJson()).toList()),
     );
   }
-
   Future<void> clearWatchHistory() async {
     await _prefs.setString(keyWatchHistory, '[]');
   }
-
   List<FavoriteEntry> getFavorites() {
     final raw = _prefs.getString(keyFavorites) ?? '[]';
     try {
@@ -107,12 +144,10 @@ class StorageService {
       return const [];
     }
   }
-
   bool isFavorite(String siteKey, String videoId) {
     final target = '$siteKey\n$videoId';
     return getFavorites().any((f) => f.key == target);
   }
-
   Future<bool> toggleFavorite(CmsSite site, CmsVideo video) async {
     final current = getFavorites().toList();
     final targetKey = '${site.key}\n${video.id}';
@@ -144,7 +179,6 @@ class StorageService {
     );
     return nowFav;
   }
-
   List<String> getSearchHistory() {
     final raw = _prefs.getString(keySearchHistory) ?? '[]';
     try {
@@ -155,7 +189,6 @@ class StorageService {
       return const [];
     }
   }
-
   Future<void> addSearchKeyword(String keyword) async {
     final trimmed = keyword.trim();
     if (trimmed.isEmpty) return;
@@ -164,7 +197,9 @@ class StorageService {
     if (list.length > 16) list.removeRange(16, list.length);
     await _prefs.setString(keySearchHistory, jsonEncode(list));
   }
-
+  Future<void> clearSearchHistory() async {
+    await _prefs.setString(keySearchHistory, '[]');
+  }
   /// Exports a backup JSON string compatible with both Android (`MarcoMovie-1`) and Flutter.
   String exportBackupJson() {
     return CmsParser.encodeBackupPayload(
@@ -181,7 +216,6 @@ class StorageService {
       },
     );
   }
-
   static String? _normalizeJsonArraySetting(dynamic value) {
     if (value is List) {
       return jsonEncode(value);
@@ -194,7 +228,6 @@ class StorageService {
     }
     return null;
   }
-
   /// Imports a backup JSON generated by either Android TV/Phone or Windows/Mac/iOS.
   /// Validates all fields before mutating preferences so failed restores preserve existing state.
   Future<CmsConfig?> importBackupJson(String rawBackup) async {
@@ -209,7 +242,6 @@ class StorageService {
     final nextSearch = settings.containsKey(keySearchHistory)
         ? _normalizeJsonArraySetting(settings[keySearchHistory])
         : null;
-
     CmsConfig? parsedConfig = decoded.parsedConfig;
     if (decoded.rawConfig.isNotEmpty) {
       await _prefs.setString(keyRawConfig, decoded.rawConfig);
