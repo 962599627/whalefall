@@ -91,4 +91,33 @@ class MirrorTests(unittest.TestCase):
         with zipfile.ZipFile(source,'w') as z: z.writestr('AndroidManifest.xml',b'<manifest/>')
         with self.assertRaises(ValueError): m.apk_identity(source.getvalue())
 
+    def add_asset(self, name, body, checksum=True):
+        url = f'https://github.com/{m.REPO}/releases/download/v0.4.12-preview/{name}'
+        sha = hashlib.sha256(body).hexdigest()
+        items = [('', body)] + ([('.sha256', (sha + '  ' + name).encode())] if checksum else [])
+        for suffix, payload in items:
+            self.release['assets'].append(dict(name=name+suffix, state='uploaded', browser_download_url=url+suffix,
+                                               size=len(payload), digest='sha256:'+hashlib.sha256(payload).hexdigest()))
+            self.data[url+suffix] = payload
+
+    def test_platform_packages_mirrored_when_published(self):
+        self.add_asset('MarcoMovie-0.4.12-windows-x64.zip', b'windows fixture')
+        self.add_asset('MarcoMovie-0.4.12-ios-unsigned.ipa', b'ios fixture')
+        self.sync()
+        self.assertEqual((self.out/'MarcoMovie-0.4.12-windows-x64.zip').read_bytes(), b'windows fixture')
+        self.assertTrue((self.out/'MarcoMovie-0.4.12-ios-unsigned.ipa.sha256').exists())
+        self.assertFalse((self.out/'MarcoMovie-0.4.12-macos.zip').exists())
+        page = (self.out/'index.html').read_text(encoding='utf-8')
+        self.assertIn('MarcoMovie-0.4.12-windows-x64.zip', page)
+        self.assertIn('其他平台', page)
+
+    def test_platform_package_without_checksum_rejected(self):
+        self.add_asset('MarcoMovie-0.4.12-macos.zip', b'mac fixture', checksum=False)
+        with self.assertRaises(ValueError): self.sync()
+        self.assertFalse(self.out.exists())
+
+    def test_without_platform_packages_links_release_page(self):
+        self.sync()
+        self.assertIn('Windows / macOS / iOS 多平台下载', (self.out/'index.html').read_text(encoding='utf-8'))
+
 if __name__ == '__main__': unittest.main()

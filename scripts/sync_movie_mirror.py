@@ -18,6 +18,15 @@ import zipfile
 REPO = 'Pilipala9919/MarcoMovie'
 BASE = 'https://marcotv.wlj9919.top/movie/'
 LIMIT = 25 * 1024 * 1024
+# Desktop and Apple packages are larger; GitHub Pages rejects files of 100 MB or more.
+PLATFORM_LIMIT = 95 * 1024 * 1024
+# (file name pattern, button label, short note). Mirrored only when the release carries the
+# package together with its official .sha256 file.
+PLATFORMS = (
+    ('MarcoMovie-{version}-windows-x64.zip', 'Windows 版', 'Windows 10 / 11 · 64 位 · 解压后运行 marco_movie.exe'),
+    ('MarcoMovie-{version}-macos.zip', 'macOS 版', 'macOS · 解压后拖入“应用程序”；未公证，首次打开请右键选择“打开”'),
+    ('MarcoMovie-{version}-ios-unsigned.ipa', 'iPhone / iPad 版', 'iOS / iPadOS · 未签名，需要用自己的 Apple ID 自签后安装'),
+)
 
 
 def fetch(url, limit=LIMIT):
@@ -90,13 +99,13 @@ def choose(releases):
     return max(valid, key=lambda r: tuple(map(int, r['tag_name'][1:-8].split('.'))))
 
 
-def asset(release, name, output):
+def asset(release, name, output, limit=LIMIT):
     matches = [a for a in release['assets'] if a['name'] == name and a['state'] == 'uploaded']
     if len(matches) != 1:
         raise ValueError('Missing or duplicate asset: ' + name)
     info = matches[0]
     expected = f'https://github.com/{REPO}/releases/download/{release["tag_name"]}/{name}'
-    if info['browser_download_url'] != expected or not 0 < info['size'] <= LIMIT:
+    if info['browser_download_url'] != expected or not 0 < info['size'] <= limit:
         raise ValueError('Unexpected asset URL or size')
     sha_url = expected + '.sha256'
     checksums = [a for a in release['assets'] if a['name'] == name + '.sha256' and a['state'] == 'uploaded' and a['browser_download_url'] == sha_url]
@@ -106,7 +115,7 @@ def asset(release, name, output):
     if len(checksum) != 2 or checksum[1].lstrip('*') != name or not re.fullmatch('[0-9a-f]{64}', checksum[0]):
         raise ValueError('Invalid checksum file')
     local = output / name
-    body = local.read_bytes() if local.exists() else fetch(expected)
+    body = local.read_bytes() if local.exists() else fetch(expected, limit)
     digest = hashlib.sha256(body).hexdigest()
     if len(body) != info['size'] or digest != checksum[0] or info.get('digest') not in (None, 'sha256:' + digest):
         raise ValueError('Release digest mismatch: ' + name)
@@ -119,6 +128,12 @@ def sync(output):
     apk_name, source_name = f'MarcoMovie-{version}-preview.apk', f'MarcoMovie-{version}-source.zip'
     apk, sha = asset(release, apk_name, output)
     source, source_sha = asset(release, source_name, output)
+    platforms = []
+    for pattern, label, note in PLATFORMS:
+        name = pattern.format(version=version)
+        if any(a['name'] == name for a in release['assets']):
+            body, digest = asset(release, name, output, PLATFORM_LIMIT)
+            platforms.append((name, label, note, body, digest))
     identity = apk_identity(apk)
     if identity['versionName'] != version:
         raise ValueError('APK version does not match release')
@@ -137,14 +152,23 @@ def sync(output):
         if previous['versionCode'] == feed['versionCode'] and previous['sha256'] != sha:
             raise ValueError('Refusing to replace a published version')
     escaped = html.escape
+    platform_card = ''
+    if platforms:
+        rows = ''.join(
+            f'<div class="box"><h3>{escaped(label)}</h3><p class="muted">{escaped(note)} · {len(body)/1024/1024:.1f} MB</p>'
+            f'<a class="button" href="{escaped(name)}">下载{escaped(label)}</a>'
+            f'<p class="muted"><a href="{escaped(name)}.sha256">校验文件</a> · SHA-256<br><code>{digest}</code></p></div>'
+            for name, label, note, body, digest in platforms)
+        platform_card = ('<div class="card"><h2>其他平台</h2><p class="muted">与 Android 版同一版本，由 GitHub Actions 云端构建；'
+                         '尚未在每台设备上实机验证。</p><div class="grid">' + rows + '</div></div>\n')
     page = f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Marco Movie · 多端自适应播放器 · Pilipala</title><style>body{{margin:0;background:#101013;color:#f5f5f7;font:16px/1.8 system-ui,sans-serif}}main{{max-width:920px;margin:auto;padding:56px 24px}}h1{{font-size:48px;letter-spacing:-2px;margin:10px 0 8px}}h2{{margin-top:0}}h3{{margin:0 0 8px;color:#fff}}.muted{{color:#a1a1aa}}.card{{background:#232329;border:1px solid #37373f;border-radius:28px;padding:28px;margin:24px 0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin:24px 0}}.box{{background:#1a1b22;border:1px solid #31333d;border-radius:22px;padding:22px}}a{{color:#9ac6ff}}.button{{display:inline-block;background:#f5f5f7;color:#111;padding:12px 24px;border-radius:18px;text-decoration:none;font-weight:600;margin:6px 12px 6px 0}}.button-ghost{{display:inline-block;border:1px solid #52525b;color:#f5f5f7;padding:11px 22px;border-radius:18px;text-decoration:none;margin:6px 12px 6px 0}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:0}}code{{overflow-wrap:anywhere}}</style>
 <main><p class="muted">PILIPALA · ANDROID 电视 / 手机 / 平板 · WINDOWS · APPLE</p><h1>Marco Movie</h1><p>支持 Android 电视大屏遥控、手机与平板专属触控，以及 Windows / macOS / iOS 多端自适应的开源播放器。</p>
 <div class="card"><h2>{version} Preview</h2><p>Android 6.0+（电视 / 手机 / 平板三合一通用安装包）· ARM 32 位 · {len(apk)/1024/1024:.1f} MB</p>
-<a class="button" href="{apk_name}">下载 Android 安装包</a><a class="button-ghost" href="{source_name}">下载同版本源码</a><a class="button-ghost" href="https://github.com/{REPO}/releases/tag/{release['tag_name']}">Windows / macOS / iOS 多平台下载</a>
+<a class="button" href="{apk_name}">下载 Android 安装包</a><a class="button-ghost" href="{source_name}">下载同版本源码</a>{'' if platforms else f'<a class="button-ghost" href="https://github.com/{REPO}/releases/tag/{release['tag_name']}">Windows / macOS / iOS 多平台下载</a>'}
 <p><a href="{apk_name}.sha256">校验文件</a> · <a href="https://github.com/{REPO}/releases/tag/{release['tag_name']}">GitHub 发布页</a> · <a href="https://github.com/{REPO}/blob/main/docs/USER_GUIDE.md">使用指南</a></p>
 <p class="muted">SHA-256<br><code>{sha}</code></p></div>
-<div class="grid">
+{platform_card}<div class="grid">
 <div class="box"><h3>📺 Android 电视端</h3><p class="muted">专为遥控器与 10 英尺大屏打造：5–8 列 2:3 海报墙、右侧悬浮图标 Dock、内置遥控全拼/首拼搜索、左固定海报 + 右独立滚动选集、小屏返回续播、局域网扫码导入配置。</p></div>
 <div class="box"><h3>📱 Android 手机 / 平板端</h3><p class="muted">完全独立的移动端触控 UI：底部固定 5 栏导航（首页、搜索、直播、我的、设置；平板横屏自动变左侧导航栏），保留系统状态栏、去除遥控白框；首页直接支持剪贴板一键粘贴与原生输入法导入（无需扫码）；支持 50 集分组触控选集与全屏横屏手势播放（双击暂停、左右滑快进、左半屏亮度、右半屏音量、长按 2 倍速）。</p></div>
 <div class="box"><h3>💻 Windows &amp; Apple 端</h3><p class="muted">提供跨平台客户端工程（覆盖 Windows x64、macOS、iPhone 与 iPad），自适应桌面侧边导航与移动端底部导航，内置硬件加速播放内核，支持与 Android 端互通备份文件。</p></div>
@@ -155,11 +179,14 @@ def sync(output):
     files = {apk_name: apk, apk_name + '.sha256': (sha + '  ' + apk_name + '\n').encode(),
              source_name: source, source_name + '.sha256': (source_sha + '  ' + source_name + '\n').encode(),
              'LICENSE': license_text, 'NOTICE': notice, 'index.html': page.encode()}
+    for name, _, _, body, digest in platforms:
+        files[name] = body
+        files[name + '.sha256'] = (digest + '  ' + name + '\n').encode()
     # Versions are immutable and written before the channel pointer; Git/Pages publishes one complete snapshot.
     output.mkdir(parents=True, exist_ok=True)
     for name, data in files.items():
         target = output / name
-        if target.exists() and target.suffix in ('.apk', '.zip') and target.read_bytes() != data:
+        if target.exists() and target.suffix in ('.apk', '.zip', '.ipa') and target.read_bytes() != data:
             raise ValueError('Immutable asset already differs')
         target.write_bytes(data)
     feed_path.parent.mkdir(exist_ok=True)
