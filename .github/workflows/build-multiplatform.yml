@@ -70,6 +70,13 @@ jobs:
           flutter config --enable-macos-desktop
           flutter create --platforms=macos --project-name=marco_movie .
           python3 -c "import shutil; shutil.copytree('src', 'lib', dirs_exist_ok=True)"
+          python3 -c "
+          from pathlib import Path
+          for p in Path('macos/Runner').glob('*.entitlements'):
+              t = p.read_text()
+              if 'com.apple.security.network.client' not in t:
+                  p.write_text(t.replace('</dict>', '  <key>com.apple.security.network.client</key>\n  <true/>\n</dict>'))
+          "
           flutter pub get
           flutter test
           flutter build macos --release
@@ -94,6 +101,13 @@ jobs:
           python3 -c "import shutil; shutil.copytree('src', 'lib', dirs_exist_ok=True)"
           flutter create --platforms=ios --org com.pilipala --project-name=marco_movie .
           python3 -c "import shutil; shutil.copytree('src', 'lib', dirs_exist_ok=True)"
+          python3 -c "
+          from pathlib import Path
+          plist = Path('ios/Runner/Info.plist')
+          t = plist.read_text()
+          if 'NSAppTransportSecurity' not in t:
+              plist.write_text(t.replace('</dict>', '  <key>NSAppTransportSecurity</key>\n  <dict>\n    <key>NSAllowsArbitraryLoads</key>\n    <true/>\n  </dict>\n</dict>', 1))
+          "
           flutter pub get
           flutter build ios --release --no-codesign
           mkdir -p build/ios/ipa/Payload
