@@ -42,7 +42,7 @@ for p in files:
             issues.append(f'{relative}: review network domain {host}')
 
 main=(ROOT/'android/src/main/java/com/pilipala/marcomovie/MainActivity.java').read_text(encoding='utf-8')
-if 'prefs.getString("origin","")' not in main:issues.append('First-run configuration address must be empty')
+if not re.search(r'prefs\.getString\(\s*"origin"\s*,\s*""\s*\)',main):issues.append('First-run configuration address must be empty')
 if '不内置、不提供、不托管' not in main:issues.append('Missing first-run tool declaration')
 if issues:
     print('\n'.join(sorted(set(issues))));sys.exit(1)
