@@ -157,28 +157,26 @@ void main() {
     ''';
     final decoded = CmsParser.decodeBackupPayload(androidBackup);
     expect(decoded.origin, 'https://mirror.example/config.json');
-    expect(decoded.selectedSiteKey, 'vod1');
-    expect(decoded.playSpeed, 1.25);
-    expect(decoded.history.length, 1);
-    expect(decoded.favorites.length, 1);
-    expect(decoded.searchHistory, ['星际', '流浪']);
+    expect(decoded.parsedConfig, isNotNull);
+    expect(decoded.parsedConfig!.sites.first.key, 'vod1');
+    expect(decoded.settings['selected_site'], 'vod1');
+    expect(decoded.settings['play_speed'], 1.25);
+    expect((decoded.settings['watch_history'] as List).length, 1);
+    expect((decoded.settings['favorites'] as List).length, 1);
+    expect(decoded.settings['global_search_history'], ['星际', '流浪']);
 
     final reEncoded = CmsParser.encodeBackupPayload(
-      configRaw: decoded.configRaw,
       origin: decoded.origin,
-      selectedSiteKey: decoded.selectedSiteKey,
-      playSpeed: decoded.playSpeed,
-      scaleMode: decoded.scaleMode,
-      autoNext: decoded.autoNext,
-      history: decoded.history,
-      favorites: decoded.favorites,
-      searchHistory: decoded.searchHistory,
-      exportedAtMs: 1700000001000,
+      rawConfig: decoded.rawConfig,
+      settings: decoded.settings,
+      exportedAt: 1700000001000,
     );
     final roundTrip = CmsParser.decodeBackupPayload(reEncoded);
-    expect(roundTrip.selectedSiteKey, 'vod1');
-    expect(roundTrip.history.first.id, '99');
-    expect(roundTrip.favorites.first.id, '99');
+    expect(roundTrip.origin, decoded.origin);
+    expect(roundTrip.parsedConfig!.sites.first.key, 'vod1');
+    expect(roundTrip.settings['selected_site'], 'vod1');
+    expect((roundTrip.settings['watch_history'] as List).first['id'], '99');
+    expect((roundTrip.settings['favorites'] as List).first['id'], '99');
 
     expect(
       () => CmsParser.decodeBackupPayload('{"format":"unknown","settings":{}}'),

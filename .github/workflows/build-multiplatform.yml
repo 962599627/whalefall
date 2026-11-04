@@ -86,12 +86,18 @@ jobs:
           flutter create --platforms=windows --project-name=marco_movie .
           python prepare_platform.py
           flutter pub get
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           flutter test
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           flutter build windows --release
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $version = ((Select-String pubspec.yaml -Pattern '^version:').Line -replace '^version:\s*','' -replace '\+.*','').Trim()
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "dist/MarcoMovie-$version-windows-x64.zip" -Force
       - uses: actions/upload-artifact@v4
         with:
           name: MarcoMovie-Windows-x64
-          path: flutter/build/windows/x64/runner/Release/
+          path: flutter/dist/*.zip
 
   build-macos:
     name: Build macOS Desktop (Apple Silicon & Intel)
@@ -112,12 +118,13 @@ jobs:
           flutter pub get
           flutter test
           flutter build macos --release
-          cd build/macos/Build/Products/Release
-          zip -r MarcoMovie-macOS.app.zip *.app
+          VERSION=$(sed -n 's/^version:[[:space:]]*\([^+]*\).*/\1/p' pubspec.yaml)
+          mkdir -p dist
+          (cd build/macos/Build/Products/Release && ditto -c -k --sequesterRsrc --keepParent *.app "$GITHUB_WORKSPACE/flutter/dist/MarcoMovie-$VERSION-macos.zip")
       - uses: actions/upload-artifact@v4
         with:
           name: MarcoMovie-macOS-App
-          path: flutter/build/macos/Build/Products/Release/MarcoMovie-macOS.app.zip
+          path: flutter/dist/*.zip
 
   build-ios:
     name: Build iOS & iPadOS (.ipa unsigned)
@@ -137,11 +144,11 @@ jobs:
           flutter pub get
           flutter test
           flutter build ios --release --no-codesign
-          mkdir -p build/ios/ipa/Payload
+          VERSION=$(sed -n 's/^version:[[:space:]]*\([^+]*\).*/\1/p' pubspec.yaml)
+          mkdir -p build/ios/ipa/Payload dist
           cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
-          cd build/ios/ipa
-          zip -r MarcoMovie-iOS-unsigned.ipa Payload
+          (cd build/ios/ipa && zip -qr "$GITHUB_WORKSPACE/flutter/dist/MarcoMovie-$VERSION-ios-unsigned.ipa" Payload)
       - uses: actions/upload-artifact@v4
         with:
           name: MarcoMovie-iOS-iPadOS-IPA
-          path: flutter/build/ios/ipa/MarcoMovie-iOS-unsigned.ipa
+          path: flutter/dist/*.ipa
