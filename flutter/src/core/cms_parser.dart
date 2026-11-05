@@ -687,11 +687,11 @@ class CmsParser {
           cleanedParams[k] = v;
         }
       });
-      return uri
-          .replace(
-            queryParameters: cleanedParams.isEmpty ? null : cleanedParams,
-          )
-          .toString();
+      if (cleanedParams.isEmpty) {
+        final qIdx = normalized.indexOf('?');
+        return qIdx >= 0 ? normalized.substring(0, qIdx) : normalized;
+      }
+      return uri.replace(queryParameters: cleanedParams).toString();
     } catch (_) {
       return normalized;
     }
