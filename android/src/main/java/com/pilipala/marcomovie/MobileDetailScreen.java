@@ -14,6 +14,8 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -392,6 +394,23 @@ final class MobileDetailScreen {
         epTitle.setTypeface(null, Typeface.BOLD);
         headerRow.addView(epTitle, new LinearLayout.LayoutParams(0, -2, 1));
 
+        // Phone / tablet only: offline download of episodes from the current line.
+        TextView downloadBtn = a.text("⬇ 下载", 12, 0xff8ab4f8);
+        downloadBtn.setTag("episodes-download");
+        downloadBtn.setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5));
+        downloadBtn.setBackground(a.bg(0xff252734, 14));
+        bindTouchFeedback(downloadBtn);
+        String pickFrom = "";
+        if (remembered != null && line.name.equals(remembered.line)) {
+            pickFrom = remembered.episode;
+        }
+        final String currentName = pickFrom;
+        downloadBtn.setOnClickListener(
+                v -> MobileDownloads.pick(a, site, video, line, currentName));
+        LinearLayout.LayoutParams downloadLp = new LinearLayout.LayoutParams(-2, -2);
+        downloadLp.rightMargin = a.dp(8);
+        headerRow.addView(downloadBtn, downloadLp);
+
         TextView sortBtn = a.text(descending ? "↓ 倒序排列" : "↑ 正序排列", 12, 0xff8ab4f8);
         sortBtn.setTag("episodes-order");
         sortBtn.setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5));
@@ -473,6 +492,12 @@ final class MobileDetailScreen {
                     v -> {
                         a.resumeAt = 0;
                         a.resolvePlayer(site, video, line, ep);
+                    });
+            epBtn.setOnLongClickListener(
+                    v -> {
+                        List<Cms.Episode> one = Collections.singletonList(ep);
+                        MobileDownloads.enqueue(a, site, video, line, one);
+                        return true;
                     });
             LinearLayout.LayoutParams cellLp = new LinearLayout.LayoutParams(0, a.dp(42), 1);
             cellLp.setMargins(a.dp(4), a.dp(4), a.dp(4), a.dp(4));

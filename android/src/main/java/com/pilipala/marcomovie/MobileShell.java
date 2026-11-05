@@ -39,6 +39,9 @@ final class MobileShell {
     static int activeTab = 0;
     static String pendingSearchKeyword = "";
 
+    /** Sub-page of the 我的 tab: 0 history, 1 favorites, 2 downloads. */
+    static int mySubTab = 0;
+
     private final MainActivity a;
     private FrameLayout contentContainer;
     private final View[] navTabs = new View[5];
@@ -443,7 +446,11 @@ final class MobileShell {
             histHeader.addView(hTitle, new LinearLayout.LayoutParams(0, -2, 1));
             TextView moreHist = a.text("全部记录 ›", 12, 0xff8ab4f8);
             MobileDetailScreen.bindTouchFeedback(moreHist);
-            moreHist.setOnClickListener(v -> switchTab(3));
+            moreHist.setOnClickListener(
+                    v -> {
+                        mySubTab = 0;
+                        switchTab(3);
+                    });
             histHeader.addView(moreHist);
             body.addView(histHeader, new LinearLayout.LayoutParams(-1, -2));
             a.gap(body, 8);
@@ -1283,17 +1290,26 @@ final class MobileShell {
         page.setPadding(a.dp(14), a.dp(12), a.dp(14), a.dp(12));
         contentContainer.addView(page, new FrameLayout.LayoutParams(-1, -1));
 
-        final boolean[] showFavorites = {false};
+        final boolean[] showFavorites = {mySubTab == 1};
+        final boolean[] showDownloads = {mySubTab == 2};
         final LinearLayout headerRow = a.row();
         final TextView tabHist = a.text("观看历史", 15, Color.WHITE);
         final TextView tabFav = a.text("我的收藏", 15, MainActivity.MUTED);
+        final TextView tabDown = a.text("我的下载", 15, MainActivity.MUTED);
+        tabDown.setTag("my-downloads");
         final TextView clearBtn = a.text("清空历史", 12, 0xffef4444);
 
-        headerRow.addView(tabHist);
+        HorizontalScrollView tabScroll = new HorizontalScrollView(a);
+        tabScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout tabRow = a.row();
+        tabScroll.addView(tabRow);
+        tabRow.addView(tabHist);
         View gapView = new View(a);
-        headerRow.addView(gapView, new LinearLayout.LayoutParams(a.dp(12), 1));
-        headerRow.addView(tabFav);
-        headerRow.addView(new View(a), new LinearLayout.LayoutParams(0, 1, 1));
+        tabRow.addView(gapView, new LinearLayout.LayoutParams(a.dp(12), 1));
+        tabRow.addView(tabFav);
+        tabRow.addView(new View(a), new LinearLayout.LayoutParams(a.dp(12), 1));
+        tabRow.addView(tabDown);
+        headerRow.addView(tabScroll, new LinearLayout.LayoutParams(0, -2, 1));
         headerRow.addView(clearBtn);
         page.addView(headerRow, new LinearLayout.LayoutParams(-1, -2));
         a.gap(page, 12);
@@ -1311,9 +1327,12 @@ final class MobileShell {
                     @Override
                     public void run() {
                         boolean favMode = showFavorites[0];
-                        tabHist.setTextColor(favMode ? MainActivity.MUTED : Color.WHITE);
-                        tabHist.setTypeface(null, favMode ? Typeface.NORMAL : Typeface.BOLD);
-                        tabHist.setBackground(a.bg(favMode ? 0xff1c1e28 : 0xff3b82f6, 16));
+                        boolean downMode = showDownloads[0];
+                        boolean histMode = !favMode && !downMode;
+                        mySubTab = downMode ? 2 : favMode ? 1 : 0;
+                        tabHist.setTextColor(histMode ? Color.WHITE : MainActivity.MUTED);
+                        tabHist.setTypeface(null, histMode ? Typeface.BOLD : Typeface.NORMAL);
+                        tabHist.setBackground(a.bg(histMode ? 0xff3b82f6 : 0xff1c1e28, 16));
                         tabHist.setPadding(a.dp(14), a.dp(6), a.dp(14), a.dp(6));
 
                         tabFav.setTextColor(favMode ? Color.WHITE : MainActivity.MUTED);
@@ -1321,9 +1340,18 @@ final class MobileShell {
                         tabFav.setBackground(a.bg(favMode ? 0xff3b82f6 : 0xff1c1e28, 16));
                         tabFav.setPadding(a.dp(14), a.dp(6), a.dp(14), a.dp(6));
 
-                        clearBtn.setVisibility(favMode ? View.GONE : View.VISIBLE);
+                        tabDown.setTextColor(downMode ? Color.WHITE : MainActivity.MUTED);
+                        tabDown.setTypeface(null, downMode ? Typeface.BOLD : Typeface.NORMAL);
+                        tabDown.setBackground(a.bg(downMode ? 0xff3b82f6 : 0xff1c1e28, 16));
+                        tabDown.setPadding(a.dp(14), a.dp(6), a.dp(14), a.dp(6));
+
+                        clearBtn.setVisibility(histMode ? View.VISIBLE : View.GONE);
                         listBody.removeAllViews();
 
+                        if (downMode) {
+                            MobileDownloads.render(a, listBody);
+                            return;
+                        }
                         if (!favMode) {
                             List<WatchHistory.Entry> items = a.watchHistory();
                             if (items.isEmpty()) {
@@ -1452,15 +1480,24 @@ final class MobileShell {
 
         MobileDetailScreen.bindTouchFeedback(tabHist);
         MobileDetailScreen.bindTouchFeedback(tabFav);
+        MobileDetailScreen.bindTouchFeedback(tabDown);
         MobileDetailScreen.bindTouchFeedback(clearBtn);
         tabHist.setOnClickListener(
                 v -> {
                     showFavorites[0] = false;
+                    showDownloads[0] = false;
                     renderSubTab.run();
                 });
         tabFav.setOnClickListener(
                 v -> {
                     showFavorites[0] = true;
+                    showDownloads[0] = false;
+                    renderSubTab.run();
+                });
+        tabDown.setOnClickListener(
+                v -> {
+                    showFavorites[0] = false;
+                    showDownloads[0] = true;
                     renderSubTab.run();
                 });
         clearBtn.setOnClickListener(

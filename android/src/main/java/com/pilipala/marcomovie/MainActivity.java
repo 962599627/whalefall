@@ -382,6 +382,8 @@ public final class MainActivity extends Activity {
             AppLog.w("MainActivity", "load saved config failed", e);
             config = null;
         }
+        // Phone / tablet only: restore the offline download queue (never started on TV).
+        if (!isTvDevice()) DownloadManager.get(this);
         worker.execute(
                 () -> {
                     try {
