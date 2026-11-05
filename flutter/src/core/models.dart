@@ -101,7 +101,15 @@ class CmsEpisode {
     required this.url,
     this.headers = const {},
   });
+  /// Whether [url] points to an already-downloaded local file (offline playback).
+  bool get isLocalFile {
+    final raw = url.trim();
+    return raw.startsWith('/') ||
+        RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(raw) ||
+        raw.toLowerCase().startsWith('file://');
+  }
   bool get isDirectPlayable {
+    if (isLocalFile) return true;
     final u = url.trim().toLowerCase();
     if (!u.startsWith('http://') &&
         !u.startsWith('https://') &&

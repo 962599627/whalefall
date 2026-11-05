@@ -293,6 +293,10 @@ class CmsParser {
     }
     return out;
   }
+  /// AES-128 key schedule (176 bytes), shared with the HLS offline downloader.
+  static Uint8List aesExpandKey(Uint8List key) => _aesKeyExpansion(key);
+  /// AES inverse S-box, shared with the HLS offline downloader.
+  static List<int> get aesInvSBox => _invSBox;
   static Uint8List? _aes128CbcDecrypt(
     Uint8List cipher,
     Uint8List key,

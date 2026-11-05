@@ -1,50 +1,31 @@
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-/// Apple Liquid Glass (iOS 26 / visionOS / macOS Tahoe / Apple TV+)
-/// design tokens, refractive glass surfaces, and floating capsule Dock.
+/// Apple design tokens (iOS / iPadOS / macOS dark appearance):
+/// pure-black canvas, neutral system materials, hairline separators.
 class AppleColors {
-  static const Color background = Color(0xFF03050A);
-  static const Color canvas = Color(0xFF080C14);
-  static const Color groupedPrimary = Color(0x88161B26);
-  static const Color groupedSecondary = Color(0x99242C3D);
-  static const Color groupedTertiary = Color(0xAA323C52);
+  static const Color background = Color(0xFF000000);
+  static const Color canvas = Color(0xFF0B0B0D);
+  static const Color groupedPrimary = Color(0xB31C1C1E);
+  static const Color groupedSecondary = Color(0xCC2C2C2E);
+  static const Color groupedTertiary = Color(0xFF3A3A3C);
+  static const Color fill = Color(0x3D767680);
+  static const Color fillStrong = Color(0x5C767680);
   static const Color systemBlue = Color(0xFF0A84FF);
   static const Color systemCyan = Color(0xFF64D2FF);
   static const Color systemIndigo = Color(0xFF5E5CE6);
   static const Color systemGreen = Color(0xFF30D158);
   static const Color systemOrange = Color(0xFFFF9F0A);
   static const Color systemRed = Color(0xFFFF453A);
-  static const Color labelPrimary = Color(0xFFF5F7FA);
-  static const Color labelSecondary = Color(0xB3EBEBF5);
-  static const Color labelTertiary = Color(0x66EBEBF5);
-  static const Color separator = Color(0x40FFFFFF);
-  static const Color glassBorder = Color(0x48FFFFFF);
-  static const Color glassBorderStrong = Color(0x68FFFFFF);
-  static const Color glassHighlight = Color(0x78FFFFFF);
-
-  static Map<String, String> posterHeaders(String url) {
-    final lower = url.toLowerCase();
-    if (lower.contains('doubanio.com') || lower.contains('douban.com')) {
-      return const {
-        'User-Agent':
-            'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
-        'Referer': 'https://m.douban.com/',
-      };
-    }
-    if (lower.contains('hdslb.com') || lower.contains('bilibili.com')) {
-      return const {
-        'User-Agent':
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.15',
-        'Referer': 'https://www.bilibili.com/',
-      };
-    }
-    return const {
-      'User-Agent':
-          'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
-    };
-  }
+  static const Color labelPrimary = Color(0xFFF5F5F7);
+  static const Color labelSecondary = Color(0x99EBEBF5);
+  static const Color labelTertiary = Color(0x4DEBEBF5);
+  static const Color separator = Color(0x33FFFFFF);
+  static const Color glassBorder = Color(0x1FFFFFFF);
+  static const Color glassBorderStrong = Color(0x2EFFFFFF);
+  static const Color glassHighlight = Color(0x4DFFFFFF);
 }
 
 /// Brand logo widget rendering the user's frosted-glass clapperboard squircle icon
@@ -157,8 +138,9 @@ class _FallbackLogoMark extends StatelessWidget {
   }
 }
 
-/// Apple Liquid Glass surface with multi-stop optical refraction, backdrop blur,
-/// top-left specular rim highlight, and soft elevation shadow.
+
+/// Apple system material surface: neutral translucent fill, background blur,
+/// 0.5pt hairline border, and a soft elevation shadow.
 class AppleGlassSurface extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -172,34 +154,30 @@ class AppleGlassSurface extends StatelessWidget {
     required this.child,
     this.padding,
     this.borderRadius,
-    this.color = const Color(0x72141A26),
-    this.blurSigma = 36,
+    this.color = const Color(0x991C1C1E),
+    this.blurSigma = 30,
     this.border,
-    this.elevated = true,
+    this.elevated = false,
   });
   @override
   Widget build(BuildContext context) {
-    final radius = borderRadius ?? BorderRadius.circular(20);
-    return Container(
+    final radius = borderRadius ?? BorderRadius.circular(18);
+    return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: radius,
         boxShadow: elevated
             ? const [
                 BoxShadow(
-                  color: Color(0x66000000),
+                  color: Color(0x40000000),
                   blurRadius: 24,
                   offset: Offset(0, 10),
-                ),
-                BoxShadow(
-                  color: Color(0x1464D2FF),
-                  blurRadius: 18,
-                  offset: Offset(0, 2),
                 ),
               ]
             : null,
       ),
       child: ClipRRect(
         borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
           child: Container(
@@ -207,22 +185,8 @@ class AppleGlassSurface extends StatelessWidget {
             decoration: BoxDecoration(
               color: color,
               borderRadius: radius,
-              gradient: const LinearGradient(
-                begin: Alignment(-0.9, -1.0),
-                end: Alignment(0.9, 1.0),
-                colors: [
-                  Color(0x36FFFFFF),
-                  Color(0x12FFFFFF),
-                  Color(0x0AFFFFFF),
-                  Color(0x2264D2FF),
-                ],
-                stops: [0.0, 0.35, 0.72, 1.0],
-              ),
               border: border ??
-                  Border.all(
-                    color: AppleColors.glassBorder,
-                    width: 0.9,
-                  ),
+                  Border.all(color: AppleColors.glassBorder, width: 0.5),
             ),
             child: child,
           ),
@@ -232,9 +196,11 @@ class AppleGlassSurface extends StatelessWidget {
   }
 }
 
-/// Floating Apple Liquid Glass Dock bar:
-/// - Portrait (`isLandscape == false`): Horizontal floating capsule Dock at the bottom center.
-/// - Landscape (`isLandscape == true`): Vertical floating capsule Dock on the right side.
+/// iPhone / iPad style Dock:
+/// - Portrait: wide rounded-rectangle dock floating above the home indicator.
+/// - Landscape: vertical dock floating on the right edge.
+/// The selection is a continuous-corner (superellipse) tile that glides between
+/// items; every shape is path-rendered with anti-aliasing for smooth edges.
 class AppleLiquidGlassDock extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelect;
@@ -249,154 +215,151 @@ class AppleLiquidGlassDock extends StatelessWidget {
     required this.items,
   });
 
+  static const double _dockRadius = 24;
+  static const double _pillRadius = 15;
+  static const double _pad = 6;
+  static const Duration _motion = Duration(milliseconds: 420);
+  static const Curve _curve = Cubic(0.22, 1.0, 0.36, 1.0);
+
+  /// Width a landscape dock occupies (including its outer margin).
+  static double landscapeFootprint(BuildContext context) {
+    final right = MediaQuery.paddingOf(context).right;
+    return 64 + _pad * 2 + (right > 0 ? right + 6 : 12) + 8;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final safePadding = MediaQuery.paddingOf(context);
-    final outerMargin = isLandscape
+    final safe = MediaQuery.paddingOf(context);
+    final margin = isLandscape
         ? EdgeInsets.only(
-            right: safePadding.right > 0 ? safePadding.right + 8 : 14,
+            right: safe.right > 0 ? safe.right + 6 : 12,
             top: 12,
             bottom: 12,
           )
         : EdgeInsets.only(
-            bottom: safePadding.bottom > 0 ? safePadding.bottom + 4 : 14,
-            left: 16,
-            right: 16,
+            left: 14,
+            right: 14,
+            bottom: safe.bottom > 0 ? safe.bottom : 12,
           );
-    final radius = BorderRadius.circular(999);
     return Padding(
-      padding: outerMargin,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: radius,
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x99000000),
-              blurRadius: 34,
-              offset: Offset(0, 14),
-            ),
-            BoxShadow(
-              color: Color(0x260A84FF),
-              blurRadius: 26,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: radius,
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 44, sigmaY: 44),
-            child: Container(
-              padding: isLandscape
-                  ? const EdgeInsets.symmetric(vertical: 10, horizontal: 7)
-                  : const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0x78101624),
-                borderRadius: radius,
-                gradient: const LinearGradient(
-                  begin: Alignment(-0.85, -1.0),
-                  end: Alignment(0.85, 1.0),
-                  colors: [
-                    Color(0x42FFFFFF),
-                    Color(0x18FFFFFF),
-                    Color(0x0EFFFFFF),
-                    Color(0x2C64D2FF),
-                  ],
-                  stops: [0.0, 0.32, 0.68, 1.0],
-                ),
-                border: Border.all(
-                  color: const Color(0x58FFFFFF),
-                  width: 1.0,
-                ),
+      padding: margin,
+      child: isLandscape ? _buildVertical() : _buildHorizontal(),
+    );
+  }
+
+  int get _safeIndex =>
+      items.isEmpty ? 0 : selectedIndex.clamp(0, items.length - 1);
+
+  Widget _shell({required Widget child}) {
+    final shape = RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.circular(_dockRadius),
+    );
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: shape,
+        shadows: const [
+          BoxShadow(
+            color: Color(0x4D000000),
+            blurRadius: 28,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ClipPath(
+        clipper: ShapeBorderClipper(shape: shape),
+        clipBehavior: Clip.antiAlias,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+          child: DecoratedBox(
+            decoration: ShapeDecoration(
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(_dockRadius),
+                side: const BorderSide(color: Color(0x2EFFFFFF), width: 0.6),
               ),
-              child: isLandscape
-                  ? Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (int i = 0; i < items.length; i++) ...[
-                          _buildDockItem(i, vertical: true),
-                          if (i < items.length - 1) const SizedBox(height: 6),
-                        ],
-                      ],
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (int i = 0; i < items.length; i++) ...[
-                          _buildDockItem(i, vertical: false),
-                          if (i < items.length - 1) const SizedBox(width: 6),
-                        ],
-                      ],
-                    ),
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xA8333338), Color(0xA81C1C20)],
+              ),
             ),
+            child: child,
           ),
         ),
       ),
     );
   }
 
-  Widget _buildDockItem(int index, {required bool vertical}) {
-    final selected = index == selectedIndex;
-    final item = items[index];
-    final pillRadius = BorderRadius.circular(999);
-    return GestureDetector(
-      onTap: () => onSelect(index),
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        width: vertical ? 58 : 62,
-        padding: vertical
-            ? const EdgeInsets.symmetric(vertical: 11, horizontal: 6)
-            : const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-        decoration: BoxDecoration(
-          borderRadius: pillRadius,
-          gradient: selected
-              ? const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0x56FFFFFF),
-                    Color(0x2E64D2FF),
-                    Color(0x380A84FF),
-                  ],
-                )
-              : null,
-          border: selected
-              ? Border.all(color: const Color(0x88FFFFFF), width: 0.9)
-              : Border.all(color: Colors.transparent, width: 0.9),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x380A84FF),
-                    blurRadius: 14,
-                    offset: Offset(0, 4),
+  Widget _buildHorizontal() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final n = math.max(items.length, 1);
+        final available =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 420.0;
+        final width = math.min(available, 520.0);
+        const itemH = 54.0;
+        final itemW = (width - _pad * 2) / n;
+        return _shell(
+          child: SizedBox(
+            width: width,
+            height: itemH + _pad * 2,
+            child: Stack(
+              children: [
+                AnimatedPositioned(
+                  duration: _motion,
+                  curve: _curve,
+                  left: _pad + itemW * _safeIndex + 2,
+                  top: _pad,
+                  width: itemW - 4,
+                  height: itemH,
+                  child: const _DockSelectionPill(radius: _pillRadius),
+                ),
+                Positioned.fill(
+                  child: Padding(
+                    padding: const EdgeInsets.all(_pad),
+                    child: Row(
+                      children: [
+                        for (int i = 0; i < items.length; i++)
+                          Expanded(child: _item(i)),
+                      ],
+                    ),
                   ),
-                ]
-              : null,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              selected ? item.$2 : item.$1,
-              size: 21,
-              color: selected
-                  ? const Color(0xFFFFFFFF)
-                  : const Color(0xCCDAE2F0),
+                ),
+              ],
             ),
-            const SizedBox(height: 3),
-            Text(
-              item.$3,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: selected
-                    ? const Color(0xFFFFFFFF)
-                    : const Color(0xB8DAE2F0),
-                fontSize: 10.5,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                letterSpacing: -0.2,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildVertical() {
+    const itemW = 64.0;
+    const itemH = 58.0;
+    final n = math.max(items.length, 1);
+    return _shell(
+      child: SizedBox(
+        width: itemW + _pad * 2,
+        height: itemH * n + _pad * 2,
+        child: Stack(
+          children: [
+            AnimatedPositioned(
+              duration: _motion,
+              curve: _curve,
+              left: _pad,
+              top: _pad + itemH * _safeIndex + 2,
+              width: itemW,
+              height: itemH - 4,
+              child: const _DockSelectionPill(radius: _pillRadius),
+            ),
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.all(_pad),
+                child: Column(
+                  children: [
+                    for (int i = 0; i < items.length; i++)
+                      SizedBox(height: itemH, child: _item(i)),
+                  ],
+                ),
               ),
             ),
           ],
@@ -404,9 +367,93 @@ class AppleLiquidGlassDock extends StatelessWidget {
       ),
     );
   }
+
+  Widget _item(int index) {
+    final item = items[index];
+    return _DockItem(
+      icon: item.$1,
+      selectedIcon: item.$2,
+      label: item.$3,
+      selected: index == _safeIndex,
+      onTap: () => onSelect(index),
+    );
+  }
 }
 
-/// Apple Liquid Glass capsule button with refractive highlight and press opacity.
+class _DockSelectionPill extends StatelessWidget {
+  final double radius;
+  const _DockSelectionPill({required this.radius});
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(radius),
+          side: const BorderSide(color: Color(0x29FFFFFF), width: 0.6),
+        ),
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0x40FFFFFF), Color(0x24FFFFFF)],
+        ),
+      ),
+    );
+  }
+}
+
+class _DockItem extends StatelessWidget {
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _DockItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) {
+    const duration = Duration(milliseconds: 260);
+    final color = selected ? const Color(0xFFFFFFFF) : const Color(0x9EEBEBF5);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          TweenAnimationBuilder<Color?>(
+            tween: ColorTween(end: color),
+            duration: duration,
+            curve: Curves.easeOut,
+            builder: (context, value, _) => Icon(
+              selected ? selectedIcon : icon,
+              size: 22,
+              color: value ?? color,
+            ),
+          ),
+          const SizedBox(height: 3),
+          AnimatedDefaultTextStyle(
+            duration: duration,
+            curve: Curves.easeOut,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              letterSpacing: 0.1,
+            ),
+            child: Text(label, maxLines: 1, overflow: TextOverflow.clip),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Apple capsule button: white filled primary (Apple TV style) or neutral
+/// translucent fill for secondary actions.
 class AppleCapsuleButton extends StatelessWidget {
   final String label;
   final IconData? icon;
@@ -427,63 +474,31 @@ class AppleCapsuleButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final fg = destructive
         ? AppleColors.systemRed
-        : (primary ? const Color(0xFFFFFFFF) : AppleColors.labelPrimary);
+        : (primary ? const Color(0xFF000000) : AppleColors.labelPrimary);
+    final bg = destructive
+        ? const Color(0x33FF453A)
+        : (primary ? const Color(0xFFF5F5F7) : AppleColors.fill);
     return CupertinoButton(
       padding: EdgeInsets.zero,
       minSize: compact ? 32 : 42,
-      pressedOpacity: 0.72,
+      pressedOpacity: 0.7,
       onPressed: onPressed,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(999),
+        clipBehavior: Clip.antiAlias,
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
             padding: EdgeInsets.symmetric(
               horizontal: compact ? 14 : 20,
               vertical: compact ? 7 : 11,
             ),
             decoration: BoxDecoration(
+              color: bg,
               borderRadius: BorderRadius.circular(999),
-              gradient: destructive
-                  ? const LinearGradient(
-                      colors: [Color(0x38FF453A), Color(0x22FF453A)],
-                    )
-                  : primary
-                      ? const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Color(0xE60A84FF),
-                            Color(0xCC3B9EFF),
-                            Color(0xD95E5CE6),
-                          ],
-                        )
-                      : const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Color(0x38FFFFFF),
-                            Color(0x16FFFFFF),
-                            Color(0x2464D2FF),
-                          ],
-                        ),
-              border: Border.all(
-                color: destructive
-                    ? const Color(0x66FF453A)
-                    : primary
-                        ? const Color(0x88FFFFFF)
-                        : AppleColors.glassBorder,
-                width: 0.85,
-              ),
-              boxShadow: primary
-                  ? const [
-                      BoxShadow(
-                        color: Color(0x440A84FF),
-                        blurRadius: 16,
-                        offset: Offset(0, 6),
-                      ),
-                    ]
-                  : null,
+              border: primary
+                  ? null
+                  : Border.all(color: AppleColors.glassBorder, width: 0.5),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -497,7 +512,7 @@ class AppleCapsuleButton extends StatelessWidget {
                   style: TextStyle(
                     color: fg,
                     fontSize: compact ? 13 : 15,
-                    fontWeight: primary ? FontWeight.w700 : FontWeight.w600,
+                    fontWeight: FontWeight.w600,
                     letterSpacing: -0.2,
                   ),
                 ),
@@ -510,7 +525,7 @@ class AppleCapsuleButton extends StatelessWidget {
   }
 }
 
-/// Liquid Glass Inset Grouped Section.
+/// Inset grouped section (Settings-app style).
 class AppleGroupedSection extends StatelessWidget {
   final String? header;
   final String? footer;
@@ -530,7 +545,7 @@ class AppleGroupedSection extends StatelessWidget {
         separated.add(
           Container(
             height: 0.5,
-            margin: const EdgeInsets.only(left: 52),
+            margin: const EdgeInsets.only(left: 58),
             color: AppleColors.separator,
           ),
         );
@@ -547,14 +562,15 @@ class AppleGroupedSection extends StatelessWidget {
               style: const TextStyle(
                 color: AppleColors.labelSecondary,
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.5,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.3,
               ),
             ),
           ),
         AppleGlassSurface(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(14),
           padding: EdgeInsets.zero,
+          color: const Color(0xCC1C1C1E),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: separated,
@@ -577,7 +593,7 @@ class AppleGroupedSection extends StatelessWidget {
   }
 }
 
-/// Liquid Glass list row with glowing icon badge, title, subtitle, and trailing widget.
+/// Settings-style list row with a rounded icon badge, title, subtitle and trailing widget.
 class AppleGroupedTile extends StatelessWidget {
   final IconData icon;
   final Color iconBgColor;
@@ -599,28 +615,23 @@ class AppleGroupedTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       child: Row(
         children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  iconBgColor,
-                  iconBgColor.withValues(alpha: 0.72),
-                ],
+          DecoratedBox(
+            decoration: ShapeDecoration(
+              color: iconBgColor,
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
-              borderRadius: BorderRadius.circular(9),
-              border: Border.all(color: Colors.white30, width: 0.6),
             ),
-            alignment: Alignment.center,
-            child: Icon(icon, color: Colors.white, size: 17),
+            child: SizedBox(
+              width: 30,
+              height: 30,
+              child: Icon(icon, color: Colors.white, size: 17),
+            ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -630,7 +641,7 @@ class AppleGroupedTile extends StatelessWidget {
                   style: const TextStyle(
                     color: AppleColors.labelPrimary,
                     fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 if (subtitle != null && subtitle!.isNotEmpty) ...[
@@ -666,7 +677,7 @@ class AppleGroupedTile extends StatelessWidget {
             const Icon(
               CupertinoIcons.chevron_right,
               color: AppleColors.labelTertiary,
-              size: 16,
+              size: 15,
             ),
           ],
         ],
@@ -677,7 +688,7 @@ class AppleGroupedTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        highlightColor: Colors.white12,
+        highlightColor: Colors.white10,
         splashColor: Colors.transparent,
         child: content,
       ),
@@ -685,7 +696,7 @@ class AppleGroupedTile extends StatelessWidget {
   }
 }
 
-/// Shows an Apple Liquid Glass modal sheet with refractive blur and luminous border.
+/// Apple sheet: neutral thick material, background blur, grabber and close button.
 Future<T?> showAppleModalSheet<T>({
   required BuildContext context,
   required String title,
@@ -706,25 +717,17 @@ Future<T?> showAppleModalSheet<T>({
               maxHeight: screenHeight * 0.86,
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(26),
+              clipBehavior: Clip.antiAlias,
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 44, sigmaY: 44),
+                filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0x98101624),
-                    borderRadius: BorderRadius.circular(28),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0x38FFFFFF),
-                        Color(0x14FFFFFF),
-                        Color(0x2464D2FF),
-                      ],
-                    ),
+                    color: const Color(0xE61C1C1E),
+                    borderRadius: BorderRadius.circular(26),
                     border: Border.all(
-                      color: const Color(0x55FFFFFF),
-                      width: 1.0,
+                      color: AppleColors.glassBorderStrong,
+                      width: 0.5,
                     ),
                   ),
                   child: Material(
@@ -734,12 +737,12 @@ Future<T?> showAppleModalSheet<T>({
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 8),
                           Container(
-                            width: 40,
+                            width: 36,
                             height: 5,
                             decoration: BoxDecoration(
-                              color: const Color(0x88FFFFFF),
+                              color: const Color(0x66EBEBF5),
                               borderRadius: BorderRadius.circular(3),
                             ),
                           ),
@@ -752,8 +755,8 @@ Future<T?> showAppleModalSheet<T>({
                                     title,
                                     style: const TextStyle(
                                       color: AppleColors.labelPrimary,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w600,
                                       letterSpacing: -0.3,
                                     ),
                                   ),
@@ -765,8 +768,8 @@ Future<T?> showAppleModalSheet<T>({
                                   onPressed: () => Navigator.of(ctx).pop(),
                                   child: const Icon(
                                     CupertinoIcons.xmark_circle_fill,
-                                    color: AppleColors.labelSecondary,
-                                    size: 24,
+                                    color: AppleColors.labelTertiary,
+                                    size: 26,
                                   ),
                                 ),
                               ],
@@ -786,4 +789,70 @@ Future<T?> showAppleModalSheet<T>({
       );
     },
   );
+}
+
+/// Minimal Apple-style app background: true black with a faint cool lift at
+/// the top and an optional, heavily blurred ambient artwork (Apple TV style).
+class AppleAmbientBackground extends StatelessWidget {
+  final Widget? artwork;
+  const AppleAmbientBackground({super.key, this.artwork});
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xFF17171B),
+                Color(0xFF0A0A0C),
+                Color(0xFF000000),
+              ],
+              stops: [0.0, 0.32, 0.72],
+            ),
+          ),
+        ),
+        if (artwork != null)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 520,
+            child: IgnorePointer(
+              child: ShaderMask(
+                blendMode: BlendMode.dstIn,
+                shaderCallback: (rect) => const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x80FFFFFF), Color(0x00FFFFFF)],
+                ).createShader(rect),
+                child: ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
+                  child: artwork,
+                ),
+              ),
+            ),
+          ),
+        const Positioned(
+          top: -260,
+          left: 0,
+          right: 0,
+          height: 560,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  radius: 0.7,
+                  colors: [Color(0x14FFFFFF), Color(0x00FFFFFF)],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

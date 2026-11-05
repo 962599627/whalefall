@@ -7,11 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/cms_client.dart';
 import '../core/cms_parser.dart';
+import '../core/download_service.dart';
 import '../core/models.dart';
 import '../core/storage_service.dart';
 import 'apple_theme.dart';
 import 'detail_screen.dart';
 import 'player_screen.dart';
+import 'poster_image.dart';
 /// Apple HIG adaptive shell:
 /// - macOS / iPadOS / Desktop (`width >= 700`): Translucent sidebar with traffic-light inset & source card
 /// - iOS (`width < 700`): Frosted-glass top navigation bar and translucent Cupertino bottom tab bar
@@ -327,75 +329,46 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       _buildFavoritesHistoryTab(context, useSidebar: isLandscape),
       _buildSettingsTab(context, useSidebar: isLandscape),
     ];
+    final ambientPoster = _tabIndex == 0 && _homeVideos.isNotEmpty
+        ? _homeVideos.first.poster
+        : '';
     return Scaffold(
       backgroundColor: AppleColors.background,
       extendBody: true,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Ambient Apple Liquid Glass mesh background
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF141C2E),
-                  Color(0xFF0A0D16),
-                  Color(0xFF040508),
-                ],
-                stops: [0.0, 0.48, 1.0],
+          // Minimal Apple background: true black, faint top lift, and a softly
+          // blurred ambient artwork of the featured title on the home tab.
+          RepaintBoundary(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 600),
+              child: AppleAmbientBackground(
+                key: ValueKey<String>(ambientPoster),
+                artwork: ambientPoster.isEmpty
+                    ? null
+                    : Opacity(
+                        opacity: 0.55,
+                        child: PosterImage(
+                          url: ambientPoster,
+                          placeholder: const SizedBox.shrink(),
+                        ),
+                      ),
               ),
             ),
           ),
-          Positioned(
-            top: -120,
-            left: -80,
-            child: IgnorePointer(
-              child: Container(
-                width: 340,
-                height: 340,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      Color(0x360A84FF),
-                      Color(0x125E5CE6),
-                      Color(0x00000000),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: -140,
-            right: -60,
-            child: IgnorePointer(
-              child: Container(
-                width: 320,
-                height: 320,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      Color(0x285E5CE6),
-                      Color(0x1064D2FF),
-                      Color(0x00000000),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // Active page content (with right clearance in landscape for right-side Liquid Glass Dock)
+          // Active page content (with right clearance in landscape for the right-side Dock)
           Padding(
-            padding: EdgeInsets.only(right: isLandscape ? 88 : 0),
-            child: pages[_tabIndex],
+            padding: EdgeInsets.only(
+              right: isLandscape
+                  ? AppleLiquidGlassDock.landscapeFootprint(context)
+                  : 0,
+            ),
+            child: RepaintBoundary(child: pages[_tabIndex]),
           ),
-          // Apple Liquid Glass Floating Dock:
-          // - Portrait: bottom center floating capsule dock
-          // - Landscape: right-side vertical floating capsule dock
+          // iPhone / iPad style Dock:
+          // - Portrait: bottom floating rounded-rectangle dock
+          // - Landscape: right-side vertical dock
           if (isLandscape)
             Positioned(
               top: 0,
@@ -490,18 +463,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                               width: 34,
                               height: 34,
                               decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    Color(0x48FFFFFF),
-                                    Color(0x22262A36),
-                                  ],
-                                ),
+                                color: AppleColors.fill,
                                 borderRadius: BorderRadius.circular(999),
                                 border: Border.all(
-                                  color: AppleColors.glassBorderStrong,
-                                  width: 0.8,
+                                  color: AppleColors.glassBorder,
+                                  width: 0.5,
                                 ),
                               ),
                               alignment: Alignment.center,
@@ -681,7 +647,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               child: Padding(
                 padding: EdgeInsets.only(
                   top: 18,
-                  bottom: useSidebar ? 32 : 100,
+                  bottom: useSidebar ? 32 : 128,
                 ),
                 child: Center(
                   child: _homeLoading
@@ -883,26 +849,17 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             constraints: const BoxConstraints(maxWidth: 164),
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7.5),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0x42FFFFFF),
-                  Color(0x26242834),
-                  Color(0x36141720),
-                ],
-                stops: [0.0, 0.45, 1.0],
-              ),
+              color: AppleColors.fill,
               borderRadius: BorderRadius.circular(999),
               border: Border.all(
-                color: AppleColors.glassBorderStrong,
-                width: 0.8,
+                color: AppleColors.glassBorder,
+                width: 0.5,
               ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, color: AppleColors.systemBlue, size: 14),
+                Icon(icon, color: AppleColors.labelSecondary, size: 14),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
@@ -944,16 +901,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       child: Container(
         height: wide ? 260 : 214,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          color: AppleColors.groupedPrimary,
-          border: Border.all(color: AppleColors.glassBorderStrong, width: 0.8),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x4D000000),
-              blurRadius: 28,
-              offset: Offset(0, 12),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(22),
+          color: const Color(0xFF111114),
+          border: Border.all(color: AppleColors.glassBorder, width: 0.5),
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -961,25 +911,20 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           children: [
             if (featured.poster.isNotEmpty)
               ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-                child: Image.network(
-                  featured.poster,
-                  headers: AppleColors.posterHeaders(featured.poster),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                ),
+                imageFilter: ImageFilter.blur(sigmaX: 36, sigmaY: 36),
+                child: PosterImage(url: featured.poster, placeholder: const SizedBox.shrink()),
               ),
             Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
                   colors: [
-                    Color(0x38FFFFFF),
-                    Color(0xAA0A0D14),
-                    Color(0xEB07090E),
+                    Color(0x33000000),
+                    Color(0x99000000),
+                    Color(0xE6000000),
                   ],
-                  stops: [0.0, 0.45, 1.0],
+                  stops: [0.0, 0.5, 1.0],
                 ),
               ),
             ),
@@ -988,17 +933,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               child: Row(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(12),
                     child: AspectRatio(
                       aspectRatio: 2 / 3,
                       child: featured.poster.isNotEmpty
-                          ? Image.network(
-                              featured.poster,
-                              headers: AppleColors.posterHeaders(featured.poster),
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  _buildPosterPlaceholder(),
-                            )
+                          ? PosterImage(url: featured.poster, placeholder: _buildPosterPlaceholder())
                           : _buildPosterPlaceholder(),
                     ),
                   ),
@@ -1008,26 +947,13 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 3.5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0x380A84FF),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: const Color(0x6664D2FF),
-                              width: 0.6,
-                            ),
-                          ),
-                          child: Text(
-                            '今日首推 · ${site.name}',
-                            style: const TextStyle(
-                              color: Color(0xFF82C4FF),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
+                        Text(
+                          '今日首推 · ${site.name}',
+                          style: const TextStyle(
+                            color: AppleColors.labelSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.2,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -1117,13 +1043,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   width: 48,
                   height: 66,
                   child: entry.poster.isNotEmpty
-                      ? Image.network(
-                          entry.poster,
-                          headers: AppleColors.posterHeaders(entry.poster),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _buildPosterPlaceholder(),
-                        )
+                      ? PosterImage(url: entry.poster, placeholder: _buildPosterPlaceholder())
                       : _buildPosterPlaceholder(),
                 ),
               ),
@@ -1183,48 +1103,21 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(999),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
-            decoration: BoxDecoration(
-              gradient: selected
-                  ? const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xD84CA8FF),
-                        Color(0xCC0A84FF),
-                      ],
-                    )
-                  : const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0x36FFFFFF),
-                        Color(0x22202430),
-                      ],
-                    ),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: selected
-                    ? AppleColors.glassHighlight
-                    : AppleColors.glassBorder,
-                width: 0.75,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: AppleColors.labelPrimary,
-                fontSize: 13,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? AppleColors.labelPrimary : AppleColors.fill,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? const Color(0xFF000000) : AppleColors.labelPrimary,
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
           ),
         ),
       ),
@@ -1234,9 +1127,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF232B3A), Color(0xFF12151E)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF242428), Color(0xFF161618)],
         ),
       ),
       alignment: Alignment.center,
@@ -1256,60 +1149,44 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(15),
+                borderRadius: BorderRadius.circular(12),
+                color: const Color(0xFF1C1C1E),
                 border: Border.all(
-                  color: AppleColors.glassBorderStrong,
-                  width: 0.7,
+                  color: AppleColors.glassBorder,
+                  width: 0.5,
                 ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x38000000),
-                    blurRadius: 14,
-                    offset: Offset(0, 6),
-                  ),
-                ],
               ),
               clipBehavior: Clip.antiAlias,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
                   video.poster.isNotEmpty
-                      ? Image.network(
-                          video.poster,
-                          headers: AppleColors.posterHeaders(video.poster),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _buildPosterPlaceholder(),
-                        )
+                      ? PosterImage(url: video.poster, placeholder: _buildPosterPlaceholder())
                       : _buildPosterPlaceholder(),
                   if (badge != null && badge.isNotEmpty)
                     Positioned(
                       top: 6,
                       left: 6,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0x9912151E),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: AppleColors.glassBorder,
-                                width: 0.5,
-                              ),
-                            ),
-                            child: Text(
-                              badge,
-                              style: const TextStyle(
-                                color: AppleColors.labelPrimary,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                              ),
+                      right: 6,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2.5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xB3000000),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            badge,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppleColors.labelPrimary,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -1317,35 +1194,27 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     ),
                   if (video.remarks.isNotEmpty)
                     Positioned(
-                      bottom: 6,
-                      right: 6,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(7),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2.5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xAA161922),
-                              borderRadius: BorderRadius.circular(7),
-                              border: Border.all(
-                                color: AppleColors.glassBorder,
-                                width: 0.5,
-                              ),
-                            ),
-                            child: Text(
-                              video.remarks,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppleColors.labelPrimary,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(7, 14, 7, 5),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0x00000000), Color(0xB3000000)],
+                          ),
+                        ),
+                        child: Text(
+                          video.remarks,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            color: AppleColors.labelPrimary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -1514,7 +1383,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       ),
                     )
                   : GridView.builder(
-                      padding: EdgeInsets.only(bottom: useSidebar ? 24 : 96),
+                      padding: EdgeInsets.only(bottom: useSidebar ? 24 : 124),
                       gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                         maxCrossAxisExtent: useSidebar ? 176 : 132,
                         mainAxisSpacing: 16,
@@ -1633,7 +1502,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             else
               Expanded(
                 child: ListView.separated(
-                  padding: EdgeInsets.only(bottom: useSidebar ? 24 : 96),
+                  padding: EdgeInsets.only(bottom: useSidebar ? 24 : 124),
                   itemCount: _liveGroups.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 18),
                   itemBuilder: (ctx, gIdx) {
@@ -1724,6 +1593,21 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   ),
                 ),
                 const Spacer(),
+                if (_librarySegment == 2 &&
+                    DownloadService.instance.canOpenFolder &&
+                    DownloadService.instance.rootPath.isNotEmpty)
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minSize: 28,
+                    onPressed: DownloadService.instance.openFolder,
+                    child: const Text(
+                      '打开文件夹',
+                      style: TextStyle(
+                        color: AppleColors.systemBlue,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
                 if (_librarySegment == 1 && history.isNotEmpty)
                   CupertinoButton(
                     padding: EdgeInsets.zero,
@@ -1746,8 +1630,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             SizedBox(
               width: double.infinity,
               child: CupertinoSlidingSegmentedControl<int>(
-                backgroundColor: AppleColors.groupedPrimary,
-                thumbColor: AppleColors.groupedTertiary,
+                backgroundColor: AppleColors.fill,
+                thumbColor: const Color(0xFF636366),
                 groupValue: _librarySegment,
                 children: const {
                   0: Padding(
@@ -1772,6 +1656,17 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       ),
                     ),
                   ),
+                  2: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 7),
+                    child: Text(
+                      '离线下载',
+                      style: TextStyle(
+                        color: AppleColors.labelPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 },
                 onValueChanged: (v) {
                   if (v != null) setState(() => _librarySegment = v);
@@ -1779,6 +1674,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               ),
             ),
             const SizedBox(height: 16),
+            if (_librarySegment == 2)
+              Expanded(child: _buildDownloadsList(useSidebar: useSidebar))
+            else
             Expanded(
               child: _librarySegment == 0
                   ? (favorites.isEmpty
@@ -1793,7 +1691,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         )
                       : GridView.builder(
                           padding: EdgeInsets.only(
-                            bottom: useSidebar ? 24 : 96,
+                            bottom: useSidebar ? 24 : 124,
                           ),
                           gridDelegate:
                               SliverGridDelegateWithMaxCrossAxisExtent(
@@ -1845,7 +1743,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         )
                       : ListView(
                           padding: EdgeInsets.only(
-                            bottom: useSidebar ? 24 : 96,
+                            bottom: useSidebar ? 24 : 124,
                           ),
                           children: [
                             AppleGroupedSection(
@@ -1882,6 +1780,291 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       ),
     );
   }
+  Widget _buildDownloadsList({required bool useSidebar}) {
+    final service = DownloadService.instance;
+    return AnimatedBuilder(
+      animation: service,
+      builder: (context, _) {
+        if (!service.isReady) {
+          return const Center(
+            child: Text(
+              '当前设备暂不支持离线下载',
+              style: TextStyle(color: AppleColors.labelSecondary, fontSize: 14),
+            ),
+          );
+        }
+        final tasks = service.tasks;
+        if (tasks.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  CupertinoIcons.arrow_down_circle,
+                  color: AppleColors.labelTertiary,
+                  size: 46,
+                ),
+                SizedBox(height: 12),
+                Text(
+                  '还没有下载任何影片',
+                  style: TextStyle(
+                    color: AppleColors.labelPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  '在影片详情页点击「下载」，即可在没有网络时观看',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppleColors.labelSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        final active = service.activeCount;
+        final hasPaused = tasks.any((t) => t.status == DownloadStatus.paused);
+        return ListView(
+          padding: EdgeInsets.only(bottom: useSidebar ? 24 : 124),
+          children: [
+            if (active > 0 || hasPaused)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+                child: Row(
+                  children: [
+                    Text(
+                      active > 0 ? '$active 个任务进行中' : '下载已暂停',
+                      style: const TextStyle(
+                        color: AppleColors.labelSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const Spacer(),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minSize: 26,
+                      onPressed:
+                          active > 0 ? service.pauseAll : service.resumeAll,
+                      child: Text(
+                        active > 0 ? '全部暂停' : '全部继续',
+                        style: const TextStyle(
+                          color: AppleColors.systemBlue,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            AppleGroupedSection(
+              children: [for (final t in tasks) _buildDownloadRow(t)],
+            ),
+            if (service.rootPath.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Text(
+                  '保存位置：${service.rootPath}',
+                  style: const TextStyle(
+                    color: AppleColors.labelTertiary,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+  Widget _buildDownloadRow(DownloadTask t) {
+    final service = DownloadService.instance;
+    final done = t.status == DownloadStatus.completed;
+    final failed = t.status == DownloadStatus.failed;
+    final statusColor = failed
+        ? AppleColors.systemRed
+        : (done ? AppleColors.systemGreen : AppleColors.labelSecondary);
+    IconData actionIcon;
+    VoidCallback action;
+    if (done) {
+      actionIcon = CupertinoIcons.play_circle_fill;
+      action = () => _playDownloaded(t);
+    } else if (t.status == DownloadStatus.paused || failed) {
+      actionIcon = CupertinoIcons.arrow_clockwise_circle;
+      action = () => service.resume(t.id);
+    } else {
+      actionIcon = CupertinoIcons.pause_circle;
+      action = () => service.pause(t.id);
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: done ? () => _playDownloaded(t) : null,
+        highlightColor: Colors.white10,
+        splashColor: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(7),
+                child: SizedBox(
+                  width: 40,
+                  height: 56,
+                  child: PosterImage(
+                    url: t.poster,
+                    placeholder: _buildPosterPlaceholder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      t.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppleColors.labelPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${t.episodeName} · ${t.lineName}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppleColors.labelSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    if (!done) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: LinearProgressIndicator(
+                          value: t.status == DownloadStatus.queued &&
+                                  t.progress <= 0
+                              ? null
+                              : t.progress.clamp(0.0, 1.0),
+                          minHeight: 3,
+                          backgroundColor: AppleColors.fill,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            failed
+                                ? AppleColors.systemRed
+                                : AppleColors.systemBlue,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    Text(
+                      DownloadService.statusLabel(t),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: statusColor, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              CupertinoButton(
+                padding: const EdgeInsets.all(4),
+                minSize: 34,
+                onPressed: action,
+                child: Icon(
+                  actionIcon,
+                  size: 27,
+                  color: done
+                      ? AppleColors.labelPrimary
+                      : AppleColors.systemBlue,
+                ),
+              ),
+              CupertinoButton(
+                padding: const EdgeInsets.all(4),
+                minSize: 34,
+                onPressed: () => _confirmDeleteDownload(t),
+                child: const Icon(
+                  CupertinoIcons.trash,
+                  size: 19,
+                  color: AppleColors.labelTertiary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  void _confirmDeleteDownload(DownloadTask t) {
+    showCupertinoDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('删除下载？'),
+        content: Text('「${t.title} · ${t.episodeName}」及已下载的文件将被删除。'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              DownloadService.instance.remove(t.id);
+            },
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+  }
+  void _playDownloaded(DownloadTask t) {
+    final completed = DownloadService.instance
+        .completedFor(t.siteKey, t.videoId)
+        .where((x) => x.lineName == t.lineName && x.filePath.isNotEmpty)
+        .toList();
+    if (completed.isEmpty) return;
+    final start = completed.indexWhere((x) => x.id == t.id);
+    final site = CmsSite(
+      key: t.siteKey,
+      name: t.siteName,
+      type: t.siteType,
+      api: t.siteApi,
+    );
+    final video = CmsVideo(
+      id: t.videoId,
+      title: t.title,
+      poster: t.poster,
+      lines: [
+        CmsLine(
+          name: t.lineName,
+          episodes: [
+            for (final x in completed)
+              CmsEpisode(name: x.episodeName, url: x.filePath),
+          ],
+        ),
+      ],
+    );
+    Navigator.of(context).push(
+      CupertinoPageRoute<void>(
+        builder: (_) => PlayerScreen(
+          site: site,
+          video: video,
+          initialLineIndex: 0,
+          initialEpisodeIndex: start < 0 ? 0 : start,
+          storage: widget.storage,
+        ),
+      ),
+    );
+  }
   Widget _buildSettingsTab(BuildContext context, {required bool useSidebar}) {
     final pad = useSidebar ? 28.0 : 16.0;
     final depots = _config?.depots ?? const [];
@@ -1892,7 +2075,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           pad,
           useSidebar && _isMacOS ? 28 : 14,
           pad,
-          useSidebar ? 32 : 100,
+          useSidebar ? 32 : 128,
         ),
         children: [
           const Text(
@@ -1953,6 +2136,20 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           AppleGroupedSection(
             header: '多端同步与播放偏好',
             children: [
+              if (DownloadService.instance.isReady)
+                AppleGroupedTile(
+                  icon: CupertinoIcons.arrow_down_circle_fill,
+                  iconBgColor: AppleColors.systemBlue,
+                  title: '离线下载',
+                  subtitle: DownloadService.instance.rootPath.isEmpty
+                      ? '下载的影片可在没有网络时观看'
+                      : '保存位置：${DownloadService.instance.rootPath}',
+                  trailingText: '${DownloadService.instance.tasks.length} 个',
+                  onTap: () => setState(() {
+                    _tabIndex = 3;
+                    _librarySegment = 2;
+                  }),
+                ),
               AppleGroupedTile(
                 icon: CupertinoIcons.arrow_2_circlepath,
                 iconBgColor: AppleColors.systemGreen,

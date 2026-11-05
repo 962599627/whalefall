@@ -3,10 +3,12 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../core/cms_client.dart';
 import '../core/cms_parser.dart';
+import '../core/download_service.dart';
 import '../core/models.dart';
 import '../core/storage_service.dart';
 import 'apple_theme.dart';
 import 'player_screen.dart';
+import 'poster_image.dart';
 /// Apple TV+ inspired responsive video detail page for iPhone, iPad, Mac, and Windows.
 class DetailScreen extends StatefulWidget {
   final CmsSite site;
@@ -87,6 +89,208 @@ class _DetailScreenState extends State<DetailScreen> {
           if (mounted) setState(() {});
         });
   }
+  void _toast(String message) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(color: AppleColors.labelPrimary, fontSize: 14),
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xF22C2C2E),
+        elevation: 0,
+        shape: const StadiumBorder(),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+  void _showDownloadSheet() {
+    if (_video.lines.isEmpty) return;
+    final lineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
+    final line = _video.lines[lineIdx];
+    final service = DownloadService.instance;
+    final selected = <int>{};
+    showAppleModalSheet<void>(
+      context: context,
+      title: '下载 · ${line.name}',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final total = line.episodes.length;
+          final downloadable = <int>[
+            for (int i = 0; i < total; i++)
+              if (service.taskFor(widget.site.key, _video.id, line.name, i) ==
+                  null)
+                i,
+          ];
+          final allSelected = downloadable.isNotEmpty &&
+              downloadable.every(selected.contains);
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 12, 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        downloadable.isEmpty
+                            ? '本线路的剧集都已在下载列表中'
+                            : '选择要下载的剧集 · 已选 ${selected.length}',
+                        style: const TextStyle(
+                          color: AppleColors.labelSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    if (downloadable.isNotEmpty)
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minSize: 28,
+                        onPressed: () => setSheet(() {
+                          if (allSelected) {
+                            selected.clear();
+                          } else {
+                            selected.addAll(downloadable);
+                          }
+                        }),
+                        child: Text(
+                          allSelected ? '取消全选' : '全选',
+                          style: const TextStyle(
+                            color: AppleColors.systemBlue,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: GridView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 124,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 2.4,
+                  ),
+                  itemCount: total,
+                  itemBuilder: (context, i) {
+                    final ep = line.episodes[i];
+                    final task = service.taskFor(
+                      widget.site.key,
+                      _video.id,
+                      line.name,
+                      i,
+                    );
+                    final exists = task != null;
+                    final done = task?.status == DownloadStatus.completed;
+                    final isSelected = selected.contains(i);
+                    return GestureDetector(
+                      onTap: exists
+                          ? null
+                          : () => setSheet(() {
+                                if (isSelected) {
+                                  selected.remove(i);
+                                } else {
+                                  selected.add(i);
+                                }
+                              }),
+                      child: DecoratedBox(
+                        decoration: ShapeDecoration(
+                          color: isSelected
+                              ? const Color(0x2E0A84FF)
+                              : AppleColors.fill,
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: BorderRadius.circular(11),
+                            side: BorderSide(
+                              color: isSelected
+                                  ? AppleColors.systemBlue
+                                  : AppleColors.glassBorder,
+                              width: isSelected ? 1.2 : 0.5,
+                            ),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (exists) ...[
+                                Icon(
+                                  done
+                                      ? CupertinoIcons.checkmark_circle_fill
+                                      : CupertinoIcons.arrow_down_circle,
+                                  size: 13,
+                                  color: done
+                                      ? AppleColors.systemGreen
+                                      : AppleColors.labelSecondary,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  ep.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: exists
+                                        ? AppleColors.labelTertiary
+                                        : AppleColors.labelPrimary,
+                                    fontSize: 13,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                child: Center(
+                  child: AppleCapsuleButton(
+                    label: selected.isEmpty
+                        ? '请选择剧集'
+                        : '开始下载（${selected.length} 集）',
+                    icon: CupertinoIcons.arrow_down_circle_fill,
+                    primary: true,
+                    onPressed: selected.isEmpty
+                        ? null
+                        : () {
+                            final list = selected.toList()..sort();
+                            final added = service.enqueue(
+                              site: widget.site,
+                              video: _video,
+                              line: line,
+                              episodeIndexes: list,
+                            );
+                            Navigator.of(ctx).pop();
+                            _toast(
+                              added > 0
+                                  ? '已加入下载队列 $added 集，可在「片库 › 离线下载」查看'
+                                  : '所选剧集已在下载列表中',
+                            );
+                          },
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
@@ -107,11 +311,9 @@ class _DetailScreenState extends State<DetailScreen> {
                 opacity: 0.38,
                 child: ImageFiltered(
                   imageFilter: ImageFilter.blur(sigmaX: 42, sigmaY: 42),
-                  child: Image.network(
-                    _video.poster,
-                    headers: AppleColors.posterHeaders(_video.poster),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  child: PosterImage(
+                    url: _video.poster,
+                    placeholder: const SizedBox.shrink(),
                   ),
                 ),
               ),
@@ -273,11 +475,9 @@ class _DetailScreenState extends State<DetailScreen> {
       child: AspectRatio(
         aspectRatio: 2 / 3,
         child: _video.poster.isNotEmpty
-            ? Image.network(
-                _video.poster,
-                headers: AppleColors.posterHeaders(_video.poster),
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _posterPlaceholder(),
+            ? PosterImage(
+                url: _video.poster,
+                placeholder: _posterPlaceholder(),
               )
             : _posterPlaceholder(),
       ),
@@ -447,6 +647,12 @@ class _DetailScreenState extends State<DetailScreen> {
                 if (mounted) setState(() => _isFavorite = fav);
               },
             ),
+            if (_video.lines.isNotEmpty && DownloadService.instance.isReady)
+              AppleCapsuleButton(
+                label: '下载',
+                icon: CupertinoIcons.arrow_down_circle,
+                onPressed: _showDownloadSheet,
+              ),
           ],
         ),
         if (_video.description.isNotEmpty) ...[

@@ -132,10 +132,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _duration = Duration.zero;
       });
     }
-    final resolvedEpisode = await _client.resolveEpisodeForPlayback(
-      widget.site,
-      _currentEpisode,
-    );
+    final resolvedEpisode = _currentEpisode.isLocalFile
+        ? _currentEpisode
+        : await _client.resolveEpisodeForPlayback(
+            widget.site,
+            _currentEpisode,
+          );
     if (!mounted || session != _playSession) return;
     final headers = <String, String>{
       ...widget.site.headers,

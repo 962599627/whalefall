@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'core/cms_client.dart';
+import 'core/download_service.dart';
 import 'core/storage_service.dart';
 import 'ui/adaptive_shell.dart';
 import 'ui/apple_theme.dart';
@@ -19,6 +20,7 @@ Future<void> main() async {
   );
   final storage = await StorageService.init();
   final client = CmsClient();
+  await DownloadService.instance.init(client);
   runApp(MarcoMovieApp(storage: storage, client: client));
 }
 class MarcoMovieApp extends StatelessWidget {

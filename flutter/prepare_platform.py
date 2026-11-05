@@ -77,7 +77,13 @@ def main() -> None:
                     "</dict>",
                     "  <key>com.apple.security.network.client</key>\n  <true/>\n</dict>",
                 )
-                ent.write_text(text, encoding="utf-8")
+            # Offline downloads are saved to ~/Downloads/Marco Movie
+            if "com.apple.security.files.downloads.read-write" not in text:
+                text = text.replace(
+                    "</dict>",
+                    "  <key>com.apple.security.files.downloads.read-write</key>\n  <true/>\n</dict>",
+                )
+            ent.write_text(text, encoding="utf-8")
         info_plist = macos_runner / "Info.plist"
         if info_plist.exists():
             text = info_plist.read_text(encoding="utf-8")
@@ -146,6 +152,17 @@ def main() -> None:
                     "    <true/>\n"
                     "  </dict>\n"
                     "</dict>",
+                    1,
+                )
+            # Expose offline downloads (Documents/Marco Movie) in the Files app
+            if "UIFileSharingEnabled" not in text:
+                text = text.replace(
+                    "</dict>\n</plist>",
+                    "  <key>UIFileSharingEnabled</key>\n"
+                    "  <true/>\n"
+                    "  <key>LSSupportsOpeningDocumentsInPlace</key>\n"
+                    "  <true/>\n"
+                    "</dict>\n</plist>",
                     1,
                 )
             ios_plist.write_text(text, encoding="utf-8")
