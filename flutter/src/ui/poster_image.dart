@@ -7,21 +7,22 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
-/// Robust cross-platform HD poster loader (Windows / macOS / iOS / iPadOS).
+/// Robust cross-platform HD poster & episode still loader (Windows / macOS / iOS / iPadOS).
 ///
 /// Key resilience & HD quality mechanisms:
 /// 1. Replaces `Image.network` + `ResizeImage` error-caching pitfalls by loading
 ///    and verifying image magic bytes in memory before handing `MemoryImage` to
 ///    Flutter's `ImageCache`, so transient network failures never stick in
 ///    `ImageCache`.
-/// 2. Upgrades Douban (`/s_ratio_poster/`, `/m_ratio_poster/`, `/spic/`, `/mpic/`)
-///    and Bilibili thumbnail URLs to 1080p HD (`/l_ratio_poster/`, `/lpic/`).
-/// 3. Deduplicates in-flight title cover lookups (`_inflightTitleBytes`) so
-///    multi-source search results for the same drama share a single domestic
-///    HD cover lookup and populate all cards simultaneously.
-/// 4. Races slow overseas MacCMS poster URLs against fast domestic cover lookup
-///    (`movie.douban.com`, `m.douban.com`, and `cn.bing.com` `tse*-mm.cn.bing.net`
-///    domestic CDN) so new drama searches never stay blank or wait for timeouts.
+/// 2. Upgrades Douban (`/s_ratio_poster/`, `/m_ratio_poster/`, `/spic/`, `/mpic/`, `.webp`)
+///    and Bilibili thumbnail URLs to 1080p HD (`/l_ratio_poster/`, `/lpic/`, `.jpg`).
+/// 3. Resolves official 1080p Douban posters via `www.douban.com/search?cat=1002`
+///    and `movie.douban.com/j/subject_suggest` using smart title variant splitting
+///    (e.g. `斗罗大陆2：绝世唐门2023` -> `['斗罗大陆2：绝世唐门', '绝世唐门', '斗罗大陆']`).
+/// 4. Extracts poster edge colors (`extractEdgeAmbientColor`) for seamless
+///    immersive detail background blending, and resolves per-episode 16:9 widescreen
+///    scene stills (`fetchSeriesEpisodeStills`) so every episode card displays a
+///    distinct scene frame.
 class PosterLoader {
   PosterLoader._();
 
@@ -31,7 +32,7 @@ class PosterLoader {
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
   static const String _tvBoxUa = 'okhttp/3.15';
   static const int _maxImageBytes = 12 * 1024 * 1024;
-  static const int _maxMemoryBytes = 80 * 1024 * 1024;
+  static const int _maxMemoryBytes = 96 * 1024 * 1024;
   static const int _maxConcurrent = 28;
 
   static final HttpClient _client = HttpClient()
@@ -47,7 +48,13 @@ class PosterLoader {
   static int _memoryBytes = 0;
   static final Map<String, Future<Uint8List>> _inflight = {};
   static final Map<String, Future<Uint8List>> _inflightTitleBytes = {};
+  static final Map<String, Future<Uint8List>> _inflightHdTitleBytes = {};
   static final Map<String, List<String>> _titleCoverUrlsCache = {};
+  static final Map<String, String> _titleSynopsisCache = {};
+  static final Map<String, List<String>> _seriesEpisodeStillsCache = {};
+  static final Map<String, List<String>> _seriesEpisodeCaptionsCache = {};
+  static final Map<String, Future<List<String>>> _inflightSeriesStills = {};
+  static final Map<int, Color> _ambientColorCache = {};
   static int _active = 0;
   static final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
   static Directory? _diskDir;
@@ -65,10 +72,14 @@ class PosterLoader {
     _memory.clear();
     _memoryBytes = 0;
     _titleCoverUrlsCache.clear();
+    _titleSynopsisCache.clear();
+    _seriesEpisodeStillsCache.clear();
+    _seriesEpisodeCaptionsCache.clear();
+    _ambientColorCache.clear();
     try {
       final dir = _diskDir ??
           Directory(
-            '${Directory.systemTemp.path}${Platform.pathSeparator}marco_poster_cache',
+            '${Directory.systemTemp.path}${Platform.pathSeparator}marco_poster_cache_v2',
           );
       if (await dir.exists()) {
         await for (final entity in dir.list()) {
@@ -96,6 +107,9 @@ class PosterLoader {
           .replaceFirst('/view/photo/mpic/', '/view/photo/lpic/')
           .replaceFirst('/view/subject/s/', '/view/subject/l/')
           .replaceFirst('/view/subject/m/', '/view/subject/l/');
+      if (u.endsWith('.webp')) {
+        u = '${u.substring(0, u.length - 5)}.jpg';
+      }
     } else if (u.contains('hdslb.com') || u.contains('biliimg.com')) {
       final atResize = RegExp(r'@\d+w_\d+h.*$').firstMatch(u);
       if (atResize != null) {
@@ -105,12 +119,51 @@ class PosterLoader {
     return u;
   }
 
+  static String cleanTitleForQuery(String rawTitle) => _cleanTitle(rawTitle);
+
   static String _cleanTitle(String rawTitle) {
     return rawTitle
         .replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '')
-        .replaceAll(RegExp(r'第[0-9一二三四五六七八九十]+季'), '')
-        .replaceAll(RegExp(r'\b(4K|1080[pP]|2160[pP]|HD|BD|国语|粤语|中字)\b'), '')
+        .replaceAll(RegExp(r'第[0-9一二三四五六七八九十百]+[季部集期篇章]'), '')
+        .replaceAll(
+          RegExp(
+            r'\b(4K|1080[pP]|2160[pP]|720[pP]|HD|BD|国语|粤语|中字|更新至.*|全\d+集)\b',
+          ),
+          '',
+        )
+        .replaceAll(RegExp(r'(?:19|20)\d{2}\s*$'), '')
         .trim();
+  }
+
+  /// Generates ordered search query variants from most specific to core title,
+  /// e.g. `斗罗大陆2：绝世唐门2023` -> `['斗罗大陆2：绝世唐门', '绝世唐门', '斗罗大陆']`.
+  static List<String> _queryVariantsForTitle(String rawTitle) {
+    final clean = _cleanTitle(rawTitle);
+    if (clean.isEmpty) return const [];
+    final out = <String>[clean];
+    final normalizedSpace = clean
+        .replaceAll(RegExp(r'[：:·—\-]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (normalizedSpace.isNotEmpty && !out.contains(normalizedSpace)) {
+      out.add(normalizedSpace);
+    }
+    final parts = clean
+        .split(
+          RegExp(
+            r'[：:·—\-\s]+|(?<=[\u4e00-\u9fa5])(?:[0-9]+|[IⅠVⅤXⅩ]{2,4})[：:·—\-\s]*(?=[\u4e00-\u9fa5])',
+          ),
+        )
+        .map((s) => s.trim())
+        .where((s) => s.length >= 2)
+        .toList();
+    if (parts.length >= 2) {
+      final subtitle = parts.last;
+      final baseTitle = parts.first;
+      if (!out.contains(subtitle)) out.add(subtitle);
+      if (!out.contains(baseTitle)) out.add(baseTitle);
+    }
+    return out;
   }
 
   static String _cacheKeyFor(String rawUrl, String title) {
@@ -122,7 +175,20 @@ class PosterLoader {
 
   /// Synchronously peeks in-memory LRU cache so already-loaded posters render
   /// on the very first frame without any async gap.
-  static Uint8List? peekMemory(String rawUrl, {String title = ''}) {
+  static Uint8List? peekMemory(
+    String rawUrl, {
+    String title = '',
+    bool preferHd = false,
+  }) {
+    final clean = _cleanTitle(title);
+    if (preferHd && clean.isNotEmpty) {
+      final hdKey = 'title_hd:$clean';
+      final hdHit = _memory.remove(hdKey);
+      if (hdHit != null) {
+        _memory[hdKey] = hdHit;
+        return hdHit;
+      }
+    }
     final u = upgradeUrlToHd(rawUrl);
     if (u.isNotEmpty) {
       final hit = _memory.remove(u);
@@ -131,8 +197,13 @@ class PosterLoader {
         return hit;
       }
     }
-    final clean = _cleanTitle(title);
     if (clean.isNotEmpty) {
+      final hdKey = 'title_hd:$clean';
+      final hdHit = _memory.remove(hdKey);
+      if (hdHit != null) {
+        _memory[hdKey] = hdHit;
+        return hdHit;
+      }
       final tKey = 'title:$clean';
       final hit = _memory.remove(tKey);
       if (hit != null) {
@@ -163,17 +234,316 @@ class PosterLoader {
     return future;
   }
 
-  /// Explicitly resolves a high-definition domestic poster by [title], used to
-  /// upgrade blurry low-res CMS thumbnails on immersive detail screens.
-  static Future<Uint8List> loadHdByTitle(String rawTitle) {
+  /// Explicitly resolves an official 1080p high-definition domestic poster by
+  /// [rawTitle] (via Douban `l_ratio_poster` / `www.douban.com/search` +
+  /// `movie.douban.com/j/subject_suggest`), upgrading blurry low-res CMS or
+  /// Bing thumbnails on immersive detail screens and persisting the HD cover
+  /// across both memory and disk cache.
+  static Future<Uint8List> loadHdByTitle(
+    String rawTitle, {
+    String rawUrl = '',
+  }) {
     final clean = _cleanTitle(rawTitle);
     if (clean.isEmpty) {
       return Future<Uint8List>.error(const FormatException('空片名'));
     }
     final hdKey = 'title_hd:$clean';
     final hit = _memory[hdKey];
-    if (hit != null) return SynchronousFuture<Uint8List>(hit);
-    return _resolveTitleCoverBytes(clean, cacheKey: hdKey);
+    if (hit != null && hit.length >= 48 * 1024) {
+      return SynchronousFuture<Uint8List>(hit);
+    }
+    final pending = _inflightHdTitleBytes[clean];
+    if (pending != null) return pending;
+
+    final future = () async {
+      // Check disk cache for hdKey first
+      final hdDisk = await _diskFileFor(hdKey);
+      if (hdDisk != null) {
+        try {
+          if (await hdDisk.exists()) {
+            final diskBytes = await hdDisk.readAsBytes();
+            if (_looksLikeImage(diskBytes) && diskBytes.length >= 48 * 1024) {
+              _remember(hdKey, diskBytes);
+              _remember('title:$clean', diskBytes);
+              final u = upgradeUrlToHd(rawUrl);
+              if (u.isNotEmpty) _remember(u, diskBytes);
+              return diskBytes;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Resolve candidate URLs with Douban 1080p l_ratio_poster prioritized first
+      final urls = await _resolveCoverUrlsByTitle(clean, forceRefreshHd: true);
+      Uint8List? bestBytes;
+      for (final candidateUrl in urls) {
+        for (final attempt in _attemptsFor(candidateUrl)) {
+          try {
+            final bytes = await _fetch(
+              attempt.$1,
+              attempt.$2,
+              timeout: const Duration(milliseconds: 3800),
+            );
+            if (bestBytes == null || bytes.length > bestBytes.length) {
+              bestBytes = bytes;
+            }
+            // Douban l_ratio_poster is typically 150KB - 450KB; accept immediately if >= 52KB
+            if (bytes.length >= 52 * 1024) {
+              await _persistHdResult(clean, rawUrl, bytes);
+              return bytes;
+            }
+          } catch (_) {}
+        }
+      }
+      if (bestBytes != null) {
+        await _persistHdResult(clean, rawUrl, bestBytes);
+        return bestBytes;
+      }
+      throw Exception('未找到「$clean」高清封面');
+    }()
+        .whenComplete(() => _inflightHdTitleBytes.remove(clean));
+
+    _inflightHdTitleBytes[clean] = future;
+    return future;
+  }
+
+  static Future<void> _persistHdResult(
+    String cleanTitle,
+    String rawUrl,
+    Uint8List bytes,
+  ) async {
+    final hdKey = 'title_hd:$cleanTitle';
+    final tKey = 'title:$cleanTitle';
+    _remember(hdKey, bytes);
+    _remember(tKey, bytes);
+    final u = upgradeUrlToHd(rawUrl);
+    if (u.isNotEmpty) {
+      _remember(u, bytes);
+      final urlDisk = await _diskFileFor(u);
+      if (urlDisk != null) unawaited(_writeDisk(urlDisk, bytes));
+    }
+    final hdDisk = await _diskFileFor(hdKey);
+    if (hdDisk != null) unawaited(_writeDisk(hdDisk, bytes));
+    final titleDisk = await _diskFileFor(tKey);
+    if (titleDisk != null) unawaited(_writeDisk(titleDisk, bytes));
+  }
+
+  /// Synchronously peeks cached ambient color extracted from poster [bytes].
+  static Color? peekAmbientColor(Uint8List bytes) {
+    return _ambientColorCache[_bytesFingerprint(bytes)];
+  }
+
+  /// Extracts a rich, cinema-grade dark ambient background color matching the
+  /// poster's top/bottom edge palette so the Detail Screen background and
+  /// top/bottom poster gradients blend seamlessly with zero visual seam.
+  static Future<Color> extractEdgeAmbientColor(Uint8List bytes) async {
+    final fp = _bytesFingerprint(bytes);
+    final cached = _ambientColorCache[fp];
+    if (cached != null) return cached;
+    try {
+      final codec = await ui.instantiateImageCodec(
+        bytes,
+        targetWidth: 24,
+        targetHeight: 36,
+      );
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      final byteData = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      image.dispose();
+      if (byteData != null) {
+        final data = byteData.buffer.asUint8List();
+        final w = 24;
+        final h = 36;
+        double rSum = 0;
+        double gSum = 0;
+        double bSum = 0;
+        double weightSum = 0;
+        for (int y = 0; y < h; y++) {
+          // Weight bottom edge (where poster meets content) highest, plus top/side edges
+          final isBottomBand = y >= (h * 0.62);
+          final isTopBand = y <= (h * 0.18);
+          final rowWeight = isBottomBand ? 2.6 : (isTopBand ? 1.4 : 0.6);
+          for (int x = 0; x < w; x++) {
+            final idx = (y * w + x) * 4;
+            if (idx + 3 >= data.length) continue;
+            final r = data[idx].toDouble();
+            final g = data[idx + 1].toDouble();
+            final b = data[idx + 2].toDouble();
+            final a = data[idx + 3].toDouble() / 255.0;
+            if (a < 0.2) continue;
+            // Boost slightly saturated pixels so the background captures the poster's true hue
+            final maxC = r > g ? (r > b ? r : b) : (g > b ? g : b);
+            final minC = r < g ? (r < b ? r : b) : (g < b ? g : b);
+            final sat = maxC > 0 ? (maxC - minC) / maxC : 0.0;
+            final wgt = rowWeight * (0.65 + sat * 0.85) * a;
+            rSum += r * wgt;
+            gSum += g * wgt;
+            bSum += b * wgt;
+            weightSum += wgt;
+          }
+        }
+        if (weightSum > 0) {
+          var rAvg = rSum / weightSum;
+          var gAvg = gSum / weightSum;
+          var bAvg = bSum / weightSum;
+          // Scale luminance into a deep cinema range (target luma ~ 26..42 out of 255)
+          // so white typography is always legible while keeping the exact hue of the poster edge.
+          final luma = 0.299 * rAvg + 0.587 * gAvg + 0.114 * bAvg;
+          if (luma > 44.0) {
+            final scale = 40.0 / luma;
+            rAvg *= scale;
+            gAvg *= scale;
+            bAvg *= scale;
+          } else if (luma < 16.0 && luma > 0.5) {
+            final scale = 20.0 / luma;
+            rAvg = (rAvg * scale).clamp(12.0, 58.0);
+            gAvg = (gAvg * scale).clamp(10.0, 54.0);
+            bAvg = (bAvg * scale).clamp(12.0, 62.0);
+          }
+          final color = Color.fromARGB(
+            255,
+            rAvg.round().clamp(10, 68),
+            gAvg.round().clamp(9, 62),
+            bAvg.round().clamp(10, 72),
+          );
+          _ambientColorCache[fp] = color;
+          return color;
+        }
+      }
+    } catch (_) {}
+    const fallback = Color(0xFF1A1512);
+    _ambientColorCache[fp] = fallback;
+    return fallback;
+  }
+
+  static int _bytesFingerprint(Uint8List b) {
+    if (b.isEmpty) return 0;
+    int h = b.length;
+    final step = (b.length ~/ 16).clamp(1, 4096);
+    for (int i = 0; i < b.length; i += step) {
+      h = ((h ^ b[i]) * 0x01000193) & 0x7fffffff;
+    }
+    return h;
+  }
+
+  /// Returns cached or fetched series synopsis from Douban when the CMS/netdisk
+  /// source did not provide a description.
+  static Future<String> fetchSeriesSynopsis(String rawTitle) async {
+    final clean = _cleanTitle(rawTitle);
+    if (clean.isEmpty) return '';
+    final cached = _titleSynopsisCache[clean];
+    if (cached != null && cached.isNotEmpty) return cached;
+    await _resolveCoverUrlsByTitle(clean);
+    return _titleSynopsisCache[clean] ?? '';
+  }
+
+  /// Returns cached per-episode scene captions if available.
+  static List<String> peekSeriesEpisodeCaptions(String rawTitle) {
+    final clean = _cleanTitle(rawTitle);
+    return _seriesEpisodeCaptionsCache[clean] ?? const [];
+  }
+
+  /// Resolves up to 35 distinct 16:9 widescreen scene stills (`剧照 / 画面`)
+  /// for [rawTitle] so each episode card in the horizontal episode strip shows
+  /// a distinct scene frame from the drama instead of repeating the main cover.
+  static Future<List<String>> fetchSeriesEpisodeStills(String rawTitle) {
+    final clean = _cleanTitle(rawTitle);
+    if (clean.isEmpty) return SynchronousFuture<List<String>>(const []);
+    final cached = _seriesEpisodeStillsCache[clean];
+    if (cached != null && cached.isNotEmpty) {
+      return SynchronousFuture<List<String>>(cached);
+    }
+    final pending = _inflightSeriesStills[clean];
+    if (pending != null) return pending;
+
+    final future = () async {
+      final stills = <String>[];
+      final captions = <String>[];
+      final seenCoreIds = <String>{};
+      final variants = _queryVariantsForTitle(clean);
+      final primaryQuery = variants.isNotEmpty ? variants.first : clean;
+      final queries = <String>[
+        '$primaryQuery 剧照 画面',
+        if (variants.length >= 2) '${variants[1]} 剧照 画面',
+      ];
+
+      for (final qText in queries) {
+        if (stills.length >= 24) break;
+        HttpClientRequest? req;
+        try {
+          final q = Uri.encodeQueryComponent(qText);
+          final uri = Uri.parse(
+            'https://cn.bing.com/images/async?q=$q&first=1&count=35&qft=+filterui:aspect-wide',
+          );
+          req = await _client
+              .getUrl(uri)
+              .timeout(const Duration(milliseconds: 2800));
+          req.headers.set('User-Agent', _desktopSafariUa);
+          req.headers.set('Referer', 'https://cn.bing.com/');
+          req.headers.set(
+            'Accept',
+            'text/html,application/xhtml+xml,*/*;q=0.8',
+          );
+          final resp =
+              await req.close().timeout(const Duration(milliseconds: 2800));
+          if (resp.statusCode >= 200 && resp.statusCode < 300) {
+            final html = await utf8.decoder
+                .bind(resp)
+                .join()
+                .timeout(const Duration(milliseconds: 2800));
+            final oipMatches = RegExp(
+              r'OIP(?:-C)?\.([A-Za-z0-9_-]+)',
+            ).allMatches(html);
+            for (final m in oipMatches) {
+              final fullId = m.group(0)!;
+              final coreId = m.group(1)!;
+              // Exclude vertical aspect ratio OIP suffixes (HaK*, HaN*, HaL*, HaM*, HaP*)
+              if (RegExp(r'Ha[KNLMP][A-Za-z0-9]$').hasMatch(coreId)) {
+                continue;
+              }
+              if (seenCoreIds.add(coreId)) {
+                stills.add(
+                  'https://tse1-mm.cn.bing.net/th/id/$fullId?w=640&h=360&c=7&r=0&o=5&pid=1.7',
+                );
+              }
+            }
+            final titleMatches = RegExp(
+              r't&quot;:&quot;([^&]{4,60})&quot;',
+            ).allMatches(html);
+            for (final tm in titleMatches) {
+              final rawCap = tm
+                  .group(1)!
+                  .replaceAll(RegExp(r'[\u0000-\u001f]'), '')
+                  .replaceAll(RegExp(r'[_｜|—\-].*$'), '')
+                  .trim();
+              if (rawCap.length >= 4 && !captions.contains(rawCap)) {
+                captions.add(rawCap);
+              }
+            }
+          } else {
+            await resp.drain<void>();
+          }
+        } catch (_) {
+          try {
+            req?.abort();
+          } catch (_) {}
+        }
+      }
+
+      if (captions.isNotEmpty) {
+        _seriesEpisodeCaptionsCache[clean] = captions;
+      }
+      if (stills.isNotEmpty) {
+        _seriesEpisodeStillsCache[clean] = stills;
+      }
+      return stills;
+    }()
+        .whenComplete(() => _inflightSeriesStills.remove(clean));
+
+    _inflightSeriesStills[clean] = future;
+    return future;
   }
 
   static bool _isKnownDeadPosterHost(String url) {
@@ -201,8 +571,35 @@ class PosterLoader {
   ) async {
     final cleanTitle = _cleanTitle(rawTitle);
     final titleCacheKey = cleanTitle.isNotEmpty ? 'title:$cleanTitle' : '';
+    final hdTitleKey = cleanTitle.isNotEmpty ? 'title_hd:$cleanTitle' : '';
 
-    // 1. Check disk cache for either the URL or the title key
+    // 0. If we already have an HD title cover in memory, return it immediately
+    if (hdTitleKey.isNotEmpty) {
+      final inMemHd = _memory[hdTitleKey];
+      if (inMemHd != null) {
+        _remember(cacheKey, inMemHd);
+        return inMemHd;
+      }
+    }
+
+    // 1. Check disk cache for HD title cover, URL key, or title key
+    if (hdTitleKey.isNotEmpty) {
+      final hdDiskFile = await _diskFileFor(hdTitleKey);
+      if (hdDiskFile != null) {
+        try {
+          if (await hdDiskFile.exists()) {
+            final bytes = await hdDiskFile.readAsBytes();
+            if (_looksLikeImage(bytes)) {
+              _remember(hdTitleKey, bytes);
+              _remember(cacheKey, bytes);
+              if (titleCacheKey.isNotEmpty) _remember(titleCacheKey, bytes);
+              return bytes;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     final diskFile = await _diskFileFor(cacheKey);
     if (diskFile != null) {
       try {
@@ -253,7 +650,7 @@ class PosterLoader {
 
     // 3. If rawUrl is a slow/unverified third-party host and we have a title,
     // race the primary URL against a fast domestic title lookup (starting after
-    // 350ms if the primary URL hasn't finished yet) so search results never wait
+    // 320ms if the primary URL hasn't finished yet) so search results never wait
     // 6-12 seconds for overseas CMS image servers.
     if (rawUrl.isNotEmpty &&
         cleanTitle.isNotEmpty &&
@@ -398,6 +795,9 @@ class PosterLoader {
             );
             final tKey = 'title:$cleanTitle';
             _remember(tKey, bytes);
+            if (bytes.length >= 52 * 1024) {
+              _remember('title_hd:$cleanTitle', bytes);
+            }
             if (cacheKey.isNotEmpty) _remember(cacheKey, bytes);
             final titleDisk = await _diskFileFor(tKey);
             if (titleDisk != null) {
@@ -418,56 +818,85 @@ class PosterLoader {
   }
 
   /// Resolves candidate HD vertical poster URLs for [cleanTitle] across:
-  /// 1. Douban `movie.douban.com/j/subject_suggest` (upgraded to `l_ratio_poster`)
-  /// 2. Douban `m.douban.com/rexxar/api/v2/search` (upgraded to `l_ratio_poster`)
-  /// 3. Bing China `cn.bing.com/images/async` (`tse*-mm.cn.bing.net` domestic CDN)
+  /// 1. Douban Web Search `www.douban.com/search?cat=1002&q=...` (upgraded to `l_ratio_poster` 1080p)
+  /// 2. Douban `movie.douban.com/j/subject_suggest` across title variants (upgraded to `l_ratio_poster` 1080p)
+  /// 3. Bing China `cn.bing.com/images/async` (`tse1-mm.cn.bing.net` domestic CDN) as fallback
   static Future<List<String>> _resolveCoverUrlsByTitle(
-    String cleanTitle,
-  ) async {
-    final cached = _titleCoverUrlsCache[cleanTitle];
-    if (cached != null && cached.isNotEmpty) return cached;
+    String cleanTitle, {
+    bool forceRefreshHd = false,
+  }) async {
+    if (!forceRefreshHd) {
+      final cached = _titleCoverUrlsCache[cleanTitle];
+      if (cached != null && cached.isNotEmpty) return cached;
+    }
 
-    final results = <String>[];
+    final doubanHdResults = <String>[];
+    final bingFallbackResults = <String>[];
     final seen = <String>{};
-    void addCandidate(String raw) {
+
+    void addDoubanCandidate(String raw) {
       final hd = upgradeUrlToHd(raw);
       if (hd.startsWith('http') && seen.add(hd)) {
-        results.add(hd);
+        doubanHdResults.add(hd);
       }
     }
 
-    final encoded = Uri.encodeQueryComponent(cleanTitle);
+    void addBingCandidate(String raw) {
+      final hd = upgradeUrlToHd(raw);
+      if (hd.startsWith('http') && seen.add(hd)) {
+        bingFallbackResults.add(hd);
+      }
+    }
 
-    // 1 & 2: Query Douban Suggest and Bing China Domestic Poster CDN in parallel
+    final variants = _queryVariantsForTitle(cleanTitle);
+    final encodedFull = Uri.encodeQueryComponent(cleanTitle);
+
     await Future.wait([
-      // Source A: Douban Subject Suggest (1080p l_ratio_poster)
+      // Source A: Douban Web Search `www.douban.com/search?cat=1002` (works for full titles like `斗罗大陆2：绝世唐门2023`, `嫁金钗`, `尚公主`)
       () async {
         HttpClientRequest? req;
         try {
           final uri = Uri.parse(
-            'https://movie.douban.com/j/subject_suggest?q=$encoded',
+            'https://www.douban.com/search?cat=1002&q=$encodedFull',
           );
           req = await _client
               .getUrl(uri)
-              .timeout(const Duration(milliseconds: 2200));
+              .timeout(const Duration(milliseconds: 2600));
           req.headers.set('User-Agent', _desktopSafariUa);
-          req.headers.set('Referer', 'https://movie.douban.com/');
-          req.headers.set('Accept', 'application/json, text/plain, */*');
+          req.headers.set('Referer', 'https://www.douban.com/');
+          req.headers.set(
+            'Accept',
+            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          );
           final resp =
-              await req.close().timeout(const Duration(milliseconds: 2200));
+              await req.close().timeout(const Duration(milliseconds: 2600));
           if (resp.statusCode >= 200 && resp.statusCode < 300) {
-            final body = await utf8.decoder
+            final html = await utf8.decoder
                 .bind(resp)
                 .join()
-                .timeout(const Duration(milliseconds: 2200));
-            final decoded = jsonDecode(body);
-            if (decoded is List) {
-              for (final item in decoded) {
-                if (item is Map) {
-                  final img = (item['img'] ?? '').toString().trim();
-                  if (img.startsWith('http')) {
-                    addCandidate(img);
-                  }
+                .timeout(const Duration(milliseconds: 2600));
+            final imgMatches = RegExp(
+              r'view/photo/[a-z_]+/public/p\d+\.(?:jpg|webp)',
+            ).allMatches(html);
+            for (final m in imgMatches.take(4)) {
+              addDoubanCandidate('https://img3.doubanio.com/${m.group(0)!}');
+            }
+            // Also extract synopsis paragraph if not yet cached
+            if (!_titleSynopsisCache.containsKey(cleanTitle)) {
+              final pMatches = RegExp(
+                r'<p>([^<]{18,400})</p>',
+              ).allMatches(html);
+              for (final pm in pMatches) {
+                final text = pm
+                    .group(1)!
+                    .replaceAll('&quot;', '"')
+                    .replaceAll('&amp;', '&')
+                    .replaceAll('&#39;', "'")
+                    .replaceAll(RegExp(r'\s+'), ' ')
+                    .trim();
+                if (text.length >= 18) {
+                  _titleSynopsisCache[cleanTitle] = text;
+                  break;
                 }
               }
             }
@@ -481,11 +910,57 @@ class PosterLoader {
         }
       }(),
 
-      // Source B: Bing China Domestic Image CDN (`tse*-mm.cn.bing.net`)
+      // Source B: Douban Subject Suggest across title variants (`['斗罗大陆2：绝世唐门', '绝世唐门', '斗罗大陆']`)
+      () async {
+        for (final variant in variants) {
+          if (doubanHdResults.length >= 3) break;
+          HttpClientRequest? req;
+          try {
+            final q = Uri.encodeQueryComponent(variant);
+            final uri = Uri.parse(
+              'https://movie.douban.com/j/subject_suggest?q=$q',
+            );
+            req = await _client
+                .getUrl(uri)
+                .timeout(const Duration(milliseconds: 2200));
+            req.headers.set('User-Agent', _desktopSafariUa);
+            req.headers.set('Referer', 'https://movie.douban.com/');
+            req.headers.set('Accept', 'application/json, text/plain, */*');
+            final resp =
+                await req.close().timeout(const Duration(milliseconds: 2200));
+            if (resp.statusCode >= 200 && resp.statusCode < 300) {
+              final body = await utf8.decoder
+                  .bind(resp)
+                  .join()
+                  .timeout(const Duration(milliseconds: 2200));
+              final decoded = jsonDecode(body);
+              if (decoded is List && decoded.isNotEmpty) {
+                for (final item in decoded) {
+                  if (item is Map) {
+                    final img = (item['img'] ?? '').toString().trim();
+                    if (img.startsWith('http')) {
+                      addDoubanCandidate(img);
+                    }
+                  }
+                }
+                if (doubanHdResults.isNotEmpty) break;
+              }
+            } else {
+              await resp.drain<void>();
+            }
+          } catch (_) {
+            try {
+              req?.abort();
+            } catch (_) {}
+          }
+        }
+      }(),
+
+      // Source C: Bing China Domestic Poster CDN fallback (only placed after Douban HD URLs)
       () async {
         HttpClientRequest? req;
         try {
-          final query = Uri.encodeQueryComponent('$cleanTitle 影视海报');
+          final query = Uri.encodeQueryComponent('$cleanTitle 官方海报');
           final uri = Uri.parse(
             'https://cn.bing.com/images/async?q=$query&first=1&count=6&qft=+filterui:aspect-tall',
           );
@@ -494,7 +969,10 @@ class PosterLoader {
               .timeout(const Duration(milliseconds: 2200));
           req.headers.set('User-Agent', _desktopSafariUa);
           req.headers.set('Referer', 'https://cn.bing.com/');
-          req.headers.set('Accept', 'text/html,application/xhtml+xml,*/*;q=0.8');
+          req.headers.set(
+            'Accept',
+            'text/html,application/xhtml+xml,*/*;q=0.8',
+          );
           final resp =
               await req.close().timeout(const Duration(milliseconds: 2200));
           if (resp.statusCode >= 200 && resp.statusCode < 300) {
@@ -507,8 +985,8 @@ class PosterLoader {
             ).allMatches(html);
             for (final m in matches.take(3)) {
               final oipId = m.group(0)!;
-              addCandidate(
-                'https://tse1-mm.cn.bing.net/th/id/$oipId?w=540&h=800&c=7&r=0&o=5&pid=1.7',
+              addBingCandidate(
+                'https://tse1-mm.cn.bing.net/th/id/$oipId?w=720&h=1080&c=7&r=0&o=5&pid=1.7',
               );
             }
           } else {
@@ -522,57 +1000,10 @@ class PosterLoader {
       }(),
     ]);
 
-    // Source C: Douban Mobile Rexxar Search fallback if both above returned empty
-    if (results.isEmpty) {
-      HttpClientRequest? req;
-      try {
-        final uri = Uri.parse(
-          'https://m.douban.com/rexxar/api/v2/search?q=$encoded&type=movie',
-        );
-        req = await _client
-            .getUrl(uri)
-            .timeout(const Duration(milliseconds: 2400));
-        req.headers.set('User-Agent', _mobileSafariUa);
-        req.headers.set('Referer', 'https://m.douban.com/');
-        req.headers.set('Accept', 'application/json, text/plain, */*');
-        final resp =
-            await req.close().timeout(const Duration(milliseconds: 2400));
-        if (resp.statusCode >= 200 && resp.statusCode < 300) {
-          final body = await utf8.decoder
-              .bind(resp)
-              .join()
-              .timeout(const Duration(milliseconds: 2400));
-          final decoded = jsonDecode(body);
-          final subjects = decoded is Map
-              ? (decoded['subjects'] is Map
-                  ? decoded['subjects']['items']
-                  : decoded['items'])
-              : null;
-          if (subjects is List) {
-            for (final entry in subjects) {
-              if (entry is! Map) continue;
-              final target = entry['target'] is Map ? entry['target'] : entry;
-              final cover = (target['cover_url'] ??
-                      (target['pic'] is Map
-                          ? (target['pic']['large'] ?? target['pic']['normal'])
-                          : ''))
-                  .toString()
-                  .trim();
-              if (cover.startsWith('http')) {
-                addCandidate(cover);
-              }
-            }
-          }
-        } else {
-          await resp.drain<void>();
-        }
-      } catch (_) {
-        try {
-          req?.abort();
-        } catch (_) {}
-      }
-    }
-
+    final results = <String>[
+      ...doubanHdResults,
+      ...bingFallbackResults,
+    ];
     if (results.isNotEmpty) {
       _titleCoverUrlsCache[cleanTitle] = results;
     }
@@ -664,7 +1095,8 @@ class PosterLoader {
             .replace(
               host: 'img3.doubanio.com',
               scheme: 'https',
-              path: uri.path.replaceFirst('/l_ratio_poster/', '/m_ratio_poster/'),
+              path:
+                  uri.path.replaceFirst('/l_ratio_poster/', '/m_ratio_poster/'),
             )
             .toString();
         add(mUrl, const {
@@ -701,7 +1133,10 @@ class PosterLoader {
         'Accept': accept,
       });
     }
-    add(url, {'User-Agent': _mobileSafariUa, 'Referer': origin, 'Accept': accept});
+    add(
+      url,
+      {'User-Agent': _mobileSafariUa, 'Referer': origin, 'Accept': accept},
+    );
     add(url, const {'User-Agent': _tvBoxUa, 'Accept': accept});
     add(url, const {'User-Agent': _desktopSafariUa, 'Accept': accept});
     final altScheme = uri.scheme == 'https' ? 'http' : 'https';
@@ -780,7 +1215,7 @@ class PosterLoader {
       _diskReady = true;
       try {
         final dir = Directory(
-          '${Directory.systemTemp.path}${Platform.pathSeparator}marco_poster_cache',
+          '${Directory.systemTemp.path}${Platform.pathSeparator}marco_poster_cache_v2',
         );
         if (!await dir.exists()) await dir.create(recursive: true);
         _diskDir = dir;
@@ -871,9 +1306,11 @@ class PosterImage extends StatefulWidget {
   final String url;
   final String title;
   final BoxFit fit;
+  final AlignmentGeometry alignment;
   final Widget placeholder;
   final bool fadeIn;
   final bool highRes;
+  final ValueChanged<Uint8List>? onBytesLoaded;
 
   const PosterImage({
     super.key,
@@ -881,8 +1318,10 @@ class PosterImage extends StatefulWidget {
     required this.placeholder,
     this.title = '',
     this.fit = BoxFit.cover,
+    this.alignment = Alignment.center,
     this.fadeIn = true,
     this.highRes = false,
+    this.onBytesLoaded,
   });
 
   @override
@@ -919,15 +1358,38 @@ class _PosterImageState extends State<PosterImage> {
     super.dispose();
   }
 
+  bool _needsHdUpgrade(Uint8List currentBytes) {
+    if (!widget.highRes || widget.title.trim().isEmpty) return false;
+    final upgraded = PosterLoader.upgradeUrlToHd(widget.url);
+    final isAlreadyDoubanHd = upgraded.contains('/l_ratio_poster/') ||
+        upgraded.contains('/view/photo/lpic/');
+    if (isAlreadyDoubanHd && currentBytes.length >= 90 * 1024) {
+      return false;
+    }
+    return currentBytes.length < 150 * 1024;
+  }
+
+  void _notifyBytes(Uint8List data) {
+    final cb = widget.onBytesLoaded;
+    if (cb != null) {
+      scheduleMicrotask(() {
+        if (mounted) cb(data);
+      });
+    }
+  }
+
   void _initLoad() {
-    final immediate = PosterLoader.peekMemory(widget.url, title: widget.title);
+    final immediate = PosterLoader.peekMemory(
+      widget.url,
+      title: widget.title,
+      preferHd: widget.highRes,
+    );
     if (immediate != null) {
       _bytes = immediate;
       _loadedSync = true;
-      if (widget.highRes &&
-          widget.title.trim().isNotEmpty &&
-          immediate.length < 36 * 1024) {
-        _tryUpgradeToHd(widget.title.trim(), immediate.length);
+      _notifyBytes(immediate);
+      if (_needsHdUpgrade(immediate)) {
+        unawaited(_tryUpgradeToHd(widget.title.trim(), immediate.length));
       }
       return;
     }
@@ -936,14 +1398,21 @@ class _PosterImageState extends State<PosterImage> {
     _fetchBytes();
   }
 
-  Future<void> _tryUpgradeToHd(String requestedTitle, int currentBytesLen) async {
+  Future<void> _tryUpgradeToHd(
+    String requestedTitle,
+    int currentBytesLen,
+  ) async {
     try {
-      final hdBytes = await PosterLoader.loadHdByTitle(requestedTitle);
+      final hdBytes = await PosterLoader.loadHdByTitle(
+        requestedTitle,
+        rawUrl: widget.url,
+      );
       if (!mounted || widget.title.trim() != requestedTitle) return;
-      if (hdBytes.length > currentBytesLen) {
+      if (hdBytes.length > currentBytesLen || hdBytes.length >= 64 * 1024) {
         setState(() {
           _bytes = hdBytes;
         });
+        _notifyBytes(hdBytes);
       }
     } catch (_) {}
   }
@@ -953,6 +1422,11 @@ class _PosterImageState extends State<PosterImage> {
     final requestedUrl = widget.url.trim();
     final requestedTitle = widget.title.trim();
     try {
+      if (widget.highRes && requestedTitle.isNotEmpty) {
+        // Race standard load with explicit Douban 1080p HD lookup so detail
+        // screen hero posters upgrade to crystal-clear 1080p immediately.
+        unawaited(_tryUpgradeToHd(requestedTitle, _bytes?.length ?? 0));
+      }
       final data = await PosterLoader.load(
         requestedUrl,
         title: requestedTitle,
@@ -962,12 +1436,13 @@ class _PosterImageState extends State<PosterImage> {
           widget.title.trim() != requestedTitle) {
         return;
       }
-      setState(() {
-        _bytes = data;
-      });
-      if (widget.highRes &&
-          requestedTitle.isNotEmpty &&
-          data.length < 36 * 1024) {
+      if (_bytes == null || data.length > _bytes!.length) {
+        setState(() {
+          _bytes = data;
+        });
+        _notifyBytes(data);
+      }
+      if (_needsHdUpgrade(data)) {
         unawaited(_tryUpgradeToHd(requestedTitle, data.length));
       }
     } catch (_) {
@@ -1000,8 +1475,6 @@ class _PosterImageState extends State<PosterImage> {
         if (!isLargeSurface &&
             constraints.maxWidth.isFinite &&
             constraints.maxWidth > 0) {
-          // Account for 2:3 vertical aspect ratio under BoxFit.cover so width
-          // is never downsampled below what vertical scaling requires.
           final effectiveWidth = constraints.maxHeight.isFinite &&
                   constraints.maxHeight * 0.72 > constraints.maxWidth
               ? constraints.maxHeight * 0.72
@@ -1019,6 +1492,7 @@ class _PosterImageState extends State<PosterImage> {
         final img = Image(
           image: provider,
           fit: widget.fit,
+          alignment: widget.alignment,
           width: constraints.maxWidth.isFinite ? constraints.maxWidth : null,
           height: constraints.maxHeight.isFinite ? constraints.maxHeight : null,
           gaplessPlayback: true,
@@ -1043,6 +1517,94 @@ class _PosterImageState extends State<PosterImage> {
           child: img,
         );
       },
+    );
+  }
+}
+
+/// Renders a distinct 16:9 widescreen scene still (`剧照 / 画面`) for a specific
+/// [episodeIndex] of [seriesTitle]. Falls back to a uniquely aligned HD crop
+/// of [fallbackPosterUrl] while scene stills are being resolved.
+class EpisodeStillImage extends StatefulWidget {
+  final String seriesTitle;
+  final int episodeIndex;
+  final String fallbackPosterUrl;
+  final Widget placeholder;
+
+  const EpisodeStillImage({
+    super.key,
+    required this.seriesTitle,
+    required this.episodeIndex,
+    required this.fallbackPosterUrl,
+    required this.placeholder,
+  });
+
+  @override
+  State<EpisodeStillImage> createState() => _EpisodeStillImageState();
+}
+
+class _EpisodeStillImageState extends State<EpisodeStillImage> {
+  String? _stillUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveStill();
+  }
+
+  @override
+  void didUpdateWidget(covariant EpisodeStillImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.seriesTitle != widget.seriesTitle ||
+        oldWidget.episodeIndex != widget.episodeIndex) {
+      _resolveStill();
+    }
+  }
+
+  Future<void> _resolveStill() async {
+    final title = widget.seriesTitle.trim();
+    if (title.isEmpty) return;
+    try {
+      final stills = await PosterLoader.fetchSeriesEpisodeStills(title);
+      if (!mounted || stills.isEmpty) return;
+      final picked = stills[widget.episodeIndex.abs() % stills.length];
+      if (_stillUrl != picked) {
+        setState(() {
+          _stillUrl = picked;
+        });
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final still = _stillUrl;
+    // Give each episode a distinct vertical focal alignment if showing fallback poster
+    final double alignY =
+        -0.72 + ((widget.episodeIndex * 3) % 7) * 0.22; // -0.72 .. +0.60
+    if (still != null && still.isNotEmpty) {
+      return PosterImage(
+        key: ValueKey('still_${widget.seriesTitle}_${widget.episodeIndex}_$still'),
+        url: still,
+        title: '',
+        fit: BoxFit.cover,
+        highRes: true,
+        placeholder: PosterImage(
+          url: widget.fallbackPosterUrl,
+          title: widget.seriesTitle,
+          fit: BoxFit.cover,
+          alignment: Alignment(0.0, alignY),
+          highRes: true,
+          placeholder: widget.placeholder,
+        ),
+      );
+    }
+    return PosterImage(
+      url: widget.fallbackPosterUrl,
+      title: widget.seriesTitle,
+      fit: BoxFit.cover,
+      alignment: Alignment(0.0, alignY),
+      highRes: true,
+      placeholder: widget.placeholder,
     );
   }
 }

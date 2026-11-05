@@ -72,6 +72,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   int _liveEpoch = 0;
   // Favorites / History segmented index
   int _librarySegment = 0;
+  // Expandable drawer keys in Settings tab
+  final Set<String> _expandedSettings = <String>{};
   bool get _isMacOS => !kIsWeb && Platform.isMacOS;
   CmsFilter get _currentFilter => CmsFilter(
         primaryTab: _primaryTab,
@@ -3543,15 +3545,16 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             header: '外观与背景壁纸',
             footer: '支持切换 Apple 暗黑影院主题色或设置自定义高清壁纸，搭配 iOS 27 液态玻璃折射效果。',
             children: [
-              AppleGroupedTile(
+              _buildSettingDrawerContainer(
+                settingKey: 'wallpaper_preset',
                 icon: CupertinoIcons.photo_fill_on_rectangle_fill,
                 iconBgColor: AppleColors.systemPurple,
                 title: '背景壁纸与主题风格',
                 subtitle: widget.storage.customWallpaperUrl.isNotEmpty
                     ? '自定义壁纸：${widget.storage.customWallpaperUrl}'
-                    : '预设主题：$presetLabel',
+                    : '点击展开抽屉选择影院主题色或自定义壁纸',
                 trailingText: presetLabel,
-                onTap: _showWallpaperSettingsSheet,
+                drawerChild: _buildWallpaperDrawerBody(),
               ),
               AppleGroupedTile(
                 icon: CupertinoIcons.sparkles,
@@ -3567,19 +3570,21 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   },
                 ),
               ),
-              AppleGroupedTile(
+              _buildExpandableChoiceDrawerTile<String>(
+                settingKey: 'glass_blur',
                 icon: CupertinoIcons.drop_fill,
                 iconBgColor: AppleColors.systemBlue,
                 title: '液态玻璃模糊浓度',
                 subtitle: '调节全局背景与毛玻璃控件的高斯模糊层级',
                 trailingText: blurLabel,
-                onTap: () async {
-                  final next = switch (widget.storage.glassBlurLevel) {
-                    'light' => 'standard',
-                    'standard' => 'deep',
-                    _ => 'light',
-                  };
-                  await widget.storage.setGlassBlurLevel(next);
+                currentValue: widget.storage.glassBlurLevel,
+                options: const [
+                  ('light', '轻盈通透', '轻量高斯模糊，保留更多背景色彩细节'),
+                  ('standard', '标准液态', 'iOS 27 标准光学折射毛玻璃'),
+                  ('deep', '深邃毛玻璃', '高浓度深邃磨砂，强化前景文字对比'),
+                ],
+                onSelected: (val) async {
+                  await widget.storage.setGlassBlurLevel(val);
                   setState(() {});
                 },
               ),
@@ -3591,19 +3596,21 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             header: '内容板块与排版布局',
             footer: '自定义首页内容展示模块、海报网格密度与卡片副标题信息。',
             children: [
-              AppleGroupedTile(
+              _buildExpandableChoiceDrawerTile<String>(
+                settingKey: 'grid_density',
                 icon: CupertinoIcons.square_grid_3x2_fill,
                 iconBgColor: AppleColors.systemBlue,
                 title: '海报网格排版密度',
-                subtitle: '点击切换：舒展大卡 / 标准均衡 / 紧凑多列',
+                subtitle: '展开抽屉选择：舒展大卡 / 标准均衡 / 紧凑多列',
                 trailingText: densityLabel,
-                onTap: () async {
-                  final next = switch (widget.storage.gridDensity) {
-                    'comfortable' => 'standard',
-                    'standard' => 'compact',
-                    _ => 'comfortable',
-                  };
-                  await widget.storage.setGridDensity(next);
+                currentValue: widget.storage.gridDensity,
+                options: const [
+                  ('comfortable', '舒展大卡', '减少单行卡片列数，放大海报尺寸与视觉呼吸感'),
+                  ('standard', '标准均衡', '默认黄金比例网格密度，兼顾浏览视野与效率'),
+                  ('compact', '紧凑多列', '同屏展示更多海报卡片，适合快速浏览检索'),
+                ],
+                onSelected: (val) async {
+                  await widget.storage.setGridDensity(val);
                   setState(() {});
                 },
               ),
@@ -3635,20 +3642,22 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   },
                 ),
               ),
-              AppleGroupedTile(
+              _buildExpandableChoiceDrawerTile<String>(
+                settingKey: 'card_subtitle',
                 icon: CupertinoIcons.text_badge_checkmark,
                 iconBgColor: AppleColors.systemIndigo,
                 title: '影视卡片副标题展示',
-                subtitle: '点击切换卡片下方展示的辅助信息类型',
+                subtitle: '展开抽屉选择卡片下方展示的辅助信息类型',
                 trailingText: subtitleModeLabel,
-                onTap: () async {
-                  final next = switch (widget.storage.cardSubtitleMode) {
-                    'remarks' => 'year_area',
-                    'year_area' => 'site',
-                    'site' => 'none',
-                    _ => 'remarks',
-                  };
-                  await widget.storage.setCardSubtitleMode(next);
+                currentValue: widget.storage.cardSubtitleMode,
+                options: const [
+                  ('remarks', '更新集数与备注', '展示「更新至第X集 / 4K / HD中字」等状态信息'),
+                  ('year_area', '年份与地区', '展示「2026 · 中国大陆」等发行年份与地区'),
+                  ('site', '所属片源名称', '展示当前影片所属的订阅源站点名称'),
+                  ('none', '极简隐藏', '仅展示影片标题，隐藏下方副标题行'),
+                ],
+                onSelected: (val) async {
+                  await widget.storage.setCardSubtitleMode(val);
                   setState(() {});
                 },
               ),
@@ -3660,63 +3669,87 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             header: '播放与默认画质推荐',
             footer: '进入详情页与播放器时自动按首选画质匹配最佳播放线路。',
             children: [
-              AppleGroupedTile(
+              _buildExpandableChoiceDrawerTile<String>(
+                settingKey: 'preferred_quality',
                 icon: CupertinoIcons.tv_music_note_fill,
                 iconBgColor: AppleColors.systemBlue,
                 title: '默认画质与线路推荐',
                 subtitle: '进入影视详情页时自动优选匹配的画质与线路',
                 trailingText: qualityLabel,
-                onTap: _showPreferredQualityPickerSheet,
+                currentValue: widget.storage.preferredQuality,
+                options: const [
+                  ('4k_netdisk', '4K 原画网盘优先', '优先匹配夸克、UC、百度、阿里等 4K 原盘线路'),
+                  ('1080p_direct', '1080P 高清直连优先', '优先选择高码率 1080P 直连点播线路'),
+                  ('fast_hls', '极速 M3U8 流媒体优先', '优先选择秒开 M3U8 切片流媒体线路'),
+                  ('default', '站点默认顺序', '保持采集站原始线路排序'),
+                ],
+                onSelected: (val) async {
+                  await widget.storage.setPreferredQuality(val);
+                  setState(() {});
+                },
               ),
-              AppleGroupedTile(
+              _buildExpandableChoiceDrawerTile<String>(
+                settingKey: 'aspect_mode',
                 icon: CupertinoIcons.viewfinder,
                 iconBgColor: AppleColors.systemPurple,
                 title: '默认画面比例',
                 subtitle: '播放器启动时的默认画面缩放模式',
                 trailingText: aspectLabel,
-                onTap: () async {
-                  final next = switch (widget.storage.defaultAspectMode) {
-                    'contain' => 'cover',
-                    'cover' => 'fill',
-                    _ => 'contain',
-                  };
-                  await widget.storage.setDefaultAspectMode(next);
+                currentValue: widget.storage.defaultAspectMode,
+                options: const [
+                  ('contain', '适应屏幕', '保持原始视频宽高比完整显示画面'),
+                  ('cover', '铺满裁剪', '等比放大铺满全屏区域，自动裁切黑边'),
+                  ('fill', '拉伸全屏', '拉伸画面填满整个屏幕显示区域'),
+                ],
+                onSelected: (val) async {
+                  await widget.storage.setDefaultAspectMode(val);
                   setState(() {});
                 },
               ),
-              AppleGroupedTile(
+              _buildExpandableChoiceDrawerTile<double>(
+                settingKey: 'play_speed',
                 icon: CupertinoIcons.speedometer,
                 iconBgColor: AppleColors.systemOrange,
                 title: '默认起播倍速',
-                subtitle: '点击切换默认播放速度（1.0x / 1.25x / 1.5x / 2.0x）',
+                subtitle: '展开抽屉选择默认播放速度',
                 trailingText: '${widget.storage.playSpeed}x',
-                onTap: () async {
-                  const speeds = [1.0, 1.25, 1.5, 2.0];
-                  final curIdx = speeds.indexOf(widget.storage.playSpeed);
-                  final next = speeds[(curIdx + 1) % speeds.length];
-                  await widget.storage.setPlaySpeed(next);
+                currentValue: widget.storage.playSpeed,
+                options: const [
+                  (0.75, '0.75x 慢速', '放慢语速与动作细节'),
+                  (1.0, '1.0x 正常原速', '标准原片播放速度'),
+                  (1.25, '1.25x 轻快倍速', '轻微提速，不损台词听感'),
+                  (1.5, '1.5x 高效倍速', '适合快速浏览剧情推进'),
+                  (2.0, '2.0x 二倍速播放', '高速刷剧模式'),
+                ],
+                onSelected: (val) async {
+                  await widget.storage.setPlaySpeed(val);
                   setState(() {});
                 },
               ),
-              AppleGroupedTile(
+              _buildSettingDrawerContainer(
+                settingKey: 'skip_intro_outro',
                 icon: CupertinoIcons.forward_fill,
                 iconBgColor: AppleColors.systemIndigo,
                 title: '片头 / 片尾自动跳过',
-                subtitle: '为剧集设置统一的片头起播秒数与片尾跳过秒数',
+                subtitle: '展开抽屉设置剧集统一的片头起播秒数与片尾跳过秒数',
                 trailingText: skipSummary,
-                onTap: _showSkipIntroOutroSheet,
+                drawerChild: _buildSkipIntroOutroDrawerBody(),
               ),
-              AppleGroupedTile(
+              _buildExpandableChoiceDrawerTile<bool>(
+                settingKey: 'episodes_order',
                 icon: CupertinoIcons.sort_down,
                 iconBgColor: AppleColors.systemGreen,
                 title: '默认剧集排序方式',
                 subtitle: '详情页与选集列表的默认排列顺序',
                 trailingText:
                     widget.storage.episodesDescending ? '倒序（最新集）' : '正序（第 1 集起）',
-                onTap: () async {
-                  await widget.storage.setEpisodesDescending(
-                    !widget.storage.episodesDescending,
-                  );
+                currentValue: widget.storage.episodesDescending,
+                options: const [
+                  (false, '正序（第 1 集起）', '从第 1 集开始依次排列，适合从头追剧'),
+                  (true, '倒序（最新集起）', '最新更新的集数排在最前，适合追更连载剧集'),
+                ],
+                onSelected: (val) async {
+                  await widget.storage.setEpisodesDescending(val);
                   setState(() {});
                 },
               ),
@@ -3815,7 +3848,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Version 0.4.27 · Apple HIG Edition',
+                  'Version 0.4.28 · Apple HIG Edition',
                   style: TextStyle(
                     color: AppleColors.labelSecondary,
                     fontSize: 12,
@@ -3841,6 +3874,472 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       ),
     );
   }
+
+  Widget _buildSettingDrawerContainer({
+    required String settingKey,
+    required IconData icon,
+    required Color iconBgColor,
+    required String title,
+    required String subtitle,
+    required String trailingText,
+    required Widget drawerChild,
+  }) {
+    final expanded = _expandedSettings.contains(settingKey);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            setState(() {
+              if (expanded) {
+                _expandedSettings.remove(settingKey);
+              } else {
+                _expandedSettings.add(settingKey);
+              }
+            });
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            child: Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: iconBgColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(icon, size: 17, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: AppleColors.labelPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: AppleColors.labelSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: expanded
+                        ? const Color(0x2E0A84FF)
+                        : const Color(0x1FFFFFFF),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    trailingText,
+                    style: TextStyle(
+                      color: expanded
+                          ? AppleColors.systemBlue
+                          : AppleColors.labelSecondary,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                AnimatedRotation(
+                  turns: expanded ? 0.5 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutCubic,
+                  child: Icon(
+                    CupertinoIcons.chevron_down,
+                    size: 14,
+                    color: expanded
+                        ? AppleColors.systemBlue
+                        : AppleColors.labelTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedCrossFade(
+          firstChild: const SizedBox(width: double.infinity, height: 0),
+          secondChild: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0x38000000),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: const Color(0x22FFFFFF),
+                  width: 0.6,
+                ),
+              ),
+              child: drawerChild,
+            ),
+          ),
+          crossFadeState:
+              expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 220),
+          sizeCurve: Curves.easeOutCubic,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExpandableChoiceDrawerTile<T>({
+    required String settingKey,
+    required IconData icon,
+    required Color iconBgColor,
+    required String title,
+    required String subtitle,
+    required String trailingText,
+    required T currentValue,
+    required List<(T, String, String)> options,
+    required Future<void> Function(T) onSelected,
+  }) {
+    return _buildSettingDrawerContainer(
+      settingKey: settingKey,
+      icon: icon,
+      iconBgColor: iconBgColor,
+      title: title,
+      subtitle: subtitle,
+      trailingText: trailingText,
+      drawerChild: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int i = 0; i < options.length; i++) ...[
+            if (i > 0)
+              const Divider(
+                height: 0.5,
+                thickness: 0.5,
+                indent: 14,
+                endIndent: 14,
+                color: Color(0x1AFFFFFF),
+              ),
+            Builder(
+              builder: (context) {
+                final opt = options[i];
+                final selected = opt.$1 == currentValue;
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onSelected(opt.$1),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                opt.$2,
+                                style: TextStyle(
+                                  color: selected
+                                      ? AppleColors.systemBlue
+                                      : AppleColors.labelPrimary,
+                                  fontSize: 14,
+                                  fontWeight: selected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                opt.$3,
+                                style: const TextStyle(
+                                  color: AppleColors.labelSecondary,
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          selected
+                              ? CupertinoIcons.checkmark_circle_fill
+                              : CupertinoIcons.circle,
+                          size: 19,
+                          color: selected
+                              ? AppleColors.systemBlue
+                              : AppleColors.labelTertiary,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWallpaperDrawerBody() {
+    const presets = <(String, String, String, Color)>[
+      ('obsidian', '曜石纯黑', '经典深邃纯黑影院底色', Color(0xFF141824)),
+      ('midnight', '午夜深蓝', '静谧冷调深海蓝', Color(0xFF0E2240)),
+      ('aurora', '极光紫韵', '灵动流光暗夜紫', Color(0xFF281542)),
+      ('amber', '流金琥珀', '温暖复古鎏金棕', Color(0xFF382210)),
+      ('emerald', '翡翠幽林', '沉稳护眼墨绿调', Color(0xFF0F3026)),
+    ];
+    final currentPreset = widget.storage.wallpaperPreset;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (int i = 0; i < presets.length; i++) ...[
+          if (i > 0)
+            const Divider(
+              height: 0.5,
+              thickness: 0.5,
+              indent: 14,
+              endIndent: 14,
+              color: Color(0x1AFFFFFF),
+            ),
+          Builder(
+            builder: (context) {
+              final item = presets[i];
+              final selected = currentPreset == item.$1 &&
+                  widget.storage.customWallpaperUrl.isEmpty;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () async {
+                  await widget.storage.setCustomWallpaperUrl('');
+                  await widget.storage.setWallpaperPreset(item.$1);
+                  setState(() {});
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: item.$4,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0x55FFFFFF),
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.$2,
+                              style: TextStyle(
+                                color: selected
+                                    ? AppleColors.systemBlue
+                                    : AppleColors.labelPrimary,
+                                fontSize: 14,
+                                fontWeight: selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              item.$3,
+                              style: const TextStyle(
+                                color: AppleColors.labelSecondary,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        selected
+                            ? CupertinoIcons.checkmark_circle_fill
+                            : CupertinoIcons.circle,
+                        size: 19,
+                        color: selected
+                            ? AppleColors.systemBlue
+                            : AppleColors.labelTertiary,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+        const Divider(
+          height: 0.5,
+          thickness: 0.5,
+          indent: 14,
+          endIndent: 14,
+          color: Color(0x1AFFFFFF),
+        ),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _showWallpaperSettingsSheet,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            child: Row(
+              children: [
+                const Icon(
+                  CupertinoIcons.link,
+                  size: 16,
+                  color: AppleColors.systemBlue,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.storage.customWallpaperUrl.isNotEmpty
+                        ? '修改自定义壁纸地址（已启用）'
+                        : '输入自定义高清壁纸 URL / 本地路径…',
+                    style: const TextStyle(
+                      color: AppleColors.systemBlue,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 14,
+                  color: AppleColors.systemBlue,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSkipIntroOutroDrawerBody() {
+    const presets = <int>[0, 15, 30, 60, 90, 120];
+    final curIntro = widget.storage.skipIntroSec;
+    final curOutro = widget.storage.skipOutroSec;
+    return Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '跳过片头时长',
+            style: TextStyle(
+              color: AppleColors.labelSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final sec in presets)
+                GestureDetector(
+                  onTap: () async {
+                    await widget.storage.setSkipIntroSec(sec);
+                    setState(() {});
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 13,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: curIntro == sec
+                          ? AppleColors.systemBlue
+                          : const Color(0x22FFFFFF),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      sec == 0 ? '关闭' : '${sec}s',
+                      style: TextStyle(
+                        color: curIntro == sec
+                            ? Colors.white
+                            : AppleColors.labelPrimary,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            '跳过片尾时长',
+            style: TextStyle(
+              color: AppleColors.labelSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final sec in presets)
+                GestureDetector(
+                  onTap: () async {
+                    await widget.storage.setSkipOutroSec(sec);
+                    setState(() {});
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 13,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: curOutro == sec
+                          ? AppleColors.systemBlue
+                          : const Color(0x22FFFFFF),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      sec == 0 ? '关闭' : '${sec}s',
+                      style: TextStyle(
+                        color: curOutro == sec
+                            ? Colors.white
+                            : AppleColors.labelPrimary,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showWallpaperSettingsSheet() {
     final urlCtrl = TextEditingController(
       text: widget.storage.customWallpaperUrl,

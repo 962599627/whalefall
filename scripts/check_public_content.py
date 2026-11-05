@@ -9,7 +9,7 @@ ALLOWED_HOSTS={'api.github.com','release-assets.githubusercontent.com','marcotv.
  'www.unicode.org','unicode.org','opensource.org','jsoup.org','developer.mozilla.org',
  'perfectionkills.com','www.engr.mun.ca','android.git.kernel.org','fsf.org','www.gnu.org',
  'gnu.org','www.fsf.org','barcode4j.sourceforge.net','maven.aliyun.com','10.0.2.2','127.0.0.1','localhost','…','x',
- 'm.douban.com','movie.douban.com','img1.doubanio.com','img2.doubanio.com','img3.doubanio.com','cn.bing.com','tse1-mm.cn.bing.net','tse2-mm.cn.bing.net','tse3-mm.cn.bing.net','tse4-mm.cn.bing.net','www.tuxiaobei.com','m.youlai.cn','www.huya.com','mp.huya.com','m.douyu.com','api.bilibili.com','www.bilibili.com','i0.hdslb.com','i1.hdslb.com','i2.hdslb.com',
+ 'm.douban.com','movie.douban.com','www.douban.com','img1.doubanio.com','img2.doubanio.com','img3.doubanio.com','cn.bing.com','tse1-mm.cn.bing.net','tse2-mm.cn.bing.net','tse3-mm.cn.bing.net','tse4-mm.cn.bing.net','www.tuxiaobei.com','m.youlai.cn','www.huya.com','mp.huya.com','m.douyu.com','api.bilibili.com','www.bilibili.com','i0.hdslb.com','i1.hdslb.com','i2.hdslb.com',
  'cj.ffzyapi.com','tyyszy.com','bfzyapi.com','caiji.dyttzyapi.com','cj.lziapi.com','suoniapi.com','cj.rycjapi.com','hhzyapi.com','jszyapi.com','ikunzyapi.com','subocaiji.com','api.xinlangapi.com','www.hongniuzy2.com','caiji.moduapi.cc','360zy.com','zuidazy.me',
  'uop.quark.cn','pan.quark.cn','su.quark.cn','api.open.uc.cn','drive.uc.cn','su.uc.cn','passport.baidu.com','pan.baidu.com','wappass.baidu.com','passport.aliyundrive.com','www.aliyundrive.com','www.alipan.com','api.qrserver.com','www.mdzypic.com'}
 

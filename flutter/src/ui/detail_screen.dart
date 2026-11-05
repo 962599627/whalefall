@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -7,14 +9,14 @@ import '../core/download_service.dart';
 import '../core/models.dart';
 import '../core/storage_service.dart';
 import 'apple_theme.dart';
-import 'netdisk_sheet.dart';
 import 'player_screen.dart';
 import 'poster_image.dart';
 
 /// Apple TV+ / Infuse inspired responsive video detail page for iPhone, iPad, Mac, and Windows.
-/// Portrait mode features a full-bleed immersive hero poster, dynamic ambient color canvas,
-/// floating Liquid Glass controls, centered title & rating badges, primary play pill + circular
-/// glass action buttons, horizontal 16:9 episode preview cards, and play source capsules.
+/// Features a fixed full-bleed HD hero poster that progressively blurs on scroll, automatic
+/// poster-edge color extraction with seamless top/bottom solid-color gradients, floating
+/// Liquid Glass navigation & download/favorite pill, full-width primary play capsule, and
+/// horizontal 16:9 episode preview cards with distinct scene stills and per-episode synopses.
 class DetailScreen extends StatefulWidget {
   final CmsSite site;
   final CmsVideo initialVideo;
@@ -40,6 +42,10 @@ class _DetailScreenState extends State<DetailScreen> {
   bool _synopsisExpanded = false;
   late bool _descending;
   late bool _isFavorite;
+  final ValueNotifier<double> _scrollOffset = ValueNotifier<double>(0.0);
+  Color? _posterAmbientColor;
+  String _externalSynopsis = '';
+  List<String> _episodeCaptions = const [];
 
   @override
   void initState() {
@@ -47,7 +53,60 @@ class _DetailScreenState extends State<DetailScreen> {
     _video = widget.initialVideo;
     _descending = widget.storage.episodesDescending;
     _isFavorite = widget.storage.isFavorite(widget.site.key, _video.id);
+    final immediateBytes = PosterLoader.peekMemory(
+      _video.poster,
+      title: _video.title,
+      preferHd: true,
+    );
+    if (immediateBytes != null) {
+      _posterAmbientColor = PosterLoader.peekAmbientColor(immediateBytes);
+      if (_posterAmbientColor == null) {
+        unawaited(_updateAmbientFromBytes(immediateBytes));
+      }
+    }
     _loadDetail();
+    _warmExternalMetadata(_video.title);
+  }
+
+  @override
+  void dispose() {
+    _scrollOffset.dispose();
+    super.dispose();
+  }
+
+  Future<void> _updateAmbientFromBytes(Uint8List bytes) async {
+    final extracted = await PosterLoader.extractEdgeAmbientColor(bytes);
+    if (!mounted) return;
+    if (_posterAmbientColor != extracted) {
+      setState(() {
+        _posterAmbientColor = extracted;
+      });
+    }
+  }
+
+  Future<void> _warmExternalMetadata(String title) async {
+    if (title.trim().isEmpty) return;
+    unawaited(
+      PosterLoader.fetchSeriesSynopsis(title).then((syn) {
+        if (!mounted || syn.isEmpty) return;
+        if (_externalSynopsis != syn) {
+          setState(() {
+            _externalSynopsis = syn;
+          });
+        }
+      }),
+    );
+    unawaited(
+      PosterLoader.fetchSeriesEpisodeStills(title).then((_) {
+        if (!mounted) return;
+        final caps = PosterLoader.peekSeriesEpisodeCaptions(title);
+        if (caps.isNotEmpty) {
+          setState(() {
+            _episodeCaptions = caps;
+          });
+        }
+      }),
+    );
   }
 
   Future<void> _loadDetail() async {
@@ -75,6 +134,9 @@ class _DetailScreenState extends State<DetailScreen> {
         _selectedLine = initialLine;
         _loading = false;
       });
+      if (detailed.title.trim().isNotEmpty) {
+        _warmExternalMetadata(detailed.title);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -93,21 +155,29 @@ class _DetailScreenState extends State<DetailScreen> {
     return null;
   }
 
-  (Color, Color) _resolveAmbientPalette() {
-    const palettes = <(Color, Color)>[
-      (Color(0xFF332012), Color(0xFF140C07)), // Warm golden amber-brown
-      (Color(0xFF362226), Color(0xFF160D10)), // Rose taupe burgundy
-      (Color(0xFF1A2436), Color(0xFF0B1019)), // Midnight cinema slate
-      (Color(0xFF281E17), Color(0xFF110D0A)), // Deep bronze umber
-      (Color(0xFF182926), Color(0xFF0A1211)), // Deep emerald obsidian
-      (Color(0xFF2B1C32), Color(0xFF120B16)), // Royal plum dusk
+  Color _resolveBaseAmbientColor() {
+    if (_posterAmbientColor != null) return _posterAmbientColor!;
+    const fallbackPalettes = <Color>[
+      Color(0xFF1F1610),
+      Color(0xFF211518),
+      Color(0xFF131A26),
+      Color(0xFF1B1511),
+      Color(0xFF111D1B),
+      Color(0xFF1C1321),
     ];
     final key = '${_video.title}_${_video.id}';
     int hash = 0;
     for (final unit in key.codeUnits) {
       hash = (hash * 31 + unit) & 0x7fffffff;
     }
-    return palettes[hash % palettes.length];
+    return fallbackPalettes[hash % fallbackPalettes.length];
+  }
+
+  String _effectiveSeriesSynopsis() {
+    final raw = _video.description.trim();
+    if (raw.length >= 12) return raw;
+    if (_externalSynopsis.trim().isNotEmpty) return _externalSynopsis.trim();
+    return raw;
   }
 
   String _deriveRatingScore() {
@@ -139,12 +209,93 @@ class _DetailScreenState extends State<DetailScreen> {
       sizeOrSpec = '1080P';
     }
     cleaned = cleaned
-        .replaceAll(RegExp(r'\.(mkv|mp4|ts|flv|avi)$', caseSensitive: false), '')
+        .replaceAll(
+          RegExp(r'\.(mkv|mp4|ts|flv|avi|m3u8)$', caseSensitive: false),
+          '',
+        )
         .trim();
     if (cleaned.isEmpty) {
       cleaned = '第$oneBasedIndex集';
     }
     return (cleaned, sizeOrSpec);
+  }
+
+  /// Builds a clean, non-redundant episode card title (`E18 · 剧情小标题`),
+  /// never repeating `E177 · E177`.
+  String _formatEpisodeCardHeadline(String cleanEpName, int oneBasedIndex) {
+    final stripped = cleanEpName
+        .replaceAll(
+          RegExp(
+            r'^(?:[Ee][Pp]?\s*0*\d+|第\s*0*\d+\s*[集话期章节回]|0*\d+)\s*[·:：\-_]*\s*',
+          ),
+          '',
+        )
+        .trim();
+    if (stripped.isNotEmpty &&
+        !RegExp(r'^(?:[Ee][Pp]?\s*)?\d+$').hasMatch(stripped)) {
+      return 'E$oneBasedIndex · $stripped';
+    }
+    if (_episodeCaptions.isNotEmpty) {
+      final cap =
+          _episodeCaptions[(oneBasedIndex - 1) % _episodeCaptions.length];
+      final cleanCap = cap
+          .replaceAll(PosterLoader.cleanTitleForQuery(_video.title), '')
+          .replaceAll(RegExp(r'^[：:·\-\s]+'), '')
+          .trim();
+      if (cleanCap.length >= 3) {
+        return 'E$oneBasedIndex · $cleanCap';
+      }
+    }
+    final cleanSeries = PosterLoader.cleanTitleForQuery(_video.title);
+    final clauses = _extractSynopsisClauses();
+    if (clauses.isNotEmpty) {
+      final clause = clauses[(oneBasedIndex - 1) % clauses.length];
+      final shortTitle =
+          clause.length > 12 ? clause.substring(0, 12) : clause;
+      return 'E$oneBasedIndex · $shortTitle';
+    }
+    return 'E$oneBasedIndex · ${cleanSeries.isNotEmpty ? cleanSeries : _video.title} 第$oneBasedIndex集';
+  }
+
+  List<String> _extractSynopsisClauses() {
+    final full = _effectiveSeriesSynopsis();
+    if (full.isEmpty) return const [];
+    return full
+        .split(RegExp(r'[。！？；!?;，,]'))
+        .map((s) => s.trim())
+        .where((s) => s.length >= 5)
+        .toList();
+  }
+
+  /// Builds a 2-line per-episode plot synopsis so every episode card in the
+  /// horizontal strip shows a distinct episode summary below the title.
+  String _buildEpisodePlotSummary(
+    int oneBasedIndex,
+    int totalEpisodes,
+    String cleanEpName,
+    String lineName,
+  ) {
+    final full = _effectiveSeriesSynopsis();
+    final sentences = full
+        .split(RegExp(r'[。！？!?]'))
+        .map((s) => s.trim())
+        .where((s) => s.length >= 8)
+        .toList();
+    if (sentences.length >= 2) {
+      final firstIdx = (oneBasedIndex - 1) % sentences.length;
+      final secondIdx = (firstIdx + 1) % sentences.length;
+      final combined =
+          '${sentences[firstIdx]}。${sentences[secondIdx]}。';
+      return combined;
+    }
+    if (full.isNotEmpty) {
+      return '第$oneBasedIndex集：$full';
+    }
+    final cast = _video.actor.trim();
+    if (cast.isNotEmpty) {
+      return '第$oneBasedIndex集剧情推进，主演：$cast。当前播放源：$lineName。';
+    }
+    return '${_video.title} 第$oneBasedIndex集正片内容，高清画质在线播放（片源：$lineName）。';
   }
 
   void _openPlayer(int lineIdx, int epIdx, {int resumeMs = 0}) {
@@ -172,8 +323,8 @@ class _DetailScreenState extends State<DetailScreen> {
     if (bookmark != null) {
       final foundLine =
           _video.lines.indexWhere((l) => l.name == bookmark.line);
-      final lineIdx =
-          (foundLine < 0 ? _selectedLine : foundLine).clamp(0, _video.lines.length - 1);
+      final lineIdx = (foundLine < 0 ? _selectedLine : foundLine)
+          .clamp(0, _video.lines.length - 1);
       final epIdx = bookmark.index.clamp(
         0,
         _video.lines[lineIdx].episodes.length - 1,
@@ -231,8 +382,9 @@ class _DetailScreenState extends State<DetailScreen> {
             ),
             child: AppleGroupedTile(
               icon: CupertinoIcons.layers_alt_fill,
-              iconBgColor:
-                  selected ? AppleColors.systemBlue : AppleColors.groupedTertiary,
+              iconBgColor: selected
+                  ? AppleColors.systemBlue
+                  : AppleColors.groupedTertiary,
               title: line.name,
               subtitle: '共 ${line.episodes.length} 集 · ${widget.site.name}',
               trailing: selected
@@ -321,7 +473,10 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   void _showDownloadSheet() {
-    if (_video.lines.isEmpty) return;
+    if (_video.lines.isEmpty) {
+      _toast('暂未获取到可下载的剧集资源');
+      return;
+    }
     final lineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
     final line = _video.lines[lineIdx];
     final service = DownloadService.instance;
@@ -515,140 +670,228 @@ class _DetailScreenState extends State<DetailScreen> {
     return _buildWideDesktopScreen(context);
   }
 
-  /// Portrait immersive layout modeled on Apple TV+ / Infuse / SenPlayer showcase cards:
-  /// full-bleed top hero poster, warm ambient color canvas, floating Liquid Glass buttons,
-  /// centered title + metadata capsules + rating, primary play pill + circular glass icon buttons,
-  /// horizontal 16:9 episode preview cards, range pills, and bottom play source bar.
+  /// Portrait immersive layout:
+  /// - Fixed full-bleed HD hero poster at the top that progressively blurs as the user scrolls up
+  /// - Unified background color automatically extracted from the poster's edges with smooth
+  ///   solid-color top & bottom gradients (zero hard seam)
+  /// - Top-right floating Liquid Glass capsule with Download + Favorite
+  /// - Centered full-width Play capsule button
+  /// - Horizontal 16:9 episode cards with distinct widescreen scene stills & 2-line synopses
   Widget _buildPortraitImmersiveScreen(BuildContext context) {
-    final (ambientTop, ambientBottom) = _resolveAmbientPalette();
+    final targetBg = _resolveBaseAmbientColor();
     final bookmark = _findBookmark();
     final topPad = MediaQuery.paddingOf(context).top;
-    return Scaffold(
-      backgroundColor: ambientBottom,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 1. Deep ambient gradient canvas
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  ambientTop,
-                  Color.lerp(ambientTop, ambientBottom, 0.55)!,
-                  ambientBottom,
-                ],
-                stops: const [0.0, 0.52, 1.0],
-              ),
-            ),
-          ),
-          // Subtle full-screen blurred poster aura
-          if (widget.storage.ambientGlowEnabled &&
-              (_video.poster.isNotEmpty || _video.title.isNotEmpty))
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.24,
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final heroHeight = (screenHeight * 0.56).clamp(430.0, 540.0);
+
+    return TweenAnimationBuilder<Color?>(
+      tween: ColorTween(begin: targetBg, end: targetBg),
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutCubic,
+      builder: (context, animatedBg, _) {
+        final bgColor = animatedBg ?? targetBg;
+        return Scaffold(
+          backgroundColor: bgColor,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 1. Unified Solid Ambient Canvas Matching Poster Edge Color
+              ColoredBox(color: bgColor),
+
+              // 2. Fixed Top Immersive Hero Poster with Progressive Scroll Blur
+              //    and Seamless Top & Bottom Solid-Color Gradients into `bgColor`
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: heroHeight,
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _scrollOffset,
+                  builder: (context, offset, child) {
+                    final progress = (offset / 260.0).clamp(0.0, 1.0);
+                    final blurSigma = progress * 26.0;
+                    final scrollVeilAlpha = progress * 0.72;
+                    Widget posterLayer = child!;
+                    if (blurSigma > 0.15) {
+                      posterLayer = ImageFiltered(
+                        imageFilter: ImageFilter.blur(
+                          sigmaX: blurSigma,
+                          sigmaY: blurSigma,
+                        ),
+                        child: posterLayer,
+                      );
+                    }
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        posterLayer,
+                        // Top solid-color gradient matching bgColor (no harsh cut at top status bar)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: topPad + 88,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  bgColor.withValues(alpha: 0.88),
+                                  bgColor.withValues(alpha: 0.42),
+                                  bgColor.withValues(alpha: 0.0),
+                                ],
+                                stops: const [0.0, 0.54, 1.0],
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Bottom multi-stop solid-color gradient melting seamlessly into bgColor
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          height: heroHeight * 0.66,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  bgColor.withValues(alpha: 0.0),
+                                  bgColor.withValues(alpha: 0.24),
+                                  bgColor.withValues(alpha: 0.62),
+                                  bgColor.withValues(alpha: 0.90),
+                                  bgColor,
+                                ],
+                                stops: const [0.0, 0.28, 0.58, 0.84, 1.0],
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Progressive scroll veil so foreground text stays ultra-legible as poster blurs
+                        if (scrollVeilAlpha > 0.01)
+                          Positioned.fill(
+                            child: ColoredBox(
+                              color: bgColor.withValues(alpha: scrollVeilAlpha),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                   child: PosterImage(
                     url: _video.poster,
                     title: _video.title,
+                    fit: BoxFit.cover,
                     highRes: true,
-                    placeholder: const SizedBox.shrink(),
+                    onBytesLoaded: _updateAmbientFromBytes,
+                    placeholder: _posterPlaceholder(bgColor),
                   ),
                 ),
               ),
-            ),
-          // 2. Main scrollable portrait content starting edge-to-edge at top: 0
-          MediaQuery.removePadding(
-            context: context,
-            removeTop: true,
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.only(bottom: 44),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildPortraitHeroHeader(
-                    context,
-                    ambientTop: ambientTop,
-                    ambientBottom: ambientBottom,
-                    topSafeInset: topPad,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
+
+              // 3. Main Scrollable Foreground Content
+              MediaQuery.removePadding(
+                context: context,
+                removeTop: true,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    if (notification.metrics.axis == Axis.vertical) {
+                      final next =
+                          notification.metrics.pixels.clamp(0.0, 500.0);
+                      if ((_scrollOffset.value - next).abs() > 0.5) {
+                        _scrollOffset.value = next;
+                      }
+                    }
+                    return false;
+                  },
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.only(bottom: 44),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Synopsis text (above or below actions; clean 2-3 lines, expandable)
-                        _buildPortraitSynopsis(),
-                        const SizedBox(height: 16),
-                        // Primary Play Pill + Circular Glass Action Buttons
-                        _buildPortraitActionRow(bookmark),
-                        if (bookmark != null) ...[
-                          const SizedBox(height: 12),
-                          _buildPortraitBookmarkProgress(bookmark),
-                        ],
-                        const SizedBox(height: 22),
-                        if (_loading)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 32),
-                            child: Center(
-                              child: CupertinoActivityIndicator(radius: 14),
-                            ),
-                          )
-                        else if (_error != null)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Text(
-                              _error!,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: AppleColors.systemRed,
-                                fontSize: 13.5,
-                              ),
-                            ),
-                          )
-                        else if (_video.lines.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 20),
-                            child: Text(
-                              '暂未获取到可播放的剧集资源',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: AppleColors.labelSecondary,
-                                fontSize: 14,
-                              ),
-                            ),
-                          )
-                        else
-                          _buildPortraitEpisodesSection(bookmark),
+                        _buildPortraitHeroForeground(
+                          context,
+                          heroHeight: heroHeight,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildPortraitSynopsis(),
+                              const SizedBox(height: 16),
+                              _buildPortraitActionRow(bookmark),
+                              if (bookmark != null) ...[
+                                const SizedBox(height: 12),
+                                _buildPortraitBookmarkProgress(bookmark),
+                              ],
+                              const SizedBox(height: 22),
+                              if (_loading)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 32),
+                                  child: Center(
+                                    child:
+                                        CupertinoActivityIndicator(radius: 14),
+                                  ),
+                                )
+                              else if (_error != null)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
+                                  child: Text(
+                                    _error!,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: AppleColors.systemRed,
+                                      fontSize: 13.5,
+                                    ),
+                                  ),
+                                )
+                              else if (_video.lines.isEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 20),
+                                  child: Text(
+                                    '暂未获取到可播放的剧集资源',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: AppleColors.labelSecondary,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                )
+                              else
+                                _buildPortraitEpisodesSection(bookmark),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-          // 3. Floating Liquid Glass Top Navigation Bar
-          Positioned(
-            top: topPad + 8,
-            left: 16,
-            right: 16,
-            child: Row(
-              children: [
-                _buildFloatingGlassCircleButton(
-                  icon: CupertinoIcons.chevron_back,
-                  onTap: () => Navigator.of(context).maybePop(),
                 ),
-                const Spacer(),
-                _buildFloatingTopRightPill(),
-              ],
-            ),
+              ),
+
+              // 4. Floating Liquid Glass Top Navigation Bar (Back on Left, Download + Favorite on Right)
+              Positioned(
+                top: topPad + 8,
+                left: 16,
+                right: 16,
+                child: Row(
+                  children: [
+                    _buildFloatingGlassCircleButton(
+                      icon: CupertinoIcons.chevron_back,
+                      onTap: () => Navigator.of(context).maybePop(),
+                    ),
+                    const Spacer(),
+                    _buildFloatingTopRightPill(),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -684,6 +927,9 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
+  /// Top-right floating Liquid Glass capsule:
+  /// Left button = Offline Download (replacing the old `...` button)
+  /// Right button = Favorite (`收藏`)
   Widget _buildFloatingTopRightPill() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
@@ -706,17 +952,9 @@ class _DetailScreenState extends State<DetailScreen> {
               CupertinoButton(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 minSize: 32,
-                onPressed: _video.lines.isNotEmpty
-                    ? _showLinePickerSheet
-                    : () => showNetdiskAccountSheet(
-                          context,
-                          widget.storage,
-                          onChanged: () {
-                            if (mounted) setState(() {});
-                          },
-                        ),
+                onPressed: _showDownloadSheet,
                 child: const Icon(
-                  CupertinoIcons.ellipsis,
+                  CupertinoIcons.arrow_down_to_line,
                   color: AppleColors.labelPrimary,
                   size: 19,
                 ),
@@ -741,10 +979,10 @@ class _DetailScreenState extends State<DetailScreen> {
                 },
                 child: Icon(
                   _isFavorite
-                      ? CupertinoIcons.checkmark_circle_fill
-                      : CupertinoIcons.checkmark_circle,
+                      ? CupertinoIcons.heart_fill
+                      : CupertinoIcons.heart,
                   color: _isFavorite
-                      ? AppleColors.systemGreen
+                      ? AppleColors.systemRed
                       : AppleColors.labelPrimary,
                   size: 19,
                 ),
@@ -756,14 +994,10 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
-  Widget _buildPortraitHeroHeader(
+  Widget _buildPortraitHeroForeground(
     BuildContext context, {
-    required Color ambientTop,
-    required Color ambientBottom,
-    required double topSafeInset,
+    required double heroHeight,
   }) {
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    final heroHeight = (screenHeight * 0.56).clamp(430.0, 540.0);
     final safeLineIdx = _video.lines.isEmpty
         ? 0
         : _selectedLine.clamp(0, _video.lines.length - 1);
@@ -783,193 +1017,139 @@ class _DetailScreenState extends State<DetailScreen> {
 
     return SizedBox(
       height: heroHeight,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Edge-to-edge full-bleed HD poster artwork
-          PosterImage(
-            url: _video.poster,
-            title: _video.title,
-            fit: BoxFit.cover,
-            highRes: true,
-            placeholder: _posterPlaceholder(),
-          ),
-          // Top status-bar protection vignette
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: topSafeInset + 76,
-            child: const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0x88000000),
-                    Color(0x00000000),
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                _video.title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  height: 1.18,
+                  shadows: [
+                    Shadow(
+                      color: Color(0xB3000000),
+                      blurRadius: 18,
+                      offset: Offset(0, 4),
+                    ),
                   ],
                 ),
               ),
-            ),
-          ),
-          // Smooth multi-stop bottom gradient blending into the ambient color canvas
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: heroHeight * 0.62,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0x00000000),
-                    ambientTop.withValues(alpha: 0.42),
-                    ambientTop.withValues(alpha: 0.86),
-                    ambientTop,
-                  ],
-                  stops: const [0.0, 0.42, 0.78, 1.0],
-                ),
-              ),
-            ),
-          ),
-          // Centered Hero Title + Metadata Pills + TMDB Rating Badge
-          Positioned(
-            left: 20,
-            right: 20,
-            bottom: 14,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  _video.title,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                    height: 1.18,
-                    shadows: [
-                      Shadow(
-                        color: Color(0xB3000000),
-                        blurRadius: 18,
-                        offset: Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                ),
-                if (pills.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      for (final tag in pills.take(4))
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0x38FFFFFF),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: const Color(0x33FFFFFF),
-                              width: 0.5,
-                            ),
-                          ),
-                          child: Text(
-                            tag,
-                            style: const TextStyle(
-                              color: Color(0xF2FFFFFF),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
+              if (pills.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  runSpacing: 6,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 1.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF01B4E4),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text(
-                        'TMDB',
-                        style: TextStyle(
-                          color: Color(0xFF081C22),
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.3,
+                    for (final tag in pills.take(4))
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0x38FFFFFF),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: const Color(0x33FFFFFF),
+                            width: 0.5,
+                          ),
+                        ),
+                        child: Text(
+                          tag,
+                          style: const TextStyle(
+                            color: Color(0xF2FFFFFF),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      rating,
-                      style: const TextStyle(
-                        color: Color(0xFFF5C518),
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 1.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2E9F43),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text(
-                        '豆',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      widget.site.name,
-                      style: const TextStyle(
-                        color: Color(0xCCFFFFFF),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
                   ],
                 ),
               ],
-            ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1.5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF01B4E4),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'TMDB',
+                      style: TextStyle(
+                        color: Color(0xFF081C22),
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    rating,
+                    style: const TextStyle(
+                      color: Color(0xFFF5C518),
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1.5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2E9F43),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      '豆',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    widget.site.name,
+                    style: const TextStyle(
+                      color: Color(0xCCFFFFFF),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildPortraitSynopsis() {
-    final desc = _video.description.trim();
+    final desc = _effectiveSeriesSynopsis();
     final cast = _video.actor.trim().isNotEmpty
         ? '演职员：${_video.actor.trim()}'
         : '';
@@ -1012,6 +1192,9 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
+  /// Middle action area: keeps ONLY the primary full-width Play capsule button
+  /// (Favorite and Download live in the top-right floating capsule, and season/line
+  /// switching lives in the episode section header below).
   Widget _buildPortraitActionRow(WatchHistoryEntry? bookmark) {
     final hasLines = _video.lines.isNotEmpty;
     String playLabel = '加载片源中…';
@@ -1026,147 +1209,61 @@ class _DetailScreenState extends State<DetailScreen> {
       final eps = _video.lines[safeLineIdx].episodes;
       if (eps.isNotEmpty) {
         final (cleanFirst, _) = _parseEpisodeDisplay(eps.first.name, 1);
-        playLabel = eps.length > 1 ? '播放 · 第 1 季 · $cleanFirst' : '播放 · $cleanFirst';
+        playLabel = eps.length > 1
+            ? '播放 · 第 1 季 · $cleanFirst'
+            : '播放 · $cleanFirst';
       } else {
         playLabel = '立即播放';
       }
     }
 
-    return Row(
-      children: [
-        // Primary High-Contrast White Play Pill Button
-        Expanded(
-          child: GestureDetector(
-            onTap: hasLines ? () => _playPrimaryAction(bookmark) : null,
-            child: Container(
-              height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: hasLines
-                    ? const Color(0xF5FFFFFF)
-                    : const Color(0x38FFFFFF),
-                borderRadius: BorderRadius.circular(999),
-                boxShadow: hasLines
-                    ? const [
-                        BoxShadow(
-                          color: Color(0x40000000),
-                          blurRadius: 16,
-                          offset: Offset(0, 6),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (hasLines) ...[
-                    const Icon(
-                      CupertinoIcons.play_fill,
-                      color: Color(0xFF121215),
-                      size: 17,
-                    ),
-                    const SizedBox(width: 7),
-                  ],
-                  Flexible(
-                    child: Text(
-                      playLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: hasLines
-                            ? const Color(0xFF121215)
-                            : const Color(0xCCFFFFFF),
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        // Circular Liquid Glass Action Buttons (matching reference design)
-        _buildActionCircleIcon(
-          icon: CupertinoIcons.folder_fill,
-          tooltip: '切换线路',
-          onTap: hasLines ? _showLinePickerSheet : null,
-        ),
-        const SizedBox(width: 9),
-        _buildActionCircleIcon(
-          icon: _isFavorite ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
-          iconColor:
-              _isFavorite ? AppleColors.systemRed : const Color(0xF0FFFFFF),
-          tooltip: '收藏',
-          onTap: () async {
-            final fav = await widget.storage.toggleFavorite(
-              widget.site,
-              _video,
-            );
-            if (mounted) {
-              setState(() => _isFavorite = fav);
-              _toast(fav ? '已加入收藏片库' : '已从片库移除');
-            }
-          },
-        ),
-        if (hasLines && DownloadService.instance.isReady) ...[
-          const SizedBox(width: 9),
-          _buildActionCircleIcon(
-            icon: CupertinoIcons.arrow_down_to_line,
-            tooltip: '离线下载',
-            onTap: _showDownloadSheet,
-          ),
-        ],
-        const SizedBox(width: 9),
-        _buildActionCircleIcon(
-          key: const ValueKey('detail-netdisk-qr-button'),
-          icon: CupertinoIcons.cloud_fill,
-          tooltip: '网盘配置',
-          onTap: () => showNetdiskAccountSheet(
-            context,
-            widget.storage,
-            onChanged: () {
-              if (mounted) setState(() {});
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildActionCircleIcon({
-    Key? key,
-    required IconData icon,
-    Color iconColor = const Color(0xF0FFFFFF),
-    String? tooltip,
-    VoidCallback? onTap,
-  }) {
     return GestureDetector(
-      key: key,
-      onTap: onTap,
-      child: ClipOval(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0x2EFFFFFF),
-              border: Border.all(
-                color: const Color(0x3DFFFFFF),
-                width: 0.7,
+      onTap: hasLines ? () => _playPrimaryAction(bookmark) : null,
+      child: Container(
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: hasLines
+              ? const Color(0xF5FFFFFF)
+              : const Color(0x38FFFFFF),
+          borderRadius: BorderRadius.circular(999),
+          boxShadow: hasLines
+              ? const [
+                  BoxShadow(
+                    color: Color(0x40000000),
+                    blurRadius: 16,
+                    offset: Offset(0, 6),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (hasLines) ...[
+              const Icon(
+                CupertinoIcons.play_fill,
+                color: Color(0xFF121215),
+                size: 17,
+              ),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Text(
+                playLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: hasLines
+                      ? const Color(0xFF121215)
+                      : const Color(0xCCFFFFFF),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
+                ),
               ),
             ),
-            alignment: Alignment.center,
-            child: Icon(
-              icon,
-              color: onTap == null ? const Color(0x66FFFFFF) : iconColor,
-              size: 19,
-            ),
-          ),
+          ],
         ),
       ),
     );
@@ -1392,9 +1489,10 @@ class _DetailScreenState extends State<DetailScreen> {
         ),
         const SizedBox(height: 14),
 
-        // 3. Horizontal 16:9 Landscape Episode Preview Cards
+        // 3. Horizontal 16:9 Landscape Episode Preview Cards with Distinct Scene Stills
+        //    and Per-Episode 2-Line Synopsis (zero border inset / zero white corner bleed)
         SizedBox(
-          height: 214,
+          height: 220,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -1413,28 +1511,28 @@ class _DetailScreenState extends State<DetailScreen> {
                 '第${originalIdx + 1}集',
                 if (specBadge != null) specBadge,
               ].join(' · ');
-              final epDesc = _video.description.trim().isNotEmpty
-                  ? _video.description.trim()
-                  : '${_video.title} · $cleanTitle（线路：${line.name}）';
+              final headline =
+                  _formatEpisodeCardHeadline(cleanTitle, originalIdx + 1);
+              final epDesc = _buildEpisodePlotSummary(
+                originalIdx + 1,
+                total,
+                cleanTitle,
+                line.name,
+              );
 
               return GestureDetector(
                 onTap: () => _openPlayer(safeLineIdx, originalIdx),
                 child: SizedBox(
-                  width: 222,
+                  width: 226,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 16:9 Landscape Thumbnail Card
-                      Container(
-                        height: 124,
+                      // 16:9 Landscape Thumbnail Card:
+                      // Uses ClipRRect + foreground DecoratedBox border so the image
+                      // fills 100% of the rounded corners with zero shrinkage or white corner bleed.
+                      DecoratedBox(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: isCurrent
-                                ? Colors.white
-                                : const Color(0x33FFFFFF),
-                            width: isCurrent ? 2.0 : 0.6,
-                          ),
                           boxShadow: const [
                             BoxShadow(
                               color: Color(0x4D000000),
@@ -1443,114 +1541,138 @@ class _DetailScreenState extends State<DetailScreen> {
                             ),
                           ],
                         ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            PosterImage(
-                              url: _video.poster,
-                              title: _video.title,
-                              fit: BoxFit.cover,
-                              highRes: true,
-                              placeholder: _posterPlaceholder(),
-                            ),
-                            const DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0x18000000),
-                                    Color(0x88000000),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            if (specBadge != null)
-                              Positioned(
-                                top: 8,
-                                right: 8,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 7,
-                                    vertical: 2,
+                        child: SizedBox(
+                          height: 126,
+                          width: 226,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                EpisodeStillImage(
+                                  seriesTitle: _video.title,
+                                  episodeIndex: originalIdx,
+                                  fallbackPosterUrl: _video.poster,
+                                  placeholder: _posterPlaceholder(
+                                    _resolveBaseAmbientColor(),
                                   ),
+                                ),
+                                const DecoratedBox(
                                   decoration: BoxDecoration(
-                                    color: const Color(0xB3121215),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: const Color(0x40FFFFFF),
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    specBadge,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            Positioned(
-                              left: 9,
-                              bottom: 8,
-                              right: 9,
-                              child: Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 7,
-                                      vertical: 2.5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: isCurrent
-                                          ? Colors.white
-                                          : const Color(0xA6121215),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          CupertinoIcons.play_fill,
-                                          size: 10,
-                                          color: isCurrent
-                                              ? const Color(0xFF121215)
-                                              : Colors.white,
-                                        ),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          'E${(originalIdx + 1).toString().padLeft(2, '0')}',
-                                          style: TextStyle(
-                                            color: isCurrent
-                                                ? const Color(0xFF121215)
-                                                : Colors.white,
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Color(0x14000000),
+                                        Color(0x84000000),
                                       ],
                                     ),
                                   ),
-                                  const Spacer(),
-                                  Flexible(
-                                    child: Text(
-                                      line.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Color(0xD9FFFFFF),
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w600,
+                                ),
+                                if (specBadge != null)
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 7,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xB3121215),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: const Color(0x40FFFFFF),
+                                          width: 0.5,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        specBadge,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ],
-                              ),
+                                Positioned(
+                                  left: 9,
+                                  bottom: 8,
+                                  right: 9,
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 7,
+                                          vertical: 2.5,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: isCurrent
+                                              ? Colors.white
+                                              : const Color(0xA6121215),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              CupertinoIcons.play_fill,
+                                              size: 10,
+                                              color: isCurrent
+                                                  ? const Color(0xFF121215)
+                                                  : Colors.white,
+                                            ),
+                                            const SizedBox(width: 3),
+                                            Text(
+                                              'E${(originalIdx + 1).toString().padLeft(2, '0')}',
+                                              style: TextStyle(
+                                                color: isCurrent
+                                                    ? const Color(0xFF121215)
+                                                    : Colors.white,
+                                                fontSize: 10.5,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      Flexible(
+                                        child: Text(
+                                          line.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Color(0xD9FFFFFF),
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // Foreground rounded border overlay (never shrinks or insets the image)
+                                Positioned.fill(
+                                  child: IgnorePointer(
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: isCurrent
+                                              ? Colors.white
+                                              : const Color(0x33FFFFFF),
+                                          width: isCurrent ? 2.0 : 0.7,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -1566,7 +1688,7 @@ class _DetailScreenState extends State<DetailScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'E${originalIdx + 1} · $cleanTitle',
+                        headline,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -1582,9 +1704,9 @@ class _DetailScreenState extends State<DetailScreen> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Color(0x99FFFFFF),
+                          color: Color(0xB3FFFFFF),
                           fontSize: 11.5,
-                          height: 1.32,
+                          height: 1.34,
                         ),
                       ),
                     ],
@@ -1708,245 +1830,260 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   /// Wide desktop / iPad / phone landscape immersive cinema showcase layout:
-  /// full-screen ambient color canvas, right-side full-bleed ultra-HD poster backdrop
-  /// with directional gradient blending, floating Liquid Glass top bar, left HD poster
-  /// card + ergonomic showcase metadata/actions, and full-width 16:9 episode preview strip.
+  /// - Unified background color matching poster edge color
+  /// - Fixed right-side ultra-HD poster backdrop that progressively blurs on scroll
+  ///   with seamless top, bottom, and left solid-color gradients into `bgColor`
+  /// - Floating Liquid Glass top bar with Download + Favorite
   Widget _buildWideDesktopScreen(BuildContext context) {
-    final (ambientTop, ambientBottom) = _resolveAmbientPalette();
+    final targetBg = _resolveBaseAmbientColor();
     final bookmark = _findBookmark();
     final size = MediaQuery.sizeOf(context);
     final topPad = MediaQuery.paddingOf(context).top;
     final horizontalPad = (size.width * 0.045).clamp(24.0, 56.0);
     final heroStageHeight = (size.height * 0.58).clamp(380.0, 500.0);
 
-    return Scaffold(
-      backgroundColor: ambientBottom,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 1. Deep ambient gradient canvas
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  ambientTop,
-                  Color.lerp(ambientTop, ambientBottom, 0.52)!,
-                  ambientBottom,
-                ],
-                stops: const [0.0, 0.48, 1.0],
-              ),
-            ),
-          ),
-          // 2. Subtle full-screen blurred poster aura
-          if (widget.storage.ambientGlowEnabled &&
-              (_video.poster.isNotEmpty || _video.title.isNotEmpty))
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.22,
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 68, sigmaY: 68),
+    return TweenAnimationBuilder<Color?>(
+      tween: ColorTween(begin: targetBg, end: targetBg),
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutCubic,
+      builder: (context, animatedBg, _) {
+        final bgColor = animatedBg ?? targetBg;
+        return Scaffold(
+          backgroundColor: bgColor,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 1. Unified Solid Ambient Canvas Matching Poster Edge Color
+              ColoredBox(color: bgColor),
+
+              // 2. Fixed Top Widescreen Ultra-HD Poster Backdrop with Progressive Scroll Blur
+              Positioned(
+                top: 0,
+                right: 0,
+                height: heroStageHeight + topPad,
+                width: size.width * 0.66,
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _scrollOffset,
+                  builder: (context, offset, child) {
+                    final progress = (offset / 260.0).clamp(0.0, 1.0);
+                    final blurSigma = progress * 26.0;
+                    final scrollVeilAlpha = progress * 0.74;
+                    Widget backdrop = child!;
+                    if (blurSigma > 0.15) {
+                      backdrop = ImageFiltered(
+                        imageFilter: ImageFilter.blur(
+                          sigmaX: blurSigma,
+                          sigmaY: blurSigma,
+                        ),
+                        child: backdrop,
+                      );
+                    }
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        backdrop,
+                        // Left-to-right seamless solid-color blend into bgColor
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                              colors: [
+                                bgColor,
+                                bgColor.withValues(alpha: 0.92),
+                                bgColor.withValues(alpha: 0.48),
+                                bgColor.withValues(alpha: 0.12),
+                              ],
+                              stops: const [0.0, 0.22, 0.58, 1.0],
+                            ),
+                          ),
+                        ),
+                        // Top & Bottom seamless solid-color blend into bgColor
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                bgColor.withValues(alpha: 0.85),
+                                bgColor.withValues(alpha: 0.0),
+                                bgColor.withValues(alpha: 0.72),
+                                bgColor,
+                              ],
+                              stops: const [0.0, 0.28, 0.78, 1.0],
+                            ),
+                          ),
+                        ),
+                        if (scrollVeilAlpha > 0.01)
+                          Positioned.fill(
+                            child: ColoredBox(
+                              color: bgColor.withValues(alpha: scrollVeilAlpha),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                   child: PosterImage(
                     url: _video.poster,
                     title: _video.title,
+                    fit: BoxFit.cover,
                     highRes: true,
-                    placeholder: const SizedBox.shrink(),
+                    onBytesLoaded: _updateAmbientFromBytes,
+                    placeholder: _posterPlaceholder(bgColor),
                   ),
                 ),
               ),
-            ),
-          // 3. Main scrollable immersive widescreen content
-          MediaQuery.removePadding(
-            context: context,
-            removeTop: true,
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.only(bottom: 44),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Top Immersive Widescreen Hero Stage
-                  SizedBox(
-                    height: heroStageHeight + topPad,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // Right-side full-bleed ultra-HD poster backdrop
-                        Positioned(
-                          top: 0,
-                          right: 0,
-                          bottom: 0,
-                          width: size.width * 0.64,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              PosterImage(
-                                url: _video.poster,
-                                title: _video.title,
-                                fit: BoxFit.cover,
-                                highRes: true,
-                                placeholder: _posterPlaceholder(),
-                              ),
-                              // Left-to-right seamless blend into ambient canvas
-                              DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.centerLeft,
-                                    end: Alignment.centerRight,
-                                    colors: [
-                                      ambientTop,
-                                      ambientTop.withValues(alpha: 0.92),
-                                      ambientTop.withValues(alpha: 0.48),
-                                      const Color(0x22000000),
-                                    ],
-                                    stops: const [0.0, 0.22, 0.58, 1.0],
-                                  ),
-                                ),
-                              ),
-                              // Bottom seamless blend into ambient canvas
-                              DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      const Color(0x44000000),
-                                      const Color(0x00000000),
-                                      ambientTop.withValues(alpha: 0.78),
-                                      ambientTop,
-                                    ],
-                                    stops: const [0.0, 0.35, 0.80, 1.0],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Foreground Hero Content Row (Poster Card + Left-Aligned Showcase Info)
-                        Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            horizontalPad,
-                            topPad + 58,
-                            horizontalPad,
-                            18,
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              SizedBox(
-                                width: (heroStageHeight * 0.48).clamp(168.0, 224.0),
-                                child: _buildPosterCard(),
-                              ),
-                              const SizedBox(width: 28),
-                              Expanded(
-                                child: _buildWideHeroShowcaseColumn(bookmark),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Bottom Full-Width Episode Showcase Section
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+
+              // 3. Main Scrollable Widescreen Foreground Content
+              MediaQuery.removePadding(
+                context: context,
+                removeTop: true,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    if (notification.metrics.axis == Axis.vertical) {
+                      final next =
+                          notification.metrics.pixels.clamp(0.0, 500.0);
+                      if ((_scrollOffset.value - next).abs() > 0.5) {
+                        _scrollOffset.value = next;
+                      }
+                    }
+                    return false;
+                  },
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.only(bottom: 44),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const SizedBox(height: 8),
-                        if (_loading)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 32),
-                            child: Center(
-                              child: CupertinoActivityIndicator(radius: 14),
+                        SizedBox(
+                          height: heroStageHeight + topPad,
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              horizontalPad,
+                              topPad + 58,
+                              horizontalPad,
+                              18,
                             ),
-                          )
-                        else if (_error != null)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Text(
-                              _error!,
-                              style: const TextStyle(
-                                color: AppleColors.systemRed,
-                                fontSize: 14,
-                              ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                SizedBox(
+                                  width: (heroStageHeight * 0.48)
+                                      .clamp(168.0, 224.0),
+                                  child: _buildPosterCard(bgColor),
+                                ),
+                                const SizedBox(width: 28),
+                                Expanded(
+                                  child: _buildWideHeroShowcaseColumn(bookmark),
+                                ),
+                              ],
                             ),
-                          )
-                        else if (_video.lines.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 20),
-                            child: Text(
-                              '暂未获取到可播放的剧集资源',
-                              style: TextStyle(
-                                color: AppleColors.labelSecondary,
-                                fontSize: 14,
-                              ),
-                            ),
-                          )
-                        else
-                          _buildPortraitEpisodesSection(bookmark),
+                          ),
+                        ),
+                        Padding(
+                          padding:
+                              EdgeInsets.symmetric(horizontal: horizontalPad),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const SizedBox(height: 8),
+                              if (_loading)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 32),
+                                  child: Center(
+                                    child:
+                                        CupertinoActivityIndicator(radius: 14),
+                                  ),
+                                )
+                              else if (_error != null)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
+                                  child: Text(
+                                    _error!,
+                                    style: const TextStyle(
+                                      color: AppleColors.systemRed,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                )
+                              else if (_video.lines.isEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 20),
+                                  child: Text(
+                                    '暂未获取到可播放的剧集资源',
+                                    style: TextStyle(
+                                      color: AppleColors.labelSecondary,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                )
+                              else
+                                _buildPortraitEpisodesSection(bookmark),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-          // 4. Floating Liquid Glass Top Navigation Bar
-          Positioned(
-            top: topPad + 10,
-            left: horizontalPad,
-            right: horizontalPad,
-            child: Row(
-              children: [
-                _buildFloatingGlassCircleButton(
-                  icon: CupertinoIcons.chevron_back,
-                  onTap: () => Navigator.of(context).maybePop(),
                 ),
-                const SizedBox(width: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                    child: Container(
-                      height: 36,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      decoration: BoxDecoration(
-                        color: const Color(0x5218181C),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: const Color(0x38FFFFFF),
-                          width: 0.65,
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        widget.site.name,
-                        style: const TextStyle(
-                          color: Color(0xE6FFFFFF),
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
+              ),
+
+              // 4. Floating Liquid Glass Top Navigation Bar
+              Positioned(
+                top: topPad + 10,
+                left: horizontalPad,
+                right: horizontalPad,
+                child: Row(
+                  children: [
+                    _buildFloatingGlassCircleButton(
+                      icon: CupertinoIcons.chevron_back,
+                      onTap: () => Navigator.of(context).maybePop(),
+                    ),
+                    const SizedBox(width: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                        child: Container(
+                          height: 36,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          decoration: BoxDecoration(
+                            color: const Color(0x5218181C),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: const Color(0x38FFFFFF),
+                              width: 0.65,
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            widget.site.name,
+                            style: const TextStyle(
+                              color: Color(0xE6FFFFFF),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    const Spacer(),
+                    _buildFloatingTopRightPill(),
+                  ],
                 ),
-                const Spacer(),
-                _buildFloatingTopRightPill(),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildPosterCard() {
-    return Container(
+  Widget _buildPosterCard(Color bgColor) {
+    return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0x4DFFFFFF), width: 0.8),
         boxShadow: const [
           BoxShadow(
             color: Color(0x80000000),
@@ -1955,26 +2092,50 @@ class _DetailScreenState extends State<DetailScreen> {
           ),
         ],
       ),
-      clipBehavior: Clip.antiAlias,
-      child: AspectRatio(
-        aspectRatio: 2 / 3,
-        child: PosterImage(
-          url: _video.poster,
-          title: _video.title,
-          highRes: true,
-          placeholder: _posterPlaceholder(),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: AspectRatio(
+          aspectRatio: 2 / 3,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              PosterImage(
+                url: _video.poster,
+                title: _video.title,
+                highRes: true,
+                onBytesLoaded: _updateAmbientFromBytes,
+                placeholder: _posterPlaceholder(bgColor),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: const Color(0x4DFFFFFF),
+                        width: 0.8,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _posterPlaceholder() {
+  Widget _posterPlaceholder(Color bgColor) {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF283448), Color(0xFF121722)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color.lerp(bgColor, const Color(0xFF283448), 0.35)!,
+            bgColor,
+          ],
         ),
       ),
       alignment: Alignment.center,
@@ -2003,7 +2164,7 @@ class _DetailScreenState extends State<DetailScreen> {
         '共$epCount集',
     ];
     final rating = _deriveRatingScore();
-    final desc = _video.description.trim();
+    final desc = _effectiveSeriesSynopsis();
     final cast = _video.actor.trim();
 
     return Column(
@@ -2137,13 +2298,13 @@ class _DetailScreenState extends State<DetailScreen> {
         ],
         const SizedBox(height: 16),
         ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
+          constraints: const BoxConstraints(maxWidth: 360),
           child: _buildPortraitActionRow(bookmark),
         ),
         if (bookmark != null) ...[
           const SizedBox(height: 10),
           ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
+            constraints: const BoxConstraints(maxWidth: 360),
             child: _buildPortraitBookmarkProgress(bookmark),
           ),
         ],
