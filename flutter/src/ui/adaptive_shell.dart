@@ -403,8 +403,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               right: 0,
               child: Center(
                 child: AppleLiquidGlassDock(
-                  currentIndex: _tabIndex,
-                  onTap: (i) => setState(() => _tabIndex = i),
+                  selectedIndex: _tabIndex,
+                  onSelect: (i) => setState(() => _tabIndex = i),
                   isLandscape: true,
                   items: dockItems,
                 ),
@@ -417,8 +417,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               bottom: 0,
               child: Center(
                 child: AppleLiquidGlassDock(
-                  currentIndex: _tabIndex,
-                  onTap: (i) => setState(() => _tabIndex = i),
+                  selectedIndex: _tabIndex,
+                  onSelect: (i) => setState(() => _tabIndex = i),
                   isLandscape: false,
                   items: dockItems,
                 ),

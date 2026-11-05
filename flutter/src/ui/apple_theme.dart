@@ -21,6 +21,7 @@ class AppleColors {
   static const Color labelTertiary = Color(0x66EBEBF5);
   static const Color separator = Color(0x40FFFFFF);
   static const Color glassBorder = Color(0x48FFFFFF);
+  static const Color glassBorderStrong = Color(0x68FFFFFF);
   static const Color glassHighlight = Color(0x78FFFFFF);
 
   static Map<String, String> posterHeaders(String url) {
@@ -250,67 +251,84 @@ class AppleLiquidGlassDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final safePadding = MediaQuery.paddingOf(context);
+    final outerMargin = isLandscape
+        ? EdgeInsets.only(
+            right: safePadding.right > 0 ? safePadding.right + 8 : 14,
+            top: 12,
+            bottom: 12,
+          )
+        : EdgeInsets.only(
+            bottom: safePadding.bottom > 0 ? safePadding.bottom + 4 : 14,
+            left: 16,
+            right: 16,
+          );
     final radius = BorderRadius.circular(999);
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: radius,
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x99000000),
-            blurRadius: 34,
-            offset: Offset(0, 14),
-          ),
-          BoxShadow(
-            color: Color(0x260A84FF),
-            blurRadius: 26,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: radius,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 44, sigmaY: 44),
-          child: Container(
-            padding: isLandscape
-                ? const EdgeInsets.symmetric(vertical: 10, horizontal: 7)
-                : const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0x78101624),
-              borderRadius: radius,
-              gradient: const LinearGradient(
-                begin: Alignment(-0.85, -1.0),
-                end: Alignment(0.85, 1.0),
-                colors: [
-                  Color(0x42FFFFFF),
-                  Color(0x18FFFFFF),
-                  Color(0x0EFFFFFF),
-                  Color(0x2C64D2FF),
-                ],
-                stops: [0.0, 0.32, 0.68, 1.0],
-              ),
-              border: Border.all(
-                color: const Color(0x58FFFFFF),
-                width: 1.0,
-              ),
+    return Padding(
+      padding: outerMargin,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x99000000),
+              blurRadius: 34,
+              offset: Offset(0, 14),
             ),
-            child: isLandscape
-                ? Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (int i = 0; i < items.length; i++) ...[
-                        _buildDockItem(i, vertical: true),
-                        if (i < items.length - 1) const SizedBox(height: 6),
+            BoxShadow(
+              color: Color(0x260A84FF),
+              blurRadius: 26,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: radius,
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 44, sigmaY: 44),
+            child: Container(
+              padding: isLandscape
+                  ? const EdgeInsets.symmetric(vertical: 10, horizontal: 7)
+                  : const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0x78101624),
+                borderRadius: radius,
+                gradient: const LinearGradient(
+                  begin: Alignment(-0.85, -1.0),
+                  end: Alignment(0.85, 1.0),
+                  colors: [
+                    Color(0x42FFFFFF),
+                    Color(0x18FFFFFF),
+                    Color(0x0EFFFFFF),
+                    Color(0x2C64D2FF),
+                  ],
+                  stops: [0.0, 0.32, 0.68, 1.0],
+                ),
+                border: Border.all(
+                  color: const Color(0x58FFFFFF),
+                  width: 1.0,
+                ),
+              ),
+              child: isLandscape
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (int i = 0; i < items.length; i++) ...[
+                          _buildDockItem(i, vertical: true),
+                          if (i < items.length - 1) const SizedBox(height: 6),
+                        ],
                       ],
-                    ],
-                  )
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (int i = 0; i < items.length; i++)
-                        Expanded(child: _buildDockItem(i, vertical: false)),
-                    ],
-                  ),
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (int i = 0; i < items.length; i++) ...[
+                          _buildDockItem(i, vertical: false),
+                          if (i < items.length - 1) const SizedBox(width: 6),
+                        ],
+                      ],
+                    ),
+            ),
           ),
         ),
       ),
@@ -327,10 +345,10 @@ class AppleLiquidGlassDock extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOutCubic,
-        width: vertical ? 58 : null,
+        width: vertical ? 58 : 62,
         padding: vertical
             ? const EdgeInsets.symmetric(vertical: 11, horizontal: 6)
-            : const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            : const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
         decoration: BoxDecoration(
           borderRadius: pillRadius,
           gradient: selected
