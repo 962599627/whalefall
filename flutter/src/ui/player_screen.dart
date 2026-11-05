@@ -1483,25 +1483,26 @@ class _PlayerEpisodePickerSheetState extends State<_PlayerEpisodePickerSheet> {
   @override
   void initState() {
     super.initState();
-    _previewLineIndex = widget.initialLineIndex.clamp(
-      0,
-      math.max(0, widget.lines.length - 1),
-    );
+    _previewLineIndex = widget.initialLineIndex
+        .clamp(0, math.max(0, widget.lines.length - 1))
+        .toInt();
     _groupIndex = (widget.activeEpisodeIndex ~/ _groupSize);
   }
 
   CmsLine get _line => widget.lines.isEmpty
       ? const CmsLine(name: '默认线路', episodes: [])
-      : widget.lines[_previewLineIndex.clamp(0, widget.lines.length - 1)];
+      : widget.lines[
+          _previewLineIndex.clamp(0, widget.lines.length - 1).toInt()];
 
   @override
   Widget build(BuildContext context) {
     final episodes = _line.episodes;
     final total = episodes.length;
     final groupCount = total <= 0 ? 1 : ((total - 1) ~/ _groupSize) + 1;
-    final safeGroup = _groupIndex.clamp(0, math.max(0, groupCount - 1));
-    final startIdx = safeGroup * _groupSize;
-    final endIdx = math.min(startIdx + _groupSize, total);
+    final safeGroup =
+        _groupIndex.clamp(0, math.max(0, groupCount - 1)).toInt();
+    final int startIdx = safeGroup * _groupSize;
+    final int endIdx = math.min(startIdx + _groupSize, total);
 
     final indices = <int>[
       for (int i = startIdx; i < endIdx; i++) i,
