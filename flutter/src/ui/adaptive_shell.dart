@@ -2167,12 +2167,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 'year_area' => [
                     video.year.trim(),
                     video.area.trim(),
-                    video.typeName.trim(),
+                    video.tag.trim(),
                   ].where((s) => s.isNotEmpty).join(' · ').isNotEmpty
                       ? [
                           video.year.trim(),
                           video.area.trim(),
-                          video.typeName.trim(),
+                          video.tag.trim(),
                         ].where((s) => s.isNotEmpty).join(' · ')
                       : (video.remarks.isNotEmpty ? video.remarks : site.name),
                 _ => video.remarks.isNotEmpty ? video.remarks : site.name,
@@ -3669,7 +3669,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 onTap: _showPreferredQualityPickerSheet,
               ),
               AppleGroupedTile(
-                icon: CupertinoIcons.aspectratio_fill,
+                icon: CupertinoIcons.aspectratio,
                 iconBgColor: AppleColors.systemPurple,
                 title: '默认画面比例',
                 subtitle: '播放器启动时的默认画面缩放模式',

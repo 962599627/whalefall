@@ -294,15 +294,20 @@ class PosterLoader {
 
       // Branch B: Fast domestic HD cover lookup by title (head-start delay 320ms)
       unawaited(
-        Future<void>.delayed(const Duration(milliseconds: 320)).then((_) {
+        Future<void>.delayed(const Duration(milliseconds: 320)).then((_) async {
           if (completer.isCompleted) {
             remaining--;
             return;
           }
-          return _resolveTitleCoverBytes(
-            cleanTitle,
-            cacheKey: titleCacheKey,
-          ).then(handleSuccess, onError: handleError);
+          try {
+            final bytes = await _resolveTitleCoverBytes(
+              cleanTitle,
+              cacheKey: titleCacheKey,
+            );
+            handleSuccess(bytes);
+          } catch (e) {
+            handleError(e);
+          }
         }),
       );
 
