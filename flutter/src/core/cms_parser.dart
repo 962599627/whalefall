@@ -1708,6 +1708,9 @@ class CmsParser {
           .replaceFirst('/view/photo/mpic/', '/view/photo/lpic/')
           .replaceFirst('/view/subject/s/', '/view/subject/l/')
           .replaceFirst('/view/subject/m/', '/view/subject/l/');
+      if (u.endsWith('.webp')) {
+        u = '${u.substring(0, u.length - 5)}.jpg';
+      }
     } else if (u.contains('hdslb.com') || u.contains('biliimg.com')) {
       final atResize = RegExp(r'@\d+w_\d+h.*$').firstMatch(u);
       if (atResize != null) {
