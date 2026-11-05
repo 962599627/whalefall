@@ -2494,7 +2494,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   ),
                   AppleCapsuleButton(
                     label: '修改隐私密码',
-                    icon: CupertinoIcons.key_fill,
+                    icon: CupertinoIcons.lock_shield_fill,
                     compact: true,
                     onPressed: () {
                       _showSetPrivacyPasswordDialog(

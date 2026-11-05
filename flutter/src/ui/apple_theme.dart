@@ -16,6 +16,7 @@ class AppleColors {
   static const Color systemBlue = Color(0xFF0A84FF);
   static const Color systemCyan = Color(0xFF64D2FF);
   static const Color systemIndigo = Color(0xFF5E5CE6);
+  static const Color systemPurple = Color(0xFFBF5AF2);
   static const Color systemGreen = Color(0xFF30D158);
   static const Color systemOrange = Color(0xFFFF9F0A);
   static const Color systemRed = Color(0xFFFF453A);
