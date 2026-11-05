@@ -945,6 +945,20 @@ class CmsParser {
         .replaceAll('&gt;', '>')
         .trim();
   }
+  static String _cleanStreamUrl(String raw) {
+    var trimmed = raw.trim();
+    final m3u8At = RegExp(r'(\.m3u8(?:\?[^@\s]*)?)@', caseSensitive: false).firstMatch(trimmed);
+    if (m3u8At != null) {
+      final cut = m3u8At.end - 1;
+      trimmed = trimmed.substring(0, cut);
+    }
+    final mp4At = RegExp(r'(\.mp4(?:\?[^@\s]*)?)@', caseSensitive: false).firstMatch(trimmed);
+    if (mp4At != null) {
+      final cut = mp4At.end - 1;
+      trimmed = trimmed.substring(0, cut);
+    }
+    return trimmed;
+  }
   static List<CmsLine> _parseLines(String playFrom, String playUrl) {
     if (playUrl.trim().isEmpty) return const [];
     final fromParts = playFrom.split(r'$$$');
@@ -962,7 +976,9 @@ class CmsParser {
         if (s.isEmpty) continue;
         final dollar = s.indexOf(r'$');
         final epName = dollar >= 0 ? s.substring(0, dollar).trim() : '正片';
-        final epUrl = dollar >= 0 ? s.substring(dollar + 1).trim() : s;
+        final epUrl = _cleanStreamUrl(
+          dollar >= 0 ? s.substring(dollar + 1).trim() : s,
+        );
         if (epUrl.isNotEmpty) {
           episodes.add(
             CmsEpisode(
@@ -974,6 +990,22 @@ class CmsParser {
       }
       if (episodes.isNotEmpty) {
         lines.add(CmsLine(name: lineName, episodes: episodes));
+      }
+    }
+    if (lines.length > 1) {
+      final directLines = lines
+          .where((l) => l.episodes.any((e) => e.isDirectPlayable))
+          .toList(growable: false);
+      if (directLines.isNotEmpty) {
+        directLines.sort((a, b) {
+          final aM3u8 = a.name.toLowerCase().contains('m3u8') ||
+              a.episodes.first.url.toLowerCase().contains('.m3u8');
+          final bM3u8 = b.name.toLowerCase().contains('m3u8') ||
+              b.episodes.first.url.toLowerCase().contains('.m3u8');
+          if (aM3u8 != bM3u8) return aM3u8 ? -1 : 1;
+          return 0;
+        });
+        return directLines;
       }
     }
     return lines;

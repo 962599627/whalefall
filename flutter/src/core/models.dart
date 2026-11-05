@@ -49,21 +49,14 @@ class CmsSite {
         lower.endsWith('.py');
   }
   /// Supports standard JSON/XML CMS (`type` 0 or 1), remote HTTP spider endpoints (`type` 4),
-  /// and any site whose `api` is a direct HTTP(S) CMS endpoint rather than a local JAR/JS script.
+  /// and TVBox `csp_*` / `.js` spider sites via the cross-platform `CspBridge` adapter.
   bool get canBrowse =>
-      isHttpApi &&
-      !isScriptOrJarApi &&
+      (isHttpApi || isScriptOrJarApi) &&
       (type == 0 || type == 1 || type == 4 || type == 3 || type == -1);
   bool get requiresPluginRuntime => !canBrowse;
   bool get supported => canBrowse;
   String get unsupportedReason {
-    if (api.trim().toLowerCase().startsWith('csp_')) {
-      return '安卓专用 JAR 爬虫源 (${api.trim()})，iOS / macOS 沙盒不支持直接加载安卓 DEX 插件';
-    }
-    if (isScriptOrJarApi) {
-      return '脚本插件源，当前平台支持标准 HTTP/HTTPS CMS 与直播源';
-    }
-    return '非标准 HTTP(S) 接口';
+    return '非标准接口 (${api.trim()})';
   }
 }
 class LiveSource {
@@ -116,8 +109,15 @@ class CmsEpisode {
         !u.startsWith('rtsp://')) {
       return false;
     }
+    if (u.contains('tuxiaobei.com/play/') ||
+        u.contains('youlai.cn/jijiu/article/') ||
+        u.contains('api.bilibili.com/x/player/playurl')) {
+      return true;
+    }
     final pathOnly = u.split('?').first.split('#').first;
-    if (pathOnly.endsWith('.html') || pathOnly.endsWith('.htm')) {
+    if (pathOnly.endsWith('.html') ||
+        pathOnly.endsWith('.htm') ||
+        pathOnly.contains('/share/')) {
       return false;
     }
     return true;

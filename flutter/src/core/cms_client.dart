@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'cms_parser.dart';
+import 'csp_bridge.dart';
 import 'models.dart';
 /// HTTP CMS client with TVBox `okhttp/3.15` User-Agent parity, tolerant TLS for third-party
 /// CMS hosts, multi-depot (`urls`/`storeHouse`) resolution, and bounded concurrent search.
@@ -206,6 +207,9 @@ class CmsClient {
     throw lastError ?? const FormatException('多仓列表中的所有子仓库均无法读取');
   }
   Future<(List<CmsCategory>, CmsListing)> fetchHome(CmsSite site) async {
+    if (CspBridge.canHandleSite(site)) {
+      return CspBridge.fetchHome(site, _getText);
+    }
     List<CmsCategory> categories = const [];
     CmsListing listing = const CmsListing();
     // Step 1: Query `ac=list` first (standard MacCMS endpoint for categories)
@@ -246,6 +250,9 @@ class CmsClient {
     String categoryId,
     int page,
   ) async {
+    if (CspBridge.canHandleSite(site)) {
+      return CspBridge.fetchCategory(site, categoryId, page, _getText);
+    }
     final params = <String, String>{
       'ac': 'detail',
       'pg': page.toString(),
@@ -264,6 +271,9 @@ class CmsClient {
     String keyword, {
     int page = 1,
   }) async {
+    if (CspBridge.canHandleSite(site)) {
+      return CspBridge.fetchSearch(site, keyword, page, _getText);
+    }
     final raw = await _getText(
       _appendQuery(
         site.api,
@@ -279,35 +289,57 @@ class CmsClient {
     return CmsParser.parseListing(raw);
   }
   Future<CmsVideo> fetchDetail(CmsSite site, CmsVideo fallback) async {
+    if (CspBridge.canHandleSite(site)) {
+      return CspBridge.fetchDetail(site, fallback, _getText);
+    }
     if (fallback.lines.isNotEmpty) return fallback;
-    final raw = await _getText(
-      _appendQuery(
-        site.api,
-        {
-          'ac': 'detail',
-          'ids': fallback.id,
-        },
-        ext: site.ext,
-      ).toString(),
-      headers: site.headers,
-    );
-    final listing = CmsParser.parseListing(raw);
-    if (listing.videos.isEmpty) return fallback;
-    final detailed = listing.videos.first;
-    return CmsVideo(
-      id: detailed.id.isEmpty ? fallback.id : detailed.id,
-      title: detailed.title.isEmpty ? fallback.title : detailed.title,
-      poster: detailed.poster.isEmpty ? fallback.poster : detailed.poster,
-      remarks: detailed.remarks.isEmpty ? fallback.remarks : detailed.remarks,
-      year: detailed.year.isEmpty ? fallback.year : detailed.year,
-      area: detailed.area.isEmpty ? fallback.area : detailed.area,
-      actor: detailed.actor.isEmpty ? fallback.actor : detailed.actor,
-      description: detailed.description.isEmpty
-          ? fallback.description
-          : detailed.description,
-      tag: detailed.tag,
-      lines: detailed.lines,
-    );
+    try {
+      final raw = await _getText(
+        _appendQuery(
+          site.api,
+          {
+            'ac': 'detail',
+            'ids': fallback.id,
+          },
+          ext: site.ext,
+        ).toString(),
+        headers: site.headers,
+      );
+      final listing = CmsParser.parseListing(raw);
+      if (listing.videos.isNotEmpty) {
+        final detailed = listing.videos.first;
+        if (detailed.lines.isNotEmpty) {
+          return CmsVideo(
+            id: detailed.id.isEmpty ? fallback.id : detailed.id,
+            title: detailed.title.isEmpty ? fallback.title : detailed.title,
+            poster: detailed.poster.isEmpty ? fallback.poster : detailed.poster,
+            remarks: detailed.remarks.isEmpty ? fallback.remarks : detailed.remarks,
+            year: detailed.year.isEmpty ? fallback.year : detailed.year,
+            area: detailed.area.isEmpty ? fallback.area : detailed.area,
+            actor: detailed.actor.isEmpty ? fallback.actor : detailed.actor,
+            description: detailed.description.isEmpty
+                ? fallback.description
+                : detailed.description,
+            tag: detailed.tag,
+            lines: detailed.lines,
+          );
+        }
+      }
+    } catch (_) {}
+    if (fallback.title.trim().isNotEmpty) {
+      return CspBridge.resolveCrossSourceVideo(
+        fallback,
+        fallback.title.trim(),
+        _getText,
+      );
+    }
+    return fallback;
+  }
+  Future<CmsEpisode> resolveEpisodeForPlayback(
+    CmsSite site,
+    CmsEpisode episode,
+  ) {
+    return CspBridge.resolveEpisodeForPlayback(site, episode, _getText);
   }
   Future<List<LiveGroup>> fetchLiveGroups(LiveSource source) async {
     final raw = await _getText(source.url, headers: source.headers);
@@ -325,8 +357,25 @@ class CmsClient {
         cancelled = true;
       },
     );
-    final runnableSites =
-        sites.where((s) => s.supported && s.searchable).toList(growable: false);
+    final seenBackends = <String>{};
+    final runnableSites = <CmsSite>[];
+    for (final s in sites) {
+      if (!s.supported || !s.searchable) continue;
+      if (CspBridge.canHandleSite(s)) {
+        if (CspBridge.isDoubanSite(s) ||
+            CspBridge.isHuyaSite(s) ||
+            CspBridge.isDouyuSite(s)) {
+          continue;
+        }
+        final sig = CspBridge.isBiliSite(s)
+            ? 'bili'
+            : CspBridge.backendsForSite(s).first.api;
+        if (!seenBackends.add(sig)) continue;
+      } else {
+        if (!seenBackends.add(s.api)) continue;
+      }
+      runnableSites.add(s);
+    }
     if (runnableSites.isEmpty || keyword.trim().isEmpty) {
       controller.close();
       return controller.stream;

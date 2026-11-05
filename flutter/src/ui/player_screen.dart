@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import '../core/cms_client.dart';
 import '../core/models.dart';
 import '../core/storage_service.dart';
 import 'apple_theme.dart';
@@ -31,6 +32,7 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   late final Player _player;
   late final VideoController _controller;
+  final CmsClient _client = CmsClient();
   late int _lineIndex;
   late int _episodeIndex;
   late double _normalSpeed;
@@ -130,12 +132,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _duration = Duration.zero;
       });
     }
+    final resolvedEpisode = await _client.resolveEpisodeForPlayback(
+      widget.site,
+      _currentEpisode,
+    );
+    if (!mounted || session != _playSession) return;
     final headers = <String, String>{
       ...widget.site.headers,
-      ..._currentEpisode.headers,
+      ...resolvedEpisode.headers,
     };
     await _player.open(
-      Media(_currentEpisode.url, httpHeaders: headers),
+      Media(resolvedEpisode.url, httpHeaders: headers),
       play: true,
     );
     if (!mounted || session != _playSession) return;

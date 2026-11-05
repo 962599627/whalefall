@@ -109,6 +109,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   imageFilter: ImageFilter.blur(sigmaX: 42, sigmaY: 42),
                   child: Image.network(
                     _video.poster,
+                    headers: AppleColors.posterHeaders(_video.poster),
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                   ),
@@ -274,6 +275,7 @@ class _DetailScreenState extends State<DetailScreen> {
         child: _video.poster.isNotEmpty
             ? Image.network(
                 _video.poster,
+                headers: AppleColors.posterHeaders(_video.poster),
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => _posterPlaceholder(),
               )
@@ -449,14 +451,9 @@ class _DetailScreenState extends State<DetailScreen> {
         ),
         if (_video.description.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
+          AppleGlassSurface(
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppleColors.groupedPrimary,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppleColors.glassBorder, width: 0.5),
-            ),
+            borderRadius: BorderRadius.circular(16),
             child: Text(
               _video.description,
               maxLines: 5,

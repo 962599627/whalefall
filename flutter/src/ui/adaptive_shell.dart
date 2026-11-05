@@ -303,300 +303,128 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    final useSidebar = width >= 700;
+    final size = MediaQuery.sizeOf(context);
+    final isLandscape = size.width > size.height;
+    const dockItems = <(IconData, IconData, String)>[
+      (CupertinoIcons.play_rectangle, CupertinoIcons.play_rectangle_fill, '主页'),
+      (CupertinoIcons.search, CupertinoIcons.search, '搜索'),
+      (
+        CupertinoIcons.dot_radiowaves_left_right,
+        CupertinoIcons.dot_radiowaves_left_right,
+        '直播',
+      ),
+      (
+        CupertinoIcons.square_favorites_alt,
+        CupertinoIcons.square_favorites_alt_fill,
+        '片库',
+      ),
+      (CupertinoIcons.gear_alt, CupertinoIcons.gear_alt_fill, '设置'),
+    ];
     final pages = [
-      _buildHomeTab(context, useSidebar: useSidebar),
-      _buildSearchTab(context, useSidebar: useSidebar),
-      _buildLiveTab(context, useSidebar: useSidebar),
-      _buildFavoritesHistoryTab(context, useSidebar: useSidebar),
-      _buildSettingsTab(context, useSidebar: useSidebar),
+      _buildHomeTab(context, useSidebar: isLandscape),
+      _buildSearchTab(context, useSidebar: isLandscape),
+      _buildLiveTab(context, useSidebar: isLandscape),
+      _buildFavoritesHistoryTab(context, useSidebar: isLandscape),
+      _buildSettingsTab(context, useSidebar: isLandscape),
     ];
     return Scaffold(
       backgroundColor: AppleColors.background,
-      extendBody: !useSidebar,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF131926),
-              Color(0xFF090B10),
-              Color(0xFF000000),
-            ],
-            stops: [0.0, 0.38, 1.0],
-          ),
-        ),
-        child: Row(
-          children: [
-            if (useSidebar) _buildAppleSidebar(context),
-            Expanded(child: pages[_tabIndex]),
-          ],
-        ),
-      ),
-      bottomNavigationBar: useSidebar ? null : _buildAppleBottomTabBar(context),
-    );
-  }
-  Widget _buildAppleSidebar(BuildContext context) {
-    const items = <(IconData, IconData, String)>[
-      (CupertinoIcons.play_rectangle, CupertinoIcons.play_rectangle_fill, '主页'),
-      (CupertinoIcons.search, CupertinoIcons.search, '搜索'),
-      (
-        CupertinoIcons.dot_radiowaves_left_right,
-        CupertinoIcons.dot_radiowaves_left_right,
-        '直播',
-      ),
-      (
-        CupertinoIcons.square_favorites_alt,
-        CupertinoIcons.square_favorites_alt_fill,
-        '片库',
-      ),
-      (CupertinoIcons.gear_alt, CupertinoIcons.gear_alt_fill, '设置'),
-    ];
-    final depots = _config?.depots ?? const [];
-    return Container(
-      width: 236,
-      decoration: const BoxDecoration(
-        color: Color(0xD8121318),
-        border: Border(
-          right: BorderSide(color: AppleColors.separator, width: 0.5),
-        ),
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(14, _isMacOS ? 30 : 18, 14, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                child: MarcoBrandLogo(iconSize: 34, fontSize: 19),
-              ),
-              const SizedBox(height: 18),
-              const Padding(
-                padding: EdgeInsets.only(left: 12, bottom: 6),
-                child: Text(
-                  '浏览',
-                  style: TextStyle(
-                    color: AppleColors.labelSecondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-              for (int i = 0; i < items.length; i++) ...[
-                _buildSidebarItem(
-                  icon: _tabIndex == i ? items[i].$2 : items[i].$1,
-                  label: items[i].$3,
-                  selected: _tabIndex == i,
-                  onTap: () => setState(() => _tabIndex = i),
-                ),
-                const SizedBox(height: 4),
-              ],
-              const Spacer(),
-              if (depots.isNotEmpty) ...[
-                _buildSidebarSourceCard(
-                  icon: CupertinoIcons.archivebox_fill,
-                  title: widget.storage.activeDepotName.isEmpty
-                      ? '当前多仓'
-                      : widget.storage.activeDepotName,
-                  subtitle: '共 ${depots.length} 个子仓库 · 点击切换',
-                  onTap: _showDepotPickerDialog,
-                ),
-                const SizedBox(height: 8),
-              ],
-              _buildSidebarSourceCard(
-                icon: CupertinoIcons.layers_alt_fill,
-                title: _activeSite != null ? _activeSite!.name : '尚未选择片源',
-                subtitle: _config != null
-                    ? '${_config!.supportedSites.length} 个直连源可用'
-                    : '点击导入配置地址或 JSON',
-                onTap: _config != null && _config!.sites.isNotEmpty
-                    ? _showSitePickerDialog
-                    : _showImportConfigDialog,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-  Widget _buildSidebarItem({
-    required IconData icon,
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? AppleColors.groupedSecondary : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: 19,
-              color: selected
-                  ? AppleColors.systemBlue
-                  : AppleColors.labelSecondary,
-            ),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected
-                    ? AppleColors.labelPrimary
-                    : AppleColors.labelSecondary,
-                fontSize: 14,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  Widget _buildSidebarSourceCard({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppleColors.groupedPrimary,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppleColors.glassBorder, width: 0.5),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: const Color(0x260A84FF),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              alignment: Alignment.center,
-              child: Icon(icon, color: AppleColors.systemBlue, size: 16),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppleColors.labelPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppleColors.labelSecondary,
-                      fontSize: 11,
-                    ),
-                  ),
+      extendBody: true,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Ambient Apple Liquid Glass mesh background
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF141C2E),
+                  Color(0xFF0A0D16),
+                  Color(0xFF040508),
                 ],
+                stops: [0.0, 0.48, 1.0],
               ),
             ),
-            const Icon(
-              CupertinoIcons.chevron_up_chevron_down,
-              color: AppleColors.labelTertiary,
-              size: 14,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  Widget _buildAppleBottomTabBar(BuildContext context) {
-    const items = <(IconData, IconData, String)>[
-      (CupertinoIcons.play_rectangle, CupertinoIcons.play_rectangle_fill, '主页'),
-      (CupertinoIcons.search, CupertinoIcons.search, '搜索'),
-      (
-        CupertinoIcons.dot_radiowaves_left_right,
-        CupertinoIcons.dot_radiowaves_left_right,
-        '直播',
-      ),
-      (
-        CupertinoIcons.square_favorites_alt,
-        CupertinoIcons.square_favorites_alt_fill,
-        '片库',
-      ),
-      (CupertinoIcons.gear_alt, CupertinoIcons.gear_alt_fill, '设置'),
-    ];
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-        child: Container(
-          padding: EdgeInsets.only(bottom: bottomInset, top: 6),
-          decoration: const BoxDecoration(
-            color: Color(0xBF141417),
-            border: Border(
-              top: BorderSide(color: AppleColors.separator, width: 0.5),
-            ),
           ),
-          child: SizedBox(
-            height: 52,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(items.length, (i) {
-                final selected = _tabIndex == i;
-                return Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => setState(() => _tabIndex = i),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          selected ? items[i].$2 : items[i].$1,
-                          size: 23,
-                          color: selected
-                              ? AppleColors.systemBlue
-                              : AppleColors.labelSecondary,
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          items[i].$3,
-                          style: TextStyle(
-                            color: selected
-                                ? AppleColors.systemBlue
-                                : AppleColors.labelSecondary,
-                            fontSize: 10,
-                            fontWeight:
-                                selected ? FontWeight.w600 : FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
+          Positioned(
+            top: -120,
+            left: -80,
+            child: IgnorePointer(
+              child: Container(
+                width: 340,
+                height: 340,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      Color(0x360A84FF),
+                      Color(0x125E5CE6),
+                      Color(0x00000000),
+                    ],
                   ),
-                );
-              }),
+                ),
+              ),
             ),
           ),
-        ),
+          Positioned(
+            bottom: -140,
+            right: -60,
+            child: IgnorePointer(
+              child: Container(
+                width: 320,
+                height: 320,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      Color(0x285E5CE6),
+                      Color(0x1064D2FF),
+                      Color(0x00000000),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Active page content (with right clearance in landscape for right-side Liquid Glass Dock)
+          Padding(
+            padding: EdgeInsets.only(right: isLandscape ? 88 : 0),
+            child: pages[_tabIndex],
+          ),
+          // Apple Liquid Glass Floating Dock:
+          // - Portrait: bottom center floating capsule dock
+          // - Landscape: right-side vertical floating capsule dock
+          if (isLandscape)
+            Positioned(
+              top: 0,
+              bottom: 0,
+              right: 0,
+              child: Center(
+                child: AppleLiquidGlassDock(
+                  currentIndex: _tabIndex,
+                  onTap: (i) => setState(() => _tabIndex = i),
+                  isLandscape: true,
+                  items: dockItems,
+                ),
+              ),
+            )
+          else
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Center(
+                child: AppleLiquidGlassDock(
+                  currentIndex: _tabIndex,
+                  onTap: (i) => setState(() => _tabIndex = i),
+                  isLandscape: false,
+                  items: dockItems,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -606,9 +434,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     }
     final depots = _config!.depots;
     final history = widget.storage.getWatchHistory();
-    final horizontalPad = useSidebar ? 28.0 : 16.0;
+    final horizontalPad = useSidebar ? 24.0 : 16.0;
     return SafeArea(
-      bottom: useSidebar,
+      bottom: false,
+      right: !useSidebar,
       child: CustomScrollView(
         physics: const BouncingScrollPhysics(
           parent: AlwaysScrollableScrollPhysics(),
@@ -620,7 +449,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
               horizontalPad,
-              useSidebar && _isMacOS ? 28 : 14,
+              useSidebar && _isMacOS ? 24 : 12,
               horizontalPad,
               12,
             ),
@@ -631,18 +460,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   // Top Header Bar
                   Row(
                     children: [
-                      if (!useSidebar)
-                        const MarcoBrandLogo(iconSize: 30, fontSize: 18)
-                      else
-                        const Text(
-                          '立即观看',
-                          style: TextStyle(
-                            color: AppleColors.labelPrimary,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.6,
-                          ),
-                        ),
+                      const MarcoBrandLogo(iconSize: 30, fontSize: 18),
                       const Spacer(),
                       if (depots.isNotEmpty) ...[
                         _buildHeaderCapsule(
@@ -664,22 +482,35 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         padding: EdgeInsets.zero,
                         minSize: 34,
                         onPressed: () => _showImportConfigDialog(),
-                        child: Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: AppleColors.groupedSecondary,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: AppleColors.glassBorder,
-                              width: 0.5,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                            child: Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Color(0x48FFFFFF),
+                                    Color(0x22262A36),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: AppleColors.glassBorderStrong,
+                                  width: 0.8,
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                CupertinoIcons.add,
+                                color: AppleColors.labelPrimary,
+                                size: 18,
+                              ),
                             ),
-                          ),
-                          alignment: Alignment.center,
-                          child: const Icon(
-                            CupertinoIcons.add,
-                            color: AppleColors.labelPrimary,
-                            size: 18,
                           ),
                         ),
                       ),
@@ -1044,38 +875,56 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: AppleColors.groupedSecondary,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: AppleColors.glassBorder, width: 0.5),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: AppleColors.systemBlue, size: 14),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppleColors.labelPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 164),
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7.5),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0x42FFFFFF),
+                  Color(0x26242834),
+                  Color(0x36141720),
+                ],
+                stops: [0.0, 0.45, 1.0],
+              ),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: AppleColors.glassBorderStrong,
+                width: 0.8,
               ),
             ),
-            const SizedBox(width: 4),
-            const Icon(
-              CupertinoIcons.chevron_down,
-              color: AppleColors.labelSecondary,
-              size: 12,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: AppleColors.systemBlue, size: 14),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppleColors.labelPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(
+                  CupertinoIcons.chevron_down,
+                  color: AppleColors.labelSecondary,
+                  size: 12,
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1093,11 +942,18 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     return GestureDetector(
       onTap: () => _openVideoDetail(site, featured),
       child: Container(
-        height: wide ? 260 : 210,
+        height: wide ? 260 : 214,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
           color: AppleColors.groupedPrimary,
-          border: Border.all(color: AppleColors.glassBorder, width: 0.5),
+          border: Border.all(color: AppleColors.glassBorderStrong, width: 0.8),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x4D000000),
+              blurRadius: 28,
+              offset: Offset(0, 12),
+            ),
+          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -1105,9 +961,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           children: [
             if (featured.poster.isNotEmpty)
               ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                imageFilter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
                 child: Image.network(
                   featured.poster,
+                  headers: AppleColors.posterHeaders(featured.poster),
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                 ),
@@ -1115,13 +972,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                   colors: [
-                    Color(0x44000000),
-                    Color(0xBB090A0F),
-                    Color(0xF2090A0F),
+                    Color(0x38FFFFFF),
+                    Color(0xAA0A0D14),
+                    Color(0xEB07090E),
                   ],
+                  stops: [0.0, 0.45, 1.0],
                 ),
               ),
             ),
@@ -1130,12 +988,13 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               child: Row(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                     child: AspectRatio(
                       aspectRatio: 2 / 3,
                       child: featured.poster.isNotEmpty
                           ? Image.network(
                               featured.poster,
+                              headers: AppleColors.posterHeaders(featured.poster),
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) =>
                                   _buildPosterPlaceholder(),
@@ -1151,17 +1010,21 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
+                            horizontal: 9,
+                            vertical: 3.5,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0x330A84FF),
-                            borderRadius: BorderRadius.circular(6),
+                            color: const Color(0x380A84FF),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: const Color(0x6664D2FF),
+                              width: 0.6,
+                            ),
                           ),
                           child: Text(
                             '今日首推 · ${site.name}',
                             style: const TextStyle(
-                              color: Color(0xFF70B7FF),
+                              color: Color(0xFF82C4FF),
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1240,74 +1103,75 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           ),
         );
       },
-      child: Container(
-        width: 230,
+      child: AppleGlassSurface(
+        borderRadius: BorderRadius.circular(16),
         padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: AppleColors.groupedPrimary,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppleColors.glassBorder, width: 0.5),
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                width: 48,
-                height: 66,
-                child: entry.poster.isNotEmpty
-                    ? Image.network(
-                        entry.poster,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _buildPosterPlaceholder(),
-                      )
-                    : _buildPosterPlaceholder(),
+        blurSigma: 28,
+        child: SizedBox(
+          width: 214,
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: SizedBox(
+                  width: 48,
+                  height: 66,
+                  child: entry.poster.isNotEmpty
+                      ? Image.network(
+                          entry.poster,
+                          headers: AppleColors.posterHeaders(entry.poster),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              _buildPosterPlaceholder(),
+                        )
+                      : _buildPosterPlaceholder(),
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    entry.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppleColors.labelPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    entry.episode.isEmpty ? '继续观看' : entry.episode,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppleColors.labelSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(2),
-                    child: LinearProgressIndicator(
-                      value: entry.progressFraction > 0
-                          ? entry.progressFraction
-                          : 0.15,
-                      minHeight: 3,
-                      backgroundColor: AppleColors.groupedTertiary,
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                        AppleColors.systemBlue,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      entry.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppleColors.labelPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 3),
+                    Text(
+                      entry.episode.isEmpty ? '继续观看' : entry.episode,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppleColors.labelSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: entry.progressFraction > 0
+                            ? entry.progressFraction
+                            : 0.15,
+                        minHeight: 3,
+                        backgroundColor: AppleColors.groupedTertiary,
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          AppleColors.systemBlue,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1319,26 +1183,48 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
-        decoration: BoxDecoration(
-          color:
-              selected ? AppleColors.labelPrimary : AppleColors.groupedPrimary,
-          borderRadius: BorderRadius.circular(999),
-          border: selected
-              ? null
-              : Border.all(color: AppleColors.glassBorder, width: 0.5),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected
-                ? const Color(0xFF000000)
-                : AppleColors.labelPrimary,
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
+            decoration: BoxDecoration(
+              gradient: selected
+                  ? const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xD84CA8FF),
+                        Color(0xCC0A84FF),
+                      ],
+                    )
+                  : const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0x36FFFFFF),
+                        Color(0x22202430),
+                      ],
+                    ),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: selected
+                    ? AppleColors.glassHighlight
+                    : AppleColors.glassBorder,
+                width: 0.75,
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: AppleColors.labelPrimary,
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
           ),
         ),
       ),
@@ -1370,8 +1256,18 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(13),
-                border: Border.all(color: AppleColors.glassBorder, width: 0.5),
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(
+                  color: AppleColors.glassBorderStrong,
+                  width: 0.7,
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x38000000),
+                    blurRadius: 14,
+                    offset: Offset(0, 6),
+                  ),
+                ],
               ),
               clipBehavior: Clip.antiAlias,
               child: Stack(
@@ -1380,6 +1276,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   video.poster.isNotEmpty
                       ? Image.network(
                           video.poster,
+                          headers: AppleColors.posterHeaders(video.poster),
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) =>
                               _buildPosterPlaceholder(),
@@ -1389,21 +1286,31 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     Positioned(
                       top: 6,
                       left: 6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xCC000000),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          badge,
-                          style: const TextStyle(
-                            color: AppleColors.labelPrimary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0x9912151E),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: AppleColors.glassBorder,
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Text(
+                              badge,
+                              style: const TextStyle(
+                                color: AppleColors.labelPrimary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -1412,23 +1319,33 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     Positioned(
                       bottom: 6,
                       right: 6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xCC1C1C1E),
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: Text(
-                          video.remarks,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppleColors.labelPrimary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(7),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2.5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xAA161922),
+                              borderRadius: BorderRadius.circular(7),
+                              border: Border.all(
+                                color: AppleColors.glassBorder,
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Text(
+                              video.remarks,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppleColors.labelPrimary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -2209,6 +2126,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }
   void _showSitePickerDialog() {
     final supported = _config?.supportedSites ?? const [];
+    final directSites =
+        supported.where((s) => !s.isScriptOrJarApi).toList();
+    final bridgedSites =
+        supported.where((s) => s.isScriptOrJarApi).toList();
     final plugins = _config?.pluginOnlySites ?? const [];
     showAppleModalSheet<void>(
       context: context,
@@ -2217,10 +2138,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         shrinkWrap: true,
         padding: const EdgeInsets.all(16),
         children: [
-          if (supported.isNotEmpty)
+          if (directSites.isNotEmpty) ...[
             AppleGroupedSection(
-              header: '直连 HTTP/HTTPS 片源 (${supported.length})',
-              children: supported.map((s) {
+              header: '直连 HTTP/HTTPS 片源 (${directSites.length})',
+              children: directSites.map((s) {
                 final selected = s.key == _activeSite?.key;
                 return AppleGroupedTile(
                   icon: CupertinoIcons.tv_fill,
@@ -2245,11 +2166,41 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 );
               }).toList(),
             ),
+            if (bridgedSites.isNotEmpty) const SizedBox(height: 16),
+          ],
+          if (bridgedSites.isNotEmpty)
+            AppleGroupedSection(
+              header: 'Apple 跨平台智能解析片源 (${bridgedSites.length})',
+              footer: '已通过内置跨平台解析引擎自动适配 csp_* 与 JS 站点，点击即可浏览、搜索与播放。',
+              children: bridgedSites.map((s) {
+                final selected = s.key == _activeSite?.key;
+                return AppleGroupedTile(
+                  icon: CupertinoIcons.sparkles,
+                  iconBgColor: selected
+                      ? AppleColors.systemBlue
+                      : AppleColors.systemIndigo,
+                  title: s.name,
+                  subtitle: 'Apple 跨平台智能解析 · ${s.api}',
+                  trailing: selected
+                      ? const Icon(
+                          CupertinoIcons.checkmark_alt,
+                          color: AppleColors.systemBlue,
+                          size: 18,
+                        )
+                      : null,
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    widget.storage.setSelectedSiteKey(s.key);
+                    setState(() => _activeSite = s);
+                    _loadSiteHome();
+                  },
+                );
+              }).toList(),
+            ),
           if (plugins.isNotEmpty) ...[
             const SizedBox(height: 16),
             AppleGroupedSection(
-              header: '安卓专用 JAR 爬虫站点 (${plugins.length})',
-              footer: '以上站点依赖安卓 DEX 插件运行环境，在 iOS / macOS 上仅展示记录。',
+              header: '其他未识别插件站点 (${plugins.length})',
               children: plugins.take(25).map((s) {
                 return AppleGroupedTile(
                   icon: CupertinoIcons.lock_shield_fill,
