@@ -13,10 +13,13 @@ import 'player_screen.dart';
 import 'poster_image.dart';
 
 /// Apple TV+ / Infuse inspired responsive video detail page for iPhone, iPad, Mac, and Windows.
-/// Features a fixed full-bleed HD hero poster that progressively blurs on scroll, automatic
-/// poster-edge color extraction with seamless top/bottom solid-color gradients, floating
-/// Liquid Glass navigation & download/favorite pill, full-width primary play capsule, and
-/// horizontal 16:9 episode preview cards with distinct scene stills and per-episode synopses.
+/// Features:
+/// - Full-screen `Positioned.fill` ambient canvas & backdrop (zero horizontal or vertical seam lines
+///   in both portrait and landscape when scrolling/blurring)
+/// - Top solid-color transition with downward-shifted hero poster framing, plus bottom progressive
+///   frosted-glass blur transition (`ShaderMask` + `BackdropFilter`) behind overlaid typography
+/// - Real per-episode 16:9 frame stills & real per-episode plot synopses (`分集剧情`) from
+///   360 Baike `tvplot`, Bilibili PGC, and Bangumi, with honest non-repetitive display
 class DetailScreen extends StatefulWidget {
   final CmsSite site;
   final CmsVideo initialVideo;
@@ -45,7 +48,6 @@ class _DetailScreenState extends State<DetailScreen> {
   final ValueNotifier<double> _scrollOffset = ValueNotifier<double>(0.0);
   Color? _posterAmbientColor;
   String _externalSynopsis = '';
-  List<String> _episodeCaptions = const [];
 
   @override
   void initState() {
@@ -53,6 +55,7 @@ class _DetailScreenState extends State<DetailScreen> {
     _video = widget.initialVideo;
     _descending = widget.storage.episodesDescending;
     _isFavorite = widget.storage.isFavorite(widget.site.key, _video.id);
+    PosterLoader.metadataRevision.addListener(_onExternalMetadataRevision);
     final immediateBytes = PosterLoader.peekMemory(
       _video.poster,
       title: _video.title,
@@ -70,8 +73,18 @@ class _DetailScreenState extends State<DetailScreen> {
 
   @override
   void dispose() {
+    PosterLoader.metadataRevision.removeListener(_onExternalMetadataRevision);
     _scrollOffset.dispose();
     super.dispose();
+  }
+
+  void _onExternalMetadataRevision() {
+    if (!mounted) return;
+    final syn = PosterLoader.peekSeriesSynopsis(_video.title);
+    if (syn.isNotEmpty && syn != _externalSynopsis) {
+      _externalSynopsis = syn;
+    }
+    setState(() {});
   }
 
   Future<void> _updateAmbientFromBytes(Uint8List bytes) async {
@@ -96,17 +109,8 @@ class _DetailScreenState extends State<DetailScreen> {
         }
       }),
     );
-    unawaited(
-      PosterLoader.fetchSeriesEpisodeStills(title).then((_) {
-        if (!mounted) return;
-        final caps = PosterLoader.peekSeriesEpisodeCaptions(title);
-        if (caps.isNotEmpty) {
-          setState(() {
-            _episodeCaptions = caps;
-          });
-        }
-      }),
-    );
+    unawaited(PosterLoader.fetchSeriesEpisodeMetadata(title));
+    unawaited(PosterLoader.fetchSeriesEpisodeStills(title));
   }
 
   Future<void> _loadDetail() async {
@@ -175,8 +179,20 @@ class _DetailScreenState extends State<DetailScreen> {
 
   String _effectiveSeriesSynopsis() {
     final raw = _video.description.trim();
+    final ext = _externalSynopsis.trim().isNotEmpty
+        ? _externalSynopsis.trim()
+        : PosterLoader.peekSeriesSynopsis(_video.title).trim();
+    // If CMS description is just a short one-line slogan (e.g. "正式启动！"),
+    // prefer the full encyclopedia synopsis when available.
+    final isShortSlogan = raw.length < 38 ||
+        raw.contains('正式启动') ||
+        raw.contains('敬请期待') ||
+        raw.contains('即将开播');
+    if (isShortSlogan && ext.length > raw.length) {
+      return ext;
+    }
     if (raw.length >= 12) return raw;
-    if (_externalSynopsis.trim().isNotEmpty) return _externalSynopsis.trim();
+    if (ext.isNotEmpty) return ext;
     return raw;
   }
 
@@ -220,9 +236,8 @@ class _DetailScreenState extends State<DetailScreen> {
     return (cleaned, sizeOrSpec);
   }
 
-  /// Builds a clean, non-redundant episode card title (`E18 · 剧情小标题`),
-  /// never repeating `E177 · E177`.
-  String _formatEpisodeCardHeadline(String cleanEpName, int oneBasedIndex) {
+  /// Extracts any meaningful episode subtitle embedded in [cleanEpName].
+  String _extractEmbeddedSubtitle(String cleanEpName) {
     final stripped = cleanEpName
         .replaceAll(
           RegExp(
@@ -233,69 +248,43 @@ class _DetailScreenState extends State<DetailScreen> {
         .trim();
     if (stripped.isNotEmpty &&
         !RegExp(r'^(?:[Ee][Pp]?\s*)?\d+$').hasMatch(stripped)) {
-      return 'E$oneBasedIndex · $stripped';
+      return stripped;
     }
-    if (_episodeCaptions.isNotEmpty) {
-      final cap =
-          _episodeCaptions[(oneBasedIndex - 1) % _episodeCaptions.length];
-      final cleanCap = cap
-          .replaceAll(PosterLoader.cleanTitleForQuery(_video.title), '')
-          .replaceAll(RegExp(r'^[：:·\-\s]+'), '')
-          .trim();
-      if (cleanCap.length >= 3) {
-        return 'E$oneBasedIndex · $cleanCap';
-      }
-    }
-    final cleanSeries = PosterLoader.cleanTitleForQuery(_video.title);
-    final clauses = _extractSynopsisClauses();
-    if (clauses.isNotEmpty) {
-      final clause = clauses[(oneBasedIndex - 1) % clauses.length];
-      final shortTitle =
-          clause.length > 12 ? clause.substring(0, 12) : clause;
-      return 'E$oneBasedIndex · $shortTitle';
-    }
-    return 'E$oneBasedIndex · ${cleanSeries.isNotEmpty ? cleanSeries : _video.title} 第$oneBasedIndex集';
+    return '';
   }
 
-  List<String> _extractSynopsisClauses() {
-    final full = _effectiveSeriesSynopsis();
-    if (full.isEmpty) return const [];
-    return full
-        .split(RegExp(r'[。！？；!?;，,]'))
-        .map((s) => s.trim())
-        .where((s) => s.length >= 5)
-        .toList();
+  /// Builds a clean, authentic episode card headline:
+  /// 1. Uses real subtitle from CMS episode name if present
+  /// 2. Uses real episode title from 360 Baike / Bilibili PGC / Bangumi if present
+  /// 3. Falls back cleanly to `第 X 集` (never fabricated text)
+  String _formatEpisodeCardHeadline(String cleanEpName, int oneBasedIndex) {
+    final embedded = _extractEmbeddedSubtitle(cleanEpName);
+    if (embedded.isNotEmpty) {
+      return 'E$oneBasedIndex · $embedded';
+    }
+    final realMeta = PosterLoader.peekEpisodeMeta(_video.title, oneBasedIndex);
+    if (realMeta != null && realMeta.title.trim().isNotEmpty) {
+      return 'E$oneBasedIndex · ${realMeta.title.trim()}';
+    }
+    return '第 $oneBasedIndex 集';
   }
 
-  /// Builds a 2-line per-episode plot synopsis so every episode card in the
-  /// horizontal strip shows a distinct episode summary below the title.
-  String _buildEpisodePlotSummary(
+  /// Resolves the authentic per-episode plot synopsis (`分集剧情`).
+  /// Returns an empty string if no real per-episode plot exists yet so we NEVER
+  /// display fake/repeated series slogans under every episode card.
+  String _resolveAuthenticEpisodeSummary(
     int oneBasedIndex,
-    int totalEpisodes,
     String cleanEpName,
-    String lineName,
   ) {
-    final full = _effectiveSeriesSynopsis();
-    final sentences = full
-        .split(RegExp(r'[。！？!?]'))
-        .map((s) => s.trim())
-        .where((s) => s.length >= 8)
-        .toList();
-    if (sentences.length >= 2) {
-      final firstIdx = (oneBasedIndex - 1) % sentences.length;
-      final secondIdx = (firstIdx + 1) % sentences.length;
-      final combined =
-          '${sentences[firstIdx]}。${sentences[secondIdx]}。';
-      return combined;
+    final realMeta = PosterLoader.peekEpisodeMeta(_video.title, oneBasedIndex);
+    if (realMeta != null && realMeta.summary.trim().isNotEmpty) {
+      return realMeta.summary.trim();
     }
-    if (full.isNotEmpty) {
-      return '第$oneBasedIndex集：$full';
+    final embedded = _extractEmbeddedSubtitle(cleanEpName);
+    if (embedded.length >= 14) {
+      return embedded;
     }
-    final cast = _video.actor.trim();
-    if (cast.isNotEmpty) {
-      return '第$oneBasedIndex集剧情推进，主演：$cast。当前播放源：$lineName。';
-    }
-    return '${_video.title} 第$oneBasedIndex集正片内容，高清画质在线播放（片源：$lineName）。';
+    return '';
   }
 
   void _openPlayer(int lineIdx, int epIdx, {int resumeMs = 0}) {
@@ -671,18 +660,19 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   /// Portrait immersive layout:
-  /// - Fixed full-bleed HD hero poster at the top that progressively blurs as the user scrolls up
-  /// - Unified background color automatically extracted from the poster's edges with smooth
-  ///   solid-color top & bottom gradients (zero hard seam)
-  /// - Top-right floating Liquid Glass capsule with Download + Favorite
-  /// - Centered full-width Play capsule button
-  /// - Horizontal 16:9 episode cards with distinct widescreen scene stills & 2-line synopses
+  /// - Full-screen `Positioned.fill` backdrop container so Gaussian blur on scroll never
+  ///   exposes a horizontal container edge
+  /// - Top solid-color transition + downward-shifted poster placement so subject artwork
+  ///   sits comfortably below the status bar
+  /// - Progressive frosted glass blur (`ShaderMask` + `BackdropFilter`) + solid-color
+  ///   gradient in the lower text-overlap zone
   Widget _buildPortraitImmersiveScreen(BuildContext context) {
     final targetBg = _resolveBaseAmbientColor();
     final bookmark = _findBookmark();
     final topPad = MediaQuery.paddingOf(context).top;
     final screenHeight = MediaQuery.sizeOf(context).height;
-    final heroHeight = (screenHeight * 0.56).clamp(430.0, 540.0);
+    final topPosterOffset = topPad + 24.0;
+    final heroHeight = (screenHeight * 0.58).clamp(448.0, 565.0);
 
     return TweenAnimationBuilder<Color?>(
       tween: ColorTween(begin: targetBg, end: targetBg),
@@ -698,60 +688,119 @@ class _DetailScreenState extends State<DetailScreen> {
               // 1. Unified Solid Ambient Canvas Matching Poster Edge Color
               ColoredBox(color: bgColor),
 
-              // 2. Fixed Top Immersive Hero Poster with Progressive Scroll Blur
-              //    and Seamless Top & Bottom Solid-Color Gradients into `bgColor`
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: heroHeight,
+              // 2. Full-Screen Backdrop Layer (zero mid-screen container clipping edge)
+              Positioned.fill(
                 child: ValueListenableBuilder<double>(
                   valueListenable: _scrollOffset,
                   builder: (context, offset, child) {
                     final progress = (offset / 260.0).clamp(0.0, 1.0);
-                    final blurSigma = progress * 26.0;
-                    final scrollVeilAlpha = progress * 0.72;
-                    Widget posterLayer = child!;
-                    if (blurSigma > 0.15) {
-                      posterLayer = ImageFiltered(
-                        imageFilter: ImageFilter.blur(
-                          sigmaX: blurSigma,
-                          sigmaY: blurSigma,
-                        ),
-                        child: posterLayer,
-                      );
-                    }
-                    return Stack(
+                    final blurSigma = progress * 24.0;
+                    final scrollVeilAlpha = progress * 0.76;
+
+                    Widget posterStack = Stack(
                       fit: StackFit.expand,
                       children: [
-                        posterLayer,
-                        // Top solid-color gradient matching bgColor (no harsh cut at top status bar)
+                        ColoredBox(color: bgColor),
+                        // Shifted downward with top solid-color cushion so poster subject is centered nicely
+                        Positioned(
+                          top: topPosterOffset,
+                          left: 0,
+                          right: 0,
+                          height: heroHeight,
+                          child: child!,
+                        ),
+                        // Top solid-color transition (status bar + upper poster edge)
                         Positioned(
                           top: 0,
                           left: 0,
                           right: 0,
-                          height: topPad + 88,
+                          height: topPosterOffset + 96,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
                                 colors: [
-                                  bgColor.withValues(alpha: 0.88),
-                                  bgColor.withValues(alpha: 0.42),
+                                  bgColor,
+                                  bgColor.withValues(alpha: 0.94),
+                                  bgColor.withValues(alpha: 0.52),
                                   bgColor.withValues(alpha: 0.0),
                                 ],
-                                stops: const [0.0, 0.54, 1.0],
+                                stops: const [0.0, 0.28, 0.64, 1.0],
                               ),
                             ),
                           ),
                         ),
-                        // Bottom multi-stop solid-color gradient melting seamlessly into bgColor
+                        // Progressive Frosted Glass Blur Transition in the lower text-overlap zone
                         Positioned(
+                          top: topPosterOffset + heroHeight * 0.44,
+                          left: 0,
+                          right: 0,
+                          height: heroHeight * 0.58,
+                          child: ShaderMask(
+                            blendMode: BlendMode.dstIn,
+                            shaderCallback: (rect) => const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Color(0x00FFFFFF),
+                                Color(0x99FFFFFF),
+                                Color(0xFFFFFFFF),
+                              ],
+                              stops: [0.0, 0.42, 0.82],
+                            ).createShader(rect),
+                            child: ClipRect(
+                              child: BackdropFilter(
+                                filter: ImageFilter.blur(
+                                  sigmaX: 18,
+                                  sigmaY: 18,
+                                  tileMode: TileMode.decal,
+                                ),
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        bgColor.withValues(alpha: 0.05),
+                                        bgColor.withValues(alpha: 0.48),
+                                        bgColor.withValues(alpha: 0.86),
+                                        bgColor,
+                                      ],
+                                      stops: const [0.0, 0.35, 0.72, 0.92],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+
+                    if (blurSigma > 0.15) {
+                      posterStack = ImageFiltered(
+                        imageFilter: ImageFilter.blur(
+                          sigmaX: blurSigma,
+                          sigmaY: blurSigma,
+                          tileMode: TileMode.decal,
+                        ),
+                        child: posterStack,
+                      );
+                    }
+
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        posterStack,
+                        // Post-blur solid-color lock gradient reaching 100% bgColor BEFORE
+                        // the end of the hero zone, plus solid bgColor below, guaranteeing
+                        // zero horizontal seam line when scrolling up!
+                        Positioned(
+                          top: topPosterOffset + heroHeight * 0.52,
                           left: 0,
                           right: 0,
                           bottom: 0,
-                          height: heroHeight * 0.66,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
@@ -759,17 +808,16 @@ class _DetailScreenState extends State<DetailScreen> {
                                 end: Alignment.bottomCenter,
                                 colors: [
                                   bgColor.withValues(alpha: 0.0),
-                                  bgColor.withValues(alpha: 0.24),
-                                  bgColor.withValues(alpha: 0.62),
-                                  bgColor.withValues(alpha: 0.90),
+                                  bgColor.withValues(alpha: 0.55),
+                                  bgColor.withValues(alpha: 0.92),
+                                  bgColor,
                                   bgColor,
                                 ],
-                                stops: const [0.0, 0.28, 0.58, 0.84, 1.0],
+                                stops: const [0.0, 0.22, 0.38, 0.46, 1.0],
                               ),
                             ),
                           ),
                         ),
-                        // Progressive scroll veil so foreground text stays ultra-legible as poster blurs
                         if (scrollVeilAlpha > 0.01)
                           Positioned.fill(
                             child: ColoredBox(
@@ -783,6 +831,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     url: _video.poster,
                     title: _video.title,
                     fit: BoxFit.cover,
+                    alignment: const Alignment(0.0, -0.2),
                     highRes: true,
                     onBytesLoaded: _updateAmbientFromBytes,
                     placeholder: _posterPlaceholder(bgColor),
@@ -813,7 +862,7 @@ class _DetailScreenState extends State<DetailScreen> {
                       children: [
                         _buildPortraitHeroForeground(
                           context,
-                          heroHeight: heroHeight,
+                          heroHeight: topPosterOffset + heroHeight - 10,
                         ),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -928,7 +977,7 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   /// Top-right floating Liquid Glass capsule:
-  /// Left button = Offline Download (replacing the old `...` button)
+  /// Left button = Offline Download
   /// Right button = Favorite (`收藏`)
   Widget _buildFloatingTopRightPill() {
     return ClipRRect(
@@ -1192,9 +1241,6 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
-  /// Middle action area: keeps ONLY the primary full-width Play capsule button
-  /// (Favorite and Download live in the top-right floating capsule, and season/line
-  /// switching lives in the episode section header below).
   Widget _buildPortraitActionRow(WatchHistoryEntry? bookmark) {
     final hasLines = _video.lines.isNotEmpty;
     String playLabel = '加载片源中…';
@@ -1323,6 +1369,20 @@ class _DetailScreenState extends State<DetailScreen> {
         (bookmark != null && bookmark.line == line.name)
             ? bookmark.index.clamp(0, total - 1)
             : 0;
+
+    // Check if any episode in the current range has an authentic plot summary
+    bool anyHasSummary = false;
+    for (int idx = 0; idx < (end - start); idx++) {
+      final visualIdx = start + idx;
+      final originalIdx = _descending ? (total - 1 - visualIdx) : visualIdx;
+      final ep = line.episodes[originalIdx];
+      final (cleanTitle, _) = _parseEpisodeDisplay(ep.name, originalIdx + 1);
+      if (_resolveAuthenticEpisodeSummary(originalIdx + 1, cleanTitle)
+          .isNotEmpty) {
+        anyHasSummary = true;
+        break;
+      }
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1489,10 +1549,10 @@ class _DetailScreenState extends State<DetailScreen> {
         ),
         const SizedBox(height: 14),
 
-        // 3. Horizontal 16:9 Landscape Episode Preview Cards with Distinct Scene Stills
-        //    and Per-Episode 2-Line Synopsis (zero border inset / zero white corner bleed)
+        // 3. Horizontal 16:9 Landscape Episode Preview Cards with Authentic Scene Stills
+        //    and Authentic Per-Episode Plot Synopsis
         SizedBox(
-          height: 220,
+          height: anyHasSummary ? 222 : 186,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -1513,23 +1573,19 @@ class _DetailScreenState extends State<DetailScreen> {
               ].join(' · ');
               final headline =
                   _formatEpisodeCardHeadline(cleanTitle, originalIdx + 1);
-              final epDesc = _buildEpisodePlotSummary(
+              final epDesc = _resolveAuthenticEpisodeSummary(
                 originalIdx + 1,
-                total,
                 cleanTitle,
-                line.name,
               );
 
               return GestureDetector(
+                key: ValueKey('ep_card_${safeLineIdx}_$originalIdx'),
                 onTap: () => _openPlayer(safeLineIdx, originalIdx),
                 child: SizedBox(
                   width: 226,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 16:9 Landscape Thumbnail Card:
-                      // Uses ClipRRect + foreground DecoratedBox border so the image
-                      // fills 100% of the rounded corners with zero shrinkage or white corner bleed.
                       DecoratedBox(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
@@ -1698,17 +1754,19 @@ class _DetailScreenState extends State<DetailScreen> {
                           letterSpacing: -0.2,
                         ),
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        epDesc,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xB3FFFFFF),
-                          fontSize: 11.5,
-                          height: 1.34,
+                      if (epDesc.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          epDesc,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xB3FFFFFF),
+                            fontSize: 11.5,
+                            height: 1.34,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -1759,81 +1817,15 @@ class _DetailScreenState extends State<DetailScreen> {
             ),
           ),
         ],
-
-        // 5. Bottom Play Resource / Line Switcher Row (播放资源： [ 4K ] [ 线路1 ] ...)
-        const SizedBox(height: 18),
-        Row(
-          children: [
-            const Text(
-              '播放资源：',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: SizedBox(
-                height: 34,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _video.lines.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (ctx, i) {
-                    final selected = i == safeLineIdx;
-                    return GestureDetector(
-                      onTap: () => setState(() {
-                        _selectedLine = i;
-                        _selectedPage = 0;
-                      }),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 160),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 15,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? Colors.white
-                              : const Color(0x24FFFFFF),
-                          borderRadius: BorderRadius.circular(999),
-                          border: selected
-                              ? null
-                              : Border.all(
-                                  color: const Color(0x30FFFFFF),
-                                  width: 0.5,
-                                ),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          _video.lines[i].name,
-                          style: TextStyle(
-                            color: selected
-                                ? const Color(0xFF121215)
-                                : const Color(0xE6FFFFFF),
-                            fontSize: 12.5,
-                            fontWeight:
-                                selected ? FontWeight.w800 : FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ],
-        ),
       ],
     );
   }
 
   /// Wide desktop / iPad / phone landscape immersive cinema showcase layout:
-  /// - Unified background color matching poster edge color
-  /// - Fixed right-side ultra-HD poster backdrop that progressively blurs on scroll
-  ///   with seamless top, bottom, and left solid-color gradients into `bgColor`
-  /// - Floating Liquid Glass top bar with Download + Favorite
+  /// - Full-screen `Positioned.fill` backdrop (zero internal 66%-width vertical edge
+  ///   or `heroStageHeight` horizontal edge!)
+  /// - Left-to-right and top-to-bottom solid-color gradients placed ON TOP OF the
+  ///   blurred backdrop so the backdrop melts seamlessly into `bgColor`
   Widget _buildWideDesktopScreen(BuildContext context) {
     final targetBg = _resolveBaseAmbientColor();
     final bookmark = _findBookmark();
@@ -1856,33 +1848,30 @@ class _DetailScreenState extends State<DetailScreen> {
               // 1. Unified Solid Ambient Canvas Matching Poster Edge Color
               ColoredBox(color: bgColor),
 
-              // 2. Fixed Top Widescreen Ultra-HD Poster Backdrop with Progressive Scroll Blur
-              Positioned(
-                top: 0,
-                right: 0,
-                height: heroStageHeight + topPad,
-                width: size.width * 0.66,
+              // 2. Full-Screen Widescreen Backdrop (`Positioned.fill` eliminates both
+              //    the vertical 34% line and the horizontal heroStageHeight line!)
+              Positioned.fill(
                 child: ValueListenableBuilder<double>(
                   valueListenable: _scrollOffset,
                   builder: (context, offset, child) {
                     final progress = (offset / 260.0).clamp(0.0, 1.0);
-                    final blurSigma = progress * 26.0;
-                    final scrollVeilAlpha = progress * 0.74;
-                    Widget backdrop = child!;
-                    if (blurSigma > 0.15) {
-                      backdrop = ImageFiltered(
-                        imageFilter: ImageFilter.blur(
-                          sigmaX: blurSigma,
-                          sigmaY: blurSigma,
-                        ),
-                        child: backdrop,
-                      );
-                    }
+                    final blurSigma = 8.0 + progress * 22.0;
+                    final scrollVeilAlpha = progress * 0.76;
+
+                    final backdropImage = ImageFiltered(
+                      imageFilter: ImageFilter.blur(
+                        sigmaX: blurSigma,
+                        sigmaY: blurSigma,
+                        tileMode: TileMode.decal,
+                      ),
+                      child: child!,
+                    );
+
                     return Stack(
                       fit: StackFit.expand,
                       children: [
-                        backdrop,
-                        // Left-to-right seamless solid-color blend into bgColor
+                        backdropImage,
+                        // Left-to-right seamless solid-color blend into bgColor across 100% width
                         DecoratedBox(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
@@ -1890,27 +1879,29 @@ class _DetailScreenState extends State<DetailScreen> {
                               end: Alignment.centerRight,
                               colors: [
                                 bgColor,
-                                bgColor.withValues(alpha: 0.92),
-                                bgColor.withValues(alpha: 0.48),
-                                bgColor.withValues(alpha: 0.12),
+                                bgColor,
+                                bgColor.withValues(alpha: 0.90),
+                                bgColor.withValues(alpha: 0.52),
+                                bgColor.withValues(alpha: 0.28),
                               ],
-                              stops: const [0.0, 0.22, 0.58, 1.0],
+                              stops: const [0.0, 0.30, 0.46, 0.72, 1.0],
                             ),
                           ),
                         ),
-                        // Top & Bottom seamless solid-color blend into bgColor
+                        // Top-to-bottom seamless solid-color blend into bgColor across 100% height
                         DecoratedBox(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
-                                bgColor.withValues(alpha: 0.85),
-                                bgColor.withValues(alpha: 0.0),
-                                bgColor.withValues(alpha: 0.72),
+                                bgColor.withValues(alpha: 0.92),
+                                bgColor.withValues(alpha: 0.22),
+                                bgColor.withValues(alpha: 0.78),
+                                bgColor,
                                 bgColor,
                               ],
-                              stops: const [0.0, 0.28, 0.78, 1.0],
+                              stops: const [0.0, 0.22, 0.56, 0.72, 1.0],
                             ),
                           ),
                         ),
@@ -1927,6 +1918,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     url: _video.poster,
                     title: _video.title,
                     fit: BoxFit.cover,
+                    alignment: const Alignment(0.35, -0.2),
                     highRes: true,
                     onBytesLoaded: _updateAmbientFromBytes,
                     placeholder: _posterPlaceholder(bgColor),

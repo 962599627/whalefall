@@ -498,8 +498,9 @@ class AppleLiquidGlassDock extends StatelessWidget {
       builder: (context, constraints) {
         final n = math.max(items.length, 1);
         final available =
-            constraints.maxWidth.isFinite ? constraints.maxWidth : 400.0;
-        final width = math.min(available, 440.0);
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 360.0;
+        // Shortened, compact iOS 27 pill length in portrait mode
+        final width = math.min(available * 0.82, 284.0).clamp(248.0, 288.0);
         final itemW = (width - _pad * 2) / n;
         return _shell(
           child: SizedBox(
@@ -536,36 +537,45 @@ class AppleLiquidGlassDock extends StatelessWidget {
   }
 
   Widget _buildVertical() {
-    final n = math.max(items.length, 1);
-    return _shell(
-      child: SizedBox(
-        width: _itemW + _pad * 2,
-        height: _itemH * n + _pad * 2,
-        child: Stack(
-          children: [
-            AnimatedPositioned(
-              duration: _motion,
-              curve: _curve,
-              left: _pad,
-              top: _pad + _itemH * _safeIndex,
-              width: _itemW,
-              height: _itemH,
-              child: const _DockSelectionLens(),
-            ),
-            Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.all(_pad),
-                child: Column(
-                  children: [
-                    for (int i = 0; i < items.length; i++)
-                      SizedBox(height: _itemH, child: _item(i)),
-                  ],
+    return Builder(
+      builder: (context) {
+        final n = math.max(items.length, 1);
+        final screenH = MediaQuery.sizeOf(context).height;
+        // Lengthened vertical dock in landscape mode
+        final targetTotalH =
+            (screenH * 0.74).clamp(_itemH * n + _pad * 2 + 44.0, 324.0);
+        final vItemH = (targetTotalH - _pad * 2) / n;
+        return _shell(
+          child: SizedBox(
+            width: _itemW + _pad * 2,
+            height: targetTotalH,
+            child: Stack(
+              children: [
+                AnimatedPositioned(
+                  duration: _motion,
+                  curve: _curve,
+                  left: _pad,
+                  top: _pad + vItemH * _safeIndex,
+                  width: _itemW,
+                  height: vItemH,
+                  child: const _DockSelectionLens(),
                 ),
-              ),
+                Positioned.fill(
+                  child: Padding(
+                    padding: const EdgeInsets.all(_pad),
+                    child: Column(
+                      children: [
+                        for (int i = 0; i < items.length; i++)
+                          SizedBox(height: vItemH, child: _item(i)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
