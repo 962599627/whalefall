@@ -267,9 +267,10 @@ class CspBridge {
     }
 
     if (isFirstAidSite(site)) {
+      final cleanPath = fallback.id.replaceFirst(RegExp(r'^/'), '');
       final url = fallback.id.startsWith('http')
           ? fallback.id
-          : 'https://m.youlai.cn${fallback.id.startsWith("/") ? "" : "/"}${fallback.id}';
+          : 'https://m.youlai.cn/$cleanPath';
       return CmsVideo(
         id: fallback.id,
         title: fallback.title,
@@ -676,7 +677,8 @@ class CspBridge {
           .replaceAll(RegExp(r'\s+'), ' ')
           .trim();
       if (href.isEmpty || inner.isEmpty || !seenIds.add(href)) continue;
-      final fullUrl = href.startsWith('http') ? href : 'https://m.youlai.cn$href';
+      final cleanHref = href.replaceFirst(RegExp(r'^/'), '');
+      final fullUrl = href.startsWith('http') ? href : 'https://m.youlai.cn/$cleanHref';
       allVideos.add(
         CmsVideo(
           id: fullUrl,
