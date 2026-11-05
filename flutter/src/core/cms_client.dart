@@ -115,7 +115,7 @@ class CmsClient {
     }
     throw firstError ?? Exception('无法连接配置地址');
   }
-  /// Resolves either a remote URL, multi-depot URL, or pasted JSON/Base64 config into
+  /// Resolves either a remote URL, multi-depot URL, or pasted JSON/Base64/M3U/VOD config into
   /// a ready-to-use `(rawConfig, origin, activeDepotUrl, parsedConfig)` tuple.
   Future<({
     String rawConfig,
@@ -126,17 +126,30 @@ class CmsClient {
   })> resolveConfigInput({
     String urlInput = '',
     String rawTextInput = '',
+    String defaultGroup = '默认分组',
+    bool isPrivate = false,
+    String subscriptionId = '',
+    String defaultName = '',
   }) async {
     var trimmedText = rawTextInput.trim();
     var trimmedUrl = urlInput.trim();
-    // If user pasted JSON into the URL field or a URL into the JSON field, handle gracefully
+    // If user pasted JSON/M3U/XML into the URL field or a URL into the JSON field, handle gracefully
     if (trimmedText.isEmpty &&
-        (trimmedUrl.startsWith('{') || trimmedUrl.startsWith('['))) {
+        (trimmedUrl.startsWith('{') ||
+            trimmedUrl.startsWith('[') ||
+            trimmedUrl.startsWith('<') ||
+            trimmedUrl.startsWith('#EXTM3U') ||
+            trimmedUrl.contains('#EXTINF') ||
+            trimmedUrl.contains(',#genre#'))) {
       trimmedText = trimmedUrl;
       trimmedUrl = '';
     } else if (trimmedUrl.isEmpty &&
         !trimmedText.startsWith('{') &&
         !trimmedText.startsWith('[') &&
+        !trimmedText.startsWith('<') &&
+        !trimmedText.startsWith('#EXTM3U') &&
+        !trimmedText.contains('#EXTINF') &&
+        !trimmedText.contains(',#genre#') &&
         (trimmedText.contains('http://') ||
             trimmedText.contains('https://') ||
             (trimmedText.contains('.') && !trimmedText.contains('\n')))) {
@@ -155,7 +168,14 @@ class CmsClient {
       }
       rawConfig = await fetchRawConfig(origin);
     }
-    final initial = CmsParser.parseConfig(rawConfig, origin: origin);
+    final initial = CmsParser.parseConfig(
+      rawConfig,
+      origin: origin,
+      defaultGroup: defaultGroup,
+      isPrivate: isPrivate,
+      subscriptionId: subscriptionId,
+      defaultName: defaultName,
+    );
     if (!initial.isMultiDepotOnly) {
       return (
         rawConfig: rawConfig,
@@ -179,7 +199,14 @@ class CmsClient {
       final depot = initial.depots[i];
       try {
         final subRaw = await fetchRawConfig(depot.url);
-        final subParsed = CmsParser.parseConfig(subRaw, origin: depot.url);
+        final subParsed = CmsParser.parseConfig(
+          subRaw,
+          origin: depot.url,
+          defaultGroup: defaultGroup,
+          isPrivate: isPrivate,
+          subscriptionId: subscriptionId,
+          defaultName: defaultName.isNotEmpty ? defaultName : depot.name,
+        );
         final merged = CmsConfig(
           sites: subParsed.sites,
           lives: subParsed.lives,
@@ -206,7 +233,132 @@ class CmsClient {
     }
     throw lastError ?? const FormatException('多仓列表中的所有子仓库均无法读取');
   }
+
+  /// Resolves one or multiple subscription URLs / raw content into [SubscriptionEntry] items.
+  Future<List<SubscriptionEntry>> resolveBatchSubscriptions({
+    String urlInput = '',
+    String rawTextInput = '',
+    String defaultGroup = '默认分组',
+    bool isPrivate = false,
+    String customName = '',
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final groupLabel =
+        defaultGroup.trim().isEmpty ? '默认分组' : defaultGroup.trim();
+    final batchLines = CmsParser.splitBatchSubscriptionUrls(
+      urlInput.trim().isNotEmpty ? urlInput : rawTextInput,
+      defaultGroup: groupLabel,
+    );
+
+    if (batchLines.length > 1) {
+      final results = <SubscriptionEntry>[];
+      Exception? lastErr;
+      for (int i = 0; i < batchLines.length; i++) {
+        final item = batchLines[i];
+        final subId = 'sub_${now}_$i';
+        try {
+          final resolved = await resolveConfigInput(
+            urlInput: item.url,
+            defaultGroup: item.group,
+            isPrivate: isPrivate,
+            subscriptionId: subId,
+            defaultName: item.name,
+          );
+          final fmt = CmsParser.detectSubscriptionFormat(
+            resolved.rawConfig,
+            origin: item.url,
+          );
+          final effectiveName = item.name.isNotEmpty
+              ? item.name
+              : (resolved.activeDepotName.isNotEmpty
+                  ? resolved.activeDepotName
+                  : (resolved.config.sites.length == 1
+                      ? resolved.config.sites.first.name
+                      : '订阅源 ${i + 1}'));
+          results.add(
+            SubscriptionEntry(
+              id: subId,
+              name: effectiveName,
+              url: item.url,
+              group: item.group,
+              format: resolved.depots.isNotEmpty ? '多仓' : fmt,
+              isPrivate: isPrivate,
+              enabled: true,
+              rawContent: resolved.rawConfig,
+              siteCount: resolved.config.supportedSites.length,
+              liveCount: resolved.config.lives.length,
+              updatedAt: now + i,
+            ),
+          );
+        } catch (e) {
+          lastErr = e is Exception ? e : Exception(e.toString());
+        }
+      }
+      if (results.isEmpty) {
+        throw lastErr ?? const FormatException('未能成功导入任何订阅地址');
+      }
+      return results;
+    }
+
+    // Single subscription (either URL or pasted content)
+    final singleLine = batchLines.length == 1 ? batchLines.first : null;
+    final subId = 'sub_$now';
+    final effectiveGroup = singleLine?.group ?? groupLabel;
+    final effectiveHintName = customName.trim().isNotEmpty
+        ? customName.trim()
+        : (singleLine?.name ?? '');
+    final resolved = await resolveConfigInput(
+      urlInput: singleLine != null ? singleLine.url : urlInput,
+      rawTextInput: singleLine != null ? '' : rawTextInput,
+      defaultGroup: effectiveGroup,
+      isPrivate: isPrivate,
+      subscriptionId: subId,
+      defaultName: effectiveHintName,
+    );
+    final fmt = CmsParser.detectSubscriptionFormat(
+      resolved.rawConfig,
+      origin: resolved.origin,
+    );
+    final displayName = effectiveHintName.isNotEmpty
+        ? effectiveHintName
+        : (resolved.activeDepotName.isNotEmpty
+            ? resolved.activeDepotName
+            : (resolved.config.sites.length == 1
+                ? resolved.config.sites.first.name
+                : (resolved.origin.isNotEmpty
+                    ? Uri.tryParse(resolved.origin)?.host ?? '订阅资源'
+                    : '$fmt 订阅')));
+    return [
+      SubscriptionEntry(
+        id: subId,
+        name: displayName,
+        url: resolved.origin,
+        group: effectiveGroup,
+        format: resolved.depots.isNotEmpty ? '多仓' : fmt,
+        isPrivate: isPrivate,
+        enabled: true,
+        rawContent: resolved.rawConfig,
+        siteCount: resolved.config.supportedSites.length,
+        liveCount: resolved.config.lives.length,
+        updatedAt: now,
+      ),
+    ];
+  }
+
+  Future<String> _resolveM3uVodPayload(CmsSite site) async {
+    if (site.ext.trim().isNotEmpty) return site.ext;
+    final rawTarget = site.api.substring('m3u_vod://'.length).trim();
+    if (rawTarget.startsWith('http://') || rawTarget.startsWith('https://')) {
+      return _getText(rawTarget, headers: site.headers);
+    }
+    return '';
+  }
+
   Future<(List<CmsCategory>, CmsListing)> fetchHome(CmsSite site) async {
+    if (site.isM3uVodApi) {
+      final content = await _resolveM3uVodPayload(site);
+      return CmsParser.parseM3uVodHome(content);
+    }
     if (CspBridge.canHandleSite(site)) {
       return CspBridge.fetchHome(site, _getText);
     }
@@ -250,15 +402,41 @@ class CmsClient {
     String categoryId,
     int page, {
     List<String> childIds = const [],
+    CmsFilter? filter,
   }) async {
+    if (site.isM3uVodApi) {
+      final content = await _resolveM3uVodPayload(site);
+      final (_, homeListing) = CmsParser.parseM3uVodHome(content);
+      var videos = homeListing.videos;
+      if (categoryId.isNotEmpty) {
+        videos = videos
+            .where((v) => v.remarks == categoryId || v.tag == categoryId)
+            .toList();
+      }
+      if (filter != null && filter.hasSubFilter) {
+        videos = CmsParser.filterVideos(videos, filter);
+      }
+      return CmsListing(page: 1, pageCount: 1, videos: videos);
+    }
     if (CspBridge.canHandleSite(site)) {
-      return CspBridge.fetchCategory(
+      final listing = await CspBridge.fetchCategory(
         site,
         categoryId,
         page,
         _getText,
         childIds: childIds,
       );
+      if (filter != null && filter.hasSubFilter) {
+        final filtered = CmsParser.filterVideos(listing.videos, filter);
+        if (filtered.isNotEmpty || page > 1) {
+          return CmsListing(
+            page: listing.page,
+            pageCount: listing.pageCount,
+            videos: filtered,
+          );
+        }
+      }
+      return listing;
     }
     Future<CmsListing> query(String id) async {
       final params = <String, String>{
@@ -268,11 +446,36 @@ class CmsClient {
       if (id.isNotEmpty) {
         params['t'] = id;
       }
+      if (filter != null) {
+        if (filter.area.isNotEmpty && filter.area != '全部') {
+          params['area'] = filter.area;
+        }
+        if (filter.year.isNotEmpty &&
+            filter.year != '全部' &&
+            filter.year != '2010年代' &&
+            filter.year != '更早') {
+          params['year'] = filter.year;
+        }
+        if (filter.genreLabel.isNotEmpty && filter.genreLabel != '全部') {
+          params['class'] = filter.genreLabel;
+        }
+      }
       final raw = await _getText(
         _appendQuery(site.api, params, ext: site.ext).toString(),
         headers: site.headers,
       );
-      return CmsParser.parseListing(raw);
+      final parsed = CmsParser.parseListing(raw);
+      if (filter != null && filter.hasSubFilter) {
+        final filtered = CmsParser.filterVideos(parsed.videos, filter);
+        if (filtered.isNotEmpty) {
+          return CmsListing(
+            page: parsed.page,
+            pageCount: parsed.pageCount,
+            videos: filtered,
+          );
+        }
+      }
+      return parsed;
     }
     final direct = await query(categoryId);
     if (direct.videos.isNotEmpty || childIds.isEmpty) return direct;
@@ -289,6 +492,15 @@ class CmsClient {
     String keyword, {
     int page = 1,
   }) async {
+    if (site.isM3uVodApi) {
+      final content = await _resolveM3uVodPayload(site);
+      final (_, homeListing) = CmsParser.parseM3uVodHome(content);
+      final kw = keyword.trim().toLowerCase();
+      final matched = homeListing.videos
+          .where((v) => v.title.toLowerCase().contains(kw))
+          .toList(growable: false);
+      return CmsListing(page: 1, pageCount: 1, videos: matched);
+    }
     if (CspBridge.canHandleSite(site)) {
       return CspBridge.fetchSearch(site, keyword, page, _getText);
     }
@@ -307,6 +519,9 @@ class CmsClient {
     return CmsParser.parseListing(raw);
   }
   Future<CmsVideo> fetchDetail(CmsSite site, CmsVideo fallback) async {
+    if (site.isM3uVodApi) {
+      return fallback;
+    }
     if (CspBridge.canHandleSite(site)) {
       return CspBridge.fetchDetail(site, fallback, _getText);
     }
@@ -362,7 +577,16 @@ class CmsClient {
     return CspBridge.resolveEpisodeForPlayback(site, episode, _getText);
   }
   Future<List<LiveGroup>> fetchLiveGroups(LiveSource source) async {
-    final raw = await _getText(source.url, headers: source.headers);
+    final u = source.url.trim();
+    if (u.startsWith('data:')) {
+      final b64Idx = u.indexOf('base64,');
+      if (b64Idx >= 0) {
+        final b64 = u.substring(b64Idx + 7).trim();
+        final text = utf8.decode(base64Decode(b64), allowMalformed: true);
+        return CmsParser.parseLivePlaylist(text);
+      }
+    }
+    final raw = await _getText(u, headers: source.headers);
     return CmsParser.parseLivePlaylist(raw);
   }
   Stream<(CmsSite, List<CmsVideo>)> searchAcrossSites(

@@ -37,6 +37,13 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   CmsSite? _activeSite;
   List<CmsCategory> _categories = const [];
   String _selectedCategoryId = '';
+  String _primaryTab = 'recommend';
+  bool _filterExpanded = false;
+  String _filterSubCategoryId = '';
+  String _filterGenreLabel = '';
+  String _filterArea = '';
+  String _filterYear = '';
+  List<CmsVideo> _rawCategoryVideos = const [];
   List<CmsVideo> _homeVideos = const [];
   int _currentPage = 1;
   int _pageCount = 1;
@@ -44,12 +51,17 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   String? _homeError;
   int _homeEpoch = 0;
   int _categoryEpoch = 0;
+  // 5-tap logo privacy state
+  int _logoTapCount = 0;
+  DateTime? _lastLogoTapAt;
+  bool _privateSessionUnlocked = false;
   // Search state
   final TextEditingController _searchController = TextEditingController();
   final List<(CmsSite, CmsVideo)> _searchResults = [];
   bool _searching = false;
   int _searchEpoch = 0;
   StreamSubscription<(CmsSite, List<CmsVideo>)>? _searchSubscription;
+  VoidCallback? _searchSheetListener;
   // Live state
   int _selectedLiveSource = 0;
   List<LiveGroup> _liveGroups = const [];
@@ -59,6 +71,25 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   // Favorites / History segmented index
   int _librarySegment = 0;
   bool get _isMacOS => !kIsWeb && Platform.isMacOS;
+  CmsFilter get _currentFilter => CmsFilter(
+        primaryTab: _primaryTab,
+        categoryId: _filterSubCategoryId,
+        genreLabel: _filterGenreLabel,
+        area: _filterArea,
+        year: _filterYear,
+      );
+  List<CmsSite> get _visibleSupportedSites {
+    final cfg = _config;
+    if (cfg == null) return const [];
+    return _privateSessionUnlocked
+        ? cfg.supportedSites
+        : cfg.publicSupportedSites;
+  }
+  List<LiveSource> get _visibleLives {
+    final cfg = _config;
+    if (cfg == null) return const [];
+    return _privateSessionUnlocked ? cfg.lives : cfg.publicLives;
+  }
   @override
   void initState() {
     super.initState();
@@ -73,20 +104,29 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   void _reloadSavedConfig() {
     final saved = widget.storage.loadSavedConfig();
     _config = saved;
-    if (saved != null && saved.supportedSites.isNotEmpty) {
+    final availableSites = saved == null
+        ? const <CmsSite>[]
+        : (_privateSessionUnlocked
+            ? saved.supportedSites
+            : (saved.publicSupportedSites.isNotEmpty
+                ? saved.publicSupportedSites
+                : saved.supportedSites.where((s) => !s.isPrivate).toList()));
+    if (availableSites.isNotEmpty) {
       final preferredKey = widget.storage.selectedSiteKey;
-      _activeSite = saved.supportedSites.firstWhere(
+      _activeSite = availableSites.firstWhere(
         (s) => s.key == preferredKey,
-        orElse: () => saved.supportedSites.first,
+        orElse: () => availableSites.first,
       );
       _loadSiteHome();
     } else {
       _activeSite = null;
       _categories = const [];
+      _rawCategoryVideos = const [];
       _homeVideos = const [];
       _homeError = null;
     }
-    if (saved != null && saved.lives.isNotEmpty) {
+    final lives = _visibleLives;
+    if (lives.isNotEmpty) {
       _loadLivePlaylist(0);
     } else {
       _liveGroups = const [];
@@ -101,7 +141,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     setState(() {
       _homeLoading = true;
       _homeError = null;
+      _primaryTab = 'recommend';
       _selectedCategoryId = '';
+      _filterSubCategoryId = '';
+      _filterGenreLabel = '';
+      _filterArea = '';
+      _filterYear = '';
       _currentPage = 1;
     });
     try {
@@ -111,7 +156,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       }
       setState(() {
         _categories = cats;
-        _homeVideos = listing.videos;
+        _rawCategoryVideos = listing.videos;
+        _homeVideos = CmsParser.filterVideos(listing.videos, _currentFilter);
         _currentPage = listing.page;
         _pageCount = listing.pageCount;
         _homeLoading = false;
@@ -126,41 +172,104 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       });
     }
   }
-  Future<void> _loadCategory(String categoryId, {int page = 1}) async {
+  Future<void> _selectPrimaryTab(String tabKey) async {
+    if (tabKey == 'recommend') {
+      setState(() {
+        _primaryTab = 'recommend';
+        _filterSubCategoryId = '';
+        _filterGenreLabel = '';
+      });
+      await _reloadFilteredListing(page: 1);
+      return;
+    }
+    final resolved = CmsParser.resolvePrimaryTabCategory(_categories, tabKey);
+    setState(() {
+      _primaryTab = tabKey;
+      _filterSubCategoryId = '';
+      _filterGenreLabel = '';
+      _selectedCategoryId = resolved.categoryId;
+    });
+    await _reloadFilteredListing(page: 1);
+  }
+  Future<void> _reloadFilteredListing({int page = 1}) async {
     final site = _activeSite;
     if (site == null) return;
     final epoch = ++_categoryEpoch;
+    final filter = _currentFilter;
+    String targetCategoryId = '';
+    List<String> targetChildIds = const [];
+    if (_filterSubCategoryId.isNotEmpty) {
+      targetCategoryId = _filterSubCategoryId;
+      targetChildIds =
+          CmsParser.childCategoryIds(_categories, _filterSubCategoryId);
+    } else if (_primaryTab != 'recommend') {
+      final resolved =
+          CmsParser.resolvePrimaryTabCategory(_categories, _primaryTab);
+      targetCategoryId = resolved.categoryId;
+      targetChildIds = resolved.childIds;
+    }
     setState(() {
       _homeLoading = true;
       _homeError = null;
-      _selectedCategoryId = categoryId;
+      _selectedCategoryId = targetCategoryId;
     });
     try {
-      final listing = await widget.client.fetchCategory(
-        site,
-        categoryId,
-        page,
-        childIds: CmsParser.childCategoryIds(_categories, categoryId),
-      );
-      if (!mounted ||
-          epoch != _categoryEpoch ||
-          _activeSite?.key != site.key ||
-          _selectedCategoryId != categoryId) {
+      CmsListing listing;
+      if (targetCategoryId.isEmpty && _primaryTab == 'recommend' && page == 1) {
+        final (cats, homeListing) = await widget.client.fetchHome(site);
+        if (_categories.isEmpty && cats.isNotEmpty) {
+          _categories = cats;
+        }
+        listing = homeListing;
+      } else {
+        final effectiveCatId = targetCategoryId.isNotEmpty
+            ? targetCategoryId
+            : (_categories.isNotEmpty ? _categories.first.id : '');
+        listing = await widget.client.fetchCategory(
+          site,
+          effectiveCatId,
+          page,
+          childIds: targetChildIds,
+          filter: filter,
+        );
+      }
+      if (!mounted || epoch != _categoryEpoch || _activeSite?.key != site.key) {
         return;
       }
+      final combinedRaw = page == 1
+          ? listing.videos
+          : [..._rawCategoryVideos, ...listing.videos];
+      var filteredVideos = CmsParser.filterVideos(combinedRaw, filter);
+      // If client-side filter on page 1 matched nothing and more pages exist, probe page 2 automatically
+      if (filteredVideos.isEmpty &&
+          filter.hasSubFilter &&
+          page == 1 &&
+          listing.pageCount > 1 &&
+          targetCategoryId.isNotEmpty) {
+        try {
+          final page2 = await widget.client.fetchCategory(
+            site,
+            targetCategoryId,
+            2,
+            childIds: targetChildIds,
+            filter: filter,
+          );
+          final merged2 = [...combinedRaw, ...page2.videos];
+          final filtered2 = CmsParser.filterVideos(merged2, filter);
+          if (filtered2.isNotEmpty) {
+            filteredVideos = filtered2;
+          }
+        } catch (_) {}
+      }
       setState(() {
-        _homeVideos = page == 1
-            ? listing.videos
-            : [..._homeVideos, ...listing.videos];
+        _rawCategoryVideos = combinedRaw;
+        _homeVideos = filteredVideos;
         _currentPage = listing.page;
         _pageCount = listing.pageCount;
         _homeLoading = false;
       });
     } catch (e) {
-      if (!mounted ||
-          epoch != _categoryEpoch ||
-          _activeSite?.key != site.key ||
-          _selectedCategoryId != categoryId) {
+      if (!mounted || epoch != _categoryEpoch || _activeSite?.key != site.key) {
         return;
       }
       setState(() {
@@ -168,6 +277,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         _homeError = '加载分类失败：$e';
       });
     }
+  }
+  Future<void> _loadCategory(String categoryId, {int page = 1}) async {
+    _filterSubCategoryId = categoryId;
+    await _reloadFilteredListing(page: page);
   }
   Future<void> _runGlobalSearch(String keyword) async {
     final trimmed = keyword.trim();
@@ -181,8 +294,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       _searching = true;
       _searchResults.clear();
     });
+    _searchSheetListener?.call();
     _searchSubscription = widget.client
-        .searchAcrossSites(_config!.supportedSites, trimmed)
+        .searchAcrossSites(_visibleSupportedSites, trimmed)
         .listen(
           (batch) {
             if (!mounted || epoch != _searchEpoch) return;
@@ -192,21 +306,24 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 _searchResults.add((site, v));
               }
             });
+            _searchSheetListener?.call();
           },
           onError: (_) {
             if (mounted && epoch == _searchEpoch) {
               setState(() => _searching = false);
+              _searchSheetListener?.call();
             }
           },
           onDone: () {
             if (mounted && epoch == _searchEpoch) {
               setState(() => _searching = false);
+              _searchSheetListener?.call();
             }
           },
         );
   }
   Future<void> _loadLivePlaylist(int sourceIndex) async {
-    final lives = _config?.lives ?? const [];
+    final lives = _visibleLives;
     if (sourceIndex < 0 || sourceIndex >= lives.length) return;
     final epoch = ++_liveEpoch;
     setState(() {
@@ -299,24 +416,17 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         _showAppleNotice('已从剪贴板恢复备份', '备份中的配置、收藏与观看历史已同步生效。');
         return;
       }
-      final resolved = await widget.client.resolveConfigInput(
+      final entries = await widget.client.resolveBatchSubscriptions(
         rawTextInput: text,
       );
-      await widget.storage.saveConfig(
-        resolved.rawConfig,
-        origin: resolved.origin,
-        depots: resolved.depots,
-        activeDepotName: resolved.activeDepotName,
-      );
+      final merged = await widget.storage.upsertSubscriptions(entries);
       _reloadSavedConfig();
-      final siteCount = resolved.config.supportedSites.length;
-      final pluginCount = resolved.config.pluginOnlySites.length;
-      final liveCount = resolved.config.lives.length;
+      final siteCount = merged?.publicSupportedSites.length ?? 0;
+      final liveCount = merged?.publicLives.length ?? 0;
       _showAppleNotice(
-        '配置导入成功',
-        '已识别 $siteCount 个直连片源'
-        '${liveCount > 0 ? "、$liveCount 个直播源" : ""}'
-        '${pluginCount > 0 ? "（另有 $pluginCount 个安卓 JAR 插件源）" : ""}。',
+        '订阅导入成功',
+        '本次成功导入 ${entries.length} 个订阅源，当前共 $siteCount 个可用片源'
+        '${liveCount > 0 ? "、$liveCount 个直播源" : ""}。',
       );
     } catch (e) {
       _showImportConfigDialog(initialInput: text, initialError: '剪贴板内容未能直接导入：$e');
@@ -328,7 +438,6 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final isLandscape = size.width > size.height;
     const dockItems = <(IconData, IconData, String)>[
       (CupertinoIcons.play_rectangle, CupertinoIcons.play_rectangle_fill, '主页'),
-      (CupertinoIcons.search, CupertinoIcons.search, '搜索'),
       (
         CupertinoIcons.dot_radiowaves_left_right,
         CupertinoIcons.dot_radiowaves_left_right,
@@ -343,12 +452,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     ];
     final pages = [
       _buildHomeTab(context, useSidebar: isLandscape),
-      _buildSearchTab(context, useSidebar: isLandscape),
       _buildLiveTab(context, useSidebar: isLandscape),
       _buildFavoritesHistoryTab(context, useSidebar: isLandscape),
       _buildSettingsTab(context, useSidebar: isLandscape),
     ];
-    final ambientPoster = _tabIndex == 0 && _homeVideos.isNotEmpty
+    final safeTabIndex = _tabIndex.clamp(0, pages.length - 1);
+    final ambientPoster = safeTabIndex == 0 && _homeVideos.isNotEmpty
         ? _homeVideos.first.poster
         : '';
     return Scaffold(
@@ -383,7 +492,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   ? AppleLiquidGlassDock.landscapeFootprint(context)
                   : 0,
             ),
-            child: RepaintBoundary(child: pages[_tabIndex]),
+            child: RepaintBoundary(child: pages[safeTabIndex]),
           ),
           // iPhone / iPad style Dock:
           // - Portrait: bottom floating rounded-rectangle dock
@@ -395,7 +504,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               right: 0,
               child: Center(
                 child: AppleLiquidGlassDock(
-                  selectedIndex: _tabIndex,
+                  selectedIndex: safeTabIndex,
                   onSelect: (i) => setState(() => _tabIndex = i),
                   isLandscape: true,
                   items: dockItems,
@@ -409,7 +518,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               bottom: 0,
               child: Center(
                 child: AppleLiquidGlassDock(
-                  selectedIndex: _tabIndex,
+                  selectedIndex: safeTabIndex,
                   onSelect: (i) => setState(() => _tabIndex = i),
                   isLandscape: false,
                   items: dockItems,
@@ -427,6 +536,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final depots = _config!.depots;
     final history = widget.storage.getWatchHistory();
     final horizontalPad = useSidebar ? 24.0 : 16.0;
+    final activeFilterCount = _currentFilter.activeDimensionCount;
     return SafeArea(
       bottom: false,
       right: !useSidebar,
@@ -452,127 +562,139 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Top Header Bar
+                  // Top Header Bar (5x tap on brand logo opens password-protected private list;
+                  // top-right button is Global Search)
                   Padding(
-                  padding: EdgeInsets.symmetric(horizontal: horizontalPad),
-                  child: Row(
-                    children: [
-                      const Flexible(
-                        flex: 0,
-                        child: MarcoBrandLogo(iconSize: 28, fontSize: 16.5),
-                      ),
-                      const Spacer(),
-                      if (depots.isNotEmpty) ...[
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+                    child: Row(
+                      children: [
+                        Flexible(
+                          flex: 0,
+                          child: GestureDetector(
+                            key: const ValueKey('home-brand-logo'),
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _handleHomeLogoTap,
+                            child: const MarcoBrandLogo(
+                              iconSize: 28,
+                              fontSize: 16.5,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        if (depots.isNotEmpty) ...[
+                          _buildHeaderCapsule(
+                            icon: CupertinoIcons.archivebox_fill,
+                            label: widget.storage.activeDepotName.isEmpty
+                                ? '切换仓库'
+                                : widget.storage.activeDepotName,
+                            onTap: _showDepotPickerDialog,
+                          ),
+                          const SizedBox(width: 6),
+                        ],
                         _buildHeaderCapsule(
-                          icon: CupertinoIcons.archivebox_fill,
-                          label: widget.storage.activeDepotName.isEmpty
-                              ? '切换仓库'
-                              : widget.storage.activeDepotName,
-                          onTap: _showDepotPickerDialog,
+                          icon: _activeSite?.isPrivate == true
+                              ? CupertinoIcons.lock_shield_fill
+                              : CupertinoIcons.layers_alt_fill,
+                          label: _activeSite?.name ?? '选择片源',
+                          onTap: _showSitePickerDialog,
                         ),
                         const SizedBox(width: 6),
-                      ],
-                      _buildHeaderCapsule(
-                        icon: CupertinoIcons.layers_alt_fill,
-                        label: _activeSite?.name ?? '选择片源',
-                        onTap: _showSitePickerDialog,
-                      ),
-                      const SizedBox(width: 6),
-                      GestureDetector(
-                        key: const ValueKey('home-netdisk-button'),
-                        onTap: () => showNetdiskAccountSheet(
-                          context,
-                          widget.storage,
-                          onChanged: () {
-                            if (mounted) setState(() {});
-                          },
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10.5,
-                                vertical: 7,
-                              ),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0xD42A2A32),
-                                    Color(0xC21D1D24),
-                                  ],
+                        GestureDetector(
+                          key: const ValueKey('home-netdisk-button'),
+                          onTap: () => showNetdiskAccountSheet(
+                            context,
+                            widget.storage,
+                            onChanged: () {
+                              if (mounted) setState(() {});
+                            },
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10.5,
+                                  vertical: 7,
                                 ),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: AppleColors.glassBorder,
-                                  width: 0.7,
-                                ),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    CupertinoIcons.qrcode_viewfinder,
-                                    color: AppleColors.systemBlue,
-                                    size: 13.5,
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Color(0xD42A2A32),
+                                      Color(0xC21D1D24),
+                                    ],
                                   ),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    '网盘',
-                                    style: TextStyle(
-                                      color: AppleColors.labelPrimary,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: AppleColors.glassBorder,
+                                    width: 0.7,
+                                  ),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      CupertinoIcons.qrcode_viewfinder,
+                                      color: AppleColors.systemBlue,
+                                      size: 13.5,
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        minSize: 33,
-                        onPressed: () => _showImportConfigDialog(),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                            child: Container(
-                              width: 33,
-                              height: 33,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0xD42A2A32),
-                                    Color(0xC21D1D24),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      '网盘',
+                                      style: TextStyle(
+                                        color: AppleColors.labelPrimary,
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   ],
                                 ),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: AppleColors.glassBorder,
-                                  width: 0.7,
-                                ),
-                              ),
-                              alignment: Alignment.center,
-                              child: const Icon(
-                                CupertinoIcons.add,
-                                color: AppleColors.labelPrimary,
-                                size: 17,
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(width: 6),
+                        CupertinoButton(
+                          key: const ValueKey('home-search-button'),
+                          padding: EdgeInsets.zero,
+                          minSize: 33,
+                          onPressed: _showGlobalSearchSheet,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                              child: Container(
+                                width: 33,
+                                height: 33,
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Color(0xD42A2A32),
+                                      Color(0xC21D1D24),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: AppleColors.glassBorder,
+                                    width: 0.7,
+                                  ),
+                                ),
+                                alignment: Alignment.center,
+                                child: const Icon(
+                                  CupertinoIcons.search,
+                                  color: AppleColors.labelPrimary,
+                                  size: 16,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   // If config has only Android JAR (`csp_*`) sites and no direct HTTP sites
                   if (_activeSite == null) ...[
@@ -604,7 +726,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                               padding: EdgeInsets.zero,
                               minSize: 24,
                               onPressed: () => setState(() {
-                                _tabIndex = 3;
+                                _tabIndex = 2;
                                 _librarySegment = 1;
                               }),
                               child: const Text(
@@ -649,7 +771,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         child: _buildMyDriveNetdiskBanner(_activeSite!),
                       ),
                     ] else if (_homeVideos.isNotEmpty &&
-                        _selectedCategoryId.isEmpty &&
+                        _primaryTab == 'recommend' &&
+                        !_currentFilter.hasSubFilter &&
                         _currentPage == 1) ...[
                       const SizedBox(height: 18),
                       Padding(
@@ -662,37 +785,120 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         ),
                       ),
                     ],
-                    // Single-row Apple Category Pills
+                    // Fixed 5 Primary Category Tabs (推荐、电影、剧集、动漫、综艺) + Filter Button
                     const SizedBox(height: 18),
-                    AppleEdgeFade(
-                      fadeWidth: horizontalPad + 6,
-                      child: SizedBox(
-                        height: 36,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          physics: const BouncingScrollPhysics(),
-                          padding:
-                              EdgeInsets.symmetric(horizontal: horizontalPad),
-                          itemCount: _categories.length + 1,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(width: 8),
-                          itemBuilder: (ctx, idx) {
-                            if (idx == 0) {
-                              return _buildCategoryPill(
-                                label: '精选推荐',
-                                selected: _selectedCategoryId.isEmpty,
-                                onTap: _loadSiteHome,
-                              );
-                            }
-                            final cat = _categories[idx - 1];
-                            return _buildCategoryPill(
-                              label: cat.name,
-                              selected: _selectedCategoryId == cat.id,
-                              onTap: () => _loadCategory(cat.id),
-                            );
-                          },
-                        ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 36,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                physics: const BouncingScrollPhysics(),
+                                itemCount: CmsParser.primaryHomeTabs.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(width: 8),
+                                itemBuilder: (ctx, idx) {
+                                  final (tabKey, tabLabel) =
+                                      CmsParser.primaryHomeTabs[idx];
+                                  return _buildCategoryPill(
+                                    label: tabLabel,
+                                    selected: _primaryTab == tabKey,
+                                    onTap: () => _selectPrimaryTab(tabKey),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            key: const ValueKey('home-filter-button'),
+                            onTap: () => setState(
+                              () => _filterExpanded = !_filterExpanded,
+                            ),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutCubic,
+                              height: 36,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 13),
+                              decoration: BoxDecoration(
+                                gradient: (_filterExpanded ||
+                                        activeFilterCount > 0)
+                                    ? const LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Color(0xFF0A84FF),
+                                          Color(0xFF0066CC),
+                                        ],
+                                      )
+                                    : const LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Color(0xCC2A2A32),
+                                          Color(0xB81D1D24),
+                                        ],
+                                      ),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: (_filterExpanded ||
+                                          activeFilterCount > 0)
+                                      ? const Color(0x885AC8FA)
+                                      : const Color(0x2EFFFFFF),
+                                  width: 0.65,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    CupertinoIcons.slider_horizontal_3,
+                                    size: 14,
+                                    color: (_filterExpanded ||
+                                            activeFilterCount > 0)
+                                        ? Colors.white
+                                        : AppleColors.labelPrimary,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    activeFilterCount > 0
+                                        ? '筛选 · $activeFilterCount'
+                                        : '筛选',
+                                    style: TextStyle(
+                                      color: (_filterExpanded ||
+                                              activeFilterCount > 0)
+                                          ? Colors.white
+                                          : AppleColors.labelPrimary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
+                    // Collapsible Multi-Dimension Filter Drawer (类别 / 国家地区 / 年份)
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      child: _filterExpanded
+                          ? Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                horizontalPad,
+                                12,
+                                horizontalPad,
+                                2,
+                              ),
+                              child: _buildHomeFilterDrawer(),
+                            )
+                          : const SizedBox.shrink(),
                     ),
                   ],
                 ],
@@ -782,7 +988,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           ? const Padding(
                               padding: EdgeInsets.symmetric(vertical: 40),
                               child: Text(
-                                '这个分类暂时没有内容，换个分类看看吧',
+                                '当前筛选条件下暂无影片，试试调整筛选或切换分类',
                                 style: TextStyle(
                                   color: AppleColors.labelSecondary,
                                   fontSize: 14,
@@ -793,8 +999,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           ? AppleCapsuleButton(
                               label: '加载更多影片',
                               icon: CupertinoIcons.arrow_down_circle,
-                              onPressed: () => _loadCategory(
-                                _selectedCategoryId,
+                              onPressed: () => _reloadFilteredListing(
                                 page: _currentPage + 1,
                               ),
                             )
@@ -951,7 +1156,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   icon: CupertinoIcons.dot_radiowaves_left_right,
                   primary: depotCount <= 1,
                   compact: true,
-                  onPressed: () => setState(() => _tabIndex = 2),
+                  onPressed: () => setState(() => _tabIndex = 1),
                 ),
               AppleCapsuleButton(
                 label: '查看全部站点列表',
@@ -1035,15 +1240,18 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     CmsVideo featured, {
     required bool wide,
   }) {
-    final subtitleParts = [
-      featured.year,
-      featured.area,
-      featured.remarks,
-    ].where((s) => s.isNotEmpty).join(' · ');
+    final tagChips = <String>[
+      if (featured.year.trim().isNotEmpty) featured.year.trim(),
+      if (featured.area.trim().isNotEmpty) featured.area.trim(),
+      if (featured.remarks.trim().isNotEmpty) featured.remarks.trim(),
+    ];
+    final infoLine = featured.description.trim().isNotEmpty
+        ? featured.description.trim()
+        : (featured.actor.trim().isNotEmpty ? '主演：${featured.actor.trim()}' : '');
     return GestureDetector(
       onTap: () => _openVideoDetail(site, featured),
       child: Container(
-        height: wide ? 260 : 214,
+        height: wide ? 256 : 210,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
           color: const Color(0xFF111114),
@@ -1071,23 +1279,24 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                   colors: [
-                    Color(0x33000000),
-                    Color(0x99000000),
-                    Color(0xE6000000),
+                    Color(0x55000000),
+                    Color(0xAD07080C),
+                    Color(0xEB050508),
                   ],
-                  stops: [0.0, 0.5, 1.0],
+                  stops: [0.0, 0.55, 1.0],
                 ),
               ),
             ),
             Padding(
-              padding: EdgeInsets.all(wide ? 24 : 16),
+              padding: EdgeInsets.all(wide ? 22 : 16),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(13),
+                    borderRadius: BorderRadius.circular(14),
                     child: AspectRatio(
                       aspectRatio: 2 / 3,
                       child: PosterImage(
@@ -1097,65 +1306,119 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       ),
                     ),
                   ),
-                  SizedBox(width: wide ? 22 : 14),
+                  SizedBox(width: wide ? 20 : 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Text(
-                          '今日首推 · ${site.name}',
-                          style: const TextStyle(
-                            color: AppleColors.labelSecondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.2,
+                        // Top badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8.5,
+                            vertical: 3.5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0x38FFFFFF),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: const Color(0x30FFFFFF),
+                              width: 0.5,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                CupertinoIcons.sparkles,
+                                color: Color(0xFF5AC8FA),
+                                size: 11,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  '今日首推 · ${site.name}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: AppleColors.labelPrimary,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.1,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: 8),
+                        // Title
                         Text(
                           featured.title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: AppleColors.labelPrimary,
-                            fontSize: wide ? 24 : 18,
+                            fontSize: wide ? 23 : 18.5,
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.4,
+                            height: 1.2,
                           ),
                         ),
-                        if (subtitleParts.isNotEmpty) ...[
-                          const SizedBox(height: 4),
+                        if (tagChips.isNotEmpty) ...[
+                          const SizedBox(height: 7),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              for (final chip in tagChips)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
+                                    vertical: 2.5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0x29FFFFFF),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    chip,
+                                    style: const TextStyle(
+                                      color: AppleColors.labelSecondary,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                        if (infoLine.isNotEmpty) ...[
+                          const SizedBox(height: 7),
                           Text(
-                            subtitleParts,
-                            maxLines: 1,
+                            infoLine,
+                            maxLines: wide ? 2 : 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: AppleColors.labelSecondary,
                               fontSize: 12,
+                              height: 1.35,
                             ),
                           ),
                         ],
-                        if (featured.description.isNotEmpty && wide) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            featured.description,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppleColors.labelSecondary,
-                              fontSize: 13,
-                              height: 1.4,
+                        const Spacer(),
+                        // Bottom row: Watch Now button anchored at bottom-right corner
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            AppleCapsuleButton(
+                              key: const ValueKey('hero-watch-now-button'),
+                              label: '立即观看',
+                              icon: CupertinoIcons.play_fill,
+                              primary: true,
+                              compact: true,
+                              onPressed: () => _openVideoDetail(site, featured),
                             ),
-                          ),
-                        ],
-                        const SizedBox(height: 12),
-                        AppleCapsuleButton(
-                          label: '立即观看',
-                          icon: CupertinoIcons.play_fill,
-                          primary: true,
-                          compact: true,
-                          onPressed: () => _openVideoDetail(site, featured),
+                          ],
                         ),
                       ],
                     ),
@@ -1164,6 +1427,217 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+  Widget _buildHomeFilterDrawer() {
+    final subCats = CmsParser.subCategoriesForPrimaryTab(
+      _categories,
+      _primaryTab,
+    );
+    final existingNames = subCats.map((c) => c.name.trim()).toSet();
+    final extraGenres = [
+      for (final g in CmsParser.fallbackGenreTags)
+        if (!existingNames.any((n) => n.contains(g))) g,
+    ];
+    final hasAnyFilter = _currentFilter.hasSubFilter;
+
+    return AppleGlassSurface(
+      key: const ValueKey('home-filter-drawer'),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      borderRadius: BorderRadius.circular(20),
+      blurSigma: 32,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                CupertinoIcons.slider_horizontal_3,
+                color: AppleColors.systemBlue,
+                size: 14,
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                '多维片库筛选',
+                style: TextStyle(
+                  color: AppleColors.labelPrimary,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              if (hasAnyFilter)
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _filterSubCategoryId = '';
+                      _filterGenreLabel = '';
+                      _filterArea = '';
+                      _filterYear = '';
+                    });
+                    _reloadFilteredListing(page: 1);
+                  },
+                  child: const Text(
+                    '重置筛选',
+                    style: TextStyle(
+                      color: AppleColors.systemBlue,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // 1. 类别 (Sub-categories from site + Genre tags)
+          _buildFilterDimensionRow(
+            title: '类别',
+            children: [
+              _buildMiniFilterChip(
+                label: '全部',
+                selected:
+                    _filterSubCategoryId.isEmpty && _filterGenreLabel.isEmpty,
+                onTap: () {
+                  setState(() {
+                    _filterSubCategoryId = '';
+                    _filterGenreLabel = '';
+                  });
+                  _reloadFilteredListing(page: 1);
+                },
+              ),
+              for (final cat in subCats)
+                _buildMiniFilterChip(
+                  label: cat.name,
+                  selected: _filterSubCategoryId == cat.id,
+                  onTap: () {
+                    setState(() {
+                      _filterSubCategoryId = cat.id;
+                      _filterGenreLabel = '';
+                    });
+                    _reloadFilteredListing(page: 1);
+                  },
+                ),
+              for (final genre in extraGenres)
+                _buildMiniFilterChip(
+                  label: genre,
+                  selected: _filterGenreLabel == genre &&
+                      _filterSubCategoryId.isEmpty,
+                  onTap: () {
+                    setState(() {
+                      _filterGenreLabel = genre;
+                    });
+                    _reloadFilteredListing(page: 1);
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 2. 地区 (Area / Country)
+          _buildFilterDimensionRow(
+            title: '地区',
+            children: [
+              for (final area in CmsParser.filterAreas)
+                _buildMiniFilterChip(
+                  label: area,
+                  selected: (_filterArea.isEmpty && area == '全部') ||
+                      _filterArea == area,
+                  onTap: () {
+                    setState(() {
+                      _filterArea = area == '全部' ? '' : area;
+                    });
+                    _reloadFilteredListing(page: 1);
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 3. 年份 (Year)
+          _buildFilterDimensionRow(
+            title: '年份',
+            children: [
+              for (final yr in CmsParser.filterYears)
+                _buildMiniFilterChip(
+                  label: yr,
+                  selected: (_filterYear.isEmpty && yr == '全部') ||
+                      _filterYear == yr,
+                  onTap: () {
+                    setState(() {
+                      _filterYear = yr == '全部' ? '' : yr;
+                    });
+                    _reloadFilteredListing(page: 1);
+                  },
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+  Widget _buildFilterDimensionRow({
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 34,
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: AppleColors.labelSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                for (int i = 0; i < children.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 6),
+                  children[i],
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+  Widget _buildMiniFilterChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppleColors.systemBlue
+              : const Color(0x24FFFFFF),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? const Color(0x885AC8FA)
+                : const Color(0x22FFFFFF),
+            width: 0.5,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : AppleColors.labelPrimary,
+            fontSize: 12,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          ),
         ),
       ),
     );
@@ -1579,161 +2053,602 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       ),
     );
   }
-  Widget _buildSearchTab(BuildContext context, {required bool useSidebar}) {
-    final history = widget.storage.getSearchHistory();
-    final pad = useSidebar ? 28.0 : 16.0;
-    return SafeArea(
-      bottom: useSidebar,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          pad,
-          useSidebar && _isMacOS ? 28 : 14,
-          pad,
-          0,
+  void _showGlobalSearchSheet() {
+    showAppleModalSheet<void>(
+      context: context,
+      title: '全站搜索',
+      maxWidth: 680,
+      trailingAction: CupertinoButton(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minSize: 28,
+        onPressed: () {
+          if (widget.storage.getSearchHistory().isNotEmpty) {
+            widget.storage.clearSearchHistory().then((_) {
+              if (mounted) setState(() {});
+              _searchSheetListener?.call();
+            });
+          }
+        },
+        child: const Text(
+          '清空历史',
+          style: TextStyle(color: AppleColors.labelSecondary, fontSize: 13),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '搜索',
-              style: TextStyle(
-                color: AppleColors.labelPrimary,
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.6,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: CupertinoSearchTextField(
-                    controller: _searchController,
-                    placeholder: '搜索片名、演员或导演…',
-                    backgroundColor: AppleColors.groupedPrimary,
-                    style: const TextStyle(
-                      color: AppleColors.labelPrimary,
-                      fontSize: 15,
-                    ),
-                    placeholderStyle: const TextStyle(
-                      color: AppleColors.labelSecondary,
-                      fontSize: 15,
-                    ),
-                    onSubmitted: _runGlobalSearch,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                AppleCapsuleButton(
-                  label: '搜索',
-                  primary: true,
-                  compact: true,
-                  onPressed: () => _runGlobalSearch(_searchController.text),
-                ),
-              ],
-            ),
-            if (history.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 30,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: history.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (ctx, i) {
-                    final kw = history[i];
-                    return GestureDetector(
-                      onTap: () {
-                        _searchController.text = kw;
-                        _runGlobalSearch(kw);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppleColors.groupedPrimary,
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: AppleColors.glassBorder,
-                            width: 0.5,
-                          ),
-                        ),
-                        child: Text(
-                          kw,
-                          style: const TextStyle(
-                            color: AppleColors.labelSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-            const SizedBox(height: 14),
-            if (_searching)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 10),
-                child: Row(
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            _searchSheetListener = () {
+              if (ctx.mounted) setSheetState(() {});
+            };
+            final history = widget.storage.getSearchHistory();
+            final size = MediaQuery.sizeOf(ctx);
+            final wide = size.width > 640;
+            return SizedBox(
+              height: (size.height * 0.78).clamp(400.0, 680.0),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CupertinoActivityIndicator(radius: 9),
-                    SizedBox(width: 8),
-                    Text(
-                      '正在并发检索所有可用片源…',
-                      style: TextStyle(
-                        color: AppleColors.labelSecondary,
-                        fontSize: 12,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: CupertinoSearchTextField(
+                            controller: _searchController,
+                            autofocus: true,
+                            placeholder: '搜索片名、演员或导演…',
+                            backgroundColor: AppleColors.groupedSecondary,
+                            style: const TextStyle(
+                              color: AppleColors.labelPrimary,
+                              fontSize: 15,
+                            ),
+                            placeholderStyle: const TextStyle(
+                              color: AppleColors.labelSecondary,
+                              fontSize: 15,
+                            ),
+                            onSubmitted: (kw) {
+                              _runGlobalSearch(kw);
+                              setSheetState(() {});
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        AppleCapsuleButton(
+                          label: '搜索',
+                          primary: true,
+                          compact: true,
+                          onPressed: () {
+                            _runGlobalSearch(_searchController.text);
+                            setSheetState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    if (history.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        height: 30,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: history.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (ctx, i) {
+                            final kw = history[i];
+                            return GestureDetector(
+                              onTap: () {
+                                _searchController.text = kw;
+                                _runGlobalSearch(kw);
+                                setSheetState(() {});
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppleColors.groupedSecondary,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: AppleColors.glassBorder,
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  kw,
+                                  style: const TextStyle(
+                                    color: AppleColors.labelSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ),
+                    ],
+                    const SizedBox(height: 12),
+                    if (_searching)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          children: [
+                            CupertinoActivityIndicator(radius: 9),
+                            SizedBox(width: 8),
+                            Text(
+                              '正在并发检索所有可用片源…',
+                              style: TextStyle(
+                                color: AppleColors.labelSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Expanded(
+                      child: _searchResults.isEmpty && !_searching
+                          ? const Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    CupertinoIcons.search,
+                                    color: AppleColors.labelTertiary,
+                                    size: 42,
+                                  ),
+                                  SizedBox(height: 10),
+                                  Text(
+                                    '输入关键词，并发检索全部已启用片源',
+                                    style: TextStyle(
+                                      color: AppleColors.labelSecondary,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : GridView.builder(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              gridDelegate:
+                                  SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent: wide ? 160 : 124,
+                                mainAxisSpacing: 14,
+                                crossAxisSpacing: 12,
+                                childAspectRatio: 0.56,
+                              ),
+                              itemCount: _searchResults.length,
+                              itemBuilder: (ctx, i) {
+                                final (site, video) = _searchResults[i];
+                                return GestureDetector(
+                                  onTap: () {
+                                    Navigator.of(ctx).pop();
+                                    _openVideoDetail(site, video);
+                                  },
+                                  child: IgnorePointer(
+                                    child: _buildVideoCard(
+                                      site,
+                                      video,
+                                      badge: site.name,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                     ),
                   ],
                 ),
               ),
-            Expanded(
-              child: _searchResults.isEmpty && !_searching
-                  ? const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            CupertinoIcons.search,
-                            color: AppleColors.labelTertiary,
-                            size: 44,
-                          ),
-                          SizedBox(height: 10),
-                          Text(
-                            '输入关键词，并发检索全部直连片源',
-                            style: TextStyle(
-                              color: AppleColors.labelSecondary,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : GridView.builder(
-                      padding: EdgeInsets.only(bottom: useSidebar ? 24 : 124),
-                      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: useSidebar ? 176 : 132,
-                        mainAxisSpacing: 16,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 0.56,
-                      ),
-                      itemCount: _searchResults.length,
-                      itemBuilder: (ctx, i) {
-                        final (site, video) = _searchResults[i];
-                        return _buildVideoCard(site, video, badge: site.name);
-                      },
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      _searchSheetListener = null;
+    });
+  }
+
+  void _handleHomeLogoTap() {
+    final now = DateTime.now();
+    if (_lastLogoTapAt == null ||
+        now.difference(_lastLogoTapAt!) > const Duration(milliseconds: 2500)) {
+      _logoTapCount = 1;
+    } else {
+      _logoTapCount++;
+    }
+    _lastLogoTapAt = now;
+    if (_logoTapCount >= 5) {
+      _logoTapCount = 0;
+      _lastLogoTapAt = null;
+      _openPrivateSpaceWithAuth();
+    }
+  }
+
+  void _openPrivateSpaceWithAuth() {
+    if (!widget.storage.hasPrivacyPassword) {
+      _showSetPrivacyPasswordDialog(
+        title: '设置隐私资源密码',
+        subtitle: '首次开启隐藏空间，请设置访问密码（后续连点首页 Logo 5 次即可输入密码进入隐藏列表）。',
+        onSuccess: () {
+          setState(() => _privateSessionUnlocked = true);
+          _showPrivateResourcesSheet();
+        },
+      );
+      return;
+    }
+    if (_privateSessionUnlocked) {
+      _showPrivateResourcesSheet();
+      return;
+    }
+    _showVerifyPrivacyPasswordDialog(
+      onSuccess: () {
+        setState(() => _privateSessionUnlocked = true);
+        _showPrivateResourcesSheet();
+      },
+    );
+  }
+
+  void _showSetPrivacyPasswordDialog({
+    String title = '设置隐私密码',
+    String subtitle = '设置密码后，连点首页左上角 Logo 5 次即可验证进入隐私资源隐藏列表。',
+    VoidCallback? onSuccess,
+  }) {
+    final pwdCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    String? err;
+    showCupertinoDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => CupertinoAlertDialog(
+          title: Text(title),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppleColors.labelSecondary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                CupertinoTextField(
+                  controller: pwdCtrl,
+                  obscureText: true,
+                  placeholder: '输入新密码（至少 4 位）',
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  style: const TextStyle(color: AppleColors.labelPrimary),
+                ),
+                const SizedBox(height: 8),
+                CupertinoTextField(
+                  controller: confirmCtrl,
+                  obscureText: true,
+                  placeholder: '再次确认密码',
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  style: const TextStyle(color: AppleColors.labelPrimary),
+                ),
+                if (err != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    err!,
+                    style: const TextStyle(
+                      color: AppleColors.systemRed,
+                      fontSize: 12,
                     ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('取消'),
+            ),
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () async {
+                final p1 = pwdCtrl.text.trim();
+                final p2 = confirmCtrl.text.trim();
+                if (p1.length < 4) {
+                  setDialogState(() => err = '密码长度至少为 4 位');
+                  return;
+                }
+                if (p1 != p2) {
+                  setDialogState(() => err = '两次输入的密码不一致');
+                  return;
+                }
+                await widget.storage.setPrivacyPassword(p1);
+                if (ctx.mounted) Navigator.of(ctx).pop();
+                onSuccess?.call();
+              },
+              child: const Text('保存并进入'),
             ),
           ],
         ),
       ),
     );
   }
+
+  void _showVerifyPrivacyPasswordDialog({required VoidCallback onSuccess}) {
+    final pwdCtrl = TextEditingController();
+    String? err;
+    showCupertinoDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => CupertinoAlertDialog(
+          title: const Text('解锁隐私资源列表'),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '请输入隐私访问密码以查看隐藏订阅与隐私片源：',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppleColors.labelSecondary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                CupertinoTextField(
+                  controller: pwdCtrl,
+                  obscureText: true,
+                  autofocus: true,
+                  placeholder: '请输入隐私密码',
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  style: const TextStyle(color: AppleColors.labelPrimary),
+                  onSubmitted: (_) {
+                    if (widget.storage.verifyPrivacyPassword(pwdCtrl.text)) {
+                      Navigator.of(ctx).pop();
+                      onSuccess();
+                    } else {
+                      setDialogState(() => err = '密码错误，请重试');
+                    }
+                  },
+                ),
+                if (err != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    err!,
+                    style: const TextStyle(
+                      color: AppleColors.systemRed,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('取消'),
+            ),
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () {
+                if (widget.storage.verifyPrivacyPassword(pwdCtrl.text)) {
+                  Navigator.of(ctx).pop();
+                  onSuccess();
+                } else {
+                  setDialogState(() => err = '密码错误，请重试');
+                }
+              },
+              child: const Text('解锁'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPrivateResourcesSheet() {
+    showAppleModalSheet<void>(
+      context: context,
+      title: '隐私资源 · 隐藏列表',
+      trailingAction: CupertinoButton(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minSize: 28,
+        onPressed: () {
+          Navigator.of(context).pop();
+          setState(() {
+            _privateSessionUnlocked = false;
+          });
+          _reloadSavedConfig();
+        },
+        child: const Text(
+          '锁定退出',
+          style: TextStyle(color: AppleColors.systemOrange, fontSize: 13),
+        ),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final allSubs = widget.storage.getSubscriptions();
+          final privateSubs = allSubs.where((s) => s.isPrivate).toList();
+          final privateSites = _config?.privateSupportedSites ?? const [];
+          final privateLives = _config?.privateLives ?? const [];
+          return ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(16),
+            children: [
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  AppleCapsuleButton(
+                    label: '导入隐私订阅 (VOD/M3U/JSON)',
+                    icon: CupertinoIcons.lock_fill,
+                    primary: true,
+                    compact: true,
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      _showImportConfigDialog(
+                        initialIsPrivate: true,
+                        initialGroup: '隐私专区',
+                      );
+                    },
+                  ),
+                  AppleCapsuleButton(
+                    label: '修改隐私密码',
+                    icon: CupertinoIcons.key_fill,
+                    compact: true,
+                    onPressed: () {
+                      _showSetPrivacyPasswordDialog(
+                        title: '修改隐私访问密码',
+                        subtitle: '请输入新的隐私空间密码：',
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (privateSites.isEmpty &&
+                  privateSubs.isEmpty &&
+                  privateLives.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppleColors.groupedSecondary,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Column(
+                    children: [
+                      Icon(
+                        CupertinoIcons.eye_slash_fill,
+                        color: AppleColors.labelTertiary,
+                        size: 38,
+                      ),
+                      SizedBox(height: 10),
+                      Text(
+                        '隐藏列表暂无隐私资源',
+                        style: TextStyle(
+                          color: AppleColors.labelPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        '点击上方「导入隐私订阅」，或将下方现有订阅设为「隐私」，即可在此安全访问；日常浏览时完全隐藏。',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppleColors.labelSecondary,
+                          fontSize: 12.5,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (privateSites.isNotEmpty) ...[
+                AppleGroupedSection(
+                  header: '隐藏影视片源 (${privateSites.length})',
+                  footer: '点击任意隐私片源即可在主页立即加载浏览；点击右上角「锁定退出」后自动恢复隐藏。',
+                  children: privateSites.map((s) {
+                    final selected = s.key == _activeSite?.key;
+                    return AppleGroupedTile(
+                      icon: CupertinoIcons.lock_shield_fill,
+                      iconBgColor: selected
+                          ? AppleColors.systemBlue
+                          : AppleColors.systemPurple,
+                      title: s.name,
+                      subtitle: '${s.group} · ${s.api}',
+                      trailing: selected
+                          ? const Icon(
+                              CupertinoIcons.checkmark_alt,
+                              color: AppleColors.systemBlue,
+                              size: 18,
+                            )
+                          : const Text(
+                              '立即访问',
+                              style: TextStyle(
+                                color: AppleColors.systemBlue,
+                                fontSize: 12,
+                              ),
+                            ),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        setState(() {
+                          _privateSessionUnlocked = true;
+                          _activeSite = s;
+                        });
+                        _loadSiteHome();
+                      },
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (privateLives.isNotEmpty) ...[
+                AppleGroupedSection(
+                  header: '隐藏直播源 (${privateLives.length})',
+                  children: [
+                    for (int i = 0; i < privateLives.length; i++)
+                      AppleGroupedTile(
+                        icon: CupertinoIcons.dot_radiowaves_left_right,
+                        iconBgColor: AppleColors.systemIndigo,
+                        title: privateLives[i].name,
+                        subtitle: '${privateLives[i].group} · M3U/TXT 直播',
+                        trailingText: '去观看',
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          setState(() {
+                            _privateSessionUnlocked = true;
+                            _tabIndex = 1;
+                          });
+                          final idx = _visibleLives.indexWhere(
+                            (l) => l.url == privateLives[i].url,
+                          );
+                          if (idx >= 0) _loadLivePlaylist(idx);
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (allSubs.isNotEmpty)
+                AppleGroupedSection(
+                  header: '管理订阅隐私开关 (${allSubs.length})',
+                  footer: '开启开关可将对应订阅移入隐私隐藏列表。',
+                  children: allSubs.map((sub) {
+                    return AppleGroupedTile(
+                      icon: sub.isPrivate
+                          ? CupertinoIcons.eye_slash_fill
+                          : CupertinoIcons.globe,
+                      iconBgColor: sub.isPrivate
+                          ? AppleColors.systemPurple
+                          : AppleColors.systemBlue,
+                      title: '${sub.name} [${sub.format}]',
+                      subtitle:
+                          '分组：${sub.group} · ${sub.siteCount} 片源 / ${sub.liveCount} 直播',
+                      trailing: CupertinoSwitch(
+                        value: sub.isPrivate,
+                        activeTrackColor: AppleColors.systemPurple,
+                        onChanged: (val) async {
+                          await widget.storage.toggleSubscriptionPrivacy(
+                            sub.id,
+                            val,
+                          );
+                          _reloadSavedConfig();
+                          setSheetState(() {});
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildLiveTab(BuildContext context, {required bool useSidebar}) {
-    final lives = _config?.lives ?? const [];
+    final lives = _visibleLives;
     final pad = useSidebar ? 28.0 : 16.0;
     if (lives.isEmpty) {
       return SafeArea(
@@ -1759,7 +2674,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  '导入包含 lives 节点的配置后，即可在此直接观看电视直播频道。',
+                  '可直接导入 M3U / TXT 直播订阅地址或包含 lives 节点的 JSON 配置。',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppleColors.labelSecondary,
@@ -1768,11 +2683,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 const SizedBox(height: 18),
                 AppleCapsuleButton(
-                  label: '导入配置',
+                  label: '导入 M3U / 直播订阅',
                   icon: CupertinoIcons.add,
                   primary: true,
                   compact: true,
-                  onPressed: _showImportConfigDialog,
+                  onPressed: () =>
+                      _showImportConfigDialog(initialGroup: '电视直播'),
                 ),
               ],
             ),
@@ -1846,12 +2762,16 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           title: ch.name,
                           trailingText: '${ch.urls.length} 线路',
                           onTap: () {
+                            final safeIdx = _selectedLiveSource.clamp(
+                              0,
+                              lives.length - 1,
+                            );
                             final liveSite = CmsSite(
                               key: 'live',
-                              name: lives[_selectedLiveSource].name,
+                              name: lives[safeIdx].name,
                               type: 1,
                               api: '',
-                              headers: lives[_selectedLiveSource].headers,
+                              headers: lives[safeIdx].headers,
                             );
                             final liveVideo = CmsVideo(
                               id: ch.name,
@@ -2400,6 +3320,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   Widget _buildSettingsTab(BuildContext context, {required bool useSidebar}) {
     final pad = useSidebar ? 28.0 : 16.0;
     final depots = _config?.depots ?? const [];
+    final subs = widget.storage.getSubscriptions();
+    final publicSubs = subs.where((s) => !s.isPrivate).toList();
     return SafeArea(
       bottom: useSidebar,
       child: ListView(
@@ -2421,23 +3343,32 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           ),
           const SizedBox(height: 18),
           AppleGroupedSection(
-            header: '片源与仓库管理',
-            footer: '支持单仓/多仓 HTTP(S) 接口、中文域名、Base64/图片隐写及加密配置。',
+            header: '片源与订阅分组管理',
+            footer:
+                '支持批量导入多个订阅资源並自定义分组，全面兼容 VOD 接口、M3U/TXT 直播与点播、TVBox 单仓/多仓 JSON。连点首页左上角 Logo 5 次可进入密码保护的隐私资源隐藏列表。',
             children: [
               AppleGroupedTile(
-                icon: CupertinoIcons.link,
+                icon: CupertinoIcons.add_circled_solid,
                 iconBgColor: AppleColors.systemBlue,
-                title: '导入或更新配置',
-                subtitle: widget.storage.configOrigin.isEmpty
-                    ? '输入配置地址或直接粘贴 JSON 内容'
-                    : widget.storage.configOrigin,
-                onTap: _showImportConfigDialog,
+                title: '导入订阅资源（支持分组 / 批量 / 隐私）',
+                subtitle: '兼容 VOD / M3U / TXT / JSON / 多仓，支持同时导入多个地址',
+                onTap: () => _showImportConfigDialog(),
+              ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.folder_fill,
+                iconBgColor: AppleColors.systemPurple,
+                title: '订阅源与分组管理',
+                subtitle: publicSubs.isEmpty
+                    ? '管理已导入的多个订阅源、切换分组或隐藏状态'
+                    : '已导入 ${publicSubs.length} 个公开订阅 · ${widget.storage.getSubscriptionGroups().length} 个分组',
+                trailingText: '${publicSubs.length} 个',
+                onTap: _showSubscriptionManagerSheet,
               ),
               AppleGroupedTile(
                 icon: CupertinoIcons.doc_on_clipboard_fill,
                 iconBgColor: AppleColors.systemIndigo,
                 title: '一键从剪贴板导入',
-                subtitle: '复制配置地址、JSON 或备份文本后直接点击即可生效',
+                subtitle: '复制配置地址、M3U、VOD、JSON 或备份文本后直接点击即可生效',
                 onTap: _quickImportFromClipboard,
               ),
               if (depots.isNotEmpty)
@@ -2455,13 +3386,22 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 AppleGroupedTile(
                   icon: CupertinoIcons.layers_alt_fill,
                   iconBgColor: AppleColors.systemGreen,
-                  title: '切换当前片源',
+                  title: '切换当前片源（按分组筛选）',
                   subtitle: _activeSite != null
-                      ? '当前：${_activeSite!.name}'
+                      ? '当前：${_activeSite!.name} (${_activeSite!.group})'
                       : '查看已导入站点列表',
-                  trailingText: '${_config!.supportedSites.length} 可用',
+                  trailingText: '${_visibleSupportedSites.length} 可用',
                   onTap: _showSitePickerDialog,
                 ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.lock_shield_fill,
+                iconBgColor: AppleColors.systemOrange,
+                title: '隐私资源密码设置',
+                subtitle: widget.storage.hasPrivacyPassword
+                    ? '已设置隐私密码 · 连点首页左上角 Logo 5 次进入隐藏列表'
+                    : '未设置密码 · 点击设置密码以保护隐私资源',
+                onTap: _openPrivateSpaceWithAuth,
+              ),
               AppleGroupedTile(
                 icon: CupertinoIcons.qrcode_viewfinder,
                 iconBgColor: AppleColors.systemBlue,
@@ -2491,7 +3431,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       : '保存位置：${DownloadService.instance.rootPath}',
                   trailingText: '${DownloadService.instance.tasks.length} 个',
                   onTap: () => setState(() {
-                    _tabIndex = 3;
+                    _tabIndex = 2;
                     _librarySegment = 2;
                   }),
                 ),
@@ -2529,7 +3469,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Version 0.4.24 · Apple HIG Edition',
+                  'Version 0.4.25 · Apple HIG Edition',
                   style: TextStyle(
                     color: AppleColors.labelSecondary,
                     fontSize: 12,
@@ -2552,6 +3492,136 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             ),
           ),
         ],
+      ),
+    );
+  }
+  void _showSubscriptionManagerSheet() {
+    showAppleModalSheet<void>(
+      context: context,
+      title: '订阅源与分组管理',
+      trailingAction: CupertinoButton(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minSize: 28,
+        onPressed: () {
+          Navigator.of(context).pop();
+          _showImportConfigDialog();
+        },
+        child: const Text(
+          '+ 批量导入',
+          style: TextStyle(color: AppleColors.systemBlue, fontSize: 13.5),
+        ),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final subs = widget.storage
+              .getSubscriptions()
+              .where((s) => _privateSessionUnlocked || !s.isPrivate)
+              .toList();
+          if (subs.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    CupertinoIcons.folder_badge_plus,
+                    color: AppleColors.labelTertiary,
+                    size: 44,
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '暂未添加多订阅分组',
+                    style: TextStyle(
+                      color: AppleColors.labelPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    '支持同时导入多个 VOD / M3U / JSON 订阅地址，并按分组归类管理。',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppleColors.labelSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  AppleCapsuleButton(
+                    label: '立即导入订阅',
+                    icon: CupertinoIcons.add,
+                    primary: true,
+                    compact: true,
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      _showImportConfigDialog();
+                    },
+                  ),
+                ],
+              ),
+            );
+          }
+          final byGroup = <String, List<SubscriptionEntry>>{};
+          for (final s in subs) {
+            byGroup.putIfAbsent(s.group, () => []).add(s);
+          }
+          return ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(16),
+            children: [
+              for (final entry in byGroup.entries) ...[
+                AppleGroupedSection(
+                  header: '${entry.key} (${entry.value.length})',
+                  children: entry.value.map((sub) {
+                    return AppleGroupedTile(
+                      icon: sub.isPrivate
+                          ? CupertinoIcons.lock_shield_fill
+                          : CupertinoIcons.link,
+                      iconBgColor: sub.enabled
+                          ? AppleColors.systemBlue
+                          : AppleColors.groupedTertiary,
+                      title: '${sub.name} · [${sub.format}]',
+                      subtitle:
+                          '${sub.siteCount} 片源 · ${sub.liveCount} 直播${sub.url.isNotEmpty ? " · ${sub.url}" : ""}',
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CupertinoSwitch(
+                            value: sub.enabled,
+                            activeTrackColor: AppleColors.systemGreen,
+                            onChanged: (v) async {
+                              await widget.storage.toggleSubscriptionEnabled(
+                                sub.id,
+                                v,
+                              );
+                              _reloadSavedConfig();
+                              setSheetState(() {});
+                            },
+                          ),
+                          CupertinoButton(
+                            padding: const EdgeInsets.only(left: 6),
+                            minSize: 28,
+                            onPressed: () async {
+                              await widget.storage.removeSubscription(sub.id);
+                              _reloadSavedConfig();
+                              setSheetState(() {});
+                            },
+                            child: const Icon(
+                              CupertinoIcons.trash,
+                              color: AppleColors.systemRed,
+                              size: 18,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 14),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -2667,109 +3737,167 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
   void _showSitePickerDialog() {
-    final supported = _config?.supportedSites ?? const [];
-    final directSites =
-        supported.where((s) => !s.isScriptOrJarApi).toList();
-    final bridgedSites =
-        supported.where((s) => s.isScriptOrJarApi).toList();
+    final supported = _visibleSupportedSites;
+    final groups = <String>['全部'];
+    for (final s in supported) {
+      final g = s.group.trim().isEmpty ? '默认分组' : s.group.trim();
+      if (!groups.contains(g)) groups.add(g);
+    }
+    String selectedGroup = '全部';
     final plugins = _config?.pluginOnlySites ?? const [];
     showAppleModalSheet<void>(
       context: context,
       title: '选择片源 (${supported.length} 可用)',
-      builder: (ctx) => ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (directSites.isNotEmpty) ...[
-            AppleGroupedSection(
-              header: '直连 HTTP/HTTPS 片源 (${directSites.length})',
-              children: directSites.map((s) {
-                final selected = s.key == _activeSite?.key;
-                return AppleGroupedTile(
-                  icon: CupertinoIcons.tv_fill,
-                  iconBgColor: selected
-                      ? AppleColors.systemBlue
-                      : AppleColors.groupedTertiary,
-                  title: s.name,
-                  subtitle: s.api,
-                  trailing: selected
-                      ? const Icon(
-                          CupertinoIcons.checkmark_alt,
-                          color: AppleColors.systemBlue,
-                          size: 18,
-                        )
-                      : null,
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    widget.storage.setSelectedSiteKey(s.key);
-                    setState(() => _activeSite = s);
-                    _loadSiteHome();
-                  },
-                );
-              }).toList(),
-            ),
-            if (bridgedSites.isNotEmpty) const SizedBox(height: 16),
-          ],
-          if (bridgedSites.isNotEmpty)
-            AppleGroupedSection(
-              header: 'Apple 跨平台智能解析片源 (${bridgedSites.length})',
-              footer: '已通过内置跨平台解析引擎自动适配 csp_* 与 JS 站点，点击即可浏览、搜索与播放。',
-              children: bridgedSites.map((s) {
-                final selected = s.key == _activeSite?.key;
-                return AppleGroupedTile(
-                  icon: CupertinoIcons.sparkles,
-                  iconBgColor: selected
-                      ? AppleColors.systemBlue
-                      : AppleColors.systemIndigo,
-                  title: s.name,
-                  subtitle: 'Apple 跨平台智能解析 · ${s.api}',
-                  trailing: selected
-                      ? const Icon(
-                          CupertinoIcons.checkmark_alt,
-                          color: AppleColors.systemBlue,
-                          size: 18,
-                        )
-                      : null,
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    widget.storage.setSelectedSiteKey(s.key);
-                    setState(() => _activeSite = s);
-                    _loadSiteHome();
-                  },
-                );
-              }).toList(),
-            ),
-          if (plugins.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            AppleGroupedSection(
-              header: '其他未识别插件站点 (${plugins.length})',
-              children: plugins.take(25).map((s) {
-                return AppleGroupedTile(
-                  icon: CupertinoIcons.lock_shield_fill,
-                  iconBgColor: AppleColors.groupedTertiary,
-                  title: s.name,
-                  subtitle: s.unsupportedReason,
-                );
-              }).toList(),
-            ),
-          ],
-        ],
+      trailingAction: CupertinoButton(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minSize: 28,
+        onPressed: () {
+          Navigator.of(context).pop();
+          _showImportConfigDialog();
+        },
+        child: const Text(
+          '+ 导入订阅',
+          style: TextStyle(color: AppleColors.systemBlue, fontSize: 13.5),
+        ),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setPickerState) {
+          final filteredSites = selectedGroup == '全部'
+              ? supported
+              : supported
+                  .where(
+                    (s) =>
+                        (s.group.trim().isEmpty ? '默认分组' : s.group.trim()) ==
+                        selectedGroup,
+                  )
+                  .toList();
+          final directSites =
+              filteredSites.where((s) => !s.isScriptOrJarApi).toList();
+          final bridgedSites =
+              filteredSites.where((s) => s.isScriptOrJarApi).toList();
+          return ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (groups.length > 1) ...[
+                SizedBox(
+                  height: 32,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: groups.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (ctx, idx) {
+                      final g = groups[idx];
+                      return _buildMiniFilterChip(
+                        label: g,
+                        selected: selectedGroup == g,
+                        onTap: () => setPickerState(() => selectedGroup = g),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (directSites.isNotEmpty) ...[
+                AppleGroupedSection(
+                  header: '直连 VOD / M3U / HTTP 片源 (${directSites.length})',
+                  children: directSites.map((s) {
+                    final selected = s.key == _activeSite?.key;
+                    return AppleGroupedTile(
+                      icon: s.isPrivate
+                          ? CupertinoIcons.lock_shield_fill
+                          : CupertinoIcons.tv_fill,
+                      iconBgColor: selected
+                          ? AppleColors.systemBlue
+                          : AppleColors.groupedTertiary,
+                      title: s.name,
+                      subtitle: '${s.group} · ${s.api}',
+                      trailing: selected
+                          ? const Icon(
+                              CupertinoIcons.checkmark_alt,
+                              color: AppleColors.systemBlue,
+                              size: 18,
+                            )
+                          : null,
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        widget.storage.setSelectedSiteKey(s.key);
+                        setState(() => _activeSite = s);
+                        _loadSiteHome();
+                      },
+                    );
+                  }).toList(),
+                ),
+                if (bridgedSites.isNotEmpty) const SizedBox(height: 16),
+              ],
+              if (bridgedSites.isNotEmpty)
+                AppleGroupedSection(
+                  header: 'Apple 跨平台智能解析片源 (${bridgedSites.length})',
+                  footer: '已通过内置跨平台解析引擎自动适配 csp_* 与 JS 站点，点击即可浏览、搜索与播放。',
+                  children: bridgedSites.map((s) {
+                    final selected = s.key == _activeSite?.key;
+                    return AppleGroupedTile(
+                      icon: CupertinoIcons.sparkles,
+                      iconBgColor: selected
+                          ? AppleColors.systemBlue
+                          : AppleColors.systemIndigo,
+                      title: s.name,
+                      subtitle: '${s.group} · Apple 跨平台智能解析 · ${s.api}',
+                      trailing: selected
+                          ? const Icon(
+                              CupertinoIcons.checkmark_alt,
+                              color: AppleColors.systemBlue,
+                              size: 18,
+                            )
+                          : null,
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        widget.storage.setSelectedSiteKey(s.key);
+                        setState(() => _activeSite = s);
+                        _loadSiteHome();
+                      },
+                    );
+                  }).toList(),
+                ),
+              if (plugins.isNotEmpty && selectedGroup == '全部') ...[
+                const SizedBox(height: 16),
+                AppleGroupedSection(
+                  header: '其他未识别插件站点 (${plugins.length})',
+                  children: plugins.take(25).map((s) {
+                    return AppleGroupedTile(
+                      icon: CupertinoIcons.lock_shield_fill,
+                      iconBgColor: AppleColors.groupedTertiary,
+                      title: s.name,
+                      subtitle: s.unsupportedReason,
+                    );
+                  }).toList(),
+                ),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
   void _showImportConfigDialog({
     String? initialInput,
     String? initialError,
+    String initialGroup = '默认分组',
+    bool initialIsPrivate = false,
   }) {
     final urlCtrl = TextEditingController(
-      text: initialInput ?? widget.storage.configOrigin,
+      text: initialInput ??
+          (initialIsPrivate ? '' : widget.storage.configOrigin),
     );
     final jsonCtrl = TextEditingController();
+    final groupCtrl = TextEditingController(text: initialGroup);
+    bool isPrivate = initialIsPrivate;
     bool submitting = false;
     String? errorText = initialError;
+    const presetGroups = ['默认分组', '主力影视', '4K网盘', '电视直播', '动漫番剧', '隐私专区'];
     showAppleModalSheet<void>(
       context: context,
-      title: '导入配置',
+      title: '导入订阅资源（支持分组 / 批量 / 隐私）',
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
           Future<void> handleImport() async {
@@ -2780,6 +3908,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             try {
               final urlText = urlCtrl.text.trim();
               final jsonText = jsonCtrl.text.trim();
+              final selectedGroup = groupCtrl.text.trim().isEmpty
+                  ? '默认分组'
+                  : groupCtrl.text.trim();
               final candidateBackup =
                   jsonText.isNotEmpty ? jsonText : urlText;
               if (CmsParser.isBackupPayload(candidateBackup)) {
@@ -2788,18 +3919,24 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 _reloadSavedConfig();
                 return;
               }
-              final resolved = await widget.client.resolveConfigInput(
+              final entries = await widget.client.resolveBatchSubscriptions(
                 urlInput: urlText,
                 rawTextInput: jsonText,
+                defaultGroup: selectedGroup,
+                isPrivate: isPrivate,
               );
-              await widget.storage.saveConfig(
-                resolved.rawConfig,
-                origin: resolved.origin,
-                depots: resolved.depots,
-                activeDepotName: resolved.activeDepotName,
-              );
+              await widget.storage.upsertSubscriptions(entries);
+              if (isPrivate) {
+                _privateSessionUnlocked = true;
+              }
               if (ctx.mounted) Navigator.of(ctx).pop();
               _reloadSavedConfig();
+              if (isPrivate && !widget.storage.hasPrivacyPassword) {
+                _showSetPrivacyPasswordDialog(
+                  title: '为隐私订阅设置访问密码',
+                  subtitle: '已导入为隐私资源。请设置密码（后续连点首页 Logo 5 次即可验证进入隐藏列表）：',
+                );
+              }
             } catch (e) {
               setModalState(() {
                 submitting = false;
@@ -2813,11 +3950,119 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
+                // 1. Group Selector
+                const Text(
+                  '订阅分组（可选择预设或直接输入自定义分组名）',
+                  style: TextStyle(
+                    color: AppleColors.labelSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final g in presetGroups)
+                      _buildMiniFilterChip(
+                        label: g,
+                        selected: groupCtrl.text.trim() == g,
+                        onTap: () => setModalState(() => groupCtrl.text = g),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                CupertinoTextField(
+                  controller: groupCtrl,
+                  placeholder: '输入自定义分组名称（如：主力4K、少儿专区）',
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  style: const TextStyle(
+                    color: AppleColors.labelPrimary,
+                    fontSize: 13.5,
+                  ),
+                  placeholderStyle: const TextStyle(
+                    color: AppleColors.labelTertiary,
+                    fontSize: 13,
+                  ),
+                  onChanged: (_) => setModalState(() {}),
+                  decoration: BoxDecoration(
+                    color: AppleColors.groupedSecondary,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppleColors.glassBorder,
+                      width: 0.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // 2. Privacy toggle
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppleColors.groupedSecondary,
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(
+                      color: AppleColors.glassBorder,
+                      width: 0.5,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        CupertinoIcons.lock_shield_fill,
+                        color: AppleColors.systemPurple,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '设为隐私资源（隐藏列表）',
+                              style: TextStyle(
+                                color: AppleColors.labelPrimary,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              '日常隐藏，连点首页左上角 Logo 5 次输入密码后访问',
+                              style: TextStyle(
+                                color: AppleColors.labelSecondary,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      CupertinoSwitch(
+                        value: isPrivate,
+                        activeTrackColor: AppleColors.systemPurple,
+                        onChanged: (v) => setModalState(() {
+                          isPrivate = v;
+                          if (v && groupCtrl.text.trim() == '默认分组') {
+                            groupCtrl.text = '隐私专区';
+                          }
+                        }),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // 3. Multi-subscription URLs input
                 Row(
                   children: [
                     const Expanded(
                       child: Text(
-                        '远程接口地址（支持单仓、多仓、中文域名）',
+                        '订阅地址（支持多行批量导入 · 兼容 VOD / M3U / JSON / 多仓）',
                         style: TextStyle(
                           color: AppleColors.labelSecondary,
                           fontSize: 12,
@@ -2833,7 +4078,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                             await Clipboard.getData(Clipboard.kTextPlain);
                         final clip = (data?.text ?? '').trim();
                         if (clip.isEmpty) return;
-                        if (clip.startsWith('{') || clip.startsWith('[')) {
+                        if (clip.startsWith('{') ||
+                            clip.startsWith('[') ||
+                            clip.startsWith('#EXTM3U') ||
+                            clip.startsWith('<')) {
                           jsonCtrl.text = clip;
                         } else {
                           urlCtrl.text = clip;
@@ -2864,24 +4112,26 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 const SizedBox(height: 8),
                 CupertinoTextField(
                   controller: urlCtrl,
-                  placeholder: 'https://config.example/config.json',
+                  placeholder:
+                      '每行一个订阅地址（如：https://config.example/config.json）\n支持 JSON单仓/多仓、MacCMS VOD接口、M3U/M3U8/TXT 直播与点播',
+                  maxLines: 4,
+                  minLines: 2,
                   autocorrect: false,
                   enableSuggestions: false,
                   smartQuotesType: SmartQuotesType.disabled,
                   smartDashesType: SmartDashesType.disabled,
-                  keyboardType: TextInputType.url,
-                  clearButtonMode: OverlayVisibilityMode.editing,
+                  keyboardType: TextInputType.multiline,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
-                    vertical: 12,
+                    vertical: 10,
                   ),
                   style: const TextStyle(
                     color: AppleColors.labelPrimary,
-                    fontSize: 14,
+                    fontSize: 13.5,
                   ),
                   placeholderStyle: const TextStyle(
                     color: AppleColors.labelTertiary,
-                    fontSize: 14,
+                    fontSize: 12.5,
                   ),
                   decoration: BoxDecoration(
                     color: AppleColors.groupedSecondary,
@@ -2892,9 +4142,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 const Text(
-                  '或直接粘贴 JSON / Base64 配置内容（选填）',
+                  '或直接粘贴 JSON / M3U (#EXTM3U) / VOD / Base64 内容（选填）',
                   style: TextStyle(
                     color: AppleColors.labelSecondary,
                     fontSize: 12,
@@ -2904,9 +4154,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 const SizedBox(height: 8),
                 CupertinoTextField(
                   controller: jsonCtrl,
-                  placeholder: '{"sites": [...], "lives": [...]}',
-                  maxLines: 5,
-                  minLines: 3,
+                  placeholder:
+                      '{"sites": [...]} 或 #EXTM3U 播放列表 或 频道名,https://live.example/tv.m3u8',
+                  maxLines: 4,
+                  minLines: 2,
                   autocorrect: false,
                   enableSuggestions: false,
                   smartQuotesType: SmartQuotesType.disabled,
@@ -2918,7 +4169,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   ),
                   placeholderStyle: const TextStyle(
                     color: AppleColors.labelTertiary,
-                    fontSize: 13,
+                    fontSize: 12.5,
                   ),
                   decoration: BoxDecoration(
                     color: AppleColors.groupedSecondary,
@@ -2952,7 +4203,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
                 SizedBox(
                   width: double.infinity,
                   child: submitting
@@ -2963,8 +4214,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           ),
                         )
                       : AppleCapsuleButton(
-                          label: '保存并启用配置',
-                          icon: CupertinoIcons.checkmark_circle_fill,
+                          label: isPrivate ? '保存至隐私隐藏列表' : '导入并启用订阅',
+                          icon: isPrivate
+                              ? CupertinoIcons.lock_fill
+                              : CupertinoIcons.checkmark_circle_fill,
                           primary: true,
                           onPressed: handleImport,
                         ),

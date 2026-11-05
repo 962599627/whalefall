@@ -23,6 +23,8 @@ class StorageService {
   static const String keyDriveOrder = 'netdisk_drive_order';
   static const String keyDepots = 'saved_depots';
   static const String keyActiveDepotName = 'active_depot_name';
+  static const String keySubscriptions = 'saved_subscriptions';
+  static const String keyPrivacyPassword = 'privacy_password';
   final SharedPreferences _prefs;
   StorageService(this._prefs);
   static Future<StorageService> init() async {
@@ -71,12 +73,241 @@ class StorageService {
       return const [];
     }
   }
+  String get privacyPassword => _prefs.getString(keyPrivacyPassword) ?? '';
+  bool get hasPrivacyPassword => privacyPassword.trim().isNotEmpty;
+  bool verifyPrivacyPassword(String input) =>
+      hasPrivacyPassword && input.trim() == privacyPassword.trim();
+  Future<void> setPrivacyPassword(String password) async {
+    await _prefs.setString(keyPrivacyPassword, password.trim());
+  }
+
+  List<SubscriptionEntry> getSubscriptions() {
+    final raw = _prefs.getString(keySubscriptions) ?? '[]';
+    try {
+      final list = jsonDecode(raw);
+      if (list is! List) return const [];
+      return list
+          .whereType<Map>()
+          .map((m) => SubscriptionEntry.fromJson(Map<String, dynamic>.from(m)))
+          .where((s) => s.id.isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  List<String> getSubscriptionGroups({bool includePrivate = false}) {
+    final groups = <String>['默认分组'];
+    for (final s in getSubscriptions()) {
+      if (!includePrivate && s.isPrivate) continue;
+      final g = s.group.trim();
+      if (g.isNotEmpty && !groups.contains(g)) {
+        groups.add(g);
+      }
+    }
+    return groups;
+  }
+
+  Future<void> saveSubscriptions(List<SubscriptionEntry> subs) async {
+    await _prefs.setString(
+      keySubscriptions,
+      jsonEncode(subs.map((s) => s.toJson()).toList()),
+    );
+  }
+
+  Future<CmsConfig?> upsertSubscriptions(
+    List<SubscriptionEntry> incoming, {
+    List<CmsDepot>? depots,
+    String? activeDepotName,
+  }) async {
+    if (incoming.isEmpty) return loadSavedConfig();
+    final current = getSubscriptions().toList();
+    // Migrate legacy single config into subscriptions list if not yet present
+    if (current.isEmpty && rawConfig.trim().isNotEmpty) {
+      try {
+        final legacyParsed = CmsParser.parseConfig(
+          rawConfig,
+          origin: configOrigin,
+        );
+        final fmt = CmsParser.detectSubscriptionFormat(
+          rawConfig,
+          origin: configOrigin,
+        );
+        current.add(
+          SubscriptionEntry(
+            id: 'legacy_primary',
+            name: this.activeDepotName.isNotEmpty
+                ? this.activeDepotName
+                : (configOrigin.isNotEmpty
+                    ? (Uri.tryParse(configOrigin)?.host ?? '默认仓库')
+                    : '默认配置'),
+            url: configOrigin,
+            group: '默认分组',
+            format: legacyParsed.depots.isNotEmpty ? '多仓' : fmt,
+            isPrivate: false,
+            enabled: true,
+            rawContent: rawConfig,
+            siteCount: legacyParsed.supportedSites.length,
+            liveCount: legacyParsed.lives.length,
+            updatedAt: DateTime.now().millisecondsSinceEpoch - 1000,
+          ),
+        );
+      } catch (_) {}
+    }
+
+    for (final entry in incoming) {
+      final existingIdx = current.indexWhere(
+        (s) =>
+            s.id == entry.id ||
+            (entry.url.isNotEmpty && s.url == entry.url && s.group == entry.group),
+      );
+      if (existingIdx >= 0) {
+        current[existingIdx] = entry.copyWith(id: current[existingIdx].id);
+      } else {
+        current.add(entry);
+      }
+    }
+    await saveSubscriptions(current);
+
+    final primary = incoming.first;
+    if (primary.rawContent.isNotEmpty && !primary.isPrivate) {
+      await _prefs.setString(keyRawConfig, primary.rawContent);
+      await _prefs.setString(keyOrigin, primary.url);
+    }
+    if (depots != null && depots.isNotEmpty) {
+      await _prefs.setString(
+        keyDepots,
+        jsonEncode(depots.map((d) => d.toJson()).toList()),
+      );
+    }
+    if (activeDepotName != null) {
+      await _prefs.setString(keyActiveDepotName, activeDepotName);
+    }
+    final merged = loadSavedConfig();
+    if (merged != null &&
+        merged.publicSupportedSites.isNotEmpty &&
+        !merged.supportedSites.any((s) => s.key == selectedSiteKey)) {
+      await _prefs.setString(
+        keySelectedSite,
+        merged.publicSupportedSites.first.key,
+      );
+    }
+    return merged;
+  }
+
+  Future<CmsConfig?> removeSubscription(String id) async {
+    final next = getSubscriptions().where((s) => s.id != id).toList();
+    await saveSubscriptions(next);
+    if (next.isEmpty) {
+      await _prefs.setString(keyRawConfig, '');
+      await _prefs.setString(keyOrigin, '');
+    }
+    return loadSavedConfig();
+  }
+
+  Future<CmsConfig?> toggleSubscriptionPrivacy(
+    String id,
+    bool isPrivate,
+  ) async {
+    final next = [
+      for (final s in getSubscriptions())
+        if (s.id == id) s.copyWith(isPrivate: isPrivate) else s,
+    ];
+    await saveSubscriptions(next);
+    return loadSavedConfig();
+  }
+
+  Future<CmsConfig?> toggleSubscriptionEnabled(String id, bool enabled) async {
+    final next = [
+      for (final s in getSubscriptions())
+        if (s.id == id) s.copyWith(enabled: enabled) else s,
+    ];
+    await saveSubscriptions(next);
+    return loadSavedConfig();
+  }
+
+  Future<CmsConfig?> updateSubscriptionGroup(String id, String group) async {
+    final cleanGroup = group.trim().isEmpty ? '默认分组' : group.trim();
+    final next = [
+      for (final s in getSubscriptions())
+        if (s.id == id) s.copyWith(group: cleanGroup) else s,
+    ];
+    await saveSubscriptions(next);
+    return loadSavedConfig();
+  }
+
   CmsConfig? loadSavedConfig() {
+    final subs = getSubscriptions().where((s) => s.enabled).toList();
+    final savedDepots = getSavedDepots();
+    if (subs.isNotEmpty) {
+      final mergedSites = <CmsSite>[];
+      final mergedLives = <LiveSource>[];
+      final mergedDepots = <CmsDepot>[...savedDepots];
+      final seenDepotUrls = <String>{for (final d in savedDepots) d.url};
+      final seenSiteKeys = <String>{};
+      String spider = '';
+
+      for (final sub in subs) {
+        if (sub.rawContent.trim().isEmpty) continue;
+        try {
+          final parsed = CmsParser.parseConfig(
+            sub.rawContent,
+            origin: sub.url,
+            defaultGroup: sub.group,
+            isPrivate: sub.isPrivate,
+            subscriptionId: sub.id,
+            defaultName: sub.name,
+          );
+          if (spider.isEmpty && parsed.spider.isNotEmpty) {
+            spider = parsed.spider;
+          }
+          for (final d in parsed.depots) {
+            if (seenDepotUrls.add(d.url)) {
+              mergedDepots.add(d);
+            }
+          }
+          for (final site in parsed.sites) {
+            var uniqueKey = site.key;
+            if (!seenSiteKeys.add(uniqueKey)) {
+              uniqueKey = '${site.key}_${sub.id}';
+              seenSiteKeys.add(uniqueKey);
+            }
+            mergedSites.add(
+              site.copyWith(
+                key: uniqueKey,
+                group: site.group.isEmpty ? sub.group : site.group,
+                isPrivate: site.isPrivate || sub.isPrivate,
+                subscriptionId: sub.id,
+              ),
+            );
+          }
+          for (final live in parsed.lives) {
+            mergedLives.add(
+              live.copyWith(
+                group: live.group.isEmpty ? sub.group : live.group,
+                isPrivate: live.isPrivate || sub.isPrivate,
+                subscriptionId: sub.id,
+              ),
+            );
+          }
+        } catch (_) {}
+      }
+      if (mergedSites.isNotEmpty ||
+          mergedLives.isNotEmpty ||
+          mergedDepots.isNotEmpty) {
+        return CmsConfig(
+          sites: mergedSites,
+          lives: mergedLives,
+          depots: mergedDepots,
+          spider: spider,
+        );
+      }
+    }
+
     final raw = rawConfig;
     if (raw.trim().isEmpty) return null;
     try {
       final parsed = CmsParser.parseConfig(raw, origin: configOrigin);
-      final savedDepots = getSavedDepots();
       if (parsed.depots.isEmpty && savedDepots.isNotEmpty) {
         return CmsConfig(
           sites: parsed.sites,
@@ -95,8 +326,17 @@ class StorageService {
     String origin = '',
     List<CmsDepot>? depots,
     String? activeDepotName,
+    String group = '默认分组',
+    bool isPrivate = false,
+    String customName = '',
   }) async {
-    final parsed = CmsParser.parseConfig(rawJson, origin: origin);
+    final parsed = CmsParser.parseConfig(
+      rawJson,
+      origin: origin,
+      defaultGroup: group,
+      isPrivate: isPrivate,
+      defaultName: customName,
+    );
     await _prefs.setString(keyRawConfig, rawJson);
     await _prefs.setString(keyOrigin, origin.trim());
     final effectiveDepots = depots ?? parsed.depots;
@@ -111,18 +351,49 @@ class StorageService {
     if (activeDepotName != null) {
       await _prefs.setString(keyActiveDepotName, activeDepotName);
     }
-    if (parsed.supportedSites.isNotEmpty &&
-        !parsed.supportedSites.any((s) => s.key == selectedSiteKey)) {
-      await _prefs.setString(keySelectedSite, parsed.supportedSites.first.key);
-    } else if (parsed.supportedSites.isEmpty && parsed.sites.isNotEmpty) {
-      await _prefs.setString(keySelectedSite, parsed.sites.first.key);
+    final fmt = CmsParser.detectSubscriptionFormat(rawJson, origin: origin);
+    final entryName = customName.trim().isNotEmpty
+        ? customName.trim()
+        : ((activeDepotName != null && activeDepotName.trim().isNotEmpty)
+            ? activeDepotName.trim()
+            : (parsed.sites.length == 1
+                ? parsed.sites.first.name
+                : (origin.trim().isNotEmpty
+                    ? (Uri.tryParse(origin.trim())?.host ?? '订阅资源')
+                    : '$fmt 订阅')));
+    await upsertSubscriptions([
+      SubscriptionEntry(
+        id: origin.trim().isNotEmpty
+            ? 'sub_${origin.trim().hashCode.abs()}'
+            : 'sub_primary',
+        name: entryName,
+        url: origin.trim(),
+        group: group.trim().isEmpty ? '默认分组' : group.trim(),
+        format: effectiveDepots.isNotEmpty ? '多仓' : fmt,
+        isPrivate: isPrivate,
+        enabled: true,
+        rawContent: rawJson,
+        siteCount: parsed.supportedSites.length,
+        liveCount: parsed.lives.length,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ]);
+    final merged = loadSavedConfig() ??
+        CmsConfig(
+          sites: parsed.sites,
+          lives: parsed.lives,
+          depots: effectiveDepots,
+          spider: parsed.spider,
+        );
+    final visibleSites =
+        isPrivate ? merged.supportedSites : merged.publicSupportedSites;
+    if (visibleSites.isNotEmpty &&
+        !visibleSites.any((s) => s.key == selectedSiteKey)) {
+      await _prefs.setString(keySelectedSite, visibleSites.first.key);
+    } else if (merged.supportedSites.isEmpty && merged.sites.isNotEmpty) {
+      await _prefs.setString(keySelectedSite, merged.sites.first.key);
     }
-    return CmsConfig(
-      sites: parsed.sites,
-      lives: parsed.lives,
-      depots: effectiveDepots,
-      spider: parsed.spider,
-    );
+    return merged;
   }
   Future<void> setSelectedSiteKey(String key) async {
     await _prefs.setString(keySelectedSite, key);

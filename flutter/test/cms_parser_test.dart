@@ -274,4 +274,85 @@ void main() {
     expect(merged.videos.map((v) => v.id), ['a', 'c', 'b']);
     expect(merged.pageCount, 5);
   });
+  test('parses universal VOD, M3U, TXT, and batch subscription formats with groups & privacy', () {
+    // 1. Direct MacCMS VOD JSON response
+    const vodJson = '{"code": 1, "msg": "数据列表", "class": [{"type_id": 1, "type_name": "电影"}], "list": [{"vod_id": 99, "vod_name": "星际穿越"}]}';
+    final vodCfg = CmsParser.parseConfig(
+      vodJson,
+      origin: 'https://vod.example/api.php/provide/vod/?ac=list',
+      defaultGroup: '主力影视',
+      isPrivate: true,
+      defaultName: '量子VOD',
+    );
+    expect(vodCfg.supportedSites.length, 1);
+    expect(vodCfg.supportedSites.first.name, '量子VOD');
+    expect(vodCfg.supportedSites.first.api, 'https://vod.example/api.php/provide/vod/');
+    expect(vodCfg.supportedSites.first.group, '主力影视');
+    expect(vodCfg.supportedSites.first.isPrivate, isTrue);
+    expect(vodCfg.privateSupportedSites.length, 1);
+    expect(vodCfg.publicSupportedSites, isEmpty);
+    expect(CmsParser.detectSubscriptionFormat(vodJson, origin: 'https://vod.example/api.php/provide/vod/'), 'VOD');
+
+    // 2. M3U subscription playlist
+    const m3uRaw = '''
+#EXTM3U
+#EXTINF:-1 group-title="央视频道",CCTV-1 综合
+https://live.example/cctv1.m3u8
+#EXTINF:-1 group-title="4K电影",奥本海默 4K
+https://vod.example/oppenheimer.mp4
+''';
+    final m3uCfg = CmsParser.parseConfig(
+      m3uRaw,
+      origin: 'https://live.example/playlist.m3u',
+      defaultGroup: '电视直播',
+    );
+    expect(m3uCfg.lives.length, 1);
+    expect(m3uCfg.supportedSites.length, 1);
+    expect(m3uCfg.supportedSites.first.isM3uVodApi, isTrue);
+    final (m3uCats, m3uListing) = CmsParser.parseM3uVodHome(m3uRaw);
+    expect(m3uCats.map((c) => c.name), ['央视频道', '4K电影']);
+    expect(m3uListing.videos.length, 2);
+
+    // 3. Batch multi-subscription URL splitting
+    const batchText = '''
+主力影视|非凡资源|https://ffzy.example/api.php/provide/vod/
+央卫直播,https://live.example/tv.m3u
+https://depot.example/config.json
+''';
+    final split = CmsParser.splitBatchSubscriptionUrls(batchText, defaultGroup: '默认分组');
+    expect(split.length, 3);
+    expect(split[0].group, '主力影视');
+    expect(split[0].name, '非凡资源');
+    expect(split[1].name, '央卫直播');
+    expect(split[2].group, '默认分组');
+  });
+  test('resolves 5 primary home tabs and filters videos by category, area, and year', () {
+    const raw = '''
+    {"class": [
+      {"type_id": 1, "type_name": "电影片", "type_pid": 0},
+      {"type_id": 2, "type_name": "连续剧", "type_pid": 0},
+      {"type_id": 3, "type_name": "综艺片", "type_pid": 0},
+      {"type_id": 4, "type_name": "动漫片", "type_pid": 0},
+      {"type_id": 6, "type_name": "动作片", "type_pid": 1},
+      {"type_id": 13, "type_name": "国产剧", "type_pid": 2}
+    ]}
+    ''';
+    final cats = CmsParser.parseCategories(raw);
+    expect(CmsParser.resolvePrimaryTabCategory(cats, 'movie').categoryId, '1');
+    expect(CmsParser.resolvePrimaryTabCategory(cats, 'movie').childIds, ['6']);
+    expect(CmsParser.resolvePrimaryTabCategory(cats, 'series').categoryId, '2');
+    expect(CmsParser.resolvePrimaryTabCategory(cats, 'anime').categoryId, '4');
+    expect(CmsParser.resolvePrimaryTabCategory(cats, 'variety').categoryId, '3');
+
+    const videos = [
+      CmsVideo(id: '1', title: '流浪地球2', year: '2023', area: '中国大陆', tag: '科幻,冒险'),
+      CmsVideo(id: '2', title: '奥本海默', year: '2023', area: '美国', tag: '传记,剧情'),
+      CmsVideo(id: '3', title: '繁花', year: '2024', area: '大陆', tag: '剧情,爱情'),
+    ];
+    final filtered = CmsParser.filterVideos(
+      videos,
+      const CmsFilter(area: '大陆', year: '2023', genreLabel: '科幻'),
+    );
+    expect(filtered.map((v) => v.id), ['1']);
+  });
 }

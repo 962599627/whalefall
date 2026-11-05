@@ -18,6 +18,127 @@ class CmsDepot {
     );
   }
 }
+class SubscriptionEntry {
+  final String id;
+  final String name;
+  final String url;
+  final String group;
+  final String format;
+  final bool isPrivate;
+  final bool enabled;
+  final String rawContent;
+  final int siteCount;
+  final int liveCount;
+  final int updatedAt;
+  const SubscriptionEntry({
+    required this.id,
+    required this.name,
+    this.url = '',
+    this.group = '默认分组',
+    this.format = 'JSON',
+    this.isPrivate = false,
+    this.enabled = true,
+    this.rawContent = '',
+    this.siteCount = 0,
+    this.liveCount = 0,
+    this.updatedAt = 0,
+  });
+  SubscriptionEntry copyWith({
+    String? id,
+    String? name,
+    String? url,
+    String? group,
+    String? format,
+    bool? isPrivate,
+    bool? enabled,
+    String? rawContent,
+    int? siteCount,
+    int? liveCount,
+    int? updatedAt,
+  }) {
+    return SubscriptionEntry(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      url: url ?? this.url,
+      group: group ?? this.group,
+      format: format ?? this.format,
+      isPrivate: isPrivate ?? this.isPrivate,
+      enabled: enabled ?? this.enabled,
+      rawContent: rawContent ?? this.rawContent,
+      siteCount: siteCount ?? this.siteCount,
+      liveCount: liveCount ?? this.liveCount,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'url': url,
+        'group': group,
+        'format': format,
+        'isPrivate': isPrivate,
+        'enabled': enabled,
+        'rawContent': rawContent,
+        'siteCount': siteCount,
+        'liveCount': liveCount,
+        'updatedAt': updatedAt,
+      };
+  factory SubscriptionEntry.fromJson(Map<String, dynamic> json) {
+    final g = (json['group'] ?? '').toString().trim();
+    final f = (json['format'] ?? '').toString().trim();
+    return SubscriptionEntry(
+      id: (json['id'] ?? '').toString().trim(),
+      name: (json['name'] ?? '订阅源').toString().trim(),
+      url: (json['url'] ?? '').toString().trim(),
+      group: g.isEmpty ? '默认分组' : g,
+      format: f.isEmpty ? 'JSON' : f,
+      isPrivate: json['isPrivate'] == true,
+      enabled: json['enabled'] != false,
+      rawContent: (json['rawContent'] ?? '').toString(),
+      siteCount: (json['siteCount'] as num?)?.toInt() ?? 0,
+      liveCount: (json['liveCount'] as num?)?.toInt() ?? 0,
+      updatedAt: (json['updatedAt'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+class CmsFilter {
+  final String primaryTab;
+  final String categoryId;
+  final String genreLabel;
+  final String area;
+  final String year;
+  const CmsFilter({
+    this.primaryTab = 'recommend',
+    this.categoryId = '',
+    this.genreLabel = '',
+    this.area = '',
+    this.year = '',
+  });
+  bool get hasSubFilter =>
+      categoryId.isNotEmpty ||
+      genreLabel.isNotEmpty ||
+      area.isNotEmpty ||
+      year.isNotEmpty;
+  int get activeDimensionCount =>
+      (categoryId.isNotEmpty || genreLabel.isNotEmpty ? 1 : 0) +
+      (area.isNotEmpty ? 1 : 0) +
+      (year.isNotEmpty ? 1 : 0);
+  CmsFilter copyWith({
+    String? primaryTab,
+    String? categoryId,
+    String? genreLabel,
+    String? area,
+    String? year,
+  }) {
+    return CmsFilter(
+      primaryTab: primaryTab ?? this.primaryTab,
+      categoryId: categoryId ?? this.categoryId,
+      genreLabel: genreLabel ?? this.genreLabel,
+      area: area ?? this.area,
+      year: year ?? this.year,
+    );
+  }
+}
 class CmsSite {
   final String key;
   final String name;
@@ -27,6 +148,9 @@ class CmsSite {
   final bool searchable;
   final String ext;
   final Map<String, String> headers;
+  final String group;
+  final bool isPrivate;
+  final String subscriptionId;
   const CmsSite({
     required this.key,
     required this.name,
@@ -36,10 +160,43 @@ class CmsSite {
     this.searchable = true,
     this.ext = '',
     this.headers = const {},
+    this.group = '默认分组',
+    this.isPrivate = false,
+    this.subscriptionId = '',
   });
+  CmsSite copyWith({
+    String? key,
+    String? name,
+    int? type,
+    String? api,
+    String? playUrl,
+    bool? searchable,
+    String? ext,
+    Map<String, String>? headers,
+    String? group,
+    bool? isPrivate,
+    String? subscriptionId,
+  }) {
+    return CmsSite(
+      key: key ?? this.key,
+      name: name ?? this.name,
+      type: type ?? this.type,
+      api: api ?? this.api,
+      playUrl: playUrl ?? this.playUrl,
+      searchable: searchable ?? this.searchable,
+      ext: ext ?? this.ext,
+      headers: headers ?? this.headers,
+      group: group ?? this.group,
+      isPrivate: isPrivate ?? this.isPrivate,
+      subscriptionId: subscriptionId ?? this.subscriptionId,
+    );
+  }
   bool get isHttpApi {
     final lower = api.trim().toLowerCase();
     return lower.startsWith('http://') || lower.startsWith('https://');
+  }
+  bool get isM3uVodApi {
+    return api.trim().toLowerCase().startsWith('m3u_vod://');
   }
   bool get isScriptOrJarApi {
     final lower = api.trim().toLowerCase().split('?').first;
@@ -49,10 +206,11 @@ class CmsSite {
         lower.endsWith('.py');
   }
   /// Supports standard JSON/XML CMS (`type` 0 or 1), remote HTTP spider endpoints (`type` 4),
-  /// and TVBox `csp_*` / `.js` spider sites via the cross-platform `CspBridge` adapter.
+  /// M3U/TXT VOD playlists (`m3u_vod://`), and TVBox `csp_*` / `.js` spider sites via `CspBridge`.
   bool get canBrowse =>
-      (isHttpApi || isScriptOrJarApi) &&
-      (type == 0 || type == 1 || type == 4 || type == 3 || type == -1);
+      isM3uVodApi ||
+      ((isHttpApi || isScriptOrJarApi) &&
+          (type == 0 || type == 1 || type == 4 || type == 3 || type == -1));
   bool get requiresPluginRuntime => !canBrowse;
   bool get supported => canBrowse;
   String get unsupportedReason {
@@ -63,11 +221,34 @@ class LiveSource {
   final String name;
   final String url;
   final Map<String, String> headers;
+  final String group;
+  final bool isPrivate;
+  final String subscriptionId;
   const LiveSource({
     required this.name,
     required this.url,
     this.headers = const {},
+    this.group = '默认分组',
+    this.isPrivate = false,
+    this.subscriptionId = '',
   });
+  LiveSource copyWith({
+    String? name,
+    String? url,
+    Map<String, String>? headers,
+    String? group,
+    bool? isPrivate,
+    String? subscriptionId,
+  }) {
+    return LiveSource(
+      name: name ?? this.name,
+      url: url ?? this.url,
+      headers: headers ?? this.headers,
+      group: group ?? this.group,
+      isPrivate: isPrivate ?? this.isPrivate,
+      subscriptionId: subscriptionId ?? this.subscriptionId,
+    );
+  }
 }
 class CmsConfig {
   final List<CmsSite> sites;
@@ -82,6 +263,14 @@ class CmsConfig {
   });
   List<CmsSite> get supportedSites =>
       sites.where((s) => s.supported).toList(growable: false);
+  List<CmsSite> get publicSupportedSites =>
+      sites.where((s) => s.supported && !s.isPrivate).toList(growable: false);
+  List<CmsSite> get privateSupportedSites =>
+      sites.where((s) => s.supported && s.isPrivate).toList(growable: false);
+  List<LiveSource> get publicLives =>
+      lives.where((l) => !l.isPrivate).toList(growable: false);
+  List<LiveSource> get privateLives =>
+      lives.where((l) => l.isPrivate).toList(growable: false);
   List<CmsSite> get pluginOnlySites =>
       sites.where((s) => !s.supported).toList(growable: false);
   bool get isMultiDepotOnly =>

@@ -640,21 +640,321 @@ class CmsParser {
     });
     return result;
   }
-  static CmsConfig parseConfig(String rawJson, {String origin = ''}) {
+  static String _shortHash(String input) {
+    int h = 0x811c9dc5;
+    for (final code in input.codeUnits) {
+      h ^= code;
+      h = (h * 0x01000193) & 0x7fffffff;
+    }
+    return h.toRadixString(36);
+  }
+
+  static String _inferSiteNameFromUrl(String url, {String fallback = '订阅资源'}) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return fallback;
+    try {
+      final uri = Uri.parse(normalizeUrl(trimmed));
+      final host = uri.host.toLowerCase();
+      if (host.isEmpty) return fallback;
+      final parts = host.split('.').where((p) => p.isNotEmpty).toList();
+      if (parts.length >= 2) {
+        final main = parts[parts.length - 2];
+        if (main != 'com' && main != 'cn' && main != 'net' && main != 'org') {
+          return main.toUpperCase();
+        }
+      }
+      return host;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  static String _cleanVodEndpointUrl(String rawUrl) {
+    final normalized = normalizeUrl(rawUrl);
+    if (normalized.isEmpty) return '';
+    try {
+      final uri = Uri.parse(normalized);
+      if (uri.queryParameters.isEmpty) return normalized;
+      final cleanedParams = <String, String>{};
+      uri.queryParameters.forEach((k, v) {
+        final lk = k.toLowerCase();
+        if (lk != 'ac' &&
+            lk != 'pg' &&
+            lk != 't' &&
+            lk != 'wd' &&
+            lk != 'ids' &&
+            lk != 'h') {
+          cleanedParams[k] = v;
+        }
+      });
+      return uri
+          .replace(
+            queryParameters: cleanedParams.isEmpty ? null : cleanedParams,
+          )
+          .toString();
+    } catch (_) {
+      return normalized;
+    }
+  }
+
+  static bool _looksLikeVodEndpointUrl(String url) {
+    final lower = url.trim().toLowerCase();
+    if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
+      return false;
+    }
+    return lower.contains('/provide/vod') ||
+        lower.contains('api.php') ||
+        lower.contains('/inc/api') ||
+        lower.contains('ac=list') ||
+        lower.contains('ac=detail') ||
+        lower.contains('ac=videolist') ||
+        lower.endsWith('/xml') ||
+        lower.endsWith('/xml/') ||
+        lower.endsWith('/vod') ||
+        lower.endsWith('/vod/');
+  }
+
+  /// Detects subscription format badge (`多仓`, `JSON`, `VOD`, `M3U`, `TXT`).
+  static String detectSubscriptionFormat(String rawText, {String origin = ''}) {
+    final unpacked = unpackConfigText(rawText).trim();
+    final lowerOrigin = origin.trim().toLowerCase();
+    if (unpacked.startsWith('#EXTM3U') ||
+        unpacked.contains('#EXTINF') ||
+        lowerOrigin.endsWith('.m3u') ||
+        lowerOrigin.endsWith('.m3u8')) {
+      return 'M3U';
+    }
+    if (unpacked.startsWith('<') &&
+        (unpacked.toLowerCase().contains('<rss') ||
+            unpacked.toLowerCase().contains('<list') ||
+            unpacked.toLowerCase().contains('<video'))) {
+      return 'VOD';
+    }
+    if (unpacked.contains(',#genre#')) {
+      return 'TXT';
+    }
+    try {
+      final cleaned = stripJsonComments(unpacked);
+      final decoded = jsonDecode(cleaned);
+      if (decoded is Map<String, dynamic>) {
+        if ((decoded['urls'] is List ||
+                decoded['storeHouse'] is List ||
+                decoded['depots'] is List) &&
+            decoded['sites'] == null) {
+          return '多仓';
+        }
+        if (decoded['list'] is List || decoded['class'] is List) {
+          return 'VOD';
+        }
+        return 'JSON';
+      }
+      if (decoded is List) {
+        return 'JSON';
+      }
+    } catch (_) {}
+    if (_looksLikeVodEndpointUrl(origin)) return 'VOD';
+    final groups = parseLivePlaylist(unpacked);
+    if (groups.isNotEmpty) {
+      return unpacked.contains('#EXT') ? 'M3U' : 'TXT';
+    }
+    return 'JSON';
+  }
+
+  /// Splits user multi-line subscription input into individual entries.
+  /// Supports:
+  /// - `https://config.example/a.json`
+  /// - `名称,https://live.example/b.m3u`
+  /// - `分组|名称|https://vod.example/api.php/provide/vod/`
+  static List<({String group, String name, String url})>
+      splitBatchSubscriptionUrls(String rawInput, {String defaultGroup = '默认分组'}) {
+    final trimmed = rawInput.trim();
+    if (trimmed.isEmpty) return const [];
+    // If it's a JSON/XML/M3U document rather than a list of URLs, return empty so caller treats as raw content.
+    if (trimmed.startsWith('{') ||
+        trimmed.startsWith('[') ||
+        trimmed.startsWith('<') ||
+        trimmed.startsWith('#EXTM3U') ||
+        trimmed.contains('#EXTINF') ||
+        trimmed.contains(',#genre#')) {
+      return const [];
+    }
+    final lines = const LineSplitter().convert(trimmed);
+    final entries = <({String group, String name, String url})>[];
+    for (final rawLine in lines) {
+      final line = rawLine.trim();
+      if (line.isEmpty || line.startsWith('//') || line.startsWith('#')) {
+        continue;
+      }
+      String group = defaultGroup.trim().isEmpty ? '默认分组' : defaultGroup.trim();
+      String name = '';
+      String urlCandidate = line;
+      if (line.contains('|')) {
+        final parts = line.split('|').map((s) => s.trim()).toList();
+        if (parts.length >= 3 && parts.last.contains('.')) {
+          if (parts[0].isNotEmpty) group = parts[0];
+          name = parts[1];
+          urlCandidate = parts.sublist(2).join('|');
+        } else if (parts.length == 2 && parts[1].contains('.')) {
+          name = parts[0];
+          urlCandidate = parts[1];
+        }
+      } else if (line.contains(',') || line.contains('，')) {
+        final normalizedLine = line.replaceAll('，', ',');
+        final commaIdx = normalizedLine.indexOf(',');
+        final left = normalizedLine.substring(0, commaIdx).trim();
+        final right = normalizedLine.substring(commaIdx + 1).trim();
+        if (!left.startsWith('http') && right.contains('.')) {
+          name = left;
+          urlCandidate = right;
+        }
+      }
+      final extracted = extractAndNormalizeUrl(urlCandidate);
+      if (extracted.startsWith('http://') || extracted.startsWith('https://')) {
+        entries.add((
+          group: group,
+          name: name,
+          url: extracted,
+        ));
+      }
+    }
+    return entries;
+  }
+
+  /// Parses TVBox JSON, Multi-Depot JSON, Direct MacCMS VOD JSON/XML, M3U/M3U8, or TXT subscriptions.
+  static CmsConfig parseConfig(
+    String rawJson, {
+    String origin = '',
+    String defaultGroup = '默认分组',
+    bool isPrivate = false,
+    String subscriptionId = '',
+    String defaultName = '',
+  }) {
+    final groupLabel =
+        defaultGroup.trim().isEmpty ? '默认分组' : defaultGroup.trim();
     final unpacked = unpackConfigText(rawJson);
+    final trimmedUnpacked = unpacked.trim();
+    if (trimmedUnpacked.isEmpty) {
+      throw const FormatException('配置内容为空');
+    }
+
+    // 1. Check for XML MacCMS VOD response (`<?xml` / `<rss` / `<list`)
+    if (trimmedUnpacked.startsWith('<') &&
+        (trimmedUnpacked.toLowerCase().contains('<rss') ||
+            trimmedUnpacked.toLowerCase().contains('<list') ||
+            trimmedUnpacked.toLowerCase().contains('<video'))) {
+      final apiUrl = origin.trim().isNotEmpty
+          ? _cleanVodEndpointUrl(origin)
+          : '';
+      final siteName = defaultName.trim().isNotEmpty
+          ? defaultName.trim()
+          : _inferSiteNameFromUrl(apiUrl, fallback: 'XML 影视源');
+      final siteKey = 'xml_${_shortHash(apiUrl.isNotEmpty ? apiUrl : trimmedUnpacked)}';
+      return CmsConfig(
+        sites: [
+          CmsSite(
+            key: siteKey,
+            name: siteName,
+            type: 0,
+            api: apiUrl.isNotEmpty ? apiUrl : 'm3u_vod://xml_inline',
+            ext: apiUrl.isEmpty ? trimmedUnpacked : '',
+            group: groupLabel,
+            isPrivate: isPrivate,
+            subscriptionId: subscriptionId,
+          ),
+        ],
+      );
+    }
+
+    // 2. Check for M3U / M3U8 (`#EXTM3U`, `#EXTINF`) or TXT (`#genre#`) before JSON
+    final looksLikeM3uOrTxt = trimmedUnpacked.startsWith('#EXTM3U') ||
+        trimmedUnpacked.contains('#EXTINF') ||
+        trimmedUnpacked.contains(',#genre#');
+    if (looksLikeM3uOrTxt) {
+      final m3uCfg = _tryParseM3uOrTxtConfig(
+        trimmedUnpacked,
+        origin: origin,
+        groupLabel: groupLabel,
+        isPrivate: isPrivate,
+        subscriptionId: subscriptionId,
+        defaultName: defaultName,
+      );
+      if (m3uCfg != null) return m3uCfg;
+    }
+
     final cleaned = stripJsonComments(unpacked);
     if (cleaned.isEmpty) {
       throw const FormatException('配置内容为空');
     }
-    final dynamic decoded;
+    dynamic decoded;
     try {
       decoded = jsonDecode(cleaned);
     } catch (e) {
-      throw FormatException('不是有效的 JSON 配置格式：$e');
+      // Fallback: check if plain text is M3U/TXT live channels or plain VOD URL lines
+      final fallbackCfg = _tryParseM3uOrTxtConfig(
+            trimmedUnpacked,
+            origin: origin,
+            groupLabel: groupLabel,
+            isPrivate: isPrivate,
+            subscriptionId: subscriptionId,
+            defaultName: defaultName,
+          ) ??
+          _tryParsePlainVodLinesConfig(
+            trimmedUnpacked,
+            groupLabel: groupLabel,
+            isPrivate: isPrivate,
+            subscriptionId: subscriptionId,
+          );
+      if (fallbackCfg != null) return fallbackCfg;
+      throw FormatException('不是有效的 JSON / VOD / M3U 配置格式：$e');
+    }
+
+    if (decoded is List) {
+      decoded = <String, dynamic>{'sites': decoded};
     }
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('配置根节点必须是 JSON 对象');
     }
+
+    // 3. Direct MacCMS v10 JSON response (`{"code":1,"class":[...],"list":[...]}`)
+    if (decoded['sites'] == null &&
+        decoded['lives'] == null &&
+        decoded['urls'] == null &&
+        decoded['storeHouse'] == null &&
+        decoded['depots'] == null &&
+        (decoded['list'] is List || decoded['class'] is List)) {
+      final apiUrl = origin.trim().isNotEmpty
+          ? _cleanVodEndpointUrl(origin)
+          : '';
+      final siteName = defaultName.trim().isNotEmpty
+          ? defaultName.trim()
+          : _inferSiteNameFromUrl(apiUrl, fallback: 'VOD 影视源');
+      final siteKey =
+          'vod_${_shortHash(apiUrl.isNotEmpty ? apiUrl : cleaned)}';
+      return CmsConfig(
+        sites: [
+          CmsSite(
+            key: siteKey,
+            name: siteName,
+            type: 1,
+            api: apiUrl.isNotEmpty ? apiUrl : 'm3u_vod://json_inline',
+            ext: apiUrl.isEmpty ? cleaned : '',
+            group: groupLabel,
+            isPrivate: isPrivate,
+            subscriptionId: subscriptionId,
+          ),
+        ],
+      );
+    }
+
+    // 4. Single site JSON object (`{"key":..., "name":..., "api":...}`)
+    if (decoded['sites'] == null &&
+        decoded['api'] != null &&
+        (decoded['name'] != null || decoded['key'] != null)) {
+      decoded = <String, dynamic>{
+        'sites': [decoded],
+      };
+    }
+
     final depots = <CmsDepot>[];
     final seenDepotUrls = <String>{};
     for (final field in ['urls', 'storeHouse', 'depots']) {
@@ -700,6 +1000,8 @@ class CmsParser {
           seenKeys.add(key);
         }
         final extStr = _stringifyExt(item['ext']);
+        final itemGroup = (item['group'] ?? '').toString().trim();
+        final itemPrivate = _asBool(item['isPrivate'] ?? item['hidden'], isPrivate);
         sites.add(
           CmsSite(
             key: key,
@@ -710,6 +1012,9 @@ class CmsParser {
             searchable: _asBool(item['searchable'], true),
             ext: extStr,
             headers: _stringHeaders(item['headers'] ?? item['header']),
+            group: itemGroup.isEmpty ? groupLabel : itemGroup,
+            isPrivate: itemPrivate,
+            subscriptionId: subscriptionId,
           ),
         );
       }
@@ -719,6 +1024,8 @@ class CmsParser {
     if (rawLives is List) {
       for (final item in rawLives) {
         if (item is! Map) continue;
+        final itemGroup = (item['group'] ?? '').toString().trim();
+        final itemPrivate = _asBool(item['isPrivate'] ?? item['hidden'], isPrivate);
         if (item['channels'] is List) {
           for (final ch in item['channels'] as List) {
             if (ch is! Map) continue;
@@ -737,6 +1044,9 @@ class CmsParser {
                       headers: _stringHeaders(
                         ch['headers'] ?? ch['header'] ?? item['headers'] ?? item['header'],
                       ),
+                      group: itemGroup.isEmpty ? groupLabel : itemGroup,
+                      isPrivate: itemPrivate,
+                      subscriptionId: subscriptionId,
                     ),
                   );
                   break;
@@ -753,6 +1063,9 @@ class CmsParser {
               name: (item['name'] ?? '直播源').toString().trim(),
               url: url,
               headers: _stringHeaders(item['headers'] ?? item['header']),
+              group: itemGroup.isEmpty ? groupLabel : itemGroup,
+              isPrivate: itemPrivate,
+              subscriptionId: subscriptionId,
             ),
           );
         }
@@ -768,6 +1081,423 @@ class CmsParser {
       depots: depots,
       spider: spider,
     );
+  }
+
+  static CmsConfig? _tryParseM3uOrTxtConfig(
+    String content, {
+    required String origin,
+    required String groupLabel,
+    required bool isPrivate,
+    required String subscriptionId,
+    required String defaultName,
+  }) {
+    final groups = parseLivePlaylist(content);
+    if (groups.isEmpty) return null;
+    final baseName = defaultName.trim().isNotEmpty
+        ? defaultName.trim()
+        : _inferSiteNameFromUrl(origin, fallback: 'M3U 订阅源');
+    final liveUrl = origin.trim().isNotEmpty
+        ? normalizeUrl(origin.trim())
+        : 'data:text/plain;base64,${base64Encode(utf8.encode(content))}';
+    final siteKey = 'm3u_${_shortHash(origin.isNotEmpty ? origin : content)}';
+    return CmsConfig(
+      sites: [
+        CmsSite(
+          key: siteKey,
+          name: baseName,
+          type: 1,
+          api: 'm3u_vod://${origin.trim().isNotEmpty ? normalizeUrl(origin.trim()) : siteKey}',
+          ext: content,
+          group: groupLabel,
+          isPrivate: isPrivate,
+          subscriptionId: subscriptionId,
+        ),
+      ],
+      lives: [
+        LiveSource(
+          name: baseName,
+          url: liveUrl,
+          group: groupLabel,
+          isPrivate: isPrivate,
+          subscriptionId: subscriptionId,
+        ),
+      ],
+    );
+  }
+
+  static CmsConfig? _tryParsePlainVodLinesConfig(
+    String content, {
+    required String groupLabel,
+    required bool isPrivate,
+    required String subscriptionId,
+  }) {
+    final entries = splitBatchSubscriptionUrls(content, defaultGroup: groupLabel);
+    if (entries.isEmpty) return null;
+    final sites = <CmsSite>[];
+    final lives = <LiveSource>[];
+    for (int i = 0; i < entries.length; i++) {
+      final e = entries[i];
+      final lower = e.url.toLowerCase();
+      final name = e.name.isNotEmpty
+          ? e.name
+          : _inferSiteNameFromUrl(e.url, fallback: '片源 ${i + 1}');
+      if (lower.endsWith('.m3u') ||
+          lower.endsWith('.m3u8') ||
+          lower.endsWith('.txt')) {
+        lives.add(
+          LiveSource(
+            name: name,
+            url: e.url,
+            group: e.group,
+            isPrivate: isPrivate,
+            subscriptionId: subscriptionId,
+          ),
+        );
+      } else if (_looksLikeVodEndpointUrl(e.url)) {
+        final isXml = lower.contains('/xml');
+        sites.add(
+          CmsSite(
+            key: 'vod_${_shortHash(e.url)}_$i',
+            name: name,
+            type: isXml ? 0 : 1,
+            api: _cleanVodEndpointUrl(e.url),
+            group: e.group,
+            isPrivate: isPrivate,
+            subscriptionId: subscriptionId,
+          ),
+        );
+      }
+    }
+    if (sites.isEmpty && lives.isEmpty) return null;
+    return CmsConfig(sites: sites, lives: lives);
+  }
+
+  /// Builds `(categories, listing)` from an `m3u_vod://` site's M3U/TXT or inline VOD payload.
+  static (List<CmsCategory>, CmsListing) parseM3uVodHome(String content) {
+    final trimmed = content.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('<')) {
+      return (parseCategories(trimmed), parseListing(trimmed));
+    }
+    final groups = parseLivePlaylist(trimmed);
+    final categories = <CmsCategory>[
+      for (int i = 0; i < groups.length; i++)
+        CmsCategory(id: groups[i].name, name: groups[i].name),
+    ];
+    final videos = <CmsVideo>[];
+    for (final g in groups) {
+      for (final ch in g.channels) {
+        videos.add(
+          CmsVideo(
+            id: '${g.name}::${ch.name}',
+            title: ch.name,
+            remarks: g.name,
+            tag: g.name,
+            lines: [
+              CmsLine(
+                name: g.name,
+                episodes: [
+                  for (int i = 0; i < ch.urls.length; i++)
+                    CmsEpisode(
+                      name: ch.urls.length == 1 ? '正片' : '线路 ${i + 1}',
+                      url: ch.urls[i],
+                    ),
+                ],
+              ),
+            ],
+          ),
+        );
+      }
+    }
+    return (categories, CmsListing(page: 1, pageCount: 1, videos: videos));
+  }
+
+  /// Fixed primary tabs shown on the Home page.
+  static const List<(String, String)> primaryHomeTabs = [
+    ('recommend', '推荐'),
+    ('movie', '电影'),
+    ('series', '剧集'),
+    ('anime', '动漫'),
+    ('variety', '综艺'),
+  ];
+
+  /// Filter options for region (`国家地区`) and year (`年份`).
+  static const List<String> filterAreas = [
+    '全部',
+    '大陆',
+    '香港',
+    '台湾',
+    '美国',
+    '韩国',
+    '日本',
+    '英国',
+    '法国',
+    '泰国',
+    '印度',
+    '其他',
+  ];
+
+  static const List<String> filterYears = [
+    '全部',
+    '2026',
+    '2025',
+    '2024',
+    '2023',
+    '2022',
+    '2021',
+    '2020',
+    '2019',
+    '2010年代',
+    '更早',
+  ];
+
+  static const List<String> fallbackGenreTags = [
+    '动作',
+    '喜剧',
+    '爱情',
+    '科幻',
+    '悬疑',
+    '犯罪',
+    '奇幻',
+    '古装',
+    '战争',
+    '家庭',
+    '武侠',
+    '恐怖',
+    '历史',
+    '纪录',
+  ];
+
+  /// Classifies a MacCMS category name into one of `'movie'`, `'series'`, `'anime'`, `'variety'`, or `''`.
+  static String classifyCategoryPrimaryTab(String name) {
+    final s = name.trim();
+    if (s.isEmpty) return '';
+    if (s.contains('漫') ||
+        s.contains('动画') ||
+        s.contains('番剧') ||
+        s.contains('二次元') ||
+        s.contains('少儿')) {
+      return 'anime';
+    }
+    if (s.contains('综') ||
+        s.contains('真人秀') ||
+        s.contains('脱口秀') ||
+        s.contains('晚会') ||
+        s.contains('娱乐')) {
+      return 'variety';
+    }
+    if ((s.contains('剧') &&
+            !s.contains('剧情') &&
+            !s.contains('喜剧') &&
+            !s.contains('悲剧') &&
+            !s.contains('歌剧')) ||
+        s.contains('连续') ||
+        s.contains('电视') ||
+        s.contains('美剧') ||
+        s.contains('韩剧') ||
+        s.contains('日剧') ||
+        s.contains('港剧') ||
+        s.contains('台剧') ||
+        s.contains('泰剧') ||
+        s.contains('短剧')) {
+      return 'series';
+    }
+    if (s.contains('影') ||
+        s.contains('片') ||
+        s.contains('动作') ||
+        s.contains('喜剧') ||
+        s.contains('爱情') ||
+        s.contains('科幻') ||
+        s.contains('悬疑') ||
+        s.contains('恐怖') ||
+        s.contains('战争') ||
+        s.contains('犯罪') ||
+        s.contains('奇幻') ||
+        s.contains('武侠')) {
+      return 'movie';
+    }
+    return '';
+  }
+
+  /// Resolves `(categoryId, childIds)` for one of the 5 primary tabs (`recommend`, `movie`, `series`, `anime`, `variety`).
+  static ({String categoryId, List<String> childIds}) resolvePrimaryTabCategory(
+    List<CmsCategory> categories,
+    String primaryTab,
+  ) {
+    if (primaryTab.isEmpty || primaryTab == 'recommend' || categories.isEmpty) {
+      return (categoryId: '', childIds: const []);
+    }
+    final matching = <CmsCategory>[];
+    for (final c in categories) {
+      if (classifyCategoryPrimaryTab(c.name) == primaryTab) {
+        matching.add(c);
+      }
+    }
+    if (matching.isEmpty) {
+      return (categoryId: '', childIds: const []);
+    }
+    // Prefer a top-level parent category if one exists
+    final topLevel = matching.where((c) => c.isTopLevel).toList();
+    for (final parent in topLevel) {
+      final children = childCategoryIds(categories, parent.id);
+      if (children.isNotEmpty) {
+        return (categoryId: parent.id, childIds: children);
+      }
+    }
+    // Exact name match (`电影` / `电影片`, `电视剧` / `连续剧` / `剧集`, `动漫` / `动漫片`, `综艺` / `综艺片`)
+    CmsCategory? exactParent;
+    for (final c in matching) {
+      final n = c.name.trim();
+      if ((primaryTab == 'movie' && (n == '电影' || n == '电影片')) ||
+          (primaryTab == 'series' &&
+              (n == '剧集' || n == '连续剧' || n == '电视剧' || n == '国产剧')) ||
+          (primaryTab == 'anime' && (n == '动漫' || n == '动漫片' || n == '动画')) ||
+          (primaryTab == 'variety' && (n == '综艺' || n == '综艺片'))) {
+        exactParent = c;
+        break;
+      }
+    }
+    if (exactParent != null) {
+      final otherIds = [
+        for (final c in matching)
+          if (c.id != exactParent.id) c.id,
+      ];
+      return (categoryId: exactParent.id, childIds: otherIds);
+    }
+    return (
+      categoryId: matching.first.id,
+      childIds: matching.map((c) => c.id).toList(growable: false),
+    );
+  }
+
+  /// Returns the sub-categories to display inside the collapsible Filter Drawer (`筛选栏`).
+  static List<CmsCategory> subCategoriesForPrimaryTab(
+    List<CmsCategory> categories,
+    String primaryTab,
+  ) {
+    if (categories.isEmpty) return const [];
+    if (primaryTab.isEmpty || primaryTab == 'recommend') {
+      // On "推荐", collapse all non-primary or specific categories into the Filter Bar
+      return categories;
+    }
+    final matched = categories
+        .where((c) => classifyCategoryPrimaryTab(c.name) == primaryTab)
+        .toList();
+    // Also include direct children of any matched parent category
+    final parentIds = matched.map((c) => c.id).toSet();
+    for (final c in categories) {
+      if (parentIds.contains(c.parentId) &&
+          !matched.any((m) => m.id == c.id)) {
+        matched.add(c);
+      }
+    }
+    return matched.isNotEmpty ? matched : categories;
+  }
+
+  /// Filters a list of [CmsVideo] by [filter] (`area`, `year`, `genreLabel`).
+  static List<CmsVideo> filterVideos(List<CmsVideo> videos, CmsFilter filter) {
+    if (!filter.hasSubFilter) return videos;
+    final area = filter.area.trim();
+    final year = filter.year.trim();
+    final genre = filter.genreLabel.trim();
+
+    return videos.where((v) {
+      if (area.isNotEmpty && area != '全部') {
+        final haystack =
+            '${v.area} ${v.remarks} ${v.tag} ${v.description} ${v.title}'
+                .toLowerCase();
+        if (!_matchesArea(haystack, area)) return false;
+      }
+      if (year.isNotEmpty && year != '全部') {
+        final haystack = '${v.year} ${v.remarks} ${v.title}';
+        if (!_matchesYear(haystack, year)) return false;
+      }
+      if (genre.isNotEmpty && genre != '全部') {
+        final cleanGenre = genre.replaceAll(RegExp(r'[片剧漫]$'), '');
+        final haystack =
+            '${v.tag} ${v.remarks} ${v.description} ${v.title} ${v.area}'
+                .toLowerCase();
+        if (cleanGenre.isNotEmpty &&
+            !haystack.contains(cleanGenre.toLowerCase()) &&
+            !haystack.contains(genre.toLowerCase())) {
+          return false;
+        }
+      }
+      return true;
+    }).toList(growable: false);
+  }
+
+  static bool _matchesArea(String haystack, String area) {
+    if (haystack.trim().isEmpty) return false;
+    switch (area) {
+      case '大陆':
+        return haystack.contains('大陆') ||
+            haystack.contains('内地') ||
+            haystack.contains('中国') ||
+            haystack.contains('国产') ||
+            haystack.contains('国语') ||
+            haystack.contains('普通话');
+      case '香港':
+        return haystack.contains('香港') ||
+            haystack.contains('港剧') ||
+            haystack.contains('港片') ||
+            haystack.contains('粤语');
+      case '台湾':
+        return haystack.contains('台湾') || haystack.contains('台剧');
+      case '美国':
+        return haystack.contains('美国') ||
+            haystack.contains('欧美') ||
+            haystack.contains('好莱坞') ||
+            haystack.contains('美剧');
+      case '韩国':
+        return haystack.contains('韩国') ||
+            haystack.contains('韩剧') ||
+            haystack.contains('韩语');
+      case '日本':
+        return haystack.contains('日本') ||
+            haystack.contains('日剧') ||
+            haystack.contains('日语') ||
+            haystack.contains('日漫');
+      case '英国':
+        return haystack.contains('英国') || haystack.contains('英剧');
+      case '法国':
+        return haystack.contains('法国');
+      case '泰国':
+        return haystack.contains('泰国') || haystack.contains('泰剧');
+      case '印度':
+        return haystack.contains('印度');
+      case '其他':
+        for (final known in [
+          '大陆',
+          '内地',
+          '中国',
+          '香港',
+          '台湾',
+          '美国',
+          '韩国',
+          '日本',
+          '英国',
+          '法国',
+          '泰国',
+          '印度',
+        ]) {
+          if (haystack.contains(known)) return false;
+        }
+        return true;
+      default:
+        return haystack.contains(area.toLowerCase());
+    }
+  }
+
+  static bool _matchesYear(String haystack, String yearFilter) {
+    if (yearFilter == '2010年代') {
+      final m = RegExp(r'\b(201\d)\b').firstMatch(haystack);
+      return m != null;
+    }
+    if (yearFilter == '更早') {
+      final m = RegExp(r'\b(19\d\d|200\d)\b').firstMatch(haystack);
+      return m != null;
+    }
+    return haystack.contains(yearFilter);
   }
   static List<CmsCategory> parseCategories(String rawJson) {
     final trimmed = rawJson.trimLeft();
