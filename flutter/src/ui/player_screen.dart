@@ -823,7 +823,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _showSpeedSheet,
       ),
       (
-        CupertinoIcons.aspectratio,
+        CupertinoIcons.play_rectangle,
         '画面·$_fitLabel',
         _cycleAspect,
       ),
