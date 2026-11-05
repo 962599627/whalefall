@@ -775,6 +775,9 @@ class CspBridge {
       } else if (item['cover'] is Map) {
         poster = (item['cover']['url'] ?? '').toString().trim();
       }
+      if (poster.contains('img9.doubanio.com')) {
+        poster = poster.replaceFirst('img9.doubanio.com', 'img3.doubanio.com');
+      }
       String ratingStr = '';
       if (item['rating'] is Map && item['rating']['value'] != null) {
         final val = item['rating']['value'];

@@ -1,19 +1,21 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../core/cms_client.dart';
+import '../core/csp_bridge.dart';
 import '../core/models.dart';
 import '../core/storage_service.dart';
 import 'apple_theme.dart';
 
 /// Apple AVPlayerViewController / Apple TV+ inspired video player with:
 /// - Large center transport controls (Rewind 15s, Play/Pause, Fast-Forward 15s)
-/// - Dedicated floating Progress Bar capsule with Portrait/Landscape fullscreen toggle
-/// - Separate scrollable Tool Dock (Bottom horizontal in Portrait, Right vertical in Landscape)
-///   exposing all adjustable playback controls.
+/// - Dedicated floating Progress Bar capsule (automatically hidden during Live TV)
+/// - Compact scrollable Tool Dock (Bottom horizontal in Portrait, Right edge in Landscape)
+/// - Full-width iOS 27 Liquid Glass Episode & Line Picker sheet.
 class PlayerScreen extends StatefulWidget {
   final CmsSite site;
   final CmsVideo video;
@@ -21,6 +23,7 @@ class PlayerScreen extends StatefulWidget {
   final int initialEpisodeIndex;
   final int initialPositionMs;
   final StorageService storage;
+  final bool isLive;
 
   const PlayerScreen({
     super.key,
@@ -30,6 +33,7 @@ class PlayerScreen extends StatefulWidget {
     required this.initialEpisodeIndex,
     required this.storage,
     this.initialPositionMs = 0,
+    this.isLive = false,
   });
 
   @override
@@ -68,6 +72,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   CmsLine get _currentLine => widget.video.lines[_lineIndex];
   CmsEpisode get _currentEpisode => _currentLine.episodes[_episodeIndex];
+
+  bool get _isLiveStream =>
+      widget.isLive ||
+      widget.site.key == 'live' ||
+      (widget.site.api.isEmpty && widget.site.type == 1) ||
+      CspBridge.isHuyaSite(widget.site) ||
+      CspBridge.isDouyuSite(widget.site);
 
   @override
   void initState() {
@@ -389,6 +400,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             _scheduleHide();
           },
           onLongPressStart: (_) {
+            if (_isLiveStream) return;
             if (_playing && _duration.inMilliseconds > 0) {
               setState(() {
                 _speedBoosting = true;
@@ -407,10 +419,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
             }
           },
           onHorizontalDragStart: (_) {
+            if (_isLiveStream) return;
             _dragStartPosMs = _position.inMilliseconds.toDouble();
           },
           onHorizontalDragUpdate: (details) {
-            if (_duration.inMilliseconds <= 0) return;
+            if (_isLiveStream || _duration.inMilliseconds <= 0) return;
             final width = MediaQuery.sizeOf(context).width.clamp(200.0, 4000.0);
             final deltaMs = (details.localPosition.dx / width - 0.5) * 120000;
             final previewMs = (_dragStartPosMs + deltaMs)
@@ -422,6 +435,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             });
           },
           onHorizontalDragEnd: (_) {
+            if (_isLiveStream) return;
             setState(() => _hudText = '');
           },
           child: Stack(
@@ -489,6 +503,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget _buildAppleChromeOverlay(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final isLandscape = size.width > size.height;
+    final safePad = MediaQuery.paddingOf(context);
+    final leftInset =
+        isLandscape ? math.max(16.0, safePad.left * 0.45) : 14.0;
+    final rightDockEdge =
+        isLandscape ? math.max(8.0, safePad.right * 0.16) : 14.0;
 
     return Container(
       decoration: const BoxDecoration(
@@ -497,20 +516,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
           end: Alignment.bottomCenter,
           colors: [
             Color(0xB8000000),
-            Color(0x26000000),
-            Color(0x26000000),
+            Color(0x22000000),
+            Color(0x22000000),
             Color(0xD8000000),
           ],
         ),
       ),
       child: SafeArea(
+        left: !isLandscape,
+        right: !isLandscape,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 1. Top Header Bar (Back + Title + Quick Orientation Button)
+            // 1. Top Header Bar (Back + Title + Live Badge / Orientation Button)
             Positioned(
-              left: 16,
-              right: isLandscape ? 92 : 16,
+              left: leftInset,
+              right: isLandscape ? rightDockEdge + 64 : 14,
               top: 10,
               child: _buildTopHeader(context, isLandscape),
             ),
@@ -519,15 +540,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
             if (!_loading && !_buffering)
               Center(
                 child: Padding(
-                  padding: EdgeInsets.only(right: isLandscape ? 72 : 0),
+                  padding: EdgeInsets.only(right: isLandscape ? 32 : 0),
                   child: _buildCenterTransportButtons(),
                 ),
               ),
 
-            // 3. Landscape Right-side Scrollable Tool Dock
+            // 3. Landscape Right-side Compact Scrollable Tool Dock (tucked near right edge)
             if (isLandscape)
               Positioned(
-                right: 14,
+                right: rightDockEdge,
                 top: 14,
                 bottom: 14,
                 child: Center(
@@ -535,17 +556,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
               ),
 
-            // 4. Bottom Floating Progress Bar Capsule (+ Bottom Scrollable Tool Dock in Portrait)
+            // 4. Bottom Floating Progress Bar Capsule (hidden during Live TV)
+            //    + Bottom Scrollable Tool Dock in Portrait
             Positioned(
-              left: 16,
-              right: isLandscape ? 96 : 16,
-              bottom: 12,
+              left: leftInset,
+              right: isLandscape ? rightDockEdge + 64 : 14,
+              bottom: 10,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildProgressBarCapsule(context, isLandscape),
+                  if (!_isLiveStream)
+                    _buildProgressBarCapsule(context, isLandscape),
                   if (!isLandscape) ...[
-                    const SizedBox(height: 10),
+                    if (!_isLiveStream) const SizedBox(height: 10),
                     _buildScrollableToolDock(isLandscape: false),
                   ],
                 ],
@@ -562,10 +585,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       children: [
         CupertinoButton(
           padding: EdgeInsets.zero,
-          minSize: 38,
+          minSize: 36,
           onPressed: () => Navigator.of(context).maybePop(),
           child: const AppleGlassSurface(
-            padding: EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+            padding: EdgeInsets.symmetric(horizontal: 13, vertical: 7.5),
             borderRadius: BorderRadius.all(Radius.circular(999)),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -593,16 +616,43 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                widget.video.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppleColors.labelPrimary,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                ),
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      widget.video.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppleColors.labelPrimary,
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ),
+                  if (_isLiveStream) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppleColors.systemRed.withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        '直播中',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 2),
               Text(
@@ -617,41 +667,89 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ],
           ),
         ),
+        if (_isLiveStream) ...[
+          const SizedBox(width: 10),
+          CupertinoButton(
+            key: const Key('player-fullscreen-toggle'),
+            padding: EdgeInsets.zero,
+            minSize: 34,
+            onPressed: _toggleOrientation,
+            child: AppleGlassSurface(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+              borderRadius: BorderRadius.circular(999),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isLandscape
+                        ? CupertinoIcons.fullscreen_exit
+                        : CupertinoIcons.fullscreen,
+                    color: AppleColors.labelPrimary,
+                    size: 15,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    isLandscape ? '竖屏' : '全屏',
+                    style: const TextStyle(
+                      color: AppleColors.labelPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
 
   /// Large center screen transport controls: Rewind 15s, Play/Pause, Fast-Forward 15s.
+  /// For Live TV streams, only the central Play/Pause button is shown.
   Widget _buildCenterTransportButtons() {
+    if (_isLiveStream) {
+      return _buildCenterCircleButton(
+        key: const Key('player-center-play-pause'),
+        icon: _playing ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
+        size: 78,
+        iconSize: 36,
+        hero: true,
+        onTap: () {
+          _player.playOrPause();
+          _scheduleHide();
+        },
+      );
+    }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         _buildCenterCircleButton(
           key: const Key('player-center-rewind'),
           icon: CupertinoIcons.gobackward_15,
-          size: 62,
-          iconSize: 28,
+          size: 60,
+          iconSize: 26,
           hero: false,
           onTap: () => _seekRelative(-15),
         ),
-        const SizedBox(width: 32),
+        const SizedBox(width: 30),
         _buildCenterCircleButton(
           key: const Key('player-center-play-pause'),
           icon: _playing ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
-          size: 82,
-          iconSize: 38,
+          size: 78,
+          iconSize: 36,
           hero: true,
           onTap: () {
             _player.playOrPause();
             _scheduleHide();
           },
         ),
-        const SizedBox(width: 32),
+        const SizedBox(width: 30),
         _buildCenterCircleButton(
           key: const Key('player-center-forward'),
           icon: CupertinoIcons.goforward_15,
-          size: 62,
-          iconSize: 28,
+          size: 60,
+          iconSize: 26,
           hero: false,
           onTap: () => _seekRelative(15),
         ),
@@ -799,29 +897,41 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   /// Separate Scrollable Tool Dock:
   /// - Portrait: horizontal scrollable strip at the bottom.
-  /// - Landscape: vertical scrollable strip on the right edge.
-  /// Exposes all adjustable playback controls.
+  /// - Landscape: compact vertical scrollable strip tucked near the right edge.
+  /// Exposes all adjustable playback controls (omitting VOD-only items during Live TV).
   Widget _buildScrollableToolDock({required bool isLandscape}) {
+    final live = _isLiveStream;
     final actions = <(IconData, String, VoidCallback)>[
       if (_episodeIndex > 0)
-        (CupertinoIcons.backward_end_fill, '上集', () => _stepEpisode(-1)),
+        (
+          CupertinoIcons.backward_end_fill,
+          live ? '上源' : '上集',
+          () => _stepEpisode(-1),
+        ),
       if (_episodeIndex < _currentLine.episodes.length - 1)
-        (CupertinoIcons.forward_end_fill, '下集', () => _stepEpisode(1)),
-      (
-        CupertinoIcons.square_grid_2x2_fill,
-        '选集',
-        _showEpisodesSheet,
-      ),
-      (
-        CupertinoIcons.layers_alt_fill,
-        '线路',
-        _showLinesSheet,
-      ),
-      (
-        CupertinoIcons.speedometer,
-        '${_normalSpeed}×',
-        _showSpeedSheet,
-      ),
+        (
+          CupertinoIcons.forward_end_fill,
+          live ? '下源' : '下集',
+          () => _stepEpisode(1),
+        ),
+      if (_currentLine.episodes.length > 1 || !live)
+        (
+          CupertinoIcons.square_grid_2x2_fill,
+          live ? '信号' : '选集',
+          _showEpisodesSheet,
+        ),
+      if (widget.video.lines.length > 1 || !live)
+        (
+          CupertinoIcons.layers_alt_fill,
+          '线路',
+          _showLinesSheet,
+        ),
+      if (!live)
+        (
+          CupertinoIcons.speedometer,
+          '${_normalSpeed}×',
+          _showSpeedSheet,
+        ),
       (
         CupertinoIcons.play_rectangle,
         '画面·$_fitLabel',
@@ -834,43 +944,51 @@ class _PlayerScreenState extends State<PlayerScreen> {
         isLandscape ? '竖屏' : '全屏',
         _toggleOrientation,
       ),
-      (
-        CupertinoIcons.forward_fill,
-        _skipIntroSec > 0 ? '片头${_skipIntroSec}s' : '跳片头',
-        _showSkipIntroSheet,
-      ),
-      (
-        CupertinoIcons.forward_end_alt_fill,
-        _skipOutroSec > 0 ? '片尾${_skipOutroSec}s' : '跳片尾',
-        _showSkipOutroSheet,
-      ),
-      (
-        CupertinoIcons.repeat,
-        '连播·${_autoNext ? "开" : "关"}',
-        _toggleAutoNext,
-      ),
-      (
-        CupertinoIcons.arrow_2_squarepath,
-        '循环·$_repeatLabel',
-        _cycleRepeatMode,
-      ),
+      if (!live) ...[
+        (
+          CupertinoIcons.forward_fill,
+          _skipIntroSec > 0 ? '片头${_skipIntroSec}s' : '跳片头',
+          _showSkipIntroSheet,
+        ),
+        (
+          CupertinoIcons.forward_end_alt_fill,
+          _skipOutroSec > 0 ? '片尾${_skipOutroSec}s' : '跳片尾',
+          _showSkipOutroSheet,
+        ),
+        (
+          CupertinoIcons.repeat,
+          '连播·${_autoNext ? "开" : "关"}',
+          _toggleAutoNext,
+        ),
+        (
+          CupertinoIcons.arrow_2_squarepath,
+          '循环·$_repeatLabel',
+          _cycleRepeatMode,
+        ),
+      ],
       (
         CupertinoIcons.speaker_2_fill,
         '音轨',
         _showAudioTracksSheet,
       ),
-      (
-        CupertinoIcons.captions_bubble_fill,
-        '字幕',
-        _showSubtitleTracksSheet,
-      ),
+      if (!live)
+        (
+          CupertinoIcons.captions_bubble_fill,
+          '字幕',
+          _showSubtitleTracksSheet,
+        ),
       (
         CupertinoIcons.refresh,
-        '重播',
+        live ? '刷新' : '重播',
         () {
-          _player.seek(Duration.zero);
-          _player.play();
-          _showHud('已从头开始播放');
+          if (live) {
+            _openCurrentEpisode();
+            _showHud('正在刷新直播流…');
+          } else {
+            _player.seek(Duration.zero);
+            _player.play();
+            _showHud('已从头开始播放');
+          }
         },
       ),
     ];
@@ -878,9 +996,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (isLandscape) {
       return AppleGlassSurface(
         key: const Key('player-tool-dock-landscape'),
-        width: 72,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-        borderRadius: BorderRadius.circular(24),
+        width: 54,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
+        borderRadius: BorderRadius.circular(18),
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           scrollDirection: Axis.vertical,
@@ -888,7 +1006,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               for (int i = 0; i < actions.length; i++) ...[
-                if (i > 0) const SizedBox(height: 8),
+                if (i > 0) const SizedBox(height: 6),
                 _buildToolTile(
                   icon: actions[i].$1,
                   label: actions[i].$2,
@@ -906,8 +1024,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       constraints: const BoxConstraints(maxWidth: 740),
       child: AppleGlassSurface(
         key: const Key('player-tool-dock-portrait'),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        borderRadius: BorderRadius.circular(22),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        borderRadius: BorderRadius.circular(20),
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           scrollDirection: Axis.horizontal,
@@ -915,7 +1033,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               for (int i = 0; i < actions.length; i++) ...[
-                if (i > 0) const SizedBox(width: 8),
+                if (i > 0) const SizedBox(width: 7),
                 _buildToolTile(
                   icon: actions[i].$1,
                   label: actions[i].$2,
@@ -938,35 +1056,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }) {
     return CupertinoButton(
       padding: EdgeInsets.zero,
-      minSize: 34,
+      minSize: verticalLayout ? 30 : 34,
       onPressed: () {
         _scheduleHide();
         onTap();
       },
       child: Container(
-        width: verticalLayout ? 60 : null,
+        width: verticalLayout ? 46 : null,
         padding: EdgeInsets.symmetric(
-          horizontal: verticalLayout ? 6 : 12,
-          vertical: verticalLayout ? 8 : 7,
+          horizontal: verticalLayout ? 2 : 11,
+          vertical: verticalLayout ? 5.5 : 6.5,
         ),
         decoration: BoxDecoration(
-          color: const Color(0x24FFFFFF),
-          borderRadius: BorderRadius.circular(verticalLayout ? 14 : 999),
+          color: const Color(0x26FFFFFF),
+          borderRadius: BorderRadius.circular(verticalLayout ? 11 : 999),
           border: Border.all(color: AppleColors.glassBorder, width: 0.5),
         ),
         child: verticalLayout
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(icon, color: AppleColors.labelPrimary, size: 17),
-                  const SizedBox(height: 4),
+                  Icon(icon, color: AppleColors.labelPrimary, size: 15),
+                  const SizedBox(height: 2.5),
                   Text(
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppleColors.labelPrimary,
-                      fontSize: 10.5,
+                      fontSize: 9.5,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1286,50 +1404,451 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _showEpisodesSheet() {
+    final screenSize = MediaQuery.sizeOf(context);
+    final isLandscape = screenSize.width > screenSize.height;
     showAppleModalSheet<void>(
       context: context,
-      title: '切换剧集 (${_currentLine.episodes.length})',
-      builder: (ctx) => GridView.builder(
-        shrinkWrap: true,
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 148,
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: 2.7,
-        ),
-        itemCount: _currentLine.episodes.length,
-        itemBuilder: (ctx, i) {
-          final ep = _currentLine.episodes[i];
-          final selected = i == _episodeIndex;
-          return GestureDetector(
-            onTap: () {
-              Navigator.of(ctx).pop();
-              setState(() => _episodeIndex = i);
-              _openCurrentEpisode();
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: selected
-                    ? AppleColors.systemBlue
-                    : AppleColors.groupedSecondary,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                ep.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: AppleColors.labelPrimary,
-                  fontSize: 13,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+      title: '选集与线路 (${_currentLine.episodes.length})',
+      maxWidth: isLandscape
+          ? math.min(screenSize.width - 24, 920.0)
+          : 560.0,
+      builder: (ctx) => _PlayerEpisodePickerSheet(
+        lines: widget.video.lines,
+        initialLineIndex: _lineIndex,
+        activeLineIndex: _lineIndex,
+        activeEpisodeIndex: _episodeIndex,
+        onSelect: (lineIdx, epIdx) {
+          Navigator.of(ctx).pop();
+          setState(() {
+            _lineIndex = lineIdx;
+            _episodeIndex = epIdx;
+          });
+          _openCurrentEpisode();
+        },
+      ),
+    );
+  }
+}
+
+class _ParsedEpisodeLabel {
+  final String title;
+  final String sizeBadge;
+
+  const _ParsedEpisodeLabel({
+    required this.title,
+    required this.sizeBadge,
+  });
+
+  factory _ParsedEpisodeLabel.parse(String raw, int index) {
+    var text = raw.trim();
+    var badge = '';
+    final bracketMatch = RegExp(r'^\[([^\]]+)\]\s*(.*)$').firstMatch(text);
+    if (bracketMatch != null) {
+      badge = (bracketMatch.group(1) ?? '').trim();
+      text = (bracketMatch.group(2) ?? '').trim();
+    }
+    if (text.isEmpty) {
+      text = raw.trim().isNotEmpty ? raw.trim() : '第${index + 1}集';
+    }
+    return _ParsedEpisodeLabel(title: text, sizeBadge: badge);
+  }
+}
+
+class _PlayerEpisodePickerSheet extends StatefulWidget {
+  final List<CmsLine> lines;
+  final int initialLineIndex;
+  final int activeLineIndex;
+  final int activeEpisodeIndex;
+  final void Function(int lineIndex, int episodeIndex) onSelect;
+
+  const _PlayerEpisodePickerSheet({
+    required this.lines,
+    required this.initialLineIndex,
+    required this.activeLineIndex,
+    required this.activeEpisodeIndex,
+    required this.onSelect,
+  });
+
+  @override
+  State<_PlayerEpisodePickerSheet> createState() =>
+      _PlayerEpisodePickerSheetState();
+}
+
+class _PlayerEpisodePickerSheetState extends State<_PlayerEpisodePickerSheet> {
+  static const int _groupSize = 40;
+  late int _previewLineIndex;
+  late int _groupIndex;
+  bool _descending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _previewLineIndex = widget.initialLineIndex.clamp(
+      0,
+      math.max(0, widget.lines.length - 1),
+    );
+    _groupIndex = (widget.activeEpisodeIndex ~/ _groupSize);
+  }
+
+  CmsLine get _line => widget.lines.isEmpty
+      ? const CmsLine(name: '默认线路', episodes: [])
+      : widget.lines[_previewLineIndex.clamp(0, widget.lines.length - 1)];
+
+  @override
+  Widget build(BuildContext context) {
+    final episodes = _line.episodes;
+    final total = episodes.length;
+    final groupCount = total <= 0 ? 1 : ((total - 1) ~/ _groupSize) + 1;
+    final safeGroup = _groupIndex.clamp(0, math.max(0, groupCount - 1));
+    final startIdx = safeGroup * _groupSize;
+    final endIdx = math.min(startIdx + _groupSize, total);
+
+    final indices = <int>[
+      for (int i = startIdx; i < endIdx; i++) i,
+    ];
+    if (_descending) {
+      indices.sort((a, b) => b.compareTo(a));
+    }
+
+    final screenSize = MediaQuery.sizeOf(context);
+    final isLandscape = screenSize.width > screenSize.height;
+    final crossAxisCount = isLandscape
+        ? (screenSize.width >= 820 ? 5 : 4)
+        : 3;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 顶部线路切换 + 当前播放状态 + 正倒序切换
+          Row(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: List.generate(widget.lines.length, (i) {
+                      final line = widget.lines[i];
+                      final selected = i == _previewLineIndex;
+                      final isPlayingLine = i == widget.activeLineIndex;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _previewLineIndex = i;
+                              final newGroupCount = line.episodes.isEmpty
+                                  ? 1
+                                  : ((line.episodes.length - 1) ~/ _groupSize) +
+                                      1;
+                              if (_groupIndex >= newGroupCount) {
+                                _groupIndex = 0;
+                              }
+                            });
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOutCubic,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 13,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: selected
+                                  ? const LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Color(0xFF2897FF),
+                                        Color(0xFF0A84FF),
+                                      ],
+                                    )
+                                  : const LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Color(0xD82C2C32),
+                                        Color(0xCC1E1E24),
+                                      ],
+                                    ),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: selected
+                                    ? const Color(0x90FFFFFF)
+                                    : const Color(0x2EFFFFFF),
+                                width: 0.7,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (isPlayingLine) ...[
+                                  Icon(
+                                    CupertinoIcons.play_fill,
+                                    size: 11.5,
+                                    color: selected
+                                        ? Colors.white
+                                        : AppleColors.systemBlue,
+                                  ),
+                                  const SizedBox(width: 5),
+                                ],
+                                Text(
+                                  '${line.name} (${line.episodes.length})',
+                                  style: TextStyle(
+                                    color: selected
+                                        ? Colors.white
+                                        : AppleColors.labelPrimary,
+                                    fontSize: 12.5,
+                                    fontWeight: selected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => setState(() => _descending = !_descending),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xCC26262C),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: const Color(0x30FFFFFF),
+                      width: 0.65,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _descending
+                            ? CupertinoIcons.sort_down
+                            : CupertinoIcons.sort_up,
+                        size: 13.5,
+                        color: AppleColors.labelSecondary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _descending ? '倒序' : '正序',
+                        style: const TextStyle(
+                          color: AppleColors.labelPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          // 分段区间快速切换（超过 40 集自动显示分段胶囊）
+          if (groupCount > 1) ...[
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: List.generate(groupCount, (g) {
+                  final gStart = g * _groupSize + 1;
+                  final gEnd = math.min((g + 1) * _groupSize, total);
+                  final active = g == safeGroup;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 7),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _groupIndex = g),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 5.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: active
+                              ? const Color(0x330A84FF)
+                              : const Color(0x99202026),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: active
+                                ? AppleColors.systemBlue
+                                : const Color(0x24FFFFFF),
+                            width: 0.75,
+                          ),
+                        ),
+                        child: Text(
+                          '$gStart-$gEnd',
+                          style: TextStyle(
+                            color: active
+                                ? const Color(0xFF64B5FF)
+                                : AppleColors.labelSecondary,
+                            fontSize: 12,
+                            fontWeight:
+                                active ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
             ),
-          );
-        },
+          ],
+          const SizedBox(height: 12),
+          // 剧集网格卡片
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: isLandscape
+                  ? math.min(screenSize.height * 0.56, 320.0)
+                  : math.min(screenSize.height * 0.52, 420.0),
+            ),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const BouncingScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: crossAxisCount,
+                mainAxisSpacing: 9,
+                crossAxisSpacing: 9,
+                mainAxisExtent: 56,
+              ),
+              itemCount: indices.length,
+              itemBuilder: (ctx, idx) {
+                final epIndex = indices[idx];
+                final ep = episodes[epIndex];
+                final selected = _previewLineIndex == widget.activeLineIndex &&
+                    epIndex == widget.activeEpisodeIndex;
+                final parsed = _ParsedEpisodeLabel.parse(ep.name, epIndex);
+                final numBadge =
+                    '#${(epIndex + 1).toString().padLeft(2, '0')}';
+
+                return GestureDetector(
+                  onTap: () => widget.onSelect(_previewLineIndex, epIndex),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 11,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: selected
+                          ? const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Color(0xFF1D8BFF),
+                                Color(0xFF0A6CE8),
+                              ],
+                            )
+                          : const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Color(0xCC28282F),
+                                Color(0xB81D1D23),
+                              ],
+                            ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xAAFFFFFF)
+                            : const Color(0x28FFFFFF),
+                        width: selected ? 0.9 : 0.65,
+                      ),
+                      boxShadow: selected
+                          ? const [
+                              BoxShadow(
+                                color: Color(0x450A84FF),
+                                blurRadius: 12,
+                                offset: Offset(0, 4),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            if (selected) ...[
+                              const Icon(
+                                CupertinoIcons.play_fill,
+                                size: 11,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 4),
+                            ],
+                            Text(
+                              numBadge,
+                              style: TextStyle(
+                                color: selected
+                                    ? const Color(0xE6FFFFFF)
+                                    : AppleColors.labelTertiary,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (parsed.sizeBadge.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5.5,
+                                  vertical: 1.5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: selected
+                                      ? const Color(0x33FFFFFF)
+                                      : const Color(0x22FFFFFF),
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Text(
+                                  parsed.sizeBadge,
+                                  style: TextStyle(
+                                    color: selected
+                                        ? Colors.white
+                                        : AppleColors.labelSecondary,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          parsed.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                            fontWeight:
+                                selected ? FontWeight.w700 : FontWeight.w600,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

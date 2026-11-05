@@ -241,53 +241,49 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Priority Order Banner (matches TV's `盘序: 夸父>优汐>嘟嘟>阿狸`)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF2C2C2E).withValues(alpha: 0.65),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.10),
-                width: 0.5,
-              ),
-            ),
-            child: Row(
+          AppleGlassSurface(
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+            borderRadius: BorderRadius.circular(18),
+            color: const Color(0x9926262E),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  CupertinoIcons.arrow_up_arrow_down_circle_fill,
-                  color: Color(0xFF0A84FF),
-                  size: 20,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '网盘线路优先顺序：$orderLabels',
+                Row(
+                  children: [
+                    const Icon(
+                      CupertinoIcons.arrow_up_arrow_down_circle_fill,
+                      color: AppleColors.systemBlue,
+                      size: 19,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '盘序优先：$orderLabels',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      const Text(
-                        '与电视端「🗂我的云盘┃配置」保持一致，支持优汐智1 / 夸父智1 / 嘟嘟无限2 / 阿狸原画',
-                        style: TextStyle(
-                          color: Color(0x99EBEBF5),
-                          fontSize: 11.5,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    AppleCapsuleButton(
+                      icon: CupertinoIcons.refresh,
+                      label: '切换盘序',
+                      compact: true,
+                      onPressed: _rotateDriveOrder,
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                AppleCapsuleButton(
-                  icon: CupertinoIcons.refresh,
-                  label: '切换盘序',
-                  compact: true,
-                  onPressed: _rotateDriveOrder,
+                const SizedBox(height: 6),
+                const Text(
+                  '与电视端「🗂我的云盘┃配置」保持一致，支持优汐智1 / 夸父智1 / 嘟嘟无限2 / 阿狸原画',
+                  style: TextStyle(
+                    color: Color(0x99EBEBF5),
+                    fontSize: 11.5,
+                  ),
                 ),
               ],
             ),
@@ -458,111 +454,163 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
 
     return Container(
       key: ValueKey('netdisk-tile-${drive.key}'),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
       decoration: BoxDecoration(
-        color: isScanning
-            ? const Color(0xFF0A84FF).withValues(alpha: 0.16)
-            : const Color(0xFF2C2C2E).withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isScanning
+              ? [
+                  const Color(0xFF0A84FF).withValues(alpha: 0.22),
+                  const Color(0xFF20222C).withValues(alpha: 0.78),
+                ]
+              : [
+                  const Color(0xFF2E2E36).withValues(alpha: 0.68),
+                  const Color(0xFF1E1E24).withValues(alpha: 0.68),
+                ],
+        ),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: loggedIn
-              ? const Color(0xFF30D158).withValues(alpha: 0.45)
-              : Colors.white.withValues(alpha: 0.08),
-          width: 0.8,
+              ? const Color(0xFF30D158).withValues(alpha: 0.48)
+              : Colors.white.withValues(alpha: 0.14),
+          width: 0.7,
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: loggedIn
-                  ? const Color(0xFF30D158).withValues(alpha: 0.18)
-                  : const Color(0xFF0A84FF).withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              loggedIn ? CupertinoIcons.cloud_fill : CupertinoIcons.qrcode,
-              color: loggedIn ? const Color(0xFF30D158) : const Color(0xFF5AC8FA),
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: loggedIn
+                      ? const Color(0xFF30D158).withValues(alpha: 0.18)
+                      : const Color(0xFF0A84FF).withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(
+                  loggedIn ? CupertinoIcons.cloud_fill : CupertinoIcons.qrcode,
+                  color: loggedIn
+                      ? const Color(0xFF30D158)
+                      : const Color(0xFF5AC8FA),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      drive.tvAlias,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: loggedIn
-                            ? const Color(0xFF30D158).withValues(alpha: 0.20)
-                            : const Color(0xFF3A3A3C),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        loggedIn ? '已登录+启用中' : '未登录',
-                        style: TextStyle(
-                          color: loggedIn
-                              ? const Color(0xFF30D158)
-                              : const Color(0x99EBEBF5),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
+                    Row(
+                      children: [
+                        Text(
+                          drive.tvAlias,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            drive.providerName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0x99EBEBF5),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '对应线路：${drive.lineBadges.join(" / ")}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xB3EBEBF5),
+                        fontSize: 12,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  '${drive.providerName} · 对应线路：${drive.lineBadges.join(" / ")}',
-                  style: const TextStyle(
-                    color: Color(0x99EBEBF5),
-                    fontSize: 12,
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                decoration: BoxDecoration(
+                  color: loggedIn
+                      ? const Color(0xFF30D158).withValues(alpha: 0.20)
+                      : const Color(0xFF3A3A42).withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: loggedIn
+                        ? const Color(0xFF30D158).withValues(alpha: 0.45)
+                        : Colors.white.withValues(alpha: 0.14),
+                    width: 0.5,
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppleCapsuleButton(
-                key: ValueKey('netdisk-scan-btn-${drive.key}'),
-                icon: CupertinoIcons.qrcode_viewfinder,
-                label: loggedIn ? '重新扫码' : '扫码登录',
-                primary: !loggedIn,
-                compact: true,
-                onPressed: () => _startQrLogin(drive.key),
+                child: Text(
+                  loggedIn ? '已登录·启用中' : '未登录',
+                  style: TextStyle(
+                    color: loggedIn
+                        ? const Color(0xFF30D158)
+                        : const Color(0x99EBEBF5),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
-              const SizedBox(width: 6),
-              AppleCapsuleButton(
-                icon: loggedIn ? CupertinoIcons.trash : CupertinoIcons.pencil,
-                label: loggedIn ? '退出' : '配置',
-                compact: true,
-                onPressed: () async {
-                  if (loggedIn) {
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            height: 0.5,
+            color: Colors.white.withValues(alpha: 0.10),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: AppleCapsuleButton(
+                  key: ValueKey('netdisk-scan-btn-${drive.key}'),
+                  icon: CupertinoIcons.qrcode_viewfinder,
+                  label: loggedIn ? '重新扫码' : '扫码登录',
+                  primary: !loggedIn,
+                  compact: true,
+                  onPressed: () => _startQrLogin(drive.key),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: AppleCapsuleButton(
+                  icon: CupertinoIcons.pencil,
+                  label: '手动配置 Token',
+                  compact: true,
+                  onPressed: () => _showManualInputDialog(drive.key),
+                ),
+              ),
+              if (loggedIn) ...[
+                const SizedBox(width: 8),
+                AppleCapsuleButton(
+                  icon: CupertinoIcons.trash,
+                  label: '退出',
+                  destructive: true,
+                  compact: true,
+                  onPressed: () async {
                     await widget.storage.setNetdiskCredential(drive.key, '');
                     widget.onChanged?.call();
                     if (mounted) setState(() {});
-                  } else {
-                    await _showManualInputDialog(drive.key);
-                  }
-                },
-              ),
+                  },
+                ),
+              ],
             ],
           ),
         ],

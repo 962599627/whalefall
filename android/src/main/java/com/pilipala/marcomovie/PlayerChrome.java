@@ -102,38 +102,40 @@ final class PlayerChrome {
         progress.addView(clockRow, new LinearLayout.LayoutParams(-1, -2));
         int width = a.windowWidth();
         boolean mobileLandscape = !a.isTvDevice() && !a.isPortrait();
+        boolean isLive = a.liveSession != null;
         FrameLayout.LayoutParams track =
                 new FrameLayout.LayoutParams(
                         Math.min(
                                 a.dp(760),
-                                Math.max(a.dp(220), width - a.dp(mobileLandscape ? 140 : 48))),
+                                Math.max(a.dp(220), width - a.dp(mobileLandscape ? 120 : 48))),
                         -2,
                         Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         track.bottomMargin = a.dp(mobileLandscape ? 20 : 94);
-        if (mobileLandscape) track.rightMargin = a.dp(44);
+        if (mobileLandscape) track.rightMargin = a.dp(36);
+        if (isLive) progress.setVisibility(View.GONE);
         overlay.addView(progress, track);
 
         dock = a.vertical();
         dock.setTag("player-dock");
-        dock.setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5));
+        dock.setPadding(a.dp(6), a.dp(5), a.dp(6), a.dp(5));
         dock.setClipChildren(false);
-        GradientDrawable glass = a.bg(0xed262629, 30);
+        GradientDrawable glass = a.bg(0xed262629, 26);
         glass.setStroke(a.dp(1), 0x30ffffff);
         dock.setBackground(glass);
         dock.setElevation(a.dp(10));
         FrameLayout.LayoutParams bottom =
                 mobileLandscape
                         ? new FrameLayout.LayoutParams(
-                                a.dp(88),
+                                a.dp(72),
                                 Math.min(
                                         a.dp(360),
-                                        Math.max(a.dp(180), a.windowHeight() - a.dp(48))),
+                                        Math.max(a.dp(180), a.windowHeight() - a.dp(40))),
                                 Gravity.RIGHT | Gravity.CENTER_VERTICAL)
                         : new FrameLayout.LayoutParams(
                                 Math.min(a.dp(552), Math.max(a.dp(240), width - a.dp(32))),
                                 -2,
                                 Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        if (mobileLandscape) bottom.rightMargin = a.dp(14);
+        if (mobileLandscape) bottom.rightMargin = a.dp(8);
         else bottom.bottomMargin = a.dp(16);
         overlay.addView(dock, bottom);
 
@@ -218,19 +220,19 @@ final class PlayerChrome {
             fp.width =
                     Math.min(
                             a.dp(760),
-                            Math.max(a.dp(220), width - a.dp(mobileLandscape ? 140 : 48)));
+                            Math.max(a.dp(220), width - a.dp(mobileLandscape ? 120 : 48)));
             fp.bottomMargin = a.dp(mobileLandscape ? 20 : 94);
-            fp.rightMargin = mobileLandscape ? a.dp(44) : 0;
+            fp.rightMargin = mobileLandscape ? a.dp(36) : 0;
             progress.setLayoutParams(fp);
         }
         ViewGroup.LayoutParams d = dock.getLayoutParams();
         if (d instanceof FrameLayout.LayoutParams) {
             FrameLayout.LayoutParams fd = (FrameLayout.LayoutParams) d;
             if (mobileLandscape) {
-                fd.width = a.dp(88);
-                fd.height = Math.min(a.dp(360), Math.max(a.dp(180), a.windowHeight() - a.dp(48)));
+                fd.width = a.dp(72);
+                fd.height = Math.min(a.dp(360), Math.max(a.dp(180), a.windowHeight() - a.dp(40)));
                 fd.gravity = Gravity.RIGHT | Gravity.CENTER_VERTICAL;
-                fd.rightMargin = a.dp(14);
+                fd.rightMargin = a.dp(8);
                 fd.bottomMargin = 0;
             } else {
                 fd.width = Math.min(a.dp(552), Math.max(a.dp(240), width - a.dp(32)));

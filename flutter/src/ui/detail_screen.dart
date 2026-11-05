@@ -302,7 +302,7 @@ class _DetailScreenState extends State<DetailScreen> {
         fit: StackFit.expand,
         children: [
           // Ambient blurred poster header backdrop
-          if (_video.poster.isNotEmpty)
+          if (_video.poster.isNotEmpty || _video.title.isNotEmpty)
             Positioned(
               top: 0,
               left: 0,
@@ -314,6 +314,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   imageFilter: ImageFilter.blur(sigmaX: 42, sigmaY: 42),
                   child: PosterImage(
                     url: _video.poster,
+                    title: _video.title,
                     placeholder: const SizedBox.shrink(),
                   ),
                 ),
@@ -475,12 +476,11 @@ class _DetailScreenState extends State<DetailScreen> {
       clipBehavior: Clip.antiAlias,
       child: AspectRatio(
         aspectRatio: 2 / 3,
-        child: _video.poster.isNotEmpty
-            ? PosterImage(
-                url: _video.poster,
-                placeholder: _posterPlaceholder(),
-              )
-            : _posterPlaceholder(),
+        child: PosterImage(
+          url: _video.poster,
+          title: _video.title,
+          placeholder: _posterPlaceholder(),
+        ),
       ),
     );
   }

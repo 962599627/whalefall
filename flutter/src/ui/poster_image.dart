@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -8,13 +9,21 @@ import 'package:flutter/widgets.dart';
 
 /// Robust cross-platform poster loader (Windows / macOS / iOS / iPadOS).
 ///
-/// Flutter's `Image.network` appends custom headers to the default
-/// `Dart/x (dart:io)` User-Agent and rejects self-signed certificates, which
-/// many CMS image CDNs (and Douban's anti-hotlink nodes) refuse. This loader
-/// uses a dedicated tolerant [HttpClient], replaces the User-Agent outright,
-/// honours TVBox `@Referer=` / `@User-Agent=` suffixes, rotates Douban image
-/// nodes, validates image magic bytes (rejecting HTML challenge pages), and
-/// keeps an in-memory LRU plus an on-disk cache.
+/// Key resilience mechanisms:
+/// 1. Replaces `Image.network` + `ResizeImage` error-caching pitfalls by loading
+///    and verifying image magic bytes in memory before handing `MemoryImage` to
+///    Flutter's `ImageCache`, so transient network failures never stick in
+///    `ImageCache` for minutes.
+/// 2. Uses a LIFO concurrency queue (`_maxConcurrent = 16`) so newly visible
+///    posters on the current screen load immediately ahead of stale requests
+///    from previous tabs or sites.
+/// 3. Aborts timed-out `HttpClientRequest` sockets immediately (`request.abort()`)
+///    so slow overseas image hosts never exhaust per-host socket pools.
+/// 4. Rewrites `img9.doubanio.com` (which serves an HTML JS challenge) directly
+///    to `img3.doubanio.com` / `img1.doubanio.com` / `img2.doubanio.com`.
+/// 5. Provides automatic domestic high-speed cover fallback by video `title` via
+///    `movie.douban.com/j/subject_suggest` when a CMS poster URL is empty,
+///    404, or stalls on overseas CDNs.
 class PosterLoader {
   PosterLoader._();
 
@@ -25,12 +34,12 @@ class PosterLoader {
   static const String _tvBoxUa = 'okhttp/3.15';
   static const int _maxImageBytes = 10 * 1024 * 1024;
   static const int _maxMemoryBytes = 64 * 1024 * 1024;
-  static const int _maxConcurrent = 8;
+  static const int _maxConcurrent = 16;
 
   static final HttpClient _client = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 10)
-    ..idleTimeout = const Duration(seconds: 30)
-    ..maxConnectionsPerHost = 6
+    ..connectionTimeout = const Duration(seconds: 4)
+    ..idleTimeout = const Duration(seconds: 25)
+    ..maxConnectionsPerHost = 12
     ..userAgent = null
     ..autoUncompress = true
     ..badCertificateCallback = (_, __, ___) => true;
@@ -39,62 +48,252 @@ class PosterLoader {
       LinkedHashMap<String, Uint8List>();
   static int _memoryBytes = 0;
   static final Map<String, Future<Uint8List>> _inflight = {};
-  static final Set<String> _failed = {};
+  static final Map<String, String> _titleCoverUrlCache = {};
   static int _active = 0;
   static final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
   static Directory? _diskDir;
   static bool _diskReady = false;
 
-  /// Loads poster bytes, de-duplicating concurrent requests for the same URL.
-  static Future<Uint8List> load(String raw) {
-    final key = raw.trim();
-    final cached = _memory.remove(key);
-    if (cached != null) {
-      _memory[key] = cached;
-      return SynchronousFuture<Uint8List>(cached);
+  static String _cleanTitle(String rawTitle) {
+    return rawTitle
+        .replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '')
+        .replaceAll(RegExp(r'第[0-9一二三四五六七八九十]+季'), '')
+        .trim();
+  }
+
+  static String _cacheKeyFor(String rawUrl, String title) {
+    final u = rawUrl.trim();
+    if (u.isNotEmpty) return u;
+    final t = _cleanTitle(title);
+    return t.isEmpty ? '' : 'title:$t';
+  }
+
+  /// Synchronously peeks in-memory LRU cache so already-loaded posters render
+  /// on the very first frame without any async gap.
+  static Uint8List? peekMemory(String rawUrl, {String title = ''}) {
+    final u = rawUrl.trim();
+    if (u.isNotEmpty) {
+      final hit = _memory.remove(u);
+      if (hit != null) {
+        _memory[u] = hit;
+        return hit;
+      }
+    }
+    final clean = _cleanTitle(title);
+    if (clean.isNotEmpty) {
+      final tKey = 'title:$clean';
+      final hit = _memory.remove(tKey);
+      if (hit != null) {
+        _memory[tKey] = hit;
+        return hit;
+      }
+    }
+    return null;
+  }
+
+  /// Loads poster bytes, de-duplicating concurrent requests and falling back
+  /// to domestic Douban cover resolution by [title] when needed.
+  static Future<Uint8List> load(String raw, {String title = ''}) {
+    final immediate = peekMemory(raw, title: title);
+    if (immediate != null) {
+      return SynchronousFuture<Uint8List>(immediate);
+    }
+    final key = _cacheKeyFor(raw, title);
+    if (key.isEmpty) {
+      return Future<Uint8List>.error(const FormatException('空海报地址'));
     }
     final pending = _inflight[key];
     if (pending != null) return pending;
-    final future = _loadUncached(key).whenComplete(() => _inflight.remove(key));
+    final future = _loadUncached(raw.trim(), title.trim(), key)
+        .whenComplete(() => _inflight.remove(key));
     _inflight[key] = future;
     return future;
   }
 
-  static Future<Uint8List> _loadUncached(String key) async {
-    final diskFile = await _diskFileFor(key);
+  static bool _isKnownDeadPosterHost(String url) {
+    final lower = url.toLowerCase();
+    return lower.contains('mdzypic.com:888') ||
+        lower.contains('pic.ry-pic.com');
+  }
+
+  static Future<Uint8List> _loadUncached(
+    String rawUrl,
+    String rawTitle,
+    String cacheKey,
+  ) async {
+    final cleanTitle = _cleanTitle(rawTitle);
+    final titleCacheKey = cleanTitle.isNotEmpty ? 'title:$cleanTitle' : '';
+
+    // 1. Check disk cache for either the URL or the title key
+    final diskFile = await _diskFileFor(cacheKey);
     if (diskFile != null) {
       try {
         if (await diskFile.exists()) {
           final bytes = await diskFile.readAsBytes();
           if (_looksLikeImage(bytes)) {
-            _remember(key, bytes);
+            _remember(cacheKey, bytes);
+            if (titleCacheKey.isNotEmpty) _remember(titleCacheKey, bytes);
             return bytes;
           }
         }
       } catch (_) {}
     }
+    if (titleCacheKey.isNotEmpty && titleCacheKey != cacheKey) {
+      final titleDiskFile = await _diskFileFor(titleCacheKey);
+      if (titleDiskFile != null) {
+        try {
+          if (await titleDiskFile.exists()) {
+            final bytes = await titleDiskFile.readAsBytes();
+            if (_looksLikeImage(bytes)) {
+              _remember(cacheKey, bytes);
+              _remember(titleCacheKey, bytes);
+              return bytes;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     await _acquire();
     try {
       Object? lastError;
-      for (final attempt in _attemptsFor(key)) {
-        try {
-          final bytes = await _fetch(attempt.$1, attempt.$2)
-              .timeout(const Duration(seconds: 18));
-          _remember(key, bytes);
-          _failed.remove(key);
-          if (diskFile != null) {
-            unawaited(_writeDisk(diskFile, bytes));
+
+      // 2. Try primary URL attempts (unless empty or known dead host)
+      if (rawUrl.isNotEmpty && !_isKnownDeadPosterHost(rawUrl)) {
+        final attempts = _attemptsFor(rawUrl);
+        // Use a tight per-attempt timeout when we have a title fallback available
+        final perAttemptTimeout = cleanTitle.isNotEmpty
+            ? const Duration(milliseconds: 3200)
+            : const Duration(seconds: 6);
+        final maxPrimaryAttempts =
+            cleanTitle.isNotEmpty ? (attempts.length > 2 ? 2 : attempts.length) : attempts.length;
+
+        for (int i = 0; i < maxPrimaryAttempts; i++) {
+          final attempt = attempts[i];
+          try {
+            final bytes = await _fetch(
+              attempt.$1,
+              attempt.$2,
+              timeout: perAttemptTimeout,
+            );
+            _remember(cacheKey, bytes);
+            if (titleCacheKey.isNotEmpty) _remember(titleCacheKey, bytes);
+            if (diskFile != null) {
+              unawaited(_writeDisk(diskFile, bytes));
+            }
+            return bytes;
+          } catch (e) {
+            lastError = e;
           }
-          return bytes;
+        }
+      }
+
+      // 3. Fallback: resolve high-speed domestic Douban poster by video title
+      if (cleanTitle.isNotEmpty) {
+        try {
+          final fallbackUrl = await _resolveDoubanCoverUrlByTitle(cleanTitle);
+          if (fallbackUrl.isNotEmpty) {
+            for (final attempt in _attemptsFor(fallbackUrl)) {
+              try {
+                final bytes = await _fetch(
+                  attempt.$1,
+                  attempt.$2,
+                  timeout: const Duration(seconds: 5),
+                );
+                _remember(cacheKey, bytes);
+                if (titleCacheKey.isNotEmpty) _remember(titleCacheKey, bytes);
+                if (diskFile != null) {
+                  unawaited(_writeDisk(diskFile, bytes));
+                }
+                if (titleCacheKey.isNotEmpty && titleCacheKey != cacheKey) {
+                  final titleDisk = await _diskFileFor(titleCacheKey);
+                  if (titleDisk != null) {
+                    unawaited(_writeDisk(titleDisk, bytes));
+                  }
+                }
+                return bytes;
+              } catch (e) {
+                lastError = e;
+              }
+            }
+          }
         } catch (e) {
           lastError = e;
         }
       }
-      _failed.add(key);
-      throw Exception('海报加载失败：${lastError ?? key}');
+
+      // 4. If title fallback was unavailable or failed, try remaining URL attempts
+      if (rawUrl.isNotEmpty && !_isKnownDeadPosterHost(rawUrl)) {
+        final attempts = _attemptsFor(rawUrl);
+        for (int i = 2; i < attempts.length; i++) {
+          final attempt = attempts[i];
+          try {
+            final bytes = await _fetch(
+              attempt.$1,
+              attempt.$2,
+              timeout: const Duration(seconds: 6),
+            );
+            _remember(cacheKey, bytes);
+            if (diskFile != null) {
+              unawaited(_writeDisk(diskFile, bytes));
+            }
+            return bytes;
+          } catch (e) {
+            lastError = e;
+          }
+        }
+      }
+
+      throw Exception('海报加载失败：${lastError ?? cacheKey}');
     } finally {
       _release();
     }
+  }
+
+  static Future<String> _resolveDoubanCoverUrlByTitle(String cleanTitle) async {
+    final cached = _titleCoverUrlCache[cleanTitle];
+    if (cached != null) return cached;
+
+    HttpClientRequest? req;
+    try {
+      final encoded = Uri.encodeQueryComponent(cleanTitle);
+      final uri = Uri.parse(
+        'https://movie.douban.com/j/subject_suggest?q=$encoded',
+      );
+      req = await _client.getUrl(uri).timeout(const Duration(seconds: 3));
+      req.headers.set('User-Agent', _desktopSafariUa);
+      req.headers.set('Referer', 'https://movie.douban.com/');
+      req.headers.set('Accept', 'application/json, text/plain, */*');
+      final resp = await req.close().timeout(const Duration(seconds: 3));
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        final body = await utf8.decoder
+            .bind(resp)
+            .join()
+            .timeout(const Duration(seconds: 3));
+        final decoded = jsonDecode(body);
+        if (decoded is List && decoded.isNotEmpty) {
+          for (final item in decoded) {
+            if (item is Map) {
+              var img = (item['img'] ?? '').toString().trim();
+              if (img.startsWith('http')) {
+                img = img
+                    .replaceFirst('img9.doubanio.com', 'img3.doubanio.com')
+                    .replaceFirst('/s_ratio_poster/', '/m_ratio_poster/');
+                _titleCoverUrlCache[cleanTitle] = img;
+                return img;
+              }
+            }
+          }
+        }
+      } else {
+        await resp.drain<void>();
+      }
+    } catch (_) {
+      try {
+        req?.abort();
+      } catch (_) {}
+    }
+    return '';
   }
 
   static Future<void> _acquire() async {
@@ -111,11 +310,13 @@ class PosterLoader {
   static void _release() {
     _active--;
     if (_waiters.isNotEmpty) {
-      _waiters.removeFirst().complete();
+      // LIFO: prioritize the most recently requested visible posters on screen
+      _waiters.removeLast().complete();
     }
   }
 
   static void _remember(String key, Uint8List bytes) {
+    if (key.isEmpty) return;
     final old = _memory.remove(key);
     if (old != null) _memoryBytes -= old.length;
     _memory[key] = bytes;
@@ -138,7 +339,8 @@ class PosterLoader {
       for (int i = 0; i < matches.length; i++) {
         final m = matches[i];
         final end = i + 1 < matches.length ? matches[i + 1].start : raw.length;
-        final name = m.group(1)!.toLowerCase() == 'referer' ? 'Referer' : 'User-Agent';
+        final name =
+            m.group(1)!.toLowerCase() == 'referer' ? 'Referer' : 'User-Agent';
         final value = raw.substring(m.end, end).trim();
         if (value.isNotEmpty && !value.contains('\n')) embedded[name] = value;
       }
@@ -146,7 +348,9 @@ class PosterLoader {
     url = url.trim();
     if (url.startsWith('//')) url = 'https:$url';
     final uri = Uri.tryParse(url);
-    if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https') || uri.host.isEmpty) {
+    if (uri == null ||
+        !(uri.scheme == 'http' || uri.scheme == 'https') ||
+        uri.host.isEmpty) {
       return const [];
     }
     final host = uri.host.toLowerCase();
@@ -158,9 +362,15 @@ class PosterLoader {
     }
 
     if (host.endsWith('doubanio.com')) {
-      // Douban image nodes: img9 et al. may answer with an HTML JS challenge,
-      // while img1/img2/img3 serve the same path with a douban.com Referer.
-      final nodes = <String>[host, 'img1.doubanio.com', 'img2.doubanio.com', 'img3.doubanio.com'];
+      // `img9.doubanio.com` frequently returns an HTML `<script>` anti-bot challenge;
+      // always prioritize `img3`, `img1`, `img2` domestic nodes first.
+      final nodes = <String>[
+        if (host != 'img9.doubanio.com') host,
+        'img3.doubanio.com',
+        'img1.doubanio.com',
+        'img2.doubanio.com',
+        if (host == 'img9.doubanio.com') host,
+      ];
       for (final node in nodes) {
         final swapped = uri.replace(host: node, scheme: 'https').toString();
         add(swapped, const {
@@ -171,14 +381,17 @@ class PosterLoader {
       }
       return attempts;
     }
-    if (host.endsWith('hdslb.com') || host.endsWith('bilibili.com') || host.endsWith('biliimg.com')) {
+    if (host.endsWith('hdslb.com') ||
+        host.endsWith('bilibili.com') ||
+        host.endsWith('biliimg.com')) {
       add(uri.replace(scheme: 'https').toString(), const {
         'User-Agent': _desktopSafariUa,
         'Referer': 'https://www.bilibili.com/',
       });
     }
     const accept = 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8';
-    final origin = '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}/';
+    final origin =
+        '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}/';
     if (embedded.isNotEmpty) {
       add(url, {
         'User-Agent': embedded['User-Agent'] ?? _tvBoxUa,
@@ -186,8 +399,8 @@ class PosterLoader {
         'Accept': accept,
       });
     }
-    add(url, const {'User-Agent': _tvBoxUa, 'Accept': accept});
     add(url, {'User-Agent': _mobileSafariUa, 'Referer': origin, 'Accept': accept});
+    add(url, const {'User-Agent': _tvBoxUa, 'Accept': accept});
     add(url, const {'User-Agent': _desktopSafariUa, 'Accept': accept});
     final altScheme = uri.scheme == 'https' ? 'http' : 'https';
     add(uri.replace(scheme: altScheme).toString(), const {
@@ -197,41 +410,66 @@ class PosterLoader {
     return attempts;
   }
 
-  static Future<Uint8List> _fetch(String url, Map<String, String> headers) async {
-    final request = await _client.getUrl(Uri.parse(url));
-    request.followRedirects = true;
-    request.maxRedirects = 6;
-    headers.forEach((k, v) => request.headers.set(k, v));
-    final response = await request.close();
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      await response.drain<void>();
-      throw HttpException('HTTP ${response.statusCode}', uri: Uri.tryParse(url));
-    }
-    final builder = BytesBuilder(copy: false);
-    await for (final chunk in response) {
-      builder.add(chunk);
-      if (builder.length > _maxImageBytes) {
-        throw const HttpException('图片超过大小上限');
+  static Future<Uint8List> _fetch(
+    String url,
+    Map<String, String> headers, {
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
+    HttpClientRequest? request;
+    try {
+      request = await _client.getUrl(Uri.parse(url)).timeout(timeout);
+      request.followRedirects = true;
+      request.maxRedirects = 6;
+      headers.forEach((k, v) => request!.headers.set(k, v));
+      final response = await request.close().timeout(timeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        await response.drain<void>();
+        throw HttpException(
+          'HTTP ${response.statusCode}',
+          uri: Uri.tryParse(url),
+        );
       }
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in response.timeout(timeout)) {
+        builder.add(chunk);
+        if (builder.length > _maxImageBytes) {
+          throw const HttpException('图片超过大小上限');
+        }
+      }
+      final bytes = builder.takeBytes();
+      if (!_looksLikeImage(bytes)) {
+        throw const FormatException('服务器返回的不是图片');
+      }
+      return bytes;
+    } catch (e) {
+      try {
+        request?.abort();
+      } catch (_) {}
+      rethrow;
     }
-    final bytes = builder.takeBytes();
-    if (!_looksLikeImage(bytes)) {
-      throw const FormatException('服务器返回的不是图片');
-    }
-    return bytes;
   }
 
   static bool _looksLikeImage(Uint8List b) {
     if (b.length < 12) return false;
     if (b[0] == 0xFF && b[1] == 0xD8) return true; // JPEG
-    if (b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) return true; // PNG
+    if (b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) {
+      return true; // PNG
+    }
     if (b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46) return true; // GIF
-    if (b[0] == 0x52 && b[1] == 0x49 && b[2] == 0x46 && b[3] == 0x46 &&
-        b[8] == 0x57 && b[9] == 0x45 && b[10] == 0x42 && b[11] == 0x50) {
+    if (b[0] == 0x52 &&
+        b[1] == 0x49 &&
+        b[2] == 0x46 &&
+        b[3] == 0x46 &&
+        b[8] == 0x57 &&
+        b[9] == 0x45 &&
+        b[10] == 0x42 &&
+        b[11] == 0x50) {
       return true; // WEBP
     }
     if (b[0] == 0x42 && b[1] == 0x4D) return true; // BMP
-    if (b[4] == 0x66 && b[5] == 0x74 && b[6] == 0x79 && b[7] == 0x70) return true; // AVIF/HEIC
+    if (b[4] == 0x66 && b[5] == 0x74 && b[6] == 0x79 && b[7] == 0x70) {
+      return true; // AVIF/HEIC
+    }
     return false;
   }
 
@@ -239,7 +477,9 @@ class PosterLoader {
     if (!_diskReady) {
       _diskReady = true;
       try {
-        final dir = Directory('${Directory.systemTemp.path}${Platform.pathSeparator}marco_poster_cache');
+        final dir = Directory(
+          '${Directory.systemTemp.path}${Platform.pathSeparator}marco_poster_cache',
+        );
         if (!await dir.exists()) await dir.create(recursive: true);
         _diskDir = dir;
       } catch (_) {
@@ -260,7 +500,6 @@ class PosterLoader {
   }
 
   static String _fnv1a64(String input) {
-    // Two independent 32-bit FNV-1a hashes (safe on all Dart targets).
     int h1 = 0x811C9DC5;
     int h2 = 0x050C5D1F;
     for (final unit in input.codeUnits) {
@@ -271,11 +510,12 @@ class PosterLoader {
   }
 }
 
-/// [ImageProvider] backed by [PosterLoader] so posters participate in Flutter's image cache.
+/// [ImageProvider] backed by [PosterLoader] for direct provider consumers.
 @immutable
 class MarcoPosterProvider extends ImageProvider<MarcoPosterProvider> {
   final String url;
-  const MarcoPosterProvider(this.url);
+  final String title;
+  const MarcoPosterProvider(this.url, {this.title = ''});
 
   @override
   Future<MarcoPosterProvider> obtainKey(ImageConfiguration configuration) {
@@ -283,7 +523,10 @@ class MarcoPosterProvider extends ImageProvider<MarcoPosterProvider> {
   }
 
   @override
-  ImageStreamCompleter loadImage(MarcoPosterProvider key, ImageDecoderCallback decode) {
+  ImageStreamCompleter loadImage(
+    MarcoPosterProvider key,
+    ImageDecoderCallback decode,
+  ) {
     return MultiFrameImageStreamCompleter(
       codec: _loadCodec(key, decode),
       scale: 1.0,
@@ -291,13 +534,15 @@ class MarcoPosterProvider extends ImageProvider<MarcoPosterProvider> {
     );
   }
 
-  Future<ui.Codec> _loadCodec(MarcoPosterProvider key, ImageDecoderCallback decode) async {
+  Future<ui.Codec> _loadCodec(
+    MarcoPosterProvider key,
+    ImageDecoderCallback decode,
+  ) async {
     try {
-      final bytes = await PosterLoader.load(key.url);
+      final bytes = await PosterLoader.load(key.url, title: key.title);
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
       return decode(buffer);
     } catch (e) {
-      // Allow a later rebuild to retry instead of caching the failure forever.
       scheduleMicrotask(() => PaintingBinding.instance.imageCache.evict(key));
       rethrow;
     }
@@ -305,69 +550,154 @@ class MarcoPosterProvider extends ImageProvider<MarcoPosterProvider> {
 
   @override
   bool operator ==(Object other) =>
-      other is MarcoPosterProvider && other.url == url;
+      other is MarcoPosterProvider &&
+      other.url == url &&
+      other.title == title;
 
   @override
-  int get hashCode => url.hashCode;
+  int get hashCode => Object.hash(url, title);
 
   @override
-  String toString() => 'MarcoPosterProvider("$url")';
+  String toString() => 'MarcoPosterProvider("$url", title: "$title")';
 }
 
-/// Poster widget with a soft placeholder, smooth fade-in, and size-aware decoding.
-class PosterImage extends StatelessWidget {
+/// Stateful poster widget that loads verified image bytes via [PosterLoader],
+/// automatically retries transient network failures, falls back to domestic
+/// Douban cover resolution by [title], and never caches failed image states.
+class PosterImage extends StatefulWidget {
   final String url;
+  final String title;
   final BoxFit fit;
   final Widget placeholder;
   final bool fadeIn;
+
   const PosterImage({
     super.key,
     required this.url,
     required this.placeholder,
+    this.title = '',
     this.fit = BoxFit.cover,
     this.fadeIn = true,
   });
 
   @override
+  State<PosterImage> createState() => _PosterImageState();
+}
+
+class _PosterImageState extends State<PosterImage> {
+  Uint8List? _bytes;
+  bool _loadedSync = false;
+  int _retryCount = 0;
+  Timer? _retryTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _initLoad();
+  }
+
+  @override
+  void didUpdateWidget(covariant PosterImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url.trim() != widget.url.trim() ||
+        oldWidget.title.trim() != widget.title.trim()) {
+      _retryTimer?.cancel();
+      _retryCount = 0;
+      _initLoad();
+    }
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    super.dispose();
+  }
+
+  void _initLoad() {
+    final immediate = PosterLoader.peekMemory(widget.url, title: widget.title);
+    if (immediate != null) {
+      _bytes = immediate;
+      _loadedSync = true;
+      return;
+    }
+    _bytes = null;
+    _loadedSync = false;
+    _fetchBytes();
+  }
+
+  Future<void> _fetchBytes() async {
+    if (widget.url.trim().isEmpty && widget.title.trim().isEmpty) return;
+    final requestedUrl = widget.url.trim();
+    final requestedTitle = widget.title.trim();
+    try {
+      final data = await PosterLoader.load(
+        requestedUrl,
+        title: requestedTitle,
+      );
+      if (!mounted) return;
+      if (widget.url.trim() != requestedUrl ||
+          widget.title.trim() != requestedTitle) {
+        return;
+      }
+      setState(() {
+        _bytes = data;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      if (_retryCount < 2) {
+        _retryCount++;
+        final delayMs = _retryCount == 1 ? 1200 : 3200;
+        _retryTimer?.cancel();
+        _retryTimer = Timer(Duration(milliseconds: delayMs), () {
+          if (mounted) _fetchBytes();
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (url.trim().isEmpty) return placeholder;
+    final bytes = _bytes;
+    if (bytes == null) {
+      return widget.placeholder;
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 2.0;
         int? cacheWidth;
         if (constraints.maxWidth.isFinite && constraints.maxWidth > 0) {
-          // Bucket decode widths so the same poster at similar sizes shares one cache entry.
           final px = (constraints.maxWidth * dpr).ceil();
           cacheWidth = ((px + 159) ~/ 160) * 160;
         }
         final ImageProvider provider = ResizeImage.resizeIfNeeded(
           cacheWidth,
           null,
-          MarcoPosterProvider(url.trim()),
+          MemoryImage(bytes),
         );
-        return Image(
+        final img = Image(
           image: provider,
-          fit: fit,
+          fit: widget.fit,
           width: constraints.maxWidth.isFinite ? constraints.maxWidth : null,
           height: constraints.maxHeight.isFinite ? constraints.maxHeight : null,
           gaplessPlayback: true,
           filterQuality: FilterQuality.medium,
-          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-            if (wasSynchronouslyLoaded || !fadeIn) return child;
-            return Stack(
-              fit: StackFit.passthrough,
-              children: [
-                if (frame == null) Positioned.fill(child: placeholder),
-                AnimatedOpacity(
-                  opacity: frame == null ? 0 : 1,
-                  duration: const Duration(milliseconds: 320),
-                  curve: Curves.easeOutCubic,
-                  child: child,
-                ),
-              ],
-            );
-          },
-          errorBuilder: (_, __, ___) => placeholder,
+          errorBuilder: (_, __, ___) => widget.placeholder,
+        );
+        if (_loadedSync || !widget.fadeIn) {
+          return img;
+        }
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0.0, end: 1.0),
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          builder: (context, opacity, child) => Stack(
+            fit: StackFit.passthrough,
+            children: [
+              if (opacity < 0.99) Positioned.fill(child: widget.placeholder),
+              Opacity(opacity: opacity, child: child),
+            ],
+          ),
+          child: img,
         );
       },
     );

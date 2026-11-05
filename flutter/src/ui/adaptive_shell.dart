@@ -448,7 +448,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   // Top Header Bar
                   Row(
                     children: [
-                      const MarcoBrandLogo(iconSize: 30, fontSize: 18),
+                      const Flexible(
+                        flex: 0,
+                        child: MarcoBrandLogo(iconSize: 28, fontSize: 16.5),
+                      ),
                       const Spacer(),
                       if (depots.isNotEmpty) ...[
                         _buildHeaderCapsule(
@@ -458,14 +461,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                               : widget.storage.activeDepotName,
                           onTap: _showDepotPickerDialog,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                       ],
                       _buildHeaderCapsule(
                         icon: CupertinoIcons.layers_alt_fill,
                         label: _activeSite?.name ?? '选择片源',
                         onTap: _showSitePickerDialog,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       GestureDetector(
                         key: const ValueKey('home-netdisk-button'),
                         onTap: () => showNetdiskAccountSheet(
@@ -478,18 +481,25 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(999),
                           child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 11,
-                                vertical: 7.5,
+                                horizontal: 10.5,
+                                vertical: 7,
                               ),
                               decoration: BoxDecoration(
-                                color: AppleColors.fill,
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0xD42A2A32),
+                                    Color(0xC21D1D24),
+                                  ],
+                                ),
                                 borderRadius: BorderRadius.circular(999),
                                 border: Border.all(
                                   color: AppleColors.glassBorder,
-                                  width: 0.5,
+                                  width: 0.7,
                                 ),
                               ),
                               child: const Row(
@@ -498,14 +508,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                   Icon(
                                     CupertinoIcons.qrcode_viewfinder,
                                     color: AppleColors.systemBlue,
-                                    size: 14,
+                                    size: 13.5,
                                   ),
                                   SizedBox(width: 4),
                                   Text(
                                     '网盘',
                                     style: TextStyle(
                                       color: AppleColors.labelPrimary,
-                                      fontSize: 13,
+                                      fontSize: 12.5,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -515,31 +525,38 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       CupertinoButton(
                         padding: EdgeInsets.zero,
-                        minSize: 34,
+                        minSize: 33,
                         onPressed: () => _showImportConfigDialog(),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(999),
                           child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
                             child: Container(
-                              width: 34,
-                              height: 34,
+                              width: 33,
+                              height: 33,
                               decoration: BoxDecoration(
-                                color: AppleColors.fill,
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0xD42A2A32),
+                                    Color(0xC21D1D24),
+                                  ],
+                                ),
                                 borderRadius: BorderRadius.circular(999),
                                 border: Border.all(
                                   color: AppleColors.glassBorder,
-                                  width: 0.5,
+                                  width: 0.7,
                                 ),
                               ),
                               alignment: Alignment.center,
                               child: const Icon(
                                 CupertinoIcons.add,
                                 color: AppleColors.labelPrimary,
-                                size: 18,
+                                size: 17,
                               ),
                             ),
                           ),
@@ -914,21 +931,28 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 164),
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7.5),
+            constraints: const BoxConstraints(maxWidth: 146),
+            padding: const EdgeInsets.symmetric(horizontal: 11.5, vertical: 7),
             decoration: BoxDecoration(
-              color: AppleColors.fill,
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xD42A2A32),
+                  Color(0xC21D1D24),
+                ],
+              ),
               borderRadius: BorderRadius.circular(999),
               border: Border.all(
                 color: AppleColors.glassBorder,
-                width: 0.5,
+                width: 0.7,
               ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, color: AppleColors.labelSecondary, size: 14),
-                const SizedBox(width: 6),
+                Icon(icon, color: AppleColors.labelSecondary, size: 13.5),
+                const SizedBox(width: 5),
                 Flexible(
                   child: Text(
                     label,
@@ -936,7 +960,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppleColors.labelPrimary,
-                      fontSize: 13,
+                      fontSize: 12.5,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -945,7 +969,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 const Icon(
                   CupertinoIcons.chevron_down,
                   color: AppleColors.labelSecondary,
-                  size: 12,
+                  size: 11.5,
                 ),
               ],
             ),
@@ -969,19 +993,29 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       child: Container(
         height: wide ? 260 : 214,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(24),
           color: const Color(0xFF111114),
-          border: Border.all(color: AppleColors.glassBorder, width: 0.5),
+          border: Border.all(color: AppleColors.glassBorder, width: 0.75),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x55000000),
+              blurRadius: 24,
+              offset: Offset(0, 10),
+            ),
+          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (featured.poster.isNotEmpty)
-              ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 36, sigmaY: 36),
-                child: PosterImage(url: featured.poster, placeholder: const SizedBox.shrink()),
+            ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 36, sigmaY: 36),
+              child: PosterImage(
+                url: featured.poster,
+                title: featured.title,
+                placeholder: const SizedBox.shrink(),
               ),
+            ),
             Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
@@ -1001,12 +1035,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               child: Row(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(13),
                     child: AspectRatio(
                       aspectRatio: 2 / 3,
-                      child: featured.poster.isNotEmpty
-                          ? PosterImage(url: featured.poster, placeholder: _buildPosterPlaceholder())
-                          : _buildPosterPlaceholder(),
+                      child: PosterImage(
+                        url: featured.poster,
+                        title: featured.title,
+                        placeholder: _buildPosterPlaceholder(),
+                      ),
                     ),
                   ),
                   SizedBox(width: wide ? 22 : 14),
@@ -1098,21 +1134,23 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         );
       },
       child: AppleGlassSurface(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         padding: const EdgeInsets.all(10),
-        blurSigma: 28,
+        blurSigma: 32,
         child: SizedBox(
           width: 214,
           child: Row(
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(9),
+                borderRadius: BorderRadius.circular(10),
                 child: SizedBox(
                   width: 48,
                   height: 66,
-                  child: entry.poster.isNotEmpty
-                      ? PosterImage(url: entry.poster, placeholder: _buildPosterPlaceholder())
-                      : _buildPosterPlaceholder(),
+                  child: PosterImage(
+                    url: entry.poster,
+                    title: entry.title,
+                    placeholder: _buildPosterPlaceholder(),
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -1176,8 +1214,30 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         curve: Curves.easeOutCubic,
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
         decoration: BoxDecoration(
-          color: selected ? AppleColors.labelPrimary : AppleColors.fill,
+          gradient: selected
+              ? const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFFFFFFFF),
+                    Color(0xFFEAEAF0),
+                  ],
+                )
+              : const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xCC2A2A32),
+                    Color(0xB81D1D24),
+                  ],
+                ),
           borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFFFFFFFF)
+                : const Color(0x2EFFFFFF),
+            width: 0.65,
+          ),
         ),
         alignment: Alignment.center,
         child: Text(
@@ -1185,7 +1245,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           style: TextStyle(
             color: selected ? const Color(0xFF000000) : AppleColors.labelPrimary,
             fontSize: 13,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           ),
         ),
       ),
@@ -1376,12 +1436,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 children: [
                   isNetdiskQr
                       ? _buildNetdiskCardPoster(qrDriveKey, video.title)
-                      : (video.poster.isNotEmpty
-                          ? PosterImage(
-                              url: video.poster,
-                              placeholder: _buildPosterPlaceholder(),
-                            )
-                          : _buildPosterPlaceholder()),
+                      : PosterImage(
+                          url: video.poster,
+                          title: video.title,
+                          placeholder: _buildPosterPlaceholder(),
+                        ),
                   if (badge != null && badge.isNotEmpty)
                     Positioned(
                       top: 6,
@@ -1766,6 +1825,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                   initialLineIndex: 0,
                                   initialEpisodeIndex: 0,
                                   storage: widget.storage,
+                                  isLive: true,
                                 ),
                               ),
                             );
@@ -2134,6 +2194,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   height: 56,
                   child: PosterImage(
                     url: t.poster,
+                    title: t.title,
                     placeholder: _buildPosterPlaceholder(),
                   ),
                 ),
@@ -2416,7 +2477,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Version 0.4.22 · Apple HIG Edition',
+                  'Version 0.4.23 · Apple HIG Edition',
                   style: TextStyle(
                     color: AppleColors.labelSecondary,
                     fontSize: 12,

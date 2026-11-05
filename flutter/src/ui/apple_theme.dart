@@ -3,16 +3,16 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-/// Apple design tokens (iOS / iPadOS / macOS dark appearance):
-/// pure-black canvas, neutral system materials, hairline separators.
+/// Apple iOS 27 Liquid Glass design tokens (iOS / iPadOS / macOS dark appearance):
+/// deep obsidian canvas, refractive translucent glass materials, specular rims.
 class AppleColors {
   static const Color background = Color(0xFF000000);
-  static const Color canvas = Color(0xFF0B0B0D);
-  static const Color groupedPrimary = Color(0xB31C1C1E);
-  static const Color groupedSecondary = Color(0xCC2C2C2E);
-  static const Color groupedTertiary = Color(0xFF3A3A3C);
-  static const Color fill = Color(0x3D767680);
-  static const Color fillStrong = Color(0x5C767680);
+  static const Color canvas = Color(0xFF09090C);
+  static const Color groupedPrimary = Color(0xA81C1C21);
+  static const Color groupedSecondary = Color(0xBF28282E);
+  static const Color groupedTertiary = Color(0xFF36363D);
+  static const Color fill = Color(0x38787884);
+  static const Color fillStrong = Color(0x59787884);
   static const Color systemBlue = Color(0xFF0A84FF);
   static const Color systemCyan = Color(0xFF64D2FF);
   static const Color systemIndigo = Color(0xFF5E5CE6);
@@ -20,12 +20,12 @@ class AppleColors {
   static const Color systemOrange = Color(0xFFFF9F0A);
   static const Color systemRed = Color(0xFFFF453A);
   static const Color labelPrimary = Color(0xFFF5F5F7);
-  static const Color labelSecondary = Color(0x99EBEBF5);
-  static const Color labelTertiary = Color(0x4DEBEBF5);
-  static const Color separator = Color(0x33FFFFFF);
-  static const Color glassBorder = Color(0x1FFFFFFF);
-  static const Color glassBorderStrong = Color(0x2EFFFFFF);
-  static const Color glassHighlight = Color(0x4DFFFFFF);
+  static const Color labelSecondary = Color(0x9EEBEBF5);
+  static const Color labelTertiary = Color(0x52EBEBF5);
+  static const Color separator = Color(0x29FFFFFF);
+  static const Color glassBorder = Color(0x26FFFFFF);
+  static const Color glassBorderStrong = Color(0x3BFFFFFF);
+  static const Color glassHighlight = Color(0x52FFFFFF);
 }
 
 /// Brand logo widget rendering the user's frosted-glass clapperboard squircle icon
@@ -37,8 +37,8 @@ class MarcoBrandLogo extends StatelessWidget {
   final bool stacked;
   const MarcoBrandLogo({
     super.key,
-    this.iconSize = 34,
-    this.fontSize = 18,
+    this.iconSize = 32,
+    this.fontSize = 17,
     this.showWordmark = true,
     this.stacked = false,
   });
@@ -57,6 +57,8 @@ class MarcoBrandLogo extends StatelessWidget {
     );
     if (!showWordmark) return iconWidget;
     final wordmark = RichText(
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
       text: TextSpan(
         style: TextStyle(
           fontSize: fontSize,
@@ -95,8 +97,8 @@ class MarcoBrandLogo extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         iconWidget,
-        const SizedBox(width: 10),
-        wordmark,
+        const SizedBox(width: 8),
+        Flexible(child: wordmark),
       ],
     );
   }
@@ -138,9 +140,8 @@ class _FallbackLogoMark extends StatelessWidget {
   }
 }
 
-
-/// Apple system material surface: neutral translucent fill, background blur,
-/// 0.5pt hairline border, and a soft elevation shadow.
+/// iOS 27 Liquid Glass surface: multi-layer optical blur, subtle diagonal
+/// refractive sheen, 0.6pt specular rim border, and soft depth shadow.
 class AppleGlassSurface extends StatelessWidget {
   final Widget child;
   final double? width;
@@ -159,9 +160,9 @@ class AppleGlassSurface extends StatelessWidget {
     this.height,
     this.padding,
     this.borderRadius,
-    this.color = const Color(0x991C1C1E),
+    this.color = const Color(0x8C202026),
     this.backgroundColor,
-    this.blurSigma = 30,
+    this.blurSigma = 34,
     this.border,
     this.elevated = false,
   });
@@ -175,7 +176,7 @@ class AppleGlassSurface extends StatelessWidget {
         boxShadow: elevated
             ? const [
                 BoxShadow(
-                  color: Color(0x40000000),
+                  color: Color(0x48000000),
                   blurRadius: 24,
                   offset: Offset(0, 10),
                 ),
@@ -193,9 +194,20 @@ class AppleGlassSurface extends StatelessWidget {
             padding: padding,
             decoration: BoxDecoration(
               color: effectiveColor,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color.alphaBlend(
+                    const Color(0x18FFFFFF),
+                    effectiveColor,
+                  ),
+                  effectiveColor,
+                ],
+              ),
               borderRadius: radius,
               border: border ??
-                  Border.all(color: AppleColors.glassBorder, width: 0.5),
+                  Border.all(color: AppleColors.glassBorder, width: 0.6),
             ),
             child: child,
           ),
@@ -205,11 +217,11 @@ class AppleGlassSurface extends StatelessWidget {
   }
 }
 
-/// iPhone / iPad style Dock:
-/// - Portrait: wide rounded-rectangle dock floating above the home indicator.
-/// - Landscape: vertical dock floating on the right edge.
-/// The selection is a continuous-corner (superellipse) tile that glides between
-/// items; every shape is path-rendered with anti-aliasing for smooth edges.
+/// iOS 27 Liquid Glass Dock:
+/// - Portrait: refined floating capsule dock (`64dp` total height) above the home indicator.
+/// - Landscape: compact vertical floating dock on the right edge.
+/// Features a continuous-corner (superellipse) refractive lens pill that glides
+/// smoothly between items with specular rim highlights.
 class AppleLiquidGlassDock extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelect;
@@ -224,16 +236,16 @@ class AppleLiquidGlassDock extends StatelessWidget {
     required this.items,
   });
 
-  static const double _dockRadius = 27;
-  static const double _pillRadius = 18;
-  static const double _pad = 7;
-  static const Duration _motion = Duration(milliseconds: 420);
+  static const double _dockRadius = 24;
+  static const double _pillRadius = 16;
+  static const double _pad = 5;
+  static const Duration _motion = Duration(milliseconds: 400);
   static const Curve _curve = Cubic(0.22, 1.0, 0.36, 1.0);
 
   /// Width a landscape dock occupies (including its outer margin).
   static double landscapeFootprint(BuildContext context) {
     final right = MediaQuery.paddingOf(context).right;
-    return 72 + _pad * 2 + (right > 0 ? right + 6 : 12) + 8;
+    return 60 + _pad * 2 + (right > 0 ? right + 4 : 10) + 8;
   }
 
   @override
@@ -241,14 +253,14 @@ class AppleLiquidGlassDock extends StatelessWidget {
     final safe = MediaQuery.paddingOf(context);
     final margin = isLandscape
         ? EdgeInsets.only(
-            right: safe.right > 0 ? safe.right + 6 : 12,
+            right: safe.right > 0 ? safe.right + 4 : 10,
             top: 12,
             bottom: 12,
           )
         : EdgeInsets.only(
-            left: 14,
-            right: 14,
-            bottom: safe.bottom > 0 ? safe.bottom : 12,
+            left: 18,
+            right: 18,
+            bottom: safe.bottom > 0 ? math.max(safe.bottom - 2, 8) : 12,
           );
     return Padding(
       padding: margin,
@@ -268,7 +280,7 @@ class AppleLiquidGlassDock extends StatelessWidget {
         shape: shape,
         shadows: const [
           BoxShadow(
-            color: Color(0x4D000000),
+            color: Color(0x52000000),
             blurRadius: 28,
             offset: Offset(0, 10),
           ),
@@ -278,17 +290,22 @@ class AppleLiquidGlassDock extends StatelessWidget {
         clipper: ShapeBorderClipper(shape: shape),
         clipBehavior: Clip.antiAlias,
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+          filter: ImageFilter.blur(sigmaX: 38, sigmaY: 38),
           child: DecoratedBox(
             decoration: ShapeDecoration(
               shape: RoundedSuperellipseBorder(
                 borderRadius: BorderRadius.circular(_dockRadius),
-                side: const BorderSide(color: Color(0x2EFFFFFF), width: 0.6),
+                side: const BorderSide(color: Color(0x36FFFFFF), width: 0.65),
               ),
               gradient: const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xA8333338), Color(0xA81C1C20)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0x96383842),
+                  Color(0x82202027),
+                  Color(0x9015151A),
+                ],
+                stops: [0.0, 0.52, 1.0],
               ),
             ),
             child: child,
@@ -303,9 +320,9 @@ class AppleLiquidGlassDock extends StatelessWidget {
       builder: (context, constraints) {
         final n = math.max(items.length, 1);
         final available =
-            constraints.maxWidth.isFinite ? constraints.maxWidth : 420.0;
-        final width = math.min(available, 520.0);
-        const itemH = 66.0;
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 400.0;
+        final width = math.min(available, 460.0);
+        const itemH = 54.0;
         final itemW = (width - _pad * 2) / n;
         return _shell(
           child: SizedBox(
@@ -342,8 +359,8 @@ class AppleLiquidGlassDock extends StatelessWidget {
   }
 
   Widget _buildVertical() {
-    const itemW = 72.0;
-    const itemH = 68.0;
+    const itemW = 60.0;
+    const itemH = 54.0;
     final n = math.max(items.length, 1);
     return _shell(
       child: SizedBox(
@@ -398,12 +415,17 @@ class _DockSelectionPill extends StatelessWidget {
       decoration: ShapeDecoration(
         shape: RoundedSuperellipseBorder(
           borderRadius: BorderRadius.circular(radius),
-          side: const BorderSide(color: Color(0x29FFFFFF), width: 0.6),
+          side: const BorderSide(color: Color(0x45FFFFFF), width: 0.65),
         ),
         gradient: const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0x40FFFFFF), Color(0x24FFFFFF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0x42FFFFFF),
+            Color(0x22FFFFFF),
+            Color(0x16FFFFFF),
+          ],
+          stops: [0.0, 0.55, 1.0],
         ),
       ),
     );
@@ -425,7 +447,7 @@ class _DockItem extends StatelessWidget {
   });
   @override
   Widget build(BuildContext context) {
-    const duration = Duration(milliseconds: 260);
+    const duration = Duration(milliseconds: 240);
     final color = selected ? const Color(0xFFFFFFFF) : const Color(0x9EEBEBF5);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -439,17 +461,17 @@ class _DockItem extends StatelessWidget {
             curve: Curves.easeOut,
             builder: (context, value, _) => Icon(
               selected ? selectedIcon : icon,
-              size: 25,
+              size: 21.5,
               color: value ?? color,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2.5),
           AnimatedDefaultTextStyle(
             duration: duration,
             curve: Curves.easeOut,
             style: TextStyle(
               color: color,
-              fontSize: 11.5,
+              fontSize: 10.5,
               fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               letterSpacing: 0.1,
             ),
@@ -461,8 +483,8 @@ class _DockItem extends StatelessWidget {
   }
 }
 
-/// Apple capsule button: white filled primary (Apple TV style) or neutral
-/// translucent fill for secondary actions.
+/// iOS 27 Liquid Glass capsule button: pearl-white primary lens or translucent
+/// specular glass for secondary actions.
 class AppleCapsuleButton extends StatelessWidget {
   final String label;
   final IconData? icon;
@@ -485,44 +507,67 @@ class AppleCapsuleButton extends StatelessWidget {
         ? AppleColors.systemRed
         : (primary ? const Color(0xFF000000) : AppleColors.labelPrimary);
     final bg = destructive
-        ? const Color(0x33FF453A)
-        : (primary ? const Color(0xFFF5F5F7) : AppleColors.fill);
+        ? const Color(0x2EFF453A)
+        : (primary ? const Color(0xFFF5F5F7) : const Color(0x42787884));
     return CupertinoButton(
       padding: EdgeInsets.zero,
       minSize: compact ? 32 : 42,
-      pressedOpacity: 0.7,
+      pressedOpacity: 0.72,
       onPressed: onPressed,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(999),
         clipBehavior: Clip.antiAlias,
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
           child: Container(
             padding: EdgeInsets.symmetric(
-              horizontal: compact ? 14 : 20,
-              vertical: compact ? 7 : 11,
+              horizontal: compact ? 13 : 20,
+              vertical: compact ? 6.5 : 11,
             ),
             decoration: BoxDecoration(
               color: bg,
+              gradient: primary
+                  ? const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0xFFFFFFFF), Color(0xFFEAECEF)],
+                    )
+                  : LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color.alphaBlend(const Color(0x1AFFFFFF), bg),
+                        bg,
+                      ],
+                    ),
               borderRadius: BorderRadius.circular(999),
               border: primary
-                  ? null
-                  : Border.all(color: AppleColors.glassBorder, width: 0.5),
+                  ? Border.all(color: const Color(0x80FFFFFF), width: 0.5)
+                  : Border.all(
+                      color: destructive
+                          ? const Color(0x59FF453A)
+                          : AppleColors.glassBorder,
+                      width: 0.6,
+                    ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (icon != null) ...[
-                  Icon(icon, size: compact ? 15 : 17, color: fg),
+                  Icon(icon, size: compact ? 14.5 : 17, color: fg),
                   SizedBox(width: compact ? 5 : 7),
                 ],
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: fg,
-                    fontSize: compact ? 13 : 15,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.2,
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: fg,
+                      fontSize: compact ? 12.5 : 15,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.2,
+                    ),
                   ),
                 ),
               ],
@@ -534,7 +579,7 @@ class AppleCapsuleButton extends StatelessWidget {
   }
 }
 
-/// Inset grouped section (Settings-app style).
+/// Inset grouped section (Settings-app style) with Liquid Glass translucency.
 class AppleGroupedSection extends StatelessWidget {
   final String? header;
   final String? footer;
@@ -577,9 +622,9 @@ class AppleGroupedSection extends StatelessWidget {
             ),
           ),
         AppleGlassSurface(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           padding: EdgeInsets.zero,
-          color: const Color(0xCC1C1C1E),
+          color: const Color(0xB81C1C22),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: separated,
@@ -705,38 +750,49 @@ class AppleGroupedTile extends StatelessWidget {
   }
 }
 
-/// Apple sheet: neutral thick material, background blur, grabber and close button.
+/// iOS 27 Liquid Glass modal sheet: deep optical blur, specular rim, grabber, and close button.
 Future<T?> showAppleModalSheet<T>({
   required BuildContext context,
   required String title,
   required Widget Function(BuildContext) builder,
   Widget? trailingAction,
+  double? maxWidth,
 }) {
   return showCupertinoModalPopup<T>(
     context: context,
     builder: (ctx) {
       final viewInsets = MediaQuery.viewInsetsOf(ctx);
-      final screenHeight = MediaQuery.sizeOf(ctx).height;
+      final screenSize = MediaQuery.sizeOf(ctx);
+      final isLandscape = screenSize.width > screenSize.height;
+      final effectiveMaxWidth =
+          maxWidth ?? (isLandscape ? math.min(screenSize.width - 28, 720.0) : 560.0);
       return Padding(
         padding: EdgeInsets.only(bottom: viewInsets.bottom, left: 10, right: 10),
         child: Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: 560,
-              maxHeight: screenHeight * 0.86,
+              maxWidth: effectiveMaxWidth,
+              maxHeight: screenSize.height * 0.88,
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(26),
               clipBehavior: Clip.antiAlias,
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+                filter: ImageFilter.blur(sigmaX: 44, sigmaY: 44),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xE61C1C1E),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xDE24242C),
+                        Color(0xE817171C),
+                      ],
+                    ),
                     borderRadius: BorderRadius.circular(26),
                     border: Border.all(
                       color: AppleColors.glassBorderStrong,
-                      width: 0.5,
+                      width: 0.65,
                     ),
                   ),
                   child: Material(
@@ -756,7 +812,7 @@ Future<T?> showAppleModalSheet<T>({
                             ),
                           ),
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 12, 12, 10),
+                            padding: const EdgeInsets.fromLTRB(20, 10, 12, 10),
                             child: Row(
                               children: [
                                 Expanded(
@@ -800,8 +856,8 @@ Future<T?> showAppleModalSheet<T>({
   );
 }
 
-/// Minimal Apple-style app background: true black with a faint cool lift at
-/// the top and an optional, heavily blurred ambient artwork (Apple TV style).
+/// iOS 27 Liquid Glass ambient app background: deep obsidian canvas with
+/// soft refractive indigo/cyan ambient light and blurred artwork bleed.
 class AppleAmbientBackground extends StatelessWidget {
   final Widget? artwork;
   const AppleAmbientBackground({super.key, this.artwork});
@@ -816,11 +872,11 @@ class AppleAmbientBackground extends StatelessWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Color(0xFF17171B),
-                Color(0xFF0A0A0C),
+                Color(0xFF15161E),
+                Color(0xFF0A0B0F),
                 Color(0xFF000000),
               ],
-              stops: [0.0, 0.32, 0.72],
+              stops: [0.0, 0.36, 0.78],
             ),
           ),
         ),
@@ -836,7 +892,7 @@ class AppleAmbientBackground extends StatelessWidget {
                 shaderCallback: (rect) => const LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Color(0x80FFFFFF), Color(0x00FFFFFF)],
+                  colors: [Color(0x88FFFFFF), Color(0x00FFFFFF)],
                 ).createShader(rect),
                 child: ImageFiltered(
                   imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
@@ -846,16 +902,16 @@ class AppleAmbientBackground extends StatelessWidget {
             ),
           ),
         const Positioned(
-          top: -260,
-          left: 0,
-          right: 0,
-          height: 560,
+          top: -240,
+          left: -80,
+          right: -80,
+          height: 540,
           child: IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
-                  radius: 0.7,
-                  colors: [Color(0x14FFFFFF), Color(0x00FFFFFF)],
+                  radius: 0.75,
+                  colors: [Color(0x1864D2FF), Color(0x00000000)],
                 ),
               ),
             ),
