@@ -2468,7 +2468,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
           final allSubs = widget.storage.getSubscriptions();
-          final privateSubs = allSubs.where((s) => s.isPrivate).toList();
+          final privateSubs =
+              allSubs.where((s) => s.isEffectivelyPrivate).toList();
           final privateSites = _config?.privateSupportedSites ?? const [];
           final privateLives = _config?.privateLives ?? const [];
           return ListView(
@@ -2615,24 +2616,33 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   header: '管理订阅隐私开关 (${allSubs.length})',
                   footer: '开启开关可将对应订阅移入隐私隐藏列表。',
                   children: allSubs.map((sub) {
+                    final priv = sub.isEffectivelyPrivate;
                     return AppleGroupedTile(
-                      icon: sub.isPrivate
+                      icon: priv
                           ? CupertinoIcons.eye_slash_fill
                           : CupertinoIcons.globe,
-                      iconBgColor: sub.isPrivate
+                      iconBgColor: priv
                           ? AppleColors.systemPurple
                           : AppleColors.systemBlue,
                       title: '${sub.name} [${sub.format}]',
                       subtitle:
                           '分组：${sub.group} · ${sub.siteCount} 片源 / ${sub.liveCount} 直播',
                       trailing: CupertinoSwitch(
-                        value: sub.isPrivate,
+                        value: priv,
                         activeTrackColor: AppleColors.systemPurple,
                         onChanged: (val) async {
                           await widget.storage.toggleSubscriptionPrivacy(
                             sub.id,
                             val,
                           );
+                          if (!val &&
+                              (sub.group.contains('隐私') ||
+                                  sub.group.contains('私密'))) {
+                            await widget.storage.updateSubscriptionGroup(
+                              sub.id,
+                              '默认分组',
+                            );
+                          }
                           _reloadSavedConfig();
                           setSheetState(() {});
                         },
@@ -3321,7 +3331,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final pad = useSidebar ? 28.0 : 16.0;
     final depots = _config?.depots ?? const [];
     final subs = widget.storage.getSubscriptions();
-    final publicSubs = subs.where((s) => !s.isPrivate).toList();
+    final publicSubs = subs.where((s) => !s.isEffectivelyPrivate).toList();
+    final publicSites = _config?.publicSupportedSites ?? const [];
     return SafeArea(
       bottom: useSidebar,
       child: ListView(
@@ -3345,12 +3356,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           AppleGroupedSection(
             header: '片源与订阅分组管理',
             footer:
-                '支持批量导入多个订阅资源並自定义分组，全面兼容 VOD 接口、M3U/TXT 直播与点播、TVBox 单仓/多仓 JSON。连点首页左上角 Logo 5 次可进入密码保护的隐私资源隐藏列表。',
+                '支持批量导入多个订阅资源并自定义分组，全面兼容 VOD 接口、M3U/TXT 直播与点播、TVBox 单仓/多仓 JSON。',
             children: [
               AppleGroupedTile(
                 icon: CupertinoIcons.add_circled_solid,
                 iconBgColor: AppleColors.systemBlue,
-                title: '导入订阅资源（支持分组 / 批量 / 隐私）',
+                title: '导入订阅资源（支持分组 / 批量导入）',
                 subtitle: '兼容 VOD / M3U / TXT / JSON / 多仓，支持同时导入多个地址',
                 onTap: () => _showImportConfigDialog(),
               ),
@@ -3359,8 +3370,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 iconBgColor: AppleColors.systemPurple,
                 title: '订阅源与分组管理',
                 subtitle: publicSubs.isEmpty
-                    ? '管理已导入的多个订阅源、切换分组或隐藏状态'
-                    : '已导入 ${publicSubs.length} 个公开订阅 · ${widget.storage.getSubscriptionGroups().length} 个分组',
+                    ? '管理已导入的多个订阅源与自定义分组'
+                    : '已导入 ${publicSubs.length} 个订阅 · ${widget.storage.getSubscriptionGroups().length} 个分组',
                 trailingText: '${publicSubs.length} 个',
                 onTap: _showSubscriptionManagerSheet,
               ),
@@ -3382,26 +3393,18 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   trailingText: '${depots.length} 个',
                   onTap: _showDepotPickerDialog,
                 ),
-              if (_config != null && _config!.sites.isNotEmpty)
+              if (publicSites.isNotEmpty)
                 AppleGroupedTile(
                   icon: CupertinoIcons.layers_alt_fill,
                   iconBgColor: AppleColors.systemGreen,
                   title: '切换当前片源（按分组筛选）',
-                  subtitle: _activeSite != null
+                  subtitle: _activeSite != null &&
+                          !_activeSite!.isEffectivelyPrivate
                       ? '当前：${_activeSite!.name} (${_activeSite!.group})'
                       : '查看已导入站点列表',
-                  trailingText: '${_visibleSupportedSites.length} 可用',
+                  trailingText: '${publicSites.length} 可用',
                   onTap: _showSitePickerDialog,
                 ),
-              AppleGroupedTile(
-                icon: CupertinoIcons.lock_shield_fill,
-                iconBgColor: AppleColors.systemOrange,
-                title: '隐私资源密码设置',
-                subtitle: widget.storage.hasPrivacyPassword
-                    ? '已设置隐私密码 · 连点首页左上角 Logo 5 次进入隐藏列表'
-                    : '未设置密码 · 点击设置密码以保护隐私资源',
-                onTap: _openPrivateSpaceWithAuth,
-              ),
               AppleGroupedTile(
                 icon: CupertinoIcons.qrcode_viewfinder,
                 iconBgColor: AppleColors.systemBlue,
@@ -3469,7 +3472,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Version 0.4.25 · Apple HIG Edition',
+                  'Version 0.4.26 · Apple HIG Edition',
                   style: TextStyle(
                     color: AppleColors.labelSecondary,
                     fontSize: 12,
@@ -3515,7 +3518,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         builder: (ctx, setSheetState) {
           final subs = widget.storage
               .getSubscriptions()
-              .where((s) => _privateSessionUnlocked || !s.isPrivate)
+              .where((s) => !s.isEffectivelyPrivate)
               .toList();
           if (subs.isEmpty) {
             return Padding(
@@ -3737,14 +3740,17 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
   void _showSitePickerDialog() {
-    final supported = _visibleSupportedSites;
+    final supported = _config?.publicSupportedSites ?? const <CmsSite>[];
     final groups = <String>['全部'];
     for (final s in supported) {
+      if (s.isEffectivelyPrivate) continue;
       final g = s.group.trim().isEmpty ? '默认分组' : s.group.trim();
       if (!groups.contains(g)) groups.add(g);
     }
     String selectedGroup = '全部';
-    final plugins = _config?.pluginOnlySites ?? const [];
+    final plugins = (_config?.pluginOnlySites ?? const <CmsSite>[])
+        .where((s) => !s.isEffectivelyPrivate)
+        .toList();
     showAppleModalSheet<void>(
       context: context,
       title: '选择片源 (${supported.length} 可用)',
@@ -3804,9 +3810,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   children: directSites.map((s) {
                     final selected = s.key == _activeSite?.key;
                     return AppleGroupedTile(
-                      icon: s.isPrivate
-                          ? CupertinoIcons.lock_shield_fill
-                          : CupertinoIcons.tv_fill,
+                      icon: CupertinoIcons.tv_fill,
                       iconBgColor: selected
                           ? AppleColors.systemBlue
                           : AppleColors.groupedTertiary,
@@ -3822,7 +3826,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       onTap: () {
                         Navigator.of(ctx).pop();
                         widget.storage.setSelectedSiteKey(s.key);
-                        setState(() => _activeSite = s);
+                        setState(() {
+                          _privateSessionUnlocked = false;
+                          _activeSite = s;
+                        });
                         _loadSiteHome();
                       },
                     );
@@ -3853,7 +3860,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       onTap: () {
                         Navigator.of(ctx).pop();
                         widget.storage.setSelectedSiteKey(s.key);
-                        setState(() => _activeSite = s);
+                        setState(() {
+                          _privateSessionUnlocked = false;
+                          _activeSite = s;
+                        });
                         _loadSiteHome();
                       },
                     );
@@ -3894,10 +3904,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     bool isPrivate = initialIsPrivate;
     bool submitting = false;
     String? errorText = initialError;
-    const presetGroups = ['默认分组', '主力影视', '4K网盘', '电视直播', '动漫番剧', '隐私专区'];
+    final showPrivacyToggle =
+        initialIsPrivate || !widget.storage.hasPrivacyConfigured;
+    const presetGroups = ['默认分组', '主力影视', '4K网盘', '电视直播', '动漫番剧'];
     showAppleModalSheet<void>(
       context: context,
-      title: '导入订阅资源（支持分组 / 批量 / 隐私）',
+      title: initialIsPrivate
+          ? '导入隐私订阅资源'
+          : '导入订阅资源（支持分组 / 批量导入）',
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
           Future<void> handleImport() async {
@@ -3911,6 +3925,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               final selectedGroup = groupCtrl.text.trim().isEmpty
                   ? '默认分组'
                   : groupCtrl.text.trim();
+              final effectivePrivate = isPrivate ||
+                  selectedGroup.contains('隐私') ||
+                  selectedGroup.contains('私密');
               final candidateBackup =
                   jsonText.isNotEmpty ? jsonText : urlText;
               if (CmsParser.isBackupPayload(candidateBackup)) {
@@ -3923,18 +3940,18 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 urlInput: urlText,
                 rawTextInput: jsonText,
                 defaultGroup: selectedGroup,
-                isPrivate: isPrivate,
+                isPrivate: effectivePrivate,
               );
               await widget.storage.upsertSubscriptions(entries);
-              if (isPrivate) {
-                _privateSessionUnlocked = true;
+              if (!initialIsPrivate) {
+                _privateSessionUnlocked = false;
               }
               if (ctx.mounted) Navigator.of(ctx).pop();
               _reloadSavedConfig();
-              if (isPrivate && !widget.storage.hasPrivacyPassword) {
+              if (effectivePrivate && !widget.storage.hasPrivacyPassword) {
                 _showSetPrivacyPasswordDialog(
-                  title: '为隐私订阅设置访问密码',
-                  subtitle: '已导入为隐私资源。请设置密码（后续连点首页 Logo 5 次即可验证进入隐藏列表）：',
+                  title: '设置隐私访问密码',
+                  subtitle: '请为隐私分组设置访问密码：',
                 );
               }
             } catch (e) {
@@ -3999,64 +4016,56 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                // 2. Privacy toggle
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppleColors.groupedSecondary,
-                    borderRadius: BorderRadius.circular(11),
-                    border: Border.all(
-                      color: AppleColors.glassBorder,
-                      width: 0.5,
+                if (showPrivacyToggle) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppleColors.groupedSecondary,
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(
+                        color: AppleColors.glassBorder,
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          CupertinoIcons.lock_shield_fill,
+                          color: AppleColors.systemPurple,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            '设为隐私分组',
+                            style: TextStyle(
+                              color: AppleColors.labelPrimary,
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        CupertinoSwitch(
+                          value: isPrivate,
+                          activeTrackColor: AppleColors.systemPurple,
+                          onChanged: (v) => setModalState(() {
+                            isPrivate = v;
+                            if (v && groupCtrl.text.trim() == '默认分组') {
+                              groupCtrl.text = '隐私分组';
+                            } else if (!v &&
+                                groupCtrl.text.trim() == '隐私分组') {
+                              groupCtrl.text = '默认分组';
+                            }
+                          }),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        CupertinoIcons.lock_shield_fill,
-                        color: AppleColors.systemPurple,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '设为隐私资源（隐藏列表）',
-                              style: TextStyle(
-                                color: AppleColors.labelPrimary,
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              '日常隐藏，连点首页左上角 Logo 5 次输入密码后访问',
-                              style: TextStyle(
-                                color: AppleColors.labelSecondary,
-                                fontSize: 11.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      CupertinoSwitch(
-                        value: isPrivate,
-                        activeTrackColor: AppleColors.systemPurple,
-                        onChanged: (v) => setModalState(() {
-                          isPrivate = v;
-                          if (v && groupCtrl.text.trim() == '默认分组') {
-                            groupCtrl.text = '隐私专区';
-                          }
-                        }),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
+                  const SizedBox(height: 14),
+                ],
                 // 3. Multi-subscription URLs input
                 Row(
                   children: [

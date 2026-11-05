@@ -70,13 +70,15 @@ class SubscriptionEntry {
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
+  bool get isEffectivelyPrivate =>
+      isPrivate || group.contains('隐私') || group.contains('私密');
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
         'url': url,
         'group': group,
         'format': format,
-        'isPrivate': isPrivate,
+        'isPrivate': isEffectivelyPrivate,
         'enabled': enabled,
         'rawContent': rawContent,
         'siteCount': siteCount,
@@ -86,13 +88,16 @@ class SubscriptionEntry {
   factory SubscriptionEntry.fromJson(Map<String, dynamic> json) {
     final g = (json['group'] ?? '').toString().trim();
     final f = (json['format'] ?? '').toString().trim();
+    final cleanGroup = g.isEmpty ? '默认分组' : g;
     return SubscriptionEntry(
       id: (json['id'] ?? '').toString().trim(),
       name: (json['name'] ?? '订阅源').toString().trim(),
       url: (json['url'] ?? '').toString().trim(),
-      group: g.isEmpty ? '默认分组' : g,
+      group: cleanGroup,
       format: f.isEmpty ? 'JSON' : f,
-      isPrivate: json['isPrivate'] == true,
+      isPrivate: json['isPrivate'] == true ||
+          cleanGroup.contains('隐私') ||
+          cleanGroup.contains('私密'),
       enabled: json['enabled'] != false,
       rawContent: (json['rawContent'] ?? '').toString(),
       siteCount: (json['siteCount'] as num?)?.toInt() ?? 0,
@@ -211,6 +216,8 @@ class CmsSite {
       isM3uVodApi ||
       ((isHttpApi || isScriptOrJarApi) &&
           (type == 0 || type == 1 || type == 4 || type == 3 || type == -1));
+  bool get isEffectivelyPrivate =>
+      isPrivate || group.contains('隐私') || group.contains('私密');
   bool get requiresPluginRuntime => !canBrowse;
   bool get supported => canBrowse;
   String get unsupportedReason {
@@ -232,6 +239,8 @@ class LiveSource {
     this.isPrivate = false,
     this.subscriptionId = '',
   });
+  bool get isEffectivelyPrivate =>
+      isPrivate || group.contains('隐私') || group.contains('私密');
   LiveSource copyWith({
     String? name,
     String? url,
@@ -264,13 +273,17 @@ class CmsConfig {
   List<CmsSite> get supportedSites =>
       sites.where((s) => s.supported).toList(growable: false);
   List<CmsSite> get publicSupportedSites =>
-      sites.where((s) => s.supported && !s.isPrivate).toList(growable: false);
+      sites
+          .where((s) => s.supported && !s.isEffectivelyPrivate)
+          .toList(growable: false);
   List<CmsSite> get privateSupportedSites =>
-      sites.where((s) => s.supported && s.isPrivate).toList(growable: false);
+      sites
+          .where((s) => s.supported && s.isEffectivelyPrivate)
+          .toList(growable: false);
   List<LiveSource> get publicLives =>
-      lives.where((l) => !l.isPrivate).toList(growable: false);
+      lives.where((l) => !l.isEffectivelyPrivate).toList(growable: false);
   List<LiveSource> get privateLives =>
-      lives.where((l) => l.isPrivate).toList(growable: false);
+      lives.where((l) => l.isEffectivelyPrivate).toList(growable: false);
   List<CmsSite> get pluginOnlySites =>
       sites.where((s) => !s.supported).toList(growable: false);
   bool get isMultiDepotOnly =>

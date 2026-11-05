@@ -75,6 +75,9 @@ class StorageService {
   }
   String get privacyPassword => _prefs.getString(keyPrivacyPassword) ?? '';
   bool get hasPrivacyPassword => privacyPassword.trim().isNotEmpty;
+  bool get hasPrivacyConfigured =>
+      hasPrivacyPassword ||
+      getSubscriptions().any((s) => s.isEffectivelyPrivate);
   bool verifyPrivacyPassword(String input) =>
       hasPrivacyPassword && input.trim() == privacyPassword.trim();
   Future<void> setPrivacyPassword(String password) async {
@@ -99,7 +102,7 @@ class StorageService {
   List<String> getSubscriptionGroups({bool includePrivate = false}) {
     final groups = <String>['默认分组'];
     for (final s in getSubscriptions()) {
-      if (!includePrivate && s.isPrivate) continue;
+      if (!includePrivate && s.isEffectivelyPrivate) continue;
       final g = s.group.trim();
       if (g.isNotEmpty && !groups.contains(g)) {
         groups.add(g);
@@ -254,7 +257,7 @@ class StorageService {
             sub.rawContent,
             origin: sub.url,
             defaultGroup: sub.group,
-            isPrivate: sub.isPrivate,
+            isPrivate: sub.isEffectivelyPrivate,
             subscriptionId: sub.id,
             defaultName: sub.name,
           );
@@ -276,7 +279,7 @@ class StorageService {
               site.copyWith(
                 key: uniqueKey,
                 group: site.group.isEmpty ? sub.group : site.group,
-                isPrivate: site.isPrivate || sub.isPrivate,
+                isPrivate: site.isEffectivelyPrivate || sub.isEffectivelyPrivate,
                 subscriptionId: sub.id,
               ),
             );
@@ -285,7 +288,7 @@ class StorageService {
             mergedLives.add(
               live.copyWith(
                 group: live.group.isEmpty ? sub.group : live.group,
-                isPrivate: live.isPrivate || sub.isPrivate,
+                isPrivate: live.isEffectivelyPrivate || sub.isEffectivelyPrivate,
                 subscriptionId: sub.id,
               ),
             );

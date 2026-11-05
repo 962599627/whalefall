@@ -293,6 +293,16 @@ void main() {
     expect(vodCfg.publicSupportedSites, isEmpty);
     expect(CmsParser.detectSubscriptionFormat(vodJson, origin: 'https://vod.example/api.php/provide/vod/'), 'VOD');
 
+    final privGroupCfg = CmsParser.parseConfig(
+      vodJson,
+      origin: 'https://vod.example/api.php/provide/vod/',
+      defaultGroup: '隐私分组',
+      isPrivate: false,
+    );
+    expect(privGroupCfg.supportedSites.first.isEffectivelyPrivate, isTrue);
+    expect(privGroupCfg.publicSupportedSites, isEmpty);
+    expect(privGroupCfg.privateSupportedSites.length, 1);
+
     // 2. M3U subscription playlist
     const m3uRaw = '''
 #EXTM3U
