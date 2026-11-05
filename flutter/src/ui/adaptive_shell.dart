@@ -3669,7 +3669,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 onTap: _showPreferredQualityPickerSheet,
               ),
               AppleGroupedTile(
-                icon: CupertinoIcons.aspectratio,
+                icon: CupertinoIcons.viewfinder,
                 iconBgColor: AppleColors.systemPurple,
                 title: '默认画面比例',
                 subtitle: '播放器启动时的默认画面缩放模式',
