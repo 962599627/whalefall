@@ -759,7 +759,7 @@ class _DetailScreenState extends State<DetailScreen> {
     final pills = <String>[
       if (_video.year.trim().isNotEmpty) _video.year.trim(),
       if (_video.area.trim().isNotEmpty) _video.area.trim(),
-      if (_video.typeName.trim().isNotEmpty) _video.typeName.trim(),
+      if (_video.tag.trim().isNotEmpty) _video.tag.trim(),
       if (_video.remarks.trim().isNotEmpty)
         _video.remarks.trim()
       else if (epCount > 1)
@@ -955,10 +955,9 @@ class _DetailScreenState extends State<DetailScreen> {
 
   Widget _buildPortraitSynopsis() {
     final desc = _video.description.trim();
-    final cast = [
-      if (_video.director.trim().isNotEmpty) '导演：${_video.director.trim()}',
-      if (_video.actor.trim().isNotEmpty) '主演：${_video.actor.trim()}',
-    ].join('  ·  ');
+    final cast = _video.actor.trim().isNotEmpty
+        ? '演职员：${_video.actor.trim()}'
+        : '';
     if (desc.isEmpty && cast.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -1159,7 +1158,7 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Widget _buildPortraitBookmarkProgress(WatchHistoryEntry bookmark) {
-    final ratio = bookmark.progressRatio.clamp(0.05, 1.0);
+    final ratio = bookmark.progressFraction.clamp(0.05, 1.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
