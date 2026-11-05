@@ -783,11 +783,26 @@ class CmsParser {
       if (item is! Map) continue;
       final id = (item['type_id'] ?? '').toString().trim();
       final name = (item['type_name'] ?? '').toString().trim();
+      final pid = (item['type_pid'] ?? '').toString().trim();
       if (id.isNotEmpty && name.isNotEmpty) {
-        categories.add(CmsCategory(id: id, name: name));
+        categories.add(CmsCategory(id: id, name: name, parentId: pid));
       }
     }
     return categories;
+  }
+
+  /// IDs of the direct child categories of [parentId] (MacCMS `type_pid`).
+  /// Many MacCMS v10 APIs return nothing for `t=<parent>` because titles are
+  /// only attached to leaf categories, so callers merge the children instead.
+  static List<String> childCategoryIds(
+    List<CmsCategory> categories,
+    String parentId,
+  ) {
+    if (parentId.isEmpty || parentId == '0') return const [];
+    return [
+      for (final c in categories)
+        if (c.parentId == parentId && c.id != parentId) c.id,
+    ];
   }
   static List<CmsCategory> _parseXmlCategories(String xml) {
     final categories = <CmsCategory>[];

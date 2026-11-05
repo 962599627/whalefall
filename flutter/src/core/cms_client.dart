@@ -248,23 +248,41 @@ class CmsClient {
   Future<CmsListing> fetchCategory(
     CmsSite site,
     String categoryId,
-    int page,
-  ) async {
+    int page, {
+    List<String> childIds = const [],
+  }) async {
     if (CspBridge.canHandleSite(site)) {
-      return CspBridge.fetchCategory(site, categoryId, page, _getText);
+      return CspBridge.fetchCategory(
+        site,
+        categoryId,
+        page,
+        _getText,
+        childIds: childIds,
+      );
     }
-    final params = <String, String>{
-      'ac': 'detail',
-      'pg': page.toString(),
-    };
-    if (categoryId.isNotEmpty) {
-      params['t'] = categoryId;
+    Future<CmsListing> query(String id) async {
+      final params = <String, String>{
+        'ac': 'detail',
+        'pg': page.toString(),
+      };
+      if (id.isNotEmpty) {
+        params['t'] = id;
+      }
+      final raw = await _getText(
+        _appendQuery(site.api, params, ext: site.ext).toString(),
+        headers: site.headers,
+      );
+      return CmsParser.parseListing(raw);
     }
-    final raw = await _getText(
-      _appendQuery(site.api, params, ext: site.ext).toString(),
-      headers: site.headers,
+    final direct = await query(categoryId);
+    if (direct.videos.isNotEmpty || childIds.isEmpty) return direct;
+    // Parent category returned nothing: merge its leaf categories instead.
+    final children = await Future.wait(
+      childIds.take(8).map(
+            (id) => query(id).catchError((_) => const CmsListing()),
+          ),
     );
-    return CmsParser.parseListing(raw);
+    return CspBridge.mergeChildListings(children, page);
   }
   Future<CmsListing> fetchSearch(
     CmsSite site,

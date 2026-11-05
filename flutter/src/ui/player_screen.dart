@@ -896,88 +896,93 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   /// Separate Scrollable Tool Dock:
-  /// - Portrait: horizontal scrollable strip at the bottom.
-  /// - Landscape: compact vertical scrollable strip tucked near the right edge.
-  /// Exposes all adjustable playback controls (omitting VOD-only items during Live TV).
+  /// - Portrait: horizontal scrollable glass strip at the bottom.
+  /// - Landscape: slim vertical Liquid Glass capsule near the right edge.
+  /// Exposes all adjustable playback controls (omitting VOD-only items during
+  /// Live TV). The orientation toggle lives only on the progress bar (or the
+  /// header during Live TV), so it is intentionally not duplicated here.
   Widget _buildScrollableToolDock({required bool isLandscape}) {
     final live = _isLiveStream;
-    final actions = <(IconData, String, VoidCallback)>[
+    final actions = <_PlayerAction>[
       if (_episodeIndex > 0)
-        (
+        _PlayerAction(
           CupertinoIcons.backward_end_fill,
           live ? '上源' : '上集',
           () => _stepEpisode(-1),
         ),
       if (_episodeIndex < _currentLine.episodes.length - 1)
-        (
+        _PlayerAction(
           CupertinoIcons.forward_end_fill,
           live ? '下源' : '下集',
           () => _stepEpisode(1),
         ),
       if (_currentLine.episodes.length > 1 || !live)
-        (
+        _PlayerAction(
           CupertinoIcons.square_grid_2x2_fill,
           live ? '信号' : '选集',
           _showEpisodesSheet,
         ),
       if (widget.video.lines.length > 1 || !live)
-        (
+        _PlayerAction(
           CupertinoIcons.layers_alt_fill,
           '线路',
           _showLinesSheet,
         ),
       if (!live)
-        (
+        _PlayerAction(
           CupertinoIcons.speedometer,
           '${_normalSpeed}×',
           _showSpeedSheet,
+          active: _normalSpeed != 1.0,
         ),
-      (
+      _PlayerAction(
         CupertinoIcons.play_rectangle,
         '画面·$_fitLabel',
         _cycleAspect,
-      ),
-      (
-        isLandscape
-            ? CupertinoIcons.fullscreen_exit
-            : CupertinoIcons.fullscreen,
-        isLandscape ? '竖屏' : '全屏',
-        _toggleOrientation,
+        shortLabel: _fitLabel,
       ),
       if (!live) ...[
-        (
+        _PlayerAction(
           CupertinoIcons.forward_fill,
           _skipIntroSec > 0 ? '片头${_skipIntroSec}s' : '跳片头',
           _showSkipIntroSheet,
+          shortLabel: '片头',
+          active: _skipIntroSec > 0,
         ),
-        (
+        _PlayerAction(
           CupertinoIcons.forward_end_alt_fill,
           _skipOutroSec > 0 ? '片尾${_skipOutroSec}s' : '跳片尾',
           _showSkipOutroSheet,
+          shortLabel: '片尾',
+          active: _skipOutroSec > 0,
         ),
-        (
+        _PlayerAction(
           CupertinoIcons.repeat,
           '连播·${_autoNext ? "开" : "关"}',
           _toggleAutoNext,
+          shortLabel: '连播',
+          active: _autoNext,
         ),
-        (
+        _PlayerAction(
           CupertinoIcons.arrow_2_squarepath,
           '循环·$_repeatLabel',
           _cycleRepeatMode,
+          shortLabel: '循环',
+          active: _repeatMode == 'one' || _repeatMode == 'all',
         ),
       ],
-      (
+      _PlayerAction(
         CupertinoIcons.speaker_2_fill,
         '音轨',
         _showAudioTracksSheet,
       ),
       if (!live)
-        (
+        _PlayerAction(
           CupertinoIcons.captions_bubble_fill,
           '字幕',
           _showSubtitleTracksSheet,
         ),
-      (
+      _PlayerAction(
         CupertinoIcons.refresh,
         live ? '刷新' : '重播',
         () {
@@ -994,117 +999,142 @@ class _PlayerScreenState extends State<PlayerScreen> {
     ];
 
     if (isLandscape) {
-      return AppleGlassSurface(
-        key: const Key('player-tool-dock-landscape'),
-        width: 54,
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
-        borderRadius: BorderRadius.circular(18),
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          scrollDirection: Axis.vertical,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (int i = 0; i < actions.length; i++) ...[
-                if (i > 0) const SizedBox(height: 6),
-                _buildToolTile(
-                  icon: actions[i].$1,
-                  label: actions[i].$2,
-                  onTap: actions[i].$3,
-                  verticalLayout: true,
-                ),
-              ],
-            ],
-          ),
-        ),
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          const itemExtent = 50.0;
+          final contentH = actions.length * itemExtent + 16;
+          final maxH = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : contentH;
+          final scrollable = contentH > maxH;
+          return LiquidGlass(
+            key: const Key('player-tool-dock-landscape'),
+            width: 54,
+            height: math.min(contentH, maxH),
+            borderRadius: 27,
+            tint: const Color(0x47141418),
+            blur: 18,
+            child: AppleEdgeFade(
+              axis: Axis.vertical,
+              fadeWidth: scrollable ? 18 : 0,
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                physics: const BouncingScrollPhysics(),
+                itemExtent: itemExtent,
+                itemCount: actions.length,
+                itemBuilder: (ctx, i) => _buildRailButton(actions[i]),
+              ),
+            ),
+          );
+        },
       );
     }
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 740),
-      child: AppleGlassSurface(
+      child: LiquidGlass(
         key: const Key('player-tool-dock-portrait'),
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-        borderRadius: BorderRadius.circular(20),
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (int i = 0; i < actions.length; i++) ...[
-                if (i > 0) const SizedBox(width: 7),
-                _buildToolTile(
-                  icon: actions[i].$1,
-                  label: actions[i].$2,
-                  onTap: actions[i].$3,
-                  verticalLayout: false,
-                ),
+        borderRadius: 24,
+        tint: const Color(0x47141418),
+        blur: 18,
+        child: AppleEdgeFade(
+          fadeWidth: 14,
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (int i = 0; i < actions.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 7),
+                  _buildToolTile(actions[i]),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildToolTile({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    required bool verticalLayout,
-  }) {
+  /// Landscape rail button: icon in a soft circular glass well with a short
+  /// caption underneath; active toggles take the system tint.
+  Widget _buildRailButton(_PlayerAction action) {
+    final tint = action.active ? const Color(0xFF3E9BFF) : AppleColors.labelPrimary;
     return CupertinoButton(
       padding: EdgeInsets.zero,
-      minSize: verticalLayout ? 30 : 34,
+      minSize: 44,
+      pressedOpacity: 0.6,
       onPressed: () {
         _scheduleHide();
-        onTap();
+        action.onTap();
+      },
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: action.active
+                  ? const Color(0x2E3E9BFF)
+                  : const Color(0x1FFFFFFF),
+            ),
+            alignment: Alignment.center,
+            child: Icon(action.icon, color: tint, size: 15),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            action.shortLabel ?? action.label,
+            maxLines: 1,
+            overflow: TextOverflow.fade,
+            softWrap: false,
+            style: TextStyle(
+              color: action.active ? tint : AppleColors.labelSecondary,
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToolTile(_PlayerAction action) {
+    final tint = action.active ? const Color(0xFF3E9BFF) : AppleColors.labelPrimary;
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      minSize: 34,
+      onPressed: () {
+        _scheduleHide();
+        action.onTap();
       },
       child: Container(
-        width: verticalLayout ? 46 : null,
-        padding: EdgeInsets.symmetric(
-          horizontal: verticalLayout ? 2 : 11,
-          vertical: verticalLayout ? 5.5 : 6.5,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6.5),
         decoration: BoxDecoration(
-          color: const Color(0x26FFFFFF),
-          borderRadius: BorderRadius.circular(verticalLayout ? 11 : 999),
-          border: Border.all(color: AppleColors.glassBorder, width: 0.5),
+          color: action.active
+              ? const Color(0x2E3E9BFF)
+              : const Color(0x1FFFFFFF),
+          borderRadius: BorderRadius.circular(999),
         ),
-        child: verticalLayout
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, color: AppleColors.labelPrimary, size: 15),
-                  const SizedBox(height: 2.5),
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppleColors.labelPrimary,
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, color: AppleColors.labelPrimary, size: 14),
-                  const SizedBox(width: 5),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: AppleColors.labelPrimary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(action.icon, color: tint, size: 14),
+            const SizedBox(width: 5),
+            Text(
+              action.label,
+              style: TextStyle(
+                color: tint,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1410,7 +1440,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       context: context,
       title: '选集与线路 (${_currentLine.episodes.length})',
       maxWidth: isLandscape
-          ? math.min(screenSize.width - 24, 920.0)
+          ? math.min(screenSize.width - 24, 760.0)
           : 560.0,
       builder: (ctx) => _PlayerEpisodePickerSheet(
         lines: widget.video.lines,
@@ -1428,6 +1458,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ),
     );
   }
+}
+
+/// One adjustable playback control shown in the tool dock.
+class _PlayerAction {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  /// Compact caption for the narrow landscape rail.
+  final String? shortLabel;
+  /// Highlights toggles that are currently on (连播、循环、跳片头…).
+  final bool active;
+  const _PlayerAction(
+    this.icon,
+    this.label,
+    this.onTap, {
+    this.shortLabel,
+    this.active = false,
+  });
 }
 
 class _ParsedEpisodeLabel {
@@ -1513,12 +1561,10 @@ class _PlayerEpisodePickerSheetState extends State<_PlayerEpisodePickerSheet> {
 
     final screenSize = MediaQuery.sizeOf(context);
     final isLandscape = screenSize.width > screenSize.height;
-    final crossAxisCount = isLandscape
-        ? (screenSize.width >= 820 ? 5 : 4)
-        : 3;
+    final crossAxisCount = isLandscape ? 5 : 3;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1709,12 +1755,13 @@ class _PlayerEpisodePickerSheetState extends State<_PlayerEpisodePickerSheet> {
               ),
             ),
           ],
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           // 剧集网格卡片
-          ConstrainedBox(
+          Flexible(
+            child: ConstrainedBox(
             constraints: BoxConstraints(
               maxHeight: isLandscape
-                  ? math.min(screenSize.height * 0.56, 320.0)
+                  ? math.min(screenSize.height * 0.6, 300.0)
                   : math.min(screenSize.height * 0.52, 420.0),
             ),
             child: GridView.builder(
@@ -1722,9 +1769,9 @@ class _PlayerEpisodePickerSheetState extends State<_PlayerEpisodePickerSheet> {
               physics: const BouncingScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: crossAxisCount,
-                mainAxisSpacing: 9,
-                crossAxisSpacing: 9,
-                mainAxisExtent: 56,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                mainAxisExtent: 52,
               ),
               itemCount: indices.length,
               itemBuilder: (ctx, idx) {
@@ -1848,6 +1895,7 @@ class _PlayerEpisodePickerSheetState extends State<_PlayerEpisodePickerSheet> {
                 );
               },
             ),
+          ),
           ),
         ],
       ),

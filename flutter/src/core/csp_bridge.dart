@@ -251,8 +251,9 @@ class CspBridge {
     CmsSite site,
     String categoryId,
     int page,
-    CspHttpTextFetcher fetchText,
-  ) async {
+    CspHttpTextFetcher fetchText, {
+    List<String> childIds = const [],
+  }) async {
     if (isDoubanSite(site)) {
       return _fetchDoubanCategory(categoryId, page, fetchText);
     }
@@ -274,7 +275,33 @@ class CspBridge {
     if (isBiliSite(site)) {
       return _fetchBiliSearch(categoryId, page, fetchText);
     }
-    return _fetchVodPoolCategory(site, categoryId, page, fetchText);
+    return _fetchVodPoolCategory(site, categoryId, page, fetchText, childIds);
+  }
+
+  /// Interleaves the same page of several leaf categories into one listing so a
+  /// parent category (e.g. 电影片 / 连续剧) shows a mixed, de-duplicated feed.
+  static CmsListing mergeChildListings(List<CmsListing> children, int page) {
+    final seen = <String>{};
+    final merged = <CmsVideo>[];
+    var maxPages = 1;
+    var longest = 0;
+    for (final c in children) {
+      if (c.pageCount > maxPages) maxPages = c.pageCount;
+      if (c.videos.length > longest) longest = c.videos.length;
+    }
+    for (int i = 0; i < longest; i++) {
+      for (final c in children) {
+        if (i >= c.videos.length) continue;
+        final v = c.videos[i];
+        final key = v.id.isNotEmpty ? v.id : v.title;
+        if (seen.add(key)) merged.add(v);
+      }
+    }
+    return CmsListing(
+      page: page < 1 ? 1 : page,
+      pageCount: maxPages,
+      videos: merged,
+    );
   }
 
   static Future<CmsListing> fetchSearch(
@@ -1316,6 +1343,11 @@ class CspBridge {
   // MacCMS v10 VOD Pool & Cross-Source Resolution
   // ---------------------------------------------------------------------------
 
+  /// Backend API that served the categories for each site: category IDs are
+  /// backend-specific (e.g. 非凡 uses 1/2 while 暴风 uses 20/30), so category
+  /// queries must go to the same backend the home page came from.
+  static final Map<String, String> _homeBackendBySite = {};
+
   static Future<(List<CmsCategory>, CmsListing)> _fetchVodPoolHome(
     CmsSite site,
     CspHttpTextFetcher fetchText,
@@ -1332,6 +1364,7 @@ class CspBridge {
         final categories = CmsParser.parseCategories(results[0]);
         final listing = CmsParser.parseListing(results[1]);
         if (categories.isNotEmpty || listing.videos.isNotEmpty) {
+          _homeBackendBySite[site.key] = backend.api;
           return (categories, listing);
         }
       } catch (_) {}
@@ -1343,23 +1376,44 @@ class CspBridge {
     CmsSite site,
     String categoryId,
     int page,
-    CspHttpTextFetcher fetchText,
-  ) async {
-    final backends = backendsForSite(site);
+    CspHttpTextFetcher fetchText, [
+    List<String> childIds = const [],
+  ]) async {
+    final all = backendsForSite(site);
+    final bound = _homeBackendBySite[site.key];
+    final backends = [
+      if (bound != null) ...all.where((b) => b.api == bound),
+      ...all.where((b) => b.api != bound),
+    ];
+    Future<CmsListing> query(String api, String id) async {
+      final params = <String, String>{
+        'ac': 'detail',
+        'pg': (page < 1 ? 1 : page).toString(),
+      };
+      if (id.isNotEmpty) {
+        params['t'] = id;
+      }
+      final uri = Uri.parse(api).replace(queryParameters: params);
+      return CmsParser.parseListing(await fetchText(uri.toString()));
+    }
     for (final backend in backends.take(3)) {
       try {
-        final params = <String, String>{
-          'ac': 'detail',
-          'pg': (page < 1 ? 1 : page).toString(),
-        };
-        if (categoryId.isNotEmpty) {
-          params['t'] = categoryId;
-        }
-        final uri = Uri.parse(backend.api).replace(queryParameters: params);
-        final raw = await fetchText(uri.toString());
-        final listing = CmsParser.parseListing(raw);
+        final listing = await query(backend.api, categoryId);
         if (listing.videos.isNotEmpty) return listing;
+        if (childIds.isNotEmpty) {
+          // Parent category is empty on this backend: merge its leaf categories.
+          final children = await Future.wait(
+            childIds.take(8).map(
+                  (id) => query(backend.api, id)
+                      .catchError((_) => const CmsListing()),
+                ),
+          );
+          final merged = mergeChildListings(children, page);
+          if (merged.videos.isNotEmpty) return merged;
+        }
       } catch (_) {}
+      // Category IDs only match the backend that produced them.
+      if (bound != null) break;
     }
     return const CmsListing();
   }

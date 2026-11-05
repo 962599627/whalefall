@@ -136,8 +136,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       _selectedCategoryId = categoryId;
     });
     try {
-      final listing =
-          await widget.client.fetchCategory(site, categoryId, page);
+      final listing = await widget.client.fetchCategory(
+        site,
+        categoryId,
+        page,
+        childIds: CmsParser.childCategoryIds(_categories, categoryId),
+      );
       if (!mounted ||
           epoch != _categoryEpoch ||
           _activeSite?.key != site.key ||
@@ -434,11 +438,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           CupertinoSliverRefreshControl(
             onRefresh: _loadSiteHome,
           ),
+          // Horizontal padding is applied per block so the horizontal shelves
+          // (继续观看 / 分类) can run edge-to-edge with a soft fade instead of
+          // being hard-clipped by the page margin.
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
-              horizontalPad,
+              0,
               useSidebar && _isMacOS ? 24 : 12,
-              horizontalPad,
+              0,
               12,
             ),
             sliver: SliverToBoxAdapter(
@@ -446,7 +453,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Top Header Bar
-                  Row(
+                  Padding(
+                  padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+                  child: Row(
                     children: [
                       const Flexible(
                         flex: 0,
@@ -564,93 +573,125 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       ),
                     ],
                   ),
+                  ),
                   // If config has only Android JAR (`csp_*`) sites and no direct HTTP sites
                   if (_activeSite == null) ...[
                     const SizedBox(height: 24),
-                    _buildPluginOnlyConfigNotice(context),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+                      child: _buildPluginOnlyConfigNotice(context),
+                    ),
                   ] else ...[
                     // Up Next ("继续观看") Shelf
                     if (history.isNotEmpty) ...[
                       const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          const Text(
-                            '继续观看',
-                            style: TextStyle(
-                              color: AppleColors.labelPrimary,
-                              fontSize: 19,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.4,
-                            ),
-                          ),
-                          const Spacer(),
-                          CupertinoButton(
-                            padding: EdgeInsets.zero,
-                            minSize: 24,
-                            onPressed: () => setState(() {
-                              _tabIndex = 3;
-                              _librarySegment = 1;
-                            }),
-                            child: const Text(
-                              '查看全部',
+                      Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: horizontalPad),
+                        child: Row(
+                          children: [
+                            const Text(
+                              '继续观看',
                               style: TextStyle(
-                                color: AppleColors.systemBlue,
-                                fontSize: 13,
+                                color: AppleColors.labelPrimary,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.4,
                               ),
                             ),
-                          ),
-                        ],
+                            const Spacer(),
+                            CupertinoButton(
+                              padding: EdgeInsets.zero,
+                              minSize: 24,
+                              onPressed: () => setState(() {
+                                _tabIndex = 3;
+                                _librarySegment = 1;
+                              }),
+                              child: const Text(
+                                '查看全部',
+                                style: TextStyle(
+                                  color: AppleColors.systemBlue,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 10),
-                      SizedBox(
-                        height: 86,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: history.length.clamp(0, 8),
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(width: 12),
-                          itemBuilder: (ctx, i) =>
-                              _buildContinueWatchingCard(history[i]),
+                      AppleEdgeFade(
+                        fadeWidth: horizontalPad + 6,
+                        child: SizedBox(
+                          height: 90,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            clipBehavior: Clip.none,
+                            physics: const BouncingScrollPhysics(),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: horizontalPad,
+                              vertical: 2,
+                            ),
+                            itemCount: history.length.clamp(0, 8),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 12),
+                            itemBuilder: (ctx, i) =>
+                                _buildContinueWatchingCard(history[i]),
+                          ),
                         ),
                       ),
                     ],
                     // Featured Hero Showcase Card on first page when videos exist
                     if (CspBridge.isMyDriveSite(_activeSite!)) ...[
                       const SizedBox(height: 18),
-                      _buildMyDriveNetdiskBanner(_activeSite!),
+                      Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: horizontalPad),
+                        child: _buildMyDriveNetdiskBanner(_activeSite!),
+                      ),
                     ] else if (_homeVideos.isNotEmpty &&
                         _selectedCategoryId.isEmpty &&
                         _currentPage == 1) ...[
                       const SizedBox(height: 18),
-                      _buildHeroShowcaseCard(
-                        _activeSite!,
-                        _homeVideos.first,
-                        wide: useSidebar,
+                      Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: horizontalPad),
+                        child: _buildHeroShowcaseCard(
+                          _activeSite!,
+                          _homeVideos.first,
+                          wide: useSidebar,
+                        ),
                       ),
                     ],
                     // Single-row Apple Category Pills
                     const SizedBox(height: 18),
-                    SizedBox(
-                      height: 36,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _categories.length + 1,
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder: (ctx, idx) {
-                          if (idx == 0) {
+                    AppleEdgeFade(
+                      fadeWidth: horizontalPad + 6,
+                      child: SizedBox(
+                        height: 36,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
+                          padding:
+                              EdgeInsets.symmetric(horizontal: horizontalPad),
+                          itemCount: _categories.length + 1,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(width: 8),
+                          itemBuilder: (ctx, idx) {
+                            if (idx == 0) {
+                              return _buildCategoryPill(
+                                label: '精选推荐',
+                                selected: _selectedCategoryId.isEmpty,
+                                onTap: _loadSiteHome,
+                              );
+                            }
+                            final cat = _categories[idx - 1];
                             return _buildCategoryPill(
-                              label: '精选推荐',
-                              selected: _selectedCategoryId.isEmpty,
-                              onTap: _loadSiteHome,
+                              label: cat.name,
+                              selected: _selectedCategoryId == cat.id,
+                              onTap: () => _loadCategory(cat.id),
                             );
-                          }
-                          final cat = _categories[idx - 1];
-                          return _buildCategoryPill(
-                            label: cat.name,
-                            selected: _selectedCategoryId == cat.id,
-                            onTap: () => _loadCategory(cat.id),
-                          );
-                        },
+                          },
+                        ),
                       ),
                     ),
                   ],
@@ -737,6 +778,17 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 child: Center(
                   child: _homeLoading
                       ? const CupertinoActivityIndicator(radius: 13)
+                      : (_homeVideos.isEmpty && _homeError == null)
+                          ? const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 40),
+                              child: Text(
+                                '这个分类暂时没有内容，换个分类看看吧',
+                                style: TextStyle(
+                                  color: AppleColors.labelSecondary,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            )
                       : (_currentPage < _pageCount
                           ? AppleCapsuleButton(
                               label: '加载更多影片',
@@ -2477,7 +2529,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Version 0.4.23 · Apple HIG Edition',
+                  'Version 0.4.24 · Apple HIG Edition',
                   style: TextStyle(
                     color: AppleColors.labelSecondary,
                     fontSize: 12,

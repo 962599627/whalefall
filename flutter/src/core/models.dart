@@ -90,7 +90,10 @@ class CmsConfig {
 class CmsCategory {
   final String id;
   final String name;
-  const CmsCategory({required this.id, required this.name});
+  /// MacCMS `type_pid`; empty or `0` for top-level categories.
+  final String parentId;
+  const CmsCategory({required this.id, required this.name, this.parentId = ''});
+  bool get isTopLevel => parentId.isEmpty || parentId == '0';
 }
 class CmsEpisode {
   final String name;

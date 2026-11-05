@@ -45,10 +45,7 @@ final class PlayerChrome {
             topActions.addView(backBtn, new LinearLayout.LayoutParams(-2, a.dp(34)));
             View spacer = new View(a);
             topActions.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
-            Button rotateBtn = a.navButton("旋转屏幕", "player-rotate", a::togglePlayerOrientation);
-            rotateBtn.setTextColor(MainActivity.WHITE);
-            rotateBtn.setBackground(a.bg(0x44000000, 16));
-            topActions.addView(rotateBtn, new LinearLayout.LayoutParams(-2, a.dp(34)));
+            // Orientation toggle lives only on the progress row ("全屏横屏 / 退出全屏").
             heading.addView(topActions, new LinearLayout.LayoutParams(-1, -2));
         }
         TextView title = a.text(video.title, a.isPortrait() ? 20 : 26, MainActivity.WHITE);

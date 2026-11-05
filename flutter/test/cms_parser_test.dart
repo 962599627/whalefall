@@ -246,4 +246,32 @@ void main() {
       'netdisk_qr:ali',
     ]));
   });
+  test('maps parent categories to leaf categories and merges child pages', () {
+    const raw = '''
+    {"class": [
+      {"type_id": 1, "type_name": "电影片", "type_pid": 0},
+      {"type_id": 2, "type_name": "连续剧", "type_pid": 0},
+      {"type_id": 6, "type_name": "动作片", "type_pid": 1},
+      {"type_id": 7, "type_name": "喜剧片", "type_pid": 1},
+      {"type_id": 13, "type_name": "国产剧", "type_pid": 2}
+    ]}
+    ''';
+    final categories = CmsParser.parseCategories(raw);
+    expect(categories.first.isTopLevel, isTrue);
+    expect(CmsParser.childCategoryIds(categories, '1'), ['6', '7']);
+    expect(CmsParser.childCategoryIds(categories, '2'), ['13']);
+    expect(CmsParser.childCategoryIds(categories, '6'), isEmpty);
+    final merged = CspBridge.mergeChildListings(const [
+      CmsListing(pageCount: 3, videos: [
+        CmsVideo(id: 'a', title: 'A'),
+        CmsVideo(id: 'b', title: 'B'),
+      ]),
+      CmsListing(pageCount: 5, videos: [
+        CmsVideo(id: 'c', title: 'C'),
+        CmsVideo(id: 'a', title: 'A'),
+      ]),
+    ], 1);
+    expect(merged.videos.map((v) => v.id), ['a', 'c', 'b']);
+    expect(merged.pageCount, 5);
+  });
 }
