@@ -7,6 +7,7 @@ import '../core/download_service.dart';
 import '../core/models.dart';
 import '../core/storage_service.dart';
 import 'apple_theme.dart';
+import 'netdisk_sheet.dart';
 import 'player_screen.dart';
 import 'poster_image.dart';
 /// Apple TV+ inspired responsive video detail page for iPhone, iPad, Mac, and Windows.
@@ -653,6 +654,18 @@ class _DetailScreenState extends State<DetailScreen> {
                 icon: CupertinoIcons.arrow_down_circle,
                 onPressed: _showDownloadSheet,
               ),
+            AppleCapsuleButton(
+              key: const ValueKey('detail-netdisk-qr-button'),
+              label: '网盘扫码',
+              icon: CupertinoIcons.qrcode_viewfinder,
+              onPressed: () => showNetdiskAccountSheet(
+                context,
+                widget.storage,
+                onChanged: () {
+                  if (mounted) setState(() {});
+                },
+              ),
+            ),
           ],
         ),
         if (_video.description.isNotEmpty) ...[

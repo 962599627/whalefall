@@ -100,17 +100,36 @@ final class PlaybackControls {
                         }
                     }
                 });
-        HorizontalScrollView scroller = new HorizontalScrollView(a);
-        scroller.setHorizontalScrollBarEnabled(false);
-        scroller.setFillViewport(true);
-        scroller.setClipToPadding(false);
-        LinearLayout row = a.row();
+        boolean mobileLandscape = !a.isTvDevice() && !a.isPortrait();
+        LinearLayout row = mobileLandscape ? a.vertical() : a.row();
         row.setGravity(Gravity.CENTER);
         row.setClipChildren(false);
         row.setPadding(a.dp(1), a.dp(2), a.dp(1), a.dp(2));
-        scroller.addView(row);
-        overlay.addView(scroller);
+        if (mobileLandscape) {
+            ScrollView vScroller = new ScrollView(a);
+            vScroller.setVerticalScrollBarEnabled(false);
+            vScroller.setFillViewport(true);
+            vScroller.setClipToPadding(false);
+            vScroller.addView(row);
+            overlay.addView(vScroller);
+        } else {
+            HorizontalScrollView scroller = new HorizontalScrollView(a);
+            scroller.setHorizontalScrollBarEnabled(false);
+            scroller.setFillViewport(true);
+            scroller.setClipToPadding(false);
+            scroller.addView(row);
+            overlay.addView(scroller);
+        }
         boolean live = "live".equals(site.key);
+        if (!a.isTvDevice() && !live) {
+            add(
+                    row,
+                    "上集",
+                    "prev-episode",
+                    () -> {
+                        if (!step(-1)) showBubble("已是第一集", new String[] {"知道了"}, -1, i -> {}, "");
+                    });
+        }
         add(
                 row,
                 live ? "下台" : "下集",
@@ -138,6 +157,25 @@ final class PlaybackControls {
         add(row, "1.0×", "speed", () -> speed());
         add(row, "画面", "aspect", () -> aspect());
         add(row, "字幕", "subtitles", () -> tracks(3));
+        if (!a.isTvDevice()) {
+            add(row, "全屏", "fullscreen-tool", a::togglePlayerOrientation);
+            add(row, "音轨", "audio-tracks", () -> tracks(1));
+            add(row, "弹幕", "danmaku-tool", this::danmaku);
+            add(row, "跳片头", "skip-intro-tool", () -> skip(true));
+            add(row, "跳片尾", "skip-outro-tool", () -> skip(false));
+            add(row, "循环", "repeat-tool", this::repeat);
+            add(
+                    row,
+                    "重播",
+                    "restart-tool",
+                    () -> {
+                        if (a.player != null && a.prepared) {
+                            a.player.seekTo(0);
+                            a.player.start();
+                            a.playing = true;
+                        } else reload(false);
+                    });
+        }
         add(row, "更多", "more", () -> more());
         timeline.setId(View.generateViewId());
         List<Button> all = new ArrayList<>(buttons.values());

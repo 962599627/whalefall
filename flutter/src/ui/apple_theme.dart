@@ -143,18 +143,24 @@ class _FallbackLogoMark extends StatelessWidget {
 /// 0.5pt hairline border, and a soft elevation shadow.
 class AppleGlassSurface extends StatelessWidget {
   final Widget child;
+  final double? width;
+  final double? height;
   final EdgeInsetsGeometry? padding;
   final BorderRadius? borderRadius;
   final Color color;
+  final Color? backgroundColor;
   final double blurSigma;
   final Border? border;
   final bool elevated;
   const AppleGlassSurface({
     super.key,
     required this.child,
+    this.width,
+    this.height,
     this.padding,
     this.borderRadius,
     this.color = const Color(0x991C1C1E),
+    this.backgroundColor,
     this.blurSigma = 30,
     this.border,
     this.elevated = false,
@@ -162,6 +168,7 @@ class AppleGlassSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = borderRadius ?? BorderRadius.circular(18);
+    final effectiveColor = backgroundColor ?? color;
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: radius,
@@ -181,9 +188,11 @@ class AppleGlassSurface extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
           child: Container(
+            width: width,
+            height: height,
             padding: padding,
             decoration: BoxDecoration(
-              color: color,
+              color: effectiveColor,
               borderRadius: radius,
               border: border ??
                   Border.all(color: AppleColors.glassBorder, width: 0.5),
@@ -215,16 +224,16 @@ class AppleLiquidGlassDock extends StatelessWidget {
     required this.items,
   });
 
-  static const double _dockRadius = 24;
-  static const double _pillRadius = 15;
-  static const double _pad = 6;
+  static const double _dockRadius = 27;
+  static const double _pillRadius = 18;
+  static const double _pad = 7;
   static const Duration _motion = Duration(milliseconds: 420);
   static const Curve _curve = Cubic(0.22, 1.0, 0.36, 1.0);
 
   /// Width a landscape dock occupies (including its outer margin).
   static double landscapeFootprint(BuildContext context) {
     final right = MediaQuery.paddingOf(context).right;
-    return 64 + _pad * 2 + (right > 0 ? right + 6 : 12) + 8;
+    return 72 + _pad * 2 + (right > 0 ? right + 6 : 12) + 8;
   }
 
   @override
@@ -296,7 +305,7 @@ class AppleLiquidGlassDock extends StatelessWidget {
         final available =
             constraints.maxWidth.isFinite ? constraints.maxWidth : 420.0;
         final width = math.min(available, 520.0);
-        const itemH = 54.0;
+        const itemH = 66.0;
         final itemW = (width - _pad * 2) / n;
         return _shell(
           child: SizedBox(
@@ -333,8 +342,8 @@ class AppleLiquidGlassDock extends StatelessWidget {
   }
 
   Widget _buildVertical() {
-    const itemW = 64.0;
-    const itemH = 58.0;
+    const itemW = 72.0;
+    const itemH = 68.0;
     final n = math.max(items.length, 1);
     return _shell(
       child: SizedBox(
@@ -430,17 +439,17 @@ class _DockItem extends StatelessWidget {
             curve: Curves.easeOut,
             builder: (context, value, _) => Icon(
               selected ? selectedIcon : icon,
-              size: 22,
+              size: 25,
               color: value ?? color,
             ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 4),
           AnimatedDefaultTextStyle(
             duration: duration,
             curve: Curves.easeOut,
             style: TextStyle(
               color: color,
-              fontSize: 10,
+              fontSize: 11.5,
               fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               letterSpacing: 0.1,
             ),

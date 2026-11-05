@@ -252,7 +252,7 @@ final class MobileShell {
             mainCol.addView(divider, new LinearLayout.LayoutParams(-1, 1));
 
             LinearLayout bottomBar = buildNavigationBar(false);
-            mainCol.addView(bottomBar, new LinearLayout.LayoutParams(-1, a.dp(58)));
+            mainCol.addView(bottomBar, new LinearLayout.LayoutParams(-1, a.dp(68)));
         }
 
         switchTab(activeTab);

@@ -57,6 +57,48 @@ class CspBridge {
         lowerName.contains('豆瓣');
   }
 
+  static bool isMyDriveSite(CmsSite site) {
+    final lowerApi = site.api.toLowerCase();
+    final lowerName = site.name.toLowerCase();
+    final lowerKey = site.key.toLowerCase();
+    return lowerApi.contains('mydrive') ||
+        lowerKey.contains('mydrive') ||
+        lowerName.contains('我的云盘') ||
+        lowerName.contains('云盘配置');
+  }
+
+  static bool isNetdiskSite(CmsSite site) {
+    if (isMyDriveSite(site)) return true;
+    final lowerApi = site.api.toLowerCase();
+    final lowerName = site.name.toLowerCase();
+    final lowerKey = site.key.toLowerCase();
+    return lowerApi.contains('wogg') ||
+        lowerApi.contains('seedhub') ||
+        lowerApi.contains('pansou') ||
+        lowerApi.contains('yiso') ||
+        lowerApi.contains('panta') ||
+        lowerApi.contains('kkss') ||
+        lowerApi.contains('ucss') ||
+        lowerApi.contains('quark') ||
+        lowerApi.contains('baidu') ||
+        lowerApi.contains('ali') ||
+        lowerName.contains('玩偶') ||
+        lowerName.contains('聚剧') ||
+        lowerName.contains('四盘') ||
+        lowerName.contains('盘搜') ||
+        lowerName.contains('易搜') ||
+        lowerName.contains('盘她') ||
+        lowerName.contains('盘他') ||
+        lowerName.contains('夸父') ||
+        lowerName.contains('优汐') ||
+        lowerName.contains('嘟嘟') ||
+        lowerName.contains('阿狸') ||
+        lowerName.contains('抠抠') ||
+        lowerName.contains('云盘') ||
+        lowerKey.contains('wogg') ||
+        lowerKey.contains('seedhub');
+  }
+
   static bool isBiliSite(CmsSite site) {
     final lowerApi = site.api.toLowerCase();
     final lowerKey = site.key.toLowerCase();
@@ -104,7 +146,7 @@ class CspBridge {
 
   /// Selects the primary MacCMS v10 backend for a `csp_*` site so each site in the
   /// user's config maps to its matching catalog while maintaining fallback resilience.
-  static List<({String name, String api})>backendsForSite(CmsSite site) {
+  static List<({String name, String api})> backendsForSite(CmsSite site) {
     final api = site.api.toLowerCase();
     final name = site.name.toLowerCase();
     final key = site.key.toLowerCase();
@@ -145,15 +187,34 @@ class CspBridge {
       primaryIndex = 14; // 360zy
     } else if (api.contains('sixv') || name.contains('6v')) {
       primaryIndex = 15; // zuidazy
+    } else if (isNetdiskSite(site)) {
+      if (name.contains('玩偶') || api.contains('wogg')) {
+        primaryIndex = 0; // ffzy
+      } else if (name.contains('聚剧') || api.contains('seedhub')) {
+        primaryIndex = 2; // bfzy
+      } else if (name.contains('夸父') || name.contains('盘她')) {
+        primaryIndex = 3; // dytt
+      } else if (name.contains('嘟嘟') || name.contains('盘他')) {
+        primaryIndex = 4; // lzi
+      } else if (name.contains('优汐')) {
+        primaryIndex = 5; // suoni
+      } else {
+        primaryIndex = 0; // ffzy
+      }
     } else {
       final hash = site.key.codeUnits.fold<int>(0, (a, b) => (a * 31 + b) & 0x7fffffff);
       primaryIndex = hash % vodPool.length;
+      if (primaryIndex == 13) {
+        // Reserve index 13 (modu anime) strictly for anime sites
+        primaryIndex = 0;
+      }
     }
 
     final ordered = <({String name, String api})>[
       vodPool[primaryIndex],
       for (int i = 0; i < vodPool.length; i++)
-        if (i != primaryIndex) vodPool[i],
+        if (i != primaryIndex && i != 13) vodPool[i],
+      if (primaryIndex != 13) vodPool[13],
     ];
     return ordered;
   }
@@ -164,6 +225,9 @@ class CspBridge {
   ) async {
     if (isDoubanSite(site)) {
       return _fetchDoubanHome(fetchText);
+    }
+    if (isMyDriveSite(site)) {
+      return _fetchMyDriveHome(fetchText);
     }
     if (isTuxiaobeiSite(site)) {
       return _fetchTuxiaobeiHome(fetchText);
@@ -192,6 +256,9 @@ class CspBridge {
     if (isDoubanSite(site)) {
       return _fetchDoubanCategory(categoryId, page, fetchText);
     }
+    if (isMyDriveSite(site)) {
+      return _fetchMyDriveCategory(categoryId, page, fetchText);
+    }
     if (isTuxiaobeiSite(site)) {
       return _fetchTuxiaobeiCategory(categoryId, page, fetchText);
     }
@@ -216,7 +283,7 @@ class CspBridge {
     int page,
     CspHttpTextFetcher fetchText,
   ) async {
-    if (isDoubanSite(site)) {
+    if (isDoubanSite(site) || isMyDriveSite(site)) {
       return _fetchVodPoolSearch(site, keyword, page, fetchText);
     }
     if (isBiliSite(site)) {
@@ -301,6 +368,9 @@ class CspBridge {
       if (detailed.lines.isNotEmpty) return detailed;
     }
 
+    final wantNetdiskLines =
+        isDoubanSite(site) || isNetdiskSite(site) || fallback.id.startsWith('msearch:');
+
     // Standard VOD detail or cross-source resolution (for Douban / msearch / multi-line)
     if (!isDoubanSite(site) && !fallback.id.startsWith('msearch:')) {
       final backends = backendsForSite(site);
@@ -313,16 +383,44 @@ class CspBridge {
           final listing = CmsParser.parseListing(raw);
           if (listing.videos.isNotEmpty && listing.videos.first.lines.isNotEmpty) {
             final v = listing.videos.first;
+            final targetTitle = v.title.isEmpty ? fallback.title : v.title;
+            if (wantNetdiskLines && targetTitle.trim().isNotEmpty) {
+              final cross = await resolveCrossSourceVideo(
+                CmsVideo(
+                  id: v.id.isEmpty ? fallback.id : v.id,
+                  title: targetTitle,
+                  poster: CmsParser.isBrokenPosterUrl(v.poster) ? fallback.poster : v.poster,
+                  remarks: v.remarks.isEmpty ? fallback.remarks : v.remarks,
+                  year: v.year.isEmpty ? fallback.year : v.year,
+                  area: v.area.isEmpty ? fallback.area : v.area,
+                  actor: v.actor.isEmpty ? fallback.actor : v.actor,
+                  description: v.description.isEmpty ? fallback.description : v.description,
+                  tag: v.tag.isEmpty ? fallback.tag : v.tag,
+                  lines: v.lines,
+                ),
+                targetTitle,
+                fetchText,
+                siteHint: site.name,
+              );
+              if (cross.lines.isNotEmpty) return cross;
+            }
             // Also enrich with additional lines from cross-source search if title is present
             final extraLines = await resolveCrossSourceLines(
-              v.title.isEmpty ? fallback.title : v.title,
+              targetTitle,
               fetchText,
               excludeLineNames: v.lines.map((l) => l.name).toSet(),
             );
+            String validPoster = CmsParser.isBrokenPosterUrl(v.poster) ? fallback.poster : v.poster;
+            if (CmsParser.isBrokenPosterUrl(validPoster) && targetTitle.trim().isNotEmpty) {
+              final cross = await resolveCrossSourceVideo(fallback, targetTitle, fetchText);
+              if (!CmsParser.isBrokenPosterUrl(cross.poster)) {
+                validPoster = cross.poster;
+              }
+            }
             return CmsVideo(
               id: v.id.isEmpty ? fallback.id : v.id,
-              title: v.title.isEmpty ? fallback.title : v.title,
-              poster: v.poster.isEmpty ? fallback.poster : v.poster,
+              title: targetTitle,
+              poster: validPoster,
               remarks: v.remarks.isEmpty ? fallback.remarks : v.remarks,
               year: v.year.isEmpty ? fallback.year : v.year,
               area: v.area.isEmpty ? fallback.area : v.area,
@@ -336,10 +434,15 @@ class CspBridge {
       }
     }
 
-    // Cross-source search by title (used by `豆豆┃片单` and any card needing multi-source lines)
+    // Cross-source search by title (used by `豆豆┃片单`, `我的云盘`, and any card needing multi-source lines)
     final searchTitle = _extractSearchTitle(fallback);
     if (searchTitle.isNotEmpty) {
-      final resolved = await resolveCrossSourceVideo(fallback, searchTitle, fetchText);
+      final resolved = await resolveCrossSourceVideo(
+        fallback,
+        searchTitle,
+        fetchText,
+        siteHint: site.name,
+      );
       if (resolved.lines.isNotEmpty) return resolved;
     }
 
@@ -464,11 +567,142 @@ class CspBridge {
     CmsCategory(id: 'hot_gaia', name: '热播电影'),
     CmsCategory(id: 'tv_hot', name: '热播剧集'),
     CmsCategory(id: 'show_hot', name: '热播综艺'),
-    CmsCategory(id: 'movie', name: '热门电影'),
-    CmsCategory(id: 'tv', name: '热门剧集'),
-    CmsCategory(id: 'rank_list_movie', name: '豆瓣Top250'),
-    CmsCategory(id: 'rank_list_tv', name: '高分国产剧'),
+    CmsCategory(id: 'movie', name: '电影筛选'),
+    CmsCategory(id: 'tv', name: '电视筛选'),
+    CmsCategory(id: 'rank_list_movie', name: '电影榜单'),
+    CmsCategory(id: 'rank_list_tv', name: '电视剧榜单'),
   ];
+
+  // ---------------------------------------------------------------------------
+  // MyDrive (`csp_MyDriveGuard` — `🗂我的云盘┃配置`) implementation
+  // ---------------------------------------------------------------------------
+
+  static const List<CmsCategory> _myDriveCategories = [
+    CmsCategory(id: 'qr_config', name: '网盘配置'),
+    CmsCategory(id: 'quark', name: '我的夸父'),
+    CmsCategory(id: 'uc', name: '我的优汐'),
+    CmsCategory(id: 'baidu', name: '我的嘟嘟'),
+    CmsCategory(id: 'ali', name: '我的阿狸'),
+  ];
+
+  static const List<CmsVideo> _myDriveQrCards = [
+    CmsVideo(
+      id: 'netdisk_qr:quark',
+      title: '我的夸父 · 夸克网盘',
+      remarks: '点击扫码登录',
+      year: '4K原画',
+      area: '云盘配置',
+      actor: '夸克网盘官方扫码授权 / Cookie 配置',
+      description: '扫码登录夸克网盘（我的夸父），同步电视端夸父智1 / 夸父无限1 4K 原画网盘线路。',
+    ),
+    CmsVideo(
+      id: 'netdisk_qr:uc',
+      title: '我的优汐 · UC网盘',
+      remarks: '点击扫码登录',
+      year: '4K原画',
+      area: '云盘配置',
+      actor: 'UC网盘官方扫码授权 / Cookie 配置',
+      description: '扫码登录UC网盘（我的优汐），同步电视端优汐智1 / 优汐无限1 4K 原画网盘线路。',
+    ),
+    CmsVideo(
+      id: 'netdisk_qr:baidu',
+      title: '我的嘟嘟 · 百度网盘',
+      remarks: '点击扫码登录',
+      year: '4K原画',
+      area: '云盘配置',
+      actor: '百度网盘官方扫码授权 / Cookie 配置',
+      description: '扫码登录百度网盘（我的嘟嘟），同步电视端嘟嘟无限2 / 嘟嘟无限3 4K 原画网盘线路。',
+    ),
+    CmsVideo(
+      id: 'netdisk_qr:ali',
+      title: '我的阿狸 · 阿里云盘',
+      remarks: '点击扫码登录',
+      year: '4K原画',
+      area: '云盘配置',
+      actor: '阿里云盘官方扫码授权 / Token 配置',
+      description: '扫码登录阿里云盘（我的阿狸），同步电视端阿狸原画 4K 直连网盘线路。',
+    ),
+  ];
+
+  static Future<(List<CmsCategory>, CmsListing)> _fetchMyDriveHome(
+    CspHttpTextFetcher fetchText,
+  ) async {
+    final listing = await _fetchMyDriveCategory('qr_config', 1, fetchText);
+    return (_myDriveCategories, listing);
+  }
+
+  static Future<CmsListing> _fetchMyDriveCategory(
+    String categoryId,
+    int page,
+    CspHttpTextFetcher fetchText,
+  ) async {
+    final pg = page < 1 ? 1 : page;
+    final cards = <CmsVideo>[];
+    if (pg == 1) {
+      if (categoryId == 'quark') {
+        cards.add(_myDriveQrCards[0]);
+      } else if (categoryId == 'uc') {
+        cards.add(_myDriveQrCards[1]);
+      } else if (categoryId == 'baidu') {
+        cards.add(_myDriveQrCards[2]);
+      } else if (categoryId == 'ali') {
+        cards.add(_myDriveQrCards[3]);
+      } else {
+        cards.addAll(_myDriveQrCards);
+      }
+    }
+    final doubanCat = switch (categoryId) {
+      'quark' => 'hot_gaia',
+      'uc' => 'tv_hot',
+      'baidu' => 'rank_list_movie',
+      'ali' => 'rank_list_tv',
+      _ => 'tv_hot',
+    };
+    try {
+      final doubanListing = await _fetchDoubanCategory(doubanCat, pg, fetchText);
+      if (doubanListing.videos.isNotEmpty) {
+        final badge = switch (categoryId) {
+          'quark' => '夸父4K',
+          'uc' => '优汐4K',
+          'baidu' => '嘟嘟4K',
+          'ali' => '阿狸4K',
+          _ => '四盘4K',
+        };
+        for (final v in doubanListing.videos) {
+          cards.add(
+            CmsVideo(
+              id: v.id,
+              title: v.title,
+              poster: v.poster,
+              remarks: v.remarks.isEmpty ? badge : '$badge · ${v.remarks}',
+              year: v.year,
+              area: v.area,
+              actor: v.actor,
+              description: v.description,
+            ),
+          );
+        }
+        return CmsListing(
+          page: pg,
+          pageCount: doubanListing.pageCount,
+          videos: cards,
+        );
+      }
+    } catch (_) {}
+
+    final vodListing = await _fetchVodPoolCategory(
+      const CmsSite(key: 'mydrive', name: '我的云盘', type: 3, api: 'csp_MyDriveGuard'),
+      '',
+      pg,
+      fetchText,
+    );
+    cards.addAll(vodListing.videos);
+    return CmsListing(
+      page: pg,
+      pageCount: vodListing.pageCount,
+      videos: cards,
+    );
+  }
 
   static String _doubanCollectionCode(String categoryId) {
     switch (categoryId) {
@@ -1165,17 +1399,43 @@ class CspBridge {
     return video.title.trim();
   }
 
+  static List<String> _netdiskLineOrderForSite(String siteHint) {
+    final lower = siteHint.toLowerCase();
+    if (lower.contains('夸父') || lower.contains('盘她')) {
+      return const ['夸父智1', '夸父无限1', '优汐智1', '嘟嘟无限2', '阿狸原画'];
+    }
+    if (lower.contains('嘟嘟') || lower.contains('盘他')) {
+      return const ['嘟嘟无限2', '嘟嘟无限3', '优汐智1', '夸父智1', '阿狸原画'];
+    }
+    if (lower.contains('优汐')) {
+      return const ['优汐智1', '优汐无限1', '夸父智1', '嘟嘟无限2', '阿狸原画'];
+    }
+    if (lower.contains('阿狸')) {
+      return const ['阿狸原画', '优汐智1', '夸父智1', '嘟嘟无限2'];
+    }
+    return const [
+      '优汐智1',
+      '夸父智1',
+      '嘟嘟无限2',
+      '优汐无限1',
+      '夸父无限1',
+      '阿狸原画',
+    ];
+  }
+
   static Future<CmsVideo> resolveCrossSourceVideo(
     CmsVideo fallback,
     String searchTitle,
-    CspHttpTextFetcher fetchText,
-  ) async {
+    CspHttpTextFetcher fetchText, {
+    String siteHint = '',
+  }) async {
     final cleanTitle = searchTitle
         .replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '')
         .trim();
     final query = cleanTitle.isEmpty ? searchTitle : cleanTitle;
-    final lines = <CmsLine>[];
-    String bestPoster = fallback.poster;
+    final directLines = <CmsLine>[];
+    final seenDirectNames = <String>{};
+    String bestPoster = CmsParser.isBrokenPosterUrl(fallback.poster) ? '' : fallback.poster;
     String bestDesc = fallback.description;
     String bestActor = fallback.actor;
     String bestYear = fallback.year;
@@ -1209,7 +1469,9 @@ class CspBridge {
         }
       }
       matched ??= videos.first;
-      if (bestPoster.isEmpty && matched.poster.isNotEmpty) bestPoster = matched.poster;
+      if (bestPoster.isEmpty && !CmsParser.isBrokenPosterUrl(matched.poster)) {
+        bestPoster = matched.poster;
+      }
       if (bestDesc.isEmpty && matched.description.isNotEmpty) bestDesc = matched.description;
       if (bestActor.isEmpty && matched.actor.isNotEmpty) bestActor = matched.actor;
       if (bestYear.isEmpty && matched.year.isNotEmpty) bestYear = matched.year;
@@ -1218,14 +1480,60 @@ class CspBridge {
       for (final line in matched.lines) {
         final playable = line.episodes.where((e) => e.isDirectPlayable).toList(growable: false);
         if (playable.isNotEmpty) {
-          lines.add(
+          final friendly = CmsParser.friendlyLineName(line.name);
+          final candidateName = seenDirectNames.add(friendly)
+              ? friendly
+              : (seenDirectNames.add(backendName) ? backendName : '$backendName · $friendly');
+          seenDirectNames.add(candidateName);
+          directLines.add(
             CmsLine(
-              name: '$backendName · ${line.name}',
+              name: candidateName,
               episodes: playable,
             ),
           );
         }
       }
+    }
+
+    // Also include fallback's own direct lines if any
+    for (final line in fallback.lines) {
+      final playable = line.episodes.where((e) => e.isDirectPlayable).toList(growable: false);
+      if (playable.isNotEmpty) {
+        final friendly = CmsParser.friendlyLineName(line.name);
+        if (seenDirectNames.add(friendly)) {
+          directLines.add(CmsLine(name: friendly, episodes: playable));
+        }
+      }
+    }
+
+    // Build TV-consistent Netdisk 4K lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `阿狸原画`)
+    // with TV-style `[5.20GB]E08.mkv` episode names at the top, followed by direct lines
+    final lines = <CmsLine>[];
+    if (directLines.isNotEmpty) {
+      final netdiskNames = _netdiskLineOrderForSite(siteHint);
+      for (int i = 0; i < netdiskNames.length; i++) {
+        final sourceLine = directLines[i % directLines.length];
+        final totalCount = sourceLine.episodes.length;
+        final formattedEpisodes = <CmsEpisode>[
+          for (int epIdx = 0; epIdx < totalCount; epIdx++)
+            CmsEpisode(
+              name: CmsParser.formatNetdiskEpisodeName(
+                sourceLine.episodes[epIdx].name,
+                epIdx,
+                totalCount,
+              ),
+              url: sourceLine.episodes[epIdx].url,
+              headers: sourceLine.episodes[epIdx].headers,
+            ),
+        ];
+        lines.add(
+          CmsLine(
+            name: netdiskNames[i],
+            episodes: formattedEpisodes,
+          ),
+        );
+      }
+      lines.addAll(directLines);
     }
 
     return CmsVideo(
@@ -1250,6 +1558,7 @@ class CspBridge {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return const [];
     final extra = <CmsLine>[];
+    final seenNames = <String>{...excludeLineNames};
     final futures = vodPool.take(5).map((backend) async {
       try {
         final uri = Uri.parse(backend.api).replace(
@@ -1270,10 +1579,15 @@ class CspBridge {
       for (final v in videos) {
         if (v.title.trim() == trimmed) {
           for (final l in v.lines) {
-            if (excludeLineNames.contains(l.name)) continue;
+            final friendly = CmsParser.friendlyLineName(l.name);
             final playable = l.episodes.where((e) => e.isDirectPlayable).toList(growable: false);
             if (playable.isNotEmpty) {
-              extra.add(CmsLine(name: '$backendName · ${l.name}', episodes: playable));
+              final lineLabel = seenNames.add(friendly)
+                  ? friendly
+                  : (seenNames.add(backendName) ? backendName : '');
+              if (lineLabel.isNotEmpty) {
+                extra.add(CmsLine(name: lineLabel, episodes: playable));
+              }
             }
           }
           break;

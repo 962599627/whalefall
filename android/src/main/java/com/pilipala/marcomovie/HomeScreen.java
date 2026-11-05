@@ -104,19 +104,21 @@ final class HomeScreen {
         posterWidth = Math.max(48, (int) ((width - marginDp - (COLUMNS - 1) * 14) / COLUMNS) - 8);
         historySection();
         LinearLayout heading = a.row();
-        heading.setPadding(0, a.dp(4), 0, a.dp(4));
+        heading.setClipChildren(false);
+        heading.setClipToPadding(false);
+        heading.setPadding(0, a.dp(6), 0, a.dp(6));
         TextView title = a.text("发现", 22, MainActivity.WHITE);
         title.setTypeface(null, Typeface.BOLD);
         heading.addView(title, new LinearLayout.LayoutParams(-2, -2));
         source = pill(site.name, "source-switcher", a::chooseSources);
-        source.setPadding(a.dp(12), 0, a.dp(12), 0);
+        source.setPadding(a.dp(14), 0, a.dp(14), 0);
         source.setCompoundDrawablePadding(a.dp(9));
         source.setCompoundDrawables(null, null, new SourceChevron(a), null);
         source.setOnFocusChangeListener((v, f) -> styleSource(f));
         styleSource(false);
         source.setMaxWidth(a.dp(220));
         source.setContentDescription("当前片源：" + site.name + "，按确认键切换");
-        LinearLayout.LayoutParams sourceSize = new LinearLayout.LayoutParams(-2, a.dp(30));
+        LinearLayout.LayoutParams sourceSize = new LinearLayout.LayoutParams(-2, a.dp(34));
         sourceSize.leftMargin = a.dp(14);
         heading.addView(source, sourceSize);
         a.body.addView(heading);
@@ -142,6 +144,8 @@ final class HomeScreen {
                             loadCategory(!state.ready);
                         });
         LinearLayout footer = a.row();
+        footer.setClipChildren(false);
+        footer.setClipToPadding(false);
         footer.setGravity(Gravity.CENTER);
         footer.setPadding(0, a.dp(14), 0, a.dp(8));
         footer.addView(more, new LinearLayout.LayoutParams(a.dp(180), a.dp(40)));
@@ -240,6 +244,8 @@ final class HomeScreen {
         title.setGravity(Gravity.CENTER_VERTICAL);
         resume.addView(title, new LinearLayout.LayoutParams(-1, a.dp(30)));
         LinearLayout heading = a.row();
+        heading.setClipChildren(false);
+        heading.setClipToPadding(false);
         TextView historyTitle = a.text("历史记录", 17, MainActivity.WHITE);
         historyTitle.setTag("home-history-title");
         historyTitle.setTypeface(null, Typeface.BOLD);
@@ -906,8 +912,8 @@ final class HomeScreen {
                 focused,
                 0x66344352,
                 0xff344452,
-                // Fully rounded capsule: the radius is clamped to half the 30dp height.
-                24,
+                // Fully rounded capsule matching the 34dp pill height.
+                17,
                 0xffd7e2ed,
                 Color.WHITE,
                 true,

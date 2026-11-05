@@ -11,6 +11,7 @@ final class PlayerChrome {
     final FrameLayout overlay;
     final LinearLayout dock, progress, heading;
     final LinearLayout loadingPill;
+    final LinearLayout centerRow;
     final TextView loadingText, episodeLabel;
     final StateGlyph state;
     final TextView resolution;
@@ -79,17 +80,37 @@ final class PlayerChrome {
 
         progress = a.vertical();
         progress.setTag("player-progress");
+        LinearLayout clockRow = a.row();
         a.playClock = a.text("--:-- / --:--", 12, MainActivity.WHITE);
-        a.playClock.setGravity(Gravity.RIGHT);
-        a.playClock.setPadding(0, 0, a.dp(12), 0);
-        progress.addView(a.playClock);
+        a.playClock.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        a.playClock.setPadding(a.dp(8), 0, a.dp(12), 0);
+        clockRow.addView(a.playClock, new LinearLayout.LayoutParams(0, -2, 1));
+        if (!a.isTvDevice()) {
+            Button fsBtn =
+                    a.navButton(
+                            a.isPortrait() ? "⛶ 全屏横屏" : "⛶ 退出全屏",
+                            "player-fullscreen",
+                            a::togglePlayerOrientation);
+            fsBtn.setTextColor(MainActivity.WHITE);
+            fsBtn.setTextSize(12);
+            fsBtn.setMinHeight(a.dp(30));
+            fsBtn.setMinimumHeight(a.dp(30));
+            fsBtn.setPadding(a.dp(12), a.dp(4), a.dp(12), a.dp(4));
+            fsBtn.setBackground(a.bg(0x44ffffff, 15));
+            clockRow.addView(fsBtn, new LinearLayout.LayoutParams(-2, a.dp(30)));
+        }
+        progress.addView(clockRow, new LinearLayout.LayoutParams(-1, -2));
         int width = a.windowWidth();
+        boolean mobileLandscape = !a.isTvDevice() && !a.isPortrait();
         FrameLayout.LayoutParams track =
                 new FrameLayout.LayoutParams(
-                        Math.min(a.dp(760), Math.max(a.dp(220), width - a.dp(48))),
+                        Math.min(
+                                a.dp(760),
+                                Math.max(a.dp(220), width - a.dp(mobileLandscape ? 140 : 48))),
                         -2,
                         Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        track.bottomMargin = a.dp(94);
+        track.bottomMargin = a.dp(mobileLandscape ? 20 : 94);
+        if (mobileLandscape) track.rightMargin = a.dp(44);
         overlay.addView(progress, track);
 
         dock = a.vertical();
@@ -101,11 +122,19 @@ final class PlayerChrome {
         dock.setBackground(glass);
         dock.setElevation(a.dp(10));
         FrameLayout.LayoutParams bottom =
-                new FrameLayout.LayoutParams(
-                        Math.min(a.dp(552), Math.max(a.dp(240), width - a.dp(32))),
-                        -2,
-                        Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        bottom.bottomMargin = a.dp(16);
+                mobileLandscape
+                        ? new FrameLayout.LayoutParams(
+                                a.dp(88),
+                                Math.min(
+                                        a.dp(360),
+                                        Math.max(a.dp(180), a.windowHeight() - a.dp(48))),
+                                Gravity.RIGHT | Gravity.CENTER_VERTICAL)
+                        : new FrameLayout.LayoutParams(
+                                Math.min(a.dp(552), Math.max(a.dp(240), width - a.dp(32))),
+                                -2,
+                                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        if (mobileLandscape) bottom.rightMargin = a.dp(14);
+        else bottom.bottomMargin = a.dp(16);
         overlay.addView(dock, bottom);
 
         state = new StateGlyph();
@@ -117,7 +146,24 @@ final class PlayerChrome {
                     a.togglePlayback();
                     a.showControls(true);
                 });
-        overlay.addView(state, new FrameLayout.LayoutParams(a.dp(72), a.dp(72), Gravity.CENTER));
+        if (!a.isTvDevice()) {
+            centerRow = a.row();
+            centerRow.setGravity(Gravity.CENTER);
+            TextView rewindBtn = buildSeekCircle("↺ 15s", -15000);
+            TextView forwardBtn = buildSeekCircle("15s ↻", 15000);
+            LinearLayout.LayoutParams sideLp = new LinearLayout.LayoutParams(a.dp(58), a.dp(58));
+            LinearLayout.LayoutParams centerLp = new LinearLayout.LayoutParams(a.dp(76), a.dp(76));
+            centerLp.leftMargin = a.dp(28);
+            centerLp.rightMargin = a.dp(28);
+            centerRow.addView(rewindBtn, sideLp);
+            centerRow.addView(state, centerLp);
+            centerRow.addView(forwardBtn, sideLp);
+            overlay.addView(centerRow, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        } else {
+            centerRow = null;
+            overlay.addView(
+                    state, new FrameLayout.LayoutParams(a.dp(72), a.dp(72), Gravity.CENTER));
+        }
         a.playbackLayer.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
 
         loadingPill = a.row();
@@ -143,17 +189,57 @@ final class PlayerChrome {
         a.controlsVisible = true;
     }
 
+    TextView buildSeekCircle(String label, int deltaMs) {
+        TextView btn = a.text(label, 12, MainActivity.WHITE);
+        btn.setGravity(Gravity.CENTER);
+        btn.setTypeface(null, Typeface.BOLD);
+        GradientDrawable bg = a.bg(0x99303034, 29);
+        bg.setStroke(a.dp(1), 0x33ffffff);
+        btn.setBackground(bg);
+        btn.setOnClickListener(
+                v -> {
+                    if (a.player != null && a.prepared) {
+                        int dur = Math.max(1, a.player.getDuration());
+                        int next =
+                                Math.max(0, Math.min(dur, a.player.getCurrentPosition() + deltaMs));
+                        a.player.seekTo(next);
+                    }
+                    a.showControls(true);
+                });
+        return btn;
+    }
+
     void relayout() {
         int width = a.windowWidth();
+        boolean mobileLandscape = !a.isTvDevice() && !a.isPortrait();
         ViewGroup.LayoutParams p = progress.getLayoutParams();
-        if (p != null) {
-            p.width = Math.min(a.dp(760), Math.max(a.dp(220), width - a.dp(48)));
-            progress.setLayoutParams(p);
+        if (p instanceof FrameLayout.LayoutParams) {
+            FrameLayout.LayoutParams fp = (FrameLayout.LayoutParams) p;
+            fp.width =
+                    Math.min(
+                            a.dp(760),
+                            Math.max(a.dp(220), width - a.dp(mobileLandscape ? 140 : 48)));
+            fp.bottomMargin = a.dp(mobileLandscape ? 20 : 94);
+            fp.rightMargin = mobileLandscape ? a.dp(44) : 0;
+            progress.setLayoutParams(fp);
         }
         ViewGroup.LayoutParams d = dock.getLayoutParams();
-        if (d != null) {
-            d.width = Math.min(a.dp(552), Math.max(a.dp(240), width - a.dp(32)));
-            dock.setLayoutParams(d);
+        if (d instanceof FrameLayout.LayoutParams) {
+            FrameLayout.LayoutParams fd = (FrameLayout.LayoutParams) d;
+            if (mobileLandscape) {
+                fd.width = a.dp(88);
+                fd.height = Math.min(a.dp(360), Math.max(a.dp(180), a.windowHeight() - a.dp(48)));
+                fd.gravity = Gravity.RIGHT | Gravity.CENTER_VERTICAL;
+                fd.rightMargin = a.dp(14);
+                fd.bottomMargin = 0;
+            } else {
+                fd.width = Math.min(a.dp(552), Math.max(a.dp(240), width - a.dp(32)));
+                fd.height = -2;
+                fd.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+                fd.rightMargin = 0;
+                fd.bottomMargin = a.dp(16);
+            }
+            dock.setLayoutParams(fd);
         }
     }
 
@@ -184,6 +270,7 @@ final class PlayerChrome {
         boolean showSpinner = loading && !a.prepared && a.playbackLoading == null && !a.miniMode;
         loadingPill.setVisibility(showSpinner ? View.VISIBLE : View.GONE);
         state.setVisibility(showSpinner ? View.GONE : View.VISIBLE);
+        if (centerRow != null) centerRow.setVisibility(showSpinner ? View.GONE : View.VISIBLE);
         state.setContentDescription(!a.prepared ? "正在准备" : a.playing ? "正在播放，确认暂停" : "已暂停，确认继续");
         state.invalidate();
     }

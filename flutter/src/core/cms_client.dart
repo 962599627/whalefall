@@ -312,7 +312,9 @@ class CmsClient {
           return CmsVideo(
             id: detailed.id.isEmpty ? fallback.id : detailed.id,
             title: detailed.title.isEmpty ? fallback.title : detailed.title,
-            poster: detailed.poster.isEmpty ? fallback.poster : detailed.poster,
+            poster: CmsParser.isBrokenPosterUrl(detailed.poster)
+                ? fallback.poster
+                : detailed.poster,
             remarks: detailed.remarks.isEmpty ? fallback.remarks : detailed.remarks,
             year: detailed.year.isEmpty ? fallback.year : detailed.year,
             area: detailed.area.isEmpty ? fallback.area : detailed.area,
@@ -363,6 +365,7 @@ class CmsClient {
       if (!s.supported || !s.searchable) continue;
       if (CspBridge.canHandleSite(s)) {
         if (CspBridge.isDoubanSite(s) ||
+            CspBridge.isMyDriveSite(s) ||
             CspBridge.isHuyaSite(s) ||
             CspBridge.isDouyuSite(s)) {
           continue;

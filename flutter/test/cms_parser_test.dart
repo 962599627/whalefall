@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marco_movie/core/cms_parser.dart';
+import 'package:marco_movie/core/csp_bridge.dart';
 import 'package:marco_movie/core/models.dart';
 void main() {
   test('parses CMS config with relative URLs and strips JSON comments', () {
@@ -212,5 +213,37 @@ void main() {
       () => CmsParser.decodeBackupPayload('{"format":"unknown","settings":{}}'),
       throwsFormatException,
     );
+  });
+
+  test('normalizes raw MacCMS line codes, broken poster domains, and TV netdisk 4K episode names', () async {
+    expect(CmsParser.friendlyLineName('modum3u8'), '魔都超清');
+    expect(CmsParser.friendlyLineName('bfzym3u8'), '暴风蓝光');
+    expect(CmsParser.friendlyLineName('dyttm3u8'), '电影天堂');
+    expect(CmsParser.isBrokenPosterUrl('https://www.mdzypic.com/upload/vod/1.jpg'), isTrue);
+    expect(CmsParser.isBrokenPosterUrl('https://img.example/poster.jpg'), isFalse);
+    expect(CmsParser.formatNetdiskEpisodeName('第08集', 7, 24), '[5.20GB]E08.mkv');
+    expect(CmsParser.formatNetdiskEpisodeName('第1集', 0, 24), '[5.17GB]E01.mkv');
+
+    const myDriveSite = CmsSite(
+      key: 'csp_MyDriveGuard',
+      name: '📁 我的云盘 | 配置',
+      type: 3,
+      api: 'csp_MyDriveGuard',
+    );
+    expect(CspBridge.isMyDriveSite(myDriveSite), isTrue);
+    expect(CspBridge.isNetdiskSite(myDriveSite), isTrue);
+    expect(CspBridge.backendsForSite(myDriveSite).first.name, isNot('魔都动漫'));
+
+    final (cats, listing) = await CspBridge.fetchHome(
+      myDriveSite,
+      (url, {headers = const {}, requestTimeout}) async => '{"list":[]}',
+    );
+    expect(cats.map((c) => c.name).toList(), containsAll(['网盘配置', '我的夸父', '我的优汐', '我的嘟嘟', '我的阿狸']));
+    expect(listing.videos.take(4).map((v) => v.id), containsAll([
+      'netdisk_qr:quark',
+      'netdisk_qr:uc',
+      'netdisk_qr:baidu',
+      'netdisk_qr:ali',
+    ]));
   });
 }

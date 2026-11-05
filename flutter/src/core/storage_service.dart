@@ -13,6 +13,14 @@ class StorageService {
   static const String keyEpisodesDescending = 'episodes_descending';
   static const String keyPlaySpeed = 'play_speed';
   static const String keyAutoNext = 'auto_next';
+  static const String keySkipIntroSec = 'skip_intro_sec';
+  static const String keySkipOutroSec = 'skip_outro_sec';
+  static const String keyRepeatMode = 'repeat_mode';
+  static const String keyQuarkCookie = 'netdisk_quark_cookie';
+  static const String keyUcCookie = 'netdisk_uc_cookie';
+  static const String keyBaiduCookie = 'netdisk_baidu_cookie';
+  static const String keyAliToken = 'netdisk_ali_token';
+  static const String keyDriveOrder = 'netdisk_drive_order';
   static const String keyDepots = 'saved_depots';
   static const String keyActiveDepotName = 'active_depot_name';
   final SharedPreferences _prefs;
@@ -29,6 +37,26 @@ class StorageService {
   double get playSpeed =>
       (_prefs.getDouble(keyPlaySpeed) ?? 1.0).clamp(0.5, 2.0);
   bool get autoNext => _prefs.getBool(keyAutoNext) ?? true;
+  int get skipIntroSec => (_prefs.getInt(keySkipIntroSec) ?? 0).clamp(0, 600);
+  int get skipOutroSec => (_prefs.getInt(keySkipOutroSec) ?? 0).clamp(0, 600);
+  String get repeatMode => _prefs.getString(keyRepeatMode) ?? 'off';
+  String get quarkCookie => _prefs.getString(keyQuarkCookie) ?? '';
+  String get ucCookie => _prefs.getString(keyUcCookie) ?? '';
+  String get baiduCookie => _prefs.getString(keyBaiduCookie) ?? '';
+  String get aliToken => _prefs.getString(keyAliToken) ?? '';
+  List<String> get driveOrder {
+    const defaults = ['quark', 'uc', 'baidu', 'ali'];
+    final raw = _prefs.getStringList(keyDriveOrder);
+    if (raw == null || raw.isEmpty) return defaults;
+    final out = <String>[
+      for (final d in raw)
+        if (defaults.contains(d)) d,
+    ];
+    for (final d in defaults) {
+      if (!out.contains(d)) out.add(d);
+    }
+    return out;
+  }
   List<CmsDepot> getSavedDepots() {
     final raw = _prefs.getString(keyDepots) ?? '[]';
     try {
@@ -107,6 +135,58 @@ class StorageService {
   }
   Future<void> setAutoNext(bool value) async {
     await _prefs.setBool(keyAutoNext, value);
+  }
+  Future<void> setSkipIntroSec(int seconds) async {
+    await _prefs.setInt(keySkipIntroSec, seconds.clamp(0, 600));
+  }
+  Future<void> setSkipOutroSec(int seconds) async {
+    await _prefs.setInt(keySkipOutroSec, seconds.clamp(0, 600));
+  }
+  Future<void> setRepeatMode(String mode) async {
+    await _prefs.setString(keyRepeatMode, mode);
+  }
+  String getNetdiskCred(String driveKey) {
+    switch (driveKey) {
+      case 'quark':
+        return quarkCookie;
+      case 'uc':
+        return ucCookie;
+      case 'baidu':
+        return baiduCookie;
+      case 'ali':
+        return aliToken;
+      default:
+        return '';
+    }
+  }
+  bool isNetdiskLoggedIn(String driveKey) {
+    return getNetdiskCred(driveKey).trim().isNotEmpty;
+  }
+  String netdiskCredential(String driveKey) {
+    return getNetdiskCred(driveKey);
+  }
+  Future<void> setNetdiskCredential(String driveKey, String value) {
+    return setNetdiskCred(driveKey, value);
+  }
+  Future<void> setNetdiskCred(String driveKey, String value) async {
+    final trimmed = value.trim();
+    switch (driveKey) {
+      case 'quark':
+        await _prefs.setString(keyQuarkCookie, trimmed);
+        break;
+      case 'uc':
+        await _prefs.setString(keyUcCookie, trimmed);
+        break;
+      case 'baidu':
+        await _prefs.setString(keyBaiduCookie, trimmed);
+        break;
+      case 'ali':
+        await _prefs.setString(keyAliToken, trimmed);
+        break;
+    }
+  }
+  Future<void> setDriveOrder(List<String> order) async {
+    await _prefs.setStringList(keyDriveOrder, order);
   }
   List<WatchHistoryEntry> getWatchHistory() {
     final raw = _prefs.getString(keyWatchHistory) ?? '[]';

@@ -15,7 +15,7 @@ final class FocusMotion {
         final MotionSpring emphasis = new MotionSpring(0, 26, .002f),
                 compression = new MotionSpring(0, 40, .002f);
         MotionLoop.Step animator;
-        int targetColor, color, stroke, text, normal, active, idleText, activeText;
+        int targetColor, color, stroke, text, normal, active, idleText, activeText, radiusPx;
         float scale = 1, elevation, gain = 1;
         boolean ready, pressed, border;
     }
@@ -60,12 +60,14 @@ final class FocusMotion {
             boolean border,
             float gain) {
         State state = state(view);
+        int strokePx = Math.round(view.getResources().getDisplayMetrics().density * 2);
         if (!state.ready) {
             state.ready = true;
             state.color = normal;
             state.text = idleText;
             state.stroke = 0x00f5f5f7;
             state.background.setColor(normal);
+            state.background.setStroke(strokePx, state.stroke);
             view.animate().cancel();
         }
         state.targetColor = focused ? active : normal;
@@ -75,7 +77,8 @@ final class FocusMotion {
         state.activeText = activeText;
         state.border = border;
         state.gain = gain;
-        state.background.setCornerRadius(a.dp(radius));
+        state.radiusPx = a.dp(radius);
+        state.background.setCornerRadius(state.radiusPx);
         if (view.getBackground() != state.background) view.setBackground(state.background);
         if (!focused) {
             state.pressed = false;
@@ -152,9 +155,18 @@ final class FocusMotion {
             float elevation,
             float alpha) {
         if (state.color != color) state.background.setColor(color);
-        if (state.stroke != stroke)
+        int maxRadius =
+                view.getWidth() > 0 && view.getHeight() > 0
+                        ? Math.min(view.getWidth(), view.getHeight()) / 2
+                        : state.radiusPx;
+        int effectiveRadius = Math.min(state.radiusPx, maxRadius);
+        if (state.stroke != stroke) {
             state.background.setStroke(
                     Math.round(view.getResources().getDisplayMetrics().density * 2), stroke);
+            state.background.setCornerRadius(effectiveRadius);
+        } else if (effectiveRadius > 0) {
+            state.background.setCornerRadius(effectiveRadius);
+        }
         if (view instanceof TextView && ((TextView) view).getCurrentTextColor() != text)
             ((TextView) view).setTextColor(text);
         if (view.getScaleX() != scale) view.setScaleX(scale);

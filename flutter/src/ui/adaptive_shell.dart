@@ -7,11 +7,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/cms_client.dart';
 import '../core/cms_parser.dart';
+import '../core/csp_bridge.dart';
 import '../core/download_service.dart';
 import '../core/models.dart';
+import '../core/netdisk_service.dart';
 import '../core/storage_service.dart';
 import 'apple_theme.dart';
 import 'detail_screen.dart';
+import 'netdisk_sheet.dart';
 import 'player_screen.dart';
 import 'poster_image.dart';
 /// Apple HIG adaptive shell:
@@ -231,6 +234,18 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     }
   }
   void _openVideoDetail(CmsSite site, CmsVideo video) {
+    if (video.id.startsWith('netdisk_qr:')) {
+      final driveKey = video.id.substring('netdisk_qr:'.length).trim();
+      showNetdiskAccountSheet(
+        context,
+        widget.storage,
+        initialDriveKey: driveKey.isEmpty ? null : driveKey,
+        onChanged: () {
+          if (mounted) setState(() {});
+        },
+      );
+      return;
+    }
     Navigator.of(context)
         .push(
           CupertinoPageRoute<void>(
@@ -451,6 +466,56 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         onTap: _showSitePickerDialog,
                       ),
                       const SizedBox(width: 8),
+                      GestureDetector(
+                        key: const ValueKey('home-netdisk-button'),
+                        onTap: () => showNetdiskAccountSheet(
+                          context,
+                          widget.storage,
+                          onChanged: () {
+                            if (mounted) setState(() {});
+                          },
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 11,
+                                vertical: 7.5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppleColors.fill,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: AppleColors.glassBorder,
+                                  width: 0.5,
+                                ),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    CupertinoIcons.qrcode_viewfinder,
+                                    color: AppleColors.systemBlue,
+                                    size: 14,
+                                  ),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    '网盘',
+                                    style: TextStyle(
+                                      color: AppleColors.labelPrimary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       CupertinoButton(
                         padding: EdgeInsets.zero,
                         minSize: 34,
@@ -533,7 +598,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       ),
                     ],
                     // Featured Hero Showcase Card on first page when videos exist
-                    if (_homeVideos.isNotEmpty &&
+                    if (CspBridge.isMyDriveSite(_activeSite!)) ...[
+                      const SizedBox(height: 18),
+                      _buildMyDriveNetdiskBanner(_activeSite!),
+                    ] else if (_homeVideos.isNotEmpty &&
                         _selectedCategoryId.isEmpty &&
                         _currentPage == 1) ...[
                       const SizedBox(height: 18),
@@ -1123,6 +1191,96 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       ),
     );
   }
+  Widget _buildMyDriveNetdiskBanner(CmsSite site) {
+    return Container(
+      key: const ValueKey('mydrive-netdisk-banner'),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF12233B), Color(0xFF14161E)],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: AppleColors.systemBlue.withValues(alpha: 0.45),
+          width: 0.8,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                CupertinoIcons.qrcode_viewfinder,
+                color: Color(0xFF5AC8FA),
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${site.name} · 电视端网盘扫码与账号管理',
+                  style: const TextStyle(
+                    color: AppleColors.labelPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              AppleCapsuleButton(
+                label: '打开网盘中心',
+                icon: CupertinoIcons.qrcode,
+                primary: true,
+                compact: true,
+                onPressed: () => showNetdiskAccountSheet(
+                  context,
+                  widget.storage,
+                  onChanged: () {
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '点击下方网盘即可弹出官方扫码窗口，支持夸克（我的夸父）、UC（我的优汐）、百度（我的嘟嘟）、阿里云盘（我的阿狸）4K 原画线路：',
+            style: TextStyle(
+              color: AppleColors.labelSecondary,
+              fontSize: 12.5,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final drive in NetdiskService.drives)
+                AppleCapsuleButton(
+                  label:
+                      '${drive.tvAlias} · ${widget.storage.isNetdiskLoggedIn(drive.key) ? "已启用" : "扫码登录"}',
+                  icon: widget.storage.isNetdiskLoggedIn(drive.key)
+                      ? CupertinoIcons.checkmark_seal_fill
+                      : CupertinoIcons.qrcode_viewfinder,
+                  primary: widget.storage.isNetdiskLoggedIn(drive.key),
+                  compact: true,
+                  onPressed: () => showNetdiskAccountSheet(
+                    context,
+                    widget.storage,
+                    initialDriveKey: drive.key,
+                    onChanged: () {
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
   Widget _buildPosterPlaceholder() {
     return Container(
       decoration: const BoxDecoration(
@@ -1140,7 +1298,63 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       ),
     );
   }
+  Widget _buildNetdiskCardPoster(String driveKey, String title) {
+    final loggedIn = widget.storage.isNetdiskLoggedIn(driveKey);
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: loggedIn
+              ? const [Color(0xFF143527), Color(0xFF0E1D17)]
+              : const [Color(0xFF152946), Color(0xFF101724)],
+        ),
+      ),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            loggedIn ? CupertinoIcons.cloud_fill : CupertinoIcons.qrcode_viewfinder,
+            color: loggedIn ? const Color(0xFF30D158) : const Color(0xFF5AC8FA),
+            size: 38,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title.split('·').first.trim(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              loggedIn ? '已登录+启用中' : '点击扫码登录',
+              style: TextStyle(
+                color: loggedIn ? const Color(0xFF30D158) : const Color(0xFF5AC8FA),
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   Widget _buildVideoCard(CmsSite site, CmsVideo video, {String? badge}) {
+    final isNetdiskQr = video.id.startsWith('netdisk_qr:');
+    final qrDriveKey =
+        isNetdiskQr ? video.id.substring('netdisk_qr:'.length).trim() : '';
     return GestureDetector(
       onTap: () => _openVideoDetail(site, video),
       child: Column(
@@ -1160,9 +1374,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  video.poster.isNotEmpty
-                      ? PosterImage(url: video.poster, placeholder: _buildPosterPlaceholder())
-                      : _buildPosterPlaceholder(),
+                  isNetdiskQr
+                      ? _buildNetdiskCardPoster(qrDriveKey, video.title)
+                      : (video.poster.isNotEmpty
+                          ? PosterImage(
+                              url: video.poster,
+                              placeholder: _buildPosterPlaceholder(),
+                            )
+                          : _buildPosterPlaceholder()),
                   if (badge != null && badge.isNotEmpty)
                     Positioned(
                       top: 6,
@@ -2130,6 +2349,19 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   trailingText: '${_config!.supportedSites.length} 可用',
                   onTap: _showSitePickerDialog,
                 ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.qrcode_viewfinder,
+                iconBgColor: AppleColors.systemBlue,
+                title: '我的云盘 · 网盘扫码登录与配置',
+                subtitle: '我的夸父（夸克）/ 我的优汐（UC）/ 我的嘟嘟（百度）/ 我的阿狸（阿里）',
+                onTap: () => showNetdiskAccountSheet(
+                  context,
+                  widget.storage,
+                  onChanged: () {
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 22),
@@ -2184,7 +2416,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Version 0.4.21 · Apple HIG Edition',
+                  'Version 0.4.22 · Apple HIG Edition',
                   style: TextStyle(
                     color: AppleColors.labelSecondary,
                     fontSize: 12,
