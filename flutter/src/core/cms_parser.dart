@@ -1695,6 +1695,28 @@ class CmsParser {
     return '[8.64GB]4K.2160p.HDR.mkv';
   }
 
+  static String upgradePosterUrlToHd(String rawUrl) {
+    var u = rawUrl.trim();
+    if (u.isEmpty) return '';
+    if (u.startsWith('//')) u = 'https:$u';
+    if (u.contains('doubanio.com')) {
+      u = u
+          .replaceFirst('img9.doubanio.com', 'img3.doubanio.com')
+          .replaceFirst('/s_ratio_poster/', '/l_ratio_poster/')
+          .replaceFirst('/m_ratio_poster/', '/l_ratio_poster/')
+          .replaceFirst('/view/photo/spic/', '/view/photo/lpic/')
+          .replaceFirst('/view/photo/mpic/', '/view/photo/lpic/')
+          .replaceFirst('/view/subject/s/', '/view/subject/l/')
+          .replaceFirst('/view/subject/m/', '/view/subject/l/');
+    } else if (u.contains('hdslb.com') || u.contains('biliimg.com')) {
+      final atResize = RegExp(r'@\d+w_\d+h.*$').firstMatch(u);
+      if (atResize != null) {
+        u = u.substring(0, atResize.start);
+      }
+    }
+    return u;
+  }
+
   static String _cleanPosterUrl(String raw) {
     var cleaned = raw.trim();
     final atIdx = cleaned.indexOf(RegExp(r'@(?i:Referer|User-Agent)='));
@@ -1707,7 +1729,7 @@ class CmsParser {
     if (isBrokenPosterUrl(cleaned)) {
       return '';
     }
-    return cleaned;
+    return upgradePosterUrlToHd(cleaned);
   }
   static CmsListing _parseXmlListing(String xml) {
     int page = 1;

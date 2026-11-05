@@ -96,10 +96,29 @@ final class ImageLoader {
                                         HttpURLConnection connection = null;
                                         try {
                                             Cms.ImageRequest source = Cms.imageRequest(address);
+                                            String targetUrl = Cms.normalizeHttp(source.url);
+                                            if (targetUrl.contains("doubanio.com")) {
+                                                targetUrl =
+                                                        targetUrl
+                                                                .replace(
+                                                                        "img9.doubanio.com",
+                                                                        "img3.doubanio.com")
+                                                                .replace(
+                                                                        "/s_ratio_poster/",
+                                                                        "/l_ratio_poster/")
+                                                                .replace(
+                                                                        "/m_ratio_poster/",
+                                                                        "/l_ratio_poster/")
+                                                                .replace(
+                                                                        "/view/photo/spic/",
+                                                                        "/view/photo/lpic/")
+                                                                .replace(
+                                                                        "/view/photo/mpic/",
+                                                                        "/view/photo/lpic/");
+                                            }
                                             connection =
                                                     (HttpURLConnection)
-                                                            new URL(Cms.normalizeHttp(source.url))
-                                                                    .openConnection();
+                                                            new URL(targetUrl).openConnection();
                                             for (Map.Entry<String, String> header :
                                                     source.headers.entrySet())
                                                 connection.setRequestProperty(

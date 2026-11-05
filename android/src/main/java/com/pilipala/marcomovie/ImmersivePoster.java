@@ -39,33 +39,33 @@ final class ImmersivePoster extends FrameLayout {
         a.artwork.execute(
                 () -> {
                     // Never alter or recycle the shared image-cache bitmap.
-                    Bitmap small = Bitmap.createScaledBitmap(bitmap, 48, 72, true);
-                    int[] pixels = new int[48 * 72];
-                    small.getPixels(pixels, 0, 48, 0, 0, 48, 72);
+                    Bitmap small = Bitmap.createScaledBitmap(bitmap, 72, 108, true);
+                    int[] pixels = new int[72 * 108];
+                    small.getPixels(pixels, 0, 72, 0, 0, 72, 108);
                     if (small != bitmap) small.recycle();
                     for (int pass = 0; pass < 3; pass++) {
                         int[] next = new int[pixels.length];
-                        for (int y = 0; y < 72; y++)
-                            for (int x = 0; x < 48; x++) {
+                        for (int y = 0; y < 108; y++)
+                            for (int x = 0; x < 72; x++) {
                                 int red = 0, green = 0, blue = 0, count = 0;
                                 for (int dy = -3; dy <= 3; dy++)
                                     for (int dx = -3; dx <= 3; dx++) {
                                         int c =
                                                 pixels[
-                                                        Math.max(0, Math.min(71, y + dy)) * 48
+                                                        Math.max(0, Math.min(107, y + dy)) * 72
                                                                 + Math.max(
-                                                                        0, Math.min(47, x + dx))];
+                                                                        0, Math.min(71, x + dx))];
                                         red += Color.red(c);
                                         green += Color.green(c);
                                         blue += Color.blue(c);
                                         count++;
                                     }
-                                next[y * 48 + x] =
+                                next[y * 72 + x] =
                                         Color.rgb(red / count, green / count, blue / count);
                             }
                         pixels = next;
                     }
-                    Bitmap blurred = Bitmap.createBitmap(pixels, 48, 72, Bitmap.Config.ARGB_8888);
+                    Bitmap blurred = Bitmap.createBitmap(pixels, 72, 108, Bitmap.Config.ARGB_8888);
                     a.ui.post(
                             () -> {
                                 if (token != revision

@@ -957,6 +957,7 @@ Future<T?> showAppleModalSheet<T>({
   required Widget Function(BuildContext) builder,
   Widget? trailingAction,
   double? maxWidth,
+  bool ignoreKeyboardInsets = false,
 }) {
   return showCupertinoModalPopup<T>(
     context: context,
@@ -967,16 +968,18 @@ Future<T?> showAppleModalSheet<T>({
       final isLandscape = screenSize.width > screenSize.height;
       final effectiveMaxWidth =
           maxWidth ?? (isLandscape ? math.min(screenSize.width - 28, 720.0) : 560.0);
-      // Keep the sheet itself clear of the notch / home indicator so its
-      // content never needs extra inner safe-area margins.
-      return Padding(
+      final sheetContent = Padding(
         padding: EdgeInsets.only(
-          bottom: viewInsets.bottom > 0
-              ? viewInsets.bottom
-              : (isLandscape ? math.max(safe.bottom, 8.0) : 0),
+          bottom: ignoreKeyboardInsets
+              ? math.max(safe.bottom, 12.0)
+              : (viewInsets.bottom > 0
+                  ? viewInsets.bottom
+                  : (isLandscape ? math.max(safe.bottom, 8.0) : 0)),
           left: math.max(10.0, safe.left),
           right: math.max(10.0, safe.right),
-          top: isLandscape ? math.max(8.0, safe.top) : 0,
+          top: ignoreKeyboardInsets
+              ? math.max(safe.top, 12.0)
+              : (isLandscape ? math.max(8.0, safe.top) : 0),
         ),
         child: Center(
           child: ConstrainedBox(
@@ -1011,7 +1014,7 @@ Future<T?> showAppleModalSheet<T>({
                       top: false,
                       left: false,
                       right: false,
-                      bottom: !isLandscape,
+                      bottom: !isLandscape && !ignoreKeyboardInsets,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -1065,43 +1068,119 @@ Future<T?> showAppleModalSheet<T>({
           ),
         ),
       );
+      if (ignoreKeyboardInsets) {
+        return MediaQuery.removeViewInsets(
+          context: ctx,
+          removeBottom: true,
+          child: sheetContent,
+        );
+      }
+      return sheetContent;
     },
   );
 }
 
-/// iOS 27 Liquid Glass ambient app background: deep obsidian canvas with
-/// soft refractive indigo/cyan ambient light and blurred artwork bleed.
+/// iOS 27 Liquid Glass ambient app background: deep obsidian or themed canvas with
+/// optional custom wallpaper, soft refractive ambient light, and blurred artwork bleed.
 class AppleAmbientBackground extends StatelessWidget {
   final Widget? artwork;
-  const AppleAmbientBackground({super.key, this.artwork});
+  final Widget? customWallpaper;
+  final String preset;
+  final bool showAmbientArtwork;
+  final double blurSigma;
+
+  const AppleAmbientBackground({
+    super.key,
+    this.artwork,
+    this.customWallpaper,
+    this.preset = 'obsidian',
+    this.showAmbientArtwork = true,
+    this.blurSigma = 60,
+  });
+
+  (List<Color>, Color) _resolveThemeColors() {
+    switch (preset) {
+      case 'midnight':
+        return (
+          const [Color(0xFF10203B), Color(0xFF091122), Color(0xFF03050A)],
+          const Color(0x260A84FF),
+        );
+      case 'aurora':
+        return (
+          const [Color(0xFF231338), Color(0xFF120A1E), Color(0xFF05020A)],
+          const Color(0x26BF5AF2),
+        );
+      case 'amber':
+        return (
+          const [Color(0xFF2D1D12), Color(0xFF150D08), Color(0xFF060402)],
+          const Color(0x24FF9F0A),
+        );
+      case 'emerald':
+        return (
+          const [Color(0xFF102A24), Color(0xFF081613), Color(0xFF020706)],
+          const Color(0x2230D158),
+        );
+      default:
+        return (
+          const [Color(0xFF15161E), Color(0xFF0A0B0F), Color(0xFF000000)],
+          const Color(0x1864D2FF),
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final (gradientColors, radialGlow) = _resolveThemeColors();
     return Stack(
       fit: StackFit.expand,
       children: [
-        const DecoratedBox(
+        DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFF15161E),
-                Color(0xFF0A0B0F),
-                Color(0xFF000000),
-              ],
-              stops: [0.0, 0.36, 0.78],
+              colors: gradientColors,
+              stops: const [0.0, 0.38, 0.82],
             ),
           ),
         ),
-        if (artwork != null)
+        if (customWallpaper != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ImageFiltered(
+                    imageFilter: ImageFilter.blur(
+                      sigmaX: (blurSigma * 0.35).clamp(8.0, 36.0),
+                      sigmaY: (blurSigma * 0.35).clamp(8.0, 36.0),
+                      tileMode: TileMode.decal,
+                    ),
+                    child: customWallpaper,
+                  ),
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color(0x7808090D),
+                          Color(0xA608090D),
+                          Color(0xCC050608),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (artwork != null && showAmbientArtwork)
           Positioned(
             top: 0,
             left: 0,
             right: 0,
             height: 560,
-            // ClipRect + a mask that reaches full transparency well before the
-            // bottom: the blurred artwork must never spill past its box, or the
-            // overflow ends in a visible horizontal seam while scrolling.
             child: IgnorePointer(
               child: ClipRect(
                 child: ShaderMask(
@@ -1118,8 +1197,8 @@ class AppleAmbientBackground extends StatelessWidget {
                   ).createShader(rect),
                   child: ImageFiltered(
                     imageFilter: ImageFilter.blur(
-                      sigmaX: 60,
-                      sigmaY: 60,
+                      sigmaX: blurSigma,
+                      sigmaY: blurSigma,
                       tileMode: TileMode.decal,
                     ),
                     child: artwork,
@@ -1128,7 +1207,7 @@ class AppleAmbientBackground extends StatelessWidget {
               ),
             ),
           ),
-        const Positioned(
+        Positioned(
           top: -240,
           left: -80,
           right: -80,
@@ -1138,7 +1217,7 @@ class AppleAmbientBackground extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: RadialGradient(
                   radius: 0.75,
-                  colors: [Color(0x1864D2FF), Color(0x00000000)],
+                  colors: [radialGlow, const Color(0x00000000)],
                 ),
               ),
             ),

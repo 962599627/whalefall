@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -48,6 +49,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   int _currentPage = 1;
   int _pageCount = 1;
   bool _homeLoading = false;
+  bool _loadingMore = false;
   String? _homeError;
   int _homeEpoch = 0;
   int _categoryEpoch = 0;
@@ -140,6 +142,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     ++_categoryEpoch;
     setState(() {
       _homeLoading = true;
+      _loadingMore = false;
       _homeError = null;
       _primaryTab = 'recommend';
       _selectedCategoryId = '';
@@ -161,6 +164,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         _currentPage = listing.page;
         _pageCount = listing.pageCount;
         _homeLoading = false;
+        _loadingMore = false;
       });
     } catch (e) {
       if (!mounted || epoch != _homeEpoch || _activeSite?.key != site.key) {
@@ -168,6 +172,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       }
       setState(() {
         _homeLoading = false;
+        _loadingMore = false;
         _homeError = '读取片源「${site.name}」失败：$e';
       });
     }
@@ -194,6 +199,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   Future<void> _reloadFilteredListing({int page = 1}) async {
     final site = _activeSite;
     if (site == null) return;
+    if (page > 1 && _loadingMore) return;
     final epoch = ++_categoryEpoch;
     final filter = _currentFilter;
     String targetCategoryId = '';
@@ -209,7 +215,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       targetChildIds = resolved.childIds;
     }
     setState(() {
-      _homeLoading = true;
+      if (page == 1) {
+        _homeLoading = true;
+        _loadingMore = false;
+      } else {
+        _loadingMore = true;
+      }
       _homeError = null;
       _selectedCategoryId = targetCategoryId;
     });
@@ -221,13 +232,41 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           _categories = cats;
         }
         listing = homeListing;
-      } else {
-        final effectiveCatId = targetCategoryId.isNotEmpty
-            ? targetCategoryId
-            : (_categories.isNotEmpty ? _categories.first.id : '');
+      } else if (targetCategoryId.isEmpty) {
+        // Recommend tab pagination (page > 1) or unfiltered query:
+        // First request default feed page (`categoryId: ''`).
         listing = await widget.client.fetchCategory(
           site,
-          effectiveCatId,
+          '',
+          page,
+          filter: filter,
+        );
+        final existingKeys = _rawCategoryVideos
+            .map((v) => v.id.isNotEmpty ? v.id : v.title)
+            .toSet();
+        final hasNewItems = listing.videos.any(
+          (v) => !existingKeys.contains(v.id.isNotEmpty ? v.id : v.title),
+        );
+        // If the site's root feed does not paginate directly, fallback to the first category with its childIds.
+        if (!hasNewItems && _categories.isNotEmpty) {
+          final firstCat = _categories.first;
+          final firstChildren =
+              CmsParser.childCategoryIds(_categories, firstCat.id);
+          final fallbackListing = await widget.client.fetchCategory(
+            site,
+            firstCat.id,
+            page,
+            childIds: firstChildren,
+            filter: filter,
+          );
+          if (fallbackListing.videos.isNotEmpty) {
+            listing = fallbackListing;
+          }
+        }
+      } else {
+        listing = await widget.client.fetchCategory(
+          site,
+          targetCategoryId,
           page,
           childIds: targetChildIds,
           filter: filter,
@@ -236,9 +275,25 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       if (!mounted || epoch != _categoryEpoch || _activeSite?.key != site.key) {
         return;
       }
-      final combinedRaw = page == 1
-          ? listing.videos
-          : [..._rawCategoryVideos, ...listing.videos];
+      List<CmsVideo> combinedRaw;
+      int addedCount = 0;
+      if (page == 1) {
+        combinedRaw = listing.videos;
+        addedCount = listing.videos.length;
+      } else {
+        final seen = <String>{
+          for (final v in _rawCategoryVideos)
+            v.id.isNotEmpty ? v.id : v.title,
+        };
+        combinedRaw = [..._rawCategoryVideos];
+        for (final v in listing.videos) {
+          final key = v.id.isNotEmpty ? v.id : v.title;
+          if (seen.add(key)) {
+            combinedRaw.add(v);
+            addedCount++;
+          }
+        }
+      }
       var filteredVideos = CmsParser.filterVideos(combinedRaw, filter);
       // If client-side filter on page 1 matched nothing and more pages exist, probe page 2 automatically
       if (filteredVideos.isEmpty &&
@@ -264,9 +319,17 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       setState(() {
         _rawCategoryVideos = combinedRaw;
         _homeVideos = filteredVideos;
-        _currentPage = listing.page;
-        _pageCount = listing.pageCount;
+        _currentPage = page;
+        if (page == 1) {
+          _pageCount = listing.pageCount;
+        } else if (addedCount == 0 && listing.videos.isEmpty) {
+          // Reached the end of available pages
+          _pageCount = page;
+        } else {
+          _pageCount = math.max(_pageCount, listing.pageCount);
+        }
         _homeLoading = false;
+        _loadingMore = false;
       });
     } catch (e) {
       if (!mounted || epoch != _categoryEpoch || _activeSite?.key != site.key) {
@@ -274,7 +337,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       }
       setState(() {
         _homeLoading = false;
-        _homeError = '加载分类失败：$e';
+        _loadingMore = false;
+        if (page == 1) {
+          _homeError = '加载分类失败：$e';
+        }
       });
     }
   }
@@ -460,6 +526,35 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final ambientPoster = safeTabIndex == 0 && _homeVideos.isNotEmpty
         ? _homeVideos.first.poster
         : '';
+    final ambientTitle = safeTabIndex == 0 && _homeVideos.isNotEmpty
+        ? _homeVideos.first.title
+        : '';
+    final customWallUrl = widget.storage.customWallpaperUrl;
+    final blurSigma = switch (widget.storage.glassBlurLevel) {
+      'light' => 36.0,
+      'deep' => 84.0,
+      _ => 60.0,
+    };
+    Widget? customWallWidget;
+    if (customWallUrl.isNotEmpty) {
+      if (customWallUrl.startsWith('http://') ||
+          customWallUrl.startsWith('https://')) {
+        customWallWidget = PosterImage(
+          url: customWallUrl,
+          highRes: true,
+          placeholder: const SizedBox.shrink(),
+        );
+      } else if (!kIsWeb) {
+        final file = File(customWallUrl);
+        if (file.existsSync()) {
+          customWallWidget = Image.file(
+            file,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.high,
+          );
+        }
+      }
+    }
     return Scaffold(
       backgroundColor: AppleColors.background,
       extendBody: true,
@@ -472,13 +567,21 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 600),
               child: AppleAmbientBackground(
-                key: ValueKey<String>(ambientPoster),
-                artwork: ambientPoster.isEmpty
+                key: ValueKey<String>(
+                  '$ambientPoster|${widget.storage.wallpaperPreset}|$customWallUrl|${widget.storage.ambientGlowEnabled}|$blurSigma',
+                ),
+                preset: widget.storage.wallpaperPreset,
+                customWallpaper: customWallWidget,
+                showAmbientArtwork: widget.storage.ambientGlowEnabled,
+                blurSigma: blurSigma,
+                artwork: ambientPoster.isEmpty && ambientTitle.isEmpty
                     ? null
                     : Opacity(
                         opacity: 0.55,
                         child: PosterImage(
                           url: ambientPoster,
+                          title: ambientTitle,
+                          highRes: true,
                           placeholder: const SizedBox.shrink(),
                         ),
                       ),
@@ -705,7 +808,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     ),
                   ] else ...[
                     // Up Next ("继续观看") Shelf
-                    if (history.isNotEmpty) ...[
+                    if (widget.storage.showContinueWatching &&
+                        history.isNotEmpty) ...[
                       const SizedBox(height: 20),
                       Padding(
                         padding:
@@ -770,7 +874,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                             EdgeInsets.symmetric(horizontal: horizontalPad),
                         child: _buildMyDriveNetdiskBanner(_activeSite!),
                       ),
-                    ] else if (_homeVideos.isNotEmpty &&
+                    ] else if (widget.storage.showHeroBanner &&
+                        _homeVideos.isNotEmpty &&
                         _primaryTab == 'recommend' &&
                         !_currentFilter.hasSubFilter &&
                         _currentPage == 1) ...[
@@ -961,7 +1066,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 sliver: SliverGrid(
                   gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: useSidebar ? 176 : 132,
+                    maxCrossAxisExtent: switch (widget.storage.gridDensity) {
+                      'comfortable' => useSidebar ? 210 : 162,
+                      'compact' => useSidebar ? 148 : 108,
+                      _ => useSidebar ? 176 : 132,
+                    },
                     mainAxisSpacing: 16,
                     crossAxisSpacing: 12,
                     childAspectRatio: 0.56,
@@ -982,7 +1091,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   bottom: useSidebar ? 32 : 128,
                 ),
                 child: Center(
-                  child: _homeLoading
+                  child: (_homeLoading || _loadingMore)
                       ? const CupertinoActivityIndicator(radius: 13)
                       : (_homeVideos.isEmpty && _homeError == null)
                           ? const Padding(
@@ -997,6 +1106,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                             )
                       : (_currentPage < _pageCount
                           ? AppleCapsuleButton(
+                              key: const ValueKey('home-load-more-button'),
                               label: '加载更多影片',
                               icon: CupertinoIcons.arrow_down_circle,
                               onPressed: () => _reloadFilteredListing(
@@ -1273,6 +1383,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               child: PosterImage(
                 url: featured.poster,
                 title: featured.title,
+                highRes: true,
                 placeholder: const SizedBox.shrink(),
               ),
             ),
@@ -1302,6 +1413,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       child: PosterImage(
                         url: featured.poster,
                         title: featured.title,
+                        highRes: true,
                         placeholder: _buildPosterPlaceholder(),
                       ),
                     ),
@@ -1618,7 +1730,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: selected
               ? AppleColors.systemBlue
@@ -1633,9 +1746,16 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         ),
         child: Text(
           label,
+          textAlign: TextAlign.center,
+          strutStyle: const StrutStyle(
+            forceStrutHeight: true,
+            height: 1.1,
+            fontSize: 12,
+          ),
           style: TextStyle(
             color: selected ? Colors.white : AppleColors.labelPrimary,
             fontSize: 12,
+            height: 1.1,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           ),
         ),
@@ -2039,16 +2159,32 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               letterSpacing: -0.2,
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            video.remarks.isNotEmpty ? video.remarks : site.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppleColors.labelSecondary,
-              fontSize: 11,
+          if (widget.storage.cardSubtitleMode != 'none') ...[
+            const SizedBox(height: 2),
+            Text(
+              switch (widget.storage.cardSubtitleMode) {
+                'site' => site.name,
+                'year_area' => [
+                    video.year.trim(),
+                    video.area.trim(),
+                    video.typeName.trim(),
+                  ].where((s) => s.isNotEmpty).join(' · ').isNotEmpty
+                      ? [
+                          video.year.trim(),
+                          video.area.trim(),
+                          video.typeName.trim(),
+                        ].where((s) => s.isNotEmpty).join(' · ')
+                      : (video.remarks.isNotEmpty ? video.remarks : site.name),
+                _ => video.remarks.isNotEmpty ? video.remarks : site.name,
+              },
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppleColors.labelSecondary,
+                fontSize: 11,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -2058,6 +2194,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       context: context,
       title: '全站搜索',
       maxWidth: 680,
+      ignoreKeyboardInsets: true,
       trailingAction: CupertinoButton(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         minSize: 28,
@@ -2084,7 +2221,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             final size = MediaQuery.sizeOf(ctx);
             final wide = size.width > 640;
             return SizedBox(
-              height: (size.height * 0.78).clamp(400.0, 680.0),
+              height: (size.height * 0.72).clamp(380.0, 620.0),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                 child: Column(
@@ -2141,6 +2278,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                 setSheetState(() {});
                               },
                               child: Container(
+                                alignment: Alignment.center,
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 12,
                                   vertical: 5,
@@ -2155,9 +2293,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                 ),
                                 child: Text(
                                   kw,
+                                  textAlign: TextAlign.center,
                                   style: const TextStyle(
                                     color: AppleColors.labelSecondary,
                                     fontSize: 12,
+                                    height: 1.1,
                                   ),
                                 ),
                               ),
@@ -2207,6 +2347,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                               ),
                             )
                           : GridView.builder(
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
                               padding: const EdgeInsets.only(bottom: 16),
                               gridDelegate:
                                   SliverGridDelegateWithMaxCrossAxisExtent(
@@ -3333,6 +3475,49 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final subs = widget.storage.getSubscriptions();
     final publicSubs = subs.where((s) => !s.isEffectivelyPrivate).toList();
     final publicSites = _config?.publicSupportedSites ?? const [];
+    final loggedDriveCount = NetdiskService.drives
+        .where((d) => widget.storage.isNetdiskLoggedIn(d.key))
+        .length;
+    final presetLabel = switch (widget.storage.wallpaperPreset) {
+      'midnight' => '午夜深蓝',
+      'aurora' => '极光紫韵',
+      'amber' => '流金琥珀',
+      'emerald' => '翡翠幽林',
+      'custom' => '自定义壁纸',
+      _ => '曜石纯黑',
+    };
+    final blurLabel = switch (widget.storage.glassBlurLevel) {
+      'light' => '轻盈通透',
+      'deep' => '深邃毛玻璃',
+      _ => '标准液态',
+    };
+    final densityLabel = switch (widget.storage.gridDensity) {
+      'comfortable' => '舒展大卡',
+      'compact' => '紧凑多列',
+      _ => '标准均衡',
+    };
+    final subtitleModeLabel = switch (widget.storage.cardSubtitleMode) {
+      'year_area' => '年份与地区',
+      'site' => '所属片源名称',
+      'none' => '极简隐藏',
+      _ => '更新集数与备注',
+    };
+    final qualityLabel = switch (widget.storage.preferredQuality) {
+      '4k_netdisk' => '4K 原画网盘优先',
+      '1080p_direct' => '1080P 高清直连优先',
+      'fast_hls' => '极速 M3U8 流媒体优先',
+      _ => '站点默认顺序',
+    };
+    final aspectLabel = switch (widget.storage.defaultAspectMode) {
+      'cover' => '铺满裁剪',
+      'fill' => '拉伸全屏',
+      _ => '适应屏幕',
+    };
+    final skipIntro = widget.storage.skipIntroSec;
+    final skipOutro = widget.storage.skipOutroSec;
+    final skipSummary = (skipIntro == 0 && skipOutro == 0)
+        ? '未开启'
+        : '片头 ${skipIntro}s · 片尾 ${skipOutro}s';
     return SafeArea(
       bottom: useSidebar,
       child: ListView(
@@ -3353,97 +3538,187 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             ),
           ),
           const SizedBox(height: 18),
+          // 1. 外观与背景壁纸
           AppleGroupedSection(
-            header: '片源与订阅分组管理',
-            footer:
-                '支持批量导入多个订阅资源并自定义分组，全面兼容 VOD 接口、M3U/TXT 直播与点播、TVBox 单仓/多仓 JSON。',
+            header: '外观与背景壁纸',
+            footer: '支持切换 Apple 暗黑影院主题色或设置自定义高清壁纸，搭配 iOS 27 液态玻璃折射效果。',
             children: [
               AppleGroupedTile(
-                icon: CupertinoIcons.add_circled_solid,
-                iconBgColor: AppleColors.systemBlue,
-                title: '导入订阅资源（支持分组 / 批量导入）',
-                subtitle: '兼容 VOD / M3U / TXT / JSON / 多仓，支持同时导入多个地址',
-                onTap: () => _showImportConfigDialog(),
-              ),
-              AppleGroupedTile(
-                icon: CupertinoIcons.folder_fill,
+                icon: CupertinoIcons.photo_fill_on_rectangle_fill,
                 iconBgColor: AppleColors.systemPurple,
-                title: '订阅源与分组管理',
-                subtitle: publicSubs.isEmpty
-                    ? '管理已导入的多个订阅源与自定义分组'
-                    : '已导入 ${publicSubs.length} 个订阅 · ${widget.storage.getSubscriptionGroups().length} 个分组',
-                trailingText: '${publicSubs.length} 个',
-                onTap: _showSubscriptionManagerSheet,
+                title: '背景壁纸与主题风格',
+                subtitle: widget.storage.customWallpaperUrl.isNotEmpty
+                    ? '自定义壁纸：${widget.storage.customWallpaperUrl}'
+                    : '预设主题：$presetLabel',
+                trailingText: presetLabel,
+                onTap: _showWallpaperSettingsSheet,
               ),
               AppleGroupedTile(
-                icon: CupertinoIcons.doc_on_clipboard_fill,
+                icon: CupertinoIcons.sparkles,
                 iconBgColor: AppleColors.systemIndigo,
-                title: '一键从剪贴板导入',
-                subtitle: '复制配置地址、M3U、VOD、JSON 或备份文本后直接点击即可生效',
-                onTap: _quickImportFromClipboard,
-              ),
-              if (depots.isNotEmpty)
-                AppleGroupedTile(
-                  icon: CupertinoIcons.archivebox_fill,
-                  iconBgColor: AppleColors.systemOrange,
-                  title: '切换多仓子仓库',
-                  subtitle: widget.storage.activeDepotName.isEmpty
-                      ? '共 ${depots.length} 个子仓库'
-                      : '当前：${widget.storage.activeDepotName}',
-                  trailingText: '${depots.length} 个',
-                  onTap: _showDepotPickerDialog,
-                ),
-              if (publicSites.isNotEmpty)
-                AppleGroupedTile(
-                  icon: CupertinoIcons.layers_alt_fill,
-                  iconBgColor: AppleColors.systemGreen,
-                  title: '切换当前片源（按分组筛选）',
-                  subtitle: _activeSite != null &&
-                          !_activeSite!.isEffectivelyPrivate
-                      ? '当前：${_activeSite!.name} (${_activeSite!.group})'
-                      : '查看已导入站点列表',
-                  trailingText: '${publicSites.length} 可用',
-                  onTap: _showSitePickerDialog,
-                ),
-              AppleGroupedTile(
-                icon: CupertinoIcons.qrcode_viewfinder,
-                iconBgColor: AppleColors.systemBlue,
-                title: '我的云盘 · 网盘扫码登录与配置',
-                subtitle: '我的夸父（夸克）/ 我的优汐（UC）/ 我的嘟嘟（百度）/ 我的阿狸（阿里）',
-                onTap: () => showNetdiskAccountSheet(
-                  context,
-                  widget.storage,
-                  onChanged: () {
-                    if (mounted) setState(() {});
+                title: '海报流光氛围背景',
+                subtitle: '在首页与影视详情页提取高清海报主色调渲染沉浸式光晕',
+                trailing: CupertinoSwitch(
+                  value: widget.storage.ambientGlowEnabled,
+                  activeTrackColor: AppleColors.systemGreen,
+                  onChanged: (v) async {
+                    await widget.storage.setAmbientGlowEnabled(v);
+                    setState(() {});
                   },
                 ),
+              ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.drop_fill,
+                iconBgColor: AppleColors.systemBlue,
+                title: '液态玻璃模糊浓度',
+                subtitle: '调节全局背景与毛玻璃控件的高斯模糊层级',
+                trailingText: blurLabel,
+                onTap: () async {
+                  final next = switch (widget.storage.glassBlurLevel) {
+                    'light' => 'standard',
+                    'standard' => 'deep',
+                    _ => 'light',
+                  };
+                  await widget.storage.setGlassBlurLevel(next);
+                  setState(() {});
+                },
               ),
             ],
           ),
           const SizedBox(height: 22),
+          // 2. 内容板块与排版布局
           AppleGroupedSection(
-            header: '多端同步与播放偏好',
+            header: '内容板块与排版布局',
+            footer: '自定义首页内容展示模块、海报网格密度与卡片副标题信息。',
             children: [
-              if (DownloadService.instance.isReady)
-                AppleGroupedTile(
-                  icon: CupertinoIcons.arrow_down_circle_fill,
-                  iconBgColor: AppleColors.systemBlue,
-                  title: '离线下载',
-                  subtitle: DownloadService.instance.rootPath.isEmpty
-                      ? '下载的影片可在没有网络时观看'
-                      : '保存位置：${DownloadService.instance.rootPath}',
-                  trailingText: '${DownloadService.instance.tasks.length} 个',
-                  onTap: () => setState(() {
-                    _tabIndex = 2;
-                    _librarySegment = 2;
-                  }),
-                ),
               AppleGroupedTile(
-                icon: CupertinoIcons.arrow_2_circlepath,
+                icon: CupertinoIcons.square_grid_3x2_fill,
+                iconBgColor: AppleColors.systemBlue,
+                title: '海报网格排版密度',
+                subtitle: '点击切换：舒展大卡 / 标准均衡 / 紧凑多列',
+                trailingText: densityLabel,
+                onTap: () async {
+                  final next = switch (widget.storage.gridDensity) {
+                    'comfortable' => 'standard',
+                    'standard' => 'compact',
+                    _ => 'comfortable',
+                  };
+                  await widget.storage.setGridDensity(next);
+                  setState(() {});
+                },
+              ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.rectangle_on_rectangle_angled,
+                iconBgColor: AppleColors.systemOrange,
+                title: '首页「今日首推」巨幕卡片',
+                subtitle: '在首页推荐顶部展示沉浸式今日首推焦点横幅',
+                trailing: CupertinoSwitch(
+                  value: widget.storage.showHeroBanner,
+                  activeTrackColor: AppleColors.systemGreen,
+                  onChanged: (v) async {
+                    await widget.storage.setShowHeroBanner(v);
+                    setState(() {});
+                  },
+                ),
+              ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.play_rectangle_fill,
                 iconBgColor: AppleColors.systemGreen,
-                title: '跨平台备份导出 / 恢复',
-                subtitle: '与 Android 电视、手机、Windows、Mac 双向互通备份',
-                onTap: _showBackupRestoreDialog,
+                title: '首页「继续观看」快捷栏',
+                subtitle: '在首页顶部显示最近观看进度卡片以便一键续播',
+                trailing: CupertinoSwitch(
+                  value: widget.storage.showContinueWatching,
+                  activeTrackColor: AppleColors.systemGreen,
+                  onChanged: (v) async {
+                    await widget.storage.setShowContinueWatching(v);
+                    setState(() {});
+                  },
+                ),
+              ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.text_badge_checkmark,
+                iconBgColor: AppleColors.systemIndigo,
+                title: '影视卡片副标题展示',
+                subtitle: '点击切换卡片下方展示的辅助信息类型',
+                trailingText: subtitleModeLabel,
+                onTap: () async {
+                  final next = switch (widget.storage.cardSubtitleMode) {
+                    'remarks' => 'year_area',
+                    'year_area' => 'site',
+                    'site' => 'none',
+                    _ => 'remarks',
+                  };
+                  await widget.storage.setCardSubtitleMode(next);
+                  setState(() {});
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          // 3. 播放与默认画质推荐
+          AppleGroupedSection(
+            header: '播放与默认画质推荐',
+            footer: '进入详情页与播放器时自动按首选画质匹配最佳播放线路。',
+            children: [
+              AppleGroupedTile(
+                icon: CupertinoIcons.tv_music_note_fill,
+                iconBgColor: AppleColors.systemBlue,
+                title: '默认画质与线路推荐',
+                subtitle: '进入影视详情页时自动优选匹配的画质与线路',
+                trailingText: qualityLabel,
+                onTap: _showPreferredQualityPickerSheet,
+              ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.aspectratio_fill,
+                iconBgColor: AppleColors.systemPurple,
+                title: '默认画面比例',
+                subtitle: '播放器启动时的默认画面缩放模式',
+                trailingText: aspectLabel,
+                onTap: () async {
+                  final next = switch (widget.storage.defaultAspectMode) {
+                    'contain' => 'cover',
+                    'cover' => 'fill',
+                    _ => 'contain',
+                  };
+                  await widget.storage.setDefaultAspectMode(next);
+                  setState(() {});
+                },
+              ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.speedometer,
+                iconBgColor: AppleColors.systemOrange,
+                title: '默认起播倍速',
+                subtitle: '点击切换默认播放速度（1.0x / 1.25x / 1.5x / 2.0x）',
+                trailingText: '${widget.storage.playSpeed}x',
+                onTap: () async {
+                  const speeds = [1.0, 1.25, 1.5, 2.0];
+                  final curIdx = speeds.indexOf(widget.storage.playSpeed);
+                  final next = speeds[(curIdx + 1) % speeds.length];
+                  await widget.storage.setPlaySpeed(next);
+                  setState(() {});
+                },
+              ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.forward_fill,
+                iconBgColor: AppleColors.systemIndigo,
+                title: '片头 / 片尾自动跳过',
+                subtitle: '为剧集设置统一的片头起播秒数与片尾跳过秒数',
+                trailingText: skipSummary,
+                onTap: _showSkipIntroOutroSheet,
+              ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.sort_down,
+                iconBgColor: AppleColors.systemGreen,
+                title: '默认剧集排序方式',
+                subtitle: '详情页与选集列表的默认排列顺序',
+                trailingText:
+                    widget.storage.episodesDescending ? '倒序（最新集）' : '正序（第 1 集起）',
+                onTap: () async {
+                  await widget.storage.setEpisodesDescending(
+                    !widget.storage.episodesDescending,
+                  );
+                  setState(() {});
+                },
               ),
               AppleGroupedTile(
                 icon: CupertinoIcons.forward_end_fill,
@@ -3461,6 +3736,74 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               ),
             ],
           ),
+          const SizedBox(height: 22),
+          // 4. 云盘、订阅与数据维护（无重复入口，每项核心能力唯一聚合入口）
+          AppleGroupedSection(
+            header: '云盘、订阅与数据维护',
+            footer: '所有片源切换可直接在首页顶部栏一键完成；此处集中管理云盘账号、订阅源分组、跨端备份与缓存清理。',
+            children: [
+              AppleGroupedTile(
+                icon: CupertinoIcons.qrcode_viewfinder,
+                iconBgColor: AppleColors.systemBlue,
+                title: '我的云盘 · 网盘扫码与账号中心',
+                subtitle: '夸克（我的夸父）/ UC（我的优汐）/ 百度（我的嘟嘟）/ 阿里（我的阿狸）',
+                trailingText:
+                    loggedDriveCount > 0 ? '已启用 $loggedDriveCount 个' : '去登录',
+                onTap: () => showNetdiskAccountSheet(
+                  context,
+                  widget.storage,
+                  onChanged: () {
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.folder_fill,
+                iconBgColor: AppleColors.systemPurple,
+                title: '订阅源与分组管理中心',
+                subtitle: publicSubs.isEmpty
+                    ? '统一管理批量导入、剪贴板导入、多仓切换与自定义分组（当前 ${publicSites.length} 可用片源）'
+                    : '已导入 ${publicSubs.length} 个订阅 · ${publicSites.length} 个可用片源${depots.isNotEmpty ? " · ${depots.length} 个子仓库" : ""}',
+                trailingText: '${publicSubs.length} 订阅',
+                onTap: _showSubscriptionManagerSheet,
+              ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.arrow_2_circlepath,
+                iconBgColor: AppleColors.systemGreen,
+                title: '跨平台备份导出 / 恢复',
+                subtitle: '与 Android 电视、手机、Windows、Mac、iPad 双向互通备份',
+                onTap: _showBackupRestoreDialog,
+              ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.trash_fill,
+                iconBgColor: AppleColors.systemRed,
+                title: '清理海报与搜索缓存',
+                subtitle:
+                    '高清海报内存缓存：${PosterLoader.memoryCacheSizeLabel} · 搜索历史 ${widget.storage.getSearchHistory().length} 条',
+                trailingText: '一键清理',
+                onTap: () async {
+                  PosterLoader.clearCache();
+                  await widget.storage.clearSearchHistory();
+                  if (!mounted) return;
+                  setState(() {});
+                  showCupertinoDialog<void>(
+                    context: context,
+                    barrierDismissible: true,
+                    builder: (ctx) => CupertinoAlertDialog(
+                      title: const Text('缓存已清理'),
+                      content: const Text('已清空内存海报缓存与搜索历史记录。'),
+                      actions: [
+                        CupertinoDialogAction(
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          child: const Text('好的'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
           const SizedBox(height: 28),
           Center(
             child: Column(
@@ -3472,7 +3815,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Version 0.4.26 · Apple HIG Edition',
+                  'Version 0.4.27 · Apple HIG Edition',
                   style: TextStyle(
                     color: AppleColors.labelSecondary,
                     fontSize: 12,
@@ -3498,24 +3841,372 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       ),
     );
   }
+  void _showWallpaperSettingsSheet() {
+    final urlCtrl = TextEditingController(
+      text: widget.storage.customWallpaperUrl,
+    );
+    const presets = <(String, String, Color, Color)>[
+      ('obsidian', '曜石纯黑', Color(0xFF141824), Color(0xFF050507)),
+      ('midnight', '午夜深蓝', Color(0xFF0E2240), Color(0xFF060A14)),
+      ('aurora', '极光紫韵', Color(0xFF281542), Color(0xFF090612)),
+      ('amber', '流金琥珀', Color(0xFF382210), Color(0xFF0D0805)),
+      ('emerald', '翡翠幽林', Color(0xFF0F3026), Color(0xFF050E0B)),
+    ];
+    showAppleModalSheet<void>(
+      context: context,
+      title: '背景壁纸与主题风格',
+      ignoreKeyboardInsets: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          final currentPreset = widget.storage.wallpaperPreset;
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Apple 影院级预设背景',
+                  style: TextStyle(
+                    color: AppleColors.labelSecondary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final (key, label, c1, c2) in presets)
+                      GestureDetector(
+                        onTap: () async {
+                          await widget.storage.setCustomWallpaperUrl('');
+                          await widget.storage.setWallpaperPreset(key);
+                          urlCtrl.clear();
+                          setModalState(() {});
+                          if (mounted) setState(() {});
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 112,
+                          height: 68,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [c1, c2],
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: currentPreset == key &&
+                                      widget.storage.customWallpaperUrl.isEmpty
+                                  ? AppleColors.systemBlue
+                                  : AppleColors.glassBorder,
+                              width: currentPreset == key &&
+                                      widget.storage.customWallpaperUrl.isEmpty
+                                  ? 1.6
+                                  : 0.6,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Container(
+                                    width: 14,
+                                    height: 14,
+                                    decoration: BoxDecoration(
+                                      color: c1,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white38,
+                                        width: 0.6,
+                                      ),
+                                    ),
+                                  ),
+                                  if (currentPreset == key &&
+                                      widget.storage.customWallpaperUrl.isEmpty)
+                                    const Icon(
+                                      CupertinoIcons.checkmark_circle_fill,
+                                      color: AppleColors.systemBlue,
+                                      size: 16,
+                                    ),
+                                ],
+                              ),
+                              Text(
+                                label,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  '自定义高清壁纸（支持图片直链 URL 或本地图片路径）',
+                  style: TextStyle(
+                    color: AppleColors.labelSecondary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                CupertinoTextField(
+                  controller: urlCtrl,
+                  placeholder: 'https://wallpaper.example/cinema.jpg 或本地图片路径',
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppleColors.groupedSecondary,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppleColors.glassBorder,
+                      width: 0.5,
+                    ),
+                  ),
+                  style: const TextStyle(
+                    color: AppleColors.labelPrimary,
+                    fontSize: 13.5,
+                  ),
+                  placeholderStyle: const TextStyle(
+                    color: AppleColors.labelTertiary,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (widget.storage.customWallpaperUrl.isNotEmpty) ...[
+                      AppleCapsuleButton(
+                        label: '恢复默认背景',
+                        compact: true,
+                        onPressed: () async {
+                          urlCtrl.clear();
+                          await widget.storage.setCustomWallpaperUrl('');
+                          await widget.storage.setWallpaperPreset('obsidian');
+                          setModalState(() {});
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    AppleCapsuleButton(
+                      label: '应用壁纸',
+                      icon: CupertinoIcons.checkmark_alt,
+                      primary: true,
+                      compact: true,
+                      onPressed: () async {
+                        final val = urlCtrl.text.trim();
+                        await widget.storage.setCustomWallpaperUrl(val);
+                        if (val.isNotEmpty) {
+                          await widget.storage.setWallpaperPreset('custom');
+                        }
+                        if (ctx.mounted) Navigator.of(ctx).pop();
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+  void _showPreferredQualityPickerSheet() {
+    const options = <(String, String, String, IconData)>[
+      (
+        '4k_netdisk',
+        '4K 原画网盘优先',
+        '优先匹配夸克 / UC / 百度 / 阿里云盘 4K HDR / 杜比视界原盘线路',
+        CupertinoIcons.cloud_fill,
+      ),
+      (
+        '1080p_direct',
+        '1080P 高清直连优先',
+        '优先匹配蓝光 1080P 直连点播线路，兼顾高画质与无需扫码',
+        CupertinoIcons.tv_fill,
+      ),
+      (
+        'fast_hls',
+        '极速 M3U8 流媒体优先',
+        '优先匹配秒开 M3U8 流媒体线路，适合移动网络或弱网环境',
+        CupertinoIcons.bolt_fill,
+      ),
+      (
+        'auto',
+        '站点默认顺序',
+        '保持片源原始线路排列顺序，不做自动重排',
+        CupertinoIcons.layers_alt_fill,
+      ),
+    ];
+    showAppleModalSheet<void>(
+      context: context,
+      title: '默认画质与线路推荐',
+      builder: (ctx) => ListView.separated(
+        shrinkWrap: true,
+        padding: const EdgeInsets.all(16),
+        itemCount: options.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (ctx, i) {
+          final (key, title, subtitle, icon) = options[i];
+          final selected = widget.storage.preferredQuality == key;
+          return Container(
+            decoration: BoxDecoration(
+              color: selected
+                  ? const Color(0x330A84FF)
+                  : AppleColors.groupedSecondary,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: AppleGroupedTile(
+              icon: icon,
+              iconBgColor:
+                  selected ? AppleColors.systemBlue : AppleColors.groupedTertiary,
+              title: title,
+              subtitle: subtitle,
+              trailing: selected
+                  ? const Icon(
+                      CupertinoIcons.checkmark_circle_fill,
+                      color: AppleColors.systemBlue,
+                      size: 18,
+                    )
+                  : null,
+              onTap: () async {
+                await widget.storage.setPreferredQuality(key);
+                if (ctx.mounted) Navigator.of(ctx).pop();
+                if (mounted) setState(() {});
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+  void _showSkipIntroOutroSheet() {
+    showAppleModalSheet<void>(
+      context: context,
+      title: '片头 / 片尾自动跳过',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final intro = widget.storage.skipIntroSec;
+          final outro = widget.storage.skipOutroSec;
+          const presets = [0, 15, 30, 45, 60, 90, 120];
+          return Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '跳过片头：${intro == 0 ? "不跳过" : "$intro 秒"}',
+                  style: const TextStyle(
+                    color: AppleColors.labelPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final sec in presets)
+                      _buildMiniFilterChip(
+                        label: sec == 0 ? '关闭' : '${sec}s',
+                        selected: intro == sec,
+                        onTap: () async {
+                          await widget.storage.setSkipIntroSec(sec);
+                          setSheetState(() {});
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  '跳过片尾：${outro == 0 ? "不跳过" : "$outro 秒"}',
+                  style: const TextStyle(
+                    color: AppleColors.labelPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final sec in presets)
+                      _buildMiniFilterChip(
+                        label: sec == 0 ? '关闭' : '${sec}s',
+                        selected: outro == sec,
+                        onTap: () async {
+                          await widget.storage.setSkipOutroSec(sec);
+                          setSheetState(() {});
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
   void _showSubscriptionManagerSheet() {
     showAppleModalSheet<void>(
       context: context,
-      title: '订阅源与分组管理',
-      trailingAction: CupertinoButton(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        minSize: 28,
-        onPressed: () {
-          Navigator.of(context).pop();
-          _showImportConfigDialog();
-        },
-        child: const Text(
-          '+ 批量导入',
-          style: TextStyle(color: AppleColors.systemBlue, fontSize: 13.5),
-        ),
+      title: '订阅源与分组管理中心',
+      trailingAction: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            minSize: 28,
+            onPressed: () {
+              Navigator.of(context).pop();
+              _quickImportFromClipboard();
+            },
+            child: const Text(
+              '剪贴板导入',
+              style: TextStyle(color: AppleColors.labelSecondary, fontSize: 13),
+            ),
+          ),
+          CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            minSize: 28,
+            onPressed: () {
+              Navigator.of(context).pop();
+              _showImportConfigDialog();
+            },
+            child: const Text(
+              '+ 批量导入',
+              style: TextStyle(color: AppleColors.systemBlue, fontSize: 13.5),
+            ),
+          ),
+        ],
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
+          final depots = _config?.depots ?? const [];
           final subs = widget.storage
               .getSubscriptions()
               .where((s) => !s.isEffectivelyPrivate)
@@ -3542,7 +4233,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    '支持同时导入多个 VOD / M3U / JSON 订阅地址，并按分组归类管理。',
+                    '支持同时导入多个 VOD / M3U / JSON 订阅地址，或一键从剪贴板读取并按分组归类管理。',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AppleColors.labelSecondary,
@@ -3550,15 +4241,31 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  AppleCapsuleButton(
-                    label: '立即导入订阅',
-                    icon: CupertinoIcons.add,
-                    primary: true,
-                    compact: true,
-                    onPressed: () {
-                      Navigator.of(ctx).pop();
-                      _showImportConfigDialog();
-                    },
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      AppleCapsuleButton(
+                        label: '批量导入订阅',
+                        icon: CupertinoIcons.add,
+                        primary: true,
+                        compact: true,
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _showImportConfigDialog();
+                        },
+                      ),
+                      AppleCapsuleButton(
+                        label: '从剪贴板导入',
+                        icon: CupertinoIcons.doc_on_clipboard,
+                        compact: true,
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _quickImportFromClipboard();
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -3572,6 +4279,27 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             shrinkWrap: true,
             padding: const EdgeInsets.all(16),
             children: [
+              if (depots.isNotEmpty) ...[
+                AppleGroupedSection(
+                  header: '多仓子仓库切换 (${depots.length})',
+                  children: [
+                    AppleGroupedTile(
+                      icon: CupertinoIcons.archivebox_fill,
+                      iconBgColor: AppleColors.systemOrange,
+                      title: '切换当前多仓子仓库',
+                      subtitle: widget.storage.activeDepotName.isEmpty
+                          ? '共 ${depots.length} 个可选子仓库'
+                          : '当前：${widget.storage.activeDepotName}',
+                      trailingText: '${depots.length} 个',
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _showDepotPickerDialog();
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+              ],
               for (final entry in byGroup.entries) ...[
                 AppleGroupedSection(
                   header: '${entry.key} (${entry.value.length})',
@@ -3741,19 +4469,25 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }
   void _showSitePickerDialog() {
     final supported = _config?.publicSupportedSites ?? const <CmsSite>[];
+    final groupCounts = <String, int>{'全部': supported.length};
     final groups = <String>['全部'];
     for (final s in supported) {
       if (s.isEffectivelyPrivate) continue;
       final g = s.group.trim().isEmpty ? '默认分组' : s.group.trim();
       if (!groups.contains(g)) groups.add(g);
+      groupCounts[g] = (groupCounts[g] ?? 0) + 1;
     }
     String selectedGroup = '全部';
+    String searchQuery = '';
+    final searchCtrl = TextEditingController();
     final plugins = (_config?.pluginOnlySites ?? const <CmsSite>[])
         .where((s) => !s.isEffectivelyPrivate)
         .toList();
     showAppleModalSheet<void>(
       context: context,
-      title: '选择片源 (${supported.length} 可用)',
+      title: '切换片源 (${supported.length} 可用)',
+      maxWidth: 680,
+      ignoreKeyboardInsets: true,
       trailingAction: CupertinoButton(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         minSize: 28,
@@ -3768,122 +4502,378 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setPickerState) {
-          final filteredSites = selectedGroup == '全部'
-              ? supported
-              : supported
-                  .where(
-                    (s) =>
-                        (s.group.trim().isEmpty ? '默认分组' : s.group.trim()) ==
-                        selectedGroup,
-                  )
-                  .toList();
-          final directSites =
-              filteredSites.where((s) => !s.isScriptOrJarApi).toList();
-          final bridgedSites =
-              filteredSites.where((s) => s.isScriptOrJarApi).toList();
-          return ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.all(16),
-            children: [
-              if (groups.length > 1) ...[
-                SizedBox(
-                  height: 32,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: groups.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (ctx, idx) {
-                      final g = groups[idx];
-                      return _buildMiniFilterChip(
-                        label: g,
-                        selected: selectedGroup == g,
-                        onTap: () => setPickerState(() => selectedGroup = g),
-                      );
-                    },
+          final size = MediaQuery.sizeOf(ctx);
+          final wide = size.width >= 600;
+          final filteredSites = supported.where((s) {
+            final g = s.group.trim().isEmpty ? '默认分组' : s.group.trim();
+            final groupMatch = selectedGroup == '全部' || g == selectedGroup;
+            if (!groupMatch) return false;
+            final q = searchQuery.trim().toLowerCase();
+            if (q.isEmpty) return true;
+            return s.name.toLowerCase().contains(q) ||
+                g.toLowerCase().contains(q) ||
+                s.api.toLowerCase().contains(q);
+          }).toList();
+
+          String siteBadgeLabel(CmsSite s) {
+            final lower = '${s.name} ${s.api} ${s.key}'.toLowerCase();
+            if (CspBridge.isMyDriveSite(s)) return '网盘中心';
+            if (lower.contains('豆瓣') || lower.contains('douban')) {
+              return '官方片单';
+            }
+            if (lower.contains('玩偶') ||
+                lower.contains('wogg') ||
+                lower.contains('木偶') ||
+                lower.contains('muou') ||
+                lower.contains('至臻') ||
+                lower.contains('米搜') ||
+                lower.contains('4k') ||
+                lower.contains('quark') ||
+                lower.contains('pan')) {
+              return '4K网盘';
+            }
+            if (s.isScriptOrJarApi) return '智能解析';
+            return '直连点播';
+          }
+
+          Color siteBadgeColor(CmsSite s) {
+            final badge = siteBadgeLabel(s);
+            return switch (badge) {
+              '4K网盘' => const Color(0xFF30D158),
+              '官方片单' => const Color(0xFFFF9F0A),
+              '网盘中心' => const Color(0xFF5AC8FA),
+              '智能解析' => const Color(0xFF5E5CE6),
+              _ => const Color(0xFF0A84FF),
+            };
+          }
+
+          return SizedBox(
+            height: (size.height * 0.72).clamp(380.0, 620.0),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Search filter bar inside site picker
+                  CupertinoSearchTextField(
+                    controller: searchCtrl,
+                    placeholder: '快速筛选片源名称或分组…',
+                    backgroundColor: AppleColors.groupedSecondary,
+                    style: const TextStyle(
+                      color: AppleColors.labelPrimary,
+                      fontSize: 14,
+                    ),
+                    placeholderStyle: const TextStyle(
+                      color: AppleColors.labelSecondary,
+                      fontSize: 13.5,
+                    ),
+                    onChanged: (v) => setPickerState(() => searchQuery = v),
                   ),
-                ),
-                const SizedBox(height: 14),
-              ],
-              if (directSites.isNotEmpty) ...[
-                AppleGroupedSection(
-                  header: '直连 VOD / M3U / HTTP 片源 (${directSites.length})',
-                  children: directSites.map((s) {
-                    final selected = s.key == _activeSite?.key;
-                    return AppleGroupedTile(
-                      icon: CupertinoIcons.tv_fill,
-                      iconBgColor: selected
-                          ? AppleColors.systemBlue
-                          : AppleColors.groupedTertiary,
-                      title: s.name,
-                      subtitle: '${s.group} · ${s.api}',
-                      trailing: selected
-                          ? const Icon(
-                              CupertinoIcons.checkmark_alt,
-                              color: AppleColors.systemBlue,
-                              size: 18,
-                            )
-                          : null,
-                      onTap: () {
-                        Navigator.of(ctx).pop();
-                        widget.storage.setSelectedSiteKey(s.key);
-                        setState(() {
-                          _privateSessionUnlocked = false;
-                          _activeSite = s;
-                        });
-                        _loadSiteHome();
+                  const SizedBox(height: 12),
+                  // Centered Group Pills Row
+                  SizedBox(
+                    height: 36,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: groups.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (ctx, idx) {
+                        final g = groups[idx];
+                        final count = groupCounts[g] ?? 0;
+                        final isSelected = selectedGroup == g;
+                        return GestureDetector(
+                          onTap: () => setPickerState(() => selectedGroup = g),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOutCubic,
+                            height: 36,
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            decoration: BoxDecoration(
+                              gradient: isSelected
+                                  ? const LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Color(0xFF0A84FF),
+                                        Color(0xFF0066CC),
+                                      ],
+                                    )
+                                  : const LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Color(0xCC2A2A32),
+                                        Color(0xB81D1D24),
+                                      ],
+                                    ),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: isSelected
+                                    ? const Color(0x995AC8FA)
+                                    : const Color(0x2EFFFFFF),
+                                width: 0.65,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Text(
+                                  g,
+                                  textAlign: TextAlign.center,
+                                  strutStyle: const StrutStyle(
+                                    forceStrutHeight: true,
+                                    height: 1.1,
+                                    fontSize: 13,
+                                  ),
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? Colors.white
+                                        : AppleColors.labelPrimary,
+                                    fontSize: 13,
+                                    height: 1.1,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  alignment: Alignment.center,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 1.5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? const Color(0x33FFFFFF)
+                                        : const Color(0x22FFFFFF),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    '$count',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: isSelected
+                                          ? Colors.white
+                                          : AppleColors.labelSecondary,
+                                      fontSize: 11,
+                                      height: 1.0,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
                       },
-                    );
-                  }).toList(),
-                ),
-                if (bridgedSites.isNotEmpty) const SizedBox(height: 16),
-              ],
-              if (bridgedSites.isNotEmpty)
-                AppleGroupedSection(
-                  header: 'Apple 跨平台智能解析片源 (${bridgedSites.length})',
-                  footer: '已通过内置跨平台解析引擎自动适配 csp_* 与 JS 站点，点击即可浏览、搜索与播放。',
-                  children: bridgedSites.map((s) {
-                    final selected = s.key == _activeSite?.key;
-                    return AppleGroupedTile(
-                      icon: CupertinoIcons.sparkles,
-                      iconBgColor: selected
-                          ? AppleColors.systemBlue
-                          : AppleColors.systemIndigo,
-                      title: s.name,
-                      subtitle: '${s.group} · Apple 跨平台智能解析 · ${s.api}',
-                      trailing: selected
-                          ? const Icon(
-                              CupertinoIcons.checkmark_alt,
-                              color: AppleColors.systemBlue,
-                              size: 18,
-                            )
-                          : null,
-                      onTap: () {
-                        Navigator.of(ctx).pop();
-                        widget.storage.setSelectedSiteKey(s.key);
-                        setState(() {
-                          _privateSessionUnlocked = false;
-                          _activeSite = s;
-                        });
-                        _loadSiteHome();
-                      },
-                    );
-                  }).toList(),
-                ),
-              if (plugins.isNotEmpty && selectedGroup == '全部') ...[
-                const SizedBox(height: 16),
-                AppleGroupedSection(
-                  header: '其他未识别插件站点 (${plugins.length})',
-                  children: plugins.take(25).map((s) {
-                    return AppleGroupedTile(
-                      icon: CupertinoIcons.lock_shield_fill,
-                      iconBgColor: AppleColors.groupedTertiary,
-                      title: s.name,
-                      subtitle: s.unsupportedReason,
-                    );
-                  }).toList(),
-                ),
-              ],
-            ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Responsive Liquid Glass Source Card Grid
+                  Expanded(
+                    child: filteredSites.isEmpty
+                        ? Center(
+                            child: Text(
+                              '未找到匹配的片源',
+                              style: const TextStyle(
+                                color: AppleColors.labelSecondary,
+                                fontSize: 14,
+                              ),
+                            ),
+                          )
+                        : CustomScrollView(
+                            keyboardDismissBehavior:
+                                ScrollViewKeyboardDismissBehavior.onDrag,
+                            physics: const BouncingScrollPhysics(),
+                            slivers: [
+                              SliverGrid(
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: wide ? 3 : 2,
+                                  mainAxisSpacing: 10,
+                                  crossAxisSpacing: 10,
+                                  mainAxisExtent: 74,
+                                ),
+                                delegate: SliverChildBuilderDelegate(
+                                  (ctx, index) {
+                                    final s = filteredSites[index];
+                                    final selected = s.key == _activeSite?.key;
+                                    final badge = siteBadgeLabel(s);
+                                    final badgeColor = siteBadgeColor(s);
+                                    final groupName = s.group.trim().isEmpty
+                                        ? '默认分组'
+                                        : s.group.trim();
+                                    return GestureDetector(
+                                      onTap: () {
+                                        Navigator.of(ctx).pop();
+                                        widget.storage.setSelectedSiteKey(s.key);
+                                        setState(() {
+                                          _privateSessionUnlocked = false;
+                                          _activeSite = s;
+                                        });
+                                        _loadSiteHome();
+                                      },
+                                      child: AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 180),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          gradient: selected
+                                              ? const LinearGradient(
+                                                  begin: Alignment.topLeft,
+                                                  end: Alignment.bottomRight,
+                                                  colors: [
+                                                    Color(0x450A84FF),
+                                                    Color(0x280055B3),
+                                                  ],
+                                                )
+                                              : const LinearGradient(
+                                                  begin: Alignment.topCenter,
+                                                  end: Alignment.bottomCenter,
+                                                  colors: [
+                                                    Color(0xCC24242C),
+                                                    Color(0xB818181E),
+                                                  ],
+                                                ),
+                                          borderRadius:
+                                              BorderRadius.circular(16),
+                                          border: Border.all(
+                                            color: selected
+                                                ? const Color(0xCC0A84FF)
+                                                : AppleColors.glassBorder,
+                                            width: selected ? 1.2 : 0.6,
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    s.name,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color: selected
+                                                          ? Colors.white
+                                                          : AppleColors
+                                                              .labelPrimary,
+                                                      fontSize: 14,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      letterSpacing: -0.2,
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (selected)
+                                                  const Icon(
+                                                    CupertinoIcons
+                                                        .checkmark_circle_fill,
+                                                    color:
+                                                        AppleColors.systemBlue,
+                                                    size: 16,
+                                                  ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                Container(
+                                                  alignment: Alignment.center,
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: badgeColor
+                                                        .withValues(alpha: 0.2),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            6),
+                                                    border: Border.all(
+                                                      color: badgeColor
+                                                          .withValues(
+                                                              alpha: 0.45),
+                                                      width: 0.5,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    badge,
+                                                    style: TextStyle(
+                                                      color: badgeColor,
+                                                      fontSize: 10,
+                                                      height: 1.1,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Text(
+                                                    groupName,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      color: AppleColors
+                                                          .labelSecondary,
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  childCount: filteredSites.length,
+                                ),
+                              ),
+                              if (plugins.isNotEmpty &&
+                                  selectedGroup == '全部' &&
+                                  searchQuery.isEmpty) ...[
+                                SliverToBoxAdapter(
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(top: 16),
+                                    child: AppleGroupedSection(
+                                      header:
+                                          '其他未识别插件站点 (${plugins.length})',
+                                      children: plugins.take(15).map((s) {
+                                        return AppleGroupedTile(
+                                          icon:
+                                              CupertinoIcons.lock_shield_fill,
+                                          iconBgColor:
+                                              AppleColors.groupedTertiary,
+                                          title: s.name,
+                                          subtitle: s.unsupportedReason,
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                  ),
+                ],
+              ),
+            ),
           );
         },
       ),

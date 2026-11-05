@@ -365,4 +365,18 @@ https://depot.example/config.json
     );
     expect(filtered.map((v) => v.id), ['1']);
   });
+  test('upgrades Douban and Bilibili poster URLs to 1080p HD variants', () {
+    expect(
+      CmsParser.upgradePosterUrlToHd(
+        'https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2912345.webp',
+      ),
+      'https://img1.doubanio.com/view/photo/l_ratio_poster/public/p2912345.jpg',
+    );
+    expect(
+      CmsParser.upgradePosterUrlToHd(
+        'https://i0.hdslb.com/bfs/archive/abc.jpg@320w_200h_1c.webp',
+      ),
+      'https://i0.hdslb.com/bfs/archive/abc.jpg',
+    );
+  });
 }

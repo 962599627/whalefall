@@ -92,6 +92,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _skipOutroSec = widget.storage.skipOutroSec;
     _autoNext = widget.storage.autoNext;
     _repeatMode = widget.storage.repeatMode;
+    _fit = switch (widget.storage.defaultAspectMode) {
+      'cover' => BoxFit.cover,
+      'fill' => BoxFit.fill,
+      _ => BoxFit.contain,
+    };
 
     _player = Player();
     _controller = VideoController(_player);

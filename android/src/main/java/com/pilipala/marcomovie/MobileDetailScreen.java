@@ -57,6 +57,12 @@ final class MobileDetailScreen {
         a.root.setBackgroundColor(0xff0f1015);
         a.setContentView(a.root);
 
+        final ImmersivePoster ambientCover = new ImmersivePoster(a, "detail-ambient-cover");
+        a.root.addView(ambientCover.backdrop, new FrameLayout.LayoutParams(-1, -1));
+        if (listing.poster != null && !listing.poster.isEmpty()) {
+            ambientCover.load(listing.poster);
+        }
+
         LinearLayout page = a.vertical();
         a.root.addView(page, new FrameLayout.LayoutParams(-1, -1));
 
@@ -187,6 +193,7 @@ final class MobileDetailScreen {
                             && v.poster != null
                             && !v.poster.isEmpty()) {
                         a.poster(v.poster, posterImg, true);
+                        ambientCover.load(v.poster);
                     }
                     content.removeView(loadingState);
                     detailsBody.removeAllViews();

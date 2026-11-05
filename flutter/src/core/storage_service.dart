@@ -25,6 +25,16 @@ class StorageService {
   static const String keyActiveDepotName = 'active_depot_name';
   static const String keySubscriptions = 'saved_subscriptions';
   static const String keyPrivacyPassword = 'privacy_password';
+  static const String keyWallpaperPreset = 'wallpaper_preset';
+  static const String keyCustomWallpaperUrl = 'custom_wallpaper_url';
+  static const String keyAmbientGlow = 'ambient_glow_enabled';
+  static const String keyGlassBlurLevel = 'glass_blur_level';
+  static const String keyGridDensity = 'grid_density';
+  static const String keyShowHeroBanner = 'show_hero_banner';
+  static const String keyShowContinueWatching = 'show_continue_watching';
+  static const String keyCardSubtitleMode = 'card_subtitle_mode';
+  static const String keyPreferredQuality = 'preferred_quality';
+  static const String keyDefaultAspectMode = 'default_aspect_mode';
   final SharedPreferences _prefs;
   StorageService(this._prefs);
   static Future<StorageService> init() async {
@@ -42,6 +52,23 @@ class StorageService {
   int get skipIntroSec => (_prefs.getInt(keySkipIntroSec) ?? 0).clamp(0, 600);
   int get skipOutroSec => (_prefs.getInt(keySkipOutroSec) ?? 0).clamp(0, 600);
   String get repeatMode => _prefs.getString(keyRepeatMode) ?? 'off';
+  String get wallpaperPreset =>
+      _prefs.getString(keyWallpaperPreset) ?? 'obsidian';
+  String get customWallpaperUrl =>
+      _prefs.getString(keyCustomWallpaperUrl) ?? '';
+  bool get ambientGlowEnabled => _prefs.getBool(keyAmbientGlow) ?? true;
+  String get glassBlurLevel =>
+      _prefs.getString(keyGlassBlurLevel) ?? 'standard';
+  String get gridDensity => _prefs.getString(keyGridDensity) ?? 'standard';
+  bool get showHeroBanner => _prefs.getBool(keyShowHeroBanner) ?? true;
+  bool get showContinueWatching =>
+      _prefs.getBool(keyShowContinueWatching) ?? true;
+  String get cardSubtitleMode =>
+      _prefs.getString(keyCardSubtitleMode) ?? 'remarks';
+  String get preferredQuality =>
+      _prefs.getString(keyPreferredQuality) ?? '4k_netdisk';
+  String get defaultAspectMode =>
+      _prefs.getString(keyDefaultAspectMode) ?? 'contain';
   String get quarkCookie => _prefs.getString(keyQuarkCookie) ?? '';
   String get ucCookie => _prefs.getString(keyUcCookie) ?? '';
   String get baiduCookie => _prefs.getString(keyBaiduCookie) ?? '';
@@ -418,6 +445,93 @@ class StorageService {
   }
   Future<void> setRepeatMode(String mode) async {
     await _prefs.setString(keyRepeatMode, mode);
+  }
+  Future<void> setWallpaperPreset(String preset) async {
+    await _prefs.setString(keyWallpaperPreset, preset.trim());
+  }
+  Future<void> setCustomWallpaperUrl(String url) async {
+    await _prefs.setString(keyCustomWallpaperUrl, url.trim());
+  }
+  Future<void> setAmbientGlowEnabled(bool enabled) async {
+    await _prefs.setBool(keyAmbientGlow, enabled);
+  }
+  Future<void> setGlassBlurLevel(String level) async {
+    await _prefs.setString(keyGlassBlurLevel, level.trim());
+  }
+  Future<void> setGridDensity(String density) async {
+    await _prefs.setString(keyGridDensity, density.trim());
+  }
+  Future<void> setShowHeroBanner(bool show) async {
+    await _prefs.setBool(keyShowHeroBanner, show);
+  }
+  Future<void> setShowContinueWatching(bool show) async {
+    await _prefs.setBool(keyShowContinueWatching, show);
+  }
+  Future<void> setCardSubtitleMode(String mode) async {
+    await _prefs.setString(keyCardSubtitleMode, mode.trim());
+  }
+  Future<void> setPreferredQuality(String quality) async {
+    await _prefs.setString(keyPreferredQuality, quality.trim());
+  }
+  Future<void> setDefaultAspectMode(String mode) async {
+    await _prefs.setString(keyDefaultAspectMode, mode.trim());
+  }
+  /// Selects the recommended line index from [lines] based on [preferredQuality]
+  /// and the user's configured Netdisk drive order.
+  int pickRecommendedLineIndex(List<CmsLine> lines) {
+    if (lines.isEmpty) return 0;
+    final pref = preferredQuality;
+    if (pref == 'auto') return 0;
+    bool isNetdiskLine(String name) {
+      final n = name.toLowerCase();
+      return n.contains('4k') ||
+          n.contains('原画') ||
+          n.contains('夸父') ||
+          n.contains('夸克') ||
+          n.contains('优汐') ||
+          n.contains('uc') ||
+          n.contains('嘟嘟') ||
+          n.contains('百度') ||
+          n.contains('阿狸') ||
+          n.contains('阿里');
+    }
+    if (pref == '4k_netdisk') {
+      // First check according to driveOrder
+      for (final drive in driveOrder) {
+        final alias = switch (drive) {
+          'quark' => '夸',
+          'uc' => '优',
+          'baidu' => '嘟',
+          'ali' => '阿',
+          _ => '',
+        };
+        if (alias.isNotEmpty) {
+          final idx = lines.indexWhere((l) => l.name.contains(alias));
+          if (idx >= 0) return idx;
+        }
+      }
+      final idx = lines.indexWhere((l) => isNetdiskLine(l.name));
+      if (idx >= 0) return idx;
+    } else if (pref == '1080p_direct') {
+      final idx = lines.indexWhere(
+        (l) =>
+            !isNetdiskLine(l.name) &&
+            (l.name.contains('蓝光') ||
+                l.name.contains('超清') ||
+                l.name.contains('1080') ||
+                l.name.contains('暴风') ||
+                l.name.contains('天堂') ||
+                l.name.contains('非凡') ||
+                l.name.contains('量子')),
+      );
+      if (idx >= 0) return idx;
+      final nonNetdisk = lines.indexWhere((l) => !isNetdiskLine(l.name));
+      if (nonNetdisk >= 0) return nonNetdisk;
+    } else if (pref == 'fast_hls') {
+      final idx = lines.indexWhere((l) => !isNetdiskLine(l.name));
+      if (idx >= 0) return idx;
+    }
+    return 0;
   }
   String getNetdiskCred(String driveKey) {
     switch (driveKey) {

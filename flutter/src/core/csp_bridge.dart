@@ -798,13 +798,11 @@ class CspBridge {
       if (title.isEmpty) continue;
       String poster = '';
       if (item['pic'] is Map) {
-        poster = (item['pic']['normal'] ?? item['pic']['large'] ?? '').toString().trim();
+        poster = (item['pic']['large'] ?? item['pic']['normal'] ?? '').toString().trim();
       } else if (item['cover'] is Map) {
         poster = (item['cover']['url'] ?? '').toString().trim();
       }
-      if (poster.contains('img9.doubanio.com')) {
-        poster = poster.replaceFirst('img9.doubanio.com', 'img3.doubanio.com');
-      }
+      poster = CmsParser.upgradePosterUrlToHd(poster);
       String ratingStr = '';
       if (item['rating'] is Map && item['rating']['value'] != null) {
         final val = item['rating']['value'];

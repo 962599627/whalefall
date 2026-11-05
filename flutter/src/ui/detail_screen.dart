@@ -59,8 +59,20 @@ class _DetailScreenState extends State<DetailScreen> {
       final detailed =
           await widget.client.fetchDetail(widget.site, widget.initialVideo);
       if (!mounted) return;
+      final bookmark = _findBookmark();
+      int initialLine = 0;
+      if (bookmark != null && detailed.lines.isNotEmpty) {
+        final found =
+            detailed.lines.indexWhere((l) => l.name == bookmark.line);
+        initialLine = found >= 0
+            ? found
+            : widget.storage.pickRecommendedLineIndex(detailed.lines);
+      } else if (detailed.lines.isNotEmpty) {
+        initialLine = widget.storage.pickRecommendedLineIndex(detailed.lines);
+      }
       setState(() {
         _video = detailed;
+        _selectedLine = initialLine;
         _loading = false;
       });
     } catch (e) {
@@ -532,15 +544,17 @@ class _DetailScreenState extends State<DetailScreen> {
             ),
           ),
           // Subtle full-screen blurred poster aura
-          if (_video.poster.isNotEmpty)
+          if (widget.storage.ambientGlowEnabled &&
+              (_video.poster.isNotEmpty || _video.title.isNotEmpty))
             Positioned.fill(
               child: Opacity(
-                opacity: 0.22,
+                opacity: 0.24,
                 child: ImageFiltered(
                   imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
                   child: PosterImage(
                     url: _video.poster,
                     title: _video.title,
+                    highRes: true,
                     placeholder: const SizedBox.shrink(),
                   ),
                 ),
@@ -772,11 +786,12 @@ class _DetailScreenState extends State<DetailScreen> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Edge-to-edge full-bleed poster artwork
+          // Edge-to-edge full-bleed HD poster artwork
           PosterImage(
             url: _video.poster,
             title: _video.title,
             fit: BoxFit.cover,
+            highRes: true,
             placeholder: _posterPlaceholder(),
           ),
           // Top status-bar protection vignette
@@ -1436,6 +1451,7 @@ class _DetailScreenState extends State<DetailScreen> {
                               url: _video.poster,
                               title: _video.title,
                               fit: BoxFit.cover,
+                              highRes: true,
                               placeholder: _posterPlaceholder(),
                             ),
                             const DecoratedBox(
@@ -1691,139 +1707,233 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
-  /// Wide desktop / tablet landscape layout
+  /// Wide desktop / iPad / phone landscape immersive cinema showcase layout:
+  /// full-screen ambient color canvas, right-side full-bleed ultra-HD poster backdrop
+  /// with directional gradient blending, floating Liquid Glass top bar, left HD poster
+  /// card + ergonomic showcase metadata/actions, and full-width 16:9 episode preview strip.
   Widget _buildWideDesktopScreen(BuildContext context) {
+    final (ambientTop, ambientBottom) = _resolveAmbientPalette();
+    final bookmark = _findBookmark();
+    final size = MediaQuery.sizeOf(context);
+    final topPad = MediaQuery.paddingOf(context).top;
+    final horizontalPad = (size.width * 0.045).clamp(24.0, 56.0);
+    final heroStageHeight = (size.height * 0.58).clamp(380.0, 500.0);
+
     return Scaffold(
-      backgroundColor: AppleColors.background,
+      backgroundColor: ambientBottom,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          if (_video.poster.isNotEmpty || _video.title.isNotEmpty)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 380,
+          // 1. Deep ambient gradient canvas
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  ambientTop,
+                  Color.lerp(ambientTop, ambientBottom, 0.52)!,
+                  ambientBottom,
+                ],
+                stops: const [0.0, 0.48, 1.0],
+              ),
+            ),
+          ),
+          // 2. Subtle full-screen blurred poster aura
+          if (widget.storage.ambientGlowEnabled &&
+              (_video.poster.isNotEmpty || _video.title.isNotEmpty))
+            Positioned.fill(
               child: Opacity(
-                opacity: 0.38,
+                opacity: 0.22,
                 child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 42, sigmaY: 42),
+                  imageFilter: ImageFilter.blur(sigmaX: 68, sigmaY: 68),
                   child: PosterImage(
                     url: _video.poster,
                     title: _video.title,
+                    highRes: true,
                     placeholder: const SizedBox.shrink(),
                   ),
                 ),
               ),
             ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: 400,
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0x44000000),
-                    Color(0xCC050608),
-                    AppleColors.background,
-                  ],
-                ),
-              ),
-            ),
-          ),
-          SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 28,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    children: [
-                      CupertinoButton(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        minSize: 34,
-                        onPressed: () => Navigator.of(context).maybePop(),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0x991C1C1E),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: AppleColors.glassBorder,
-                              width: 0.5,
-                            ),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
+          // 3. Main scrollable immersive widescreen content
+          MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 44),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Top Immersive Widescreen Hero Stage
+                  SizedBox(
+                    height: heroStageHeight + topPad,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Right-side full-bleed ultra-HD poster backdrop
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          bottom: 0,
+                          width: size.width * 0.64,
+                          child: Stack(
+                            fit: StackFit.expand,
                             children: [
-                              Icon(
-                                CupertinoIcons.chevron_back,
-                                color: AppleColors.labelPrimary,
-                                size: 16,
+                              PosterImage(
+                                url: _video.poster,
+                                title: _video.title,
+                                fit: BoxFit.cover,
+                                highRes: true,
+                                placeholder: _posterPlaceholder(),
                               ),
-                              SizedBox(width: 4),
-                              Text(
-                                '返回',
-                                style: TextStyle(
-                                  color: AppleColors.labelPrimary,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
+                              // Left-to-right seamless blend into ambient canvas
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                    colors: [
+                                      ambientTop,
+                                      ambientTop.withValues(alpha: 0.92),
+                                      ambientTop.withValues(alpha: 0.48),
+                                      const Color(0x22000000),
+                                    ],
+                                    stops: const [0.0, 0.22, 0.58, 1.0],
+                                  ),
+                                ),
+                              ),
+                              // Bottom seamless blend into ambient canvas
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      const Color(0x44000000),
+                                      const Color(0x00000000),
+                                      ambientTop.withValues(alpha: 0.78),
+                                      ambientTop,
+                                    ],
+                                    stops: const [0.0, 0.35, 0.80, 1.0],
+                                  ),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0x881C1C1E),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          widget.site.name,
-                          style: const TextStyle(
-                            color: AppleColors.labelSecondary,
-                            fontSize: 12,
+                        // Foreground Hero Content Row (Poster Card + Left-Aligned Showcase Info)
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            horizontalPad,
+                            topPad + 58,
+                            horizontalPad,
+                            18,
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              SizedBox(
+                                width: (heroStageHeight * 0.48).clamp(168.0, 224.0),
+                                child: _buildPosterCard(),
+                              ),
+                              const SizedBox(width: 28),
+                              Expanded(
+                                child: _buildWideHeroShowcaseColumn(bookmark),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(36, 8, 36, 36),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: 240,
-                          child: _buildPosterCard(),
-                        ),
-                        const SizedBox(width: 32),
-                        Expanded(child: _buildWideDetailsContent()),
                       ],
                     ),
                   ),
+                  // Bottom Full-Width Episode Showcase Section
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPad),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 8),
+                        if (_loading)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 32),
+                            child: Center(
+                              child: CupertinoActivityIndicator(radius: 14),
+                            ),
+                          )
+                        else if (_error != null)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Text(
+                              _error!,
+                              style: const TextStyle(
+                                color: AppleColors.systemRed,
+                                fontSize: 14,
+                              ),
+                            ),
+                          )
+                        else if (_video.lines.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: Text(
+                              '暂未获取到可播放的剧集资源',
+                              style: TextStyle(
+                                color: AppleColors.labelSecondary,
+                                fontSize: 14,
+                              ),
+                            ),
+                          )
+                        else
+                          _buildPortraitEpisodesSection(bookmark),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // 4. Floating Liquid Glass Top Navigation Bar
+          Positioned(
+            top: topPad + 10,
+            left: horizontalPad,
+            right: horizontalPad,
+            child: Row(
+              children: [
+                _buildFloatingGlassCircleButton(
+                  icon: CupertinoIcons.chevron_back,
+                  onTap: () => Navigator.of(context).maybePop(),
                 ),
+                const SizedBox(width: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                    child: Container(
+                      height: 36,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: const Color(0x5218181C),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: const Color(0x38FFFFFF),
+                          width: 0.65,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        widget.site.name,
+                        style: const TextStyle(
+                          color: Color(0xE6FFFFFF),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                _buildFloatingTopRightPill(),
               ],
             ),
           ),
@@ -1835,13 +1945,13 @@ class _DetailScreenState extends State<DetailScreen> {
   Widget _buildPosterCard() {
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppleColors.glassBorder, width: 0.5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0x4DFFFFFF), width: 0.8),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x66000000),
-            blurRadius: 24,
-            offset: Offset(0, 10),
+            color: Color(0x80000000),
+            blurRadius: 28,
+            offset: Offset(0, 12),
           ),
         ],
       ),
@@ -1851,6 +1961,7 @@ class _DetailScreenState extends State<DetailScreen> {
         child: PosterImage(
           url: _video.poster,
           title: _video.title,
+          highRes: true,
           placeholder: _posterPlaceholder(),
         ),
       ),
@@ -1875,126 +1986,167 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
-  Widget _buildWideDetailsContent() {
-    final bookmark = _findBookmark();
-    final metadata = [_video.year, _video.area, _video.remarks]
-        .where((s) => s.isNotEmpty)
-        .join('  ·  ');
+  Widget _buildWideHeroShowcaseColumn(WatchHistoryEntry? bookmark) {
+    final safeLineIdx = _video.lines.isEmpty
+        ? 0
+        : _selectedLine.clamp(0, _video.lines.length - 1);
+    final epCount = _video.lines.isEmpty
+        ? 0
+        : _video.lines[safeLineIdx].episodes.length;
+    final pills = <String>[
+      if (_video.year.trim().isNotEmpty) _video.year.trim(),
+      if (_video.area.trim().isNotEmpty) _video.area.trim(),
+      if (_video.tag.trim().isNotEmpty) _video.tag.trim(),
+      if (_video.remarks.trim().isNotEmpty)
+        _video.remarks.trim()
+      else if (epCount > 1)
+        '共$epCount集',
+    ];
+    final rating = _deriveRatingScore();
+    final desc = _video.description.trim();
+    final cast = _video.actor.trim();
+
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           _video.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            color: AppleColors.labelPrimary,
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
+            color: Colors.white,
+            fontSize: 32,
+            fontWeight: FontWeight.w800,
             letterSpacing: -0.6,
+            height: 1.15,
+            shadows: [
+              Shadow(
+                color: Color(0xB3000000),
+                blurRadius: 18,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
         ),
-        if (metadata.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(
-            metadata,
-            style: const TextStyle(
-              color: AppleColors.labelSecondary,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-        if (_video.actor.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(
-            '演职员：${_video.actor}',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppleColors.labelSecondary,
-              fontSize: 13,
-            ),
-          ),
-        ],
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
         Wrap(
-          spacing: 10,
-          runSpacing: 10,
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            if (_video.lines.isNotEmpty)
-              AppleCapsuleButton(
-                label: bookmark == null
-                    ? '立即播放'
-                    : '继续播放 · ${bookmark.episode}',
-                icon: CupertinoIcons.play_fill,
-                primary: true,
-                onPressed: () => _playPrimaryAction(bookmark),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF01B4E4),
+                borderRadius: BorderRadius.circular(4),
               ),
-            AppleCapsuleButton(
-              label: _isFavorite ? '已收藏' : '加入片库',
-              icon: _isFavorite
-                  ? CupertinoIcons.bookmark_fill
-                  : CupertinoIcons.bookmark,
-              onPressed: () async {
-                final fav =
-                    await widget.storage.toggleFavorite(widget.site, _video);
-                if (mounted) setState(() => _isFavorite = fav);
-              },
-            ),
-            if (_video.lines.isNotEmpty && DownloadService.instance.isReady)
-              AppleCapsuleButton(
-                label: '下载',
-                icon: CupertinoIcons.arrow_down_circle,
-                onPressed: _showDownloadSheet,
-              ),
-            AppleCapsuleButton(
-              key: const ValueKey('detail-netdisk-qr-button'),
-              label: '网盘扫码',
-              icon: CupertinoIcons.qrcode_viewfinder,
-              onPressed: () => showNetdiskAccountSheet(
-                context,
-                widget.storage,
-                onChanged: () {
-                  if (mounted) setState(() {});
-                },
+              child: const Text(
+                'TMDB',
+                style: TextStyle(
+                  color: Color(0xFF081C22),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
+            Text(
+              rating,
+              style: const TextStyle(
+                color: Color(0xFFF5C518),
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2E9F43),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                '豆',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            for (final tag in pills.take(4))
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 3.5,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0x33FFFFFF),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: const Color(0x38FFFFFF),
+                    width: 0.5,
+                  ),
+                ),
+                child: Text(
+                  tag,
+                  style: const TextStyle(
+                    color: Color(0xF2FFFFFF),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
           ],
         ),
-        if (_video.description.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          AppleGlassSurface(
-            padding: const EdgeInsets.all(14),
-            borderRadius: BorderRadius.circular(16),
-            child: Text(
-              _video.description,
-              maxLines: 5,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppleColors.labelSecondary,
-                fontSize: 14,
-                height: 1.5,
+        if (desc.isNotEmpty || cast.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => setState(() => _synopsisExpanded = !_synopsisExpanded),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 680),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (desc.isNotEmpty)
+                    Text(
+                      desc,
+                      maxLines: _synopsisExpanded ? 8 : 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xE0FFFFFF),
+                        fontSize: 13.5,
+                        height: 1.52,
+                      ),
+                    ),
+                  if (cast.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '演职员：$cast',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xA6FFFFFF),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
         ],
-        const SizedBox(height: 22),
-        if (_loading)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 28),
-            child: Center(child: CupertinoActivityIndicator(radius: 14)),
-          )
-        else if (_error != null)
-          Text(
-            _error!,
-            style: const TextStyle(color: AppleColors.systemRed, fontSize: 14),
-          )
-        else if (_video.lines.isEmpty)
-          const Text(
-            '这部影片没有返回可识别的播放线路。',
-            style: TextStyle(color: AppleColors.labelSecondary, fontSize: 14),
-          )
-        else
-          _buildPortraitEpisodesSection(bookmark),
+        const SizedBox(height: 16),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: _buildPortraitActionRow(bookmark),
+        ),
+        if (bookmark != null) ...[
+          const SizedBox(height: 10),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: _buildPortraitBookmarkProgress(bookmark),
+          ),
+        ],
       ],
     );
   }
