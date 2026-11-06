@@ -2289,7 +2289,7 @@ class CmsParser {
   /// Detects an explicit season number inside an episode name (`S01E02`, `第2季01`, etc.).
   static int? detectEpisodeSeasonNumber(String rawEpisodeName) {
     final seMatch = RegExp(
-      r'(?:^|[\s.\-_\[【(（])[Ss]0*(\d{1,2})\s*(?:[Ee]\s*\d+|[\]】)）\s.\-_])',
+      r'(?:^|[^A-Za-z0-9])[Ss]0*(\d{1,2})\s*(?:[Ee]\s*\d+|[\]】)）\s.\-_])',
     ).firstMatch(rawEpisodeName);
     if (seMatch != null) {
       final n = int.tryParse(seMatch.group(1)!);
