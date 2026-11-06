@@ -105,7 +105,13 @@ public final class Cms {
 
     public static boolean isMedia(String value) {
         return isHttp(value)
-                || (value != null && (value.startsWith("rtsp://") || value.startsWith("udp://")));
+                || (value != null
+                        && (value.startsWith("rtsp://")
+                                || value.startsWith("rtmp://")
+                                || value.startsWith("mms://")
+                                || value.startsWith("udp://")
+                                || value.startsWith("file://")
+                                || value.startsWith("content://")));
     }
 
     public static boolean isHttp(String value) {
@@ -133,8 +139,11 @@ public final class Cms {
 
     private static String resolve(String origin, String target) {
         if (target == null) return "";
-        if (isHttp(target) || target.startsWith("csp_") || origin == null || !isHttp(origin))
-            return target;
+        if (isHttp(target)
+                || target.startsWith("file://")
+                || target.startsWith("csp_")
+                || origin == null
+                || (!isHttp(origin) && !origin.startsWith("file://"))) return target;
         try {
             return new URL(new URL(origin), target).toString();
         } catch (Exception e) {
@@ -142,10 +151,99 @@ public final class Cms {
         }
     }
 
+    public static boolean looksLikeJsSpider(String text, String origin) {
+        String cleanOrigin =
+                origin == null ? "" : origin.split("[?#]", 2)[0].toLowerCase(Locale.ROOT);
+        if (cleanOrigin.endsWith(".js") || cleanOrigin.endsWith(".mjs")) return true;
+        if (text == null) return false;
+        String t = text.trim();
+        return t.contains("__jsEvalReturn")
+                || t.contains("export default")
+                || (t.contains("var rule") && t.contains("host"));
+    }
+
+    public static boolean looksLikePySpider(String text, String origin) {
+        String cleanOrigin =
+                origin == null ? "" : origin.split("[?#]", 2)[0].toLowerCase(Locale.ROOT);
+        if (cleanOrigin.endsWith(".py")) return true;
+        if (text == null) return false;
+        String t = text.trim();
+        return (t.contains("class Spider") && t.contains("def "))
+                || (t.contains("def homeContent") && t.contains("def playerContent"));
+    }
+
+    private static String extractScriptTitle(String text, String origin, String prefix) {
+        if (text != null) {
+            java.util.regex.Matcher m =
+                    java.util.regex.Pattern.compile(
+                                    "(?:title|name)\\s*[:=]\\s*['\"]([^'\"\\r\\n]{1,32})['\"]")
+                            .matcher(text);
+            if (m.find()) return prefix + " · " + m.group(1).trim();
+        }
+        if (origin != null && !origin.isEmpty()) {
+            String path = origin.split("[?#]", 2)[0];
+            int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+            String file = slash >= 0 ? path.substring(slash + 1) : path;
+            int dot = file.lastIndexOf('.');
+            if (dot > 0) file = file.substring(0, dot);
+            if (!file.isEmpty()) return prefix + " · " + file;
+        }
+        return prefix + " 扩展片源";
+    }
+
     public static Config parseConfig(String text, String origin) throws Exception {
         if (text == null || text.length() > MAX_JSON) throw new IOException("配置超过 4 MB 限制");
-        JSONObject root = new JSONObject(withoutComments(text.trim().replaceFirst("^\\uFEFF", "")));
+        String trimmed = text.trim().replaceFirst("^\\uFEFF", "");
+        if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+            if (looksLikeJsSpider(trimmed, origin)
+                    && origin != null
+                    && (isHttp(origin) || origin.startsWith("file://"))) {
+                String title = extractScriptTitle(trimmed, origin, "JS");
+                JSONObject siteObj =
+                        new JSONObject()
+                                .put("key", "js_" + Math.abs(origin.hashCode()))
+                                .put("name", title)
+                                .put("type", 3)
+                                .put("api", origin)
+                                .put("searchable", 1);
+                JSONObject synth = new JSONObject().put("sites", new JSONArray().put(siteObj));
+                return parseConfig(synth.toString(), origin);
+            }
+            if (looksLikePySpider(trimmed, origin)) {
+                String title = extractScriptTitle(trimmed, origin, "PY");
+                java.util.regex.Matcher cmsMatcher =
+                        java.util.regex.Pattern.compile(
+                                        "https?://[A-Za-z0-9._~:/?#\\[\\]@!$&()*+,;=%-]+/api\\.php/provide/vod/?")
+                                .matcher(trimmed);
+                JSONObject siteObj = new JSONObject();
+                siteObj.put(
+                        "key",
+                        "py_"
+                                + Math.abs(
+                                        (origin != null && !origin.isEmpty() ? origin : trimmed)
+                                                .hashCode()));
+                siteObj.put("name", title);
+                if (cmsMatcher.find()) {
+                    siteObj.put("type", 1);
+                    siteObj.put("api", cmsMatcher.group());
+                } else {
+                    siteObj.put("type", 3);
+                    siteObj.put(
+                            "api",
+                            origin != null && !origin.isEmpty() ? origin : "csp_PythonSpider.py");
+                }
+                siteObj.put("searchable", 1);
+                JSONObject synth = new JSONObject().put("sites", new JSONArray().put(siteObj));
+                return parseConfig(synth.toString(), origin);
+            }
+        }
+        JSONObject root = new JSONObject(withoutComments(trimmed));
         JSONArray sites = root.optJSONArray("sites");
+        if ((sites == null || sites.length() == 0)
+                && root.has("api")
+                && !root.optString("api").isEmpty()) {
+            sites = new JSONArray().put(root);
+        }
         if ((sites == null || sites.length() == 0) && origin != null && isHttp(origin)) {
             JSONArray warehouses = root.optJSONArray("urls");
             if (warehouses == null) warehouses = root.optJSONArray("storeHouse");

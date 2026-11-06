@@ -35,7 +35,35 @@ def _replace_xcassets_icons(appiconset_dir: Path, source_png: Path) -> None:
 def _write_windows_ico(ico_path: Path, source_png: Path) -> None:
     if not ico_path.parent.exists() or not source_png.exists():
         return
+    w, h = _png_dimensions(source_png)
     png_bytes = source_png.read_bytes()
+    # Win32 ICO PNG entries MUST be <= 256x256; if source_png is larger (e.g. 512x512),
+    # downscale to 256x256 PNG via PowerShell System.Drawing on Windows so GDI LoadIcon never fails.
+    if (w > 256 or h > 256) and shutil.which("powershell"):
+        tmp_png = ico_path.parent / "app_icon_256.png"
+        ps_cmd = (
+            "Add-Type -AssemblyName System.Drawing; "
+            f"$src = [System.Drawing.Image]::FromFile('{source_png}'); "
+            "$bmp = New-Object System.Drawing.Bitmap(256, 256); "
+            "$g = [System.Drawing.Graphics]::FromImage($bmp); "
+            "$g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic; "
+            "$g.DrawImage($src, 0, 0, 256, 256); "
+            f"$bmp.Save('{tmp_png}', [System.Drawing.Imaging.ImageFormat]::Png); "
+            "$g.Dispose(); $bmp.Dispose(); $src.Dispose()"
+        )
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if tmp_png.exists():
+            png_bytes = tmp_png.read_bytes()
+            tmp_png.unlink(missing_ok=True)
+        else:
+            return
+    elif w > 256 or h > 256:
+        return
     header = struct.pack("<HHH", 0, 1, 1)
     entry = struct.pack(
         "<BBBBHHII",
@@ -215,13 +243,47 @@ def main() -> None:
                 "    end",
             )
         ios_podfile.write_text(text, encoding="utf-8")
-    # Windows icon & title
-    win_ico = ROOT / "windows" / "runner" / "resources" / "app_icon.ico"
+    # Windows icon, working directory, immediate window show, and title
+    win_runner = ROOT / "windows" / "runner"
+    win_ico = win_runner / "resources" / "app_icon.ico"
     if win_ico.parent.exists():
         _write_windows_ico(
             win_ico,
             OPAQUE_ICON if OPAQUE_ICON.exists() else LOGO_MARK,
         )
+    win_main = win_runner / "main.cpp"
+    if win_main.exists():
+        text = win_main.read_text(encoding="utf-8")
+        text = text.replace('L"marco_movie"', 'L"Marco Movie"')
+        if "SetCurrentDirectoryW" not in text and "wWinMain(" in text:
+            init_hook = (
+                "  wchar_t exe_path[MAX_PATH];\n"
+                "  if (::GetModuleFileNameW(nullptr, exe_path, MAX_PATH) > 0) {\n"
+                "    wchar_t* last_slash = wcsrchr(exe_path, L'\\\\');\n"
+                "    if (last_slash) {\n"
+                "      *last_slash = L'\\0';\n"
+                "      ::SetCurrentDirectoryW(exe_path);\n"
+                "    }\n"
+                "  }\n"
+            )
+            text = text.replace(
+                "  // Attach to console when present",
+                init_hook + "  // Attach to console when present",
+                1,
+            )
+        win_main.write_text(text, encoding="utf-8")
+    win_fw = win_runner / "flutter_window.cpp"
+    if win_fw.exists():
+        text = win_fw.read_text(encoding="utf-8")
+        if "this->Show();" in text and "// Immediate Show on Windows" not in text:
+            text = text.replace(
+                "SetChildContent(flutter_controller_->view()->GetNativeWindow());",
+                "SetChildContent(flutter_controller_->view()->GetNativeWindow());\n"
+                "  // Immediate Show on Windows so the window always appears right away\n"
+                "  this->Show();",
+                1,
+            )
+            win_fw.write_text(text, encoding="utf-8")
 
 if __name__ == "__main__":
     main()

@@ -490,15 +490,7 @@ final class MobileDetailScreen {
         a.generation++;
 
         // Edge-to-edge transparent status bar so the full-bleed poster reaches physical top y=0
-        try {
-            a.getWindow()
-                    .getDecorView()
-                    .setSystemUiVisibility(
-                            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
-            a.getWindow().setStatusBarColor(Color.TRANSPARENT);
-        } catch (Exception ignored) {
-        }
+        a.applyMobileSystemBars(false);
 
         final int topPad = getStatusBarHeight(a);
         final int screenH = a.getResources().getDisplayMetrics().heightPixels;
@@ -662,6 +654,7 @@ final class MobileDetailScreen {
         sourceTopBtn.setPadding(a.dp(13), 0, a.dp(13), 0);
         sourceTopBtn.setBackground(glassBg(a, 0x5218181c, 0x40ffffff, 999));
         bindTouchFeedback(sourceTopBtn);
+        sourceTopBtn.setOnClickListener(v -> a.crossSearch(Cms.searchTitle(listing)));
         LinearLayout.LayoutParams sourceTopLp = new LinearLayout.LayoutParams(-2, a.dp(40));
         sourceTopLp.rightMargin = a.dp(8);
         topNavRow.addView(sourceTopBtn, sourceTopLp);
@@ -978,8 +971,21 @@ final class MobileDetailScreen {
         final SeasonMeta curSeason = parseSeasonMeta(video.title);
         final int total = line.episodes.size();
 
-        // Update Top-Right Floating Source Button & Download Button
+        // Update Top-Right Floating Source Button, Play Button & Download Button
         if (a.root != null) {
+            View playBtnView = a.root.findViewWithTag("detail-play");
+            if (playBtnView instanceof Button && !line.episodes.isEmpty()) {
+                Button playBtn = (Button) playBtnView;
+                playBtn.setOnClickListener(
+                        v -> {
+                            if (remembered != null && line.name.equals(remembered.line)) {
+                                a.playBookmark(site, video, remembered);
+                            } else {
+                                a.resumeAt = 0;
+                                a.resolvePlayer(site, video, line, line.episodes.get(0));
+                            }
+                        });
+            }
             View topSourceView = a.root.findViewWithTag("detail-source-picker");
             if (topSourceView instanceof TextView) {
                 TextView sourceTopBtn = (TextView) topSourceView;
@@ -1015,6 +1021,10 @@ final class MobileDetailScreen {
                                                         discoveredSeasons,
                                                         discoveredLabels);
                                             })
+                                    .setNeutralButton(
+                                            "🔍 跨片源搜索",
+                                            (dialog, which) ->
+                                                    a.crossSearch(Cms.searchTitle(video)))
                                     .setNegativeButton("取消", null)
                                     .show();
                         });
@@ -1604,6 +1614,7 @@ final class MobileDetailScreen {
             final Map<Integer, Cms.Video> bySeason,
             final Map<Integer, String> labels) {
         final SeasonMeta curMeta = parseSeasonMeta(currentVideo.title);
+        if (!curMeta.explicit) return;
         final String baseKey = normalizeBaseKey(curMeta.baseTitle);
         if (baseKey.isEmpty()) return;
         final int ticket = a.generation;

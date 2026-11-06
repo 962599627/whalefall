@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -789,24 +790,35 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                             ),
                           ),
                         ],
-                        const Spacer(),
-                        if (depots.isNotEmpty) ...[
-                          _buildHeaderCapsule(
-                            icon: CupertinoIcons.archivebox_fill,
-                            label: widget.storage.activeDepotName.isEmpty
-                                ? '切换仓库'
-                                : widget.storage.activeDepotName,
-                            onTap: _showDepotPickerDialog,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              if (depots.isNotEmpty) ...[
+                                Flexible(
+                                  child: _buildHeaderCapsule(
+                                    icon: CupertinoIcons.archivebox_fill,
+                                    label: widget.storage.activeDepotName.isEmpty
+                                        ? '切换仓库'
+                                        : widget.storage.activeDepotName,
+                                    onTap: _showDepotPickerDialog,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              Flexible(
+                                child: _buildHeaderCapsule(
+                                  icon: _privateSessionUnlocked
+                                      ? CupertinoIcons.lock_shield_fill
+                                      : CupertinoIcons.layers_alt_fill,
+                                  label: _activeSite?.name ??
+                                      (_privateSessionUnlocked ? '选择隐私源' : '选择片源'),
+                                  onTap: _showSitePickerDialog,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 6),
-                        ],
-                        _buildHeaderCapsule(
-                          icon: _privateSessionUnlocked
-                              ? CupertinoIcons.lock_shield_fill
-                              : CupertinoIcons.layers_alt_fill,
-                          label: _activeSite?.name ??
-                              (_privateSessionUnlocked ? '选择隐私源' : '选择片源'),
-                          onTap: _showSitePickerDialog,
                         ),
                         const SizedBox(width: 6),
                         GestureDetector(
@@ -820,47 +832,44 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(999),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10.5,
-                                  vertical: 7,
-                                ),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Color(0xD42A2A32),
-                                      Color(0xC21D1D24),
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: AppleColors.glassBorder,
-                                    width: 0.7,
-                                  ),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      CupertinoIcons.qrcode_viewfinder,
-                                      color: AppleColors.systemBlue,
-                                      size: 13.5,
-                                    ),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      '网盘',
-                                      style: TextStyle(
-                                        color: AppleColors.labelPrimary,
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10.5,
+                                vertical: 7,
+                              ),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0xE02A2A32),
+                                    Color(0xD41D1D24),
                                   ],
                                 ),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: AppleColors.glassBorder,
+                                  width: 0.7,
+                                ),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    CupertinoIcons.qrcode_viewfinder,
+                                    color: AppleColors.systemBlue,
+                                    size: 13.5,
+                                  ),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    '网盘',
+                                    style: TextStyle(
+                                      color: AppleColors.labelPrimary,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -873,32 +882,29 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           onPressed: _showGlobalSearchSheet,
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(999),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                              child: Container(
-                                width: 33,
-                                height: 33,
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Color(0xD42A2A32),
-                                      Color(0xC21D1D24),
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: AppleColors.glassBorder,
-                                    width: 0.7,
-                                  ),
+                            child: Container(
+                              width: 33,
+                              height: 33,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0xE02A2A32),
+                                    Color(0xD41D1D24),
+                                  ],
                                 ),
-                                alignment: Alignment.center,
-                                child: const Icon(
-                                  CupertinoIcons.search,
-                                  color: AppleColors.labelPrimary,
-                                  size: 16,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: AppleColors.glassBorder,
+                                  width: 0.7,
                                 ),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                CupertinoIcons.search,
+                                color: AppleColors.labelPrimary,
+                                size: 16,
                               ),
                             ),
                           ),
@@ -1474,51 +1480,48 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       onTap: onTap,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(999),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 146),
-            padding: const EdgeInsets.symmetric(horizontal: 11.5, vertical: 7),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xD42A2A32),
-                  Color(0xC21D1D24),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: AppleColors.glassBorder,
-                width: 0.7,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: AppleColors.labelSecondary, size: 13.5),
-                const SizedBox(width: 5),
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppleColors.labelPrimary,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Icon(
-                  CupertinoIcons.chevron_down,
-                  color: AppleColors.labelSecondary,
-                  size: 11.5,
-                ),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 126),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xE02A2A32),
+                Color(0xD41D1D24),
               ],
             ),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: AppleColors.glassBorder,
+              width: 0.7,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: AppleColors.labelSecondary, size: 13.5),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppleColors.labelPrimary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                CupertinoIcons.chevron_down,
+                color: AppleColors.labelSecondary,
+                size: 11.5,
+              ),
+            ],
           ),
         ),
       ),
@@ -2422,7 +2425,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         Expanded(
                           child: CupertinoSearchTextField(
                             controller: _searchController,
-                            autofocus: true,
+                            autofocus: _searchResults.isEmpty &&
+                                _searchController.text.isEmpty,
                             placeholder: '搜索片名、演员或导演…',
                             backgroundColor: AppleColors.groupedSecondary,
                             style: const TextStyle(
@@ -2555,7 +2559,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                   video,
                                   badge: site.name,
                                   onTap: () {
-                                    Navigator.of(ctx).pop();
+                                    // Keep the search modal sheet resident underneath DetailScreen
+                                    // so returning from DetailScreen lands directly back on search results.
+                                    FocusScope.of(ctx).unfocus();
                                     _openVideoDetail(site, video);
                                   },
                                 );
@@ -4814,6 +4820,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 trailingText: '管理订阅',
                 onTap: _showSubscriptionManagerSheet,
               ),
+              AppleGroupedTile(
+                icon: CupertinoIcons.arrow_down_circle_fill,
+                iconBgColor: AppleColors.systemGreen,
+                title: '检查版本更新',
+                subtitle: '当前正式版：0.4.36 · 支持在线检测与安装程序一键更新',
+                trailingText: '0.4.36',
+                onTap: _showUpdateCheckSheet,
+              ),
             ],
           ),
           const SizedBox(height: 28),
@@ -4827,7 +4841,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Version 0.4.33 · Apple HIG Edition',
+                  'Version 0.4.36 · Official Release',
                   style: TextStyle(
                     color: AppleColors.labelSecondary,
                     fontSize: 12,
@@ -5266,6 +5280,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           onTap: _showBackupRestoreDialog,
         ),
         AppleGroupedTile(
+          icon: CupertinoIcons.arrow_down_circle_fill,
+          iconBgColor: AppleColors.systemOrange,
+          title: '检查版本更新',
+          subtitle: '当前正式版 0.4.36 · 支持 Windows 安装包自动下载升级',
+          trailingText: '检测更新',
+          onTap: _showUpdateCheckSheet,
+        ),
+        AppleGroupedTile(
           icon: CupertinoIcons.trash_fill,
           iconBgColor: AppleColors.systemRed,
           title: '清理海报与搜索缓存',
@@ -5674,37 +5696,105 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }
 
   Widget _buildSkipIntroOutroDrawerBody({VoidCallback? onStateChanged}) {
-    const presets = <int>[0, 15, 30, 60, 90, 120];
+    const presets = <int>[0, 15, 30, 60, 90, 120, 180];
     final curIntro = widget.storage.skipIntroSec;
     final curOutro = widget.storage.skipOutroSec;
+    String fmtSec(int s) {
+      if (s <= 0) return '00:00 (关闭)';
+      final m = s ~/ 60;
+      final r = s % 60;
+      return '${m.toString().padLeft(2, '0')}:${r.toString().padLeft(2, '0')} (${s}s)';
+    }
+
+    Future<void> updateIntro(int sec) async {
+      await widget.storage.setSkipIntroSec(sec.clamp(0, 300));
+      if (onStateChanged != null) {
+        onStateChanged();
+      } else {
+        setState(() {});
+      }
+    }
+
+    Future<void> updateOutro(int sec) async {
+      await widget.storage.setSkipOutroSec(sec.clamp(0, 300));
+      if (onStateChanged != null) {
+        onStateChanged();
+      } else {
+        setState(() {});
+      }
+    }
+
     return Padding(
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '跳过片头时长',
-            style: TextStyle(
-              color: AppleColors.labelSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '跳过片头精准时间节点',
+                  style: TextStyle(
+                    color: AppleColors.labelSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                fmtSec(curIntro),
+                style: const TextStyle(
+                  color: AppleColors.systemBlue,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(
+            width: double.infinity,
+            child: CupertinoSlider(
+              value: curIntro.clamp(0, 300).toDouble(),
+              min: 0,
+              max: 300,
+              divisions: 300,
+              activeColor: AppleColors.systemBlue,
+              onChanged: (v) => updateIntro(v.round()),
             ),
           ),
-          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
+              for (final delta in const [-5, -1, 1, 5])
+                GestureDetector(
+                  onTap: () => updateIntro(curIntro + delta),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0x18FFFFFF),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: const Color(0x2EFFFFFF),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Text(
+                      delta > 0 ? '+${delta}s' : '${delta}s',
+                      style: const TextStyle(
+                        color: AppleColors.labelSecondary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
               for (final sec in presets)
                 GestureDetector(
-                  onTap: () async {
-                    await widget.storage.setSkipIntroSec(sec);
-                    if (onStateChanged != null) {
-                      onStateChanged();
-                    } else {
-                      setState(() {});
-                    }
-                  },
+                  onTap: () => updateIntro(sec),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 13,
@@ -5730,30 +5820,73 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
             ],
           ),
-          const SizedBox(height: 14),
-          const Text(
-            '跳过片尾时长',
-            style: TextStyle(
-              color: AppleColors.labelSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '跳过片尾精准时间节点',
+                  style: TextStyle(
+                    color: AppleColors.labelSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                fmtSec(curOutro),
+                style: const TextStyle(
+                  color: AppleColors.systemBlue,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(
+            width: double.infinity,
+            child: CupertinoSlider(
+              value: curOutro.clamp(0, 300).toDouble(),
+              min: 0,
+              max: 300,
+              divisions: 300,
+              activeColor: AppleColors.systemBlue,
+              onChanged: (v) => updateOutro(v.round()),
             ),
           ),
-          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
+              for (final delta in const [-5, -1, 1, 5])
+                GestureDetector(
+                  onTap: () => updateOutro(curOutro + delta),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0x18FFFFFF),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: const Color(0x2EFFFFFF),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Text(
+                      delta > 0 ? '+${delta}s' : '${delta}s',
+                      style: const TextStyle(
+                        color: AppleColors.labelSecondary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
               for (final sec in presets)
                 GestureDetector(
-                  onTap: () async {
-                    await widget.storage.setSkipOutroSec(sec);
-                    if (onStateChanged != null) {
-                      onStateChanged();
-                    } else {
-                      setState(() {});
-                    }
-                  },
+                  onTap: () => updateOutro(sec),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 13,
@@ -5781,6 +5914,318 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           ),
         ],
       ),
+    );
+  }
+
+  static const String _currentAppVersion = '0.4.36';
+
+  static bool _isRemoteVersionNewer(String remote, String current) {
+    List<int> parseParts(String v) => v
+        .replaceAll(RegExp(r'^[vV]'), '')
+        .split(RegExp(r'[^0-9]+'))
+        .where((s) => s.isNotEmpty)
+        .map((s) => int.tryParse(s) ?? 0)
+        .toList();
+    final r = parseParts(remote);
+    final c = parseParts(current);
+    final len = math.max(r.length, c.length);
+    for (var i = 0; i < len; i++) {
+      final rv = i < r.length ? r[i] : 0;
+      final cv = i < c.length ? c[i] : 0;
+      if (rv != cv) return rv > cv;
+    }
+    return false;
+  }
+
+  void _showUpdateCheckSheet() {
+    bool checking = true;
+    bool downloading = false;
+    double progress = 0.0;
+    String statusText = '正在连接镜像站检测最新版本…';
+    String latestVersion = _currentAppVersion;
+    String releaseNotes = '';
+    String downloadUrl = '';
+    bool hasNewer = false;
+
+    showAppleModalSheet<void>(
+      context: context,
+      title: '检查版本更新',
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            Future<void> checkRemote() async {
+              final http = HttpClient()
+                ..connectionTimeout = const Duration(seconds: 8);
+              try {
+                final req = await http.getUrl(
+                  Uri.parse(
+                    'https://marcotv.wlj9919.top/movie/updates/preview.json?t=${DateTime.now().millisecondsSinceEpoch}',
+                  ),
+                );
+                req.headers.set('Cache-Control', 'no-cache');
+                final resp =
+                    await req.close().timeout(const Duration(seconds: 10));
+                if (resp.statusCode == 200) {
+                  final raw = await resp.transform(utf8.decoder).join();
+                  final json = jsonDecode(raw) as Map<String, dynamic>;
+                  final ver =
+                      (json['versionName'] ?? json['version'] ?? '').toString().trim();
+                  if (ver.isNotEmpty) {
+                    latestVersion = ver.replaceFirst(RegExp(r'^[vV]'), '');
+                  }
+                  releaseNotes = (json['notes'] ?? '').toString().trim();
+                }
+              } catch (_) {
+                // Fallback to GitHub Release API
+                try {
+                  final req = await http.getUrl(
+                    Uri.parse(
+                      'https://api.github.com/repos/Pilipala9919/MarcoMovie/releases/latest',
+                    ),
+                  );
+                  req.headers.set('User-Agent', 'MarcoMovie-Updater');
+                  final resp =
+                      await req.close().timeout(const Duration(seconds: 10));
+                  if (resp.statusCode == 200) {
+                    final raw = await resp.transform(utf8.decoder).join();
+                    final json = jsonDecode(raw) as Map<String, dynamic>;
+                    final tag = (json['tag_name'] ?? '').toString().trim();
+                    if (tag.isNotEmpty) {
+                      latestVersion = tag.replaceFirst(RegExp(r'^[vV]'), '');
+                    }
+                    releaseNotes = (json['body'] ?? '').toString().trim();
+                  }
+                } catch (_) {}
+              } finally {
+                http.close(force: true);
+              }
+              if (downloadUrl.isEmpty && !kIsWeb && Platform.isWindows) {
+                downloadUrl =
+                    'https://github.com/Pilipala9919/MarcoMovie/releases/download/v$latestVersion-preview/MarcoMovie-$latestVersion-windows-setup.exe';
+              }
+              hasNewer =
+                  _isRemoteVersionNewer(latestVersion, _currentAppVersion);
+              if (ctx.mounted) {
+                setSheetState(() {
+                  checking = false;
+                  statusText = hasNewer
+                      ? '发现新正式版 v$latestVersion（当前 v$_currentAppVersion）'
+                      : '当前已是最新正式版（v$_currentAppVersion）';
+                });
+              }
+            }
+
+            if (checking && releaseNotes.isEmpty && downloadUrl.isEmpty) {
+              Future.microtask(checkRemote);
+            }
+
+            Future<void> downloadAndInstallWindows() async {
+              if (downloadUrl.isEmpty || downloading) return;
+              setSheetState(() {
+                downloading = true;
+                progress = 0.02;
+                statusText = '正在下载 Windows 安装更新包…';
+              });
+              final http = HttpClient()
+                ..connectionTimeout = const Duration(seconds: 15);
+              try {
+                final uri = Uri.parse(downloadUrl);
+                final req = await http.getUrl(uri);
+                final resp = await req.close();
+                if (resp.statusCode != 200) {
+                  throw Exception('HTTP ${resp.statusCode}');
+                }
+                final total = resp.contentLength;
+                final isExe =
+                    downloadUrl.toLowerCase().contains('setup.exe') ||
+                        downloadUrl.toLowerCase().endsWith('.exe');
+                final ext = isExe ? 'exe' : 'zip';
+                final filePath =
+                    '${Directory.systemTemp.path}${Platform.pathSeparator}MarcoMovie-$latestVersion-update.$ext';
+                final outFile = File(filePath);
+                final sink = outFile.openWrite();
+                var received = 0;
+                await for (final chunk in resp) {
+                  sink.add(chunk);
+                  received += chunk.length;
+                  if (total > 0 && ctx.mounted) {
+                    setSheetState(() {
+                      progress = (received / total).clamp(0.02, 0.99);
+                    });
+                  }
+                }
+                await sink.flush();
+                await sink.close();
+                if (isExe) {
+                  if (ctx.mounted) {
+                    setSheetState(() {
+                      progress = 1.0;
+                      statusText = '下载完成，正在启动安装向导自动升级…';
+                    });
+                  }
+                  await Process.start(
+                    filePath,
+                    const ['/SILENT'],
+                    mode: ProcessStartMode.detached,
+                  );
+                  await Future<void>.delayed(const Duration(milliseconds: 600));
+                  exit(0);
+                } else {
+                  await Process.start(
+                    'explorer.exe',
+                    ['/select,', filePath],
+                    mode: ProcessStartMode.detached,
+                  );
+                  if (ctx.mounted) {
+                    setSheetState(() {
+                      downloading = false;
+                      statusText = '更新包已保存至：$filePath';
+                    });
+                  }
+                }
+              } catch (e) {
+                if (ctx.mounted) {
+                  setSheetState(() {
+                    downloading = false;
+                    statusText = '自动下载失败：$e';
+                  });
+                }
+              } finally {
+                http.close(force: true);
+              }
+            }
+
+            return Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (checking || downloading) ...[
+                        const CupertinoActivityIndicator(radius: 10),
+                        const SizedBox(width: 10),
+                      ] else ...[
+                        Icon(
+                          hasNewer
+                              ? CupertinoIcons.arrow_down_circle_fill
+                              : CupertinoIcons.checkmark_seal_fill,
+                          color: hasNewer
+                              ? AppleColors.systemBlue
+                              : AppleColors.systemGreen,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Text(
+                          statusText,
+                          style: const TextStyle(
+                            color: AppleColors.labelPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (downloading) ...[
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 6,
+                        backgroundColor: const Color(0x26FFFFFF),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          AppleColors.systemBlue,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (releaseNotes.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppleColors.groupedSecondary,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppleColors.glassBorder,
+                          width: 0.5,
+                        ),
+                      ),
+                      child: SingleChildScrollView(
+                        child: Text(
+                          releaseNotes,
+                          style: const TextStyle(
+                            color: AppleColors.labelSecondary,
+                            fontSize: 12.5,
+                            height: 1.45,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  if (!checking && !downloading)
+                    Row(
+                      children: [
+                        if (!kIsWeb &&
+                            Platform.isWindows &&
+                            downloadUrl.isNotEmpty)
+                          Expanded(
+                            child: AppleCapsuleButton(
+                              label: hasNewer
+                                  ? '一键下载安装 v$latestVersion'
+                                  : '重新下载安装 v$latestVersion',
+                              icon: CupertinoIcons.arrow_down_to_line,
+                              primary: true,
+                              onPressed: downloadAndInstallWindows,
+                            ),
+                          ),
+                        if (!kIsWeb &&
+                            Platform.isWindows &&
+                            downloadUrl.isNotEmpty)
+                          const SizedBox(width: 10),
+                        Expanded(
+                          child: AppleCapsuleButton(
+                            label: '打开官方下载站',
+                            icon: CupertinoIcons.globe,
+                            primary: kIsWeb || !Platform.isWindows,
+                            onPressed: () async {
+                              const mirror =
+                                  'https://marcotv.wlj9919.top/movie/';
+                              if (!kIsWeb && Platform.isWindows) {
+                                await Process.run(
+                                  'cmd',
+                                  ['/c', 'start', '', mirror],
+                                );
+                              } else if (!kIsWeb && Platform.isMacOS) {
+                                await Process.run('open', [mirror]);
+                              } else {
+                                await Clipboard.setData(
+                                  const ClipboardData(text: mirror),
+                                );
+                                _showAppleNotice(
+                                  '已复制下载站地址',
+                                  '请在浏览器中打开：$mirror',
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

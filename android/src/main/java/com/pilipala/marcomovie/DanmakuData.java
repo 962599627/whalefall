@@ -12,6 +12,8 @@ final class DanmakuData {
         long time;
         int mode = 1, color = 0xffffff;
         String text;
+        float cachedWidth;
+        float cachedTextSize;
     }
 
     static List<Comment> parse(String text) throws Exception {
@@ -72,8 +74,19 @@ final class DanmakuData {
                         if (o.has("p")) {
                             String[] p = o.getString("p").split(",");
                             c.time = (long) (Double.parseDouble(p[0]) * 1000);
-                            if (p.length > 1) c.color = Integer.parseInt(p[1]);
-                            if (p.length > 2) c.mode = Integer.parseInt(p[2]);
+                            if (p.length > 2) {
+                                int v1 = Integer.parseInt(p[1].trim());
+                                int v2 = Integer.parseInt(p[2].trim());
+                                if (v1 <= 8 && v2 > 8) {
+                                    c.mode = v1;
+                                    c.color = v2;
+                                } else {
+                                    c.color = v1;
+                                    c.mode = v2;
+                                }
+                            } else if (p.length > 1) {
+                                c.color = Integer.parseInt(p[1].trim());
+                            }
                         }
                     } else continue;
                     add(out, c);

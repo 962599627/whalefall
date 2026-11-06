@@ -137,6 +137,61 @@ final class PlaybackController {
         return null;
     }
 
+    private static Cms.Site findPushSite(MainActivity a) {
+        if (a == null || a.config == null) return null;
+        for (Cms.Site site : a.config.sites) {
+            if (site.api != null
+                    && site.api.toLowerCase(Locale.ROOT).contains("push")
+                    && a.available(site)) {
+                return site;
+            }
+        }
+        return null;
+    }
+
+    private static boolean looksLikeNetdiskLine(Cms.Site s, Cms.Line line, String url) {
+        String combined =
+                ((s != null && s.name != null ? s.name : "")
+                                + " "
+                                + (line != null && line.name != null ? line.name : "")
+                                + " "
+                                + (url != null ? url : ""))
+                        .toLowerCase(Locale.ROOT);
+        return combined.contains("原画")
+                || combined.contains("原畫")
+                || combined.contains("网盘")
+                || combined.contains("百度")
+                || combined.contains("摆渡")
+                || combined.contains("夸克")
+                || combined.contains("夸父")
+                || combined.contains("阿里")
+                || combined.contains("天翼")
+                || combined.contains("移动")
+                || combined.contains("115")
+                || combined.contains("123")
+                || combined.contains("uc")
+                || combined.contains("pan")
+                || combined.contains("quark")
+                || combined.contains("baidu");
+    }
+
+    private static Cms.Episode findMatchingEpisode(
+            Cms.Line targetLine, Cms.Line fromLine, Cms.Episode ep) {
+        if (targetLine == null || targetLine.episodes.isEmpty()) return null;
+        if (ep != null && ep.name != null) {
+            for (Cms.Episode candidate : targetLine.episodes) {
+                if (ep.name.equalsIgnoreCase(candidate.name)) {
+                    return candidate;
+                }
+            }
+        }
+        int idx = fromLine != null && ep != null ? fromLine.episodes.indexOf(ep) : 0;
+        if (idx >= 0 && idx < targetLine.episodes.size()) {
+            return targetLine.episodes.get(idx);
+        }
+        return targetLine.episodes.get(0);
+    }
+
     static void resolvePlayer(
             MainActivity a, Cms.Site s, Cms.Video v, Cms.Line line, Cms.Episode ep) {
         if (a.miniMode) {
@@ -163,32 +218,223 @@ final class PlaybackController {
                         a.details,
                         () -> {
                             try {
-                                JSONObject result =
-                                        new JSONObject(a.engine(s).player(line.name, ep.url));
+                                Cms.Site targetSite = s;
+                                Cms.Line chosenLine = line;
+                                Cms.Episode chosenEp = ep;
+                                String targetFlag = line != null ? line.name : "";
+                                String targetId = ep.url != null ? ep.url : "";
+                                if (targetId.regionMatches(true, 0, "push://", 0, 7)) {
+                                    Cms.Site pushSite = findPushSite(a);
+                                    if (pushSite != null) {
+                                        targetSite = pushSite;
+                                        String pushTarget = targetId.substring(7);
+                                        Cms.Listing pushList =
+                                                Cms.listing(a.engine(pushSite).detail(pushTarget));
+                                        if (!pushList.videos.isEmpty()
+                                                && !pushList.videos.get(0).lines.isEmpty()
+                                                && !pushList.videos
+                                                        .get(0)
+                                                        .lines
+                                                        .get(0)
+                                                        .episodes
+                                                        .isEmpty()) {
+                                            Cms.Line pLine = pushList.videos.get(0).lines.get(0);
+                                            targetFlag = pLine.name;
+                                            targetId = pLine.episodes.get(0).url;
+                                        }
+                                    }
+                                }
+                                JSONObject result = null;
+                                Cms.Episode resolvedCandidate = null;
+                                Exception primaryError = null;
+                                try {
+                                    result =
+                                            new JSONObject(
+                                                    a.engine(targetSite)
+                                                            .player(targetFlag, targetId));
+                                    resolvedCandidate =
+                                            MediaOptions.episode(targetSite, chosenEp, result);
+                                    if (resolvedCandidate.url.regionMatches(
+                                            true, 0, "push://", 0, 7)) {
+                                        Cms.Site pushSite = findPushSite(a);
+                                        if (pushSite != null) {
+                                            String pushTarget = resolvedCandidate.url.substring(7);
+                                            Cms.Listing pushList =
+                                                    Cms.listing(
+                                                            a.engine(pushSite).detail(pushTarget));
+                                            if (!pushList.videos.isEmpty()
+                                                    && !pushList.videos.get(0).lines.isEmpty()
+                                                    && !pushList.videos
+                                                            .get(0)
+                                                            .lines
+                                                            .get(0)
+                                                            .episodes
+                                                            .isEmpty()) {
+                                                Cms.Line pLine =
+                                                        pushList.videos.get(0).lines.get(0);
+                                                JSONObject pushRes =
+                                                        new JSONObject(
+                                                                a.engine(pushSite)
+                                                                        .player(
+                                                                                pLine.name,
+                                                                                pLine.episodes.get(
+                                                                                                0)
+                                                                                        .url));
+                                                resolvedCandidate =
+                                                        MediaOptions.episode(
+                                                                pushSite, chosenEp, pushRes);
+                                                result = pushRes;
+                                            }
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    primaryError = e;
+                                }
+
+                                boolean primaryPlayable =
+                                        resolvedCandidate != null
+                                                && resolvedCandidate.url != null
+                                                && !resolvedCandidate.url.trim().isEmpty()
+                                                && (Cms.isMedia(resolvedCandidate.url.trim())
+                                                        || resolvedCandidate
+                                                                .url
+                                                                .trim()
+                                                                .startsWith("magnet:?")
+                                                        || (result != null
+                                                                && (result.optInt("parse", 0) != 0
+                                                                        || result.optInt("jx", 0)
+                                                                                != 0)));
+                                if (!primaryPlayable
+                                        && v != null
+                                        && v.lines != null
+                                        && v.lines.size() > 1
+                                        && !looksLikeNetdiskLine(s, line, targetId)) {
+                                    for (Cms.Line altLine : v.lines) {
+                                        if (altLine == null
+                                                || altLine == line
+                                                || altLine.episodes.isEmpty()) {
+                                            continue;
+                                        }
+                                        Cms.Episode altEp = findMatchingEpisode(altLine, line, ep);
+                                        if (altEp == null || altEp.url == null) continue;
+                                        if (looksLikeNetdiskLine(s, altLine, altEp.url)) continue;
+                                        try {
+                                            JSONObject altRes =
+                                                    new JSONObject(
+                                                            a.engine(s)
+                                                                    .player(
+                                                                            altLine.name,
+                                                                            altEp.url));
+                                            Cms.Episode altResolved =
+                                                    MediaOptions.episode(s, altEp, altRes);
+                                            String altUrl =
+                                                    altResolved.url == null
+                                                            ? ""
+                                                            : altResolved.url.trim();
+                                            if (!altUrl.isEmpty()
+                                                    && (Cms.isMedia(altUrl)
+                                                            || altUrl.startsWith("magnet:?")
+                                                            || altRes.optInt("parse", 0) != 0
+                                                            || altRes.optInt("jx", 0) != 0)) {
+                                                result = altRes;
+                                                resolvedCandidate = altResolved;
+                                                chosenLine = altLine;
+                                                chosenEp = altEp;
+                                                primaryError = null;
+                                                break;
+                                            }
+                                        } catch (Exception ignored) {
+                                        }
+                                    }
+                                }
+                                if (primaryError != null && resolvedCandidate == null) {
+                                    throw primaryError;
+                                }
+                                final JSONObject finalResult =
+                                        result != null ? result : new JSONObject();
+                                final Cms.Episode resolved =
+                                        resolvedCandidate != null
+                                                ? resolvedCandidate
+                                                : MediaOptions.episode(
+                                                        targetSite, chosenEp, finalResult);
+                                final Cms.Line finalLine = chosenLine;
+                                final Cms.Episode finalEp = chosenEp;
+                                final boolean switchedLine =
+                                        chosenLine != line && chosenLine != null;
                                 a.ui.post(
                                         () -> {
                                             if (serial != a.playbackResolveSerial
                                                     || ticket != a.generation
                                                     || a.isFinishing()) return;
                                             try {
-                                                String url = result.optString("url");
-                                                Cms.Episode resolved =
-                                                        MediaOptions.episode(s, ep, result);
-                                                if (result.optInt("parse", 0) != 0
-                                                        || result.optInt("jx", 0) != 0) {
+                                                if (switchedLine) {
+                                                    a.activeLine = finalLine;
+                                                    a.activeEpisode = finalEp;
+                                                    a.toast("当前线路响应异常，已自动切换至 " + finalLine.name);
+                                                }
+                                                String url =
+                                                        resolved.url == null
+                                                                ? ""
+                                                                : resolved.url.trim();
+                                                if (url.isEmpty() && finalEp.url != null) {
+                                                    String fallbackEpUrl =
+                                                            LocalProxy.rewrite(finalEp.url.trim());
+                                                    if (Cms.isMedia(fallbackEpUrl)
+                                                            || fallbackEpUrl.startsWith(
+                                                                    "magnet:?")) {
+                                                        url = fallbackEpUrl;
+                                                        resolved.url = fallbackEpUrl;
+                                                    }
+                                                }
+                                                if (finalResult.optInt("parse", 0) != 0
+                                                        || finalResult.optInt("jx", 0) != 0) {
                                                     resolveWebPage(
                                                             a,
                                                             s,
                                                             v,
                                                             resolved,
-                                                            result.optString("playUrl", s.playUrl));
+                                                            finalResult.optString(
+                                                                    "playUrl", s.playUrl));
                                                     return;
                                                 }
                                                 clearPlaybackLoading(a);
+                                                if (url.isEmpty()) {
+                                                    a.changingMiniEpisode = false;
+                                                    String spiderMsg =
+                                                            finalResult
+                                                                    .optString(
+                                                                            "msg",
+                                                                            finalResult.optString(
+                                                                                    "message",
+                                                                                    finalResult
+                                                                                            .optString(
+                                                                                                    "tip",
+                                                                                                    "")))
+                                                                    .trim();
+                                                    if (!spiderMsg.isEmpty()) {
+                                                        failInPlaceSwitch(a, spiderMsg);
+                                                    } else if (looksLikeNetdiskLine(
+                                                            s, finalLine, finalEp.url)) {
+                                                        failInPlaceSwitch(
+                                                                a,
+                                                                "该网盘线路未返回播放地址，请先在「网盘与账号」扫码登录对应网盘，或点击右上角 ⇄ 切换其他线路");
+                                                    } else {
+                                                        failInPlaceSwitch(
+                                                                a, "当前线路未返回有效播放地址，请点击右上角 ⇄ 切换其他线路");
+                                                    }
+                                                    return;
+                                                }
                                                 if (!Cms.isMedia(url)
                                                         && !url.startsWith("magnet:?")) {
                                                     a.changingMiniEpisode = false;
-                                                    failInPlaceSwitch(a, "来源返回的播放协议暂不支持");
+                                                    if (looksLikeNetdiskLine(s, finalLine, url)) {
+                                                        failInPlaceSwitch(
+                                                                a,
+                                                                "该网盘线路需先在「网盘与账号」登录授权，或点击右上角 ⇄ 切换其他线路");
+                                                    } else {
+                                                        failInPlaceSwitch(
+                                                                a, "来源返回的播放协议暂不支持，请切换其他线路");
+                                                    }
                                                     return;
                                                 }
                                                 openPlayer(a, s, v, resolved);
@@ -396,8 +642,13 @@ final class PlaybackController {
     static void showEpisodeDetails(MainActivity a, Cms.Site site, Cms.Video video) {
         releasePlayer(a);
         if (!a.isTvDevice()) {
-            a.getWindow().getDecorView().setSystemUiVisibility(0);
+            a.applyMobileSystemBars(false);
             a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
+            if (a.usableWidth > a.usableHeight && a.usableHeight > 0) {
+                int tmp = a.usableWidth;
+                a.usableWidth = a.usableHeight;
+                a.usableHeight = tmp;
+            }
         }
         if (a.current != null && a.current.player)
             a.current =
@@ -412,8 +663,13 @@ final class PlaybackController {
 
     static void leavePlayback(MainActivity a) {
         if (!a.isTvDevice()) {
-            a.getWindow().getDecorView().setSystemUiVisibility(0);
+            a.applyMobileSystemBars(false);
             a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
+            if (a.usableWidth > a.usableHeight && a.usableHeight > 0) {
+                int tmp = a.usableWidth;
+                a.usableWidth = a.usableHeight;
+                a.usableHeight = tmp;
+            }
         }
         if (!a.back.isEmpty()) {
             releasePlayer(a);
@@ -492,9 +748,14 @@ final class PlaybackController {
         final int ticket = a.generation;
         a.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (!a.isTvDevice()) {
-            a.getWindow().getDecorView().setSystemUiVisibility(5894);
+            a.applyMobileSystemBars(true);
             a.setRequestedOrientation(
                     android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            if (a.usableWidth > 0 && a.usableHeight > 0 && a.usableWidth < a.usableHeight) {
+                int tmp = a.usableWidth;
+                a.usableWidth = a.usableHeight;
+                a.usableHeight = tmp;
+            }
         }
         a.root = new FrameLayout(a);
         a.root.setBackgroundColor(Color.BLACK);
@@ -513,6 +774,44 @@ final class PlaybackController {
                         a, a.playerChrome.dock, a.playerChrome.progress, surface, s, v, ep);
         TouchPlayerGesture.attach(a, surface);
         final PlaybackControls controls = a.playbackControls;
+        a.root.addOnLayoutChangeListener(
+                (view, l, t, r, b, ol, ot, or, ob) -> {
+                    int w = r - l, h = b - t;
+                    if (w > 0 && h > 0) {
+                        if (!a.isTvDevice()) {
+                            int req = a.getRequestedOrientation();
+                            if (req
+                                            == android.content.pm.ActivityInfo
+                                                    .SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                    && w < h) {
+                                int tmp = w;
+                                w = h;
+                                h = tmp;
+                            } else if (req
+                                            == android.content.pm.ActivityInfo
+                                                    .SCREEN_ORIENTATION_PORTRAIT
+                                    && w > h) {
+                                int tmp = w;
+                                w = h;
+                                h = tmp;
+                            }
+                        }
+                        if (w != a.usableWidth || h != a.usableHeight) {
+                            a.usableWidth = w;
+                            a.usableHeight = h;
+                            view.post(
+                                    () -> {
+                                        if (ticket != a.generation || a.isFinishing()) return;
+                                        if (a.playerChrome != null) a.playerChrome.relayout();
+                                        if (a.playbackControls != null) {
+                                            a.playbackControls.resize(
+                                                    a.playbackControls.videoWidth,
+                                                    a.playbackControls.videoHeight);
+                                        }
+                                    });
+                        }
+                    }
+                });
         a.setContentView(a.root);
         surface.listen(
                 new VideoOutput.Listener() {
@@ -637,6 +936,57 @@ final class PlaybackController {
                                                             (mp, what, extra) -> {
                                                                 if (ticket != a.generation)
                                                                     return true;
+                                                                JSONArray qualities =
+                                                                        ep.media.optJSONArray(
+                                                                                "qualities");
+                                                                int qIdx =
+                                                                        ep.media.optInt(
+                                                                                "_qualityIdx", 0);
+                                                                if (qualities != null
+                                                                        && qIdx + 1
+                                                                                < qualities
+                                                                                        .length()) {
+                                                                    JSONObject nextQ =
+                                                                            qualities.optJSONObject(
+                                                                                    qIdx + 1);
+                                                                    String nextUrl =
+                                                                            nextQ != null
+                                                                                    ? nextQ
+                                                                                            .optString(
+                                                                                                    "url",
+                                                                                                    "")
+                                                                                    : "";
+                                                                    if (!nextUrl.isEmpty()) {
+                                                                        try {
+                                                                            ep.media.put(
+                                                                                    "_qualityIdx",
+                                                                                    qIdx + 1);
+                                                                        } catch (
+                                                                                Exception ignored) {
+                                                                        }
+                                                                        ep.url =
+                                                                                LocalProxy.rewrite(
+                                                                                        nextUrl);
+                                                                        String qName =
+                                                                                nextQ.optString(
+                                                                                        "name",
+                                                                                        "备用线路");
+                                                                        a.playStatus.setText(
+                                                                                "正在切换至 " + qName
+                                                                                        + "…");
+                                                                        a.ui.post(
+                                                                                () -> {
+                                                                                    if (ticket
+                                                                                            == a.generation)
+                                                                                        playerPage(
+                                                                                                a,
+                                                                                                s,
+                                                                                                v,
+                                                                                                ep);
+                                                                                });
+                                                                        return true;
+                                                                    }
+                                                                }
                                                                 if (PlaybackFailure.decoderFallback(
                                                                                 what)
                                                                         && a.prefs.getInt(
@@ -780,12 +1130,14 @@ final class PlaybackController {
                         a.playbackControls != null
                                 ? a.playbackControls.displayPosition(rawPos)
                                 : rawPos;
+                int dur = a.player.getDuration();
+                if (dur <= 0 && a.playingBookmark != null && a.playingBookmark.duration > 0) {
+                    dur = a.playingBookmark.duration;
+                }
                 a.playClock.setText(
                         formatTime(displayPos)
                                 + " / "
-                                + (a.player.getDuration() > 0
-                                        ? formatTime(a.player.getDuration())
-                                        : "直播"));
+                                + (dur > 0 ? formatTime(dur) : (a.isLive() ? "直播" : "--:--")));
                 if (a.playbackControls != null) a.playbackControls.tick();
             }
             if (a.playerChrome != null) a.playerChrome.update();

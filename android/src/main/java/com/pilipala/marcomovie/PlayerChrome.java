@@ -12,7 +12,8 @@ final class PlayerChrome {
     final LinearLayout dock, progress, heading;
     final LinearLayout loadingPill;
     final LinearLayout centerRow;
-    final TextView loadingText, episodeLabel;
+    final TextView loadingText, episodeLabel, titleView;
+    final Button fsBtn;
     final StateGlyph state;
     final TextView resolution;
     boolean loading = true;
@@ -48,13 +49,27 @@ final class PlayerChrome {
             // Orientation toggle lives only on the progress row ("全屏横屏 / 退出全屏").
             heading.addView(topActions, new LinearLayout.LayoutParams(-1, -2));
         }
-        TextView title = a.text(video.title, a.isPortrait() ? 20 : 26, MainActivity.WHITE);
-        title.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        title.getPaint().setFakeBoldText(true);
-        title.setSingleLine();
-        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        title.setShadowLayer(a.dp(4), 0, a.dp(2), 0xdd000000);
-        heading.addView(title);
+        LinearLayout titleRow = a.row();
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleView = a.text(video.title, a.isPortrait() ? 20 : 26, MainActivity.WHITE);
+        titleView.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        titleView.getPaint().setFakeBoldText(true);
+        titleView.setSingleLine();
+        titleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        titleView.setShadowLayer(a.dp(4), 0, a.dp(2), 0xdd000000);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-2, -2);
+        titleLp.rightMargin = a.dp(10);
+        titleRow.addView(titleView, titleLp);
+        resolution = a.text("分辨率读取中", 11, 0xffeeeef2);
+        resolution.setTag("player-resolution");
+        resolution.setSingleLine();
+        resolution.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        resolution.setPadding(a.dp(9), a.dp(3), a.dp(9), a.dp(3));
+        GradientDrawable specPill = a.bg(0x661a2421, 10);
+        specPill.setStroke(a.dp(1), 0x38ffffff);
+        resolution.setBackground(specPill);
+        titleRow.addView(resolution, new LinearLayout.LayoutParams(-2, -2));
+        heading.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
         String line = a.activeLine == null ? "" : a.activeLine.name;
         episodeLabel =
                 a.text(episode.name + (line.isEmpty() ? "" : "  ·  " + line), 14, 0xffdddddf);
@@ -63,10 +78,6 @@ final class PlayerChrome {
         episodeLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);
         episodeLabel.setPadding(0, a.dp(6), 0, 0);
         heading.addView(episodeLabel);
-        resolution = a.text("分辨率读取中", 12, 0xffdddddf);
-        resolution.setTag("player-resolution");
-        resolution.setPadding(0, a.dp(6), 0, 0);
-        heading.addView(resolution);
         a.playStatus = a.text("正在加载所选剧集…", 12, MainActivity.MUTED);
         a.playStatus.setPadding(0, a.dp(6), 0, 0);
         heading.addView(a.playStatus);
@@ -83,7 +94,7 @@ final class PlayerChrome {
         a.playClock.setPadding(a.dp(8), 0, a.dp(12), 0);
         clockRow.addView(a.playClock, new LinearLayout.LayoutParams(0, -2, 1));
         if (!a.isTvDevice()) {
-            Button fsBtn =
+            fsBtn =
                     a.navButton(
                             a.isPortrait() ? "⛶ 全屏横屏" : "⛶ 退出全屏",
                             "player-fullscreen",
@@ -95,6 +106,8 @@ final class PlayerChrome {
             fsBtn.setPadding(a.dp(12), a.dp(4), a.dp(12), a.dp(4));
             fsBtn.setBackground(a.bg(0x44ffffff, 15));
             clockRow.addView(fsBtn, new LinearLayout.LayoutParams(-2, a.dp(30)));
+        } else {
+            fsBtn = null;
         }
         progress.addView(clockRow, new LinearLayout.LayoutParams(-1, -2));
         int width = a.windowWidth();
@@ -114,7 +127,8 @@ final class PlayerChrome {
 
         dock = a.vertical();
         dock.setTag("player-dock");
-        dock.setPadding(a.dp(6), a.dp(5), a.dp(6), a.dp(5));
+        dock.setPadding(
+                a.dp(mobileLandscape ? 4 : 6), a.dp(5), a.dp(mobileLandscape ? 4 : 6), a.dp(5));
         dock.setClipChildren(false);
         GradientDrawable glass = a.bg(0xed262629, 26);
         glass.setStroke(a.dp(1), 0x30ffffff);
@@ -123,7 +137,7 @@ final class PlayerChrome {
         FrameLayout.LayoutParams bottom =
                 mobileLandscape
                         ? new FrameLayout.LayoutParams(
-                                a.dp(72),
+                                a.dp(76),
                                 Math.min(
                                         a.dp(360),
                                         Math.max(a.dp(180), a.windowHeight() - a.dp(40))),
@@ -222,6 +236,19 @@ final class PlayerChrome {
     void relayout() {
         int width = a.windowWidth();
         boolean mobileLandscape = !a.isTvDevice() && !a.isPortrait();
+        if (titleView != null) {
+            titleView.setTextSize(a.isPortrait() ? 20 : 26);
+        }
+        if (fsBtn != null) {
+            fsBtn.setText(a.isPortrait() ? "⛶ 全屏横屏" : "⛶ 退出全屏");
+        }
+        ViewGroup.LayoutParams hlp = heading.getLayoutParams();
+        if (hlp instanceof FrameLayout.LayoutParams) {
+            FrameLayout.LayoutParams fhlp = (FrameLayout.LayoutParams) hlp;
+            int sideMargin = a.isPortrait() ? a.dp(20) : a.dp(44);
+            fhlp.setMargins(sideMargin, a.dp(24), sideMargin, 0);
+            heading.setLayoutParams(fhlp);
+        }
         ViewGroup.LayoutParams p = progress.getLayoutParams();
         if (p instanceof FrameLayout.LayoutParams) {
             FrameLayout.LayoutParams fp = (FrameLayout.LayoutParams) p;
@@ -233,11 +260,13 @@ final class PlayerChrome {
             fp.rightMargin = mobileLandscape ? a.dp(36) : 0;
             progress.setLayoutParams(fp);
         }
+        dock.setPadding(
+                a.dp(mobileLandscape ? 4 : 6), a.dp(5), a.dp(mobileLandscape ? 4 : 6), a.dp(5));
         ViewGroup.LayoutParams d = dock.getLayoutParams();
         if (d instanceof FrameLayout.LayoutParams) {
             FrameLayout.LayoutParams fd = (FrameLayout.LayoutParams) d;
             if (mobileLandscape) {
-                fd.width = a.dp(72);
+                fd.width = a.dp(76);
                 fd.height = Math.min(a.dp(360), Math.max(a.dp(180), a.windowHeight() - a.dp(40)));
                 fd.gravity = Gravity.RIGHT | Gravity.CENTER_VERTICAL;
                 fd.rightMargin = a.dp(8);
@@ -251,10 +280,17 @@ final class PlayerChrome {
             }
             dock.setLayoutParams(fd);
         }
+        if (a.playbackControls != null) {
+            a.playbackControls.relayout(mobileLandscape);
+        }
     }
 
     void resolution(int width, int height) {
-        resolution.setText(width > 0 && height > 0 ? width + " × " + height : "分辨率未知");
+        if (a.player != null && a.prepared) {
+            resolution.setText(a.player.videoResolution());
+        } else {
+            resolution.setText(width > 0 && height > 0 ? width + " × " + height : "分辨率未知");
+        }
     }
 
     void setLoading(boolean value) {

@@ -17,26 +17,9 @@ class CspBridge {
   static const String _desktopSafariUa =
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.15';
 
-  /// Verified standard MacCMS v10 JSON endpoints used as protocol backends
-  /// when a user imports a TVBox config containing `csp_*` spider identifiers.
-  static const List<({String name, String api})> vodPool = [
-    (name: '非凡线路', api: 'https://cj.ffzyapi.com/api.php/provide/vod/'),
-    (name: '天涯线路', api: 'https://tyyszy.com/api.php/provide/vod/'),
-    (name: '暴风线路', api: 'https://bfzyapi.com/api.php/provide/vod/'),
-    (name: '电影天堂', api: 'http://caiji.dyttzyapi.com/api.php/provide/vod/'),
-    (name: '量子线路', api: 'https://cj.lziapi.com/api.php/provide/vod/'),
-    (name: '索尼线路', api: 'https://suoniapi.com/api.php/provide/vod/'),
-    (name: '如意线路', api: 'https://cj.rycjapi.com/api.php/provide/vod/'),
-    (name: '豪华线路', api: 'https://hhzyapi.com/api.php/provide/vod/'),
-    (name: '极速线路', api: 'https://jszyapi.com/api.php/provide/vod/'),
-    (name: '爱坤线路', api: 'https://ikunzyapi.com/api.php/provide/vod/'),
-    (name: '速播线路', api: 'https://subocaiji.com/api.php/provide/vod/'),
-    (name: '新浪线路', api: 'https://api.xinlangapi.com/xinlangapi.php/provide/vod/'),
-    (name: '红牛线路', api: 'https://www.hongniuzy2.com/api.php/provide/vod/'),
-    (name: '魔都动漫', api: 'https://caiji.moduapi.cc/api.php/provide/vod/'),
-    (name: '360线路', api: 'https://360zy.com/api.php/provide/vod/'),
-    (name: '最大线路', api: 'http://zuidazy.me/api.php/provide/vod/'),
-  ];
+  /// Empty-shell compliance: no built-in VOD or subscription URLs are shipped.
+  /// Only endpoints explicitly provided in the user's imported configuration are used.
+  static const List<({String name, String api})> vodPool = [];
 
   static bool canHandleSite(CmsSite site) {
     final lowerApi = site.api.trim().toLowerCase();
@@ -144,79 +127,60 @@ class CspBridge {
         lowerExt.contains('斗鱼');
   }
 
-  /// Selects the primary MacCMS v10 backend for a `csp_*` site so each site in the
-  /// user's config maps to its matching catalog while maintaining fallback resilience.
+  /// Extracts user-configured HTTP/HTTPS endpoints from `site.api` or `site.ext` without
+  /// any built-in hardcoded VOD URLs.
   static List<({String name, String api})> backendsForSite(CmsSite site) {
-    final api = site.api.toLowerCase();
-    final name = site.name.toLowerCase();
-    final key = site.key.toLowerCase();
-
-    int primaryIndex = 0;
-    if (name.contains('奶酪') || key.contains('奶酪')) {
-      primaryIndex = 3; // dytt
-    } else if (api.contains('app99') || name.contains('茉莉')) {
-      primaryIndex = 0; // ffzy
-    } else if (name.contains('剧圈') || api.contains('appsx') && !name.contains('动漫')) {
-      primaryIndex = 1; // tyyszy
-    } else if (api.contains('apptt') || name.contains('热播')) {
-      primaryIndex = 4; // lzi
-    } else if (name.contains('光影')) {
-      primaryIndex = 5; // suoni
-    } else if (api.contains('newcz') || name.contains('厂长')) {
-      primaryIndex = 2; // bfzy
-    } else if (api.contains('hmys') || name.contains('海绵')) {
-      primaryIndex = 6; // rycj
-    } else if (api.contains('appgz') || name.contains('瓜子')) {
-      primaryIndex = 7; // hhzy
-    } else if (api.contains('bttwoo') || name.contains('比特')) {
-      primaryIndex = 8; // jszy
-    } else if (api.contains('nmys') || name.contains('糯米')) {
-      primaryIndex = 9; // ikunzy
-    } else if (api.contains('jpys') || name.contains('文采')) {
-      primaryIndex = 10; // subo
-    } else if (api.contains('fyguard') || name.contains('风云')) {
-      primaryIndex = 11; // xinlang
-    } else if (api.contains('jpj') || name.contains('荐片')) {
-      primaryIndex = 12; // hongniu
-    } else if (api.contains('dm84') ||
-        name.contains('动漫') ||
-        name.contains('巴士') ||
-        name.contains('咕咕')) {
-      primaryIndex = 13; // modu anime
-    } else if (api.contains('auete') || name.contains('奥特')) {
-      primaryIndex = 14; // 360zy
-    } else if (api.contains('sixv') || name.contains('6v')) {
-      primaryIndex = 15; // zuidazy
-    } else if (isNetdiskSite(site)) {
-      if (name.contains('玩偶') || api.contains('wogg')) {
-        primaryIndex = 0; // ffzy
-      } else if (name.contains('聚剧') || api.contains('seedhub')) {
-        primaryIndex = 2; // bfzy
-      } else if (name.contains('夸父') || name.contains('盘她')) {
-        primaryIndex = 3; // dytt
-      } else if (name.contains('嘟嘟') || name.contains('盘他')) {
-        primaryIndex = 4; // lzi
-      } else if (name.contains('优汐')) {
-        primaryIndex = 5; // suoni
-      } else {
-        primaryIndex = 0; // ffzy
-      }
-    } else {
-      final hash = site.key.codeUnits.fold<int>(0, (a, b) => (a * 31 + b) & 0x7fffffff);
-      primaryIndex = hash % vodPool.length;
-      if (primaryIndex == 13) {
-        // Reserve index 13 (modu anime) strictly for anime sites
-        primaryIndex = 0;
+    final endpoints = <({String name, String api})>[];
+    final seen = <String>{};
+    void addCandidate(String raw) {
+      final t = raw.trim();
+      if (!t.startsWith('http://') && !t.startsWith('https://')) return;
+      final lower = t.toLowerCase().split('?').first;
+      if (lower.endsWith('.jar') || lower.endsWith('.js') || lower.endsWith('.py')) return;
+      if (seen.add(t)) {
+        endpoints.add((name: site.name.isEmpty ? '默认线路' : site.name, api: t));
       }
     }
 
-    final ordered = <({String name, String api})>[
-      vodPool[primaryIndex],
-      for (int i = 0; i < vodPool.length; i++)
-        if (i != primaryIndex && i != 13) vodPool[i],
-      if (primaryIndex != 13) vodPool[13],
-    ];
-    return ordered;
+    addCandidate(site.api);
+    final ext = site.ext.trim();
+    if (ext.isNotEmpty) {
+      addCandidate(ext);
+      for (final part in ext.split(RegExp(r'[\$,|;\s]+'))) {
+        addCandidate(part);
+      }
+      if (!ext.startsWith('{') && !ext.startsWith('http')) {
+        try {
+          final decoded = utf8.decode(base64.decode(ext), allowMalformed: true).trim();
+          addCandidate(decoded);
+          if (decoded.startsWith('{')) {
+            final map = jsonDecode(decoded);
+            if (map is Map) {
+              for (final k in const ['api', 'url', 'host', 'site']) {
+                final v = map[k];
+                if (v is String) addCandidate(v);
+              }
+            }
+          }
+        } catch (_) {}
+      } else if (ext.startsWith('{')) {
+        try {
+          final map = jsonDecode(ext);
+          if (map is Map) {
+            for (final k in const ['api', 'url', 'host', 'site']) {
+              final v = map[k];
+              if (v is String) addCandidate(v);
+            }
+          }
+        } catch (_) {}
+      }
+    }
+    if (vodPool.isNotEmpty) {
+      for (final b in vodPool) {
+        if (seen.add(b.api)) endpoints.add(b);
+      }
+    }
+    return endpoints;
   }
 
   static Future<(List<CmsCategory>, CmsListing)> fetchHome(

@@ -16,16 +16,29 @@ import java.util.List;
 final class LiveController {
     private LiveController() {}
 
+    static List<LiveCatalog.Source> sourcesFor(MainActivity a) {
+        if (a == null) return java.util.Collections.emptyList();
+        String raw = a.config != null ? a.config.raw : "";
+        String customUrl = a.prefs != null ? a.prefs.getString(Prefs.LIVE_URL, "") : "";
+        String customName = a.prefs != null ? a.prefs.getString(Prefs.LIVE_NAME, "自定义直播源") : "";
+        return LiveCatalog.sourcesFor(raw, a.configOrigin, customUrl, customName);
+    }
+
     static void liveSources(MainActivity a) {
         a.renderPage("直播", "LIVE TV");
-        if (a.config == null) {
-            a.paragraph("先导入包含直播列表的配置。");
-            return;
-        }
+        LinearLayout actions = a.row();
+        a.addButton(
+                actions,
+                a.button(
+                        "＋ 导入直播源 (M3U / TXT / JSON)",
+                        "live-import",
+                        () -> SourceController.showLiveImportDialog(a)));
+        a.body.addView(actions);
+        a.gap(a.body, 10);
         try {
-            List<LiveCatalog.Source> sources = LiveCatalog.sources(a.config.raw, a.configOrigin);
+            List<LiveCatalog.Source> sources = sourcesFor(a);
             if (sources.isEmpty()) {
-                a.paragraph("当前配置没有直播列表。");
+                a.paragraph("当前没有直播频道列表。可点击上方「＋ 导入直播源」导入 M3U、TXT 或 JSON 直播源。");
                 return;
             }
             int cols = 3;
@@ -199,6 +212,10 @@ final class LiveController {
         ep.name = "直播";
         ep.url = stream.url;
         ep.headers.putAll(stream.headers);
+        try {
+            ep.media.put("live", true);
+        } catch (Exception ignored) {
+        }
         if (a.current != null && a.current.player) {
             MainActivity.Screen next =
                     new MainActivity.Screen(

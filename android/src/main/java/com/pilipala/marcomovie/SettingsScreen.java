@@ -229,23 +229,48 @@ final class SettingsScreen {
                                 .show());
         toggle("自动播放下一集", Prefs.AUTO_NEXT, true, null);
         ints("循环", Prefs.REPEAT_MODE, new String[] {"关闭", "单集循环", "列表循环"}, new int[] {0, 1, 2}, 0);
-        String[] times = {"关闭", "15 秒", "30 秒", "60 秒", "90 秒", "120 秒", "180 秒"};
-        int[] seconds = {0, 15, 30, 60, 90, 120, 180};
-        ints("跳过片头", Prefs.SKIP_INTRO, times, seconds, 0);
-        ints("跳过片尾", Prefs.SKIP_OUTRO, times, seconds, 0);
+        int skipIntroSec = Prefs.clampSkipSeconds(a.prefs.getInt(Prefs.SKIP_INTRO, 0));
+        link(
+                "跳过片头（精准拉取节点）",
+                skipIntroSec <= 0
+                        ? "关闭（点击可手动拉取秒数）"
+                        : PlaybackController.formatTime(skipIntroSec * 1000)
+                                + " · "
+                                + skipIntroSec
+                                + " 秒",
+                "setting-" + Prefs.SKIP_INTRO,
+                () -> PlaybackControls.showSkipAdjuster(a, true, 0, 0, a::refresh));
+        int skipOutroSec = Prefs.clampSkipSeconds(a.prefs.getInt(Prefs.SKIP_OUTRO, 0));
+        link(
+                "跳过片尾（精准拉取节点）",
+                skipOutroSec <= 0
+                        ? "关闭（点击可手动拉取秒数）"
+                        : PlaybackController.formatTime(skipOutroSec * 1000)
+                                + " · "
+                                + skipOutroSec
+                                + " 秒",
+                "setting-" + Prefs.SKIP_OUTRO,
+                () -> PlaybackControls.showSkipAdjuster(a, false, 0, 0, a::refresh));
+        int subSize = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
+        int subBottom = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+        int subStyle = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
+        link(
+                "字幕大小与位置（方向键直调）",
+                "字号 "
+                        + subSize
+                        + " · 底部高度 "
+                        + subBottom
+                        + "dp · "
+                        + SubtitleOverlayView.STYLE_LABELS[subStyle],
+                "setting-" + Prefs.SUBTITLE_SIZE,
+                () -> PlaybackControls.showSubtitleAdjuster(a, null, a::refresh));
         ints(
-                "字幕大小",
-                Prefs.SUBTITLE_SIZE,
-                new String[] {"极小", "小", "标准", "大", "超大"},
-                new int[] {28, 35, 45, 55, 65},
-                45);
-        ints(
-                "字幕位置",
-                Prefs.SUBTITLE_BOTTOM,
-                new String[] {"贴底", "标准", "略高", "中下", "偏高", "较高"},
-                new int[] {8, 24, 48, 76, 110, 148},
-                24);
-        toggle("自动加载来源弹幕", Prefs.DANMAKU_DEFAULT, false, null);
+                "字幕样式",
+                Prefs.SUBTITLE_STYLE,
+                SubtitleOverlayView.STYLE_LABELS,
+                new int[] {0, 1, 2, 3, 4},
+                0);
+        toggle("自动加载来源弹幕", Prefs.DANMAKU_DEFAULT, true, null);
         ints(
                 "画面色彩",
                 Prefs.PICTURE_EFFECT,
@@ -278,9 +303,16 @@ final class SettingsScreen {
                 20);
         link(
                 "导入或更新配置源",
-                a.isTvDevice() ? "手机扫码、遥控输入或本地文件" : "剪贴板粘贴、网址输入或本地文件",
+                a.isTvDevice()
+                        ? "手机扫码、遥控输入或本地包 (.json/.js/.py/.zip)"
+                        : "剪贴板粘贴、网址输入或本地包 (.json/.js/.py/.zip)",
                 "settings-import",
                 a::importDialog);
+        link(
+                "导入或管理电视直播源",
+                "支持 M3U、TXT (#genre#)、JSON 及本地直播文件",
+                "settings-live-import",
+                () -> SourceController.showLiveImportDialog(a));
         toggle("启用来源扩展", Prefs.EXPERIMENTAL_CSP, true, a::closeEngines);
         link(
                 "网盘与账号",

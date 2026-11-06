@@ -110,23 +110,44 @@ public class MoviePlayer {
                             (mime, secure, tunneling) -> {
                                 java.util.List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo>
                                         raw =
-                                                androidx.media3.exoplayer.mediacodec.MediaCodecUtil
-                                                        .getDecoderInfos(mime, secure, tunneling);
-                                if (raw.isEmpty() && MimeTypes.VIDEO_DOLBY_VISION.equals(mime)) {
-                                    raw =
+                                                new java.util.ArrayList<>(
+                                                        androidx.media3.exoplayer.mediacodec
+                                                                .MediaCodecUtil.getDecoderInfos(
+                                                                mime, secure, tunneling));
+                                if (MimeTypes.VIDEO_DOLBY_VISION.equals(mime)) {
+                                    for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo h265 :
                                             androidx.media3.exoplayer.mediacodec.MediaCodecUtil
                                                     .getDecoderInfos(
                                                             MimeTypes.VIDEO_H265,
                                                             secure,
-                                                            tunneling);
-                                } else if (raw.isEmpty()
-                                        && MimeTypes.AUDIO_E_AC3_JOC.equals(mime)) {
-                                    raw =
+                                                            tunneling)) {
+                                        boolean exists = false;
+                                        for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo c :
+                                                raw) {
+                                            if (c.name.equals(h265.name)) {
+                                                exists = true;
+                                                break;
+                                            }
+                                        }
+                                        if (!exists) raw.add(h265);
+                                    }
+                                } else if (MimeTypes.AUDIO_E_AC3_JOC.equals(mime)) {
+                                    for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo eac3 :
                                             androidx.media3.exoplayer.mediacodec.MediaCodecUtil
                                                     .getDecoderInfos(
                                                             MimeTypes.AUDIO_E_AC3,
                                                             secure,
-                                                            tunneling);
+                                                            tunneling)) {
+                                        boolean exists = false;
+                                        for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo c :
+                                                raw) {
+                                            if (c.name.equals(eac3.name)) {
+                                                exists = true;
+                                                break;
+                                            }
+                                        }
+                                        if (!exists) raw.add(eac3);
+                                    }
                                 }
                                 if (decoderMode == 0 || decoderMode == 3) return raw;
                                 java.util.List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo>
@@ -149,14 +170,17 @@ public class MoviePlayer {
                                                             .getSharedPreferences(Prefs.FILE, 0)
                                                             .getInt(Prefs.BUFFER_SECONDS, 30)))
                                     * 1000;
+                    int minBuffer = Math.min(12000, buffer);
+                    int maxBuffer = Math.max(20000, buffer);
                     exo =
                             new ExoPlayer.Builder(this.context, renderers)
                                     .setLoadControl(
                                             new androidx.media3.exoplayer.DefaultLoadControl
                                                             .Builder()
                                                     .setBufferDurationsMs(
-                                                            buffer, buffer, 1500, 3000)
-                                                    .setTargetBufferBytes(32 * 1024 * 1024)
+                                                            minBuffer, maxBuffer, 800, 1600)
+                                                    .setPrioritizeTimeOverSizeThresholds(true)
+                                                    .setTargetBufferBytes(64 * 1024 * 1024)
                                                     .build())
                                     .setLooper(Looper.getMainLooper())
                                     .build();
@@ -224,7 +248,8 @@ public class MoviePlayer {
                                             tracks.getGroups())
                                         if (group.getType() == C.TRACK_TYPE_VIDEO) {
                                             video = true;
-                                            supported |= group.isSupported(true);
+                                            supported |=
+                                                    group.isSupported(true) || group.isSelected();
                                         }
                                     if (video && !supported && !unsupportedVideo) {
                                         unsupportedVideo = true;
@@ -407,6 +432,36 @@ public class MoviePlayer {
     static final int PROBE_BUDGET_MS = 3000;
     static final int PROBE_MAX_BYTES = 512;
 
+    private static Map<String, String> sanitizeHeadersForAddress(
+            Uri address, Map<String, String> sourceHeaders) {
+        Map<String, String> out = new LinkedHashMap<>(sourceHeaders);
+        if (address != null && ProxyAddress.isLoopbackHost(address.getHost())) {
+            for (java.util.Iterator<Map.Entry<String, String>> it = out.entrySet().iterator();
+                    it.hasNext(); ) {
+                Map.Entry<String, String> e = it.next();
+                String k = e.getKey();
+                if ("Origin".equalsIgnoreCase(k)) {
+                    String v = e.getValue();
+                    it.remove();
+                    if (v != null && !v.isEmpty()) out.put("X-Movie-Origin", v);
+                    break;
+                }
+            }
+            for (java.util.Iterator<Map.Entry<String, String>> it = out.entrySet().iterator();
+                    it.hasNext(); ) {
+                Map.Entry<String, String> e = it.next();
+                String k = e.getKey();
+                if ("Host".equalsIgnoreCase(k)) {
+                    String v = e.getValue();
+                    it.remove();
+                    if (v != null && !v.isEmpty()) out.put("X-Movie-Host", v);
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
     public void prepareAsync() {
         onMain(
                 () -> {
@@ -418,8 +473,13 @@ public class MoviePlayer {
                     final RequestScope scope = new RequestScope();
                     probeScope = scope;
                     final Uri address = uri;
-                    final Map<String, String> requestHeaders = headers;
+                    final Map<String, String> requestHeaders =
+                            sanitizeHeadersForAddress(address, headers);
+                    final String epName =
+                            options.optString("_episodeName", "").toLowerCase(Locale.ROOT);
+                    final boolean isLive = options.optBoolean("live", false);
                     readySent = false;
+                    maxKnownDurationMs = 0;
                     prepareStarted = android.os.SystemClock.elapsedRealtime();
                     firstFrameMs = -1;
                     // Local proxy and signed URLs often have no extension. Inspect a bounded
@@ -430,15 +490,39 @@ public class MoviePlayer {
                                         String mime = null;
                                         try {
                                             String declared = MediaOptions.mime(options);
-                                            mime =
-                                                    declared == null
-                                                            ? scope.call(
-                                                                    () ->
-                                                                            sniffMime(
-                                                                                    address,
-                                                                                    requestHeaders,
-                                                                                    scope))
-                                                            : declared;
+                                            String fullLower =
+                                                    address.toString().toLowerCase(Locale.ROOT);
+                                            boolean knownContainer =
+                                                    !fullLower.contains(".m3u8")
+                                                            && !fullLower.contains(".mpd")
+                                                            && (epName.endsWith(".mkv")
+                                                                    || epName.endsWith(".mp4")
+                                                                    || epName.endsWith(".webm")
+                                                                    || epName.endsWith(".avi")
+                                                                    || epName.endsWith(".mov")
+                                                                    || epName.endsWith(".flv")
+                                                                    || fullLower.contains(".mkv")
+                                                                    || fullLower.contains(".mp4")
+                                                                    || fullLower.contains(".flv")
+                                                                    || fullLower.contains(".ts"));
+                                            if (knownContainer) {
+                                                mime = null;
+                                            } else if (declared != null) {
+                                                mime = declared;
+                                            } else if (isLive) {
+                                                mime =
+                                                        fullLower.contains(".m3u8")
+                                                                ? MimeTypes.APPLICATION_M3U8
+                                                                : null;
+                                            } else {
+                                                mime =
+                                                        scope.call(
+                                                                () ->
+                                                                        sniffMime(
+                                                                                address,
+                                                                                requestHeaders,
+                                                                                scope));
+                                            }
                                         } catch (Exception ignored) {
                                         }
                                         if (scope.cancelled) return;
@@ -462,14 +546,23 @@ public class MoviePlayer {
                                                                                 requestHeaders)
                                                                         .setAllowCrossProtocolRedirects(
                                                                                 true)
-                                                                        .setConnectTimeoutMs(12000)
-                                                                        .setReadTimeoutMs(25000);
+                                                                        .setConnectTimeoutMs(15000)
+                                                                        .setReadTimeoutMs(30000);
                                                         DefaultDataSource.Factory data =
                                                                 new DefaultDataSource.Factory(
                                                                         context, http);
                                                         mediaMime = resolvedMime;
+                                                        androidx.media3.extractor
+                                                                        .DefaultExtractorsFactory
+                                                                extractors =
+                                                                        new androidx.media3
+                                                                                        .extractor
+                                                                                        .DefaultExtractorsFactory()
+                                                                                .setTsExtractorTimestampSearchBytes(
+                                                                                        1500 * 188);
                                                         mediaSourceFactory =
-                                                                new DefaultMediaSourceFactory(data);
+                                                                new DefaultMediaSourceFactory(
+                                                                        data, extractors);
                                                         exo.setMediaSource(
                                                                 mediaSourceFactory
                                                                         .createMediaSource(
@@ -504,10 +597,15 @@ public class MoviePlayer {
         String path = address.getPath();
         if (path != null
                 && path.toLowerCase(Locale.ROOT)
-                        .matches(".*\\.(mp4|mkv|webm|mp3|aac|flac|ogg|ts|flv|mov)$")) return null;
+                        .matches(".*\\.(mp4|mkv|webm|mp3|aac|flac|ogg|ts|flv|mov|avi)$"))
+            return null;
         String fullUri = address.toString().toLowerCase(Locale.ROOT);
         if (fullUri.contains(".m3u8")) return MimeTypes.APPLICATION_M3U8;
         if (fullUri.contains(".mpd")) return MimeTypes.APPLICATION_MPD;
+        if (fullUri.contains(".mkv")
+                || fullUri.contains(".mp4")
+                || fullUri.contains(".flv")
+                || fullUri.contains(".ts")) return null;
         String scheme = address.getScheme();
         if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) return null;
         long deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(PROBE_BUDGET_MS);
@@ -528,7 +626,10 @@ public class MoviePlayer {
                 String lower = contentType.toLowerCase(Locale.ROOT);
                 if (lower.contains("mpegurl")) return MimeTypes.APPLICATION_M3U8;
                 if (lower.contains("dash+xml")) return MimeTypes.APPLICATION_MPD;
-                if (lower.startsWith("video/") || lower.startsWith("audio/")) return null;
+                if (lower.startsWith("video/")
+                        || lower.startsWith("audio/")
+                        || lower.contains("matroska")
+                        || lower.contains("octet-stream")) return null;
             }
             byte[] prefix = new byte[PROBE_MAX_BYTES];
             int count = 0;
@@ -545,6 +646,14 @@ public class MoviePlayer {
                     int n = stream.read(prefix, count, prefix.length - count);
                     if (n < 0) break;
                     count += n;
+                    if (count >= 4
+                            && (prefix[0] & 0xFF) == 0x1A
+                            && (prefix[1] & 0xFF) == 0x45
+                            && (prefix[2] & 0xFF) == 0xDF
+                            && (prefix[3] & 0xFF) == 0xA3) {
+                        // EBML / Matroska (.mkv / .webm) magic bytes
+                        return null;
+                    }
                     String partial = new String(prefix, 0, count, "UTF-8").trim();
                     if (partial.startsWith("\ufeff")) partial = partial.substring(1).trim();
                     if (partial.startsWith("#EXTM3U")) return MimeTypes.APPLICATION_M3U8;
@@ -600,8 +709,22 @@ public class MoviePlayer {
         return onMain(() -> released ? 0 : milliseconds(exo.getCurrentPosition()));
     }
 
+    private int maxKnownDurationMs = 0;
+
     public int getDuration() {
-        return onMain(() -> released ? 0 : milliseconds(exo.getDuration()));
+        return onMain(
+                () -> {
+                    if (released) return 0;
+                    long raw = exo.getDuration();
+                    if (raw == C.TIME_UNSET || raw <= 0) {
+                        raw = exo.getContentDuration();
+                    }
+                    int ms = milliseconds(raw);
+                    if (ms > maxKnownDurationMs) {
+                        maxKnownDurationMs = ms;
+                    }
+                    return ms > 0 ? ms : maxKnownDurationMs;
+                });
     }
 
     public int getVideoWidth() {
@@ -614,11 +737,55 @@ public class MoviePlayer {
                                                 * exo.getVideoSize().pixelWidthHeightRatio));
     }
 
+    private static String shortVideoCodec(String mime) {
+        if (mime == null) return "";
+        String m = mime.toLowerCase(Locale.ROOT);
+        if (m.contains("dolby-vision") || m.contains("dvhe") || m.contains("dvh1")) return "杜比视界";
+        if (m.contains("hevc") || m.contains("h265")) return "HEVC";
+        if (m.contains("avc") || m.contains("h264")) return "H.264";
+        if (m.contains("av01") || m.contains("av1")) return "AV1";
+        if (m.contains("vp9")) return "VP9";
+        if (m.contains("mp4v")) return "MPEG4";
+        return "";
+    }
+
+    private static String shortAudioCodec(String mime) {
+        if (mime == null) return "";
+        String m = mime.toLowerCase(Locale.ROOT);
+        if (m.contains("eac3")) return "EAC3";
+        if (m.contains("ac3")) return "AC3";
+        if (m.contains("truehd")) return "TrueHD";
+        if (m.contains("dts")) return "DTS";
+        if (m.contains("flac")) return "FLAC";
+        if (m.contains("opus")) return "Opus";
+        if (m.contains("mp4a") || m.contains("aac")) return "AAC";
+        if (m.contains("mpeg") || m.contains("mp3")) return "MP3";
+        return "";
+    }
+
+    private String shortContainerFormat() {
+        String epName =
+                options != null
+                        ? options.optString("_episodeName", "").toLowerCase(Locale.ROOT)
+                        : "";
+        String u = uri != null ? uri.toString().toLowerCase(Locale.ROOT) : "";
+        String m = mediaMime != null ? mediaMime.toLowerCase(Locale.ROOT) : "";
+        if (epName.endsWith(".mkv") || u.contains(".mkv") || m.contains("matroska")) return "MKV";
+        if (m.contains("mpegurl") || u.contains(".m3u8")) return "HLS";
+        if (m.contains("dash") || u.contains(".mpd")) return "DASH";
+        if (epName.endsWith(".mp4") || u.contains(".mp4")) return "MP4";
+        if (epName.endsWith(".flv") || u.contains(".flv")) return "FLV";
+        if (epName.endsWith(".ts") || u.contains(".ts")) return "TS";
+        if (epName.endsWith(".webm") || u.contains(".webm")) return "WebM";
+        return "";
+    }
+
     public String videoResolution() {
         return onMain(
                 () -> {
                     if (released) return "分辨率未知";
                     androidx.media3.common.Format format = exo.getVideoFormat();
+                    androidx.media3.common.Format audioFormat = exo.getAudioFormat();
                     int w =
                             format != null && format.width > 0
                                     ? format.width
@@ -627,7 +794,32 @@ public class MoviePlayer {
                             format != null && format.height > 0
                                     ? format.height
                                     : exo.getVideoSize().height;
-                    return w > 0 && h > 0 ? w + " × " + h : "分辨率未知";
+                    if (w <= 0 || h <= 0) return "分辨率未知";
+                    int longEdge = Math.max(w, h);
+                    String tier =
+                            longEdge >= 3800
+                                    ? "4K "
+                                    : longEdge >= 2500
+                                            ? "2K "
+                                            : longEdge >= 1900
+                                                    ? "1080P "
+                                                    : longEdge >= 1200 ? "720P " : "";
+                    StringBuilder sb = new StringBuilder();
+                    sb.append(tier).append(w).append(" × ").append(h);
+                    String vCodec = format != null ? shortVideoCodec(format.sampleMimeType) : "";
+                    if (!vCodec.isEmpty()) sb.append(" · ").append(vCodec);
+                    if (format != null
+                            && format.colorInfo != null
+                            && androidx.media3.common.ColorInfo.isTransferHdr(format.colorInfo)
+                            && !"杜比视界".equals(vCodec)) {
+                        sb.append(" HDR");
+                    }
+                    String aCodec =
+                            audioFormat != null ? shortAudioCodec(audioFormat.sampleMimeType) : "";
+                    if (!aCodec.isEmpty()) sb.append(" · ").append(aCodec);
+                    String container = shortContainerFormat();
+                    if (!container.isEmpty()) sb.append(" · ").append(container);
+                    return sb.toString();
                 });
     }
 
@@ -721,7 +913,20 @@ public class MoviePlayer {
 
     private MediaItem mediaItem(Uri address) throws Exception {
         MediaItem.Builder item = new MediaItem.Builder().setUri(address);
-        if (mediaMime != null) item.setMimeType(mediaMime);
+        if (mediaMime != null
+                && (MimeTypes.APPLICATION_M3U8.equalsIgnoreCase(mediaMime)
+                        || MimeTypes.APPLICATION_MPD.equalsIgnoreCase(mediaMime)
+                        || MimeTypes.APPLICATION_SS.equalsIgnoreCase(mediaMime))) {
+            item.setMimeType(mediaMime);
+        }
+        if (options.optBoolean("live", false)) {
+            item.setLiveConfiguration(
+                    new MediaItem.LiveConfiguration.Builder()
+                            .setTargetOffsetMs(3500)
+                            .setMinPlaybackSpeed(0.97f)
+                            .setMaxPlaybackSpeed(1.04f)
+                            .build());
+        }
         java.util.List<MediaItem.SubtitleConfiguration> tracks = new java.util.ArrayList<>();
         org.json.JSONArray subtitles = options.optJSONArray("subtitles");
         if (subtitles != null)

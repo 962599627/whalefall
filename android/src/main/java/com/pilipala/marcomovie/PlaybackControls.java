@@ -13,12 +13,14 @@ final class PlaybackControls {
     final Cms.Site site;
     final Cms.Video video;
     final Cms.Episode resolved;
+    final LinearLayout dockOverlay;
     final SeekBar timeline;
     final SubtitleOverlayView subtitle;
     final VideoOutput surface;
     final PlaybackEffects effects = new PlaybackEffects();
     final DanmakuView danmaku;
     boolean danmakuLoaded;
+    boolean currentMobileLandscape;
     final Map<String, Button> buttons = new LinkedHashMap<>();
     Dialog activeDialog;
     View menuAnchor;
@@ -61,6 +63,7 @@ final class PlaybackControls {
         site = s;
         video = v;
         resolved = ep;
+        dockOverlay = overlay;
         surface = texture;
         danmaku =
                 new DanmakuView(
@@ -148,25 +151,8 @@ final class PlaybackControls {
                     }
                 });
         boolean mobileLandscape = !a.isTvDevice() && !a.isPortrait();
-        LinearLayout row = mobileLandscape ? a.vertical() : a.row();
-        row.setGravity(Gravity.CENTER);
-        row.setClipChildren(false);
-        row.setPadding(a.dp(1), a.dp(2), a.dp(1), a.dp(2));
-        if (mobileLandscape) {
-            ScrollView vScroller = new ScrollView(a);
-            vScroller.setVerticalScrollBarEnabled(false);
-            vScroller.setFillViewport(true);
-            vScroller.setClipToPadding(false);
-            vScroller.addView(row);
-            overlay.addView(vScroller);
-        } else {
-            HorizontalScrollView scroller = new HorizontalScrollView(a);
-            scroller.setHorizontalScrollBarEnabled(false);
-            scroller.setFillViewport(true);
-            scroller.setClipToPadding(false);
-            scroller.addView(row);
-            overlay.addView(scroller);
-        }
+        currentMobileLandscape = mobileLandscape;
+        LinearLayout row = a.row();
         boolean live = "live".equals(site.key);
         if (!a.isTvDevice() && !live) {
             add(
@@ -247,7 +233,63 @@ final class PlaybackControls {
                                 all.get(0).requestFocus();
                             return true;
                         });
+        rebuildToolDock(mobileLandscape);
         updateLabels();
+    }
+
+    void relayout(boolean mobileLandscape) {
+        if (mobileLandscape != currentMobileLandscape || dockOverlay.getChildCount() == 0) {
+            currentMobileLandscape = mobileLandscape;
+            rebuildToolDock(mobileLandscape);
+        }
+        Button fsTool = buttons.get("fullscreen-tool");
+        if (fsTool != null) {
+            fsTool.setText(mobileLandscape ? "竖屏" : "全屏");
+        }
+    }
+
+    private void rebuildToolDock(boolean mobileLandscape) {
+        dockOverlay.removeAllViews();
+        LinearLayout row = mobileLandscape ? a.vertical() : a.row();
+        row.setGravity(
+                mobileLandscape ? (Gravity.CENTER_HORIZONTAL | Gravity.TOP) : Gravity.CENTER);
+        row.setClipChildren(false);
+        row.setPadding(a.dp(1), a.dp(2), a.dp(1), a.dp(2));
+        for (Button b : buttons.values()) {
+            if (b.getParent() instanceof ViewGroup) {
+                ((ViewGroup) b.getParent()).removeView(b);
+            }
+            b.setSingleLine(true);
+            b.setPadding(a.dp(mobileLandscape ? 4 : 6), 0, a.dp(mobileLandscape ? 4 : 6), 0);
+            LinearLayout.LayoutParams size =
+                    new LinearLayout.LayoutParams(
+                            a.dp(mobileLandscape ? 64 : 68), a.dp(mobileLandscape ? 40 : 42));
+            size.setMargins(
+                    a.dp(mobileLandscape ? 2 : 4),
+                    a.dp(mobileLandscape ? 3 : 4),
+                    a.dp(mobileLandscape ? 2 : 4),
+                    a.dp(mobileLandscape ? 3 : 4));
+            row.addView(b, size);
+        }
+        Button fsTool = buttons.get("fullscreen-tool");
+        if (fsTool != null) {
+            fsTool.setText(mobileLandscape ? "竖屏" : "全屏");
+        }
+        if (mobileLandscape) {
+            ScrollView vScroller = new ScrollView(a);
+            vScroller.setVerticalScrollBarEnabled(false);
+            vScroller.setFillViewport(false);
+            vScroller.setClipToPadding(false);
+            vScroller.addView(row, new FrameLayout.LayoutParams(-1, -2));
+            dockOverlay.addView(vScroller, new LinearLayout.LayoutParams(-1, -1));
+        } else {
+            HorizontalScrollView scroller = new HorizontalScrollView(a);
+            scroller.setHorizontalScrollBarEnabled(false);
+            scroller.setFillViewport(true);
+            scroller.setClipToPadding(false);
+            scroller.addView(row);
+            dockOverlay.addView(scroller, new LinearLayout.LayoutParams(-1, -2));
+        }
     }
 
     Button add(LinearLayout row, String title, String key, Runnable action) {
@@ -408,21 +450,62 @@ final class PlaybackControls {
     }
 
     void chooseLine() {
-        if (video.lines.isEmpty()) {
+        org.json.JSONArray qualities =
+                resolved != null && resolved.media != null
+                        ? resolved.media.optJSONArray("qualities")
+                        : null;
+        int qCount = qualities != null && qualities.length() > 1 ? qualities.length() : 0;
+        if (video.lines.isEmpty() && qCount == 0) {
             message("此内容只有当前地址。");
             return;
         }
-        String[] labels = new String[video.lines.size()];
-        for (int i = 0; i < labels.length; i++) labels[i] = video.lines.get(i).name;
+        List<String> items = new ArrayList<>();
+        int currentQualityIdx =
+                resolved != null && resolved.media != null
+                        ? resolved.media.optInt("_qualityIdx", 0)
+                        : 0;
+        for (int q = 0; q < qCount; q++) {
+            org.json.JSONObject qObj = qualities.optJSONObject(q);
+            String qName = qObj != null ? qObj.optString("name", "画质 " + (q + 1)) : "画质 " + (q + 1);
+            items.add("画质 · " + qName + (q == currentQualityIdx ? "（当前）" : ""));
+        }
+        for (int i = 0; i < video.lines.size(); i++) {
+            items.add((qCount > 0 ? "线路 · " : "") + video.lines.get(i).name);
+        }
+        int selected = qCount > 0 ? currentQualityIdx : lineIndex();
+        final int finalQCount = qCount;
+        final org.json.JSONArray finalQualities = qualities;
         choose(
-                "选择播放线路",
-                labels,
-                lineIndex(),
+                qCount > 0 ? "选择画质或播放线路" : "选择播放线路",
+                items.toArray(new String[0]),
+                selected,
                 i -> {
-                    Cms.Line line = video.lines.get(i);
-                    if (!line.episodes.isEmpty()) {
-                        int n = Math.min(Math.max(0, episodeIndex()), line.episodes.size() - 1);
-                        a.changeEpisode(site, video, line, line.episodes.get(n), 0);
+                    if (i < finalQCount && finalQualities != null) {
+                        org.json.JSONObject qObj = finalQualities.optJSONObject(i);
+                        if (qObj != null) {
+                            String nextUrl = qObj.optString("url", "");
+                            if (!nextUrl.isEmpty()) {
+                                try {
+                                    resolved.media.put("_qualityIdx", i);
+                                } catch (Exception ignored) {
+                                }
+                                resolved.url = LocalProxy.rewrite(nextUrl);
+                                a.resumeAt =
+                                        a.prepared && a.player != null
+                                                ? a.player.getCurrentPosition()
+                                                : 0;
+                                a.playerPage(site, video, resolved);
+                            }
+                        }
+                        return;
+                    }
+                    int lineIdx = i - finalQCount;
+                    if (lineIdx >= 0 && lineIdx < video.lines.size()) {
+                        Cms.Line line = video.lines.get(lineIdx);
+                        if (!line.episodes.isEmpty()) {
+                            int n = Math.min(Math.max(0, episodeIndex()), line.episodes.size() - 1);
+                            a.changeEpisode(site, video, line, line.episodes.get(n), 0);
+                        }
                     }
                 });
     }
@@ -597,6 +680,8 @@ final class PlaybackControls {
     void applySubtitleStyle() {
         int size = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
         int bottomDp = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+        int stylePreset = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
+        subtitle.applyStylePreset(stylePreset);
         subtitle.setFractionalTextSize(size / 1000f);
         subtitle.setBottomPaddingFraction(0.02f + (bottomDp / 650f));
         visible(a.controlsVisible);
@@ -607,7 +692,7 @@ final class PlaybackControls {
         for (int i = 0; i < SUBTITLE_SIZES.length; i++) {
             if (SUBTITLE_SIZES[i] == size) return SUBTITLE_SIZE_LABELS[i];
         }
-        return "标准";
+        return size + "";
     }
 
     String subtitleBottomLabel() {
@@ -615,39 +700,190 @@ final class PlaybackControls {
         for (int i = 0; i < SUBTITLE_BOTTOMS.length; i++) {
             if (SUBTITLE_BOTTOMS[i] == bottomDp) return SUBTITLE_BOTTOM_LABELS[i];
         }
-        return "标准";
+        return bottomDp + "dp";
+    }
+
+    String subtitleStyleLabel() {
+        int style = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
+        return SubtitleOverlayView.STYLE_LABELS[style];
     }
 
     void subtitleSizeDialog() {
-        int current = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
-        int selected = 2;
-        for (int i = 0; i < SUBTITLE_SIZES.length; i++) {
-            if (SUBTITLE_SIZES[i] == current) selected = i;
-        }
-        choose(
-                "字幕大小",
-                SUBTITLE_SIZE_LABELS,
-                selected,
-                i -> {
-                    a.prefs.edit().putInt(Prefs.SUBTITLE_SIZE, SUBTITLE_SIZES[i]).apply();
-                    applySubtitleStyle();
-                });
+        showSubtitleAdjuster(a, subtitle, this::applySubtitleStyle);
     }
 
     void subtitleBottomDialog() {
-        int current = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
-        int selected = 1;
-        for (int i = 0; i < SUBTITLE_BOTTOMS.length; i++) {
-            if (SUBTITLE_BOTTOMS[i] == current) selected = i;
+        showSubtitleAdjuster(a, subtitle, this::applySubtitleStyle);
+    }
+
+    static void showSubtitleAdjuster(
+            MainActivity a, SubtitleOverlayView liveSub, Runnable onChanged) {
+        final Dialog dlg = new Dialog(a);
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        if (dlg.getWindow() != null) {
+            dlg.getWindow()
+                    .setBackgroundDrawable(
+                            new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            dlg.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         }
-        choose(
-                "字幕位置（距离底部高低）",
-                SUBTITLE_BOTTOM_LABELS,
-                selected,
-                i -> {
-                    a.prefs.edit().putInt(Prefs.SUBTITLE_BOTTOM, SUBTITLE_BOTTOMS[i]).apply();
-                    applySubtitleStyle();
+        if (liveSub != null) {
+            liveSub.setPreviewActive(true);
+        }
+
+        LinearLayout card = a.vertical();
+        card.setPadding(a.dp(22), a.dp(18), a.dp(22), a.dp(18));
+        android.graphics.drawable.GradientDrawable bg = a.bg(0xe8141c19, 22);
+        bg.setStroke(a.dp(1), 0x40ffffff);
+        card.setBackground(bg);
+        card.setFocusable(true);
+        card.setFocusableInTouchMode(true);
+
+        TextView title = a.text("字幕方向键直调（实时预览）", 17, MainActivity.WHITE);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        card.addView(title);
+        a.gap(card, 6);
+
+        TextView guide =
+                a.text(
+                        a.isTvDevice()
+                                ? "◀ ▶ 调整字号大小  ·  ▲ ▼ 调整高低位置  ·  确认键 切换字幕样式  ·  返回键 完成"
+                                : "可使用方向键或下方按钮实时调节字号、高低位置与透明描边样式",
+                        12,
+                        MainActivity.MUTED);
+        card.addView(guide);
+        a.gap(card, 12);
+
+        final TextView statusView = a.text("", 14, 0xff2ad47a);
+        statusView.setTypeface(null, android.graphics.Typeface.BOLD);
+        card.addView(statusView);
+        a.gap(card, 12);
+
+        final SubtitleOverlayView previewBox;
+        if (liveSub == null) {
+            previewBox = new SubtitleOverlayView(a);
+            previewBox.setBackground(a.bg(0xff0b110f, 14));
+            previewBox.setPreviewActive(true);
+            card.addView(previewBox, new LinearLayout.LayoutParams(-1, a.dp(92)));
+            a.gap(card, 12);
+        } else {
+            previewBox = null;
+        }
+
+        final Runnable syncState =
+                () -> {
+                    int sz = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
+                    int bt = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+                    int st = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
+                    statusView.setText(
+                            "字号："
+                                    + sz
+                                    + "   ·   底部高度："
+                                    + bt
+                                    + "dp   ·   样式："
+                                    + SubtitleOverlayView.STYLE_LABELS[st]);
+                    if (previewBox != null) {
+                        previewBox.applyStylePreset(st);
+                        previewBox.setFractionalTextSize(sz / 1000f);
+                        previewBox.setBottomPaddingFraction(0.02f + (bt / 650f));
+                    }
+                    if (onChanged != null) onChanged.run();
+                };
+        syncState.run();
+
+        final java.util.function.IntConsumer stepSize =
+                delta -> {
+                    int cur = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
+                    int next = Prefs.clampSubtitleSize(cur + delta);
+                    a.prefs.edit().putInt(Prefs.SUBTITLE_SIZE, next).apply();
+                    syncState.run();
+                };
+        final java.util.function.IntConsumer stepBottom =
+                delta -> {
+                    int cur = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+                    int next = Prefs.clampSubtitleBottom(cur + delta);
+                    a.prefs.edit().putInt(Prefs.SUBTITLE_BOTTOM, next).apply();
+                    syncState.run();
+                };
+        final Runnable cycleStyle =
+                () -> {
+                    int cur = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
+                    int next = (cur + 1) % SubtitleOverlayView.STYLE_LABELS.length;
+                    a.prefs.edit().putInt(Prefs.SUBTITLE_STYLE, next).apply();
+                    syncState.run();
+                };
+
+        LinearLayout controlsRow = a.row();
+        controlsRow.setGravity(Gravity.CENTER);
+        String[] btnLabels = {"字号 -", "字号 +", "▼ 下移", "▲ 上移", "切换样式", "完成"};
+        Runnable[] btnActions = {
+            () -> stepSize.accept(-2),
+            () -> stepSize.accept(2),
+            () -> stepBottom.accept(-6),
+            () -> stepBottom.accept(6),
+            cycleStyle,
+            dlg::dismiss
+        };
+        for (int i = 0; i < btnLabels.length; i++) {
+            final Runnable act = btnActions[i];
+            TextView b = a.text(btnLabels[i], 12, MainActivity.WHITE);
+            b.setGravity(Gravity.CENTER);
+            b.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
+            b.setBackground(a.bg(i == btnLabels.length - 1 ? 0xff1f6f4a : 0x26ffffff, 12));
+            b.setOnClickListener(v -> act.run());
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.rightMargin = a.dp(6);
+            controlsRow.addView(b, lp);
+        }
+        HorizontalScrollView hScroll = new HorizontalScrollView(a);
+        hScroll.setHorizontalScrollBarEnabled(false);
+        hScroll.addView(controlsRow);
+        card.addView(hScroll, new LinearLayout.LayoutParams(-1, -2));
+
+        dlg.setOnKeyListener(
+                (dialog, keyCode, event) -> {
+                    if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+                    if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                        stepSize.accept(-2);
+                        return true;
+                    }
+                    if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                        stepSize.accept(2);
+                        return true;
+                    }
+                    if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                        stepBottom.accept(6);
+                        return true;
+                    }
+                    if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                        stepBottom.accept(-6);
+                        return true;
+                    }
+                    if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                            || keyCode == KeyEvent.KEYCODE_ENTER) {
+                        cycleStyle.run();
+                        return true;
+                    }
+                    if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                        dlg.dismiss();
+                        return true;
+                    }
+                    return false;
                 });
+        dlg.setOnDismissListener(
+                d -> {
+                    if (liveSub != null) liveSub.setPreviewActive(false);
+                });
+        FrameLayout wrapper = new FrameLayout(a);
+        FrameLayout.LayoutParams wlp =
+                new FrameLayout.LayoutParams(
+                        Math.min(a.windowWidth() - a.dp(32), a.dp(560)),
+                        -2,
+                        Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        wlp.topMargin = a.dp(32);
+        wrapper.addView(card, wlp);
+        dlg.setContentView(wrapper);
+        dlg.show();
+        card.requestFocus();
     }
 
     void tracks(int type) {
@@ -657,8 +893,15 @@ final class PlaybackControls {
                             ? a.player.trackLabels(3)
                             : Collections.emptyList();
             List<String> labels = new ArrayList<>();
-            labels.add("字幕大小 · " + subtitleSizeLabel());
-            labels.add("字幕位置 · " + subtitleBottomLabel());
+            labels.add(
+                    "方向键直调字幕（大小 "
+                            + subtitleSizeLabel()
+                            + " · 位置 "
+                            + subtitleBottomLabel()
+                            + " · "
+                            + subtitleStyleLabel()
+                            + "）");
+            labels.add("字幕样式 · " + subtitleStyleLabel());
             labels.add("关闭字幕");
             labels.addAll(tracks);
             labels.add("导入字幕文件…");
@@ -668,9 +911,19 @@ final class PlaybackControls {
                     -1,
                     i -> {
                         if (i == 0) {
-                            subtitleSizeDialog();
+                            showSubtitleAdjuster(a, subtitle, this::applySubtitleStyle);
                         } else if (i == 1) {
-                            subtitleBottomDialog();
+                            int cur =
+                                    Prefs.clampSubtitleStyle(
+                                            a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
+                            choose(
+                                    "字幕样式（默认透明底描边）",
+                                    SubtitleOverlayView.STYLE_LABELS,
+                                    cur,
+                                    sIdx -> {
+                                        a.prefs.edit().putInt(Prefs.SUBTITLE_STYLE, sIdx).apply();
+                                        applySubtitleStyle();
+                                    });
                         } else if (i == labels.size() - 1) {
                             a.pickSubtitle();
                         } else if (a.player != null && a.prepared) {
@@ -701,20 +954,145 @@ final class PlaybackControls {
     }
 
     void skip(boolean intro) {
-        int[] seconds = {0, 15, 30, 60, 90, 120, 180};
-        String[] labels = {"关闭", "15 秒", "30 秒", "1 分钟", "1 分 30 秒", "2 分钟", "3 分钟"};
-        String key = intro ? Prefs.SKIP_INTRO : Prefs.SKIP_OUTRO;
-        int selected = 0;
-        for (int i = 0; i < seconds.length; i++)
-            if (seconds[i] == a.prefs.getInt(key, 0)) selected = i;
-        choose(
-                intro ? "自动跳过片头" : "自动跳过片尾",
-                labels,
-                selected,
-                i -> {
-                    a.prefs.edit().putInt(key, seconds[i]).apply();
-                    updateLabels();
+        int curPos = a.player != null && a.prepared ? a.player.getCurrentPosition() : 0;
+        int curDur = a.player != null && a.prepared ? a.player.getDuration() : 0;
+        showSkipAdjuster(a, intro, curPos, curDur, this::updateLabels);
+    }
+
+    static void showSkipAdjuster(
+            MainActivity a,
+            boolean intro,
+            int currentPlayerPosMs,
+            int currentPlayerDurMs,
+            Runnable onChanged) {
+        final String key = intro ? Prefs.SKIP_INTRO : Prefs.SKIP_OUTRO;
+        final Dialog dlg = new Dialog(a);
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        if (dlg.getWindow() != null) {
+            dlg.getWindow()
+                    .setBackgroundDrawable(
+                            new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        }
+        LinearLayout card = a.vertical();
+        card.setPadding(a.dp(22), a.dp(18), a.dp(22), a.dp(18));
+        android.graphics.drawable.GradientDrawable bg = a.bg(0xf2161e1b, 22);
+        bg.setStroke(a.dp(1), 0x38ffffff);
+        card.setBackground(bg);
+
+        TextView title = a.text(intro ? "手动精准设置跳过片头" : "手动精准设置跳过片尾", 17, MainActivity.WHITE);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        card.addView(title);
+        a.gap(card, 6);
+
+        TextView sub =
+                a.text("拖动滑块或使用左右方向键精准定位到秒（00:00 - 03:00），也可一键抓取当前播放进度", 12, MainActivity.MUTED);
+        card.addView(sub);
+        a.gap(card, 14);
+
+        final TextView valueLabel = a.text("", 18, 0xff2ad47a);
+        valueLabel.setTypeface(null, android.graphics.Typeface.BOLD);
+        card.addView(valueLabel);
+        a.gap(card, 10);
+
+        final SeekBar bar = new SeekBar(a);
+        bar.setMax(180);
+        bar.setKeyProgressIncrement(1);
+        UiCompat.tintSeekBar(bar, 0xff2ad47a, Color.WHITE);
+        int initialSec = Prefs.clampSkipSeconds(a.prefs.getInt(key, 0));
+        bar.setProgress(initialSec);
+        card.addView(bar, new LinearLayout.LayoutParams(-1, a.dp(36)));
+        a.gap(card, 12);
+
+        final java.util.function.IntConsumer applySec =
+                sec -> {
+                    int clamped = Prefs.clampSkipSeconds(sec);
+                    a.prefs.edit().putInt(key, clamped).apply();
+                    if (bar.getProgress() != clamped) bar.setProgress(clamped);
+                    valueLabel.setText(
+                            clamped <= 0
+                                    ? "当前：已关闭（00:00）"
+                                    : "当前："
+                                            + PlaybackController.formatTime(clamped * 1000)
+                                            + "（"
+                                            + clamped
+                                            + " 秒）");
+                    if (onChanged != null) onChanged.run();
+                };
+        applySec.accept(initialSec);
+
+        bar.setOnSeekBarChangeListener(
+                new SeekBar.OnSeekBarChangeListener() {
+                    public void onStartTrackingTouch(SeekBar s) {}
+
+                    public void onStopTrackingTouch(SeekBar s) {}
+
+                    public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
+                        if (fromUser) applySec.accept(progress);
+                    }
                 });
+
+        if (currentPlayerPosMs > 0) {
+            int candidateSec =
+                    intro
+                            ? (currentPlayerPosMs / 1000)
+                            : (currentPlayerDurMs > currentPlayerPosMs
+                                    ? (currentPlayerDurMs - currentPlayerPosMs) / 1000
+                                    : (currentPlayerPosMs / 1000));
+            final int captureSec = Prefs.clampSkipSeconds(Math.max(1, candidateSec));
+            String captureText =
+                    (intro ? "设为当前播放进度 · " : "设为当前剩余时长 · ")
+                            + PlaybackController.formatTime(captureSec * 1000)
+                            + " ("
+                            + captureSec
+                            + "秒)";
+            TextView captureBtn = a.text(captureText, 13, MainActivity.WHITE);
+            captureBtn.setGravity(Gravity.CENTER);
+            captureBtn.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
+            captureBtn.setBackground(a.bg(0xff1e5d41, 14));
+            captureBtn.setFocusable(true);
+            captureBtn.setOnClickListener(v -> applySec.accept(captureSec));
+            card.addView(captureBtn, new LinearLayout.LayoutParams(-1, -2));
+            a.gap(card, 10);
+        }
+
+        LinearLayout stepRow = a.row();
+        stepRow.setGravity(Gravity.CENTER);
+        String[] stepTitles = {"关闭", "-10秒", "-5秒", "-1秒", "+1秒", "+5秒", "+10秒", "完成"};
+        int[] deltas = {0, -10, -5, -1, 1, 5, 10, 999};
+        for (int i = 0; i < stepTitles.length; i++) {
+            final int d = deltas[i];
+            TextView b = a.text(stepTitles[i], 12, MainActivity.WHITE);
+            b.setGravity(Gravity.CENTER);
+            b.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
+            b.setFocusable(true);
+            b.setBackground(a.bg(d == 999 ? 0xff1f6f4a : 0x24ffffff, 12));
+            b.setOnClickListener(
+                    v -> {
+                        if (d == 999) {
+                            dlg.dismiss();
+                        } else if (d == 0) {
+                            applySec.accept(0);
+                        } else {
+                            applySec.accept(a.prefs.getInt(key, 0) + d);
+                        }
+                    });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.rightMargin = a.dp(6);
+            stepRow.addView(b, lp);
+        }
+        HorizontalScrollView scroll = new HorizontalScrollView(a);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.addView(stepRow);
+        card.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+
+        FrameLayout wrapper = new FrameLayout(a);
+        FrameLayout.LayoutParams wlp =
+                new FrameLayout.LayoutParams(
+                        Math.min(a.windowWidth() - a.dp(32), a.dp(540)), -2, Gravity.CENTER);
+        wrapper.addView(card, wlp);
+        dlg.setContentView(wrapper);
+        dlg.show();
+        bar.requestFocus();
     }
 
     void repeat() {
@@ -878,6 +1256,16 @@ final class PlaybackControls {
 
     void updateLabels() {
         buttons.get("speed").setText(a.prefs.getFloat(Prefs.PLAY_SPEED, 1) + "×");
+        Button introBtn = buttons.get("skip-intro-tool");
+        if (introBtn != null) {
+            int s = a.prefs.getInt(Prefs.SKIP_INTRO, 0);
+            introBtn.setText(s > 0 ? "片头" + s + "s" : "跳片头");
+        }
+        Button outroBtn = buttons.get("skip-outro-tool");
+        if (outroBtn != null) {
+            int s = a.prefs.getInt(Prefs.SKIP_OUTRO, 0);
+            outroBtn.setText(s > 0 ? "片尾" + s + "s" : "跳片尾");
+        }
     }
 
     String skipLabel(int seconds) {
@@ -886,7 +1274,7 @@ final class PlaybackControls {
 
     void prepared() {
         if (a.player == null) return;
-        if (a.prefs.getBoolean(Prefs.DANMAKU_DEFAULT, false)
+        if (a.prefs.getBoolean(Prefs.DANMAKU_DEFAULT, true)
                 && !danmakuLoaded
                 && !resolved.media.optString("danmaku").isEmpty()) {
             danmakuLoaded = true;
@@ -906,8 +1294,12 @@ final class PlaybackControls {
         } catch (Exception ignored) {
         }
         int duration = a.player.getDuration();
+        if (duration <= 0 && a.playingBookmark != null && a.playingBookmark.duration > 0) {
+            duration = a.playingBookmark.duration;
+        }
         timeline.setEnabled(duration > 0);
-        timeline.setMax(Math.max(1, duration));
+        timeline.setMax(duration > 0 ? duration : 100);
+        if (duration <= 0) timeline.setProgress(0);
         timeline.setKeyProgressIncrement(15000);
         boolean explicitRestart = a.resumeAt < 0;
         boolean historyResume = a.resumeAt > 0;
@@ -928,8 +1320,6 @@ final class PlaybackControls {
                 }
             } else {
                 pendingResumeMs = seek;
-                recordUserSeek(seek);
-                a.player.seekTo(seek);
                 if (historyResume) {
                     a.toast("已为您续播至 " + PlaybackController.formatTime(seek));
                 }
@@ -945,6 +1335,9 @@ final class PlaybackControls {
         if ("live".equals(site.key)) return;
         if (a.player == null || !a.prepared || isUserSeeking()) return;
         int duration = a.player.getDuration();
+        if (duration <= 0 && a.playingBookmark != null && a.playingBookmark.duration > 0) {
+            duration = a.playingBookmark.duration;
+        }
         if (pendingResumeMs > 0 && duration > 0) {
             int target = pendingResumeMs;
             pendingResumeMs = 0;
@@ -955,8 +1348,15 @@ final class PlaybackControls {
             }
         }
         int position = displayPosition(a.player.getCurrentPosition());
-        timeline.setMax(Math.max(1, duration));
-        timeline.setProgress(position);
+        if (duration > 0) {
+            timeline.setEnabled(true);
+            timeline.setMax(Math.max(duration, position));
+            timeline.setProgress(Math.max(0, Math.min(position, timeline.getMax())));
+        } else {
+            timeline.setEnabled(false);
+            timeline.setMax(100);
+            timeline.setProgress(0);
+        }
         int tail = a.prefs.getInt(Prefs.SKIP_OUTRO, 0) * 1000;
         if (!transitioning
                 && a.playing

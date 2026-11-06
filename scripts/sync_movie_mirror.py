@@ -26,7 +26,8 @@ PLATFORM_LIMIT = 300 * 1024 * 1024
 PLATFORMS = (
     ('MarcoMovie-{version}-mobile.apk', 'Android 手机 / 平板版 (64位)', 'Android 6.0+ · 原生 64 位 (arm64-v8a) 与 32 位双架构 · 竖屏触控 UI'),
     ('MarcoMovie-{version}-ios-unsigned.ipa', 'iPhone / iPad 版 (IPA)', 'iOS / iPadOS 14.0+ · 支持巨魔 (TrollStore) 直接安装或自签安装'),
-    ('MarcoMovie-{version}-windows-x64.zip', 'Windows 版', 'Windows 10 / 11 · 64 位 · 解压后运行 marco_movie.exe'),
+    ('MarcoMovie-{version}-windows-setup.exe', 'Windows 安装版 (推荐)', 'Windows 10 / 11 · 64 位安装向导 · 内置运行库与快捷方式，支持后续一键更新'),
+    ('MarcoMovie-{version}-windows-x64.zip', 'Windows 绿色版 (ZIP)', 'Windows 10 / 11 · 64 位便携压缩包 · 完整解压后运行 marco_movie.exe'),
     ('MarcoMovie-{version}-macos.zip', 'macOS 版', 'macOS · 解压后拖入“应用程序”；未公证，首次打开请右键选择“打开”'),
     ('MarcoMovie-{version}-lite.apk', 'Android 4.0+ 轻量版', 'Android 4.0+ (API 14+) · 适配老旧电视/盒子/老手机 · 独立包名可共存'),
 )
@@ -215,7 +216,7 @@ def sync(output):
     output.mkdir(parents=True, exist_ok=True)
     for name, data in files.items():
         target = output / name
-        if target.exists() and target.suffix in ('.apk', '.zip', '.ipa') and target.read_bytes() != data:
+        if target.exists() and target.suffix in ('.apk', '.zip', '.ipa', '.exe') and target.read_bytes() != data:
             raise ValueError('Immutable asset already differs')
         target.write_bytes(data)
     feed_path.parent.mkdir(exist_ok=True)

@@ -97,15 +97,68 @@ jobs:
           flutter build windows --release
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $version = ((Select-String pubspec.yaml -Pattern '^version:').Line -replace '^version:\s*','' -replace '\+.*','').Trim()
+          $releaseDir = "build/windows/x64/runner/Release"
+          foreach ($dll in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "concrt140.dll")) {
+            $sysDll = Join-Path $env:SystemRoot "System32\$dll"
+            if (Test-Path $sysDll) {
+              Copy-Item $sysDll -Destination $releaseDir -Force
+            }
+          }
           New-Item -ItemType Directory -Force dist | Out-Null
           $zipName = "MarcoMovie-$version-windows-x64.zip"
-          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "dist/$zipName" -Force
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath "dist/$zipName" -Force
           $hash = (Get-FileHash "dist/$zipName" -Algorithm SHA256).Hash.ToLower()
           [System.IO.File]::WriteAllText("$PWD/dist/$zipName.sha256", "$hash  $zipName`n", [System.Text.Encoding]::ASCII)
+          $setupBase = "MarcoMovie-$version-windows-setup"
+          $setupName = "$setupBase.exe"
+          $iss = @"
+          [Setup]
+          AppId={{8E9A5D2B-4F31-4C19-9A62-7B8D1E3F4A50}
+          AppName=Marco Movie
+          AppVersion=$version
+          AppPublisher=Pilipala
+          DefaultDirName={autopf}\Marco Movie
+          DefaultGroupName=Marco Movie
+          PrivilegesRequired=lowest
+          PrivilegesRequiredOverridesAllowed=dialog
+          OutputDir=dist
+          OutputBaseFilename=$setupBase
+          SetupIconFile=windows\runner\resources\app_icon.ico
+          UninstallDisplayIcon={app}\marco_movie.exe
+          Compression=lzma2
+          SolidCompression=yes
+          WizardStyle=modern
+          CloseApplications=force
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+
+          [Tasks]
+          Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
+
+          [Files]
+          Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+          [Icons]
+          Name: "{group}\Marco Movie"; Filename: "{app}\marco_movie.exe"; WorkingDir: "{app}"
+          Name: "{autodesktop}\Marco Movie"; Filename: "{app}\marco_movie.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\marco_movie.exe"; Description: "Launch Marco Movie"; WorkingDir: "{app}"; Flags: nowait postinstall
+          "@
+          [System.IO.File]::WriteAllText("$PWD/installer.iss", $iss, [System.Text.Encoding]::UTF8)
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+          & $iscc "$PWD/installer.iss"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $setupHash = (Get-FileHash "dist/$setupName" -Algorithm SHA256).Hash.ToLower()
+          [System.IO.File]::WriteAllText("$PWD/dist/$setupName.sha256", "$setupHash  $setupName`n", [System.Text.Encoding]::ASCII)
       - uses: actions/upload-artifact@v4
         with:
           name: MarcoMovie-Windows-x64
           path: |
+            flutter/dist/*.exe
             flutter/dist/*.zip
             flutter/dist/*.sha256
 
@@ -195,6 +248,6 @@ jobs:
           VERSION="${TAG#v}"
           VERSION="${VERSION%-preview}"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release upload "$TAG" --repo "${{ github.repository }}" release-artifacts/MarcoMovie-*-windows-x64.zip* release-artifacts/MarcoMovie-*-macos.zip* release-artifacts/MarcoMovie-*-ios-unsigned.ipa* --clobber
+            gh release upload "$TAG" --repo "${{ github.repository }}" release-artifacts/MarcoMovie-*-windows-setup.exe* release-artifacts/MarcoMovie-*-windows-x64.zip* release-artifacts/MarcoMovie-*-macos.zip* release-artifacts/MarcoMovie-*-ios-unsigned.ipa* --clobber
             gh release edit "$TAG" --repo "${{ github.repository }}" --prerelease=false --latest --title "Marco Movie $VERSION"
           fi

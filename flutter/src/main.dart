@@ -9,18 +9,28 @@ import 'ui/adaptive_shell.dart';
 import 'ui/apple_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarBrightness: Brightness.dark,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: AppleColors.background,
-      systemNavigationBarIconBrightness: Brightness.light,
-    ),
-  );
+  try {
+    MediaKit.ensureInitialized();
+  } catch (e) {
+    debugPrint('MediaKit init warning: $e');
+  }
+  try {
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarBrightness: Brightness.dark,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: AppleColors.background,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+    );
+  } catch (_) {}
   final storage = await StorageService.init();
   final client = CmsClient();
-  await DownloadService.instance.init(client);
+  try {
+    await DownloadService.instance.init(client);
+  } catch (e) {
+    debugPrint('DownloadService init warning: $e');
+  }
   runApp(MarcoMovieApp(storage: storage, client: client));
 }
 class MarcoMovieApp extends StatelessWidget {

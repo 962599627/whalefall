@@ -50,8 +50,30 @@ final class MobileShell {
     static int activeTab = 0;
     static String pendingSearchKeyword = "";
 
+    /** Persistent search session state so returning from Detail keeps search results resident. */
+    static final class CachedSearchHit {
+        final Cms.Site site;
+        final Cms.Video video;
+
+        CachedSearchHit(Cms.Site site, Cms.Video video) {
+            this.site = site;
+            this.video = video;
+        }
+    }
+
+    static String cachedSearchKeyword = "";
+    static String cachedSearchStatus = "";
+    static final List<CachedSearchHit> cachedSearchHits = new ArrayList<>();
+    static int cachedSearchScrollY = 0;
+
     /** Sub-page of the 片库 tab: 0 history, 1 favorites, 2 downloads. */
     static int mySubTab = 0;
+
+    /**
+     * Sub-page of the 设置 tab:
+     * 0 = Main 5-card index, 1 = 片源与直播配置, 2 = 播放、解码与字幕, 3 = 界面外观与偏好, 4 = 备份、更新与诊断.
+     */
+    static int settingsSubPage = 0;
 
     private final MainActivity a;
     private FrameLayout contentContainer;
@@ -79,8 +101,22 @@ final class MobileShell {
 
     static void openSearchTab(MainActivity a, String initialKeyword) {
         activeTab = 1;
-        pendingSearchKeyword = initialKeyword == null ? "" : initialKeyword.trim();
-        new MobileShell(a).render();
+        String kw = initialKeyword == null ? "" : initialKeyword.trim();
+        if (!kw.isEmpty()) {
+            pendingSearchKeyword = kw;
+        }
+        if (a.current == null || !a.current.home) {
+            boolean pushBack = a.current != null && !a.current.redirect;
+            a.open(
+                    new MainActivity.Screen(
+                            () -> {
+                                activeTab = 1;
+                                new MobileShell(a).render();
+                            }),
+                    pushBack);
+        } else {
+            new MobileShell(a).render();
+        }
     }
 
     private int statusBarHeight() {
@@ -111,12 +147,13 @@ final class MobileShell {
         LinearLayout panel = a.vertical();
         panel.setPadding(a.dp(4), a.dp(6), a.dp(4), a.dp(4));
 
-        TextView tip = a.text("在下方输入或粘贴配置网址（HTTP/HTTPS）或 JSON 文本：", 13, MainActivity.MUTED);
+        TextView tip =
+                a.text("输入或粘贴配置网址（JSON / JS / PY / TXT / M3U / ZIP）或源码文本：", 13, MainActivity.MUTED);
         panel.addView(tip);
         a.gap(panel, 10);
 
         final EditText input = new EditText(a);
-        input.setHint("https://…/config.json");
+        input.setHint("https://…/config.json 或 .js / .py / .txt / .zip");
         input.setHintTextColor(0xff6b7280);
         input.setTextColor(MainActivity.WHITE);
         input.setTextSize(14);
@@ -134,7 +171,7 @@ final class MobileShell {
         panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
         a.gap(panel, 12);
 
-        TextView pasteBtn = a.text("📋 一键读取手机剪贴板并直接导入", 13, Color.WHITE);
+        TextView pasteBtn = a.text("一键读取手机剪贴板并直接导入", 13, Color.WHITE);
         pasteBtn.setTypeface(null, Typeface.BOLD);
         pasteBtn.setGravity(Gravity.CENTER);
         pasteBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
@@ -143,12 +180,20 @@ final class MobileShell {
         panel.addView(pasteBtn, new LinearLayout.LayoutParams(-1, -2));
         a.gap(panel, 8);
 
-        TextView fileBtn = a.text("📂 选择手机本地 JSON 配置文件", 13, MainActivity.WHITE);
+        TextView fileBtn = a.text("选择本地配置或本地包 (.json/.js/.py/.txt/.zip)", 13, MainActivity.WHITE);
         fileBtn.setGravity(Gravity.CENTER);
         fileBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
         fileBtn.setBackground(a.bg(0xff1e2623, 999));
         MobileDetailScreen.bindTouchFeedback(fileBtn);
         panel.addView(fileBtn, new LinearLayout.LayoutParams(-1, -2));
+        a.gap(panel, 8);
+
+        TextView liveBtn = a.text("导入或管理电视直播源 (M3U / TXT / JSON)", 13, MainActivity.WHITE);
+        liveBtn.setGravity(Gravity.CENTER);
+        liveBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
+        liveBtn.setBackground(a.bg(0xff1e2623, 999));
+        MobileDetailScreen.bindTouchFeedback(liveBtn);
+        panel.addView(liveBtn, new LinearLayout.LayoutParams(-1, -2));
 
         final AppDialog dialog =
                 new AppDialog.Builder(a)
@@ -177,6 +222,11 @@ final class MobileShell {
                     dialog.dismiss();
                     a.pickConfig();
                 });
+        liveBtn.setOnClickListener(
+                v -> {
+                    dialog.dismiss();
+                    SourceController.showLiveImportDialog(a);
+                });
         dialog.show();
     }
 
@@ -190,7 +240,7 @@ final class MobileShell {
             }
         }
         if (text.isEmpty()) {
-            a.toast("剪贴板为空，请先复制配置网址或 JSON 内容");
+            a.toast("剪贴板为空，请先复制配置网址或源码内容");
             return;
         }
         importTextOrUrl(a, text);
@@ -199,7 +249,7 @@ final class MobileShell {
     static void importTextOrUrl(MainActivity a, String rawInput) {
         final String pasted = rawInput == null ? "" : rawInput.trim();
         if (pasted.isEmpty()) {
-            a.toast("请输入有效的配置网址或 JSON 内容");
+            a.toast("请输入有效的配置网址或源码内容");
             return;
         }
         a.toast("正在读取并解析配置…");
@@ -210,19 +260,73 @@ final class MobileShell {
                         String rawJson = pasted;
                         if (Cms.isHttp(pasted)) {
                             origin = Cms.normalizeHttp(pasted);
-                            rawJson = Cms.fetch(origin, null);
-                        }
-                        Cms.Config parsed = Cms.parseConfig(rawJson, origin);
-                        final String savedOrigin = origin;
-                        a.ui.post(
-                                () -> {
-                                    try {
-                                        a.saveConfig(parsed, savedOrigin);
-                                        a.toast("配置导入成功（共 " + parsed.sites.size() + " 个片源）");
-                                    } catch (Exception ex) {
-                                        a.toast("保存配置失败：" + a.message(ex));
+                            String lowerOrigin = origin.toLowerCase();
+                            if (lowerOrigin.endsWith(".zip") || lowerOrigin.contains(".zip?")) {
+                                java.net.HttpURLConnection conn =
+                                        (java.net.HttpURLConnection)
+                                                new java.net.URL(origin).openConnection();
+                                conn.setConnectTimeout(15000);
+                                conn.setReadTimeout(25000);
+                                conn.setRequestProperty("User-Agent", Cms.USER_AGENT);
+                                byte[] bytes;
+                                try (java.io.InputStream in = conn.getInputStream();
+                                        java.io.ByteArrayOutputStream bos =
+                                                new java.io.ByteArrayOutputStream()) {
+                                    byte[] buf = new byte[8192];
+                                    int n;
+                                    while ((n = in.read(buf)) != -1) {
+                                        if (bos.size() + n > 28 * 1024 * 1024)
+                                            throw new IOException("远程包超过 28 MB 限制");
+                                        bos.write(buf, 0, n);
                                     }
-                                });
+                                    bytes = bos.toByteArray();
+                                } finally {
+                                    conn.disconnect();
+                                }
+                                Cms.Config pkgConfig =
+                                        SourceController.extractZipPackage(a.getFilesDir(), bytes);
+                                a.ui.post(
+                                        () -> {
+                                            try {
+                                                a.saveConfig(pkgConfig, "");
+                                                a.toast(
+                                                        "压缩包配置导入成功（共 "
+                                                                + pkgConfig.sites.size()
+                                                                + " 个片源）");
+                                            } catch (Exception ex) {
+                                                a.toast("保存配置失败：" + a.message(ex));
+                                            }
+                                        });
+                                return;
+                            } else {
+                                rawJson = Cms.fetch(origin, null);
+                            }
+                        }
+                        try {
+                            Cms.Config parsed = Cms.parseConfig(rawJson, origin);
+                            final String savedOrigin = origin;
+                            a.ui.post(
+                                    () -> {
+                                        try {
+                                            a.saveConfig(parsed, savedOrigin);
+                                            a.toast("配置导入成功（共 " + parsed.sites.size() + " 个片源）");
+                                        } catch (Exception ex) {
+                                            a.toast("保存配置失败：" + a.message(ex));
+                                        }
+                                    });
+                        } catch (Exception parseEx) {
+                            String trimmed = rawJson == null ? "" : rawJson.trim();
+                            if (trimmed.startsWith("#EXTM3U")
+                                    || trimmed.contains("#genre#")
+                                    || trimmed.contains(",http://")
+                                    || trimmed.contains(",https://")
+                                    || trimmed.contains(",rtmp://")
+                                    || trimmed.contains(",rtsp://")) {
+                                SourceController.importLiveTextOrUrl(a, pasted);
+                                return;
+                            }
+                            throw parseEx;
+                        }
                     } catch (Exception e) {
                         a.ui.post(() -> a.toast("配置读取失败：" + a.message(e)));
                     }
@@ -244,13 +348,7 @@ final class MobileShell {
         a.generation++;
 
         // Edge-to-edge transparent status bar over the iPhone emerald-obsidian ambient canvas
-        try {
-            int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
-            a.getWindow().getDecorView().setSystemUiVisibility(flags);
-            a.getWindow().setStatusBarColor(Color.TRANSPARENT);
-            a.getWindow().setNavigationBarColor(0xff060a08);
-        } catch (Exception ignored) {
-        }
+        a.applyMobileSystemBars(false);
 
         resolveActiveSite();
 
@@ -355,8 +453,13 @@ final class MobileShell {
         brandRow.addView(brandTitle);
         bar.addView(brandRow, new LinearLayout.LayoutParams(-2, -2));
 
-        View spacer = new View(a);
-        bar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        // Flexible middle slot: keeps `sitePill` right-aligned and guarantees it shrinks/truncates
+        // before ever pushing `netdiskPill` or `searchCircle` off the right edge of the screen.
+        FrameLayout siteSlot = new FrameLayout(a);
+        LinearLayout.LayoutParams slotLp = new LinearLayout.LayoutParams(0, a.dp(34), 1f);
+        slotLp.leftMargin = a.dp(8);
+        slotLp.rightMargin = a.dp(6);
+        bar.addView(siteSlot, slotLp);
 
         // Right 1: Site selector Liquid Glass capsule (`source-switcher`)
         String siteLabel = currentSite != null ? currentSite.name + " ▾" : "选择片源 ▾";
@@ -365,9 +468,10 @@ final class MobileShell {
         sitePill.setTypeface(null, Typeface.BOLD);
         sitePill.setSingleLine(true);
         sitePill.setEllipsize(TextUtils.TruncateAt.END);
-        sitePill.setMaxWidth(a.dp(138));
+        int maxSiteWidth = Math.max(a.dp(72), Math.min(a.dp(136), a.windowWidth() - a.dp(232)));
+        sitePill.setMaxWidth(maxSiteWidth);
         sitePill.setGravity(Gravity.CENTER);
-        sitePill.setPadding(a.dp(12), a.dp(7), a.dp(12), a.dp(7));
+        sitePill.setPadding(a.dp(11), a.dp(7), a.dp(11), a.dp(7));
         sitePill.setBackground(glassBg(0xd4262e2b, 0xc41a211f, a.dp(999), a.dp(0.8f), 0x38ffffff));
         MobileDetailScreen.bindTouchFeedback(sitePill);
         sitePill.setOnClickListener(
@@ -375,9 +479,9 @@ final class MobileShell {
                     if (a.config == null) showMobileImportDialog(a);
                     else a.chooseSources();
                 });
-        LinearLayout.LayoutParams siteLp = new LinearLayout.LayoutParams(-2, a.dp(34));
-        siteLp.rightMargin = a.dp(6);
-        bar.addView(sitePill, siteLp);
+        siteSlot.addView(
+                sitePill,
+                new FrameLayout.LayoutParams(-2, a.dp(34), Gravity.END | Gravity.CENTER_VERTICAL));
 
         // Right 2: Netdisk / Config Liquid Glass capsule
         TextView netdiskPill = a.text(a.config == null ? "＋配置" : "网盘", 12.5f, Color.WHITE);
@@ -1183,10 +1287,21 @@ final class MobileShell {
         a.gap(card, 12);
 
         addMobileActionBtn(
-                card, "📋 一键粘贴剪贴板并导入", 0xff0a84ff, Color.WHITE, () -> pasteConfigFromClipboard(a));
+                card, "一键粘贴剪贴板并导入", 0xff0a84ff, Color.WHITE, () -> pasteConfigFromClipboard(a));
         a.gap(card, 10);
         addMobileActionBtn(
-                card, "📂 选择手机本地 JSON 配置文件", 0xff1e2724, MainActivity.WHITE, a::pickConfig);
+                card,
+                "选择本地配置或本地包 (.json/.js/.py/.zip)",
+                0xff1e2724,
+                MainActivity.WHITE,
+                a::pickConfig);
+        a.gap(card, 10);
+        addMobileActionBtn(
+                card,
+                "导入电视直播源 (M3U / TXT / JSON)",
+                0xff1e2724,
+                MainActivity.WHITE,
+                () -> SourceController.showLiveImportDialog(a));
 
         a.gap(wrap, 18);
         TextView legal = a.text("本产品仅为播放工具，不内置、不提供、不托管任何影视资源或配置地址。", 11.5f, 0xff6b7280);
@@ -1252,7 +1367,6 @@ final class MobileShell {
         clearBtn.setGravity(Gravity.CENTER);
         clearBtn.setPadding(a.dp(8), a.dp(6), a.dp(8), a.dp(6));
         MobileDetailScreen.bindTouchFeedback(clearBtn);
-        clearBtn.setOnClickListener(v -> input.setText(""));
         inputRow.addView(clearBtn);
 
         TextView searchBtn = a.text("搜索", 13, Color.WHITE);
@@ -1274,15 +1388,32 @@ final class MobileShell {
         searchStatus.setPadding(a.dp(4), a.dp(10), a.dp(4), a.dp(8));
         page.addView(searchStatus);
 
-        ScrollView resultScroll = new ScrollView(a);
+        final ScrollView resultScroll = new ScrollView(a);
         resultScroll.setFillViewport(true);
         resultScroll.setVerticalScrollBarEnabled(false);
         resultScroll.setClipToPadding(false);
+        resultScroll
+                .getViewTreeObserver()
+                .addOnScrollChangedListener(
+                        () -> {
+                            cachedSearchScrollY = resultScroll.getScrollY();
+                        });
         page.addView(resultScroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         final LinearLayout resultList = a.vertical();
         resultList.setPadding(0, 0, 0, a.dp(106));
         resultScroll.addView(resultList, new ScrollView.LayoutParams(-1, -2));
+
+        clearBtn.setOnClickListener(
+                v -> {
+                    input.setText("");
+                    cachedSearchKeyword = "";
+                    cachedSearchStatus = "";
+                    cachedSearchHits.clear();
+                    cachedSearchScrollY = 0;
+                    resultList.removeAllViews();
+                    searchStatus.setText("输入关键词搜索全部已启用的片源");
+                });
 
         final Runnable[] triggerSearch = new Runnable[1];
         final Runnable renderHistoryChips =
@@ -1381,15 +1512,21 @@ final class MobileShell {
 
                     a.cancelPageRequests();
                     resultList.removeAllViews();
+                    cachedSearchKeyword = kw;
+                    cachedSearchHits.clear();
+                    cachedSearchScrollY = 0;
+
                     List<Cms.Site> searchableSites = new ArrayList<>();
                     for (Cms.Site s : a.config.sites) {
                         if (a.available(s) && s.searchable) searchableSites.add(s);
                     }
                     if (searchableSites.isEmpty()) {
-                        searchStatus.setText("当前没有可搜索的片源");
+                        cachedSearchStatus = "当前没有可搜索的片源";
+                        searchStatus.setText(cachedSearchStatus);
                         return;
                     }
-                    searchStatus.setText("正在并发搜索 " + searchableSites.size() + " 个片源…");
+                    cachedSearchStatus = "正在并发搜索 " + searchableSites.size() + " 个片源…";
+                    searchStatus.setText(cachedSearchStatus);
                     final int ticket = a.generation;
                     final int[] completed = {0};
                     final int[] hitCount = {0};
@@ -1417,27 +1554,33 @@ final class MobileShell {
                                                         completed[0]++;
                                                         for (final Cms.Video v : matches) {
                                                             hitCount[0]++;
+                                                            if (kw.equals(cachedSearchKeyword)) {
+                                                                cachedSearchHits.add(
+                                                                        new CachedSearchHit(
+                                                                                site, v));
+                                                            }
                                                             resultList.addView(
                                                                     buildSearchResultRow(site, v));
                                                         }
                                                         if (completed[0] < searchableSites.size()) {
-                                                            searchStatus.setText(
+                                                            cachedSearchStatus =
                                                                     "已找到 "
                                                                             + hitCount[0]
                                                                             + " 条结果（已完成 "
                                                                             + completed[0]
                                                                             + "/"
                                                                             + searchableSites.size()
-                                                                            + " 个片源）");
+                                                                            + " 个片源）";
                                                         } else {
-                                                            searchStatus.setText(
+                                                            cachedSearchStatus =
                                                                     hitCount[0] == 0
                                                                             ? "未找到与“" + kw
                                                                                     + "”相关的影片"
                                                                             : "搜索完成，共找到 "
                                                                                     + hitCount[0]
-                                                                                    + " 条结果");
+                                                                                    + " 条结果（点击任意线路进入，返回可继续切换）";
                                                         }
+                                                        searchStatus.setText(cachedSearchStatus);
                                                     });
                                         });
                         a.pageRequests.add(f);
@@ -1459,8 +1602,39 @@ final class MobileShell {
 
         renderHistoryChips.run();
         if (!pendingSearchKeyword.isEmpty()) {
+            String wantedKw = pendingSearchKeyword;
             pendingSearchKeyword = "";
-            triggerSearch[0].run();
+            input.setText(wantedKw);
+            input.setSelection(wantedKw.length());
+            if (wantedKw.equals(cachedSearchKeyword) && !cachedSearchHits.isEmpty()) {
+                for (CachedSearchHit hit : cachedSearchHits) {
+                    resultList.addView(buildSearchResultRow(hit.site, hit.video));
+                }
+                searchStatus.setText(
+                        cachedSearchStatus.isEmpty()
+                                ? "已保留搜索结果，共 " + cachedSearchHits.size() + " 条"
+                                : cachedSearchStatus);
+                final int savedScroll = cachedSearchScrollY;
+                if (savedScroll > 0) {
+                    resultScroll.post(() -> resultScroll.scrollTo(0, savedScroll));
+                }
+            } else {
+                triggerSearch[0].run();
+            }
+        } else if (!cachedSearchKeyword.isEmpty()) {
+            input.setText(cachedSearchKeyword);
+            input.setSelection(cachedSearchKeyword.length());
+            for (CachedSearchHit hit : cachedSearchHits) {
+                resultList.addView(buildSearchResultRow(hit.site, hit.video));
+            }
+            searchStatus.setText(
+                    cachedSearchStatus.isEmpty()
+                            ? "已保留搜索结果，共 " + cachedSearchHits.size() + " 条"
+                            : cachedSearchStatus);
+            final int savedScroll = cachedSearchScrollY;
+            if (savedScroll > 0) {
+                resultScroll.post(() -> resultScroll.scrollTo(0, savedScroll));
+            }
         }
     }
 
@@ -1470,7 +1644,11 @@ final class MobileShell {
         row.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
         row.setBackground(glassBg(0xb81b2320, 0xb8131917, a.dp(16), a.dp(0.7f), 0x26ffffff));
         MobileDetailScreen.bindTouchFeedback(row);
-        row.setOnClickListener(view -> a.openListing(site, v));
+        row.setOnClickListener(
+                view -> {
+                    activeTab = 1;
+                    a.openListing(site, v);
+                });
 
         ImageView poster = new ImageView(a);
         poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -1523,22 +1701,16 @@ final class MobileShell {
         LinearLayout page = a.vertical();
         contentContainer.addView(page, new FrameLayout.LayoutParams(-1, -1));
 
-        if (a.config == null) {
-            page.setPadding(0, statusBarHeight() + a.dp(24), 0, 0);
-            renderCenteredHint(page, "请先导入包含直播列表的配置");
-            return;
-        }
-        final List<LiveCatalog.Source> sources;
-        try {
-            sources = LiveCatalog.sources(a.config.raw, a.configOrigin);
-        } catch (Exception e) {
-            page.setPadding(0, statusBarHeight() + a.dp(24), 0, 0);
-            renderCenteredHint(page, "无法读取直播源配置");
-            return;
-        }
+        final List<LiveCatalog.Source> sources = LiveController.sourcesFor(a);
         if (sources.isEmpty()) {
-            page.setPadding(0, statusBarHeight() + a.dp(24), 0, 0);
-            renderCenteredHint(page, "当前配置没有包含 M3U / TXT 直播源");
+            page.setPadding(a.dp(24), statusBarHeight() + a.dp(24), a.dp(24), 0);
+            renderCenteredHint(page, "当前未配置直播源（支持 M3U / TXT / JSON）");
+            addMobileActionBtn(
+                    page,
+                    "导入电视直播源 (M3U / TXT / JSON)",
+                    0xff0a84ff,
+                    Color.WHITE,
+                    () -> SourceController.showLiveImportDialog(a));
             return;
         }
 
@@ -1651,6 +1823,15 @@ final class MobileShell {
                         lp.rightMargin = a.dp(8);
                         srcRow.addView(chip, lp);
                     }
+                    TextView importLiveChip = a.text("＋ 导入直播", 12, 0xff5ac8fa);
+                    importLiveChip.setTypeface(null, Typeface.BOLD);
+                    importLiveChip.setPadding(a.dp(13), a.dp(5), a.dp(13), a.dp(5));
+                    importLiveChip.setBackground(
+                            glassBg(0xcc262e2b, 0xb81a211f, a.dp(999), a.dp(0.7f), 0x2effffff));
+                    MobileDetailScreen.bindTouchFeedback(importLiveChip);
+                    importLiveChip.setOnClickListener(
+                            v -> SourceController.showLiveImportDialog(a));
+                    srcRow.addView(importLiveChip, new LinearLayout.LayoutParams(-2, -2));
 
                     groupRow.removeAllViews();
                     channelGridCol.removeAllViews();
@@ -1664,7 +1845,7 @@ final class MobileShell {
                                     if (selectedSource.isLocalProxy()) {
                                         if (!a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true))
                                             throw new IOException("请先在设置中开启实验性扩展支持");
-                                        a.ensureProxy(a.config);
+                                        if (a.config != null) a.ensureProxy(a.config);
                                         selectedSource.url = LocalProxy.rewrite(selectedSource.url);
                                     }
                                     final LiveCatalog.Catalog catalog =
@@ -2180,98 +2361,384 @@ final class MobileShell {
     }
 
     // =========================================================================
-    // TAB 4: MOBILE SETTINGS (Grouped Liquid Glass Cards)
+    // TAB 4: MOBILE SETTINGS (2-Level Clean Architecture, Zero Emojis, Zero Ghosting)
     // =========================================================================
     private void renderSettingsTab() {
-        ScrollView sv = new ScrollView(a);
+        contentContainer.removeAllViews();
+
+        final ScrollView sv = new ScrollView(a);
         sv.setFillViewport(true);
         sv.setVerticalScrollBarEnabled(false);
         sv.setClipToPadding(false);
         contentContainer.addView(sv, new FrameLayout.LayoutParams(-1, -1));
 
-        LinearLayout body = a.vertical();
+        final LinearLayout body = a.vertical();
         body.setPadding(a.dp(16), statusBarHeight() + a.dp(10), a.dp(16), a.dp(108));
         sv.addView(body, new ScrollView.LayoutParams(-1, -2));
 
-        TextView pageTitle = a.text("设置", 22, Color.WHITE);
+        populateSettingsBody(body, sv);
+    }
+
+    private void populateSettingsBody(final LinearLayout body, final ScrollView sv) {
+        final int savedScrollY = sv.getScrollY();
+        body.removeAllViews();
+
+        final Runnable refreshInPlace =
+                () -> {
+                    populateSettingsBody(body, sv);
+                    body.invalidate();
+                    sv.invalidate();
+                    if (contentContainer != null) contentContainer.invalidate();
+                    if (a.root != null) a.root.invalidate();
+                };
+
+        if (settingsSubPage != 0) {
+            LinearLayout topNav = a.row();
+            topNav.setGravity(Gravity.CENTER_VERTICAL);
+            topNav.setPadding(0, 0, 0, a.dp(14));
+
+            TextView backBtn = a.text("‹", 22, Color.WHITE);
+            backBtn.setGravity(Gravity.CENTER);
+            backBtn.setBackground(
+                    glassBg(0xd4262e2b, 0xc41a211f, a.dp(999), a.dp(0.8f), 0x38ffffff));
+            MobileDetailScreen.bindTouchFeedback(backBtn);
+            backBtn.setOnClickListener(
+                    v -> {
+                        settingsSubPage = 0;
+                        sv.scrollTo(0, 0);
+                        refreshInPlace.run();
+                    });
+            LinearLayout.LayoutParams backLp = new LinearLayout.LayoutParams(a.dp(38), a.dp(38));
+            backLp.rightMargin = a.dp(10);
+            topNav.addView(backBtn, backLp);
+
+            String subTitleText =
+                    settingsSubPage == 1
+                            ? "片源与直播配置"
+                            : settingsSubPage == 2
+                                    ? "播放、解码与字幕"
+                                    : settingsSubPage == 3 ? "界面外观与偏好" : "备份、更新与诊断";
+            TextView subTitle = a.text(subTitleText, 20, Color.WHITE);
+            subTitle.setTypeface(null, Typeface.BOLD);
+            topNav.addView(subTitle, new LinearLayout.LayoutParams(0, -2, 1));
+            body.addView(topNav, new LinearLayout.LayoutParams(-1, -2));
+
+            if (settingsSubPage == 1) {
+                addSectionHeader(body, "配置与直播源导入");
+                addSettingCard(
+                        body,
+                        1,
+                        "从剪贴板一键粘贴配置",
+                        "直接读取手机剪贴板中的 JSON、JS、PY、TXT/M3U 或配置网址",
+                        () -> pasteConfigFromClipboard(a));
+                addSettingCard(
+                        body,
+                        1,
+                        "输入或修改配置网址与源码",
+                        a.configOrigin.isEmpty()
+                                ? "支持 JSON / JS / PY / TXT / M3U / ZIP 地址"
+                                : a.configOrigin,
+                        () -> showMobileImportDialog(a));
+                addSettingCard(
+                        body,
+                        1,
+                        "选择本地配置或本地包",
+                        "支持导入 .json / .js / .py / .txt / .m3u / .zip 本地文件",
+                        a::pickConfig);
+                String savedLiveUrl = a.prefs.getString(Prefs.LIVE_URL, "");
+                addSettingCard(
+                        body,
+                        1,
+                        "导入或管理电视直播源",
+                        savedLiveUrl.isEmpty()
+                                ? "支持 M3U、TXT (#genre#)、JSON 及本地直播文件"
+                                : "当前直播源：" + savedLiveUrl,
+                        () -> SourceController.showLiveImportDialog(a));
+
+                a.gap(body, 12);
+                addSectionHeader(body, "片源选择与扩展引擎");
+                addSettingCard(
+                        body,
+                        1,
+                        "切换默认片源",
+                        currentSite == null ? "未选择" : "当前：" + currentSite.name,
+                        a::chooseSources);
+                final boolean cspEnabled = a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true);
+                addSettingCard(
+                        body,
+                        1,
+                        "启用第三方扩展片源 (JAR / JS / PY)",
+                        cspEnabled ? "当前状态：已开启" : "当前状态：已关闭（点击开启）",
+                        () -> {
+                            a.prefs.edit().putBoolean(Prefs.EXPERIMENTAL_CSP, !cspEnabled).apply();
+                            a.closeEngines();
+                            refreshInPlace.run();
+                            a.toast(!cspEnabled ? "已开启扩展片源支持" : "已关闭扩展片源支持");
+                        });
+            } else if (settingsSubPage == 2) {
+                addSectionHeader(body, "播放器与解码器");
+                final int engine = a.prefs.getInt(Prefs.PLAYER_ENGINE, 0);
+                addSettingCard(
+                        body,
+                        3,
+                        "播放器内核",
+                        engine == 0 ? "Media3（自带软解与字幕增强）" : "Android 系统播放器",
+                        () -> {
+                            int next = engine == 0 ? 1 : 0;
+                            a.prefs.edit().putInt(Prefs.PLAYER_ENGINE, next).apply();
+                            refreshInPlace.run();
+                        });
+                final int decoder = a.prefs.getInt(Prefs.DECODER_MODE, 0);
+                final String[] decNames = {"自动选择（推荐）", "硬件解码优先", "软件解码优先"};
+                addSettingCard(
+                        body,
+                        3,
+                        "视频解码方式",
+                        decNames[Math.max(0, Math.min(2, decoder))],
+                        () -> {
+                            int next = (decoder + 1) % 3;
+                            a.prefs.edit().putInt(Prefs.DECODER_MODE, next).apply();
+                            refreshInPlace.run();
+                        });
+                final boolean tunnel = a.prefs.getBoolean(Prefs.TUNNELED_PLAYBACK, false);
+                addSettingCard(
+                        body,
+                        3,
+                        "4K HDR 隧道模式",
+                        tunnel ? "已开启（部分设备可降低高码率掉帧）" : "已关闭（兼容模式）",
+                        () -> {
+                            a.prefs.edit().putBoolean(Prefs.TUNNELED_PLAYBACK, !tunnel).apply();
+                            refreshInPlace.run();
+                        });
+                final boolean autoNext = a.prefs.getBoolean(Prefs.AUTO_NEXT, true);
+                addSettingCard(
+                        body,
+                        3,
+                        "自动连播下一集",
+                        autoNext ? "已开启" : "已关闭",
+                        () -> {
+                            a.prefs.edit().putBoolean(Prefs.AUTO_NEXT, !autoNext).apply();
+                            refreshInPlace.run();
+                        });
+
+                a.gap(body, 12);
+                addSectionHeader(body, "片头片尾与字幕样式");
+                int introSec = a.prefs.getInt(Prefs.SKIP_INTRO_SECONDS, 0);
+                int outroSec = a.prefs.getInt(Prefs.SKIP_OUTRO_SECONDS, 0);
+                String skipDesc =
+                        (introSec > 0
+                                        ? "片头 " + PlaybackController.formatTime(introSec * 1000)
+                                        : "片头关闭")
+                                + " · "
+                                + (outroSec > 0
+                                        ? "片尾 " + PlaybackController.formatTime(outroSec * 1000)
+                                        : "片尾关闭");
+                addSettingCard(
+                        body,
+                        3,
+                        "片头片尾跳过时间节点",
+                        skipDesc + "（支持手动拖动滑块精准设定）",
+                        () ->
+                                PlaybackControls.showSkipAdjuster(
+                                        a, true, introSec, 0, refreshInPlace));
+
+                int subSize = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE_SP, 40));
+                int subBg = Prefs.clampSubtitleBgStyle(a.prefs.getInt(Prefs.SUBTITLE_BG_STYLE, 0));
+                addSettingCard(
+                        body,
+                        3,
+                        "字幕大小、位置与样式",
+                        "字号 "
+                                + subSize
+                                + " · "
+                                + SubtitleOverlayView.bgStyleLabel(subBg)
+                                + "（支持方向键与触控调节）",
+                        () -> PlaybackControls.showSubtitleAdjuster(a, null, refreshInPlace));
+            } else if (settingsSubPage == 3) {
+                addSectionHeader(body, "界面显示与交互");
+                final int scale = a.prefs.getInt(Prefs.UI_SCALE_PERCENT, 100);
+                addSettingCard(
+                        body,
+                        4,
+                        "界面整体缩放比例",
+                        "当前：" + scale + "%（点击切换 90% / 100% / 110%）",
+                        () -> {
+                            int next = scale == 100 ? 110 : (scale == 110 ? 90 : 100);
+                            a.prefs.edit().putInt(Prefs.UI_SCALE_PERCENT, next).apply();
+                            a.recreate();
+                        });
+                final boolean reduced = a.prefs.getBoolean(Prefs.REDUCED, false);
+                addSettingCard(
+                        body,
+                        4,
+                        "精简界面动画",
+                        reduced ? "已开启（减少过渡动画，提升响应速度）" : "已关闭（保留完整流畅动效）",
+                        () -> {
+                            a.reduced = !reduced;
+                            a.prefs.edit().putBoolean(Prefs.REDUCED, !reduced).apply();
+                            refreshInPlace.run();
+                        });
+                addSettingCard(
+                        body,
+                        4,
+                        "清空搜索历史记录",
+                        "清除搜索页保存的全部历史关键词",
+                        () -> {
+                            a.prefs.edit().putString(Prefs.GLOBAL_SEARCH_HISTORY, "[]").apply();
+                            cachedSearchKeyword = "";
+                            cachedSearchStatus = "";
+                            cachedSearchHits.clear();
+                            a.toast("已清空搜索历史记录");
+                        });
+            } else {
+                addSectionHeader(body, "更新、备份与诊断");
+                addSettingCard(
+                        body,
+                        5,
+                        "检查软件更新",
+                        "当前版本：" + UpdateManager.installedVersion(a) + " · 正式版",
+                        () ->
+                                a.open(
+                                        new MainActivity.Screen(() -> new UpdateScreen(a).show()),
+                                        true));
+                addSettingCard(
+                        body,
+                        5,
+                        "查看运行诊断日志",
+                        "排查片源网络请求、代理与播放解码日志",
+                        () -> new SettingsScreen(a).diagnostics());
+                addSettingCard(
+                        body,
+                        5,
+                        "完整高级设置与备份恢复",
+                        "配置备份导出、恢复及完整系统参数页面",
+                        () ->
+                                a.open(
+                                        new MainActivity.Screen(() -> new SettingsScreen(a).show()),
+                                        true));
+            }
+            if (savedScrollY > 0) {
+                sv.scrollTo(0, savedScrollY);
+            }
+            return;
+        }
+
+        // =====================================================================
+        // LEVEL 1: CLEAN 5-CARD PRIMARY SETTINGS MENU (Zero Emojis)
+        // =====================================================================
+        TextView pageTitle = a.text("设置", 24, Color.WHITE);
         pageTitle.setTypeface(null, Typeface.BOLD);
-        pageTitle.setPadding(0, 0, 0, a.dp(10));
         body.addView(pageTitle);
 
-        addSectionHeader(body, "片源与配置管理");
-        addSettingCard(
-                body, "📋 从剪贴板一键粘贴配置", "直接读取你在手机上复制的配置网址或 JSON", () -> pasteConfigFromClipboard(a));
-        addSettingCard(
-                body,
-                "🌐 输入或修改 HTTP(S) 配置网址",
-                a.configOrigin.isEmpty() ? "当前未设置远程配置网址" : a.configOrigin,
-                () -> showMobileImportDialog(a));
-        addSettingCard(body, "📂 选择手机本地 JSON 文件", "从手机存储导入兼容配置文件", a::pickConfig);
-        addSettingCard(
-                body,
-                "🔀 切换默认片源",
-                currentSite == null ? "未选择" : "当前：" + currentSite.name,
-                a::chooseSources);
-        boolean cspEnabled = a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true);
-        addSettingCard(
-                body,
-                "🧩 启用第三方扩展片源 (JAR / JS)",
-                cspEnabled ? "当前状态：已开启" : "当前状态：已关闭（点击开启）",
-                () -> {
-                    a.prefs.edit().putBoolean(Prefs.EXPERIMENTAL_CSP, !cspEnabled).apply();
-                    a.closeEngines();
-                    renderSettingsTab();
-                    a.toast(!cspEnabled ? "已开启扩展片源支持" : "已关闭扩展片源支持");
-                });
-        addSettingCard(body, "☁ 网盘与账号", "网盘扫码登录、凭据与网盘顺序（由配置提供）", () -> AccountPanel.show(a, null));
+        TextView pageSub = a.text("管理片源、账号授权、播放偏好与版本更新", 12.5f, 0xff8e959e);
+        pageSub.setPadding(0, a.dp(3), 0, a.dp(14));
+        body.addView(pageSub);
 
-        a.gap(body, 12);
-        addSectionHeader(body, "播放与解码偏好");
+        // Quick 2-pill bar for the two most common daily operations
+        LinearLayout quickRow = a.row();
+        quickRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView quickPaste = a.text("一键粘贴配置", 13, Color.WHITE);
+        quickPaste.setTypeface(null, Typeface.BOLD);
+        quickPaste.setGravity(Gravity.CENTER);
+        quickPaste.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
+        quickPaste.setBackground(a.bg(0xff0a84ff, 14));
+        MobileDetailScreen.bindTouchFeedback(quickPaste);
+        quickPaste.setOnClickListener(v -> pasteConfigFromClipboard(a));
+        LinearLayout.LayoutParams qpLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        qpLp.rightMargin = a.dp(8);
+        quickRow.addView(quickPaste, qpLp);
+
+        TextView quickSite =
+                a.text(
+                        currentSite == null ? "选择默认片源" : "片源：" + currentSite.name,
+                        13,
+                        MainActivity.WHITE);
+        quickSite.setTypeface(null, Typeface.BOLD);
+        quickSite.setSingleLine(true);
+        quickSite.setEllipsize(TextUtils.TruncateAt.END);
+        quickSite.setGravity(Gravity.CENTER);
+        quickSite.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
+        quickSite.setBackground(glassBg(0xcc262e2b, 0xb81a211f, a.dp(14), a.dp(0.7f), 0x33ffffff));
+        MobileDetailScreen.bindTouchFeedback(quickSite);
+        quickSite.setOnClickListener(
+                v -> {
+                    if (a.config == null) showMobileImportDialog(a);
+                    else a.chooseSources();
+                });
+        quickRow.addView(quickSite, new LinearLayout.LayoutParams(0, -2, 1f));
+        body.addView(quickRow, new LinearLayout.LayoutParams(-1, -2));
+        a.gap(body, 14);
+
+        // Primary Category Card 1: 片源与直播配置
+        String sourceSummary =
+                (currentSite != null
+                                ? "当前：" + currentSite.name
+                                : (a.config != null && !a.config.sites.isEmpty()
+                                        ? "已导入 " + a.config.sites.size() + " 个片源"
+                                        : "尚未导入配置"))
+                        + " · 支持 JSON / JS / PY / M3U / ZIP";
+        addSettingCard(
+                body,
+                1,
+                "片源与直播配置",
+                sourceSummary,
+                () -> {
+                    settingsSubPage = 1;
+                    sv.scrollTo(0, 0);
+                    refreshInPlace.run();
+                });
+
+        // Primary Category Card 2: 网盘与账号授权
+        addSettingCard(
+                body, 2, "网盘与账号授权", "夸克、UC、百度、阿里云盘与哔哩哔哩扫码登录", () -> AccountPanel.show(a, null));
+
+        // Primary Category Card 3: 播放、解码与字幕
         int engine = a.prefs.getInt(Prefs.PLAYER_ENGINE, 0);
-        addSettingCard(
-                body,
-                "🎬 播放器内核",
-                engine == 0 ? "Media3（自带软解与字幕增强）" : "Android 系统播放器",
-                () -> {
-                    int next = engine == 0 ? 1 : 0;
-                    a.prefs.edit().putInt(Prefs.PLAYER_ENGINE, next).apply();
-                    renderSettingsTab();
-                });
         int decoder = a.prefs.getInt(Prefs.DECODER_MODE, 0);
-        String[] decNames = {"自动选择（推荐）", "硬件解码优先", "软件解码优先"};
+        String[] decShort = {"自动解码", "硬解优先", "软解优先"};
+        int subSize = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE_SP, 22));
+        String playSummary =
+                (engine == 0 ? "Media3 内核" : "系统播放器")
+                        + " · "
+                        + decShort[Math.max(0, Math.min(2, decoder))]
+                        + " · 字幕 "
+                        + subSize
+                        + " · 片头片尾调节";
         addSettingCard(
                 body,
-                "⚡ 视频解码方式",
-                decNames[Math.max(0, Math.min(2, decoder))],
+                3,
+                "播放、解码与字幕",
+                playSummary,
                 () -> {
-                    int next = (decoder + 1) % 3;
-                    a.prefs.edit().putInt(Prefs.DECODER_MODE, next).apply();
-                    renderSettingsTab();
-                });
-        boolean autoNext = a.prefs.getBoolean(Prefs.AUTO_NEXT, true);
-        addSettingCard(
-                body,
-                "⏭ 自动连播下一集",
-                autoNext ? "已开启" : "已关闭",
-                () -> {
-                    a.prefs.edit().putBoolean(Prefs.AUTO_NEXT, !autoNext).apply();
-                    renderSettingsTab();
+                    settingsSubPage = 2;
+                    sv.scrollTo(0, 0);
+                    refreshInPlace.run();
                 });
 
-        a.gap(body, 12);
-        addSectionHeader(body, "备份、更新与系统诊断");
+        // Primary Category Card 4: 界面外观与偏好
+        int scale = a.prefs.getInt(Prefs.UI_SCALE_PERCENT, 100);
         addSettingCard(
                 body,
-                "💾 完整设置与数据高级选项",
-                "备份导出与恢复、网盘账号登录、字幕与壁纸设置",
-                () -> a.open(new MainActivity.Screen(() -> new SettingsScreen(a).show()), true));
+                4,
+                "界面外观与偏好",
+                "画面缩放 " + scale + "% · 动画动效与搜索历史管理",
+                () -> {
+                    settingsSubPage = 3;
+                    sv.scrollTo(0, 0);
+                    refreshInPlace.run();
+                });
+
+        // Primary Category Card 5: 备份、更新与诊断
         addSettingCard(
                 body,
-                "🔄 检查软件更新",
-                "当前版本：" + UpdateManager.installedVersion(a) + " · 正式版",
-                () -> a.open(new MainActivity.Screen(() -> new UpdateScreen(a).show()), true));
-        addSettingCard(
-                body, "📋 查看运行诊断日志", "排查片源网络请求与播放解码报错", () -> new SettingsScreen(a).diagnostics());
+                5,
+                "备份、更新与诊断",
+                "版本 " + UpdateManager.installedVersion(a) + " 正式版 · 配置备份恢复与运行日志",
+                () -> {
+                    settingsSubPage = 4;
+                    sv.scrollTo(0, 0);
+                    refreshInPlace.run();
+                });
     }
 
     private void addSectionHeader(LinearLayout parent, String title) {
@@ -2282,16 +2749,21 @@ final class MobileShell {
     }
 
     private void addSettingCard(
-            LinearLayout parent, String title, String subtitle, Runnable action) {
+            LinearLayout parent, int iconKind, String title, String subtitle, Runnable action) {
         LinearLayout row = a.row();
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(a.dp(15), a.dp(13), a.dp(15), a.dp(13));
-        row.setBackground(glassBg(0xb81b2320, 0xb8131917, a.dp(16), a.dp(0.7f), 0x26ffffff));
+        row.setPadding(a.dp(14), a.dp(13), a.dp(14), a.dp(13));
+        row.setBackground(glassBg(0xb81b2320, 0xb8131917, a.dp(18), a.dp(0.7f), 0x26ffffff));
         MobileDetailScreen.bindTouchFeedback(row);
         row.setOnClickListener(v -> action.run());
 
+        SettingIconView icon = new SettingIconView(a, iconKind);
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(a.dp(36), a.dp(36));
+        iconLp.rightMargin = a.dp(12);
+        row.addView(icon, iconLp);
+
         LinearLayout textCol = a.vertical();
-        TextView t = a.text(title, 14, MainActivity.WHITE);
+        TextView t = a.text(title, 14.5f, MainActivity.WHITE);
         t.setTypeface(null, Typeface.BOLD);
         textCol.addView(t);
 
@@ -2305,8 +2777,112 @@ final class MobileShell {
         row.addView(a.text("›", 20, MainActivity.MUTED));
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.bottomMargin = a.dp(8);
+        lp.bottomMargin = a.dp(10);
         parent.addView(row, lp);
+    }
+
+    /** Clean vector icon badge for Settings cards (replaces emojis). */
+    static final class SettingIconView extends View {
+        private final MainActivity a;
+        private final int kind;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        SettingIconView(MainActivity activity, int kind) {
+            super(activity);
+            this.a = activity;
+            this.kind = kind;
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            float w = getWidth(), h = getHeight();
+            float cx = w / 2f, cy = h / 2f;
+            int badgeBg;
+            int strokeColor;
+            switch (kind) {
+                case 1:
+                    badgeBg = 0x260a84ff;
+                    strokeColor = 0xff5ac8fa;
+                    break;
+                case 2:
+                    badgeBg = 0x2630d158;
+                    strokeColor = 0xff34d399;
+                    break;
+                case 3:
+                    badgeBg = 0x26ff9f0a;
+                    strokeColor = 0xfffbbf24;
+                    break;
+                case 4:
+                    badgeBg = 0x26bf5af2;
+                    strokeColor = 0xffc084fc;
+                    break;
+                default:
+                    badgeBg = 0x265ac8fa;
+                    strokeColor = 0xff60a5fa;
+                    break;
+            }
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(badgeBg);
+            c.drawRoundRect(new RectF(0, 0, w, h), a.dp(10), a.dp(10), paint);
+
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setColor(strokeColor);
+            paint.setStrokeWidth(a.dp(1.6f));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+
+            if (kind == 1) {
+                // Layers / source cube icon
+                Path top = new Path();
+                top.moveTo(cx, a.dp(8.5f));
+                top.lineTo(w - a.dp(8.5f), cy - a.dp(2f));
+                top.lineTo(cx, cy + a.dp(2.5f));
+                top.lineTo(a.dp(8.5f), cy - a.dp(2f));
+                top.close();
+                c.drawPath(top, paint);
+                c.drawLine(a.dp(8.5f), cy + a.dp(2.5f), cx, h - a.dp(8.5f), paint);
+                c.drawLine(w - a.dp(8.5f), cy + a.dp(2.5f), cx, h - a.dp(8.5f), paint);
+            } else if (kind == 2) {
+                // Cloud / netdisk icon
+                RectF base = new RectF(a.dp(8.5f), cy - a.dp(2f), w - a.dp(8.5f), h - a.dp(9.5f));
+                c.drawRoundRect(base, a.dp(4.5f), a.dp(4.5f), paint);
+                c.drawArc(
+                        new RectF(cx - a.dp(5f), a.dp(9f), cx + a.dp(5f), cy + a.dp(3f)),
+                        190,
+                        160,
+                        false,
+                        paint);
+            } else if (kind == 3) {
+                // Play circle + sliders icon
+                c.drawCircle(cx, cy, a.dp(8.5f), paint);
+                paint.setStyle(Paint.Style.FILL);
+                Path tri = new Path();
+                tri.moveTo(cx - a.dp(2.2f), cy - a.dp(3.4f));
+                tri.lineTo(cx + a.dp(3.6f), cy);
+                tri.lineTo(cx - a.dp(2.2f), cy + a.dp(3.4f));
+                tri.close();
+                c.drawPath(tri, paint);
+            } else if (kind == 4) {
+                // Sliders / tuning icon
+                float x1 = a.dp(9.5f), x2 = w - a.dp(9.5f);
+                c.drawLine(x1, cy - a.dp(5f), x2, cy - a.dp(5f), paint);
+                c.drawLine(x1, cy + a.dp(5f), x2, cy + a.dp(5f), paint);
+                paint.setStyle(Paint.Style.FILL);
+                c.drawCircle(cx - a.dp(3f), cy - a.dp(5f), a.dp(2.3f), paint);
+                c.drawCircle(cx + a.dp(3f), cy + a.dp(5f), a.dp(2.3f), paint);
+            } else {
+                // Shield / update arrow icon
+                c.drawArc(
+                        new RectF(a.dp(9.5f), a.dp(9.5f), w - a.dp(9.5f), h - a.dp(9.5f)),
+                        -30,
+                        300,
+                        false,
+                        paint);
+                c.drawLine(cx, a.dp(13f), cx, cy + a.dp(3.5f), paint);
+                c.drawLine(cx - a.dp(2.8f), cy + a.dp(0.8f), cx, cy + a.dp(3.6f), paint);
+                c.drawLine(cx + a.dp(2.8f), cy + a.dp(0.8f), cx, cy + a.dp(3.6f), paint);
+            }
+        }
     }
 
     private void renderCenteredHint(LinearLayout parent, String message) {

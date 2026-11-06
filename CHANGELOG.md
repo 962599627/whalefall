@@ -1,5 +1,20 @@
 # 版本记录
 
+## 0.4.36 — 2026-11-07
+
+- **网盘 `.mkv` 视频加载与非直播影视进度条/总时长稳定化修复（`LocalProxy`、`MoviePlayer`、`PlaybackController`、`player_screen.dart`）**：
+  - 修复网盘插件 `proxyLocal` 分片响应缺少完整 `Content-Range` / `Content-Length` 导致 `.mkv` EBML Cues 索引读取中断的问题，实现多段流式自动续接（Chunk-Chaining）与原画直连优先；稳定化非直播点播总时长（`maxKnownDurationMs`），消除 HLS/TS 流播放过程中进度条跳动与无总时长显示的问题。
+- **扩展片源 `playerContent` IOException 自动重试、多格式协议解包与备用线路自动切换（`CspEngine`、`MediaOptions`、`PlaybackController`）**：
+  - 为 `Spider.playerContent()` 增加网络抖动自动重试、裸 URL 自动包装与直连地址回退；当主线路解析失败或报协议不支持时自动切换同剧集可用备用线路。
+- **播放页片名旁新增视频详情角标 & 跳片头片尾支持手动拖拽精准时间节点（全平台）**：
+  - 在播放器顶部片名旁实时展示视频规格胶囊（如 `4K UHD · 3840×2160 · HEVC · HDR · MKV`）；新增跳片头/片尾 0~300 秒 1 秒级手动拖拽滑块、微调按钮与「设为当前播放进度」一键精准捕获。
+- **搜索弹窗与搜索结果驻留保持 & 顶栏长源名防挤压保护（`MobileShell`、`GlobalSearchScreen`、`adaptive_shell.dart`）**：
+  - 从搜索结果进入影视详情页再返回时，搜索弹窗/搜索页与已检索结果列表、滚动位置完整驻留，无需重新打开搜索即可直接换源选片；约束顶栏片源胶囊最大宽度并自适应省略，防止超长源名将搜索按钮挤出屏幕。
+- **方向键交互式字幕大小/位置/样式调节、弹幕自动加载与手机端二级无 Emoji 设置页重构（`PlaybackControls`、`SubtitleOverlayView`、`DanmakuView`、`MobileShell`）**：
+  - 字幕调整改为全透明实时预览 HUD（上下键调高低位置、左右键调字号大小、确认键切换全透明描边/毛玻璃/浅灰底样式）；重构手机端设置为无 Emoji 矢量图标二级分组菜单并原地刷新消除高刷屏重影；修复横屏右侧工具栏文字排版与电视端/Windows 端掉帧问题。
+- **Windows 安装向导程序（`MarcoMovie-0.4.36-windows-setup.exe`）与后续版本一键在线更新**：
+  - 新增 Inno Setup 安装程序（内置 VC++ 运行库、自动创建桌面与开始菜单快捷方式、启动即显窗口），并在桌面端设置中内置在线检测与安装向导自动升级。
+
 ## 0.4.35 — 2026-11-06
 
 - **Android 电视端与手机/平板 64 位安装包独立分包（`preview.apk` 电视版 + `mobile.apk` 64位手机版）**：

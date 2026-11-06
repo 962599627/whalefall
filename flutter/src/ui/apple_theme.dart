@@ -1,8 +1,12 @@
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+bool get _isWindowsDesktop => !kIsWeb && Platform.isWindows;
 
 /// Apple iOS 27 Liquid Glass design tokens (iOS / iPadOS / macOS dark appearance):
 /// deep obsidian canvas, refractive translucent glass materials, specular rims.
@@ -274,31 +278,60 @@ class LiquidGlass extends StatelessWidget {
       child: ClipPath(
         clipper: ShapeBorderClipper(shape: shape),
         clipBehavior: Clip.antiAlias,
-        child: BackdropFilter(
-          filter: liquidGlassFilter(blur: blur, saturation: saturation),
-          child: CustomPaint(
-            foregroundPainter:
-                _LiquidRimPainter(shape: shape, strength: rimStrength),
-            child: Container(
-              width: width,
-              height: height,
-              decoration: ShapeDecoration(
-                shape: shape,
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color.alphaBlend(const Color(0x24FFFFFF), tint),
-                    tint,
-                    Color.alphaBlend(const Color(0x0DFFFFFF), tint),
-                  ],
-                  stops: const [0.0, 0.55, 1.0],
+        child: _isWindowsDesktop
+            ? CustomPaint(
+                foregroundPainter:
+                    _LiquidRimPainter(shape: shape, strength: rimStrength),
+                child: Container(
+                  width: width,
+                  height: height,
+                  decoration: ShapeDecoration(
+                    shape: shape,
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color.alphaBlend(
+                          const Color(0x28FFFFFF),
+                          tint.withValues(alpha: math.max(tint.a, 0.88)),
+                        ),
+                        tint.withValues(alpha: math.max(tint.a, 0.88)),
+                        Color.alphaBlend(
+                          const Color(0x10FFFFFF),
+                          tint.withValues(alpha: math.max(tint.a, 0.88)),
+                        ),
+                      ],
+                      stops: const [0.0, 0.55, 1.0],
+                    ),
+                  ),
+                  child: content,
+                ),
+              )
+            : BackdropFilter(
+                filter: liquidGlassFilter(blur: blur, saturation: saturation),
+                child: CustomPaint(
+                  foregroundPainter:
+                      _LiquidRimPainter(shape: shape, strength: rimStrength),
+                  child: Container(
+                    width: width,
+                    height: height,
+                    decoration: ShapeDecoration(
+                      shape: shape,
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color.alphaBlend(const Color(0x24FFFFFF), tint),
+                          tint,
+                          Color.alphaBlend(const Color(0x0DFFFFFF), tint),
+                        ],
+                        stops: const [0.0, 0.55, 1.0],
+                      ),
+                    ),
+                    child: content,
+                  ),
                 ),
               ),
-              child: content,
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -397,32 +430,67 @@ class AppleGlassSurface extends StatelessWidget {
       child: ClipRRect(
         borderRadius: radius,
         clipBehavior: Clip.antiAlias,
-        child: BackdropFilter(
-          filter: liquidGlassFilter(blur: blurSigma * 0.7, saturation: 1.6),
-          child: CustomPaint(
-            foregroundPainter: border == null
-                ? _LiquidRimPainter(shape: shape, strength: 0.8)
-                : null,
-            child: Container(
-              width: width,
-              height: height,
-              padding: padding,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color.alphaBlend(const Color(0x1CFFFFFF), effectiveColor),
-                    effectiveColor,
-                  ],
+        child: _isWindowsDesktop
+            ? CustomPaint(
+                foregroundPainter: border == null
+                    ? _LiquidRimPainter(shape: shape, strength: 0.8)
+                    : null,
+                child: Container(
+                  width: width,
+                  height: height,
+                  padding: padding,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color.alphaBlend(
+                          const Color(0x20FFFFFF),
+                          effectiveColor.withValues(
+                            alpha: math.max(effectiveColor.a, 0.90),
+                          ),
+                        ),
+                        effectiveColor.withValues(
+                          alpha: math.max(effectiveColor.a, 0.90),
+                        ),
+                      ],
+                    ),
+                    borderRadius: radius,
+                    border: border,
+                  ),
+                  child: child,
                 ),
-                borderRadius: radius,
-                border: border,
+              )
+            : BackdropFilter(
+                filter:
+                    liquidGlassFilter(blur: blurSigma * 0.7, saturation: 1.6),
+                child: CustomPaint(
+                  foregroundPainter: border == null
+                      ? _LiquidRimPainter(shape: shape, strength: 0.8)
+                      : null,
+                  child: Container(
+                    width: width,
+                    height: height,
+                    padding: padding,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color.alphaBlend(
+                            const Color(0x1CFFFFFF),
+                            effectiveColor,
+                          ),
+                          effectiveColor,
+                        ],
+                      ),
+                      borderRadius: radius,
+                      border: border,
+                    ),
+                    child: child,
+                  ),
+                ),
               ),
-              child: child,
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -802,6 +870,60 @@ class AppleCapsuleButton extends StatelessWidget {
     final bg = destructive
         ? const Color(0x2EFF453A)
         : (primary ? const Color(0xFFF5F5F7) : const Color(0x42787884));
+    final buttonBody = Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 13 : 20,
+        vertical: compact ? 6.5 : 11,
+      ),
+      decoration: BoxDecoration(
+        color: bg,
+        gradient: primary
+            ? const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFFFFFFF), Color(0xFFEAECEF)],
+              )
+            : LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color.alphaBlend(const Color(0x1AFFFFFF), bg),
+                  bg,
+                ],
+              ),
+        borderRadius: BorderRadius.circular(999),
+        border: primary
+            ? Border.all(color: const Color(0x80FFFFFF), width: 0.5)
+            : Border.all(
+                color: destructive
+                    ? const Color(0x59FF453A)
+                    : AppleColors.glassBorder,
+                width: 0.6,
+              ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: compact ? 14.5 : 17, color: fg),
+            SizedBox(width: compact ? 5 : 7),
+          ],
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: fg,
+                fontSize: compact ? 12.5 : 15,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
     return CupertinoButton(
       padding: EdgeInsets.zero,
       minSize: compact ? 32 : 42,
@@ -810,63 +932,12 @@ class AppleCapsuleButton extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(999),
         clipBehavior: Clip.antiAlias,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: compact ? 13 : 20,
-              vertical: compact ? 6.5 : 11,
-            ),
-            decoration: BoxDecoration(
-              color: bg,
-              gradient: primary
-                  ? const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Color(0xFFFFFFFF), Color(0xFFEAECEF)],
-                    )
-                  : LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color.alphaBlend(const Color(0x1AFFFFFF), bg),
-                        bg,
-                      ],
-                    ),
-              borderRadius: BorderRadius.circular(999),
-              border: primary
-                  ? Border.all(color: const Color(0x80FFFFFF), width: 0.5)
-                  : Border.all(
-                      color: destructive
-                          ? const Color(0x59FF453A)
-                          : AppleColors.glassBorder,
-                      width: 0.6,
-                    ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, size: compact ? 14.5 : 17, color: fg),
-                  SizedBox(width: compact ? 5 : 7),
-                ],
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: fg,
-                      fontSize: compact ? 12.5 : 15,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+        child: _isWindowsDesktop
+            ? buttonBody
+            : BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                child: buttonBody,
+              ),
       ),
     );
   }
@@ -1268,33 +1339,39 @@ class AppleAmbientBackground extends StatelessWidget {
               ),
             ),
           ),
-        if (artwork != null && showAmbientArtwork)
+                if (artwork != null && showAmbientArtwork)
           Positioned(
             top: 0,
             left: 0,
             right: 0,
             height: 560,
             child: IgnorePointer(
-              child: ClipRect(
-                child: ShaderMask(
-                  blendMode: BlendMode.dstIn,
-                  shaderCallback: (rect) => const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0x80FFFFFF),
-                      Color(0x38FFFFFF),
-                      Color(0x00FFFFFF),
-                    ],
-                    stops: [0.0, 0.45, 0.88],
-                  ).createShader(rect),
-                  child: ImageFiltered(
-                    imageFilter: ImageFilter.blur(
-                      sigmaX: blurSigma,
-                      sigmaY: blurSigma,
-                      tileMode: TileMode.decal,
+              child: RepaintBoundary(
+                child: ClipRect(
+                  child: ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (rect) => const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0x80FFFFFF),
+                        Color(0x38FFFFFF),
+                        Color(0x00FFFFFF),
+                      ],
+                      stops: [0.0, 0.45, 0.88],
+                    ).createShader(rect),
+                    child: ImageFiltered(
+                      imageFilter: ImageFilter.blur(
+                        sigmaX: _isWindowsDesktop
+                            ? math.min(blurSigma, 24.0)
+                            : blurSigma,
+                        sigmaY: _isWindowsDesktop
+                            ? math.min(blurSigma, 24.0)
+                            : blurSigma,
+                        tileMode: TileMode.decal,
+                      ),
+                      child: artwork,
                     ),
-                    child: artwork,
                   ),
                 ),
               ),

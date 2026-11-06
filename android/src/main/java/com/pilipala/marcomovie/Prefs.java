@@ -37,7 +37,13 @@ final class Prefs {
     static final String SKIP_INTRO = "skip_intro";
     static final String SKIP_OUTRO = "skip_outro";
     static final String SUBTITLE_SIZE = "subtitle_size";
+    static final String SUBTITLE_SIZE_SP = SUBTITLE_SIZE;
     static final String SUBTITLE_BOTTOM = "subtitle_bottom";
+    static final String SUBTITLE_STYLE = "subtitle_style";
+    static final String SUBTITLE_BG_STYLE = SUBTITLE_STYLE;
+    static final String SKIP_INTRO_SECONDS = SKIP_INTRO;
+    static final String SKIP_OUTRO_SECONDS = SKIP_OUTRO;
+    static final String TUNNELED_PLAYBACK = "tunneled_playback";
     static final String DANMAKU_DEFAULT = "danmaku_default";
     static final String PICTURE_EFFECT = "picture_effect";
     static final String AUDIO_EFFECT = "audio_effect";
@@ -47,6 +53,8 @@ final class Prefs {
 
     // Runtime state & user data keys (excluded from settings-only reset/restore).
     static final String ORIGIN = "origin";
+    static final String LIVE_URL = "live_url";
+    static final String LIVE_NAME = "live_name";
     static final String SELECTED_SITE = "selected_site";
     static final String LOADING_SITE = "loading_site";
     static final String EXPERIMENTAL_CSP = "experimental_csp";
@@ -119,6 +127,7 @@ final class Prefs {
         ranges.put(SKIP_OUTRO, new int[] {0, 180});
         ranges.put(SUBTITLE_SIZE, new int[] {25, 65});
         ranges.put(SUBTITLE_BOTTOM, new int[] {0, 180});
+        ranges.put(SUBTITLE_STYLE, new int[] {0, 4});
         ranges.put(PICTURE_EFFECT, new int[] {0, 3});
         ranges.put(AUDIO_EFFECT, new int[] {0, 3});
         ranges.put(SEARCH_THREADS, new int[] {2, 6});
@@ -166,6 +175,18 @@ final class Prefs {
 
     static int clampSubtitleBottom(int dp) {
         return Math.max(0, Math.min(180, dp));
+    }
+
+    static int clampSubtitleStyle(int style) {
+        return Math.max(0, Math.min(4, style));
+    }
+
+    static int clampSubtitleBgStyle(int style) {
+        return clampSubtitleStyle(style);
+    }
+
+    static int clampSkipSeconds(int seconds) {
+        return Math.max(0, Math.min(180, seconds));
     }
 
     static int clampSearchTimeoutSeconds(int seconds) {

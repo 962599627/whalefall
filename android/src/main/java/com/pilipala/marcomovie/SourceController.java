@@ -450,28 +450,450 @@ final class SourceController {
             }
             return;
         }
-        if (request == 41
+        if ((request == 41 || request == 47)
                 && result == Activity.RESULT_OK
                 && data != null
                 && data.getData() != null) {
-            Uri uri = data.getData();
-            a.open(
-                    new MainActivity.Screen(
-                            () -> {
-                                a.renderPage("正在读取文件", "IMPORT CONFIGURATION");
-                                a.load(
-                                        "读取本地配置…",
-                                        () -> {
-                                            try (InputStream i =
-                                                    a.getContentResolver().openInputStream(uri)) {
-                                                return Cms.parseConfig(
-                                                        Cms.read(i, Cms.MAX_JSON), null);
-                                            }
-                                        },
-                                        c -> a.saveConfig(c, ""));
-                            }),
-                    true);
+            importLocalUri(a, data.getData(), request == 47);
         }
+    }
+
+    static void pickLiveSource(MainActivity a) {
+        pickDocument(a, 47, "这台设备没有文件选择器，请使用网址或剪贴板导入直播源。");
+    }
+
+    static void showLiveImportDialog(MainActivity a) {
+        LinearLayout panel = a.vertical();
+        panel.setPadding(a.dp(4), a.dp(6), a.dp(4), a.dp(4));
+
+        TextView tip =
+                a.text("支持 M3U / M3U8 / TXT (#genre#) / JSON 直播源网址或文本：", 13, MainActivity.MUTED);
+        panel.addView(tip);
+        a.gap(panel, 10);
+
+        final android.widget.EditText input = new android.widget.EditText(a);
+        input.setHint("https://…/live.txt 或 #EXTM3U…");
+        input.setHintTextColor(0xff6b7280);
+        input.setTextColor(MainActivity.WHITE);
+        input.setTextSize(14);
+        input.setMaxLines(4);
+        input.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
+        input.setBackground(a.bg(0xff1e2623, 12));
+        String savedLive = a.prefs.getString(Prefs.LIVE_URL, "");
+        if (Cms.isHttp(savedLive)) {
+            input.setText(savedLive);
+            input.setSelection(savedLive.length());
+        }
+        panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
+        a.gap(panel, 12);
+
+        TextView pasteBtn = a.text("📋 从剪贴板一键粘贴直播源", 13, android.graphics.Color.WHITE);
+        pasteBtn.setTypeface(null, android.graphics.Typeface.BOLD);
+        pasteBtn.setGravity(android.view.Gravity.CENTER);
+        pasteBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
+        pasteBtn.setBackground(a.bg(0xff0a84ff, 999));
+        MobileDetailScreen.bindTouchFeedback(pasteBtn);
+        panel.addView(pasteBtn, new LinearLayout.LayoutParams(-1, -2));
+        a.gap(panel, 8);
+
+        TextView fileBtn = a.text("📂 选择本地直播源文件 (TXT / M3U / JSON)", 13, MainActivity.WHITE);
+        fileBtn.setGravity(android.view.Gravity.CENTER);
+        fileBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
+        fileBtn.setBackground(a.bg(0xff1e2623, 999));
+        MobileDetailScreen.bindTouchFeedback(fileBtn);
+        panel.addView(fileBtn, new LinearLayout.LayoutParams(-1, -2));
+
+        AppDialog.Builder builder =
+                new AppDialog.Builder(a)
+                        .setTitle("导入或管理直播源")
+                        .setView(panel)
+                        .setNegativeButton("取消", null)
+                        .setPositiveButton(
+                                "导入输入内容",
+                                (d, w) -> {
+                                    String raw = input.getText().toString().trim();
+                                    if (raw.isEmpty()) {
+                                        a.toast("请输入直播源网址或内容");
+                                        return;
+                                    }
+                                    importLiveTextOrUrl(a, raw);
+                                });
+        if (!savedLive.isEmpty()) {
+            builder.setNeutralButton(
+                    "清除自定义直播",
+                    (d, w) -> {
+                        a.prefs.edit().remove(Prefs.LIVE_URL).remove(Prefs.LIVE_NAME).apply();
+                        a.toast("已清除自定义直播源");
+                        if (!a.isTvDevice()) MobileShell.show(a);
+                        else a.refresh();
+                    });
+        }
+        final AppDialog dialog = builder.create();
+
+        pasteBtn.setOnClickListener(
+                v -> {
+                    dialog.dismiss();
+                    android.content.ClipboardManager cm =
+                            (android.content.ClipboardManager)
+                                    a.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                    String clipText = "";
+                    if (cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip() != null) {
+                        android.content.ClipData clip = cm.getPrimaryClip();
+                        if (clip.getItemCount() > 0 && clip.getItemAt(0).getText() != null) {
+                            clipText = clip.getItemAt(0).getText().toString().trim();
+                        }
+                    }
+                    if (clipText.isEmpty()) {
+                        a.toast("剪贴板为空，请先复制直播源网址或内容");
+                        return;
+                    }
+                    importLiveTextOrUrl(a, clipText);
+                });
+        fileBtn.setOnClickListener(
+                v -> {
+                    dialog.dismiss();
+                    pickLiveSource(a);
+                });
+        dialog.show();
+    }
+
+    static void importLiveTextOrUrl(MainActivity a, String rawInput) {
+        final String text = rawInput == null ? "" : rawInput.trim();
+        if (text.isEmpty()) {
+            a.toast("请输入直播源网址或内容");
+            return;
+        }
+        a.toast("正在读取并校验直播源…");
+        a.worker.execute(
+                () -> {
+                    try {
+                        final String savedUrl;
+                        final String savedName;
+                        final int count;
+                        if (Cms.isHttp(text)) {
+                            String norm = Cms.normalizeHttp(text);
+                            LiveCatalog.Source src = new LiveCatalog.Source();
+                            src.name = "自定义直播源";
+                            src.url = norm;
+                            src.origin = norm;
+                            src.headers.put("User-Agent", Cms.USER_AGENT);
+                            LiveCatalog.Catalog cat = LiveCatalog.load(src);
+                            count = cat.channelCount();
+                            savedUrl = norm;
+                            savedName = "自定义直播 (" + count + "台)";
+                        } else {
+                            LiveCatalog.Catalog cat = LiveCatalog.parse(text, "", null);
+                            count = cat.channelCount();
+                            java.io.File liveFile =
+                                    new java.io.File(a.getFilesDir(), "custom_live.txt");
+                            try (java.io.OutputStream out =
+                                    new java.io.FileOutputStream(liveFile)) {
+                                out.write(text.getBytes("UTF-8"));
+                            }
+                            savedUrl = liveFile.toURI().toURL().toString();
+                            savedName = "本地直播 (" + count + "台)";
+                        }
+                        a.ui.post(
+                                () -> {
+                                    a.prefs
+                                            .edit()
+                                            .putString(Prefs.LIVE_URL, savedUrl)
+                                            .putString(Prefs.LIVE_NAME, savedName)
+                                            .apply();
+                                    a.toast("直播源导入成功（共 " + count + " 个频道）");
+                                    if (!a.isTvDevice()) MobileShell.show(a);
+                                    else a.refresh();
+                                });
+                    } catch (Exception e) {
+                        a.ui.post(() -> a.toast("直播源导入失败：" + a.message(e)));
+                    }
+                });
+    }
+
+    static void mergeOrSaveConfig(MainActivity a, Cms.Config incoming, String origin, boolean merge)
+            throws Exception {
+        if (!merge || a.config == null || a.config.sites.isEmpty()) {
+            saveConfig(a, incoming, origin);
+            return;
+        }
+        org.json.JSONObject baseJson;
+        try {
+            baseJson = new org.json.JSONObject(Cms.withoutComments(a.config.raw));
+        } catch (Exception ignored) {
+            saveConfig(a, incoming, origin);
+            return;
+        }
+        org.json.JSONArray sitesArr = baseJson.optJSONArray("sites");
+        if (sitesArr == null) {
+            sitesArr = new org.json.JSONArray();
+            baseJson.put("sites", sitesArr);
+        }
+        for (Cms.Site ns : incoming.sites) {
+            for (int i = sitesArr.length() - 1; i >= 0; i--) {
+                org.json.JSONObject existing = sitesArr.optJSONObject(i);
+                if (existing != null
+                        && (ns.key.equals(existing.optString("key"))
+                                || ns.api.equals(existing.optString("api")))) {
+                    sitesArr.remove(i);
+                }
+            }
+            org.json.JSONObject sObj =
+                    new org.json.JSONObject()
+                            .put("key", ns.key)
+                            .put("name", ns.name)
+                            .put("type", ns.type)
+                            .put("api", ns.api)
+                            .put("searchable", ns.searchable ? 1 : 0);
+            if (ns.jar != null && !ns.jar.isEmpty()) sObj.put("jar", ns.jar);
+            if (ns.ext != null) sObj.put("ext", ns.ext);
+            sitesArr.put(sObj);
+        }
+        String mergedRaw = baseJson.toString(2);
+        Cms.Config merged = Cms.parseConfig(mergedRaw, a.configOrigin);
+        if (!incoming.sites.isEmpty()) {
+            a.prefs.edit().putString(Prefs.SELECTED_SITE, incoming.sites.get(0).key).apply();
+        }
+        saveConfig(a, merged, a.configOrigin);
+    }
+
+    private static void deleteRecursive(java.io.File f) {
+        if (f == null || !f.exists()) return;
+        if (f.isDirectory()) {
+            java.io.File[] children = f.listFiles();
+            if (children != null) {
+                for (java.io.File c : children) deleteRecursive(c);
+            }
+        }
+        f.delete();
+    }
+
+    private static java.io.File findMainConfigInDir(java.io.File dir) {
+        if (dir == null || !dir.isDirectory()) return null;
+        String[] preferred = {"config.json", "api.json", "tv.json", "index.json", "main.json"};
+        for (String name : preferred) {
+            java.io.File f = new java.io.File(dir, name);
+            if (f.isFile()) return f;
+        }
+        java.io.File[] files = dir.listFiles();
+        if (files == null) return null;
+        for (java.io.File f : files) {
+            if (f.isFile() && f.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".json")) {
+                return f;
+            }
+        }
+        for (java.io.File f : files) {
+            if (f.isDirectory()) {
+                java.io.File sub = findMainConfigInDir(f);
+                if (sub != null) return sub;
+            }
+        }
+        return null;
+    }
+
+    static Cms.Config extractZipPackage(java.io.File filesDir, byte[] zipBytes) throws Exception {
+        java.io.File pkgDir = new java.io.File(filesDir, "local_pkg");
+        deleteRecursive(pkgDir);
+        if (!pkgDir.mkdirs() && !pkgDir.exists()) throw new IOException("无法创建本地包解压目录");
+        String canonicalRoot = pkgDir.getCanonicalPath();
+        long totalWritten = 0;
+        try (java.util.zip.ZipInputStream zis =
+                new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zipBytes))) {
+            java.util.zip.ZipEntry entry;
+            byte[] buf = new byte[8192];
+            while ((entry = zis.getNextEntry()) != null) {
+                String entryName = entry.getName().replace('\\', '/');
+                if (entryName.startsWith("/") || entryName.contains("..")) continue;
+                java.io.File target = new java.io.File(pkgDir, entryName);
+                if (!target.getCanonicalPath().startsWith(canonicalRoot)) continue;
+                if (entry.isDirectory()) {
+                    target.mkdirs();
+                } else {
+                    java.io.File parent = target.getParentFile();
+                    if (parent != null && !parent.exists()) parent.mkdirs();
+                    try (java.io.OutputStream out = new java.io.FileOutputStream(target)) {
+                        int n;
+                        while ((n = zis.read(buf)) != -1) {
+                            totalWritten += n;
+                            if (totalWritten > 48L * 1024 * 1024)
+                                throw new IOException("本地包解压内容超过 48 MB 限制");
+                            out.write(buf, 0, n);
+                        }
+                    }
+                }
+                zis.closeEntry();
+            }
+        }
+        java.io.File mainJson = findMainConfigInDir(pkgDir);
+        if (mainJson == null) throw new IOException("本地 ZIP 包中未找到 JSON 配置文件");
+        try (InputStream in = new java.io.FileInputStream(mainJson)) {
+            String raw = Cms.read(in, Cms.MAX_JSON);
+            String origin = mainJson.toURI().toURL().toString();
+            return Cms.parseConfig(raw, origin);
+        }
+    }
+
+    static void importLocalUri(MainActivity a, Uri uri, boolean preferLive) {
+        a.toast("正在读取本地文件…");
+        a.worker.execute(
+                () -> {
+                    try {
+                        String displayName = "imported";
+                        try (android.database.Cursor cursor =
+                                a.getContentResolver()
+                                        .query(
+                                                uri,
+                                                new String[] {
+                                                    android.provider.OpenableColumns.DISPLAY_NAME
+                                                },
+                                                null,
+                                                null,
+                                                null)) {
+                            if (cursor != null && cursor.moveToFirst()) {
+                                String n = cursor.getString(0);
+                                if (n != null && !n.trim().isEmpty()) displayName = n.trim();
+                            }
+                        } catch (Exception ignored) {
+                        }
+                        byte[] rawBytes;
+                        try (InputStream in = a.getContentResolver().openInputStream(uri);
+                                java.io.ByteArrayOutputStream bos =
+                                        new java.io.ByteArrayOutputStream()) {
+                            byte[] buf = new byte[8192];
+                            int n;
+                            while ((n = in.read(buf)) != -1) {
+                                if (bos.size() + n > 28 * 1024 * 1024)
+                                    throw new IOException("本地文件超过 28 MB 大小限制");
+                                bos.write(buf, 0, n);
+                            }
+                            rawBytes = bos.toByteArray();
+                        }
+                        String lowerName = displayName.toLowerCase(java.util.Locale.ROOT);
+                        boolean isZip =
+                                lowerName.endsWith(".zip")
+                                        || (rawBytes.length >= 4
+                                                && (rawBytes[0] & 0xff) == 0x50
+                                                && (rawBytes[1] & 0xff) == 0x4b
+                                                && (rawBytes[2] & 0xff) == 0x03
+                                                && (rawBytes[3] & 0xff) == 0x04);
+                        if (isZip && !lowerName.endsWith(".jar")) {
+                            Cms.Config pkgConfig = extractZipPackage(a.getFilesDir(), rawBytes);
+                            a.ui.post(
+                                    () -> {
+                                        try {
+                                            saveConfig(a, pkgConfig, "");
+                                            a.toast(
+                                                    "本地包导入成功（共 "
+                                                            + pkgConfig.sites.size()
+                                                            + " 个片源）");
+                                        } catch (Exception ex) {
+                                            a.toast("保存本地包配置失败：" + a.message(ex));
+                                        }
+                                    });
+                            return;
+                        }
+                        String text = Cms.document(rawBytes);
+                        if (preferLive
+                                || lowerName.endsWith(".m3u")
+                                || lowerName.endsWith(".m3u8")
+                                || lowerName.endsWith(".txt")) {
+                            try {
+                                LiveCatalog.Catalog cat = LiveCatalog.parse(text, "", null);
+                                java.io.File liveFile =
+                                        new java.io.File(a.getFilesDir(), "custom_live.txt");
+                                try (java.io.OutputStream out =
+                                        new java.io.FileOutputStream(liveFile)) {
+                                    out.write(text.getBytes("UTF-8"));
+                                }
+                                final String liveUrl = liveFile.toURI().toURL().toString();
+                                final int count = cat.channelCount();
+                                final String liveName = displayName + " (" + count + "台)";
+                                a.ui.post(
+                                        () -> {
+                                            a.prefs
+                                                    .edit()
+                                                    .putString(Prefs.LIVE_URL, liveUrl)
+                                                    .putString(Prefs.LIVE_NAME, liveName)
+                                                    .apply();
+                                            a.toast("直播源导入成功（共 " + count + " 个频道）");
+                                            if (!a.isTvDevice()) MobileShell.show(a);
+                                            else a.refresh();
+                                        });
+                                return;
+                            } catch (Exception liveErr) {
+                                if (preferLive) throw liveErr;
+                            }
+                        }
+                        if (lowerName.endsWith(".js")
+                                || lowerName.endsWith(".mjs")
+                                || lowerName.endsWith(".py")
+                                || Cms.looksLikeJsSpider(text, displayName)
+                                || Cms.looksLikePySpider(text, displayName)) {
+                            java.io.File spiderDir =
+                                    new java.io.File(a.getFilesDir(), "local_spiders");
+                            if (!spiderDir.exists()) spiderDir.mkdirs();
+                            String safeName =
+                                    displayName.replaceAll("[^A-Za-z0-9._\\-\\u4e00-\\u9fa5]", "_");
+                            java.io.File savedFile = new java.io.File(spiderDir, safeName);
+                            try (java.io.OutputStream out =
+                                    new java.io.FileOutputStream(savedFile)) {
+                                out.write(text.getBytes("UTF-8"));
+                            }
+                            String fileOrigin = savedFile.toURI().toURL().toString();
+                            Cms.Config singleCfg = Cms.parseConfig(text, fileOrigin);
+                            a.ui.post(
+                                    () -> {
+                                        try {
+                                            mergeOrSaveConfig(a, singleCfg, "", true);
+                                            a.toast("已导入扩展片源：" + singleCfg.sites.get(0).name);
+                                        } catch (Exception ex) {
+                                            a.toast("保存扩展片源失败：" + a.message(ex));
+                                        }
+                                    });
+                            return;
+                        }
+                        try {
+                            Cms.Config parsed = Cms.parseConfig(text, null);
+                            a.ui.post(
+                                    () -> {
+                                        try {
+                                            saveConfig(a, parsed, "");
+                                        } catch (Exception ex) {
+                                            a.toast("保存配置失败：" + a.message(ex));
+                                        }
+                                    });
+                        } catch (Exception configErr) {
+                            // Fallback: check if the JSON/text file is actually a live channel list
+                            try {
+                                LiveCatalog.Catalog cat = LiveCatalog.parse(text, "", null);
+                                java.io.File liveFile =
+                                        new java.io.File(a.getFilesDir(), "custom_live.txt");
+                                try (java.io.OutputStream out =
+                                        new java.io.FileOutputStream(liveFile)) {
+                                    out.write(text.getBytes("UTF-8"));
+                                }
+                                final String liveUrl = liveFile.toURI().toURL().toString();
+                                final int count = cat.channelCount();
+                                a.ui.post(
+                                        () -> {
+                                            a.prefs
+                                                    .edit()
+                                                    .putString(Prefs.LIVE_URL, liveUrl)
+                                                    .putString(
+                                                            Prefs.LIVE_NAME,
+                                                            "本地直播 (" + count + "台)")
+                                                    .apply();
+                                            a.toast("已识别并导入直播源（共 " + count + " 个频道）");
+                                            if (!a.isTvDevice()) MobileShell.show(a);
+                                            else a.refresh();
+                                        });
+                            } catch (Exception ignored) {
+                                throw configErr;
+                            }
+                        }
+                    } catch (Exception e) {
+                        a.ui.post(() -> a.toast("文件读取失败：" + a.message(e)));
+                    }
+                });
     }
 
     static void saveConfig(MainActivity a, Cms.Config c, String origin) throws Exception {

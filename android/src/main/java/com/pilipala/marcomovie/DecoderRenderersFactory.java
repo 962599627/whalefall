@@ -3,6 +3,7 @@ package com.pilipala.marcomovie;
 import android.content.Context;
 import android.media.MediaCrypto;
 import android.os.Handler;
+import androidx.media3.common.C;
 import androidx.media3.common.Format;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.exoplayer.DecoderReuseEvaluation;
@@ -49,11 +50,8 @@ final class DecoderRenderersFactory extends DefaultRenderersFactory {
         return false;
     }
 
-    static Format fallbackVideoFormat(Format format) {
+    static Format toBaseLayerFormat(Format format) {
         if (format == null || !MimeTypes.VIDEO_DOLBY_VISION.equals(format.sampleMimeType)) {
-            return format;
-        }
-        if (hasNativeDolbyVisionDecoder()) {
             return format;
         }
         String altMime =
@@ -72,6 +70,16 @@ final class DecoderRenderersFactory extends DefaultRenderersFactory {
                 .setCodecs(null)
                 .setInitializationData(initData != null ? initData : Collections.emptyList())
                 .build();
+    }
+
+    static Format fallbackVideoFormat(Format format) {
+        if (format == null || !MimeTypes.VIDEO_DOLBY_VISION.equals(format.sampleMimeType)) {
+            return format;
+        }
+        if (hasNativeDolbyVisionDecoder()) {
+            return format;
+        }
+        return toBaseLayerFormat(format);
     }
 
     @Override
@@ -104,8 +112,22 @@ final class DecoderRenderersFactory extends DefaultRenderersFactory {
                     protected int supportsFormat(
                             MediaCodecSelector mediaCodecSelector, Format format)
                             throws MediaCodecUtil.DecoderQueryException {
-                        return super.supportsFormat(
-                                mediaCodecSelector, fallbackVideoFormat(format));
+                        if (format != null
+                                && MimeTypes.VIDEO_DOLBY_VISION.equals(format.sampleMimeType)) {
+                            if (mode == 2 || !hasNativeDolbyVisionDecoder()) {
+                                return super.supportsFormat(
+                                        mediaCodecSelector, toBaseLayerFormat(format));
+                            }
+                            int dvSupport = super.supportsFormat(mediaCodecSelector, format);
+                            if ((dvSupport & 7) >= C.FORMAT_HANDLED) {
+                                return dvSupport;
+                            }
+                            int baseSupport =
+                                    super.supportsFormat(
+                                            mediaCodecSelector, toBaseLayerFormat(format));
+                            return (baseSupport & 7) > (dvSupport & 7) ? baseSupport : dvSupport;
+                        }
+                        return super.supportsFormat(mediaCodecSelector, format);
                     }
 
                     @Override
@@ -114,6 +136,39 @@ final class DecoderRenderersFactory extends DefaultRenderersFactory {
                             Format format,
                             boolean requiresSecureDecoder)
                             throws MediaCodecUtil.DecoderQueryException {
+                        if (format != null
+                                && MimeTypes.VIDEO_DOLBY_VISION.equals(format.sampleMimeType)) {
+                            List<MediaCodecInfo> combined = new ArrayList<>();
+                            if (mode != 2 && hasNativeDolbyVisionDecoder()) {
+                                try {
+                                    combined.addAll(
+                                            super.getDecoderInfos(
+                                                    mediaCodecSelector,
+                                                    format,
+                                                    requiresSecureDecoder));
+                                } catch (Throwable ignored) {
+                                }
+                            }
+                            try {
+                                List<MediaCodecInfo> baseDecoders =
+                                        super.getDecoderInfos(
+                                                mediaCodecSelector,
+                                                toBaseLayerFormat(format),
+                                                requiresSecureDecoder);
+                                for (MediaCodecInfo info : baseDecoders) {
+                                    boolean exists = false;
+                                    for (MediaCodecInfo c : combined) {
+                                        if (c.name.equals(info.name)) {
+                                            exists = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!exists) combined.add(info);
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                            if (!combined.isEmpty()) return combined;
+                        }
                         return super.getDecoderInfos(
                                 mediaCodecSelector,
                                 fallbackVideoFormat(format),
@@ -130,7 +185,7 @@ final class DecoderRenderersFactory extends DefaultRenderersFactory {
                                 codecInfo != null
                                                 && !MimeTypes.VIDEO_DOLBY_VISION.equals(
                                                         codecInfo.mimeType)
-                                        ? fallbackVideoFormat(format)
+                                        ? toBaseLayerFormat(format)
                                         : format;
                         return super.getMediaCodecConfiguration(
                                 codecInfo, resolved, crypto, codecOperatingRate);
@@ -139,8 +194,10 @@ final class DecoderRenderersFactory extends DefaultRenderersFactory {
                     @Override
                     protected DecoderReuseEvaluation onInputFormatChanged(FormatHolder formatHolder)
                             throws ExoPlaybackException {
-                        if (formatHolder != null && formatHolder.format != null) {
-                            formatHolder.format = fallbackVideoFormat(formatHolder.format);
+                        if (formatHolder != null
+                                && formatHolder.format != null
+                                && (mode == 2 || !hasNativeDolbyVisionDecoder())) {
+                            formatHolder.format = toBaseLayerFormat(formatHolder.format);
                         }
                         return super.onInputFormatChanged(formatHolder);
                     }

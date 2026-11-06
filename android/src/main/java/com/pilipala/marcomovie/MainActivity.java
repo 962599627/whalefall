@@ -358,14 +358,58 @@ public final class MainActivity extends Activity {
         return TvLayoutPolicy.useBottomDock(windowWidth(), windowHeight(), formFactor);
     }
 
+    void applyMobileSystemBars(boolean fullscreenPlayer) {
+        if (isTvDevice()) return;
+        try {
+            Window w = getWindow();
+            if (w == null) return;
+            WindowManager.LayoutParams lp = w.getAttributes();
+            try {
+                java.lang.reflect.Field f = lp.getClass().getField("layoutInDisplayCutoutMode");
+                // 1 == WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                if (f.getInt(lp) != 1) {
+                    f.setInt(lp, 1);
+                    w.setAttributes(lp);
+                }
+            } catch (Throwable ignored) {
+            }
+            if (fullscreenPlayer) {
+                w.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                w.getDecorView().setSystemUiVisibility(5894);
+            } else {
+                w.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                w.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+                w.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+                w.getDecorView()
+                        .setSystemUiVisibility(
+                                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+                w.setStatusBarColor(Color.TRANSPARENT);
+                w.setNavigationBarColor(0xff060a08);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     void togglePlayerOrientation() {
         if (isTvDevice()) return;
         if (isPortrait()) {
             setRequestedOrientation(
                     android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            if (usableWidth > 0 && usableHeight > 0 && usableWidth < usableHeight) {
+                int tmp = usableWidth;
+                usableWidth = usableHeight;
+                usableHeight = tmp;
+            }
         } else {
             setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+            if (usableWidth > 0 && usableHeight > 0 && usableWidth > usableHeight) {
+                int tmp = usableWidth;
+                usableWidth = usableHeight;
+                usableHeight = tmp;
+            }
         }
+        if (playerChrome != null) playerChrome.relayout();
     }
 
     int windowWidth() {
@@ -427,12 +471,7 @@ public final class MainActivity extends Activity {
         if (isTvDevice()) {
             getWindow().getDecorView().setSystemUiVisibility(5894);
         } else {
-            getWindow().getDecorView().setSystemUiVisibility(0);
-            try {
-                getWindow().setStatusBarColor(0xff12131a);
-                getWindow().setNavigationBarColor(0xff161720);
-            } catch (Exception ignored) {
-            }
+            applyMobileSystemBars(false);
         }
         prefs = getSharedPreferences(Prefs.FILE, MODE_PRIVATE);
         reduced = prefs.getBoolean(Prefs.REDUCED, false);
@@ -728,6 +767,9 @@ public final class MainActivity extends Activity {
         stopWeb();
         stopMagnet();
         releasePlayer();
+        if (!isTvDevice()) {
+            applyMobileSystemBars(false);
+        }
         generation++;
         root = new FrameLayout(this);
         root.setBackgroundColor(DARK);
@@ -926,6 +968,18 @@ public final class MainActivity extends Activity {
             }
         }
         if (current != null && current.home) {
+            if (!isTvDevice() && MobileShell.activeTab == 4 && MobileShell.settingsSubPage != 0) {
+                MobileShell.settingsSubPage = 0;
+                MobileShell.show(this);
+                return;
+            }
+            if (!isTvDevice() && !back.isEmpty()) {
+                capture();
+                current = back.pop();
+                current.render.run();
+                restore(current);
+                return;
+            }
             if (!isTvDevice() && MobileShell.activeTab != 0) {
                 MobileShell.activeTab = 0;
                 MobileShell.show(this);

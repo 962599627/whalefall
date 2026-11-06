@@ -43,6 +43,12 @@ public final class GlobalSearchScreen implements AutoCloseable {
     final Map<String, LinearLayout> posterCards = new HashMap<>();
     final Map<PinyinKeyboardModel.Mode, Button> modeButtons = new LinkedHashMap<>();
 
+    static String staticSubmitted = "";
+    static Cms.Config staticConfig;
+    static long staticTime;
+    static int staticMatched;
+    static final LinkedHashMap<String, SourceResult> staticResults = new LinkedHashMap<>();
+
     static final class SourceResult {
         final Cms.Site site;
         final List<Cms.Video> videos;
@@ -62,12 +68,24 @@ public final class GlobalSearchScreen implements AutoCloseable {
 
     public void show() {
         String restored = keyboard == null ? initial : keyboard.query();
+        if (results.isEmpty()
+                && !staticResults.isEmpty()
+                && staticConfig == a.config
+                && System.currentTimeMillis() - staticTime < 7200000L
+                && (restored.trim().isEmpty() || restored.trim().equals(staticSubmitted))) {
+            restored = staticSubmitted;
+            submitted = staticSubmitted;
+            resultConfig = staticConfig;
+            resultTime = staticTime;
+            matched = staticMatched;
+            results.putAll(staticResults);
+        }
         boolean searchAgain = !submitted.isEmpty() || !initial.trim().isEmpty();
         boolean reuse =
                 !results.isEmpty()
                         && submitted.equals(restored.trim())
                         && resultConfig == a.config
-                        && System.currentTimeMillis() - resultTime < 300000;
+                        && System.currentTimeMillis() - resultTime < 7200000L;
         a.renderPage("", "");
         closed = false;
         edited = "";
@@ -751,6 +769,12 @@ public final class GlobalSearchScreen implements AutoCloseable {
                                             if (outcome == SearchCoordinator.Outcome.TIMEOUT)
                                                 timedOut++;
                                             if (outcome == SearchCoordinator.Outcome.BUSY) busy++;
+                                            staticSubmitted = submitted;
+                                            staticConfig = resultConfig;
+                                            staticTime = resultTime;
+                                            staticMatched = matched;
+                                            staticResults.clear();
+                                            staticResults.putAll(results);
                                             updateStatus(total);
                                             scheduleRender();
                                         }),

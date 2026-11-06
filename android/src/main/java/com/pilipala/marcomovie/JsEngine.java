@@ -39,7 +39,7 @@ public final class JsEngine implements SourceEngine {
 
     public static boolean eligible(Cms.Site s) {
         return s.type == 3
-                && Cms.isHttp(s.api)
+                && (Cms.isHttp(s.api) || (s.api != null && s.api.startsWith("file://")))
                 && s.api.split("\\?", 2)[0].toLowerCase(Locale.ROOT).endsWith(".js");
     }
 
@@ -157,7 +157,9 @@ public final class JsEngine implements SourceEngine {
         context.setModuleLoader(
                 new QuickJSContext.DefaultModuleLoader() {
                     public String moduleNormalizeName(String parent, String name) {
-                        if (name.startsWith("assets://") || Cms.isHttp(name)) return name;
+                        if (name.startsWith("assets://")
+                                || Cms.isHttp(name)
+                                || name.startsWith("file://")) return name;
                         try {
                             return new URL(new URL(parent), name).toString();
                         } catch (Exception e) {
@@ -241,7 +243,16 @@ public final class JsEngine implements SourceEngine {
                             new URL(new URL(site.api), name.substring(name.lastIndexOf('/') + 1))
                                     .toString());
         else if (Cms.isHttp(name)) found = download(name);
-        else throw new IOException("不支持的 JS 模块路径");
+        else if (name.startsWith("file://")) {
+            File localFile = new File(URI.create(name));
+            String allowedPrefix = app.getFilesDir().getCanonicalPath();
+            if (!localFile.isFile() || !localFile.getCanonicalPath().startsWith(allowedPrefix)) {
+                throw new IOException("本地 JS 模块路径不可用");
+            }
+            try (InputStream in = new FileInputStream(localFile)) {
+                found = new String(read(in, 2 * 1024 * 1024), "UTF-8");
+            }
+        } else throw new IOException("不支持的 JS 模块路径");
         modules.put(name, found);
         return found;
     }

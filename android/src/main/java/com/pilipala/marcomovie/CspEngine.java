@@ -91,9 +91,31 @@ public final class CspEngine implements SourceEngine {
         loader.loadClass("com.github.catvod.spider.Init")
                 .getMethod("init", Context.class)
                 .invoke(null, app);
+        syncPluginProxyPort(loader, ProxyAddress.port);
         replayForegroundActivity(app, before);
         LOADERS.put(sha, loader);
         return loader;
+    }
+
+    static void syncPluginProxyPort(ClassLoader loader, int port) {
+        if (loader == null || port <= 0) return;
+        try {
+            Class<?> proxyClass = loader.loadClass("com.github.catvod.spider.Proxy");
+            try {
+                proxyClass.getMethod("set", int.class).invoke(null, port);
+                return;
+            } catch (Throwable ignored) {
+            }
+            for (Field f : proxyClass.getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers())
+                        && (f.getType() == int.class || f.getType() == Integer.class)
+                        && f.getName().toLowerCase(Locale.ROOT).contains("port")) {
+                    f.setAccessible(true);
+                    f.setInt(null, port);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     /**
@@ -317,7 +339,56 @@ public final class CspEngine implements SourceEngine {
     }
 
     public String player(String flag, String id) throws Exception {
-        return call("player", () -> spider.playerContent(flag, id, Collections.emptyList()));
+        return call(
+                "player",
+                () -> {
+                    Throwable lastError = null;
+                    String raw = null;
+                    for (int attempt = 0; attempt < 2; attempt++) {
+                        try {
+                            raw = spider.playerContent(flag, id, Collections.emptyList());
+                            if (raw != null && !raw.trim().isEmpty()) {
+                                break;
+                            }
+                        } catch (Throwable t) {
+                            lastError = unwrap(t);
+                            if (attempt == 0) {
+                                try {
+                                    Thread.sleep(150);
+                                } catch (InterruptedException ie) {
+                                    Thread.currentThread().interrupt();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (raw != null) {
+                        String trimmed = raw.trim();
+                        if (!trimmed.isEmpty()) {
+                            if (trimmed.startsWith("{")) {
+                                return trimmed;
+                            }
+                            if (Cms.isHttp(trimmed)
+                                    || Cms.isMedia(trimmed)
+                                    || trimmed.startsWith("magnet:?")) {
+                                return new JSONObject()
+                                        .put("url", trimmed)
+                                        .put("parse", 0)
+                                        .toString();
+                            }
+                        }
+                    }
+                    String fallbackId = id == null ? "" : id.trim();
+                    if (!fallbackId.isEmpty()
+                            && (Cms.isMedia(fallbackId) || fallbackId.startsWith("magnet:?"))) {
+                        return new JSONObject().put("url", fallbackId).put("parse", 0).toString();
+                    }
+                    if (lastError != null) {
+                        if (lastError instanceof Exception) throw (Exception) lastError;
+                        throw new IOException(lastError);
+                    }
+                    return new JSONObject().put("url", "").put("parse", 0).toString();
+                });
     }
 
     public String action(String value) throws Exception {
@@ -412,6 +483,18 @@ public final class CspEngine implements SourceEngine {
             throw new IOException("配置没有声明 spider 插件");
         String[] parts = declaration.split(";md5;", 2);
         String address = parts[0];
+        if (address.startsWith("file://")) {
+            File localFile = new File(URI.create(address));
+            String allowedPrefix = app.getFilesDir().getCanonicalPath();
+            if (!localFile.exists() || !localFile.getCanonicalPath().startsWith(allowedPrefix)) {
+                throw new IOException("本地 spider 插件不存在或不在受保护目录内");
+            }
+            try (ZipFile zip = new ZipFile(localFile)) {
+                if (zip.getEntry("classes.dex") == null)
+                    throw new IOException("本地插件不含 classes.dex");
+            }
+            return localFile;
+        }
         if (!Cms.isHttp(address)) throw new IOException("spider 需要 HTTP(S) 插件地址");
         String expected = parts.length == 2 ? parts[1].trim().toLowerCase(Locale.ROOT) : "";
         if (!expected.isEmpty() && !expected.matches("[0-9a-f]{32}"))

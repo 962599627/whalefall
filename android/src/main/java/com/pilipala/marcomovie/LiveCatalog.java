@@ -74,6 +74,28 @@ public final class LiveCatalog {
         }
     }
 
+    public static List<Source> sourcesFor(
+            String configRaw, String configOrigin, String customUrl, String customName) {
+        List<Source> out = new ArrayList<>();
+        String trimmedCustom = customUrl == null ? "" : customUrl.trim();
+        if (!trimmedCustom.isEmpty()) {
+            Source custom = new Source();
+            custom.name = customName == null ? "" : customName.trim();
+            if (custom.name.isEmpty()) custom.name = "自定义直播源";
+            custom.url = trimmedCustom;
+            custom.origin = trimmedCustom;
+            custom.headers.put("User-Agent", Cms.USER_AGENT);
+            out.add(custom);
+        }
+        if (configRaw != null && !configRaw.isEmpty()) {
+            try {
+                out.addAll(sources(configRaw, configOrigin));
+            } catch (Exception ignored) {
+            }
+        }
+        return out;
+    }
+
     public static List<Source> sources(String configJson, String origin) throws Exception {
         Object root =
                 new JSONTokener(Cms.withoutComments(configJson.replaceFirst("^\\uFEFF", "")))
@@ -112,6 +134,12 @@ public final class LiveCatalog {
     public static Catalog load(Source source) throws Exception {
         if (source.inline != null)
             return parse(source.inline.toString(), source.origin, source.headers);
+        if (source.url != null && source.url.startsWith("file://")) {
+            File localFile = new File(URI.create(source.url));
+            try (InputStream in = new FileInputStream(localFile)) {
+                return parse(Cms.read(in, MAX_BYTES), source.url, source.headers);
+            }
+        }
         if (!Cms.isHttp(source.url)) throw new IOException("直播列表地址不是 HTTP(S)");
         URL next = new URL(Cms.normalizeHttp(source.url));
         long deadline = System.nanoTime() + source.timeoutMs * 1000000L;

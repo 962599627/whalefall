@@ -75,6 +75,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   int _pendingResumeMs = 0;
   int _lastKnownPositionMs = 0;
   int _lastKnownDurationMs = 0;
+  int _lastPositionUiUpdateMs = 0;
+  int _videoWidth = 0;
+  int _videoHeight = 0;
+  String _videoCodec = '';
+  String _audioCodec = '';
+  String _activeStreamUrl = '';
   bool _introSkippedForSession = false;
   bool _outroSkippedForSession = false;
 
@@ -110,29 +116,62 @@ class _PlayerScreenState extends State<PlayerScreen>
     _player = Player();
     _controller = VideoController(_player);
 
+    _player.stream.width.listen((w) {
+      if (!mounted || w == null || w <= 0 || w == _videoWidth) return;
+      setState(() => _videoWidth = w);
+    });
+    _player.stream.height.listen((h) {
+      if (!mounted || h == null || h <= 0 || h == _videoHeight) return;
+      setState(() => _videoHeight = h);
+    });
+    _player.stream.track.listen((track) {
+      if (!mounted) return;
+      final vCodec = (track.video.codec ?? track.video.decoder ?? '').trim();
+      final aCodec = (track.audio.codec ?? track.audio.decoder ?? '').trim();
+      if (vCodec != _videoCodec || aCodec != _audioCodec) {
+        setState(() {
+          _videoCodec = vCodec;
+          _audioCodec = aCodec;
+        });
+      }
+    });
+
     _player.stream.position.listen((pos) {
       if (!mounted) return;
-      setState(() {
-        if (!_isDraggingSeek && !_isSliderDragging) {
-          // Do not snap UI position back to 0 while a resume seek is still pending
-          if (_pendingResumeMs > 0 && pos.inMilliseconds < 2000) {
-            _position = Duration(milliseconds: _pendingResumeMs);
-          } else {
-            _position = pos;
+      final nextPos = (!_isDraggingSeek && !_isSliderDragging)
+          ? ((_pendingResumeMs > 0 && pos.inMilliseconds < 2000)
+              ? Duration(milliseconds: _pendingResumeMs)
+              : pos)
+          : _position;
+      if (pos.inMilliseconds >= 1000) {
+        _lastKnownPositionMs = pos.inMilliseconds;
+      }
+      final shouldClearLoading = pos > Duration.zero && _loading;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final shouldRebuildUi = shouldClearLoading ||
+          (_controlsVisible &&
+              !_isDraggingSeek &&
+              !_isSliderDragging &&
+              (nowMs - _lastPositionUiUpdateMs >= 250 || !_playing));
+      if (shouldRebuildUi) {
+        _lastPositionUiUpdateMs = nowMs;
+        setState(() {
+          _position = nextPos;
+          if (shouldClearLoading) {
+            _loading = false;
           }
-        }
-        if (pos.inMilliseconds >= 1000) {
-          _lastKnownPositionMs = pos.inMilliseconds;
-        }
-        if (pos > Duration.zero && _loading) {
-          _loading = false;
-        }
-      });
+        });
+      } else {
+        _position = nextPos;
+      }
+      final effectiveDur = _duration.inMilliseconds > 0
+          ? _duration
+          : Duration(milliseconds: _lastKnownDurationMs);
       if (!_outroSkippedForSession &&
           _skipOutroSec > 0 &&
-          _duration.inSeconds > _skipOutroSec + 30 &&
+          effectiveDur.inSeconds > _skipOutroSec + 30 &&
           pos.inSeconds > 10 &&
-          (_duration - pos).inSeconds <= _skipOutroSec) {
+          (effectiveDur - pos).inSeconds <= _skipOutroSec) {
         _outroSkippedForSession = true;
         _showHud('已自动跳过片尾 ${_skipOutroSec}s');
         _handleEpisodeEnd();
@@ -142,9 +181,18 @@ class _PlayerScreenState extends State<PlayerScreen>
     _player.stream.duration.listen((dur) {
       if (!mounted) return;
       setState(() {
-        _duration = dur;
         if (dur.inMilliseconds > 0) {
-          _lastKnownDurationMs = dur.inMilliseconds;
+          if (dur.inMilliseconds > _lastKnownDurationMs) {
+            _lastKnownDurationMs = dur.inMilliseconds;
+          }
+          _duration = (!_isLiveStream &&
+                  _lastKnownDurationMs > dur.inMilliseconds)
+              ? Duration(milliseconds: _lastKnownDurationMs)
+              : dur;
+        } else if (!_isLiveStream && _lastKnownDurationMs > 0) {
+          _duration = Duration(milliseconds: _lastKnownDurationMs);
+        } else {
+          _duration = dur;
         }
         if (dur > Duration.zero && _loading) {
           _loading = false;
@@ -285,6 +333,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (mounted) {
       setState(() {
         _loading = true;
+        _videoWidth = 0;
+        _videoHeight = 0;
+        _videoCodec = '';
+        _audioCodec = '';
+        _activeStreamUrl = _currentEpisode.url;
         _position = _pendingResumeMs > 0
             ? Duration(milliseconds: _pendingResumeMs)
             : Duration.zero;
@@ -299,6 +352,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             _currentEpisode,
           );
     if (!mounted || session != _playSession) return;
+    _activeStreamUrl = resolvedEpisode.url;
 
     final headers = <String, String>{
       ...widget.site.headers,
@@ -438,6 +492,65 @@ class _PlayerScreenState extends State<PlayerScreen>
     return '关闭';
   }
 
+  String get _videoSpecsLabel {
+    final parts = <String>[];
+    if (_videoWidth > 0 && _videoHeight > 0) {
+      final maxDim = math.max(_videoWidth, _videoHeight);
+      final minDim = math.min(_videoWidth, _videoHeight);
+      final tier = (maxDim >= 3800 || minDim >= 2100)
+          ? '4K '
+          : (maxDim >= 2500 || minDim >= 1400)
+              ? '2K '
+              : (maxDim >= 1900 || minDim >= 1000)
+                  ? '1080P '
+                  : (maxDim >= 1200 || minDim >= 700)
+                      ? '720P '
+                      : '';
+      parts.add('$tier$_videoWidth × $_videoHeight');
+    }
+    final vc = _videoCodec.toLowerCase();
+    if (vc.isNotEmpty) {
+      if (vc.contains('hevc') || vc.contains('h265') || vc.contains('hev1')) {
+        parts.add('HEVC');
+      } else if (vc.contains('avc') || vc.contains('h264')) {
+        parts.add('H.264');
+      } else if (vc.contains('av01') || vc.contains('av1')) {
+        parts.add('AV1');
+      } else if (vc.contains('vp9')) {
+        parts.add('VP9');
+      } else {
+        parts.add(_videoCodec.toUpperCase());
+      }
+    }
+    final ac = _audioCodec.toLowerCase();
+    if (ac.isNotEmpty) {
+      if (ac.contains('eac3') || ac.contains('ec-3')) {
+        parts.add('EAC3');
+      } else if (ac.contains('ac3') || ac.contains('ac-3')) {
+        parts.add('AC3');
+      } else if (ac.contains('aac') || ac.contains('mp4a')) {
+        parts.add('AAC');
+      } else if (ac.contains('flac')) {
+        parts.add('FLAC');
+      } else if (ac.contains('opus')) {
+        parts.add('OPUS');
+      }
+    }
+    final hint = '${_activeStreamUrl.split('?').first} ${_currentEpisode.name}'.toLowerCase();
+    if (hint.contains('.mkv')) {
+      parts.add('MKV');
+    } else if (hint.contains('.mp4')) {
+      parts.add('MP4');
+    } else if (hint.contains('.m3u8')) {
+      parts.add('HLS');
+    } else if (hint.contains('.flv')) {
+      parts.add('FLV');
+    } else if (hint.contains('.ts')) {
+      parts.add('TS');
+    }
+    return parts.join(' · ');
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -560,10 +673,12 @@ class _PlayerScreenState extends State<PlayerScreen>
             fit: StackFit.expand,
             children: [
               Center(
-                child: Video(
-                  controller: _controller,
-                  fit: _fit,
-                  controls: NoVideoControls,
+                child: RepaintBoundary(
+                  child: Video(
+                    controller: _controller,
+                    fit: _fit,
+                    controls: NoVideoControls,
+                  ),
                 ),
               ),
               if (_hudText.isNotEmpty)
@@ -749,6 +864,34 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ),
                     ),
                   ),
+                  if (_videoSpecsLabel.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      key: const Key('player-video-specs'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7.5,
+                        vertical: 2.5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0x33FFFFFF),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: const Color(0x3DFFFFFF),
+                          width: 0.6,
+                        ),
+                      ),
+                      child: Text(
+                        _videoSpecsLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFFE5E7EB),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                   if (_isLiveStream) ...[
                     const SizedBox(width: 8),
                     Container(
@@ -912,19 +1055,19 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// Standalone floating Progress Bar capsule with Fullscreen / Orientation toggle button.
   Widget _buildProgressBarCapsule(BuildContext context, bool isLandscape) {
-    final maxMs = _duration.inMilliseconds > 0
-        ? _duration.inMilliseconds.toDouble()
-        : 1.0;
+    final effectiveDurationMs = _duration.inMilliseconds > 0
+        ? _duration.inMilliseconds
+        : _lastKnownDurationMs;
+    final hasDuration = effectiveDurationMs > 0;
+    final maxMs = hasDuration ? effectiveDurationMs.toDouble() : 1.0;
     final activePosMs = _isDraggingSeek
         ? _dragTargetPosMs.toDouble()
         : (_isSliderDragging
             ? _sliderDragPosMs
             : _position.inMilliseconds.toDouble());
-    final curMs = activePosMs.clamp(0.0, maxMs);
-    final activeDuration = Duration(milliseconds: curMs.round());
-    final remaining = _duration > activeDuration
-        ? _duration - activeDuration
-        : Duration.zero;
+    final curMs = hasDuration ? activePosMs.clamp(0.0, maxMs) : 0.0;
+    final activeDuration = Duration(milliseconds: activePosMs.clamp(0.0, 86400000.0).round());
+    final totalDuration = Duration(milliseconds: effectiveDurationMs);
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 740),
@@ -960,38 +1103,42 @@ class _PlayerScreenState extends State<PlayerScreen>
                   value: curMs,
                   min: 0,
                   max: maxMs,
-                  onChangeStart: (value) {
-                    setState(() {
-                      _isSliderDragging = true;
-                      _sliderDragPosMs = value;
-                    });
-                    _hideTimer?.cancel();
-                  },
-                  onChanged: (value) {
-                    setState(() {
-                      _isSliderDragging = true;
-                      _sliderDragPosMs = value;
-                    });
-                  },
-                  onChangeEnd: (value) {
-                    final targetMs = value.round().clamp(
-                      0,
-                      _duration.inMilliseconds,
-                    );
-                    setState(() {
-                      _isSliderDragging = false;
-                      _position = Duration(milliseconds: targetMs);
-                    });
-                    _player.seek(Duration(milliseconds: targetMs));
-                    _scheduleHide();
-                  },
+                  onChangeStart: hasDuration
+                      ? (value) {
+                          setState(() {
+                            _isSliderDragging = true;
+                            _sliderDragPosMs = value;
+                          });
+                          _hideTimer?.cancel();
+                        }
+                      : null,
+                  onChanged: hasDuration
+                      ? (value) {
+                          setState(() {
+                            _isSliderDragging = true;
+                            _sliderDragPosMs = value;
+                          });
+                        }
+                      : null,
+                  onChangeEnd: hasDuration
+                      ? (value) {
+                          final targetMs = value.round().clamp(
+                            0,
+                            effectiveDurationMs,
+                          );
+                          setState(() {
+                            _isSliderDragging = false;
+                            _position = Duration(milliseconds: targetMs);
+                          });
+                          _player.seek(Duration(milliseconds: targetMs));
+                          _scheduleHide();
+                        }
+                      : null,
                 ),
               ),
             ),
             Text(
-              _duration.inMilliseconds > 0
-                  ? '-${_formatDuration(remaining)}'
-                  : 'LIVE',
+              hasDuration ? _formatDuration(totalDuration) : '--:--',
               style: const TextStyle(
                 color: AppleColors.labelSecondary,
                 fontSize: 12,
@@ -1316,79 +1463,196 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _showSkipIntroSheet() {
-    const options = [0, 15, 30, 45, 60, 90, 120, 150];
-    showAppleModalSheet<void>(
-      context: context,
-      title: '跳过片头时长',
-      builder: (ctx) => ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.all(16),
-        children: [
-          AppleGroupedSection(
-            children: options.map((sec) {
-              final selected = _skipIntroSec == sec;
-              return AppleGroupedTile(
-                icon: CupertinoIcons.forward_fill,
-                iconBgColor: selected
-                    ? AppleColors.systemBlue
-                    : AppleColors.groupedTertiary,
-                title: sec == 0 ? '不跳过片头' : '跳过前 $sec 秒',
-                trailing: selected
-                    ? const Icon(
-                        CupertinoIcons.checkmark_alt,
-                        color: AppleColors.systemBlue,
-                        size: 18,
-                      )
-                    : null,
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  setState(() => _skipIntroSec = sec);
-                  widget.storage.setSkipIntroSec(sec);
-                  _showHud(sec == 0 ? '已关闭跳过片头' : '片头跳过已设为 ${sec}s');
-                },
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
+    _showPrecisionSkipSheet(isIntro: true);
   }
 
   void _showSkipOutroSheet() {
-    const options = [0, 15, 30, 45, 60, 90, 120, 150];
+    _showPrecisionSkipSheet(isIntro: false);
+  }
+
+  void _showPrecisionSkipSheet({required bool isIntro}) {
+    const presets = [0, 15, 30, 45, 60, 90, 120, 150, 180];
+    int tempSec = (isIntro ? _skipIntroSec : _skipOutroSec).clamp(0, 300);
+
+    void applySec(int sec, void Function(void Function()) setSheetState) {
+      final clamped = sec.clamp(0, 300);
+      setSheetState(() => tempSec = clamped);
+      setState(() {
+        if (isIntro) {
+          _skipIntroSec = clamped;
+        } else {
+          _skipOutroSec = clamped;
+        }
+      });
+      if (isIntro) {
+        widget.storage.setSkipIntroSec(clamped);
+      } else {
+        widget.storage.setSkipOutroSec(clamped);
+      }
+    }
+
     showAppleModalSheet<void>(
       context: context,
-      title: '跳过片尾时长',
-      builder: (ctx) => ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.all(16),
-        children: [
-          AppleGroupedSection(
-            children: options.map((sec) {
-              final selected = _skipOutroSec == sec;
-              return AppleGroupedTile(
-                icon: CupertinoIcons.forward_end_alt_fill,
-                iconBgColor: selected
-                    ? AppleColors.systemBlue
-                    : AppleColors.groupedTertiary,
-                title: sec == 0 ? '不跳过片尾' : '跳过最后 $sec 秒',
-                trailing: selected
-                    ? const Icon(
-                        CupertinoIcons.checkmark_alt,
-                        color: AppleColors.systemBlue,
-                        size: 18,
-                      )
-                    : null,
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  setState(() => _skipOutroSec = sec);
-                  widget.storage.setSkipOutroSec(sec);
-                  _showHud(sec == 0 ? '已关闭跳过片尾' : '片尾跳过已设为 ${sec}s');
-                },
-              );
-            }).toList(),
-          ),
-        ],
+      title: isIntro ? '跳过片头时间节点' : '跳过片尾时间节点',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final formatted = _formatDuration(Duration(seconds: tempSec));
+          final currentPlaySec = isIntro
+              ? _position.inSeconds.clamp(0, 300)
+              : ((_duration.inMilliseconds > 0
+                          ? (_duration - _position).inSeconds
+                          : _position.inSeconds)
+                      .clamp(0, 300));
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppleGlassSurface(
+                  padding: const EdgeInsets.all(14),
+                  borderRadius: BorderRadius.circular(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isIntro ? '手动拉取精准片头节点' : '手动拉取精准片尾节点',
+                            style: const TextStyle(
+                              color: AppleColors.labelSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            tempSec == 0 ? '不跳过 (00:00)' : '$formatted ($tempSec秒)',
+                            style: const TextStyle(
+                              color: AppleColors.systemBlue,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      SliderTheme(
+                        data: SliderTheme.of(ctx).copyWith(
+                          trackHeight: 5,
+                          activeTrackColor: AppleColors.systemBlue,
+                          inactiveTrackColor: const Color(0x38FFFFFF),
+                          thumbColor: Colors.white,
+                        ),
+                        child: Slider(
+                          value: tempSec.toDouble(),
+                          min: 0,
+                          max: 300,
+                          divisions: 300,
+                          onChanged: (v) => applySec(v.round(), setSheetState),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          for (final step in const [-10, -5, -1, 1, 5, 10]) ...[
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                                child: CupertinoButton(
+                                  padding: const EdgeInsets.symmetric(vertical: 7),
+                                  minSize: 32,
+                                  color: const Color(0x28FFFFFF),
+                                  borderRadius: BorderRadius.circular(10),
+                                  onPressed: () =>
+                                      applySec(tempSec + step, setSheetState),
+                                  child: Text(
+                                    step > 0 ? '+${step}s' : '${step}s',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (_position.inSeconds > 0) ...[
+                        const SizedBox(height: 10),
+                        CupertinoButton(
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                          minSize: 36,
+                          color: AppleColors.systemBlue,
+                          borderRadius: BorderRadius.circular(12),
+                          onPressed: () {
+                            applySec(currentPlaySec, setSheetState);
+                            _showHud(
+                              '${isIntro ? "片头" : "片尾"}已设为当前时间节点 ${_formatDuration(Duration(seconds: currentPlaySec))}',
+                            );
+                          },
+                          child: Text(
+                            isIntro
+                                ? '设为当前播放位置 (${_formatDuration(Duration(seconds: currentPlaySec))})'
+                                : '设为当前剩余时长 (${_formatDuration(Duration(seconds: currentPlaySec))})',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: presets.map((sec) {
+                    final selected = tempSec == sec;
+                    return GestureDetector(
+                      onTap: () {
+                        applySec(sec, setSheetState);
+                        _showHud(
+                          sec == 0
+                              ? '已关闭跳过${isIntro ? "片头" : "片尾"}'
+                              : '${isIntro ? "片头" : "片尾"}跳过已设为 ${_formatDuration(Duration(seconds: sec))}',
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 13,
+                          vertical: 7.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? AppleColors.systemBlue
+                              : const Color(0x24FFFFFF),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          sec == 0
+                              ? '关闭'
+                              : '${_formatDuration(Duration(seconds: sec))} (${sec}s)',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight:
+                                selected ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

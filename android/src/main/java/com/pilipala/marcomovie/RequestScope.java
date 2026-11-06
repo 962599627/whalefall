@@ -47,13 +47,20 @@ final class RequestScope {
 
     <T> T call(Callable<T> work) throws Exception {
         RequestScope previous = CURRENT.get();
+        if (previous == null) {
+            Thread.interrupted();
+        }
         CURRENT.set(this);
         try {
             check();
             return work.call();
         } finally {
-            if (previous == null) CURRENT.remove();
-            else CURRENT.set(previous);
+            if (previous == null) {
+                CURRENT.remove();
+                Thread.interrupted();
+            } else {
+                CURRENT.set(previous);
+            }
         }
     }
 
