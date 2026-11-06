@@ -94,6 +94,19 @@ final class MobileDetailScreen {
         topTitleLp.setMargins(a.dp(10), 0, a.dp(10), 0);
         appBar.addView(topTitle, topTitleLp);
 
+        final TextView sourceTopBtn = a.text("⇄ 选源", 13, MainActivity.WHITE);
+        sourceTopBtn.setTag("detail-source-picker");
+        sourceTopBtn.setGravity(Gravity.CENTER);
+        sourceTopBtn.setSingleLine(true);
+        sourceTopBtn.setEllipsize(TextUtils.TruncateAt.END);
+        sourceTopBtn.setMaxWidth(a.dp(132));
+        sourceTopBtn.setPadding(a.dp(11), a.dp(6), a.dp(11), a.dp(6));
+        sourceTopBtn.setBackground(a.bg(0xff232530, 18));
+        bindTouchFeedback(sourceTopBtn);
+        LinearLayout.LayoutParams sourceTopLp = new LinearLayout.LayoutParams(-2, a.dp(34));
+        sourceTopLp.rightMargin = a.dp(8);
+        appBar.addView(sourceTopBtn, sourceTopLp);
+
         final TextView favTopBtn = a.text("☆ 收藏", 13, MainActivity.WHITE);
         favTopBtn.setTag("detail-favorite");
         favTopBtn.setGravity(Gravity.CENTER);
@@ -376,12 +389,42 @@ final class MobileDetailScreen {
         final boolean descending = a.prefs.getBoolean(Prefs.EPISODES_DESCENDING, false);
         SeasonMeta curSeason = parseSeasonMeta(video.title);
 
+        if (a.root != null) {
+            View topSourceView = a.root.findViewWithTag("detail-source-picker");
+            if (topSourceView instanceof TextView) {
+                TextView sourceTopBtn = (TextView) topSourceView;
+                sourceTopBtn.setText("⇄ " + line.name + " ▾");
+                sourceTopBtn.setOnClickListener(
+                        v -> {
+                            String[] names = new String[video.lines.size()];
+                            for (int i = 0; i < video.lines.size(); i++) {
+                                Cms.Line l = video.lines.get(i);
+                                names[i] = l.name + "  (" + l.episodes.size() + "集)";
+                            }
+                            new android.app.AlertDialog.Builder(a)
+                                    .setTitle("切换播放源 (" + video.lines.size() + ")")
+                                    .setSingleChoiceItems(
+                                            names,
+                                            lineIndex,
+                                            (dialog, which) -> {
+                                                dialog.dismiss();
+                                                renderMobileEpisodes(
+                                                        a,
+                                                        site,
+                                                        video,
+                                                        which,
+                                                        0,
+                                                        panel,
+                                                        remembered);
+                                            })
+                                    .setNegativeButton("取消", null)
+                                    .show();
+                        });
+            }
+        }
+
         // 1. Horizontal Scrollable Line Selector
-        TextView lineHeader =
-                a.text(
-                        curSeason.seasonLabel + " · 播放线路 (" + video.lines.size() + ")",
-                        14,
-                        MainActivity.WHITE);
+        TextView lineHeader = a.text("播放线路 (" + video.lines.size() + ")", 14, MainActivity.WHITE);
         lineHeader.setTypeface(null, Typeface.BOLD);
         panel.addView(lineHeader);
         a.gap(panel, 8);
@@ -410,9 +453,13 @@ final class MobileDetailScreen {
 
         a.gap(panel, 14);
 
-        // 2. Episode Count & Sort Toggle Row
+        // 2.Dedicated Season Label + Episode Count & Sort Toggle Row
         LinearLayout headerRow = a.row();
-        TextView epTitle = a.text("选集 · 共 " + line.episodes.size() + " 集", 14, MainActivity.WHITE);
+        TextView epTitle =
+                a.text(
+                        curSeason.seasonLabel + " · 共 " + line.episodes.size() + " 集",
+                        14,
+                        MainActivity.WHITE);
         epTitle.setTypeface(null, Typeface.BOLD);
         headerRow.addView(epTitle, new LinearLayout.LayoutParams(0, -2, 1));
 
@@ -659,7 +706,10 @@ final class MobileDetailScreen {
                 () -> {
                     try {
                         List<Cms.Video> found =
-                                SourceController.engine(a, site).search(curMeta.baseTitle, 1);
+                                Cms.listing(
+                                                SourceController.engine(a, site)
+                                                        .search(curMeta.baseTitle, 1))
+                                        .videos;
                         if (found == null || found.isEmpty()) return;
                         final Map<Integer, Cms.Video> bySeason = new TreeMap<>();
                         final Map<Integer, String> labels = new TreeMap<>();

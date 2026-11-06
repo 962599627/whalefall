@@ -239,7 +239,10 @@ class _DetailScreenState extends State<DetailScreen> {
           }
         } catch (_) {}
       }
-      if (mounted && _relatedSeasons.length < 2) {
+      if (mounted &&
+          (_relatedSeasons.length < 3 ||
+              (info.seasonNumber > 1 &&
+                  _relatedSeasons.length < info.seasonNumber))) {
         final isPriv = _activeSite.isEffectivelyPrivate;
         final allSites =
             widget.storage.config?.supportedSites ?? const <CmsSite>[];
@@ -251,7 +254,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   s.isEffectivelyPrivate == isPriv &&
                   (s.group == _activeSite.group || !isPriv),
             )
-            .take(4)
+            .take(6)
             .toList(growable: false);
         if (siblingSites.isNotEmpty) {
           await Future.wait(
@@ -631,7 +634,7 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
-  void _showLinePickerSheet() {
+  void _showSeasonPickerSheet() {
     if (_video.lines.isEmpty) return;
     final safeLineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
     final currentLine = _video.lines[safeLineIdx];
@@ -647,14 +650,13 @@ class _DetailScreenState extends State<DetailScreen> {
 
     showAppleModalSheet<void>(
       context: context,
-      title: '选择季数与播放源',
+      title: totalSeasons > 1 ? '选择季数（共 $totalSeasons 季）' : '选择季数',
       builder: (ctx) => ListView(
         shrinkWrap: true,
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
         children: [
-          // 1. Season Selector Section
           Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            padding: const EdgeInsets.only(left: 4, bottom: 10),
             child: Row(
               children: [
                 const Icon(
@@ -663,82 +665,92 @@ class _DetailScreenState extends State<DetailScreen> {
                   size: 15,
                 ),
                 const SizedBox(width: 6),
-                Text(
-                  totalSeasons > 1
-                      ? '连续剧集选季（共 $totalSeasons 季）'
-                      : '当前季数',
-                  style: const TextStyle(
-                    color: AppleColors.labelSecondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    totalSeasons > 1
+                        ? '连续剧集选季 · 点击切换对应季'
+                        : (_discoveringSeasons
+                            ? '正在检索同系列其他季…'
+                            : '当前仅检索到单季资源'),
+                    style: const TextStyle(
+                      color: AppleColors.labelSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                if (_discoveringSeasons) ...[
-                  const SizedBox(width: 8),
-                  const CupertinoActivityIndicator(radius: 7),
-                ],
+                if (_discoveringSeasons)
+                  const CupertinoActivityIndicator(radius: 7)
+                else
+                  CupertinoButton(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    minSize: 24,
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      _discoveredFranchiseKey = null;
+                      unawaited(_discoverRelatedSeasons(_video.title));
+                      _toast('正在重新检索同系列季数…');
+                    },
+                    child: const Text(
+                      '重新检索',
+                      style: TextStyle(
+                        color: AppleColors.systemBlue,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
           if (hasInLineSeasons)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            Column(
               children: [
-                for (final s in inLineSeasons)
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.of(ctx).pop();
-                      setState(() {
-                        _selectedInLineSeason = s.seasonNumber;
-                        _selectedPage = 0;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 9,
-                      ),
-                      decoration: BoxDecoration(
-                        color: s.seasonNumber == activeInLineSeasonNum
-                            ? AppleColors.systemBlue
-                            : AppleColors.groupedSecondary,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: s.seasonNumber == activeInLineSeasonNum
-                              ? AppleColors.systemBlue
-                              : AppleColors.glassBorder,
-                          width: 0.7,
+                for (int idx = 0; idx < inLineSeasons.length; idx++) ...[
+                  if (idx > 0) const SizedBox(height: 8),
+                  Builder(
+                    builder: (_) {
+                      final s = inLineSeasons[idx];
+                      final isSelected =
+                          s.seasonNumber == activeInLineSeasonNum;
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0x330A84FF)
+                              : AppleColors.groupedSecondary,
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            s.seasonLabel,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13.5,
-                              fontWeight:
-                                  s.seasonNumber == activeInLineSeasonNum
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '(${s.episodeIndexes.length}集)',
-                            style: TextStyle(
-                              color: s.seasonNumber == activeInLineSeasonNum
-                                  ? const Color(0xE6FFFFFF)
-                                  : AppleColors.labelSecondary,
-                              fontSize: 11.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                        child: AppleGroupedTile(
+                          icon: CupertinoIcons.tv_fill,
+                          iconBgColor: isSelected
+                              ? AppleColors.systemBlue
+                              : AppleColors.groupedTertiary,
+                          title: s.seasonLabel,
+                          subtitle:
+                              '共 ${s.episodeIndexes.length} 集 · ${currentLine.name}',
+                          trailing: isSelected
+                              ? const Icon(
+                                  CupertinoIcons.checkmark_alt,
+                                  color: AppleColors.systemBlue,
+                                  size: 18,
+                                )
+                              : const Icon(
+                                  CupertinoIcons.chevron_right,
+                                  color: AppleColors.labelTertiary,
+                                  size: 15,
+                                ),
+                          onTap: () {
+                            Navigator.of(ctx).pop();
+                            setState(() {
+                              _selectedInLineSeason = s.seasonNumber;
+                              _selectedPage = 0;
+                            });
+                          },
+                        ),
+                      );
+                    },
                   ),
+                ],
               ],
             )
           else
@@ -795,11 +807,27 @@ class _DetailScreenState extends State<DetailScreen> {
                 ],
               ],
             ),
-          const SizedBox(height: 18),
+        ],
+      ),
+    );
+  }
 
-          // 2. Playback Source / Line Selector Section
+  void _showSourcePickerSheet() {
+    if (_video.lines.isEmpty) {
+      _toast('正在加载播放源，请稍候…');
+      return;
+    }
+    final safeLineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
+
+    showAppleModalSheet<void>(
+      context: context,
+      title: '切换播放源 (${_video.lines.length})',
+      builder: (ctx) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+        children: [
           Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            padding: const EdgeInsets.only(left: 4, bottom: 10),
             child: Row(
               children: [
                 const Icon(
@@ -808,12 +836,14 @@ class _DetailScreenState extends State<DetailScreen> {
                   size: 15,
                 ),
                 const SizedBox(width: 6),
-                Text(
-                  '切换播放线路 (${_video.lines.length})',
-                  style: const TextStyle(
-                    color: AppleColors.labelSecondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    '当前站点：${_activeSite.name} · 共 ${_video.lines.length} 条播放线路',
+                    style: const TextStyle(
+                      color: AppleColors.labelSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -1409,7 +1439,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 ),
               ),
 
-              // 4. Floating Liquid Glass Top Navigation Bar (Back on Left, Download + Favorite on Right)
+              // 4. Floating Liquid Glass Top Navigation Bar (Back on Left, Source Picker + Download/Favorite on Right)
               Positioned(
                 top: topPad + 8,
                 left: 16,
@@ -1421,6 +1451,8 @@ class _DetailScreenState extends State<DetailScreen> {
                       onTap: () => Navigator.of(context).maybePop(),
                     ),
                     const Spacer(),
+                    _buildFloatingSourceButton(),
+                    const SizedBox(width: 8),
                     _buildFloatingTopRightPill(),
                   ],
                 ),
@@ -1457,6 +1489,72 @@ class _DetailScreenState extends State<DetailScreen> {
               icon,
               color: AppleColors.labelPrimary,
               size: 20,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Top-right floating Liquid Glass source selector button (`选源`):
+  /// Displays the active playback source/line name and opens `_showSourcePickerSheet`.
+  Widget _buildFloatingSourceButton() {
+    final hasLines = _video.lines.isNotEmpty;
+    final safeLineIdx = hasLines
+        ? _selectedLine.clamp(0, _video.lines.length - 1)
+        : 0;
+    final activeLineName = hasLines
+        ? _video.lines[safeLineIdx].name
+        : (_loading ? '加载片源…' : _activeSite.name);
+
+    return GestureDetector(
+      key: const ValueKey('source_picker_button'),
+      onTap: _showSourcePickerSheet,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            height: 40,
+            constraints: const BoxConstraints(maxWidth: 168),
+            padding: const EdgeInsets.symmetric(horizontal: 13),
+            decoration: BoxDecoration(
+              color: const Color(0x5218181C),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: const Color(0x40FFFFFF),
+                width: 0.7,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  CupertinoIcons.layers_alt_fill,
+                  color: AppleColors.labelPrimary,
+                  size: 15,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    activeLineName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppleColors.labelPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(
+                  CupertinoIcons.chevron_down,
+                  color: Color(0xCCFFFFFF),
+                  size: 12,
+                ),
+              ],
             ),
           ),
         ),
@@ -1888,19 +1986,19 @@ class _DetailScreenState extends State<DetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Season / Line Selector Header + Sort + All Episodes Grid trigger
+        // 1. Dedicated Season Selector Header + Sort + All Episodes Grid trigger
         Row(
           children: [
             Flexible(
               child: GestureDetector(
-                key: const ValueKey('season_line_picker_button'),
-                onTap: _showLinePickerSheet,
+                key: const ValueKey('season_picker_button'),
+                onTap: _showSeasonPickerSheet,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Flexible(
                       child: Text(
-                        '$seasonLabel · ${line.name}',
+                        seasonLabel,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -1931,6 +2029,9 @@ class _DetailScreenState extends State<DetailScreen> {
                           ),
                         ),
                       ),
+                    ] else if (_discoveringSeasons) ...[
+                      const SizedBox(width: 6),
+                      const CupertinoActivityIndicator(radius: 6.5),
                     ],
                     const SizedBox(width: 5),
                     const Icon(
@@ -2652,7 +2753,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 ),
               ),
 
-              // 4. Floating Liquid Glass Top Navigation Bar
+              // 4. Floating Liquid Glass Top Navigation Bar (Back on Left, Source Picker + Download/Favorite on Right)
               Positioned(
                 top: topPad + 10,
                 left: horizontalPad,
@@ -2663,35 +2764,9 @@ class _DetailScreenState extends State<DetailScreen> {
                       icon: CupertinoIcons.chevron_back,
                       onTap: () => Navigator.of(context).maybePop(),
                     ),
-                    const SizedBox(width: 10),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                        child: Container(
-                          height: 36,
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          decoration: BoxDecoration(
-                            color: const Color(0x5218181C),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: const Color(0x38FFFFFF),
-                              width: 0.65,
-                            ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            _activeSite.name,
-                            style: const TextStyle(
-                              color: Color(0xE6FFFFFF),
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
                     const Spacer(),
+                    _buildFloatingSourceButton(),
+                    const SizedBox(width: 10),
                     _buildFloatingTopRightPill(),
                   ],
                 ),

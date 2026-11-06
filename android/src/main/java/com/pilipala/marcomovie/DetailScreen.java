@@ -555,7 +555,10 @@ final class DetailScreen {
                 () -> {
                     try {
                         List<Cms.Video> found =
-                                SourceController.engine(a, site).search(curMeta.baseTitle, 1);
+                                Cms.listing(
+                                                SourceController.engine(a, site)
+                                                        .search(curMeta.baseTitle, 1))
+                                        .videos;
                         if (found == null || found.isEmpty()) return;
                         final Map<Integer, Cms.Video> bySeason = new TreeMap<>();
                         final Map<Integer, String> labels = new TreeMap<>();
@@ -615,14 +618,14 @@ final class DetailScreen {
                                                             }
                                                         });
                                         if (active) {
-                                            btn.setBackground(a.bg(MainActivity.ACCENT, 10));
+                                            btn.setBackground(a.bg(0xff465c76, 10));
                                             btn.setOnFocusChangeListener(
                                                     (v, f) ->
                                                             FocusMotion.style(
                                                                     a,
                                                                     btn,
                                                                     f,
-                                                                    MainActivity.ACCENT,
+                                                                    0xff465c76,
                                                                     MainActivity.WHITE,
                                                                     10,
                                                                     MainActivity.WHITE,
@@ -630,7 +633,7 @@ final class DetailScreen {
                                                                     true,
                                                                     1.02f));
                                         }
-                                        flow.addButton(btn);
+                                        flow.addView(btn);
                                     }
                                 });
                     } catch (Exception ignored) {
