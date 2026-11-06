@@ -99,6 +99,7 @@ class PosterLoader {
   static final Map<String, Future<Uint8List>> _inflightTitleBytes = {};
   static final Map<String, Future<Uint8List>> _inflightHdTitleBytes = {};
   static final Map<String, List<String>> _titleCoverUrlsCache = {};
+  static final Map<String, List<String>> _verifiedTitleCoverUrlsCache = {};
   static final Map<String, String> _titleSynopsisCache = {};
   static final Map<String, List<String>> _seriesEpisodeStillsCache = {};
   static final Map<String, List<String>> _seriesEpisodeCaptionsCache = {};
@@ -137,6 +138,7 @@ class PosterLoader {
     _memory.clear();
     _memoryBytes = 0;
     _titleCoverUrlsCache.clear();
+    _verifiedTitleCoverUrlsCache.clear();
     _titleSynopsisCache.clear();
     _seriesEpisodeStillsCache.clear();
     _seriesEpisodeCaptionsCache.clear();
@@ -148,7 +150,7 @@ class PosterLoader {
     try {
       final dir = _diskDir ??
           Directory(
-            '${Directory.systemTemp.path}${Platform.pathSeparator}marco_poster_cache_v3',
+            '${Directory.systemTemp.path}${Platform.pathSeparator}marco_poster_cache_v4',
           );
       if (await dir.exists()) {
         await for (final entity in dir.list()) {
@@ -294,6 +296,41 @@ class PosterLoader {
     return false;
   }
 
+  /// Verifies that an encyclopedia description/abstract actually describes a
+  /// film, TV drama, anime, variety show, or documentary — rejecting homonym
+  /// entries such as the 24 Solar Terms (`二十四节气·谷雨/惊蛰/清明/白露/立春`),
+  /// novels, dictionary words, poems, plants, or administrative regions.
+  static bool _isFilmOrTvEntryText(String text) {
+    final t = text.trim();
+    if (t.isEmpty) return false;
+    // Reject solar terms, novels, idioms, plants, and geography definitions
+    if (RegExp(
+      r'二十四节气|太阳到达黄经|节气之一|春季的最后一个节气|雨生百谷|春茶|'
+      r'所著的.*小说|连载于.*小说|网络小说|起点中文网|晋江文学城|'
+      r'汉语词语|成语|唐代诗人|宋代词人|草本植物|中药材|行政区划|下辖',
+    ).hasMatch(t)) {
+      return false;
+    }
+    return RegExp(
+      r'电视剧|剧集|网剧|网络剧|短剧|连续剧|电视连续剧|'
+      r'电影|影片|院线|故事片|纪录片|'
+      r'动画|动漫|番剧|电视动画|动画片|'
+      r'综艺|真人秀|节目|'
+      r'执导|导演|主演|领衔主演|出演|饰演|编剧|制片|出品|播出|首播|上映|定档|杀青',
+    ).hasMatch(t);
+  }
+
+  /// Filters out non-entertainment Bing image search results (solar-term posters,
+  /// graphic design templates, stock material, wallpapers, tea/poetry posters).
+  static bool _isNonEntertainmentBingCaption(String text) {
+    return RegExp(
+      r'节气|二十四节气|雨生百谷|春山雨前|春茶|茗茶|茶叶|养生|诗词|古诗|'
+      r'手抄报|模板|素材|设计|海报设计|展板|易拉宝|宣传画|公众号首图|'
+      r'千图|昵图|包图|花瓣|站酷|红动中国|图怪兽|稿定设计|壁纸|插画|矢量|PPT',
+      caseSensitive: false,
+    ).hasMatch(text);
+  }
+
   /// Generates ordered search query variants from most specific to core title,
   /// e.g. `斗罗大陆2：绝世唐门2023` -> `['斗罗大陆2：绝世唐门', '斗罗大陆2绝世唐门', '绝世唐门', '斗罗大陆']`.
   static List<String> _queryVariantsForTitle(String rawTitle) {
@@ -437,9 +474,11 @@ class PosterLoader {
   }
 
   /// Explicitly resolves an official 1080p/2K high-definition domestic poster by
-  /// [rawTitle] (via Bangumi `images.large`, Baidu Baike raw `bcebos`, Bilibili
-  /// PGC, Douban `l_ratio_poster`, and Bing `murl`), verifying actual pixel
-  /// resolution before persisting across memory and disk cache.
+  /// [rawTitle] (via Bangumi `images.large`, film-verified Baidu Baike raw `bcebos`,
+  /// title-verified Bilibili PGC, and title-verified Douban `l_ratio_poster`),
+  /// verifying actual pixel resolution before persisting across memory and disk cache.
+  /// When [rawUrl] is provided by the CMS, unverified generic search results (Bing)
+  /// are NEVER allowed to overwrite the CMS poster.
   static Future<Uint8List> loadHdByTitle(
     String rawTitle, {
     String rawUrl = '',
@@ -475,8 +514,26 @@ class PosterLoader {
         } catch (_) {}
       }
 
-      // Resolve candidate URLs with 1080p/2K sources prioritized first
-      final urls = await _resolveCoverUrlsByTitle(clean, forceRefreshHd: true);
+      // If the CMS provided a valid poster URL, check if its upgraded URL is
+      // already a true HD poster first!
+      final hasValidCmsUrl =
+          rawUrl.trim().isNotEmpty && !_isKnownDeadPosterHost(rawUrl);
+      if (hasValidCmsUrl) {
+        final upgradedCms = upgradeUrlToHd(rawUrl);
+        final inMemCms = _memory[upgradedCms];
+        if (inMemCms != null && await isTrueHdPoster(inMemCms)) {
+          await _persistHdResult(clean, rawUrl, inMemCms);
+          return inMemCms;
+        }
+      }
+
+      // Resolve candidate URLs: when CMS already has a valid poster URL, ONLY
+      // allow verified film/TV databases (`verifiedOnly: true`) to upgrade it!
+      final urls = await _resolveCoverUrlsByTitle(
+        clean,
+        forceRefreshHd: true,
+        verifiedOnly: hasValidCmsUrl,
+      );
       Uint8List? bestBytes;
       int bestScore = 0;
 
@@ -1028,6 +1085,10 @@ class PosterLoader {
           !_isSameWorkTitle(docTitleText, cleanTitle)) {
         return;
       }
+      final tvplotIdx = doc.indexOf('id=tvplot');
+      if (tvplotIdx < 0 && !_isFilmOrTvEntryText(doc)) {
+        return;
+      }
 
       // Collect anti-scrape hidden CSS class names from <style> blocks
       final hiddenClasses = <String>{};
@@ -1080,7 +1141,6 @@ class PosterLoader {
             .trim();
       }
 
-      final tvplotIdx = doc.indexOf('id=tvplot');
       final plotRegion = tvplotIdx >= 0 ? doc.substring(tvplotIdx) : doc;
       final dlMatches = RegExp(
         r'<dt>(.*?)</dt>\s*<dd>(.*?)</dd>',
@@ -1135,9 +1195,11 @@ class PosterLoader {
       final seenCoreIds = <String>{};
       final variants = _queryVariantsForTitle(clean);
       final primaryQuery = variants.isNotEmpty ? variants.first : clean;
+      final isShortAmbiguousTitle = clean.length <= 2;
       final queries = <String>[
-        '$primaryQuery 剧照 画面',
-        if (variants.length >= 2) '${variants[1]} 剧照 画面',
+        '$primaryQuery 电视剧 剧照 画面 -节气 -模板 -素材',
+        if (variants.length >= 2)
+          '${variants[1]} 电视剧 剧照 画面 -节气 -模板 -素材',
       ];
 
       for (final qText in queries) {
@@ -1164,45 +1226,57 @@ class PosterLoader {
                 .bind(resp)
                 .join()
                 .timeout(const Duration(milliseconds: 2800));
-            // 1. Extract high-resolution widescreen OIP domestic CDN stills (fast & reliable 16:9)
-            final oipMatches = RegExp(
-              r'OIP(?:-C)?\.([A-Za-z0-9_-]+)',
+            // Parse each Bing image card (`m="{...}"`) so we can verify its caption
+            // before accepting its OIP or murl still
+            final cardMatches = RegExp(
+              r'm=&quot;(\{[^"]*?\})&quot;',
             ).allMatches(html);
-            for (final m in oipMatches) {
-              final fullId = m.group(0)!;
-              final coreId = m.group(1)!;
-              if (RegExp(r'Ha[KNLMP][A-Za-z0-9]$').hasMatch(coreId)) {
+            for (final cm in cardMatches) {
+              final cardJsonAttr = cm.group(1) ?? '';
+              final tMatch = RegExp(
+                r't&quot;:&quot;([^&]{2,80})&quot;',
+              ).firstMatch(cardJsonAttr);
+              final rawCap = (tMatch?.group(1) ?? '')
+                  .replaceAll(RegExp(r'[\u0000-\u001f]'), '')
+                  .trim();
+              if (_isNonEntertainmentBingCaption(rawCap) ||
+                  _isNonEntertainmentBingCaption(cardJsonAttr)) {
                 continue;
               }
-              if (seenCoreIds.add(coreId)) {
-                final u =
-                    'https://tse1-mm.cn.bing.net/th/id/$fullId?w=640&h=360&c=7&r=0&o=5&pid=1.7';
-                if (seenUrls.add(u)) {
-                  stills.add(u);
+              if (isShortAmbiguousTitle) {
+                final hasDramaContext = rawCap.contains(clean) &&
+                    RegExp(
+                      r'剧|集|饰|演|导|电影|电视|片|幕|角色|预告|开机|杀青|官宣|剧照|番|动画|综',
+                    ).hasMatch(rawCap);
+                if (!hasDramaContext) continue;
+              }
+              final oipMatch = RegExp(
+                r'OIP(?:-C)?\.([A-Za-z0-9_-]+)',
+              ).firstMatch(cardJsonAttr);
+              if (oipMatch != null) {
+                final fullId = oipMatch.group(0)!;
+                final coreId = oipMatch.group(1)!;
+                if (!RegExp(r'Ha[KNLMP][A-Za-z0-9]$').hasMatch(coreId) &&
+                    seenCoreIds.add(coreId)) {
+                  final u =
+                      'https://tse1-mm.cn.bing.net/th/id/$fullId?w=640&h=360&c=7&r=0&o=5&pid=1.7';
+                  if (seenUrls.add(u)) {
+                    stills.add(u);
+                  }
                 }
               }
-            }
-            // 2. Also extract direct widescreen murl stills from fast domestic CDNs
-            final murlMatches = RegExp(
-              r'murl&quot;:&quot;(https?://[^&"\x27]+?)&quot;',
-            ).allMatches(html);
-            for (final mm in murlMatches) {
-              final rawMurl = upgradeUrlToHd(mm.group(1)!);
-              if (_isFastDomesticHost(rawMurl) && seenUrls.add(rawMurl)) {
-                stills.add(rawMurl);
+              final murlMatch = RegExp(
+                r'murl&quot;:&quot;(https?://[^&"\x27]+?)&quot;',
+              ).firstMatch(cardJsonAttr);
+              if (murlMatch != null) {
+                final rawMurl = upgradeUrlToHd(murlMatch.group(1)!);
+                if (_isFastDomesticHost(rawMurl) && seenUrls.add(rawMurl)) {
+                  stills.add(rawMurl);
+                }
               }
-            }
-            final titleMatches = RegExp(
-              r't&quot;:&quot;([^&]{4,60})&quot;',
-            ).allMatches(html);
-            for (final tm in titleMatches) {
-              final rawCap = tm
-                  .group(1)!
-                  .replaceAll(RegExp(r'[\u0000-\u001f]'), '')
-                  .replaceAll(RegExp(r'[_｜|—\-].*$'), '')
-                  .trim();
-              if (rawCap.length >= 4 && !captions.contains(rawCap)) {
-                captions.add(rawCap);
+              final cleanCap = rawCap.replaceAll(RegExp(r'[_｜|—\-].*$'), '').trim();
+              if (cleanCap.length >= 4 && !captions.contains(cleanCap)) {
+                captions.add(cleanCap);
               }
             }
           } else {
@@ -1337,8 +1411,9 @@ class PosterLoader {
     }
 
     // 3. If rawUrl is a slow/unverified third-party host and we have a title,
-    // race the primary URL against a fast domestic title lookup (starting after
-    // 280ms if the primary URL hasn't finished yet).
+    // race the primary URL against a verified domestic film-DB lookup (starting
+    // after 900ms if the primary URL hasn't finished yet). Unverified Bing search
+    // is only used if rawUrl completely fails.
     if (rawUrl.isNotEmpty &&
         cleanTitle.isNotEmpty &&
         !_isFastDomesticHost(rawUrl)) {
@@ -1371,12 +1446,12 @@ class PosterLoader {
         _tryPrimaryUrlAttempts(
           rawUrl,
           maxAttempts: 2,
-          perAttemptTimeout: const Duration(milliseconds: 2200),
+          perAttemptTimeout: const Duration(milliseconds: 2600),
         ).then(handleSuccess, onError: handleError),
       );
 
       unawaited(
-        Future<void>.delayed(const Duration(milliseconds: 280)).then((_) async {
+        Future<void>.delayed(const Duration(milliseconds: 900)).then((_) async {
           if (completer.isCompleted) {
             remaining--;
             return;
@@ -1385,6 +1460,7 @@ class PosterLoader {
             final bytes = await _resolveTitleCoverBytes(
               cleanTitle,
               cacheKey: titleCacheKey,
+              verifiedOnly: true,
             );
             handleSuccess(bytes);
           } catch (e) {
@@ -1461,12 +1537,17 @@ class PosterLoader {
   static Future<Uint8List> _resolveTitleCoverBytes(
     String cleanTitle, {
     required String cacheKey,
+    bool verifiedOnly = false,
   }) {
-    final existing = _inflightTitleBytes[cleanTitle];
+    final inflightKey = verifiedOnly ? 'verified:$cleanTitle' : cleanTitle;
+    final existing = _inflightTitleBytes[inflightKey];
     if (existing != null) return existing;
 
     final future = () async {
-      final urls = await _resolveCoverUrlsByTitle(cleanTitle);
+      final urls = await _resolveCoverUrlsByTitle(
+        cleanTitle,
+        verifiedOnly: verifiedOnly,
+      );
       Object? lastError;
       for (final candidateUrl in urls) {
         for (final attempt in _attemptsFor(candidateUrl)) {
@@ -1498,25 +1579,33 @@ class PosterLoader {
       }
       throw lastError ?? Exception('未找到「$cleanTitle」海报');
     }()
-        .whenComplete(() => _inflightTitleBytes.remove(cleanTitle));
+        .whenComplete(() => _inflightTitleBytes.remove(inflightKey));
 
-    _inflightTitleBytes[cleanTitle] = future;
+    _inflightTitleBytes[inflightKey] = future;
     return future;
   }
 
   /// Resolves candidate 1080p/2K vertical poster URLs for [cleanTitle] across:
   /// 1. Bangumi Official Open API (`api.bgm.tv` `images.large` 1080p/2K covers)
-  /// 2. Baidu Baike OpenAPI (`BaikeLemmaCardApi` raw `bcebos.com` official covers)
-  /// 3. Bilibili PGC Search (`api.bilibili.com` `media_bangumi` & `media_ft` raw covers)
-  /// 4. Douban Web Search & `subject_suggest` with `Cookie: bid=...` (`l_ratio_poster`)
-  /// 5. Bing China `cn.bing.com/images/async` original `murl` high-res vertical covers
+  /// 2. Baidu Baike OpenAPI (`BaikeLemmaCardApi` raw `bcebos.com` official covers, film/TV verified)
+  /// 3. Bilibili PGC Search (`api.bilibili.com` `media_bangumi` & `media_ft` raw covers, title verified)
+  /// 4. Douban Web Search & `subject_suggest` with `Cookie: bid=...` (`l_ratio_poster`, title verified)
+  /// 5. Bing China `cn.bing.com/images/async` original `murl` high-res vertical covers (ONLY when `!verifiedOnly`)
   static Future<List<String>> _resolveCoverUrlsByTitle(
     String cleanTitle, {
     bool forceRefreshHd = false,
+    bool verifiedOnly = false,
   }) async {
     if (!forceRefreshHd) {
-      final cached = _titleCoverUrlsCache[cleanTitle];
-      if (cached != null && cached.isNotEmpty) return cached;
+      if (verifiedOnly) {
+        final cachedVerified = _verifiedTitleCoverUrlsCache[cleanTitle];
+        if (cachedVerified != null && cachedVerified.isNotEmpty) {
+          return cachedVerified;
+        }
+      } else {
+        final cached = _titleCoverUrlsCache[cleanTitle];
+        if (cached != null && cached.isNotEmpty) return cached;
+      }
     }
 
     final primaryHdResults = <String>[];
@@ -1614,11 +1703,20 @@ class PosterLoader {
       }(),
 
       // Source 2: Baidu Baike OpenAPI LemmaCard (`BaikeLemmaCardApi` raw `bcebos.com` poster + official synopsis)
+      // Explicitly verifies film/TV/anime/variety attributes so homonyms like《谷雨》(solar term)
+      // are never mistaken for TV drama posters.
       () async {
-        for (final qv in variants.take(2)) {
+        final baikeKeys = <String>[
+          for (final qv in variants.take(2)) ...[
+            qv,
+            '${qv}电视剧',
+            '${qv}电影',
+          ],
+        ];
+        for (final bkKey in baikeKeys) {
           HttpClientRequest? req;
           try {
-            final q = Uri.encodeQueryComponent(qv);
+            final q = Uri.encodeQueryComponent(bkKey);
             final uri = Uri.parse(
               'https://baike.baidu.com/api/openapi/BaikeLemmaCardApi?scope=103&format=json&appid=379020&bk_key=$q&bk_length=600',
             );
@@ -1636,22 +1734,25 @@ class PosterLoader {
                   .timeout(const Duration(milliseconds: 2500));
               final decoded = jsonDecode(body);
               if (decoded is Map) {
-                final lemmaTitle = (decoded['title'] ?? '').toString().trim();
+                final lemmaTitle = (decoded['title'] ?? '')
+                    .toString()
+                    .replaceAll(RegExp(r'(?:电视剧|电影)$'), '')
+                    .trim();
                 final titleMatches = lemmaTitle.isEmpty ||
-                    _isSameWorkTitle(lemmaTitle, cleanTitle) ||
-                    _isSameWorkTitle(lemmaTitle, qv);
+                    _isSameWorkTitle(lemmaTitle, cleanTitle);
                 final abstractText =
                     (decoded['abstract'] ?? '').toString().trim();
-                final isNovelEntry = abstractText.contains('所著的') &&
-                    abstractText.contains('小说');
+                final descText = (decoded['desc'] ?? '').toString().trim();
+                final isFilmOrTv =
+                    _isFilmOrTvEntryText('$abstractText $descText');
                 if (titleMatches &&
-                    abstractText.length >= 18 &&
-                    !isNovelEntry) {
+                    isFilmOrTv &&
+                    abstractText.length >= 18) {
                   _titleSynopsisCache[cleanTitle] = abstractText;
                   metadataRevision.value++;
                 }
                 final rawImg = (decoded['image'] ?? '').toString().trim();
-                if (titleMatches && rawImg.startsWith('http') && !isNovelEntry) {
+                if (titleMatches && isFilmOrTv && rawImg.startsWith('http')) {
                   addPrimaryHd(rawImg);
                   break;
                 }
@@ -1667,7 +1768,7 @@ class PosterLoader {
         }
       }(),
 
-      // Source 3: Bilibili PGC Search (`media_bangumi` & `media_ft`)
+      // Source 3: Bilibili PGC Search (`media_bangumi` & `media_ft`) — strict title verification
       () async {
         for (final stype in const ['media_bangumi', 'media_ft']) {
           HttpClientRequest? req;
@@ -1695,8 +1796,15 @@ class PosterLoader {
                 final data = decoded['data'];
                 final list = data is Map ? data['result'] : null;
                 if (list is List && list.isNotEmpty) {
-                  for (final item in list.take(2)) {
+                  for (final item in list.take(4)) {
                     if (item is Map) {
+                      final rawItemTitle = (item['title'] ?? '')
+                          .toString()
+                          .replaceAll(RegExp(r'<[^>]+>'), '')
+                          .trim();
+                      if (!_isSameWorkTitle(rawItemTitle, cleanTitle)) {
+                        continue;
+                      }
                       final cover = (item['cover'] ?? '').toString().trim();
                       if (cover.isNotEmpty) {
                         addPrimaryHd(cover);
@@ -1716,7 +1824,7 @@ class PosterLoader {
         }
       }(),
 
-      // Source 4: Douban Subject Suggest & Search with `Cookie: bid=...`
+      // Source 4: Douban Subject Suggest & Search with `Cookie: bid=...` — strict title verification
       () async {
         for (final variant in variants.take(2)) {
           HttpClientRequest? req;
@@ -1743,6 +1851,14 @@ class PosterLoader {
               if (decoded is List && decoded.isNotEmpty) {
                 for (final item in decoded) {
                   if (item is Map) {
+                    final itemTitle =
+                        (item['title'] ?? '').toString().trim();
+                    final itemSubTitle =
+                        (item['sub_title'] ?? '').toString().trim();
+                    if (!_isSameWorkTitle(itemTitle, cleanTitle) &&
+                        !_isSameWorkTitle(itemSubTitle, cleanTitle)) {
+                      continue;
+                    }
                     final img = (item['img'] ?? '').toString().trim();
                     if (img.startsWith('http')) {
                       addPrimaryHd(img);
@@ -1763,54 +1879,87 @@ class PosterLoader {
       }(),
 
       // Source 5: Bing China Original High-Res `murl` Vertical Posters + OIP fallback
-      () async {
-        HttpClientRequest? req;
-        try {
-          final query = Uri.encodeQueryComponent('$primary 官方海报 竖版');
-          final uri = Uri.parse(
-            'https://cn.bing.com/images/async?q=$query&first=0&count=12&qft=+filterui:aspect-tall',
-          );
-          req = await _client
-              .getUrl(uri)
-              .timeout(const Duration(milliseconds: 2400));
-          req.headers.set('User-Agent', _desktopChromeUa);
-          req.headers.set('Referer', 'https://cn.bing.com/');
-          req.headers.set(
-            'Accept',
-            'text/html,application/xhtml+xml,*/*;q=0.8',
-          );
-          final resp =
-              await req.close().timeout(const Duration(milliseconds: 2400));
-          if (resp.statusCode >= 200 && resp.statusCode < 300) {
-            final html = await utf8.decoder
-                .bind(resp)
-                .join()
-                .timeout(const Duration(milliseconds: 2400));
-            final murlMatches = RegExp(
-              r'murl&quot;:&quot;(https?://[^&"\x27]+?)&quot;',
-            ).allMatches(html);
-            for (final mm in murlMatches.take(6)) {
-              addMurlHd(mm.group(1)!);
-            }
-            final oipMatches = RegExp(
-              r'OIP(?:-C)?\.[A-Za-z0-9_-]+',
-            ).allMatches(html);
-            for (final m in oipMatches.take(3)) {
-              final oipId = m.group(0)!;
-              addBingOip(
-                'https://tse1-mm.cn.bing.net/th/id/$oipId?w=720&h=1080&c=7&r=0&o=5&pid=1.7',
-              );
-            }
-          } else {
-            await resp.drain<void>();
-          }
-        } catch (_) {
+      // (Only queried when `!verifiedOnly`, and strictly filtered against solar terms / templates)
+      if (!verifiedOnly)
+        () async {
+          HttpClientRequest? req;
           try {
-            req?.abort();
-          } catch (_) {}
-        }
-      }(),
+            final query = Uri.encodeQueryComponent(
+              '$primary 电视剧 电影 官方海报 竖版 -节气 -二十四节气 -模板 -素材',
+            );
+            final uri = Uri.parse(
+              'https://cn.bing.com/images/async?q=$query&first=0&count=12&qft=+filterui:aspect-tall',
+            );
+            req = await _client
+                .getUrl(uri)
+                .timeout(const Duration(milliseconds: 2400));
+            req.headers.set('User-Agent', _desktopChromeUa);
+            req.headers.set('Referer', 'https://cn.bing.com/');
+            req.headers.set(
+              'Accept',
+              'text/html,application/xhtml+xml,*/*;q=0.8',
+            );
+            final resp =
+                await req.close().timeout(const Duration(milliseconds: 2400));
+            if (resp.statusCode >= 200 && resp.statusCode < 300) {
+              final html = await utf8.decoder
+                  .bind(resp)
+                  .join()
+                  .timeout(const Duration(milliseconds: 2400));
+              final cardMatches = RegExp(
+                r'm=&quot;(\{[^"]*?\})&quot;',
+              ).allMatches(html);
+              for (final cm in cardMatches) {
+                final cardJsonAttr = cm.group(1) ?? '';
+                final tMatch = RegExp(
+                  r't&quot;:&quot;([^&]{2,80})&quot;',
+                ).firstMatch(cardJsonAttr);
+                final rawCap = (tMatch?.group(1) ?? '').trim();
+                if (_isNonEntertainmentBingCaption(rawCap) ||
+                    _isNonEntertainmentBingCaption(cardJsonAttr)) {
+                  continue;
+                }
+                if (cleanTitle.length <= 2) {
+                  final hasFilmContext = rawCap.contains(cleanTitle) &&
+                      RegExp(
+                        r'剧|集|饰|演|导|电影|电视|片|角色|海报|预告|官宣|番|动画|综',
+                      ).hasMatch(rawCap);
+                  if (!hasFilmContext) continue;
+                }
+                final mm = RegExp(
+                  r'murl&quot;:&quot;(https?://[^&"\x27]+?)&quot;',
+                ).firstMatch(cardJsonAttr);
+                if (mm != null && murlHdResults.length < 5) {
+                  addMurlHd(mm.group(1)!);
+                }
+                final om = RegExp(
+                  r'OIP(?:-C)?\.[A-Za-z0-9_-]+',
+                ).firstMatch(cardJsonAttr);
+                if (om != null && bingOipFallbackResults.length < 3) {
+                  final oipId = om.group(0)!;
+                  addBingOip(
+                    'https://tse1-mm.cn.bing.net/th/id/$oipId?w=720&h=1080&c=7&r=0&o=5&pid=1.7',
+                  );
+                }
+              }
+            } else {
+              await resp.drain<void>();
+            }
+          } catch (_) {
+            try {
+              req?.abort();
+            } catch (_) {}
+          }
+        }(),
     ]);
+
+    if (primaryHdResults.isNotEmpty) {
+      _verifiedTitleCoverUrlsCache[cleanTitle] =
+          List<String>.unmodifiable(primaryHdResults);
+    }
+    if (verifiedOnly) {
+      return primaryHdResults;
+    }
 
     final results = <String>[
       ...primaryHdResults,
@@ -2065,7 +2214,7 @@ class PosterLoader {
       _diskReady = true;
       try {
         final dir = Directory(
-          '${Directory.systemTemp.path}${Platform.pathSeparator}marco_poster_cache_v3',
+          '${Directory.systemTemp.path}${Platform.pathSeparator}marco_poster_cache_v4',
         );
         if (!await dir.exists()) await dir.create(recursive: true);
         _diskDir = dir;
@@ -2516,6 +2665,14 @@ class _EpisodeStillImageState extends State<EpisodeStillImage>
     final still = _stillUrl;
     final double alignY =
         -0.72 + ((widget.episodeIndex * 3) % 7) * 0.22; // -0.72 .. +0.60
+    final fallbackPosterWidget = PosterImage(
+      url: widget.fallbackPosterUrl,
+      title: widget.seriesTitle,
+      fit: BoxFit.cover,
+      alignment: Alignment(0.0, alignY),
+      highRes: true,
+      placeholder: widget.placeholder,
+    );
     if (still != null && still.isNotEmpty) {
       return PosterImage(
         key: ValueKey(
@@ -2525,16 +2682,9 @@ class _EpisodeStillImageState extends State<EpisodeStillImage>
         title: '',
         fit: BoxFit.cover,
         highRes: true,
-        placeholder: widget.placeholder,
+        placeholder: fallbackPosterWidget,
       );
     }
-    return PosterImage(
-      url: widget.fallbackPosterUrl,
-      title: widget.seriesTitle,
-      fit: BoxFit.cover,
-      alignment: Alignment(0.0, alignY),
-      highRes: true,
-      placeholder: widget.placeholder,
-    );
+    return fallbackPosterWidget;
   }
 }

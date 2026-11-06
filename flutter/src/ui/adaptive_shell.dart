@@ -4275,7 +4275,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Version 0.4.30 · Apple HIG Edition',
+                  'Version 0.4.31 · Apple HIG Edition',
                   style: TextStyle(
                     color: AppleColors.labelSecondary,
                     fontSize: 12,
