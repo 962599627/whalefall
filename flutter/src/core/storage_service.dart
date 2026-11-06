@@ -9,7 +9,9 @@ class StorageService {
   static const String keySelectedSite = 'selected_site';
   static const String keyWatchHistory = 'watch_history';
   static const String keyFavorites = 'favorites';
+  static const String keyPrivateFavorites = 'private_favorites';
   static const String keySearchHistory = 'global_search_history';
+  static const String keyPrivateSearchHistory = 'private_search_history';
   static const String keyEpisodesDescending = 'episodes_descending';
   static const String keyPlaySpeed = 'play_speed';
   static const String keyAutoNext = 'auto_next';
@@ -576,21 +578,43 @@ class StorageService {
   Future<void> setDriveOrder(List<String> order) async {
     await _prefs.setStringList(keyDriveOrder, order);
   }
+  Set<String> _privateSiteKeySet() {
+    final cfg = loadSavedConfig();
+    if (cfg == null) return const <String>{};
+    return <String>{
+      for (final s in cfg.sites)
+        if (s.isEffectivelyPrivate) s.key,
+    };
+  }
   List<WatchHistoryEntry> getWatchHistory() {
     final raw = _prefs.getString(keyWatchHistory) ?? '[]';
     try {
       final list = jsonDecode(raw);
       if (list is! List) return const [];
+      final privKeys = _privateSiteKeySet();
       return list
           .whereType<Map>()
           .map((m) => WatchHistoryEntry.fromJson(Map<String, dynamic>.from(m)))
+          .where((e) => !privKeys.contains(e.site))
           .toList(growable: false);
     } catch (_) {
       return const [];
     }
   }
   Future<void> upsertWatchHistory(WatchHistoryEntry entry) async {
+    if (_privateSiteKeySet().contains(entry.site)) {
+      return;
+    }
     final updated = CmsParser.upsertHistory(getWatchHistory(), entry);
+    await _prefs.setString(
+      keyWatchHistory,
+      jsonEncode(updated.map((e) => e.toJson()).toList()),
+    );
+  }
+  Future<void> removeWatchHistoryItem(String siteKey, String videoId) async {
+    final targetKey = '$siteKey\n$videoId';
+    final updated =
+        getWatchHistory().where((e) => e.key != targetKey).toList();
     await _prefs.setString(
       keyWatchHistory,
       jsonEncode(updated.map((e) => e.toJson()).toList()),
@@ -599,25 +623,37 @@ class StorageService {
   Future<void> clearWatchHistory() async {
     await _prefs.setString(keyWatchHistory, '[]');
   }
-  List<FavoriteEntry> getFavorites() {
-    final raw = _prefs.getString(keyFavorites) ?? '[]';
+  List<FavoriteEntry> getFavorites({bool forPrivate = false}) {
+    final storageKey = forPrivate ? keyPrivateFavorites : keyFavorites;
+    final raw = _prefs.getString(storageKey) ?? '[]';
     try {
       final list = jsonDecode(raw);
       if (list is! List) return const [];
+      final privKeys = _privateSiteKeySet();
       return list
           .whereType<Map>()
           .map((m) => FavoriteEntry.fromJson(Map<String, dynamic>.from(m)))
+          .where((f) => forPrivate ? true : !privKeys.contains(f.site))
           .toList(growable: false);
     } catch (_) {
       return const [];
     }
   }
-  bool isFavorite(String siteKey, String videoId) {
+  bool isFavorite(
+    String siteKey,
+    String videoId, {
+    bool forPrivate = false,
+  }) {
+    final effectivePrivate = forPrivate || _privateSiteKeySet().contains(siteKey);
     final target = '$siteKey\n$videoId';
-    return getFavorites().any((f) => f.key == target);
+    return getFavorites(forPrivate: effectivePrivate)
+        .any((f) => f.key == target);
   }
   Future<bool> toggleFavorite(CmsSite site, CmsVideo video) async {
-    final current = getFavorites().toList();
+    final forPrivate =
+        site.isEffectivelyPrivate || _privateSiteKeySet().contains(site.key);
+    final storageKey = forPrivate ? keyPrivateFavorites : keyFavorites;
+    final current = getFavorites(forPrivate: forPrivate).toList();
     final targetKey = '${site.key}\n${video.id}';
     final existingIdx = current.indexWhere((f) => f.key == targetKey);
     bool nowFav;
@@ -642,13 +678,14 @@ class StorageService {
       nowFav = true;
     }
     await _prefs.setString(
-      keyFavorites,
+      storageKey,
       jsonEncode(current.map((e) => e.toJson()).toList()),
     );
     return nowFav;
   }
-  List<String> getSearchHistory() {
-    final raw = _prefs.getString(keySearchHistory) ?? '[]';
+  List<String> getSearchHistory({bool forPrivate = false}) {
+    final storageKey = forPrivate ? keyPrivateSearchHistory : keySearchHistory;
+    final raw = _prefs.getString(storageKey) ?? '[]';
     try {
       final list = jsonDecode(raw);
       if (list is! List) return const [];
@@ -657,16 +694,22 @@ class StorageService {
       return const [];
     }
   }
-  Future<void> addSearchKeyword(String keyword) async {
+  Future<void> addSearchKeyword(
+    String keyword, {
+    bool forPrivate = false,
+  }) async {
     final trimmed = keyword.trim();
     if (trimmed.isEmpty) return;
-    final list = getSearchHistory().where((k) => k != trimmed).toList();
+    final storageKey = forPrivate ? keyPrivateSearchHistory : keySearchHistory;
+    final list =
+        getSearchHistory(forPrivate: forPrivate).where((k) => k != trimmed).toList();
     list.insert(0, trimmed);
     if (list.length > 16) list.removeRange(16, list.length);
-    await _prefs.setString(keySearchHistory, jsonEncode(list));
+    await _prefs.setString(storageKey, jsonEncode(list));
   }
-  Future<void> clearSearchHistory() async {
-    await _prefs.setString(keySearchHistory, '[]');
+  Future<void> clearSearchHistory({bool forPrivate = false}) async {
+    final storageKey = forPrivate ? keyPrivateSearchHistory : keySearchHistory;
+    await _prefs.setString(storageKey, '[]');
   }
   /// Exports a backup JSON string compatible with both Android (`MarcoMovie-1`) and Flutter.
   String exportBackupJson() {

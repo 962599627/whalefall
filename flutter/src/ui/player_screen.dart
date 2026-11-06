@@ -248,7 +248,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _saveProgress() async {
-    if (widget.site.key == 'live' || _duration.inMilliseconds <= 0) return;
+    if (widget.site.key == 'live' ||
+        widget.site.isEffectivelyPrivate ||
+        _duration.inMilliseconds <= 0) {
+      return;
+    }
     await widget.storage.upsertWatchHistory(
       WatchHistoryEntry(
         site: widget.site.key,

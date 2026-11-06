@@ -57,6 +57,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   int _logoTapCount = 0;
   DateTime? _lastLogoTapAt;
   bool _privateSessionUnlocked = false;
+  String _selectedPrivateSiteKey = '';
+  bool _privacyPortalAnimating = false;
+  int _privacyPortalRunId = 0;
   // Search state
   final TextEditingController _searchController = TextEditingController();
   final List<(CmsSite, CmsVideo)> _searchResults = [];
@@ -86,13 +89,13 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final cfg = _config;
     if (cfg == null) return const [];
     return _privateSessionUnlocked
-        ? cfg.supportedSites
+        ? cfg.privateSupportedSites
         : cfg.publicSupportedSites;
   }
   List<LiveSource> get _visibleLives {
     final cfg = _config;
     if (cfg == null) return const [];
-    return _privateSessionUnlocked ? cfg.lives : cfg.publicLives;
+    return _privateSessionUnlocked ? cfg.privateLives : cfg.publicLives;
   }
   @override
   void initState() {
@@ -111,16 +114,23 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final availableSites = saved == null
         ? const <CmsSite>[]
         : (_privateSessionUnlocked
-            ? saved.supportedSites
+            ? saved.privateSupportedSites
             : (saved.publicSupportedSites.isNotEmpty
                 ? saved.publicSupportedSites
-                : saved.supportedSites.where((s) => !s.isPrivate).toList()));
+                : saved.supportedSites
+                    .where((s) => !s.isEffectivelyPrivate)
+                    .toList()));
     if (availableSites.isNotEmpty) {
-      final preferredKey = widget.storage.selectedSiteKey;
+      final preferredKey = _privateSessionUnlocked
+          ? _selectedPrivateSiteKey
+          : widget.storage.selectedSiteKey;
       _activeSite = availableSites.firstWhere(
         (s) => s.key == preferredKey,
         orElse: () => availableSites.first,
       );
+      if (_privateSessionUnlocked) {
+        _selectedPrivateSiteKey = _activeSite!.key;
+      }
       _loadSiteHome();
     } else {
       _activeSite = null;
@@ -356,7 +366,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final epoch = ++_searchEpoch;
     await _searchSubscription?.cancel();
     _searchSubscription = null;
-    await widget.storage.addSearchKeyword(trimmed);
+    await widget.storage.addSearchKeyword(
+      trimmed,
+      forPrivate: _privateSessionUnlocked,
+    );
     if (!mounted || epoch != _searchEpoch) return;
     setState(() {
       _searching = true;
@@ -630,16 +643,30 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
               ),
             ),
+          if (_privacyPortalAnimating)
+            Positioned.fill(
+              child: _PrivacyModePortalAnimation(
+                key: ValueKey('privacy_portal_$_privacyPortalRunId'),
+                onFinished: () {
+                  if (mounted) {
+                    setState(() => _privacyPortalAnimating = false);
+                  }
+                },
+              ),
+            ),
         ],
       ),
     );
   }
   Widget _buildHomeTab(BuildContext context, {required bool useSidebar}) {
-    if (_config == null) {
+    if (_config == null && !_privateSessionUnlocked) {
       return _buildWelcomeOnboarding(context);
     }
-    final depots = _config!.depots;
-    final history = widget.storage.getWatchHistory();
+    final depots =
+        _privateSessionUnlocked ? const <CmsDepot>[] : (_config?.depots ?? const []);
+    final history = _privateSessionUnlocked
+        ? const <WatchHistoryEntry>[]
+        : widget.storage.getWatchHistory();
     final horizontalPad = useSidebar ? 24.0 : 16.0;
     final activeFilterCount = _currentFilter.activeDimensionCount;
     return SafeArea(
@@ -667,7 +694,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Top Header Bar (5x tap on brand logo opens password-protected private list;
+                  // Top Header Bar (5x tap on brand logo opens number-pad unlock for Privacy Mode;
                   // top-right button is Global Search)
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: horizontalPad),
@@ -685,6 +712,51 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                             ),
                           ),
                         ),
+                        if (_privateSessionUnlocked) ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            key: const ValueKey('home-exit-privacy-pill'),
+                            onTap: _exitPrivacySpace,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFF7C3AED),
+                                    Color(0xFF4F46E5),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: const Color(0x88C4B5FD),
+                                  width: 0.6,
+                                ),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    CupertinoIcons.eye_slash_fill,
+                                    color: Colors.white,
+                                    size: 11.5,
+                                  ),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    '隐私 · 退出',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                         const Spacer(),
                         if (depots.isNotEmpty) ...[
                           _buildHeaderCapsule(
@@ -697,10 +769,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           const SizedBox(width: 6),
                         ],
                         _buildHeaderCapsule(
-                          icon: _activeSite?.isPrivate == true
+                          icon: _privateSessionUnlocked
                               ? CupertinoIcons.lock_shield_fill
                               : CupertinoIcons.layers_alt_fill,
-                          label: _activeSite?.name ?? '选择片源',
+                          label: _activeSite?.name ??
+                              (_privateSessionUnlocked ? '选择隐私源' : '选择片源'),
                           onTap: _showSitePickerDialog,
                         ),
                         const SizedBox(width: 6),
@@ -806,11 +879,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     const SizedBox(height: 24),
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: horizontalPad),
-                      child: _buildPluginOnlyConfigNotice(context),
+                      child: _privateSessionUnlocked
+                          ? _buildEmptyPrivacySpaceNotice(context)
+                          : _buildPluginOnlyConfigNotice(context),
                     ),
                   ] else ...[
-                    // Up Next ("继续观看") Shelf
-                    if (widget.storage.showContinueWatching &&
+                    // Up Next ("继续观看") Shelf — Strictly hidden in Privacy Mode
+                    if (!_privateSessionUnlocked &&
+                        widget.storage.showContinueWatching &&
                         history.isNotEmpty) ...[
                       const SizedBox(height: 20),
                       Padding(
@@ -831,10 +907,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                             CupertinoButton(
                               padding: EdgeInsets.zero,
                               minSize: 24,
-                              onPressed: () => setState(() {
-                                _tabIndex = 2;
-                                _librarySegment = 1;
-                              }),
+                              onPressed: _showWatchHistorySheet,
                               child: const Text(
                                 '查看全部',
                                 style: TextStyle(
@@ -1207,6 +1280,75 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             ),
           ),
         ),
+      ),
+    );
+  }
+  Widget _buildEmptyPrivacySpaceNotice(BuildContext context) {
+    return AppleGlassSurface(
+      padding: const EdgeInsets.all(24),
+      borderRadius: BorderRadius.circular(22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                CupertinoIcons.eye_slash_fill,
+                color: Color(0xFFA78BFA),
+                size: 22,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '隐私分组模式 · 独立无痕空间',
+                  style: TextStyle(
+                    color: AppleColors.labelPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            '当前尚未添加任何隐私分组订阅。隐私空间与正常模式完全隔离：不保留观看历史记录，搜索、收藏与片源数据互不共通。',
+            style: TextStyle(
+              color: AppleColors.labelSecondary,
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              AppleCapsuleButton(
+                label: '导入隐私订阅 (VOD/M3U/JSON)',
+                icon: CupertinoIcons.lock_fill,
+                primary: true,
+                compact: true,
+                onPressed: () => _showImportConfigDialog(
+                  initialIsPrivate: true,
+                  initialGroup: '隐私分组',
+                ),
+              ),
+              AppleCapsuleButton(
+                label: '管理隐私订阅与密码',
+                icon: CupertinoIcons.slider_horizontal_3,
+                compact: true,
+                onPressed: _showPrivateResourcesSheet,
+              ),
+              AppleCapsuleButton(
+                label: '退出隐私模式',
+                icon: CupertinoIcons.lock_open_fill,
+                compact: true,
+                onPressed: _exitPrivacySpace,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -2196,17 +2338,18 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
   void _showGlobalSearchSheet() {
+    final isPriv = _privateSessionUnlocked;
     showAppleModalSheet<void>(
       context: context,
-      title: '全站搜索',
+      title: isPriv ? '隐私空间搜索' : '全站搜索',
       maxWidth: 680,
       ignoreKeyboardInsets: true,
       trailingAction: CupertinoButton(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         minSize: 28,
         onPressed: () {
-          if (widget.storage.getSearchHistory().isNotEmpty) {
-            widget.storage.clearSearchHistory().then((_) {
+          if (widget.storage.getSearchHistory(forPrivate: isPriv).isNotEmpty) {
+            widget.storage.clearSearchHistory(forPrivate: isPriv).then((_) {
               if (mounted) setState(() {});
               _searchSheetListener?.call();
             });
@@ -2223,7 +2366,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             _searchSheetListener = () {
               if (ctx.mounted) setSheetState(() {});
             };
-            final history = widget.storage.getSearchHistory();
+            final history = widget.storage.getSearchHistory(forPrivate: isPriv);
             final size = MediaQuery.sizeOf(ctx);
             final wide = size.width > 640;
             return SizedBox(
@@ -2410,185 +2553,458 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     }
   }
 
+  void _enterPrivacySpaceDirectly() {
+    HapticFeedback.heavyImpact();
+    _searchSubscription?.cancel();
+    _searchResults.clear();
+    _searchController.clear();
+    setState(() {
+      _privateSessionUnlocked = true;
+      _privacyPortalAnimating = true;
+      _privacyPortalRunId++;
+      _tabIndex = 0;
+    });
+    _reloadSavedConfig();
+  }
+
+  void _exitPrivacySpace() {
+    HapticFeedback.lightImpact();
+    _searchSubscription?.cancel();
+    _searchResults.clear();
+    _searchController.clear();
+    setState(() {
+      _privateSessionUnlocked = false;
+    });
+    _reloadSavedConfig();
+  }
+
   void _openPrivateSpaceWithAuth() {
+    if (_privateSessionUnlocked) {
+      _exitPrivacySpace();
+      return;
+    }
     if (!widget.storage.hasPrivacyPassword) {
       _showSetPrivacyPasswordDialog(
-        title: '设置隐私资源密码',
-        subtitle: '首次开启隐藏空间，请设置访问密码（后续连点首页 Logo 5 次即可输入密码进入隐藏列表）。',
-        onSuccess: () {
-          setState(() => _privateSessionUnlocked = true);
-          _showPrivateResourcesSheet();
-        },
+        title: '设置隐私数字密码',
+        subtitle: '请使用下方号码盘设置 4 位数字密码（后续连点 Logo 5 次输入密码即可直接进入隐私分组模式）',
+        onSuccess: _enterPrivacySpaceDirectly,
       );
       return;
     }
-    if (_privateSessionUnlocked) {
-      _showPrivateResourcesSheet();
-      return;
-    }
     _showVerifyPrivacyPasswordDialog(
-      onSuccess: () {
-        setState(() => _privateSessionUnlocked = true);
-        _showPrivateResourcesSheet();
-      },
+      onSuccess: _enterPrivacySpaceDirectly,
     );
   }
 
   void _showSetPrivacyPasswordDialog({
-    String title = '设置隐私密码',
-    String subtitle = '设置密码后，连点首页左上角 Logo 5 次即可验证进入隐私资源隐藏列表。',
+    String title = '设置隐私数字密码',
+    String subtitle = '请输入 4 位数字作为隐私分组访问密码',
     VoidCallback? onSuccess,
   }) {
-    final pwdCtrl = TextEditingController();
-    final confirmCtrl = TextEditingController();
+    String firstPin = '';
+    String currentPin = '';
+    bool confirming = false;
     String? err;
-    showCupertinoDialog<void>(
+    showGeneralDialog<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => CupertinoAlertDialog(
-          title: Text(title),
-          content: Padding(
-            padding: const EdgeInsets.only(top: 10),
+      barrierDismissible: true,
+      barrierLabel: 'SetPrivacyPin',
+      barrierColor: const Color(0xB3000000),
+      transitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (ctx, anim1, anim2) {
+        return Center(
+          child: StatefulBuilder(
+            builder: (ctx, setPadState) {
+              void handleDigit(String digit) async {
+                if (currentPin.length >= 4) return;
+                HapticFeedback.selectionClick();
+                setPadState(() {
+                  err = null;
+                  currentPin += digit;
+                });
+                if (currentPin.length == 4) {
+                  await Future<void>.delayed(const Duration(milliseconds: 120));
+                  if (!ctx.mounted) return;
+                  if (!confirming) {
+                    setPadState(() {
+                      firstPin = currentPin;
+                      currentPin = '';
+                      confirming = true;
+                    });
+                  } else {
+                    if (currentPin == firstPin) {
+                      await widget.storage.setPrivacyPassword(currentPin);
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                      onSuccess?.call();
+                    } else {
+                      HapticFeedback.heavyImpact();
+                      setPadState(() {
+                        err = '两次输入的密码不一致，请重新设置';
+                        firstPin = '';
+                        currentPin = '';
+                        confirming = false;
+                      });
+                    }
+                  }
+                }
+              }
+
+              void handleBackspace() {
+                if (currentPin.isEmpty) return;
+                HapticFeedback.selectionClick();
+                setPadState(() {
+                  err = null;
+                  currentPin = currentPin.substring(0, currentPin.length - 1);
+                });
+              }
+
+              return _buildGlassPinPadCard(
+                context: ctx,
+                title: confirming ? '再次输入确认密码' : title,
+                subtitle: confirming ? '请再次输入刚才设置的 4 位数字密码' : subtitle,
+                pinLength: 4,
+                enteredCount: currentPin.length,
+                errorText: err,
+                onDigit: handleDigit,
+                onBackspace: handleBackspace,
+                onCancel: () => Navigator.of(ctx).pop(),
+              );
+            },
+          ),
+        );
+      },
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutBack);
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.90, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  void _showVerifyPrivacyPasswordDialog({required VoidCallback onSuccess}) {
+    final savedPwd = widget.storage.privacyPassword.trim();
+    final targetLen = savedPwd.length.clamp(4, 8);
+    String currentPin = '';
+    String? err;
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'VerifyPrivacyPin',
+      barrierColor: const Color(0xB8000000),
+      transitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (ctx, anim1, anim2) {
+        return Center(
+          child: StatefulBuilder(
+            builder: (ctx, setPadState) {
+              void handleDigit(String digit) async {
+                if (currentPin.length >= targetLen) return;
+                HapticFeedback.selectionClick();
+                setPadState(() {
+                  err = null;
+                  currentPin += digit;
+                });
+                if (widget.storage.verifyPrivacyPassword(currentPin)) {
+                  await Future<void>.delayed(const Duration(milliseconds: 90));
+                  if (ctx.mounted) Navigator.of(ctx).pop();
+                  onSuccess();
+                  return;
+                }
+                if (currentPin.length >= targetLen) {
+                  HapticFeedback.heavyImpact();
+                  setPadState(() {
+                    err = '密码错误，请重新输入';
+                  });
+                  await Future<void>.delayed(const Duration(milliseconds: 340));
+                  if (ctx.mounted) {
+                    setPadState(() {
+                      currentPin = '';
+                    });
+                  }
+                }
+              }
+
+              void handleBackspace() {
+                if (currentPin.isEmpty) return;
+                HapticFeedback.selectionClick();
+                setPadState(() {
+                  err = null;
+                  currentPin = currentPin.substring(0, currentPin.length - 1);
+                });
+              }
+
+              return _buildGlassPinPadCard(
+                context: ctx,
+                title: '解锁隐私空间',
+                subtitle: '输入设置的密码即可直接进入隐私分组模式',
+                pinLength: targetLen,
+                enteredCount: currentPin.length,
+                errorText: err,
+                onDigit: handleDigit,
+                onBackspace: handleBackspace,
+                onCancel: () => Navigator.of(ctx).pop(),
+              );
+            },
+          ),
+        );
+      },
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutBack);
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.90, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildGlassPinPadCard({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required int pinLength,
+    required int enteredCount,
+    required String? errorText,
+    required ValueChanged<String> onDigit,
+    required VoidCallback onBackspace,
+    required VoidCallback onCancel,
+  }) {
+    final hasError = errorText != null && errorText.isNotEmpty;
+    const rows = [
+      ['1', '2', '3'],
+      ['4', '5', '6'],
+      ['7', '8', '9'],
+    ];
+    return Material(
+      color: Colors.transparent,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(32),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 36, sigmaY: 36),
+          child: Container(
+            width: 326,
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xE01F1C2E),
+                  Color(0xEB111019),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(32),
+              border: Border.all(
+                color: const Color(0x4DA78BFA),
+                width: 0.9,
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x80000000),
+                  blurRadius: 36,
+                  offset: Offset(0, 16),
+                ),
+              ],
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: AppleColors.labelSecondary,
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF8B5CF6), Color(0xFF4F46E5)],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF8B5CF6).withValues(alpha: 0.45),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    CupertinoIcons.lock_shield_fill,
+                    color: Colors.white,
+                    size: 24,
                   ),
                 ),
                 const SizedBox(height: 12),
-                CupertinoTextField(
-                  controller: pwdCtrl,
-                  obscureText: true,
-                  placeholder: '输入新密码（至少 4 位）',
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  style: const TextStyle(color: AppleColors.labelPrimary),
-                ),
-                const SizedBox(height: 8),
-                CupertinoTextField(
-                  controller: confirmCtrl,
-                  obscureText: true,
-                  placeholder: '再次确认密码',
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  style: const TextStyle(color: AppleColors.labelPrimary),
-                ),
-                if (err != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    err!,
-                    style: const TextStyle(
-                      color: AppleColors.systemRed,
-                      fontSize: 12,
-                    ),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3,
                   ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  hasError ? errorText : subtitle,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: hasError
+                        ? AppleColors.systemRed
+                        : AppleColors.labelSecondary,
+                    fontSize: 12.5,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                // PIN indicator dots
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (int i = 0; i < pinLength; i++) ...[
+                      if (i > 0) const SizedBox(width: 14),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        width: 14,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i < enteredCount
+                              ? (hasError
+                                  ? AppleColors.systemRed
+                                  : const Color(0xFFC4B5FD))
+                              : const Color(0x1FFFFFFF),
+                          border: Border.all(
+                            color: i < enteredCount
+                                ? (hasError
+                                    ? AppleColors.systemRed
+                                    : const Color(0xFFA78BFA))
+                                : const Color(0x4DFFFFFF),
+                            width: 1.2,
+                          ),
+                          boxShadow: i < enteredCount
+                              ? [
+                                  BoxShadow(
+                                    color: (hasError
+                                            ? AppleColors.systemRed
+                                            : const Color(0xFF8B5CF6))
+                                        .withValues(alpha: 0.65),
+                                    blurRadius: 10,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 22),
+                // 3x4 Tactile Liquid Glass Number Pad
+                for (final row in rows) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      for (final digit in row)
+                        _buildPinPadDigitButton(
+                          label: digit,
+                          onTap: () => onDigit(digit),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                 ],
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildPinPadActionButton(
+                      label: '取消',
+                      onTap: onCancel,
+                    ),
+                    _buildPinPadDigitButton(
+                      label: '0',
+                      onTap: () => onDigit('0'),
+                    ),
+                    _buildPinPadActionButton(
+                      icon: CupertinoIcons.delete_left_fill,
+                      onTap: onBackspace,
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('取消'),
-            ),
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () async {
-                final p1 = pwdCtrl.text.trim();
-                final p2 = confirmCtrl.text.trim();
-                if (p1.length < 4) {
-                  setDialogState(() => err = '密码长度至少为 4 位');
-                  return;
-                }
-                if (p1 != p2) {
-                  setDialogState(() => err = '两次输入的密码不一致');
-                  return;
-                }
-                await widget.storage.setPrivacyPassword(p1);
-                if (ctx.mounted) Navigator.of(ctx).pop();
-                onSuccess?.call();
-              },
-              child: const Text('保存并进入'),
-            ),
-          ],
         ),
       ),
     );
   }
 
-  void _showVerifyPrivacyPasswordDialog({required VoidCallback onSuccess}) {
-    final pwdCtrl = TextEditingController();
-    String? err;
-    showCupertinoDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => CupertinoAlertDialog(
-          title: const Text('解锁隐私资源列表'),
-          content: Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  '请输入隐私访问密码以查看隐藏订阅与隐私片源：',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: AppleColors.labelSecondary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                CupertinoTextField(
-                  controller: pwdCtrl,
-                  obscureText: true,
-                  autofocus: true,
-                  placeholder: '请输入隐私密码',
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  style: const TextStyle(color: AppleColors.labelPrimary),
-                  onSubmitted: (_) {
-                    if (widget.storage.verifyPrivacyPassword(pwdCtrl.text)) {
-                      Navigator.of(ctx).pop();
-                      onSuccess();
-                    } else {
-                      setDialogState(() => err = '密码错误，请重试');
-                    }
-                  },
-                ),
-                if (err != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    err!,
-                    style: const TextStyle(
-                      color: AppleColors.systemRed,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+  Widget _buildPinPadDigitButton({
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: 68,
+        height: 68,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0x38FFFFFF),
+              Color(0x1AFFFFFF),
+            ],
           ),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('取消'),
-            ),
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () {
-                if (widget.storage.verifyPrivacyPassword(pwdCtrl.text)) {
-                  Navigator.of(ctx).pop();
-                  onSuccess();
-                } else {
-                  setDialogState(() => err = '密码错误，请重试');
-                }
-              },
-              child: const Text('解锁'),
-            ),
-          ],
+          border: Border.all(
+            color: const Color(0x36FFFFFF),
+            width: 0.7,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 26,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPinPadActionButton({
+    String? label,
+    IconData? icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 68,
+        height: 68,
+        child: Center(
+          child: icon != null
+              ? Icon(icon, color: AppleColors.labelSecondary, size: 22)
+              : Text(
+                  label ?? '',
+                  style: const TextStyle(
+                    color: AppleColors.labelSecondary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
         ),
       ),
     );
@@ -2971,12 +3387,123 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       ),
     );
   }
+  void _showWatchHistorySheet() {
+    if (_privateSessionUnlocked) return;
+    showAppleModalSheet<void>(
+      context: context,
+      title: '观看历史记录',
+      maxWidth: 620,
+      trailingAction: CupertinoButton(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minSize: 28,
+        onPressed: () async {
+          await widget.storage.clearWatchHistory();
+          if (mounted) setState(() {});
+          if (context.mounted) Navigator.of(context).pop();
+        },
+        child: const Text(
+          '清空全部',
+          style: TextStyle(color: AppleColors.systemRed, fontSize: 13),
+        ),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final history = widget.storage.getWatchHistory();
+          if (history.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.all(40),
+              child: Center(
+                child: Text(
+                  '暂无观看历史记录',
+                  style: TextStyle(
+                    color: AppleColors.labelSecondary,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            );
+          }
+          return ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: (MediaQuery.sizeOf(ctx).height * 0.72).clamp(320.0, 580.0),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(18, 10, 18, 4),
+                  child: Text(
+                    '提示：向左滑动单条记录可显示「删除」按钮',
+                    style: TextStyle(
+                      color: AppleColors.labelTertiary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                    itemCount: history.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (ctx, idx) {
+                      final h = history[idx];
+                      return _SwipeToDeleteHistoryTile(
+                        key: ValueKey('sheet_hist_${h.site}_${h.id}'),
+                        entry: h,
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          if (_config == null) return;
+                          final site = _config!.publicSupportedSites.firstWhere(
+                            (s) => s.key == h.site,
+                            orElse: () =>
+                                _activeSite ??
+                                CmsSite(
+                                  key: h.site,
+                                  name: h.site,
+                                  type: 1,
+                                  api: '',
+                                ),
+                          );
+                          _openVideoDetail(
+                            site,
+                            CmsVideo(
+                              id: h.id,
+                              title: h.title,
+                              poster: h.poster,
+                            ),
+                          );
+                        },
+                        onDelete: () async {
+                          await widget.storage.removeWatchHistoryItem(
+                            h.site,
+                            h.id,
+                          );
+                          setSheetState(() {});
+                          if (mounted) setState(() {});
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildFavoritesHistoryTab(
     BuildContext context, {
     required bool useSidebar,
   }) {
-    final favorites = widget.storage.getFavorites();
-    final history = widget.storage.getWatchHistory();
+    final favorites =
+        widget.storage.getFavorites(forPrivate: _privateSessionUnlocked);
+    final history = _privateSessionUnlocked
+        ? const <WatchHistoryEntry>[]
+        : widget.storage.getWatchHistory();
     final pad = useSidebar ? 28.0 : 16.0;
     return SafeArea(
       bottom: useSidebar,
@@ -2992,9 +3519,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           children: [
             Row(
               children: [
-                const Text(
-                  '我的片库',
-                  style: TextStyle(
+                Text(
+                  _privateSessionUnlocked ? '隐私片库' : '我的片库',
+                  style: const TextStyle(
                     color: AppleColors.labelPrimary,
                     fontSize: 28,
                     fontWeight: FontWeight.w700,
@@ -3017,7 +3544,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       ),
                     ),
                   ),
-                if (_librarySegment == 1 && history.isNotEmpty)
+                if (_librarySegment == 1 &&
+                    !_privateSessionUnlocked &&
+                    history.isNotEmpty)
                   CupertinoButton(
                     padding: EdgeInsets.zero,
                     minSize: 28,
@@ -3089,10 +3618,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             Expanded(
               child: _librarySegment == 0
                   ? (favorites.isEmpty
-                      ? const Center(
+                      ? Center(
                           child: Text(
-                            '还没有收藏任何影片',
-                            style: TextStyle(
+                            _privateSessionUnlocked
+                                ? '隐私片库还没有收藏任何影片'
+                                : '还没有收藏任何影片',
+                            style: const TextStyle(
                               color: AppleColors.labelSecondary,
                               fontSize: 14,
                             ),
@@ -3112,23 +3643,19 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           itemCount: favorites.length,
                           itemBuilder: (ctx, i) {
                             final fav = favorites[i];
-                            final site = _config?.supportedSites.firstWhere(
-                                  (s) => s.key == fav.site,
-                                  orElse: () =>
-                                      _activeSite ??
-                                      CmsSite(
-                                        key: fav.site,
-                                        name: fav.site,
-                                        type: 1,
-                                        api: '',
-                                      ),
-                                ) ??
-                                CmsSite(
-                                  key: fav.site,
-                                  name: fav.site,
-                                  type: 1,
-                                  api: '',
-                                );
+                            final sitePool = _visibleSupportedSites;
+                            final site = sitePool.firstWhere(
+                              (s) => s.key == fav.site,
+                              orElse: () =>
+                                  _activeSite ??
+                                  CmsSite(
+                                    key: fav.site,
+                                    name: fav.site,
+                                    type: 1,
+                                    api: '',
+                                    isPrivate: _privateSessionUnlocked,
+                                  ),
+                            );
                             return _buildVideoCard(
                               site,
                               CmsVideo(
@@ -3140,32 +3667,77 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                             );
                           },
                         ))
-                  : (history.isEmpty
+                  : (_privateSessionUnlocked
                       ? const Center(
-                          child: Text(
-                            '暂无观看历史',
-                            style: TextStyle(
-                              color: AppleColors.labelSecondary,
-                              fontSize: 14,
-                            ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                CupertinoIcons.eye_slash_fill,
+                                color: Color(0xFFA78BFA),
+                                size: 42,
+                              ),
+                              SizedBox(height: 12),
+                              Text(
+                                '隐私模式不保留任何观看历史记录',
+                                style: TextStyle(
+                                  color: AppleColors.labelPrimary,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              SizedBox(height: 6),
+                              Text(
+                                '隐私分组中的播放进度、搜索与收藏均与正常模式完全隔离',
+                                style: TextStyle(
+                                  color: AppleColors.labelSecondary,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                            ],
                           ),
                         )
-                      : ListView(
-                          padding: EdgeInsets.only(
-                            bottom: useSidebar ? 24 : 124,
-                          ),
-                          children: [
-                            AppleGroupedSection(
-                              children: history.map((h) {
-                                return AppleGroupedTile(
-                                  icon: CupertinoIcons.play_circle_fill,
-                                  iconBgColor: AppleColors.systemBlue,
-                                  title: h.title,
-                                  subtitle: '${h.episode} · ${h.line}',
+                      : (history.isEmpty
+                          ? const Center(
+                              child: Text(
+                                '暂无观看历史',
+                                style: TextStyle(
+                                  color: AppleColors.labelSecondary,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: EdgeInsets.only(
+                                bottom: useSidebar ? 24 : 124,
+                              ),
+                              itemCount: history.length + 1,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (ctx, idx) {
+                                if (idx == 0) {
+                                  return const Padding(
+                                    padding: EdgeInsets.only(
+                                      left: 4,
+                                      bottom: 2,
+                                    ),
+                                    child: Text(
+                                      '提示：向左滑动单条记录可显示「删除」按钮',
+                                      style: TextStyle(
+                                        color: AppleColors.labelTertiary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  );
+                                }
+                                final h = history[idx - 1];
+                                return _SwipeToDeleteHistoryTile(
+                                  key: ValueKey('lib_hist_${h.site}_${h.id}'),
+                                  entry: h,
                                   onTap: () {
                                     if (_config == null) return;
                                     final site =
-                                        _config!.supportedSites.firstWhere(
+                                        _config!.publicSupportedSites.firstWhere(
                                       (s) => s.key == h.site,
                                       orElse: () => _activeSite!,
                                     );
@@ -3178,11 +3750,16 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                       ),
                                     );
                                   },
+                                  onDelete: () async {
+                                    await widget.storage.removeWatchHistoryItem(
+                                      h.site,
+                                      h.id,
+                                    );
+                                    if (mounted) setState(() {});
+                                  },
                                 );
-                              }).toList(),
-                            ),
-                          ],
-                        )),
+                              },
+                            ))),
             ),
           ],
         ),
@@ -3666,7 +4243,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Version 0.4.29 · Apple HIG Edition',
+                  'Version 0.4.30 · Apple HIG Edition',
                   style: TextStyle(
                     color: AppleColors.labelSecondary,
                     fontSize: 12,
@@ -4109,11 +4686,13 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           iconBgColor: AppleColors.systemRed,
           title: '清理海报与搜索缓存',
           subtitle:
-              '高清海报内存缓存：${PosterLoader.memoryCacheSizeLabel} · 搜索历史 ${widget.storage.getSearchHistory().length} 条',
+              '高清海报内存缓存：${PosterLoader.memoryCacheSizeLabel} · 搜索历史 ${widget.storage.getSearchHistory(forPrivate: _privateSessionUnlocked).length} 条',
           trailingText: '一键清理',
           onTap: () async {
             await PosterLoader.clearCache();
-            await widget.storage.clearSearchHistory();
+            await widget.storage.clearSearchHistory(
+              forPrivate: _privateSessionUnlocked,
+            );
             refreshBoth();
             if (!context.mounted) return;
             showCupertinoDialog<void>(
@@ -5248,12 +5827,17 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
   void _showSitePickerDialog() {
-    final supported = _config?.publicSupportedSites ?? const <CmsSite>[];
+    final inPrivacyMode = _privateSessionUnlocked;
+    final defaultGroupName = inPrivacyMode ? '隐私分组' : '默认分组';
+    final supported = inPrivacyMode
+        ? (_config?.privateSupportedSites ?? const <CmsSite>[])
+        : (_config?.publicSupportedSites ?? const <CmsSite>[]);
     final groupCounts = <String, int>{'全部': supported.length};
     final groups = <String>['全部'];
     for (final s in supported) {
-      if (s.isEffectivelyPrivate) continue;
-      final g = s.group.trim().isEmpty ? '默认分组' : s.group.trim();
+      if (!inPrivacyMode && s.isEffectivelyPrivate) continue;
+      if (inPrivacyMode && !s.isEffectivelyPrivate) continue;
+      final g = s.group.trim().isEmpty ? defaultGroupName : s.group.trim();
       if (!groups.contains(g)) groups.add(g);
       groupCounts[g] = (groupCounts[g] ?? 0) + 1;
     }
@@ -5261,31 +5845,71 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     String searchQuery = '';
     final searchCtrl = TextEditingController();
     final plugins = (_config?.pluginOnlySites ?? const <CmsSite>[])
-        .where((s) => !s.isEffectivelyPrivate)
+        .where((s) => inPrivacyMode ? s.isEffectivelyPrivate : !s.isEffectivelyPrivate)
         .toList();
     showAppleModalSheet<void>(
       context: context,
-      title: '切换片源 (${supported.length} 可用)',
+      title: inPrivacyMode
+          ? '切换隐私片源 (${supported.length} 可用)'
+          : '切换片源 (${supported.length} 可用)',
       maxWidth: 680,
       ignoreKeyboardInsets: true,
-      trailingAction: CupertinoButton(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        minSize: 28,
-        onPressed: () {
-          Navigator.of(context).pop();
-          _showImportConfigDialog();
-        },
-        child: const Text(
-          '+ 导入订阅',
-          style: TextStyle(color: AppleColors.systemBlue, fontSize: 13.5),
-        ),
-      ),
+      trailingAction: inPrivacyMode
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  minSize: 28,
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _showPrivateResourcesSheet();
+                  },
+                  child: const Text(
+                    '管理 / 密码',
+                    style: TextStyle(
+                      color: Color(0xFFBF5AF2),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  minSize: 28,
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _showImportConfigDialog(
+                      initialGroup: '隐私分组',
+                      initialIsPrivate: true,
+                    );
+                  },
+                  child: const Text(
+                    '+ 导入隐私源',
+                    style: TextStyle(color: AppleColors.systemBlue, fontSize: 13),
+                  ),
+                ),
+              ],
+            )
+          : CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minSize: 28,
+              onPressed: () {
+                Navigator.of(context).pop();
+                _showImportConfigDialog();
+              },
+              child: const Text(
+                '+ 导入订阅',
+                style: TextStyle(color: AppleColors.systemBlue, fontSize: 13.5),
+              ),
+            ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setPickerState) {
           final size = MediaQuery.sizeOf(ctx);
           final wide = size.width >= 600;
           final filteredSites = supported.where((s) {
-            final g = s.group.trim().isEmpty ? '默认分组' : s.group.trim();
+            final g =
+                s.group.trim().isEmpty ? defaultGroupName : s.group.trim();
             final groupMatch = selectedGroup == '全部' || g == selectedGroup;
             if (!groupMatch) return false;
             final q = searchQuery.trim().toLowerCase();
@@ -5486,16 +6110,25 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                     final badge = siteBadgeLabel(s);
                                     final badgeColor = siteBadgeColor(s);
                                     final groupName = s.group.trim().isEmpty
-                                        ? '默认分组'
+                                        ? defaultGroupName
                                         : s.group.trim();
                                     return GestureDetector(
                                       onTap: () {
                                         Navigator.of(ctx).pop();
-                                        widget.storage.setSelectedSiteKey(s.key);
-                                        setState(() {
-                                          _privateSessionUnlocked = false;
-                                          _activeSite = s;
-                                        });
+                                        if (inPrivacyMode) {
+                                          setState(() {
+                                            _privateSessionUnlocked = true;
+                                            _selectedPrivateSiteKey = s.key;
+                                            _activeSite = s;
+                                          });
+                                        } else {
+                                          widget.storage
+                                              .setSelectedSiteKey(s.key);
+                                          setState(() {
+                                            _privateSessionUnlocked = false;
+                                            _activeSite = s;
+                                          });
+                                        }
                                         _loadSiteHome();
                                       },
                                       child: AnimatedContainer(
@@ -6095,6 +6728,366 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// iOS-style left-swipe row that reveals a red "删除" action button on the right,
+/// and also supports full swipe or tapping the red delete button to remove a single watch history item.
+class _SwipeToDeleteHistoryTile extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onDelete;
+
+  const _SwipeToDeleteHistoryTile({
+    super.key,
+    required this.child,
+    required this.onDelete,
+  });
+
+  @override
+  State<_SwipeToDeleteHistoryTile> createState() =>
+      _SwipeToDeleteHistoryTileState();
+}
+
+class _SwipeToDeleteHistoryTileState extends State<_SwipeToDeleteHistoryTile> {
+  static const double _actionWidth = 86.0;
+  double _dragOffset = 0.0;
+  bool _dragging = false;
+
+  void _handleDragStart(DragStartDetails _) {
+    setState(() => _dragging = true);
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details) {
+    final next = (_dragOffset + details.delta.dx).clamp(-150.0, 0.0);
+    setState(() => _dragOffset = next);
+  }
+
+  void _handleDragEnd(DragEndDetails details) {
+    final vx = details.primaryVelocity ?? 0.0;
+    if (_dragOffset <= -125.0 || vx < -950.0) {
+      HapticFeedback.mediumImpact();
+      setState(() {
+        _dragging = false;
+        _dragOffset = 0.0;
+      });
+      widget.onDelete();
+      return;
+    }
+    final shouldOpen = _dragOffset < -(_actionWidth * 0.42) || vx < -280.0;
+    setState(() {
+      _dragging = false;
+      _dragOffset = shouldOpen ? -_actionWidth : 0.0;
+    });
+  }
+
+  void _closeIfOpen() {
+    if (_dragOffset != 0.0) {
+      setState(() => _dragOffset = 0.0);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final revealProgress = (-_dragOffset / _actionWidth).clamp(0.0, 1.0);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: _handleDragStart,
+        onHorizontalDragUpdate: _handleDragUpdate,
+        onHorizontalDragEnd: _handleDragEnd,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Opacity(
+                  opacity: revealProgress,
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      setState(() => _dragOffset = 0.0);
+                      widget.onDelete();
+                    },
+                    child: Container(
+                      width: _actionWidth + 16,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 18),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            Color(0xFFE0352B),
+                            Color(0xFFFF453A),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            CupertinoIcons.trash_fill,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            '删除',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            AnimatedContainer(
+              duration: _dragging
+                  ? Duration.zero
+                  : const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              transform: Matrix4.translationValues(_dragOffset, 0, 0),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1C1C23),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Listener(
+                onPointerDown: (_) {
+                  if (_dragOffset <= -10) {
+                    _closeIfOpen();
+                  }
+                },
+                child: widget.child,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Full-screen iOS 27 Liquid Glass Cyber-Aurora portal animation played when entering Privacy Mode.
+class _PrivacyModePortalAnimation extends StatefulWidget {
+  final VoidCallback onCompleted;
+
+  const _PrivacyModePortalAnimation({
+    super.key,
+    required this.onCompleted,
+  });
+
+  @override
+  State<_PrivacyModePortalAnimation> createState() =>
+      _PrivacyModePortalAnimationState();
+}
+
+class _PrivacyModePortalAnimationState
+    extends State<_PrivacyModePortalAnimation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1280),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          widget.onCompleted();
+        }
+      });
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final t = _controller.value;
+        // Fade in quickly (0..0.22), hold (0.22..0.72), fade out smoothly (0.72..1.0)
+        final double masterOpacity;
+        if (t < 0.22) {
+          masterOpacity = Curves.easeOutCubic.transform(t / 0.22);
+        } else if (t < 0.72) {
+          masterOpacity = 1.0;
+        } else {
+          masterOpacity =
+              1.0 - Curves.easeInOutCubic.transform((t - 0.72) / 0.28);
+        }
+
+        final ring1Scale = 0.35 + Curves.easeOutExpo.transform(t) * 2.45;
+        final ring2Scale =
+            0.2 + Curves.easeOutCubic.transform((t - 0.08).clamp(0.0, 1.0)) * 1.85;
+        final shieldScale = t < 0.32
+            ? 0.68 + Curves.easeOutBack.transform(t / 0.32) * 0.36
+            : 1.04 + (t - 0.32) * 0.14;
+        final blurSigma = (26.0 * masterOpacity).clamp(0.01, 28.0);
+
+        return Opacity(
+          opacity: masterOpacity.clamp(0.0, 1.0),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment(0.0, -0.08),
+                  radius: 1.05,
+                  colors: [
+                    Color(0xEE2B124C),
+                    Color(0xF2120924),
+                    Color(0xF807070C),
+                  ],
+                  stops: [0.0, 0.52, 1.0],
+                ),
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Expanding Liquid Aurora Wave Ring 1
+                  Transform.scale(
+                    scale: ring1Scale,
+                    child: Container(
+                      width: 260,
+                      height: 260,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFFBF5AF2).withValues(
+                            alpha: ((1.0 - t) * 0.65).clamp(0.0, 1.0),
+                          ),
+                          width: 2.2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF5E5CE6).withValues(
+                              alpha: ((1.0 - t) * 0.42).clamp(0.0, 1.0),
+                            ),
+                            blurRadius: 42,
+                            spreadRadius: 8,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Expanding Liquid Aurora Wave Ring 2
+                  Transform.scale(
+                    scale: ring2Scale,
+                    child: Container(
+                      width: 210,
+                      height: 210,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF5AC8FA).withValues(
+                            alpha: ((1.0 - t) * 0.5).clamp(0.0, 1.0),
+                          ),
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Center Shield & Status Badge
+                  Transform.scale(
+                    scale: shieldScale,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 88,
+                          height: 88,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Color(0xFFBF5AF2),
+                                Color(0xFF5E5CE6),
+                                Color(0xFF0A84FF),
+                              ],
+                            ),
+                            border: Border.all(
+                              color: const Color(0x99FFFFFF),
+                              width: 1.2,
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x88BF5AF2),
+                                blurRadius: 36,
+                                spreadRadius: 4,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            t < 0.28
+                                ? CupertinoIcons.lock_shield
+                                : CupertinoIcons.lock_shield_fill,
+                            color: Colors.white,
+                            size: 42,
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        const Text(
+                          '已进入隐私专属空间',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 21,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                            decoration: TextDecoration.none,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0x28FFFFFF),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: const Color(0x45BF5AF2),
+                              width: 0.7,
+                            ),
+                          ),
+                          child: const Text(
+                            '无痕播放 · 独立片源与搜索 · 数据零留存隔离',
+                            style: TextStyle(
+                              color: Color(0xFFE5D4FF),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.2,
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

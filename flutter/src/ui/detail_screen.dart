@@ -54,7 +54,11 @@ class _DetailScreenState extends State<DetailScreen> {
     super.initState();
     _video = widget.initialVideo;
     _descending = widget.storage.episodesDescending;
-    _isFavorite = widget.storage.isFavorite(widget.site.key, _video.id);
+    _isFavorite = widget.storage.isFavorite(
+      widget.site.key,
+      _video.id,
+      forPrivate: widget.site.isEffectivelyPrivate,
+    );
     PosterLoader.metadataRevision.addListener(_onExternalMetadataRevision);
     final immediateBytes = PosterLoader.peekMemory(
       _video.poster,
@@ -151,6 +155,7 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   WatchHistoryEntry? _findBookmark() {
+    if (widget.site.isEffectivelyPrivate) return null;
     for (final item in widget.storage.getWatchHistory()) {
       if (item.site == widget.site.key && item.id == _video.id) {
         return item;
@@ -688,55 +693,27 @@ class _DetailScreenState extends State<DetailScreen> {
               // 1. Unified Solid Ambient Canvas Matching Poster Edge Color
               ColoredBox(color: bgColor),
 
-              // 2. Full-Screen Backdrop Layer (zero mid-screen container clipping edge)
+              // 2. Full-Screen Backdrop Layer (zero mid-screen or top container clipping edge)
               Positioned.fill(
                 child: ValueListenableBuilder<double>(
                   valueListenable: _scrollOffset,
                   builder: (context, offset, child) {
-                    final progress = (offset / 260.0).clamp(0.0, 1.0);
-                    final blurSigma = progress * 24.0;
-                    final scrollVeilAlpha = progress * 0.76;
+                    final progress = (offset / 340.0).clamp(0.0, 1.0);
+                    final blurSigma = progress * 9.5;
+                    final scrollVeilAlpha = progress * 0.38;
 
                     Widget posterStack = Stack(
                       fit: StackFit.expand,
                       children: [
                         ColoredBox(color: bgColor),
-                        // Shifted downward with top solid-color cushion so poster subject is centered nicely
+                        // Shifted downward with intrinsic alpha-feathered top & bottom edges
+                        // (`ShaderMask` guarantees 0% opacity at both top and bottom boundaries,
+                        // making any horizontal step line mathematically impossible!)
                         Positioned(
                           top: topPosterOffset,
                           left: 0,
                           right: 0,
                           height: heroHeight,
-                          child: child!,
-                        ),
-                        // Top solid-color transition (status bar + upper poster edge)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          height: topPosterOffset + 96,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  bgColor,
-                                  bgColor.withValues(alpha: 0.94),
-                                  bgColor.withValues(alpha: 0.52),
-                                  bgColor.withValues(alpha: 0.0),
-                                ],
-                                stops: const [0.0, 0.28, 0.64, 1.0],
-                              ),
-                            ),
-                          ),
-                        ),
-                        // Progressive Frosted Glass Blur Transition in the lower text-overlap zone
-                        Positioned(
-                          top: topPosterOffset + heroHeight * 0.44,
-                          left: 0,
-                          right: 0,
-                          height: heroHeight * 0.58,
                           child: ShaderMask(
                             blendMode: BlendMode.dstIn,
                             shaderCallback: (rect) => const LinearGradient(
@@ -744,16 +721,64 @@ class _DetailScreenState extends State<DetailScreen> {
                               end: Alignment.bottomCenter,
                               colors: [
                                 Color(0x00FFFFFF),
-                                Color(0x99FFFFFF),
+                                Color(0x00FFFFFF),
+                                Color(0xB3FFFFFF),
+                                Color(0xFFFFFFFF),
+                                Color(0xFFFFFFFF),
+                                Color(0x00FFFFFF),
+                                Color(0x00FFFFFF),
+                              ],
+                              stops: [0.0, 0.04, 0.14, 0.26, 0.68, 0.94, 1.0],
+                            ).createShader(rect),
+                            child: child!,
+                          ),
+                        ),
+                        // Top solid-color transition (status bar + upper poster feather)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: topPosterOffset + 124,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  bgColor,
+                                  bgColor,
+                                  bgColor.withValues(alpha: 0.78),
+                                  bgColor.withValues(alpha: 0.28),
+                                  bgColor.withValues(alpha: 0.0),
+                                ],
+                                stops: const [0.0, 0.42, 0.64, 0.84, 1.0],
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Gentle Progressive Frosted Glass Blur Transition in the lower text-overlap zone
+                        Positioned(
+                          top: topPosterOffset + heroHeight * 0.46,
+                          left: 0,
+                          right: 0,
+                          height: heroHeight * 0.56,
+                          child: ShaderMask(
+                            blendMode: BlendMode.dstIn,
+                            shaderCallback: (rect) => const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Color(0x00FFFFFF),
+                                Color(0x80FFFFFF),
                                 Color(0xFFFFFFFF),
                               ],
-                              stops: [0.0, 0.42, 0.82],
+                              stops: [0.0, 0.48, 0.86],
                             ).createShader(rect),
                             child: ClipRect(
                               child: BackdropFilter(
                                 filter: ImageFilter.blur(
-                                  sigmaX: 18,
-                                  sigmaY: 18,
+                                  sigmaX: 7.5,
+                                  sigmaY: 7.5,
                                   tileMode: TileMode.decal,
                                 ),
                                 child: DecoratedBox(
@@ -762,12 +787,12 @@ class _DetailScreenState extends State<DetailScreen> {
                                       begin: Alignment.topCenter,
                                       end: Alignment.bottomCenter,
                                       colors: [
-                                        bgColor.withValues(alpha: 0.05),
-                                        bgColor.withValues(alpha: 0.48),
-                                        bgColor.withValues(alpha: 0.86),
+                                        bgColor.withValues(alpha: 0.04),
+                                        bgColor.withValues(alpha: 0.42),
+                                        bgColor.withValues(alpha: 0.84),
                                         bgColor,
                                       ],
-                                      stops: const [0.0, 0.35, 0.72, 0.92],
+                                      stops: const [0.0, 0.38, 0.74, 0.94],
                                     ),
                                   ),
                                 ),
@@ -793,7 +818,29 @@ class _DetailScreenState extends State<DetailScreen> {
                       fit: StackFit.expand,
                       children: [
                         posterStack,
-                        // Post-blur solid-color lock gradient reaching 100% bgColor BEFORE
+                        // Post-blur top solid-color lock gradient guaranteeing zero top line
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: topPosterOffset + 96,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  bgColor,
+                                  bgColor,
+                                  bgColor.withValues(alpha: 0.52),
+                                  bgColor.withValues(alpha: 0.0),
+                                ],
+                                stops: const [0.0, 0.46, 0.74, 1.0],
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Post-blur bottom solid-color lock gradient reaching 100% bgColor BEFORE
                         // the end of the hero zone, plus solid bgColor below, guaranteeing
                         // zero horizontal seam line when scrolling up!
                         Positioned(
@@ -808,8 +855,8 @@ class _DetailScreenState extends State<DetailScreen> {
                                 end: Alignment.bottomCenter,
                                 colors: [
                                   bgColor.withValues(alpha: 0.0),
-                                  bgColor.withValues(alpha: 0.55),
-                                  bgColor.withValues(alpha: 0.92),
+                                  bgColor.withValues(alpha: 0.52),
+                                  bgColor.withValues(alpha: 0.90),
                                   bgColor,
                                   bgColor,
                                 ],
@@ -1849,14 +1896,15 @@ class _DetailScreenState extends State<DetailScreen> {
               ColoredBox(color: bgColor),
 
               // 2. Full-Screen Widescreen Backdrop (`Positioned.fill` eliminates both
-              //    the vertical 34% line and the horizontal heroStageHeight line!)
+              //    the vertical 34% line and the horizontal heroStageHeight line, while
+              //    keeping right-side poster artwork clearly visible with low blur!)
               Positioned.fill(
                 child: ValueListenableBuilder<double>(
                   valueListenable: _scrollOffset,
                   builder: (context, offset, child) {
-                    final progress = (offset / 260.0).clamp(0.0, 1.0);
-                    final blurSigma = 8.0 + progress * 22.0;
-                    final scrollVeilAlpha = progress * 0.76;
+                    final progress = (offset / 320.0).clamp(0.0, 1.0);
+                    final blurSigma = 1.6 + progress * 7.5;
+                    final scrollVeilAlpha = progress * 0.36;
 
                     final backdropImage = ImageFiltered(
                       imageFilter: ImageFilter.blur(
@@ -1871,7 +1919,8 @@ class _DetailScreenState extends State<DetailScreen> {
                       fit: StackFit.expand,
                       children: [
                         backdropImage,
-                        // Left-to-right seamless solid-color blend into bgColor across 100% width
+                        // Left-to-right seamless solid-color blend: solid on left text area,
+                        // light & transparent on right so poster artwork is clearly visible
                         DecoratedBox(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
@@ -1879,12 +1928,12 @@ class _DetailScreenState extends State<DetailScreen> {
                               end: Alignment.centerRight,
                               colors: [
                                 bgColor,
-                                bgColor,
-                                bgColor.withValues(alpha: 0.90),
-                                bgColor.withValues(alpha: 0.52),
-                                bgColor.withValues(alpha: 0.28),
+                                bgColor.withValues(alpha: 0.94),
+                                bgColor.withValues(alpha: 0.46),
+                                bgColor.withValues(alpha: 0.14),
+                                bgColor.withValues(alpha: 0.05),
                               ],
-                              stops: const [0.0, 0.30, 0.46, 0.72, 1.0],
+                              stops: const [0.0, 0.24, 0.46, 0.72, 1.0],
                             ),
                           ),
                         ),
@@ -1895,13 +1944,13 @@ class _DetailScreenState extends State<DetailScreen> {
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
-                                bgColor.withValues(alpha: 0.92),
-                                bgColor.withValues(alpha: 0.22),
-                                bgColor.withValues(alpha: 0.78),
-                                bgColor,
+                                bgColor.withValues(alpha: 0.56),
+                                bgColor.withValues(alpha: 0.04),
+                                bgColor.withValues(alpha: 0.32),
+                                bgColor.withValues(alpha: 0.90),
                                 bgColor,
                               ],
-                              stops: const [0.0, 0.22, 0.56, 0.72, 1.0],
+                              stops: const [0.0, 0.18, 0.58, 0.80, 1.0],
                             ),
                           ),
                         ),
