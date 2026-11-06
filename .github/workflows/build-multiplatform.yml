@@ -194,7 +194,7 @@ jobs:
         run: |
           VERSION="${TAG#v}"
           VERSION="${VERSION%-preview}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" release-artifacts/MarcoMovie-*-windows-x64.zip* release-artifacts/MarcoMovie-*-macos.zip* release-artifacts/MarcoMovie-*-ios-unsigned.ipa* --clobber
-            gh release edit "$TAG" --prerelease=false --latest --title "Marco Movie $VERSION"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" --repo "${{ github.repository }}" release-artifacts/MarcoMovie-*-windows-x64.zip* release-artifacts/MarcoMovie-*-macos.zip* release-artifacts/MarcoMovie-*-ios-unsigned.ipa* --clobber
+            gh release edit "$TAG" --repo "${{ github.repository }}" --prerelease=false --latest --title "Marco Movie $VERSION"
           fi
