@@ -1,6 +1,25 @@
 # 版本记录
 
-## 0.4.34 Preview — 2026-11-06
+## 0.4.35 — 2026-11-06
+
+- **Android 电视端与手机/平板 64 位安装包独立分包（`preview.apk` 电视版 + `mobile.apk` 64位手机版）**：
+  - **Android 电视专享版（`MarcoMovie-0.4.35-preview.apk`）**：锁定大屏电视横屏 UI（`EDITION="tv"`），即使外接空中飞鼠或无线鼠标接收器也不会误入手机布局；保留 32 位 `armeabi-v7a` 架构以降低 1.5GB 内存电视占用，并完整搭载 `FFmpeg` / `AV1` / `VP9` 软解扩展。
+  - **Android 手机 / 平板 64 位版（`MarcoMovie-0.4.35-mobile.apk`）**：原生搭载 `arm64-v8a`（64 位）与 `armeabi-v7a`（32 位）双架构 `QuickJS` 与 `libtorrent` 库，全面兼容仅支持 64 位应用的现代旗舰手机，默认启用竖屏/平板触控 UI（`EDITION="mobile"`）。
+- **电视端搜索支持双击输入框直接调出系统电视输入法（`GlobalSearchScreen`）**：
+  - 在电视端全局搜索页聚焦顶部搜索框时，支持连续按两次遥控器确认键（或双击输入框）直接唤起电视系统软键盘输入法，输入内容实时同步至搜索框并自动检索；单击输入框仍保持跳转至左侧内置拼音键盘首字母键。
+- **修复电视端详情选集页背景竖线与新增电视端字幕设置、大小与高低位置调整（`ImmersivePoster` & `PlaybackControls` & `SettingsScreen`）**：
+  - **消除详情选集页背景竖线**：修复 `ImmersivePoster.Backdrop` 此前将模糊海报背景绘制区域截断在屏幕宽度 `73%` 处导致浅色海报在选集页右侧出现垂直分割线的问题，改为全屏宽度铺展配合多段式平滑水平/垂直渐变遮罩。
+  - **新增播放器内字幕大小与高低位置实时调整**：点击播放器底部工具栏「字幕」按钮即可直接调整 **字幕大小**（`极小` / `小` / `标准` / `大` / `超大` 共 5 档，强制覆盖内嵌 ASS/SSA 字号限制）与 **字幕位置**（`贴底` / `标准` / `略高` / `中下` / `偏高` / `较高` 共 6 档高低位置），无需等待片源加载完成或退出播放页面；同时在「设置 → 播放与音画」中同步提供字幕大小与字幕位置持久化选项。
+- **修复扩展来源请求报 `NoSuchMethodError` 及支持混淆/多仓订阅源配置（`Spider`、`SpiderApi`、`CspEngine`、`Cms`）**：
+  - 补全 `com.github.catvod.crawler.Spider` 与 `SpiderApi` 宿主桥接方法（`safeDns()`、`initApi(SpiderApi)`、`getToken()`、`setToken(String)`、`client()`、`proxy(Map)`），支持按站点独立加载 `site.jar` 自定义爬虫包，并默认开启来源扩展支持，彻底解决 `XBPQ` 等扩展插件在获取详情或播放时抛出 `NoSuchMethodError` 的问题。
+  - 新增对非图片前缀 `**` + Base64 混淆配置、十六进制 `$#...#$` AES-128-CBC 加密配置以及 `urls` / `storeHouse` 多仓聚合配置的自动解析支持。
+- **修复小米电视等设备播放 4K 杜比视界（`DoVi.H265.10bit`）MKV 报 `(4005)` 解码不支持的问题（`DecoderRenderersFactory` & `MoviePlayer`）**：
+  - 当设备无硬件 `video/dolby-vision` 解码器时，自动将杜比视界 Profile 5 / Profile 7 / Profile 8 视频流回退映射至硬件 `video/hevc`（H.265 10-bit）或 `video/avc` 解码器并剥离附加 `dvcC` 初始化块；同时开启 `exceedRendererCapabilitiesIfNecessary` 与 `group.isSupported(true)`，避免因系统 `media_codecs.xml` 标称等级限制误报 `(4005)`。
+- **iPhone / iPad 巨魔（TrollStore）IPA 兼容下放至 iOS 14.0+（含 iOS 15.4.1）并恢复镜像站全平台下载按钮**：
+  - 将 iOS 部署目标统一降至 `iOS 14.0`，注入 `-Wl,-no_fixup_chains` 与 `-fno-objc-msgsend-selector-stubs` 消除 Xcode 16 在 iOS 14 / 15.4.1 上触发闪退的 `DYLD_CHAINED_PTR_64_OFFSET` 指针格式，剥离单架构 FAT 包装并完成全量 `Frameworks` 与 `Runner.app` 巨魔兼容签名（`patch_ios_ipa.py`）。
+  - 更新镜像站同步脚本（`sync_movie_mirror.py`），完整展示 Android 电视版、Android 手机/平板 64 位版、iPhone/iPad 版（IPA）、Windows 版、macOS 版与 Android 4.0+ 轻量版下载入口。
+
+## 0.4.34 — 2026-11-06
 
 - **底部液态玻璃 Dock 栏支持按住左右/上下滑动连续聚焦切换（iOS / Android 全平台）**：
   - **iPhone / 跨平台端（`AppleLiquidGlassDock`）**：支持在底部悬浮液态玻璃胶囊 Dock（及横屏右侧垂直 Dock）上直接按住手指左右/上下滑动，高光透镜（`_DockSelectionLens`）实时跟随手指平滑游走并带微幅放大动效，滑入对应栏目时立即触发触感反馈（`HapticFeedback.selectionClick`）并无感切换「主页 · 直播 · 片库 · 设置」，无需离散点击。

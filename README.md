@@ -2,7 +2,7 @@
   <img src="docs/images/tv-banner-960x540.png" width="480" alt="Marco Movie — 银色场记板与播放标志" />
   <h1>Marco Movie</h1>
   <p>支持 Android 电视、手机、平板及 Windows / macOS / iOS 多端自适应的播放器。</p>
-  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.4.34 Preview · Android 6.0+ 标准版 / Android 4.0+ 轻量版 · Android 6.0+（电视 / 手机 / 平板三合一）· 桌面与移动端跨平台</p>
+  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.4.35 · Android 电视版 / Android 64 位手机版 / Android 4.0+ 轻量版 · 桌面与移动端跨平台</p>
   <p><a href="https://marcotv.wlj9919.top/movie/">镜像下载与产品展示</a> · <a href="https://github.com/Pilipala9919/MarcoMovie/releases">GitHub 下载</a> · <a href="docs/USER_GUIDE.md">使用指南</a> · <a href="docs/BUILD.md">构建说明</a> · <a href="docs/PRIVACY.md">隐私说明</a></p>
 </div>
 
@@ -12,7 +12,7 @@
 
 Marco Movie 希望让大屏电视、随身手机、平板电脑与桌面端上的浏览、搜索和播放同样自然顺手：在电视上以大幅竖版海报与清晰焦点反馈配合遥控器操作；在手机与平板上采用完全独立的触控界面（底部 5 栏导航、原生键盘搜索、剪贴板一键导入、全屏手势播放）；并提供 `flutter/` 跨平台工程覆盖 Windows、macOS、iPhone 与 iPad。应用没有预装片库；第一次打开时，用户需要自行导入有权使用的配置。
 
-这是一个原生 Android 与多平台客户端项目。界面、配置管理、播放控制和本地搜索匹配在设备上运行；本项目不运营影视内容服务。项目处于预览阶段，功能和设备兼容性仍在持续完善。
+这是一个原生 Android 与多平台客户端项目。界面、配置管理、播放控制和本地搜索匹配在设备上运行；本项目不运营影视内容服务。功能和设备兼容性仍在持续完善。
 
 ## 能做什么
 
@@ -37,7 +37,7 @@ Marco Movie 希望让大屏电视、随身手机、平板电脑与桌面端上�
 
 ## 安装与开始使用
 
-1. 在 [镜像下载页](https://marcotv.wlj9919.top/movie/) 或 [Releases](https://github.com/Pilipala9919/MarcoMovie/releases) 下载预览 APK，并核对随附的 SHA-256 文件。
+1. 在 [镜像下载页](https://marcotv.wlj9919.top/movie/) 或 [Releases](https://github.com/Pilipala9919/MarcoMovie/releases) 下载 APK 安装包，并核对随附的 SHA-256 文件。
 2. 在兼容的 Android 电视、盒子、手机或平板上安装（同一个 APK 自动识别设备形态并切换专属界面）。当前发布包包含 `armeabi-v7a` 原生库，需要设备支持 32 位 ARM 应用；Windows / macOS / iOS 构建产物可通过 GitHub Actions 或 Releases 获取。
 3. 打开应用导入配置：
    - **手机 / 平板端**：直接在首页欢迎卡片输入网址，或复制配置链接/JSON 后点击「📋 一键读取手机剪贴板并导入」，也可选择手机本地 JSON 文件，无需扫码。
@@ -47,7 +47,7 @@ Marco Movie 希望让大屏电视、随身手机、平板电脑与桌面端上�
 
 同一应用签名的安装包一般可以覆盖升级；自行编译会生成自己的开发签名，不能保证覆盖官方项目发布包。卸载会删除应用本地数据，请先妥善保存必要配置。详细操作见[使用指南](docs/USER_GUIDE.md)。
 
-## 设备与预览版边界
+## 设备与兼容性说明
 
 - 最低 Android 6.0（API 23）；当前主要验证环境为 Android 9、ARM 32 位电视。最低版本声明不等于每台设备均已实测。
 - 兼容标准 JSON 内容接口及部分可选扩展形式，扩展默认关闭。没有承诺所有配置、网盘、直播列表、编码或第三方服务都可使用。

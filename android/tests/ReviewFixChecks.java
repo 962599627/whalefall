@@ -184,7 +184,7 @@ public final class ReviewFixChecks {
                         && ImageDecodePolicy.cacheBytes(512) == 32 * 1024 * 1024,
                 "image memory cache budget scales within 10MB..32MB bounds");
 
-        check(Prefs.KEYS.length == 28, "backup settings key table has 28 entries");
+        check(Prefs.KEYS.length == 29, "backup settings key table has 29 entries");
         check(
                 Boolean.TRUE.equals(Prefs.sanitizeSetting(Prefs.AUTO_NEXT, true))
                         && Prefs.sanitizeSetting(Prefs.AUTO_NEXT, "true") == null
@@ -218,6 +218,8 @@ public final class ReviewFixChecks {
                         && Prefs.clampWallpaperDim(120) == 100
                         && Prefs.clampSubtitleSize(10) == 25
                         && Prefs.clampSubtitleSize(90) == 65
+                        && Prefs.clampSubtitleBottom(-10) == 0
+                        && Prefs.clampSubtitleBottom(240) == 180
                         && Prefs.clampSearchTimeoutSeconds(1) == 10
                         && Prefs.clampSearchTimeoutSeconds(99) == 30,
                 "preference range clamp helpers bound out-of-range values");

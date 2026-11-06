@@ -301,6 +301,31 @@ public final class MainActivity extends Activity {
     int formFactor = TvLayoutPolicy.FORM_TV;
 
     static int detectFormFactor(Context base, int widthPixels, int heightPixels, int densityDpi) {
+        int smallestDp =
+                densityDpi > 0
+                        ? Math.round(Math.min(widthPixels, heightPixels) * 160f / densityDpi)
+                        : 360;
+        if (viewportHint == null) {
+            try {
+                android.content.pm.ApplicationInfo appInfo =
+                        base.getPackageManager()
+                                .getApplicationInfo(
+                                        base.getPackageName(),
+                                        android.content.pm.PackageManager.GET_META_DATA);
+                if (appInfo != null && appInfo.metaData != null) {
+                    String edition = appInfo.metaData.getString("com.pilipala.marcomovie.EDITION");
+                    if ("mobile".equals(edition)) {
+                        return smallestDp >= 600
+                                ? TvLayoutPolicy.FORM_TABLET
+                                : TvLayoutPolicy.FORM_PHONE;
+                    }
+                    if ("tv".equals(edition)) {
+                        return TvLayoutPolicy.FORM_TV;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
         boolean tvMode = false;
         try {
             UiModeManager uiMode = (UiModeManager) base.getSystemService(Context.UI_MODE_SERVICE);
@@ -318,10 +343,6 @@ public final class MainActivity extends Activity {
                                     android.content.pm.PackageManager.FEATURE_TOUCHSCREEN);
         } catch (Exception ignored) {
         }
-        int smallestDp =
-                densityDpi > 0
-                        ? Math.round(Math.min(widthPixels, heightPixels) * 160f / densityDpi)
-                        : 360;
         return TvLayoutPolicy.formFactor(tvMode, hasTouch, smallestDp);
     }
 

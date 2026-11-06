@@ -236,9 +236,15 @@ final class SettingsScreen {
         ints(
                 "字幕大小",
                 Prefs.SUBTITLE_SIZE,
-                new String[] {"小", "标准", "大"},
-                new int[] {35, 45, 55},
+                new String[] {"极小", "小", "标准", "大", "超大"},
+                new int[] {28, 35, 45, 55, 65},
                 45);
+        ints(
+                "字幕位置",
+                Prefs.SUBTITLE_BOTTOM,
+                new String[] {"贴底", "标准", "略高", "中下", "偏高", "较高"},
+                new int[] {8, 24, 48, 76, 110, 148},
+                24);
         toggle("自动加载来源弹幕", Prefs.DANMAKU_DEFAULT, false, null);
         ints(
                 "画面色彩",
@@ -275,7 +281,7 @@ final class SettingsScreen {
                 a.isTvDevice() ? "手机扫码、遥控输入或本地文件" : "剪贴板粘贴、网址输入或本地文件",
                 "settings-import",
                 a::importDialog);
-        toggle("启用来源扩展", Prefs.EXPERIMENTAL_CSP, false, a::closeEngines);
+        toggle("启用来源扩展", Prefs.EXPERIMENTAL_CSP, true, a::closeEngines);
         link(
                 "网盘与账号",
                 "网盘扫码登录、凭据与网盘顺序（由配置提供）",

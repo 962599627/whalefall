@@ -17,7 +17,7 @@ public final class Cms {
     }
 
     public static final class Site {
-        public String key, name, api, playUrl;
+        public String key, name, api, playUrl, jar = "";
         public int type;
         public final Map<String, String> headers = new LinkedHashMap<>();
         public boolean requiresParser;
@@ -146,11 +146,36 @@ public final class Cms {
         if (text == null || text.length() > MAX_JSON) throw new IOException("配置超过 4 MB 限制");
         JSONObject root = new JSONObject(withoutComments(text.trim().replaceFirst("^\\uFEFF", "")));
         JSONArray sites = root.optJSONArray("sites");
+        if ((sites == null || sites.length() == 0) && origin != null && isHttp(origin)) {
+            JSONArray warehouses = root.optJSONArray("urls");
+            if (warehouses == null) warehouses = root.optJSONArray("storeHouse");
+            if (warehouses != null && warehouses.length() > 0) {
+                for (int i = 0; i < Math.min(5, warehouses.length()); i++) {
+                    JSONObject w = warehouses.optJSONObject(i);
+                    if (w == null) continue;
+                    String subUrl =
+                            resolve(origin, w.optString("url", w.optString("sourceUrl", "")));
+                    if (isHttp(subUrl) && !subUrl.equals(origin)) {
+                        try {
+                            return parseConfig(fetch(subUrl, null), subUrl);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            }
+        }
         if (sites == null || sites.length() == 0) throw new IOException("配置中没有 sites 来源列表");
         if (sites.length() > 500) throw new IOException("来源超过 500 个限制");
         Config out = new Config();
         out.raw = text;
-        out.spider = resolve(origin, root.optString("spider", ""));
+        String rawSpider = root.optString("spider", "");
+        if (!rawSpider.isEmpty()) {
+            String[] spParts = rawSpider.split(";md5;", 2);
+            out.spider =
+                    resolve(origin, spParts[0]) + (spParts.length == 2 ? ";md5;" + spParts[1] : "");
+        } else {
+            out.spider = "";
+        }
         Set<String> keys = new HashSet<>();
         for (int i = 0; i < sites.length(); i++) {
             JSONObject j = sites.optJSONObject(i);
@@ -161,6 +186,13 @@ public final class Cms {
             if (!keys.add(s.key)) s.key = s.key + "-" + i;
             s.type = j.optInt("type", -1);
             s.api = resolve(origin, j.optString("api", ""));
+            String rawJar = j.optString("jar", "");
+            if (!rawJar.isEmpty()) {
+                String[] jarParts = rawJar.split(";md5;", 2);
+                s.jar =
+                        resolve(origin, jarParts[0])
+                                + (jarParts.length == 2 ? ";md5;" + jarParts[1] : "");
+            }
             s.playUrl = j.optString("playUrl", "");
             s.searchable = j.optInt("searchable", 1) != 0;
             s.ext = j.opt("ext");
@@ -255,25 +287,93 @@ public final class Cms {
                         break;
                     }
             if (marker < 0) throw new IOException("配置图片中没有受支持的 JSON 载荷");
-            ByteArrayOutputStream decoded = new ByteArrayOutputStream();
-            int bits = 0, count = 0;
-            String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-            for (int i = marker; i < bytes.length; i++) {
-                char ch = (char) (bytes[i] & 255);
-                if (ch == '=') break;
-                if (Character.isWhitespace(ch)) continue;
-                int v = alphabet.indexOf(ch);
-                if (v < 0) throw new IOException("配置图片中的 Base64 格式不受支持");
-                bits = (bits << 6) | v;
-                count += 6;
-                if (count >= 8) {
-                    count -= 8;
-                    decoded.write((bits >> count) & 255);
+            return decodeBase64Range(bytes, marker, bytes.length);
+        }
+        String text = new String(bytes, "UTF-8");
+        String trimmed = text.trim().replaceFirst("^\\uFEFF", "");
+        if (!trimmed.startsWith("{") && !trimmed.startsWith("[") && !trimmed.startsWith("/")) {
+            int star = trimmed.lastIndexOf("**");
+            if (star >= 0 && star + 2 < trimmed.length()) {
+                try {
+                    byte[] sub = trimmed.substring(star + 2).getBytes("US-ASCII");
+                    String decoded = decodeBase64Range(sub, 0, sub.length);
+                    if (decoded.trim().replaceFirst("^\\uFEFF", "").startsWith("{")) return decoded;
+                } catch (Exception ignored) {
                 }
             }
-            return new String(decoded.toByteArray(), "UTF-8");
+            if (trimmed.startsWith("2423") && trimmed.length() > 36 && trimmed.length() % 2 == 0) {
+                try {
+                    String decrypted = decryptHexAes(trimmed);
+                    if (decrypted != null
+                            && decrypted.trim().replaceFirst("^\\uFEFF", "").startsWith("{"))
+                        return decrypted;
+                } catch (Exception ignored) {
+                }
+            }
+            if (trimmed.startsWith("eyJ")) {
+                try {
+                    byte[] sub = trimmed.getBytes("US-ASCII");
+                    String decoded = decodeBase64Range(sub, 0, sub.length);
+                    if (decoded.trim().replaceFirst("^\\uFEFF", "").startsWith("{")) return decoded;
+                } catch (Exception ignored) {
+                }
+            }
         }
-        return new String(bytes, "UTF-8");
+        return text;
+    }
+
+    private static String decodeBase64Range(byte[] bytes, int start, int end) throws IOException {
+        ByteArrayOutputStream decoded = new ByteArrayOutputStream();
+        int bits = 0, count = 0;
+        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        for (int i = start; i < end; i++) {
+            char ch = (char) (bytes[i] & 255);
+            if (ch == '=') break;
+            if (Character.isWhitespace(ch)) continue;
+            if (ch == '-') ch = '+';
+            else if (ch == '_') ch = '/';
+            int v = alphabet.indexOf(ch);
+            if (v < 0) throw new IOException("配置图片中的 Base64 格式不受支持");
+            bits = (bits << 6) | v;
+            count += 6;
+            if (count >= 8) {
+                count -= 8;
+                decoded.write((bits >> count) & 255);
+            }
+        }
+        return new String(decoded.toByteArray(), "UTF-8");
+    }
+
+    private static String decryptHexAes(String hex) throws Exception {
+        byte[] raw = new byte[hex.length() / 2];
+        for (int i = 0; i < raw.length; i++) {
+            int hi = Character.digit(hex.charAt(i * 2), 16);
+            int lo = Character.digit(hex.charAt(i * 2 + 1), 16);
+            if (hi < 0 || lo < 0) return null;
+            raw[i] = (byte) ((hi << 4) | lo);
+        }
+        String ascii = new String(raw, "ISO-8859-1");
+        int endKey = ascii.indexOf("#$");
+        if (!ascii.startsWith("$#") || endKey < 2 || ascii.length() < endKey + 2 + 16) return null;
+        String keyPart = ascii.substring(2, endKey);
+        String ivPart = ascii.substring(ascii.length() - 13);
+        byte[] keyBytes = pad16(keyPart);
+        byte[] ivBytes = pad16(ivPart);
+        int cipherLen = raw.length - (endKey + 2) - 13;
+        if (cipherLen <= 0 || cipherLen % 16 != 0) return null;
+        javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding");
+        cipher.init(
+                javax.crypto.Cipher.DECRYPT_MODE,
+                new javax.crypto.spec.SecretKeySpec(keyBytes, "AES"),
+                new javax.crypto.spec.IvParameterSpec(ivBytes));
+        byte[] out = cipher.doFinal(raw, endKey + 2, cipherLen);
+        return new String(out, "UTF-8");
+    }
+
+    private static byte[] pad16(String s) throws Exception {
+        StringBuilder sb = new StringBuilder(s);
+        while (sb.length() < 16) sb.append('0');
+        return sb.substring(0, 16).getBytes("UTF-8");
     }
 
     public static String fetch(String address, Map<String, String> headers) throws Exception {

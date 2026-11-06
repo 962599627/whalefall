@@ -16,7 +16,12 @@ final class SubtitleOverlayView extends FrameLayout {
     }
 
     void setFractionalTextSize(float fractionOfHeight) {
+        delegate.setApplyEmbeddedFontSizes(false);
         delegate.setFractionalTextSize(fractionOfHeight);
+    }
+
+    void setBottomPaddingFraction(float fractionOfHeight) {
+        delegate.setBottomPaddingFraction(fractionOfHeight);
     }
 
     void setUserDefaultStyle() {

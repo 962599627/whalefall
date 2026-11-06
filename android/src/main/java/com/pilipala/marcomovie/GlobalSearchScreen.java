@@ -13,7 +13,11 @@ public final class GlobalSearchScreen implements AutoCloseable {
     final MainActivity a;
     final String initial;
     PinyinKeyboardModel keyboard;
-    TextView input, composition, status;
+    EditText input;
+    TextView composition, status;
+    boolean syncingInput, imeActive;
+    long lastInputClickMs;
+    Runnable pendingInputClick;
     LinearLayout candidates, keys, resultBody, sourceFilters;
     SearchCoordinator coordinator, retryCoordinator;
     List<String> searchVariants = Collections.emptyList();
@@ -67,6 +71,13 @@ public final class GlobalSearchScreen implements AutoCloseable {
         a.renderPage("", "");
         closed = false;
         edited = "";
+        syncingInput = false;
+        imeActive = false;
+        lastInputClickMs = 0L;
+        if (pendingInputClick != null) {
+            a.ui.removeCallbacks(pendingInputClick);
+            pendingInputClick = null;
+        }
         filterButtons.clear();
         displayed.clear();
         posterCards.clear();
@@ -109,12 +120,82 @@ public final class GlobalSearchScreen implements AutoCloseable {
         heading.setTypeface(null, Typeface.BOLD);
         left.addView(heading);
         a.gap(left, 12);
-        input = a.text("", 18, MainActivity.WHITE);
+        input =
+                new EditText(a) {
+                    @Override
+                    public boolean onKeyPreIme(int keyCode, KeyEvent event) {
+                        if (keyCode == KeyEvent.KEYCODE_BACK
+                                && event.getAction() == KeyEvent.ACTION_UP
+                                && imeActive) {
+                            imeActive = false;
+                            setCursorVisible(false);
+                            setShowSoftInputOnFocus(false);
+                        }
+                        return super.onKeyPreIme(keyCode, event);
+                    }
+
+                    @Override
+                    public boolean onTouchEvent(MotionEvent event) {
+                        boolean hadFocus = hasFocus();
+                        boolean handled = super.onTouchEvent(event);
+                        if (event.getAction() == MotionEvent.ACTION_UP && !hadFocus && hasFocus()) {
+                            handleInputClick();
+                        }
+                        return handled;
+                    }
+
+                    @Override
+                    public boolean onKeyDown(int keyCode, KeyEvent event) {
+                        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                                || keyCode == KeyEvent.KEYCODE_ENTER
+                                || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                            if (event.getRepeatCount() == 0) {
+                                FocusMotion.key(a, this, keyCode, event);
+                                performClick();
+                            }
+                            return true;
+                        }
+                        if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                                || keyCode == KeyEvent.KEYCODE_DPAD_UP
+                                || (!imeActive
+                                        && (keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                                                || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT))) {
+                            return false;
+                        }
+                        return super.onKeyDown(keyCode, event);
+                    }
+
+                    @Override
+                    public boolean onKeyUp(int keyCode, KeyEvent event) {
+                        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                                || keyCode == KeyEvent.KEYCODE_ENTER
+                                || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                            FocusMotion.key(a, this, keyCode, event);
+                            return true;
+                        }
+                        if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                                || keyCode == KeyEvent.KEYCODE_DPAD_UP
+                                || (!imeActive
+                                        && (keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                                                || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT))) {
+                            return false;
+                        }
+                        return super.onKeyUp(keyCode, event);
+                    }
+                };
+        input.setTextSize(18);
+        input.setTextColor(MainActivity.WHITE);
+        input.setHintTextColor(MainActivity.MUTED);
+        input.setHint("输入片名…（双击调出输入法）");
         input.setGravity(Gravity.CENTER_VERTICAL);
         input.setIncludeFontPadding(false);
         input.setTag("primary");
         input.setContentDescription("搜索内容");
         input.setSingleLine(true);
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+        input.setShowSoftInputOnFocus(false);
+        input.setCursorVisible(false);
         input.setEllipsize(android.text.TextUtils.TruncateAt.START);
         input.setPadding(a.dp(14), a.dp(10), a.dp(12), a.dp(10));
         input.setBackground(a.bg(0xff29292e, 10));
@@ -122,22 +203,47 @@ public final class GlobalSearchScreen implements AutoCloseable {
         input.setFocusableInTouchMode(true);
         input.setClickable(true);
         input.setOnFocusChangeListener(
-                (v, f) ->
-                        FocusMotion.style(
-                                a,
-                                input,
-                                f,
-                                0xff29292e,
-                                0xff35353e,
-                                10,
-                                MainActivity.WHITE,
-                                MainActivity.WHITE,
-                                true,
-                                1.01f));
-        input.setOnClickListener(
-                v -> {
-                    View first = a.root.findViewWithTag("search-key:a");
-                    if (first != null) first.requestFocus();
+                (v, f) -> {
+                    if (!f && imeActive) {
+                        imeActive = false;
+                        input.setCursorVisible(false);
+                        input.setShowSoftInputOnFocus(false);
+                        hideSystemIme();
+                    }
+                    FocusMotion.style(
+                            a,
+                            input,
+                            f,
+                            0xff29292e,
+                            0xff35353e,
+                            10,
+                            MainActivity.WHITE,
+                            MainActivity.WHITE,
+                            true,
+                            1.01f);
+                });
+        input.setOnClickListener(v -> handleInputClick());
+        input.setOnEditorActionListener(
+                (v, actionId, event) -> {
+                    hideSystemIme();
+                    submit();
+                    return true;
+                });
+        input.addTextChangedListener(
+                new android.text.TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(
+                            CharSequence s, int start, int count, int after) {}
+
+                    @Override
+                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+                    @Override
+                    public void afterTextChanged(android.text.Editable s) {
+                        if (syncingInput || keyboard == null) return;
+                        keyboard.set(s == null ? "" : s.toString());
+                        updateAfterImeInput();
+                    }
                 });
         input.setOnKeyListener((v, key, event) -> physicalKey(key, event));
         left.addView(input, new LinearLayout.LayoutParams(-1, a.dp(48)));
@@ -321,7 +427,84 @@ public final class GlobalSearchScreen implements AutoCloseable {
                 : mode == PinyinKeyboardModel.Mode.LETTERS ? "字母" : "数字";
     }
 
+    void handleInputClick() {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - lastInputClickMs <= 500L) {
+            lastInputClickMs = 0L;
+            if (pendingInputClick != null) {
+                a.ui.removeCallbacks(pendingInputClick);
+                pendingInputClick = null;
+            }
+            openSystemIme();
+            return;
+        }
+        lastInputClickMs = now;
+        if (pendingInputClick != null) a.ui.removeCallbacks(pendingInputClick);
+        pendingInputClick =
+                () -> {
+                    pendingInputClick = null;
+                    if (!current() || imeActive) return;
+                    View first = a.root.findViewWithTag("search-key:a");
+                    if (first != null) first.requestFocus();
+                };
+        a.ui.postDelayed(pendingInputClick, 420);
+    }
+
+    void openSystemIme() {
+        if (input == null || keyboard == null) return;
+        imeActive = true;
+        if (!keyboard.composition().isEmpty()) {
+            keyboard.set(keyboard.query());
+        }
+        syncingInput = true;
+        String currentText = keyboard.query();
+        if (!currentText.equals(input.getText().toString())) {
+            input.setText(currentText);
+        }
+        input.setSelection(input.getText().length());
+        syncingInput = false;
+        input.setShowSoftInputOnFocus(true);
+        input.setCursorVisible(true);
+        input.requestFocus();
+        try {
+            a.getWindow()
+                    .setSoftInputMode(
+                            WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+                                    | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN);
+        } catch (Exception ignored) {
+        }
+        android.view.inputmethod.InputMethodManager imm =
+                (android.view.inputmethod.InputMethodManager)
+                        a.getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            if (!imm.showSoftInput(
+                    input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)) {
+                imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_FORCED);
+            }
+        }
+        if (composition != null) composition.setText("已调出电视输入法 · 可直接输入中文或拼音");
+    }
+
+    void hideSystemIme() {
+        if (input == null) return;
+        try {
+            android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager)
+                            a.getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.hideSoftInputFromWindow(input.getWindowToken(), 0);
+        } catch (Exception ignored) {
+        }
+    }
+
     boolean physicalKey(int key, KeyEvent event) {
+        if (imeActive && a.getCurrentFocus() == input) {
+            if (key == KeyEvent.KEYCODE_SEARCH && event.getAction() == KeyEvent.ACTION_DOWN) {
+                hideSystemIme();
+                submit();
+                return true;
+            }
+            return false;
+        }
         if (key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER) {
             View focus = a.getCurrentFocus();
             if (focus != null) FocusMotion.key(a, focus, key, event);
@@ -355,18 +538,29 @@ public final class GlobalSearchScreen implements AutoCloseable {
 
     void changed() {
         if (input == null) return;
-        input.setText(
+        String display =
                 keyboard.query().isEmpty()
-                        ? "输入片名…"
+                        ? ""
                         : keyboard.committed()
                                 + (keyboard.composition().isEmpty()
                                         ? ""
-                                        : "  " + keyboard.composition()));
+                                        : "  " + keyboard.composition());
+        syncingInput = true;
+        if (!display.equals(input.getText().toString())) {
+            input.setText(display);
+            input.setSelection(display.length());
+        }
+        syncingInput = false;
+        updateAfterImeInput();
+    }
+
+    void updateAfterImeInput() {
+        if (composition == null) return;
         composition.setText(
                 keyboard.composition().isEmpty()
                         ? (keyboard.mode() == PinyinKeyboardModel.Mode.PINYIN
-                                ? "默认识别首拼 / 全拼 · 也可拼音选字"
-                                : "直接输入字母、首字母或数字")
+                                ? "默认识别首拼 / 全拼 · 双击输入框调出电视输入法"
+                                : "直接输入字母、首字母或数字 · 双击输入框调出输入法")
                         : "拼音  " + keyboard.composition());
         candidatePage = 0;
         renderCandidates();
@@ -988,6 +1182,11 @@ public final class GlobalSearchScreen implements AutoCloseable {
     public void close() {
         closed = true;
         if (resultScroll != null) savedResultScroll = resultScroll.getScrollY();
+        if (pendingInputClick != null) {
+            a.ui.removeCallbacks(pendingInputClick);
+            pendingInputClick = null;
+        }
+        hideSystemIme();
         if (pendingSearch != null) {
             a.ui.removeCallbacks(pendingSearch);
             pendingSearch = null;

@@ -77,6 +77,13 @@ public final class LiteCatalog {
  public static List<Site> parse(String raw,String base)throws Exception {
   String cleaned=withoutComments(raw).trim();
   if(cleaned.startsWith("\ufeff"))cleaned=cleaned.substring(1).trim();
+  int star=cleaned.indexOf("**");
+  if(!cleaned.startsWith("{")&&star>=0){
+   try{
+    String decoded=new String(android.util.Base64.decode(cleaned.substring(star+2).replaceAll("\\s+",""),android.util.Base64.DEFAULT),"UTF-8");
+    if(decoded.trim().startsWith("{"))cleaned=withoutComments(decoded).trim();
+   }catch(Exception ignored){}
+  }
   JSONArray rows=new JSONObject(cleaned).optJSONArray("sites");if(rows==null||rows.length()==0)throw new IOException("配置没有 sites 列表");
   List<Site> sites=new ArrayList<Site>();
   for(int i=0;i<rows.length()&&i<500;i++){JSONObject row=rows.getJSONObject(i);Site s=new Site();

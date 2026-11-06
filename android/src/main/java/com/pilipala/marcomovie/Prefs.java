@@ -37,6 +37,7 @@ final class Prefs {
     static final String SKIP_INTRO = "skip_intro";
     static final String SKIP_OUTRO = "skip_outro";
     static final String SUBTITLE_SIZE = "subtitle_size";
+    static final String SUBTITLE_BOTTOM = "subtitle_bottom";
     static final String DANMAKU_DEFAULT = "danmaku_default";
     static final String PICTURE_EFFECT = "picture_effect";
     static final String AUDIO_EFFECT = "audio_effect";
@@ -77,6 +78,7 @@ final class Prefs {
         SKIP_INTRO,
         SKIP_OUTRO,
         SUBTITLE_SIZE,
+        SUBTITLE_BOTTOM,
         DANMAKU_DEFAULT,
         PICTURE_EFFECT,
         AUDIO_EFFECT,
@@ -116,6 +118,7 @@ final class Prefs {
         ranges.put(SKIP_INTRO, new int[] {0, 180});
         ranges.put(SKIP_OUTRO, new int[] {0, 180});
         ranges.put(SUBTITLE_SIZE, new int[] {25, 65});
+        ranges.put(SUBTITLE_BOTTOM, new int[] {0, 180});
         ranges.put(PICTURE_EFFECT, new int[] {0, 3});
         ranges.put(AUDIO_EFFECT, new int[] {0, 3});
         ranges.put(SEARCH_THREADS, new int[] {2, 6});
@@ -159,6 +162,10 @@ final class Prefs {
 
     static int clampSubtitleSize(int size) {
         return Math.max(25, Math.min(65, size));
+    }
+
+    static int clampSubtitleBottom(int dp) {
+        return Math.max(0, Math.min(180, dp));
     }
 
     static int clampSearchTimeoutSeconds(int seconds) {

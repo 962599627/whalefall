@@ -28,7 +28,7 @@ def main():
     if 'MARCOMOVIE_ANDROID_JAR' not in os.environ:
         from prepare_android_platform import prepare
         prepare()
-    dependencies=[];native_files={};resource_dirs=[];packages=[]
+    dependencies=[];native_files={};native_files_mobile={};resource_dirs=[];packages=[]
     items=json.loads((ROOT/'android/dependencies.json').read_text(encoding='utf-8'))
     for filename in ('media-dependencies.json','torrent-dependencies.json','decoder-dependencies.json'):
         manifest=ROOT/'android'/filename
@@ -44,8 +44,13 @@ def main():
                 manifest=ET.fromstring(z.read('AndroidManifest.xml'))
                 package=manifest.get('package')
                 if package:packages.append(package)
+                has_arm64=any(n.startswith('jni/arm64-v8a/') and n.endswith('.so') for n in z.namelist())
                 for name in z.namelist():
-                    if name.startswith('jni/armeabi-v7a/') and name.endswith('.so'):native_files['lib/'+name[4:]]=z.read(name)
+                    if name.startswith('jni/armeabi-v7a/') and name.endswith('.so'):
+                        native_files['lib/'+name[4:]]=z.read(name)
+                        if has_arm64:native_files_mobile['lib/'+name[4:]]=z.read(name)
+                    if name.startswith('jni/arm64-v8a/') and name.endswith('.so'):
+                        native_files_mobile['lib/'+name[4:]]=z.read(name)
                     if name.startswith('res/') and not name.endswith('/'):
                         target=(unpack/name).resolve()
                         if not target.is_relative_to(unpack.resolve()):raise RuntimeError('Invalid AAR resource path')
@@ -56,8 +61,14 @@ def main():
             if item.get('native_members'):
                 with zipfile.ZipFile(jar) as z:
                     for name in item['native_members']:
-                        if not name.startswith('lib/armeabi-v7a/') or not name.endswith('.so'):raise RuntimeError('Unexpected native dependency member')
-                        native_files[name]=z.read(name)
+                        if not (name.startswith('lib/armeabi-v7a/') or name.startswith('lib/arm64-v8a/')) or not name.endswith('.so'):
+                            raise RuntimeError('Unexpected native dependency member')
+                        data=z.read(name)
+                        if name.startswith('lib/armeabi-v7a/'):
+                            native_files[name]=data
+                            native_files_mobile[name]=data
+                        elif name.startswith('lib/arm64-v8a/'):
+                            native_files_mobile[name]=data
     for p in (exe(JDK/'bin','java'), exe(SDK,'aapt2'), ANDROID):
         if not p.exists(): raise RuntimeError(f'Required existing tool missing: {p}')
     for folder in (BUILD, BUILD/'classes', BUILD/'dex', DIST): folder.mkdir(parents=True, exist_ok=True)
@@ -112,9 +123,24 @@ def main():
         except Exception:
             pass
     (DIST/(apk.name+'.sha256')).write_text(digest+'  '+apk.name+'\n',encoding='ascii')
+    mobile_manifest=BUILD/'AndroidManifest.mobile.xml'
+    mobile_xml=(SRC/'AndroidManifest.xml').read_text(encoding='utf-8').replace('android:value="tv"','android:value="mobile"').replace('<category android:name="android.intent.category.LEANBACK_LAUNCHER" />','')
+    mobile_manifest.write_text(mobile_xml,encoding='utf-8')
+    run(exe(SDK,'aapt2'),'link','-o',BUILD/'resources-mobile.apk','--manifest',mobile_manifest,'-I',ANDROID,'-A',SRC/'assets','--auto-add-overlay',*extra,*overlays,'-R',BUILD/'resources.zip')
+    with zipfile.ZipFile(BUILD/'resources-mobile.apk') as source, zipfile.ZipFile(BUILD/'unsigned-mobile.apk','w',zipfile.ZIP_DEFLATED) as dest:
+        for entry in source.infolist():dest.writestr(entry,source.read(entry.filename))
+        for dex in (BUILD/'dex').glob('*.dex'):dest.write(dex,dex.name)
+        for name,data in native_files_mobile.items():dest.writestr(name,data)
+    run(exe(SDK,'zipalign'),'-f','4',BUILD/'unsigned-mobile.apk',BUILD/'aligned-mobile.apk')
+    mobile_apk=DIST/f'MarcoMovie-{version}-mobile.apk'
+    run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','sign','--ks',key,'--ks-key-alias','marcomovie','--ks-pass','env:MARCOMOVIE_KEY_PASSWORD','--out',mobile_apk,BUILD/'aligned-mobile.apk')
+    run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','verify','--verbose','--print-certs',mobile_apk,capture=True)
+    run(exe(SDK,'zipalign'),'-c','4',mobile_apk,capture=True)
+    mobile_digest=hashlib.sha256(mobile_apk.read_bytes()).hexdigest()
+    (DIST/(mobile_apk.name+'.sha256')).write_text(mobile_digest+'  '+mobile_apk.name+'\n',encoding='ascii')
     (BUILD/'apk-signature.txt').write_text(signature,encoding='utf-8')
     (BUILD/'apk-badging.txt').write_text(badging,encoding='utf-8')
-    result={'apk':apk.name,'sha256':digest,'bytes':apk.stat().st_size,'signature_verified':True,'signer_sha256':signer_sha256,'zipalign_verified':True,'package':'com.pilipala.marcomovie','version':version,'version_code':version_code,'git_commit':git_commit,'git_dirty':git_dirty,'min_sdk':23,'target_sdk':28,'device_install_tested':False,'device_playback_tested':False,'signing':'release-verified signing key' if expected_signer else 'independent local development key; not a store release'}
+    result={'apk':apk.name,'sha256':digest,'bytes':apk.stat().st_size,'mobile_apk':mobile_apk.name,'mobile_sha256':mobile_digest,'mobile_bytes':mobile_apk.stat().st_size,'signature_verified':True,'signer_sha256':signer_sha256,'zipalign_verified':True,'package':'com.pilipala.marcomovie','version':version,'version_code':version_code,'git_commit':git_commit,'git_dirty':git_dirty,'min_sdk':23,'target_sdk':28,'device_install_tested':False,'device_playback_tested':False,'signing':'release-verified signing key' if expected_signer else 'independent local development key; not a store release'}
     (BUILD/'build-validation.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
     print(json.dumps(result,indent=2))
 

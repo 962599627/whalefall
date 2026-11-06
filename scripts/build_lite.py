@@ -72,7 +72,7 @@ def build():
  sha=hashlib.sha256(apk.read_bytes()).hexdigest()
  apk.with_suffix('.apk.sha256').write_text(sha+'  '+apk.name+'\n')
  if not candidate:
-  version=ET.parse(SRC/'AndroidManifest.xml').getroot().get('{http://schemas.android.com/apk/res/android}versionName','0.4.34')
+  version=ET.parse(SRC/'AndroidManifest.xml').getroot().get('{http://schemas.android.com/apk/res/android}versionName','0.4.35')
   release_apk=ROOT/'dist'/f'MarcoMovie-{version}-lite.apk'
   shutil.copy2(apk,release_apk)
   release_apk.with_suffix('.apk.sha256').write_text(sha+'  '+release_apk.name+'\n',encoding='utf8')

@@ -166,14 +166,54 @@ def main() -> None:
                     1,
                 )
             ios_plist.write_text(text, encoding="utf-8")
+    ios_app_fw_plist = ROOT / "ios" / "Flutter" / "AppFrameworkInfo.plist"
+    if ios_app_fw_plist.exists():
+        text = ios_app_fw_plist.read_text(encoding="utf-8")
+        text = re.sub(
+            r"(<key>MinimumOSVersion</key>\s*<string>)[^<]+(</string>)",
+            r"\g<1>14.0\g<2>",
+            text,
+        )
+        ios_app_fw_plist.write_text(text, encoding="utf-8")
+    for xcconfig_name in ("Release.xcconfig", "Debug.xcconfig", "Profile.xcconfig"):
+        xcconfig = ROOT / "ios" / "Flutter" / xcconfig_name
+        if xcconfig.exists():
+            text = xcconfig.read_text(encoding="utf-8")
+            if "no_fixup_chains" not in text:
+                text = (
+                    text.rstrip()
+                    + "\nIPHONEOS_DEPLOYMENT_TARGET = 14.0\n"
+                    + "OTHER_LDFLAGS = $(inherited) -Wl,-no_fixup_chains\n"
+                    + "OTHER_CFLAGS = $(inherited) -fno-objc-msgsend-selector-stubs\n"
+                )
+                xcconfig.write_text(text, encoding="utf-8")
+    ios_pbx = ROOT / "ios" / "Runner.xcodeproj" / "project.pbxproj"
+    if ios_pbx.exists():
+        text = ios_pbx.read_text(encoding="utf-8")
+        text = re.sub(
+            r"IPHONEOS_DEPLOYMENT_TARGET\s*=\s*[0-9.]+;",
+            "IPHONEOS_DEPLOYMENT_TARGET = 14.0;",
+            text,
+        )
+        ios_pbx.write_text(text, encoding="utf-8")
     ios_podfile = ROOT / "ios" / "Podfile"
     if ios_podfile.exists():
         text = ios_podfile.read_text(encoding="utf-8")
         text = re.sub(
             r"#?\s*platform\s+:ios\s*,\s*'[^']+'",
-            "platform :ios, '13.0'",
+            "platform :ios, '14.0'",
             text,
         )
+        if "no_fixup_chains" not in text and "flutter_additional_ios_build_settings(target)" in text:
+            text = text.replace(
+                "flutter_additional_ios_build_settings(target)",
+                "flutter_additional_ios_build_settings(target)\n"
+                "    target.build_configurations.each do |config|\n"
+                "      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'\n"
+                "      config.build_settings['OTHER_LDFLAGS'] = '$(inherited) -Wl,-no_fixup_chains'\n"
+                "      config.build_settings['OTHER_CFLAGS'] = '$(inherited) -fno-objc-msgsend-selector-stubs'\n"
+                "    end",
+            )
         ios_podfile.write_text(text, encoding="utf-8")
     # Windows icon & title
     win_ico = ROOT / "windows" / "runner" / "resources" / "app_icon.ico"

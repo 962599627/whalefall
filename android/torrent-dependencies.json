@@ -18,5 +18,16 @@
       "lib/armeabi-v7a/libjlibtorrent-2.0.12.9.so"
     ],
     "java_classes": false
+  },
+  {
+    "name": "jlibtorrent-android-arm64",
+    "version": "2.0.12.9",
+    "license": "MIT wrapper; BSD-3-Clause libtorrent; bundled native dependency notices required",
+    "url": "https://dl.frostwire.com/maven/com/frostwire/jlibtorrent-android-arm64/2.0.12.9/jlibtorrent-android-arm64-2.0.12.9.jar",
+    "sha256": "8e48600b74a9f497ce2c7e1e6a025ce550f039658baef986ad634298758d5b9d",
+    "native_members": [
+      "lib/arm64-v8a/libjlibtorrent-2.0.12.9.so"
+    ],
+    "java_classes": false
   }
 ]

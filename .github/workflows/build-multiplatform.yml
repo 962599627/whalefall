@@ -98,11 +98,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $version = ((Select-String pubspec.yaml -Pattern '^version:').Line -replace '^version:\s*','' -replace '\+.*','').Trim()
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "dist/MarcoMovie-$version-windows-x64.zip" -Force
+          $zipName = "MarcoMovie-$version-windows-x64.zip"
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "dist/$zipName" -Force
+          $hash = (Get-FileHash "dist/$zipName" -Algorithm SHA256).Hash.ToLower()
+          [System.IO.File]::WriteAllText("$PWD/dist/$zipName.sha256", "$hash  $zipName`n", [System.Text.Encoding]::ASCII)
       - uses: actions/upload-artifact@v4
         with:
           name: MarcoMovie-Windows-x64
-          path: flutter/dist/*.zip
+          path: |
+            flutter/dist/*.zip
+            flutter/dist/*.sha256
 
   build-macos:
     name: Build macOS Desktop (Apple Silicon & Intel)
@@ -126,11 +131,15 @@ jobs:
           flutter build macos --release
           VERSION=$(sed -n 's/^version:[[:space:]]*\([^+]*\).*/\1/p' pubspec.yaml)
           mkdir -p dist
-          (cd build/macos/Build/Products/Release && ditto -c -k --sequesterRsrc --keepParent *.app "$GITHUB_WORKSPACE/flutter/dist/MarcoMovie-$VERSION-macos.zip")
+          ZIP_NAME="MarcoMovie-$VERSION-macos.zip"
+          (cd build/macos/Build/Products/Release && ditto -c -k --sequesterRsrc --keepParent *.app "$GITHUB_WORKSPACE/flutter/dist/$ZIP_NAME")
+          (cd dist && shasum -a 256 "$ZIP_NAME" > "$ZIP_NAME.sha256")
       - uses: actions/upload-artifact@v4
         with:
           name: MarcoMovie-macOS-App
-          path: flutter/dist/*.zip
+          path: |
+            flutter/dist/*.zip
+            flutter/dist/*.sha256
 
   build-ios:
     name: Build iOS & iPadOS (.ipa unsigned)
@@ -151,11 +160,41 @@ jobs:
           flutter pub get
           flutter test
           flutter build ios --release --no-codesign
+          python3 patch_ios_ipa.py build/ios/iphoneos/Runner.app
           VERSION=$(sed -n 's/^version:[[:space:]]*\([^+]*\).*/\1/p' pubspec.yaml)
+          IPA_NAME="MarcoMovie-$VERSION-ios-unsigned.ipa"
           mkdir -p build/ios/ipa/Payload dist
           cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
-          (cd build/ios/ipa && zip -qr "$GITHUB_WORKSPACE/flutter/dist/MarcoMovie-$VERSION-ios-unsigned.ipa" Payload)
+          (cd build/ios/ipa && zip -qry "$GITHUB_WORKSPACE/flutter/dist/$IPA_NAME" Payload)
+          (cd dist && shasum -a 256 "$IPA_NAME" > "$IPA_NAME.sha256")
       - uses: actions/upload-artifact@v4
         with:
           name: MarcoMovie-iOS-iPadOS-IPA
-          path: flutter/dist/*.ipa
+          path: |
+            flutter/dist/*.ipa
+            flutter/dist/*.sha256
+
+  publish-release:
+    name: Attach Multiplatform Assets & Promote Official Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows, build-macos, build-ios]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          pattern: MarcoMovie-*
+          merge-multiple: true
+      - name: Upload assets & mark release as Latest official release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          VERSION="${VERSION%-preview}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-artifacts/MarcoMovie-*-windows-x64.zip* release-artifacts/MarcoMovie-*-macos.zip* release-artifacts/MarcoMovie-*-ios-unsigned.ipa* --clobber
+            gh release edit "$TAG" --prerelease=false --latest --title "Marco Movie $VERSION"
+          fi

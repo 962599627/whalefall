@@ -139,31 +139,31 @@ final class ImmersivePoster extends FrameLayout {
         protected void onDraw(Canvas c) {
             c.drawColor(MainActivity.DARK);
             if (bitmap == null) return;
-            paint.setAlpha(145);
+            paint.setAlpha(135);
             c.drawBitmap(
                     bitmap,
                     null,
                     new RectF(
-                            -getWidth() * .08f,
-                            -getHeight() * .2f,
-                            getWidth() * .73f,
-                            getHeight() * 1.2f),
+                            -getWidth() * .05f,
+                            -getHeight() * .15f,
+                            getWidth() * 1.05f,
+                            getHeight() * 1.15f),
                     paint);
             paint.setAlpha(255);
             paint.setShader(
                     new LinearGradient(
                             0,
                             0,
-                            getWidth() * .78f,
+                            getWidth(),
                             0,
-                            new int[] {0x22101013, MainActivity.DARK},
-                            null,
+                            new int[] {0x38101013, 0x99101013, 0xd8101013, MainActivity.DARK},
+                            new float[] {0f, .45f, .78f, 1f},
                             Shader.TileMode.CLAMP));
             c.drawRect(0, 0, getWidth(), getHeight(), paint);
             paint.setShader(
                     new LinearGradient(
                             0,
-                            getHeight() * .45f,
+                            getHeight() * .35f,
                             0,
                             getHeight(),
                             new int[] {0x00101013, MainActivity.DARK},

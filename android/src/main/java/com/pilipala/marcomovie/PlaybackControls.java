@@ -77,13 +77,12 @@ final class PlaybackControls {
         a.playbackLayer.addView(danmaku, 1, new FrameLayout.LayoutParams(-1, -1));
         danmaku.enabled(false);
         subtitle = new SubtitleOverlayView(a);
-        subtitle.setFractionalTextSize(
-                Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45)) / 1000f);
         subtitle.setUserDefaultStyle();
-        subtitle.setPadding(a.dp(40), 0, a.dp(40), a.dp(24));
+        subtitle.setPadding(a.dp(40), 0, a.dp(40), a.dp(12));
         FrameLayout.LayoutParams caption = new FrameLayout.LayoutParams(-1, -1, Gravity.BOTTOM);
         caption.bottomMargin = a.dp(168);
         a.playbackLayer.addView(subtitle, 1, caption);
+        applySubtitleStyle();
         timeline = new SeekBar(a);
         timeline.setTag("timeline");
         timeline.setBackgroundColor(Color.TRANSPARENT);
@@ -590,28 +589,114 @@ final class PlaybackControls {
         danmaku.close();
     }
 
+    static final int[] SUBTITLE_SIZES = {28, 35, 45, 55, 65};
+    static final String[] SUBTITLE_SIZE_LABELS = {"极小", "小", "标准", "大", "超大"};
+    static final int[] SUBTITLE_BOTTOMS = {8, 24, 48, 76, 110, 148};
+    static final String[] SUBTITLE_BOTTOM_LABELS = {"贴底", "标准", "略高", "中下", "偏高", "较高"};
+
+    void applySubtitleStyle() {
+        int size = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
+        int bottomDp = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+        subtitle.setFractionalTextSize(size / 1000f);
+        subtitle.setBottomPaddingFraction(0.02f + (bottomDp / 650f));
+        visible(a.controlsVisible);
+    }
+
+    String subtitleSizeLabel() {
+        int size = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
+        for (int i = 0; i < SUBTITLE_SIZES.length; i++) {
+            if (SUBTITLE_SIZES[i] == size) return SUBTITLE_SIZE_LABELS[i];
+        }
+        return "标准";
+    }
+
+    String subtitleBottomLabel() {
+        int bottomDp = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+        for (int i = 0; i < SUBTITLE_BOTTOMS.length; i++) {
+            if (SUBTITLE_BOTTOMS[i] == bottomDp) return SUBTITLE_BOTTOM_LABELS[i];
+        }
+        return "标准";
+    }
+
+    void subtitleSizeDialog() {
+        int current = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
+        int selected = 2;
+        for (int i = 0; i < SUBTITLE_SIZES.length; i++) {
+            if (SUBTITLE_SIZES[i] == current) selected = i;
+        }
+        choose(
+                "字幕大小",
+                SUBTITLE_SIZE_LABELS,
+                selected,
+                i -> {
+                    a.prefs.edit().putInt(Prefs.SUBTITLE_SIZE, SUBTITLE_SIZES[i]).apply();
+                    applySubtitleStyle();
+                });
+    }
+
+    void subtitleBottomDialog() {
+        int current = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+        int selected = 1;
+        for (int i = 0; i < SUBTITLE_BOTTOMS.length; i++) {
+            if (SUBTITLE_BOTTOMS[i] == current) selected = i;
+        }
+        choose(
+                "字幕位置（距离底部高低）",
+                SUBTITLE_BOTTOM_LABELS,
+                selected,
+                i -> {
+                    a.prefs.edit().putInt(Prefs.SUBTITLE_BOTTOM, SUBTITLE_BOTTOMS[i]).apply();
+                    applySubtitleStyle();
+                });
+    }
+
     void tracks(int type) {
+        if (type == 3) {
+            List<String> tracks =
+                    (a.player != null && a.prepared)
+                            ? a.player.trackLabels(3)
+                            : Collections.emptyList();
+            List<String> labels = new ArrayList<>();
+            labels.add("字幕大小 · " + subtitleSizeLabel());
+            labels.add("字幕位置 · " + subtitleBottomLabel());
+            labels.add("关闭字幕");
+            labels.addAll(tracks);
+            labels.add("导入字幕文件…");
+            choose(
+                    "字幕与显示设置",
+                    labels.toArray(new String[0]),
+                    -1,
+                    i -> {
+                        if (i == 0) {
+                            subtitleSizeDialog();
+                        } else if (i == 1) {
+                            subtitleBottomDialog();
+                        } else if (i == labels.size() - 1) {
+                            a.pickSubtitle();
+                        } else if (a.player != null && a.prepared) {
+                            a.player.selectTrack(3, i == 2 ? -2 : i - 3);
+                        }
+                    });
+            return;
+        }
         if (a.player == null || !a.prepared) {
             message("请等待视频开始播放。");
             return;
         }
         List<String> tracks = a.player.trackLabels(type);
         List<String> labels = new ArrayList<>();
-        labels.add(type == 3 ? "关闭字幕" : "自动选择");
+        labels.add("自动选择");
         labels.addAll(tracks);
-        if (type == 3) labels.add("导入字幕文件…");
-        if (type != 3 && tracks.isEmpty()) {
+        if (tracks.isEmpty()) {
             message("当前视频没有可选择的音轨。");
             return;
         }
         choose(
-                type == 3 ? "字幕" : "音轨",
+                "音轨",
                 labels.toArray(new String[0]),
                 -1,
                 i -> {
-                    if (type == 3 && i == labels.size() - 1) a.pickSubtitle();
-                    else if (a.player != null)
-                        a.player.selectTrack(type, i == 0 ? (type == 3 ? -2 : -1) : i - 1);
+                    if (a.player != null) a.player.selectTrack(type, i == 0 ? -1 : i - 1);
                 });
     }
 
@@ -920,8 +1005,9 @@ final class PlaybackControls {
     }
 
     void visible(boolean visible) {
+        int bottomDp = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) subtitle.getLayoutParams();
-        lp.bottomMargin = visible ? a.dp(168) : a.dp(24);
+        lp.bottomMargin = a.dp(visible ? Math.max(168, bottomDp + 24) : bottomDp);
         subtitle.setLayoutParams(lp);
     }
 }

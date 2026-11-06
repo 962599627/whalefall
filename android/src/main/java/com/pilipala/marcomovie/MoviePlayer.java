@@ -106,23 +106,40 @@ public class MoviePlayer {
                                     : requestedDecoder;
                     DefaultRenderersFactory renderers =
                             new DecoderRenderersFactory(this.context, decoderMode);
-                    if (decoderMode != 0 && decoderMode != 3)
-                        renderers.setMediaCodecSelector(
-                                (mime, secure, tunneling) -> {
-                                    java.util.List<
-                                                    androidx.media3.exoplayer.mediacodec
-                                                            .MediaCodecInfo>
-                                            selected = new java.util.ArrayList<>();
-                                    for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo codec :
+                    renderers.setMediaCodecSelector(
+                            (mime, secure, tunneling) -> {
+                                java.util.List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo>
+                                        raw =
+                                                androidx.media3.exoplayer.mediacodec.MediaCodecUtil
+                                                        .getDecoderInfos(mime, secure, tunneling);
+                                if (raw.isEmpty() && MimeTypes.VIDEO_DOLBY_VISION.equals(mime)) {
+                                    raw =
                                             androidx.media3.exoplayer.mediacodec.MediaCodecUtil
-                                                    .getDecoderInfos(mime, secure, tunneling))
-                                        if (!mime.startsWith("video/")
-                                                || (decoderMode == 2
-                                                        ? codec.softwareOnly
-                                                        : codec.hardwareAccelerated))
-                                            selected.add(codec);
-                                    return selected;
-                                });
+                                                    .getDecoderInfos(
+                                                            MimeTypes.VIDEO_H265,
+                                                            secure,
+                                                            tunneling);
+                                } else if (raw.isEmpty()
+                                        && MimeTypes.AUDIO_E_AC3_JOC.equals(mime)) {
+                                    raw =
+                                            androidx.media3.exoplayer.mediacodec.MediaCodecUtil
+                                                    .getDecoderInfos(
+                                                            MimeTypes.AUDIO_E_AC3,
+                                                            secure,
+                                                            tunneling);
+                                }
+                                if (decoderMode == 0 || decoderMode == 3) return raw;
+                                java.util.List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo>
+                                        selected = new java.util.ArrayList<>();
+                                for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo codec :
+                                        raw)
+                                    if (!mime.startsWith("video/")
+                                            || (decoderMode == 2
+                                                    ? codec.softwareOnly
+                                                    : codec.hardwareAccelerated))
+                                        selected.add(codec);
+                                return selected.isEmpty() ? raw : selected;
+                            });
                     int buffer =
                             Math.max(
                                             15,
@@ -143,14 +160,19 @@ public class MoviePlayer {
                                                     .build())
                                     .setLooper(Looper.getMainLooper())
                                     .build();
+                    androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters.Builder
+                            trackParams =
+                                    new androidx.media3.exoplayer.trackselection
+                                                    .DefaultTrackSelector.Parameters.Builder(
+                                                    this.context)
+                                            .setExceedRendererCapabilitiesIfNecessary(true)
+                                            .setExceedVideoConstraintsIfNecessary(true)
+                                            .setExceedAudioConstraintsIfNecessary(true);
                     if (this.context
                             .getSharedPreferences(Prefs.FILE, 0)
                             .getBoolean(Prefs.PREFER_AAC, false))
-                        exo.setTrackSelectionParameters(
-                                exo.getTrackSelectionParameters()
-                                        .buildUpon()
-                                        .setPreferredAudioMimeTypes(MimeTypes.AUDIO_AAC)
-                                        .build());
+                        trackParams.setPreferredAudioMimeTypes(MimeTypes.AUDIO_AAC);
+                    exo.setTrackSelectionParameters(trackParams.build());
                     exo.addAnalyticsListener(
                             new androidx.media3.exoplayer.analytics.AnalyticsListener() {
                                 @Override
@@ -202,7 +224,7 @@ public class MoviePlayer {
                                             tracks.getGroups())
                                         if (group.getType() == C.TRACK_TYPE_VIDEO) {
                                             video = true;
-                                            supported |= group.isSupported();
+                                            supported |= group.isSupported(true);
                                         }
                                     if (video && !supported && !unsupportedVideo) {
                                         unsupportedVideo = true;

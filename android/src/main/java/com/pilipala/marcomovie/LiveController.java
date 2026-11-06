@@ -63,7 +63,7 @@ final class LiveController {
                 "读取频道分组…",
                 () -> {
                     if (source.isLocalProxy()) {
-                        if (!a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, false))
+                        if (!a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true))
                             throw new IOException("请先启用来源扩展");
                         a.ensureProxy(a.config);
                         source.url = LocalProxy.rewrite(source.url);

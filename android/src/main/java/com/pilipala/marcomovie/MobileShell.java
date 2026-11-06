@@ -1662,7 +1662,7 @@ final class MobileShell {
                             () -> {
                                 try {
                                     if (selectedSource.isLocalProxy()) {
-                                        if (!a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, false))
+                                        if (!a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true))
                                             throw new IOException("请先在设置中开启实验性扩展支持");
                                         a.ensureProxy(a.config);
                                         selectedSource.url = LocalProxy.rewrite(selectedSource.url);
@@ -2212,7 +2212,7 @@ final class MobileShell {
                 "🔀 切换默认片源",
                 currentSite == null ? "未选择" : "当前：" + currentSite.name,
                 a::chooseSources);
-        boolean cspEnabled = a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, false);
+        boolean cspEnabled = a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true);
         addSettingCard(
                 body,
                 "🧩 启用第三方扩展片源 (JAR / JS)",

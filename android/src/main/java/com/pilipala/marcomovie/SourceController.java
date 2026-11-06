@@ -23,10 +23,12 @@ final class SourceController {
 
     static boolean available(MainActivity a, Cms.Site s) {
         return s.supported()
-                || (a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, false)
-                        && (CspEngine.eligible(s) || JsEngine.eligible(s))
-                        && a.config != null
-                        && !a.config.spider.isEmpty());
+                || (a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true)
+                        && ((CspEngine.eligible(s)
+                                        && ((s.jar != null && !s.jar.isEmpty())
+                                                || (a.config != null
+                                                        && !a.config.spider.isEmpty())))
+                                || (JsEngine.eligible(s) && a.config != null)));
     }
 
     static SourceEngine engine(MainActivity a, Cms.Site s) throws Exception {
@@ -54,12 +56,12 @@ final class SourceController {
                     }
                     SourceEngine raw;
                     if (s.supported()) raw = new JsonCmsEngine(s);
-                    else if (a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, false)
+                    else if (a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true)
                             && CspEngine.eligible(s)
                             && snapshot != null) {
                         ensureProxy(a, snapshot);
                         raw = new CspEngine(a.getApplication(), snapshot, s);
-                    } else if (a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, false)
+                    } else if (a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true)
                             && JsEngine.eligible(s)
                             && snapshot != null) {
                         ensureProxy(a, snapshot);
@@ -477,7 +479,21 @@ final class SourceController {
         a.closeEngines();
         a.config = c;
         a.configOrigin = origin;
-        a.prefs.edit().putString(Prefs.ORIGIN, origin).apply();
+        android.content.SharedPreferences.Editor editor =
+                a.prefs.edit().putString(Prefs.ORIGIN, origin);
+        String currentKey = a.prefs.getString(Prefs.SELECTED_SITE, "");
+        boolean hasSelected = false;
+        Cms.Site firstAvailable = null;
+        for (Cms.Site s : c.sites) {
+            if (available(a, s)) {
+                if (firstAvailable == null) firstAvailable = s;
+                if (s.key.equals(currentKey)) hasSelected = true;
+            }
+        }
+        if (!hasSelected && firstAvailable != null) {
+            editor.putString(Prefs.SELECTED_SITE, firstAvailable.key);
+        }
+        editor.apply();
         a.back.clear();
         a.current = new MainActivity.Screen(a::home);
         a.current.render.run();

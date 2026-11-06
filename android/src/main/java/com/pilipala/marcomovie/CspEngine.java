@@ -15,6 +15,7 @@ import org.json.*;
 /** Experimental ordinary CSP host. Never unwraps, patches, or bypasses plugin protection. */
 public final class CspEngine implements SourceEngine {
     static final Map<String, DexClassLoader> LOADERS = new HashMap<>();
+    static volatile String activeJarDeclaration = "";
     final Application app;
     final Cms.Site site;
     final Spider spider;
@@ -27,7 +28,26 @@ public final class CspEngine implements SourceEngine {
         site = selected;
         if (!eligible(selected)) throw new IOException("此来源不是实验 CSP JAR 接口支持的 csp_ 站点");
         try {
-            File artifact = obtain(application, config.spider);
+            String primaryJar =
+                    selected.jar != null && !selected.jar.trim().isEmpty()
+                            ? selected.jar
+                            : config.spider;
+            File artifact;
+            try {
+                artifact = obtain(application, primaryJar);
+                activeJarDeclaration = primaryJar;
+            } catch (Exception firstError) {
+                if (selected.jar != null
+                        && !selected.jar.trim().isEmpty()
+                        && config.spider != null
+                        && !config.spider.trim().isEmpty()
+                        && !selected.jar.equals(config.spider)) {
+                    artifact = obtain(application, config.spider);
+                    activeJarDeclaration = config.spider;
+                } else {
+                    throw firstError;
+                }
+            }
             pluginSha256 = digest(artifact, "SHA-256");
             DexClassLoader loader = loader(app, artifact, pluginSha256);
             pluginLock = new Object();
@@ -39,6 +59,10 @@ public final class CspEngine implements SourceEngine {
             if (!(candidate instanceof Spider)) throw new IOException("插件父接口与当前宿主不兼容");
             spider = (Spider) candidate;
             synchronized (pluginLock) {
+                try {
+                    spider.initApi(new com.github.catvod.crawler.SpiderApi());
+                } catch (Throwable ignored) {
+                }
                 spider.init(app, site.ext == null ? "" : site.ext.toString());
             }
             diagnostic("loaded", className, null);
@@ -225,7 +249,11 @@ public final class CspEngine implements SourceEngine {
 
     public static Object[] proxy(Application app, Cms.Config config, Map<String, String> params)
             throws Exception {
-        File artifact = obtain(app, config.spider);
+        String decl =
+                activeJarDeclaration != null && !activeJarDeclaration.isEmpty()
+                        ? activeJarDeclaration
+                        : config.spider;
+        File artifact = obtain(app, decl);
         DexClassLoader loader = loader(app, artifact, digest(artifact, "SHA-256"));
         // playerContent may call its own HTTP proxy synchronously. Holding its
         // catalogue lock here would deadlock that reentrant network request.

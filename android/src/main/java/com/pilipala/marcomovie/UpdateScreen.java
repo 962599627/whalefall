@@ -29,7 +29,7 @@ final class UpdateScreen {
         status.setLineSpacing(a.dp(4), 1);
         a.body.addView(status);
         a.gap(a.body, 18);
-        settings.link("检查更新", "当前使用预览版更新渠道", "update-check", () -> updates.check(true));
+        settings.link("检查更新", "当前使用正式版更新渠道", "update-check", () -> updates.check(true));
         settings.link(
                 "下载新版",
                 "下载后仍需你确认安装",
@@ -67,7 +67,7 @@ final class UpdateScreen {
             status.setText(
                     "当前版本 "
                             + UpdateManager.installedVersion(a)
-                            + " · 预览版渠道\n"
+                            + " · 正式版\n"
                             + updates.message
                             + (updates.percent >= 0 ? " · " + updates.percent + "%" : "")
                             + "\n"
