@@ -232,7 +232,7 @@ void main() {
     );
     expect(CspBridge.isMyDriveSite(myDriveSite), isTrue);
     expect(CspBridge.isNetdiskSite(myDriveSite), isTrue);
-    expect(CspBridge.backendsForSite(myDriveSite).first.name, isNot('魔都动漫'));
+    expect(CspBridge.backendsForSite(myDriveSite), isEmpty);
 
     final (cats, listing) = await CspBridge.fetchHome(
       myDriveSite,
