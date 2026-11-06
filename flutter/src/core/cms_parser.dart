@@ -2084,4 +2084,270 @@ class CmsParser {
       settings: settings,
     );
   }
+
+  /// Converts Arabic digits or Chinese numerals (`一`..`九十九`, `2026`, etc.) into an integer.
+  static int parseChineseNumber(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return 1;
+    final direct = int.tryParse(trimmed);
+    if (direct != null && direct > 0) return direct;
+    const digitMap = <String, int>{
+      '零': 0,
+      '〇': 0,
+      '一': 1,
+      '壹': 1,
+      '二': 2,
+      '两': 2,
+      '贰': 2,
+      '三': 3,
+      '叁': 3,
+      '四': 4,
+      '肆': 4,
+      '五': 5,
+      '伍': 5,
+      '六': 6,
+      '陆': 6,
+      '七': 7,
+      '柒': 7,
+      '八': 8,
+      '捌': 8,
+      '九': 9,
+      '玖': 9,
+    };
+    if (trimmed == '十' || trimmed == '拾') return 10;
+    if (trimmed.contains('十') || trimmed.contains('拾')) {
+      final parts = trimmed.split(RegExp(r'[十拾]'));
+      final tens = parts[0].isEmpty ? 1 : (digitMap[parts[0]] ?? 1);
+      final ones =
+          (parts.length > 1 && parts[1].isNotEmpty) ? (digitMap[parts[1]] ?? 0) : 0;
+      final val = tens * 10 + ones;
+      return val > 0 ? val : 1;
+    }
+    int acc = 0;
+    for (int i = 0; i < trimmed.length; i++) {
+      final d = digitMap[trimmed[i]];
+      if (d != null) {
+        acc = acc * 10 + d;
+      }
+    }
+    return acc > 0 ? acc : 1;
+  }
+
+  /// Parses a video title into its franchise base title, season number, and display label.
+  /// Examples:
+  /// - `披荆斩棘第六季` -> `(baseTitle: '披荆斩棘', seasonNumber: 6, seasonLabel: '第 6 季', hasExplicitSeason: true)`
+  /// - `全美超模大赛第二十一季` -> `(baseTitle: '全美超模大赛', seasonNumber: 21, seasonLabel: '第 21 季', hasExplicitSeason: true)`
+  /// - `我家那闺女2026` -> `(baseTitle: '我家那闺女', seasonNumber: 2026, seasonLabel: '2026 季', hasExplicitSeason: true)`
+  /// - `庆余年2` -> `(baseTitle: '庆余年', seasonNumber: 2, seasonLabel: '第 2 季', hasExplicitSeason: true)`
+  /// - `谷雨` -> `(baseTitle: '谷雨', seasonNumber: 1, seasonLabel: '第 1 季', hasExplicitSeason: false)`
+  static ({
+    String baseTitle,
+    int seasonNumber,
+    String seasonLabel,
+    bool hasExplicitSeason,
+  }) parseSeriesSeasonInfo(String rawTitle) {
+    var cleaned = rawTitle
+        .replaceAll(
+          RegExp(
+            r'(\s*[\[【(（](?:4K|2160P|1080P|720P|HD|BD|国语|粤语|中字|双语|完结|全集|未删减)[^\]】)）]*[\]】)）])\s*$',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .trim();
+    if (cleaned.isEmpty) cleaned = rawTitle.trim();
+
+    // 1. Explicit `第 X 季/部/辑/篇` at end of title (optionally inside parentheses/brackets)
+    final endCnMatch = RegExp(
+      r'^(.+?)\s*(?:[（(\[【·:：\-—]\s*)?第\s*([一二三四五六七八九十百零〇两\d]+)\s*([季部辑篇])(?:\s*[)）\]】])?\s*$',
+    ).firstMatch(cleaned);
+    if (endCnMatch != null) {
+      final base = endCnMatch.group(1)!.trim();
+      final num = parseChineseNumber(endCnMatch.group(2)!);
+      final unit = endCnMatch.group(3)!;
+      if (base.isNotEmpty) {
+        return (
+          baseTitle: base,
+          seasonNumber: num,
+          seasonLabel: '第 $num $unit',
+          hasExplicitSeason: true,
+        );
+      }
+    }
+
+    // 2. Explicit `第 X 季/部` in the middle followed by a subtitle (e.g. `凡人修仙传 第一季 风起天南`)
+    final midCnMatch = RegExp(
+      r'^([\u4e00-\u9fa5A-Za-z0-9·]+?)\s*第\s*([一二三四五六七八九十百零〇两\d]+)\s*([季部])(?:\s+|[:：·\-—]).*$',
+    ).firstMatch(cleaned);
+    if (midCnMatch != null) {
+      final base = midCnMatch.group(1)!.trim();
+      final num = parseChineseNumber(midCnMatch.group(2)!);
+      final unit = midCnMatch.group(3)!;
+      if (base.isNotEmpty) {
+        return (
+          baseTitle: base,
+          seasonNumber: num,
+          seasonLabel: '第 $num $unit',
+          hasExplicitSeason: true,
+        );
+      }
+    }
+
+    // 3. `Season X` or `S01` / `S1`
+    final enMatch = RegExp(
+      r'^(.+?)\s*(?:[（(\[【·:：\-—]\s*)?(?:Season\s*0*(\d{1,2})|[Ss]0*(\d{1,2}))(?:\s*[)）\]】])?\s*$',
+      caseSensitive: false,
+    ).firstMatch(cleaned);
+    if (enMatch != null) {
+      final base = enMatch.group(1)!.trim();
+      final numStr = enMatch.group(2) ?? enMatch.group(3) ?? '1';
+      final num = int.tryParse(numStr) ?? 1;
+      if (base.isNotEmpty && num > 0) {
+        return (
+          baseTitle: base,
+          seasonNumber: num,
+          seasonLabel: '第 $num 季',
+          hasExplicitSeason: true,
+        );
+      }
+    }
+
+    // 4. Year-based season suffix (`2015`..`2035`), e.g. `我家那闺女2026`, `歌手2024`
+    final yearMatch = RegExp(
+      r'^([\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9·\s]{1,22}?)\s*(?:[（(\[【·\-]\s*)?(20[123]\d)\s*[季期年]?(?:\s*[)）\]】])?\s*$',
+    ).firstMatch(cleaned);
+    if (yearMatch != null) {
+      final base = yearMatch.group(1)!.trim();
+      final yr = int.tryParse(yearMatch.group(2)!) ?? 1;
+      if (base.isNotEmpty && !RegExp(r'^\d+$').hasMatch(base)) {
+        return (
+          baseTitle: base,
+          seasonNumber: yr,
+          seasonLabel: '$yr 季',
+          hasExplicitSeason: true,
+        );
+      }
+    }
+
+    // 5. Trailing sequel number `1..9` after a Chinese title (e.g. `庆余年2`, `白夜追凶2`, `流浪地球2`)
+    final seqMatch = RegExp(
+      r'^([\u4e00-\u9fa5]{2,16})\s*([1-9])\s*$',
+    ).firstMatch(cleaned);
+    if (seqMatch != null) {
+      final base = seqMatch.group(1)!.trim();
+      final num = int.tryParse(seqMatch.group(2)!) ?? 1;
+      if (base.isNotEmpty) {
+        return (
+          baseTitle: base,
+          seasonNumber: num,
+          seasonLabel: '第 $num 季',
+          hasExplicitSeason: true,
+        );
+      }
+    }
+
+    return (
+      baseTitle: cleaned,
+      seasonNumber: 1,
+      seasonLabel: '第 1 季',
+      hasExplicitSeason: false,
+    );
+  }
+
+  static String _normalizeFranchiseKey(String raw) {
+    return raw
+        .toLowerCase()
+        .replaceAll(
+          RegExp(r'[\s·:：\-—_（）()【】\[\]《》〈〉"“”' "'" r'’!！?？,，.。]'),
+          '',
+        )
+        .trim();
+  }
+
+  static bool _hasExtraDerivativeTag(String rawTitle) {
+    return RegExp(r'(花絮|特辑|彩蛋|纯享|加更|幕后|纪录片|演唱会|预告|解说|速看|陪看|合集篇)')
+        .hasMatch(rawTitle);
+  }
+
+  /// Checks whether [candidateTitle] belongs to the same multi-season franchise as [currentTitle].
+  static bool isSameFranchiseSeasonCandidate(
+    String currentTitle,
+    String candidateTitle,
+  ) {
+    final cur = parseSeriesSeasonInfo(currentTitle);
+    final cand = parseSeriesSeasonInfo(candidateTitle);
+    final curNorm = _normalizeFranchiseKey(cur.baseTitle);
+    final candNorm = _normalizeFranchiseKey(cand.baseTitle);
+    if (curNorm.isEmpty || curNorm != candNorm) return false;
+    if (_hasExtraDerivativeTag(candidateTitle) !=
+        _hasExtraDerivativeTag(currentTitle)) {
+      return false;
+    }
+    return true;
+  }
+
+  /// Detects an explicit season number inside an episode name (`S01E02`, `第2季01`, etc.).
+  static int? detectEpisodeSeasonNumber(String rawEpisodeName) {
+    final seMatch = RegExp(
+      r'(?:^|[\s.\-_\[【(（])[Ss]0*(\d{1,2})\s*(?:[Ee]\s*\d+|[\]】)）\s.\-_])',
+    ).firstMatch(rawEpisodeName);
+    if (seMatch != null) {
+      final n = int.tryParse(seMatch.group(1)!);
+      if (n != null && n > 0 && n <= 99) return n;
+    }
+    final cnMatch = RegExp(
+      r'第\s*([一二三四五六七八九十两\d]+)\s*[季部]',
+    ).firstMatch(rawEpisodeName);
+    if (cnMatch != null) {
+      final n = parseChineseNumber(cnMatch.group(1)!);
+      if (n > 0 && n <= 99) return n;
+    }
+    return null;
+  }
+
+  /// Extracts in-line season groups when a single [CmsLine] contains episodes across
+  /// multiple seasons (e.g. `S01E01..S01E08`, `S02E01..S02E08`).
+  /// Returns an empty list if the line does not span multiple seasons.
+  static List<({
+    int seasonNumber,
+    String seasonLabel,
+    List<int> episodeIndexes,
+  })> extractInLineSeasons(List<CmsEpisode> episodes) {
+    if (episodes.length < 2) return const [];
+    final buckets = <int, List<int>>{};
+    int? lastDetectedSeason;
+    int explicitCount = 0;
+    for (int i = 0; i < episodes.length; i++) {
+      final detected = detectEpisodeSeasonNumber(episodes[i].name);
+      if (detected != null) {
+        explicitCount++;
+        lastDetectedSeason = detected;
+      }
+      final bucketKey = detected ?? lastDetectedSeason;
+      if (bucketKey != null) {
+        buckets.putIfAbsent(bucketKey, () => <int>[]).add(i);
+      }
+    }
+    if (buckets.length < 2 || explicitCount < 2) return const [];
+    // If any leading episodes before the first explicit marker were missed, attach them to the first season
+    final sortedKeys = buckets.keys.toList()..sort();
+    final assigned = buckets.values.expand((e) => e).toSet();
+    if (assigned.length < episodes.length) {
+      final firstList = buckets[sortedKeys.first]!;
+      for (int i = 0; i < episodes.length; i++) {
+        if (!assigned.contains(i)) {
+          firstList.insert(0, i);
+        }
+      }
+      firstList.sort();
+    }
+    return [
+      for (final k in sortedKeys)
+        (
+          seasonNumber: k,
+          seasonLabel: k >= 1990 ? '$k 季' : '第 $k 季',
+          episodeIndexes: List<int>.unmodifiable(buckets[k]!),
+        ),
+    ];
+  }
 }

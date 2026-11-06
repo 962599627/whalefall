@@ -14,9 +14,14 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Dedicated mobile and tablet video detail screen designed for touch interaction, horizontal
@@ -325,6 +330,11 @@ final class MobileDetailScreen {
                         }
                     }
 
+                    LinearLayout seasonPanel = a.vertical();
+                    seasonPanel.setTag("detail-seasons");
+                    detailsBody.addView(seasonPanel, new LinearLayout.LayoutParams(-1, -2));
+                    populateRelatedSeasons(a, s, v, seasonPanel);
+
                     LinearLayout episodePanel = a.vertical();
                     episodePanel.setTag("detail-episodes");
                     LinearLayout.LayoutParams epLp = new LinearLayout.LayoutParams(-1, -2);
@@ -364,9 +374,14 @@ final class MobileDetailScreen {
 
         Cms.Line line = video.lines.get(lineIndex);
         final boolean descending = a.prefs.getBoolean(Prefs.EPISODES_DESCENDING, false);
+        SeasonMeta curSeason = parseSeasonMeta(video.title);
 
         // 1. Horizontal Scrollable Line Selector
-        TextView lineHeader = a.text("播放线路 (" + video.lines.size() + ")", 14, MainActivity.WHITE);
+        TextView lineHeader =
+                a.text(
+                        curSeason.seasonLabel + " · 播放线路 (" + video.lines.size() + ")",
+                        14,
+                        MainActivity.WHITE);
         lineHeader.setTypeface(null, Typeface.BOLD);
         panel.addView(lineHeader);
         a.gap(panel, 8);
@@ -520,5 +535,214 @@ final class MobileDetailScreen {
                 }
             }
         }
+    }
+
+    static final class SeasonMeta {
+        final String baseTitle;
+        final int seasonNumber;
+        final String seasonLabel;
+        final boolean explicit;
+
+        SeasonMeta(String baseTitle, int seasonNumber, String seasonLabel, boolean explicit) {
+            this.baseTitle = baseTitle;
+            this.seasonNumber = seasonNumber;
+            this.seasonLabel = seasonLabel;
+            this.explicit = explicit;
+        }
+    }
+
+    static int parseChineseNumber(String raw) {
+        if (raw == null) return 1;
+        String s = raw.trim();
+        if (s.isEmpty()) return 1;
+        try {
+            int d = Integer.parseInt(s);
+            if (d > 0) return d;
+        } catch (NumberFormatException ignored) {
+        }
+        String digits = "零一二三四五六七八九";
+        if ("十".equals(s) || "拾".equals(s)) return 10;
+        if (s.contains("十") || s.contains("拾")) {
+            String[] parts = s.split("[十拾]", -1);
+            int tens = parts[0].isEmpty() ? 1 : Math.max(1, digits.indexOf(parts[0].charAt(0)));
+            int ones =
+                    (parts.length > 1 && !parts[1].isEmpty())
+                            ? Math.max(0, digits.indexOf(parts[1].charAt(0)))
+                            : 0;
+            int val = tens * 10 + ones;
+            return val > 0 ? val : 1;
+        }
+        int acc = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            int idx = digits.indexOf(c);
+            if (c == '两') idx = 2;
+            if (idx >= 0) acc = acc * 10 + idx;
+        }
+        return acc > 0 ? acc : 1;
+    }
+
+    static SeasonMeta parseSeasonMeta(String rawTitle) {
+        String t = rawTitle == null ? "" : rawTitle.trim();
+        t =
+                t.replaceAll(
+                                "(?i)\\s*[\\[【(（](?:4K|2160P|1080P|720P|HD|BD|国语|粤语|中字|双语|完结|全集)[^\\]】)）]*[\\]】)）]\\s*$",
+                                "")
+                        .trim();
+        if (t.isEmpty() && rawTitle != null) t = rawTitle.trim();
+
+        Matcher m1 =
+                Pattern.compile(
+                                "^(.+?)\\s*(?:[（(\\[【·:：\\-—]\\s*)?第\\s*([一二三四五六七八九十百零两\\d]+)\\s*([季部辑篇])(?:\\s*[)）\\]】])?\\s*$")
+                        .matcher(t);
+        if (m1.matches()) {
+            String base = m1.group(1).trim();
+            int num = parseChineseNumber(m1.group(2));
+            String unit = m1.group(3);
+            if (!base.isEmpty()) {
+                return new SeasonMeta(base, num, "第 " + num + " " + unit, true);
+            }
+        }
+
+        Matcher m2 =
+                Pattern.compile(
+                                "(?i)^(.+?)\\s*(?:[（(\\[【·:：\\-—]\\s*)?(?:Season\\s*0*(\\d{1,2})|S0*(\\d{1,2}))(?:\\s*[)）\\]】])?\\s*$")
+                        .matcher(t);
+        if (m2.matches()) {
+            String base = m2.group(1).trim();
+            String numStr = m2.group(2) != null ? m2.group(2) : m2.group(3);
+            int num = parseChineseNumber(numStr);
+            if (!base.isEmpty()) {
+                return new SeasonMeta(base, num, "第 " + num + " 季", true);
+            }
+        }
+
+        Matcher m3 =
+                Pattern.compile(
+                                "^([\\u4e00-\\u9fa5A-Za-z][\\u4e00-\\u9fa5A-Za-z0-9·\\s]{1,20}?)\\s*(20[123]\\d)\\s*[季期年]?\\s*$")
+                        .matcher(t);
+        if (m3.matches()) {
+            String base = m3.group(1).trim();
+            int yr = parseChineseNumber(m3.group(2));
+            if (!base.isEmpty()) {
+                return new SeasonMeta(base, yr, yr + " 季", true);
+            }
+        }
+
+        Matcher m4 = Pattern.compile("^([\\u4e00-\\u9fa5]{2,15})\\s*([1-9])\\s*$").matcher(t);
+        if (m4.matches()) {
+            String base = m4.group(1).trim();
+            int num = parseChineseNumber(m4.group(2));
+            if (!base.isEmpty()) {
+                return new SeasonMeta(base, num, "第 " + num + " 季", true);
+            }
+        }
+
+        return new SeasonMeta(t, 1, "第 1 季", false);
+    }
+
+    private static String normalizeBaseKey(String s) {
+        if (s == null) return "";
+        return s.toLowerCase().replaceAll("[\\s·:：\\-—_（）()【】\\[\\]《》〈〉\"“”'’!！?？,，.。]", "").trim();
+    }
+
+    static void populateRelatedSeasons(
+            final MainActivity a,
+            final Cms.Site site,
+            final Cms.Video currentVideo,
+            final LinearLayout seasonPanel) {
+        final SeasonMeta curMeta = parseSeasonMeta(currentVideo.title);
+        final String baseKey = normalizeBaseKey(curMeta.baseTitle);
+        if (baseKey.isEmpty()) return;
+        final int ticket = a.generation;
+        a.submitPage(
+                () -> {
+                    try {
+                        List<Cms.Video> found =
+                                SourceController.engine(a, site).search(curMeta.baseTitle, 1);
+                        if (found == null || found.isEmpty()) return;
+                        final Map<Integer, Cms.Video> bySeason = new TreeMap<>();
+                        final Map<Integer, String> labels = new TreeMap<>();
+                        bySeason.put(curMeta.seasonNumber, currentVideo);
+                        labels.put(curMeta.seasonNumber, curMeta.seasonLabel);
+                        for (Cms.Video cand : found) {
+                            if (cand == null || cand.title == null) continue;
+                            SeasonMeta candMeta = parseSeasonMeta(cand.title);
+                            if (!baseKey.equals(normalizeBaseKey(candMeta.baseTitle))) continue;
+                            if (!curMeta.explicit
+                                    && !candMeta.explicit
+                                    && !Objects.equals(cand.id, currentVideo.id)) {
+                                continue;
+                            }
+                            if (!bySeason.containsKey(candMeta.seasonNumber)) {
+                                bySeason.put(candMeta.seasonNumber, cand);
+                                labels.put(candMeta.seasonNumber, candMeta.seasonLabel);
+                            }
+                        }
+                        if (bySeason.size() < 2) return;
+                        final List<Integer> seasonNums = new ArrayList<>(bySeason.keySet());
+                        a.ui.post(
+                                () -> {
+                                    if (a.isFinishing()
+                                            || a.isDestroyed()
+                                            || ticket != a.generation) return;
+                                    seasonPanel.removeAllViews();
+                                    LinearLayout card = a.vertical();
+                                    card.setPadding(a.dp(14), a.dp(12), a.dp(14), a.dp(12));
+                                    card.setBackground(a.bg(0xff181922, 16));
+                                    LinearLayout.LayoutParams cardLp =
+                                            new LinearLayout.LayoutParams(-1, -2);
+                                    cardLp.topMargin = a.dp(12);
+                                    seasonPanel.addView(card, cardLp);
+
+                                    TextView hdr =
+                                            a.text(
+                                                    "连续剧集选季 (" + seasonNums.size() + ")",
+                                                    14,
+                                                    MainActivity.WHITE);
+                                    hdr.setTypeface(null, Typeface.BOLD);
+                                    card.addView(hdr);
+                                    a.gap(card, 8);
+
+                                    HorizontalScrollView hsv = new HorizontalScrollView(a);
+                                    hsv.setHorizontalScrollBarEnabled(false);
+                                    LinearLayout row = a.row();
+                                    hsv.addView(row);
+                                    card.addView(hsv, new LinearLayout.LayoutParams(-1, -2));
+
+                                    for (final Integer sNum : seasonNums) {
+                                        final Cms.Video targetVid = bySeason.get(sNum);
+                                        String sLabel = labels.get(sNum);
+                                        boolean active =
+                                                Objects.equals(targetVid.id, currentVideo.id)
+                                                        || sNum == curMeta.seasonNumber;
+                                        TextView pill =
+                                                a.text(
+                                                        sLabel,
+                                                        13,
+                                                        active ? Color.WHITE : 0xffa1a1aa);
+                                        pill.setTag("detail-season:" + sNum);
+                                        pill.setTypeface(
+                                                null, active ? Typeface.BOLD : Typeface.NORMAL);
+                                        pill.setPadding(a.dp(14), a.dp(7), a.dp(14), a.dp(7));
+                                        pill.setBackground(
+                                                a.bg(active ? 0xff3b82f6 : 0xff252734, 16));
+                                        bindTouchFeedback(pill);
+                                        pill.setOnClickListener(
+                                                v -> {
+                                                    if (!Objects.equals(
+                                                            targetVid.id, currentVideo.id)) {
+                                                        show(a, site, targetVid, null);
+                                                    }
+                                                });
+                                        LinearLayout.LayoutParams lp =
+                                                new LinearLayout.LayoutParams(-2, -2);
+                                        lp.rightMargin = a.dp(8);
+                                        row.addView(pill, lp);
+                                    }
+                                });
+                    } catch (Exception ignored) {
+                    }
+                });
     }
 }

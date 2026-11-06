@@ -9,7 +9,11 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 
 /**
  * Video detail page, fixed poster artwork column, line switcher, reversible episode ordering, and
@@ -236,6 +240,10 @@ final class DetailScreen {
                                                 v.lines.get(i).episodes.size());
                                 break;
                             }
+                    LinearLayout seasonPanel = a.vertical();
+                    seasonPanel.setTag("detail-seasons");
+                    info.addView(seasonPanel);
+                    populateTvRelatedSeasons(a, s, v, seasonPanel);
                     LinearLayout episodePanel = a.vertical();
                     episodePanel.setTag("detail-episodes");
                     a.gap(info, 12);
@@ -525,5 +533,108 @@ final class DetailScreen {
                 if (saved != null) saved.requestFocus();
             }
         }
+    }
+
+    static void populateTvRelatedSeasons(
+            final MainActivity a,
+            final Cms.Site site,
+            final Cms.Video currentVideo,
+            final LinearLayout seasonPanel) {
+        final MobileDetailScreen.SeasonMeta curMeta =
+                MobileDetailScreen.parseSeasonMeta(currentVideo.title);
+        final String baseKey =
+                curMeta.baseTitle == null
+                        ? ""
+                        : curMeta.baseTitle
+                                .toLowerCase()
+                                .replaceAll("[\\s·:：\\-—_（）()【】\\[\\]《》〈〉\"“”'’!！?？,，.。]", "")
+                                .trim();
+        if (baseKey.isEmpty()) return;
+        final int ticket = a.generation;
+        a.submitPage(
+                () -> {
+                    try {
+                        List<Cms.Video> found =
+                                SourceController.engine(a, site).search(curMeta.baseTitle, 1);
+                        if (found == null || found.isEmpty()) return;
+                        final Map<Integer, Cms.Video> bySeason = new TreeMap<>();
+                        final Map<Integer, String> labels = new TreeMap<>();
+                        bySeason.put(curMeta.seasonNumber, currentVideo);
+                        labels.put(curMeta.seasonNumber, curMeta.seasonLabel);
+                        for (Cms.Video cand : found) {
+                            if (cand == null || cand.title == null) continue;
+                            MobileDetailScreen.SeasonMeta candMeta =
+                                    MobileDetailScreen.parseSeasonMeta(cand.title);
+                            String candKey =
+                                    candMeta.baseTitle
+                                            .toLowerCase()
+                                            .replaceAll(
+                                                    "[\\s·:：\\-—_（）()【】\\[\\]《》〈〉\"“”'’!！?？,，.。]",
+                                                    "")
+                                            .trim();
+                            if (!baseKey.equals(candKey)) continue;
+                            if (!curMeta.explicit
+                                    && !candMeta.explicit
+                                    && !Objects.equals(cand.id, currentVideo.id)) {
+                                continue;
+                            }
+                            if (!bySeason.containsKey(candMeta.seasonNumber)) {
+                                bySeason.put(candMeta.seasonNumber, cand);
+                                labels.put(candMeta.seasonNumber, candMeta.seasonLabel);
+                            }
+                        }
+                        if (bySeason.size() < 2) return;
+                        final List<Integer> seasonNums = new ArrayList<>(bySeason.keySet());
+                        a.ui.post(
+                                () -> {
+                                    if (a.isFinishing()
+                                            || a.isDestroyed()
+                                            || ticket != a.generation) return;
+                                    seasonPanel.removeAllViews();
+                                    a.gap(seasonPanel, 10);
+                                    CategoryFlow flow = new CategoryFlow(a, () -> {});
+                                    flow.setTag("detail-season-buttons");
+                                    flow.setPadding(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
+                                    seasonPanel.addView(
+                                            flow, new LinearLayout.LayoutParams(-1, -2));
+                                    for (final Integer sNum : seasonNums) {
+                                        final Cms.Video targetVid = bySeason.get(sNum);
+                                        String sLabel = labels.get(sNum);
+                                        boolean active =
+                                                Objects.equals(targetVid.id, currentVideo.id)
+                                                        || sNum == curMeta.seasonNumber;
+                                        Button btn =
+                                                a.button(
+                                                        sLabel,
+                                                        "detail-season:" + sNum,
+                                                        () -> {
+                                                            if (!Objects.equals(
+                                                                    targetVid.id,
+                                                                    currentVideo.id)) {
+                                                                show(a, site, targetVid, null);
+                                                            }
+                                                        });
+                                        if (active) {
+                                            btn.setBackground(a.bg(MainActivity.ACCENT, 10));
+                                            btn.setOnFocusChangeListener(
+                                                    (v, f) ->
+                                                            FocusMotion.style(
+                                                                    a,
+                                                                    btn,
+                                                                    f,
+                                                                    MainActivity.ACCENT,
+                                                                    MainActivity.WHITE,
+                                                                    10,
+                                                                    MainActivity.WHITE,
+                                                                    MainActivity.DARK,
+                                                                    true,
+                                                                    1.02f));
+                                        }
+                                        flow.addButton(btn);
+                                    }
+                                });
+                    } catch (Exception ignored) {
+                    }
+                });
     }
 }

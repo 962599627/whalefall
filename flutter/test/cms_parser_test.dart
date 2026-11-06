@@ -379,4 +379,71 @@ https://depot.example/config.json
       'https://i0.hdslb.com/bfs/archive/abc.jpg',
     );
   });
+  test('parses multi-season titles, matches franchise seasons, and extracts in-line season groups', () {
+    expect(CmsParser.parseChineseNumber('一'), 1);
+    expect(CmsParser.parseChineseNumber('六'), 6);
+    expect(CmsParser.parseChineseNumber('十'), 10);
+    expect(CmsParser.parseChineseNumber('十二'), 12);
+    expect(CmsParser.parseChineseNumber('二十'), 20);
+    expect(CmsParser.parseChineseNumber('二十一'), 21);
+
+    final s6 = CmsParser.parseSeriesSeasonInfo('披荆斩棘第六季');
+    expect(s6.baseTitle, '披荆斩棘');
+    expect(s6.seasonNumber, 6);
+    expect(s6.seasonLabel, '第 6 季');
+    expect(s6.hasExplicitSeason, isTrue);
+
+    final s21 = CmsParser.parseSeriesSeasonInfo('全美超模大赛第二十一季');
+    expect(s21.baseTitle, '全美超模大赛');
+    expect(s21.seasonNumber, 21);
+    expect(s21.seasonLabel, '第 21 季');
+    expect(s21.hasExplicitSeason, isTrue);
+
+    final sYear = CmsParser.parseSeriesSeasonInfo('我家那闺女2026');
+    expect(sYear.baseTitle, '我家那闺女');
+    expect(sYear.seasonNumber, 2026);
+    expect(sYear.seasonLabel, '2026 季');
+    expect(sYear.hasExplicitSeason, isTrue);
+
+    final seq = CmsParser.parseSeriesSeasonInfo('庆余年2');
+    expect(seq.baseTitle, '庆余年');
+    expect(seq.seasonNumber, 2);
+    expect(seq.seasonLabel, '第 2 季');
+    expect(seq.hasExplicitSeason, isTrue);
+
+    final baseOnly = CmsParser.parseSeriesSeasonInfo('谷雨');
+    expect(baseOnly.baseTitle, '谷雨');
+    expect(baseOnly.seasonNumber, 1);
+    expect(baseOnly.seasonLabel, '第 1 季');
+    expect(baseOnly.hasExplicitSeason, isFalse);
+
+    expect(
+      CmsParser.isSameFranchiseSeasonCandidate('披荆斩棘第六季', '披荆斩棘 第一季'),
+      isTrue,
+    );
+    expect(
+      CmsParser.isSameFranchiseSeasonCandidate('庆余年', '庆余年 第二季'),
+      isTrue,
+    );
+    expect(
+      CmsParser.isSameFranchiseSeasonCandidate('庆余年 第二季', '庆余年 花絮特辑'),
+      isFalse,
+    );
+
+    const inLineEps = [
+      CmsEpisode(name: '[4K]S01E01.mkv', url: 'https://v.example/1'),
+      CmsEpisode(name: '[4K]S01E02.mkv', url: 'https://v.example/2'),
+      CmsEpisode(name: '[4K]S02E01.mkv', url: 'https://v.example/3'),
+      CmsEpisode(name: '[4K]S02E02.mkv', url: 'https://v.example/4'),
+      CmsEpisode(name: '[4K]S02E03.mkv', url: 'https://v.example/5'),
+    ];
+    final groups = CmsParser.extractInLineSeasons(inLineEps);
+    expect(groups.length, 2);
+    expect(groups[0].seasonNumber, 1);
+    expect(groups[0].seasonLabel, '第 1 季');
+    expect(groups[0].episodeIndexes, [0, 1]);
+    expect(groups[1].seasonNumber, 2);
+    expect(groups[1].seasonLabel, '第 2 季');
+    expect(groups[1].episodeIndexes, [2, 3, 4]);
+  });
 }

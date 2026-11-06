@@ -37,11 +37,17 @@ class DetailScreen extends StatefulWidget {
 }
 
 class _DetailScreenState extends State<DetailScreen> {
+  late CmsSite _activeSite;
   late CmsVideo _video;
   bool _loading = true;
   String? _error;
   int _selectedLine = 0;
   int _selectedPage = 0;
+  int? _selectedInLineSeason;
+  List<({int seasonNumber, String seasonLabel, CmsSite site, CmsVideo video})>
+      _relatedSeasons = const [];
+  bool _discoveringSeasons = false;
+  String _discoveredFranchiseKey = '';
   bool _synopsisExpanded = false;
   late bool _descending;
   late bool _isFavorite;
@@ -52,12 +58,22 @@ class _DetailScreenState extends State<DetailScreen> {
   @override
   void initState() {
     super.initState();
+    _activeSite = widget.site;
     _video = widget.initialVideo;
+    final curInfo = CmsParser.parseSeriesSeasonInfo(_video.title);
+    _relatedSeasons = [
+      (
+        seasonNumber: curInfo.seasonNumber,
+        seasonLabel: curInfo.seasonLabel,
+        site: _activeSite,
+        video: _video,
+      ),
+    ];
     _descending = widget.storage.episodesDescending;
     _isFavorite = widget.storage.isFavorite(
-      widget.site.key,
+      _activeSite.key,
       _video.id,
-      forPrivate: widget.site.isEffectivelyPrivate,
+      forPrivate: _activeSite.isEffectivelyPrivate,
     );
     PosterLoader.metadataRevision.addListener(_onExternalMetadataRevision);
     final immediateBytes = PosterLoader.peekMemory(
@@ -73,6 +89,7 @@ class _DetailScreenState extends State<DetailScreen> {
     }
     _loadDetail();
     _warmExternalMetadata(_video.title);
+    unawaited(_discoverRelatedSeasons(_video.title));
   }
 
   @override
@@ -152,14 +169,20 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Future<void> _loadDetail() async {
+    final targetSite = _activeSite;
+    final targetVideo = _video;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final detailed =
-          await widget.client.fetchDetail(widget.site, widget.initialVideo);
-      if (!mounted) return;
+          await widget.client.fetchDetail(targetSite, targetVideo);
+      if (!mounted ||
+          targetSite.key != _activeSite.key ||
+          targetVideo.id != _video.id) {
+        return;
+      }
       final bookmark = _findBookmark();
       int initialLine = 0;
       if (bookmark != null && detailed.lines.isNotEmpty) {
@@ -176,8 +199,10 @@ class _DetailScreenState extends State<DetailScreen> {
         _selectedLine = initialLine;
         _loading = false;
       });
+      _mergeSeasonCandidates(_activeSite, [detailed]);
       if (detailed.title.trim().isNotEmpty) {
         _warmExternalMetadata(detailed.title);
+        unawaited(_discoverRelatedSeasons(detailed.title));
       }
     } catch (e) {
       if (!mounted) return;
@@ -188,10 +213,194 @@ class _DetailScreenState extends State<DetailScreen> {
     }
   }
 
+  Future<void> _discoverRelatedSeasons(String title) async {
+    final info = CmsParser.parseSeriesSeasonInfo(title);
+    final base = info.baseTitle.trim();
+    if (base.isEmpty) return;
+    _mergeSeasonCandidates(_activeSite, [_video]);
+    final normKey = '${_activeSite.isEffectivelyPrivate}_${base.toLowerCase()}';
+    if (_discoveredFranchiseKey == normKey && _relatedSeasons.length > 1) {
+      return;
+    }
+    _discoveredFranchiseKey = normKey;
+    if (mounted) {
+      setState(() {
+        _discoveringSeasons = true;
+      });
+    }
+    try {
+      if (_activeSite.supported && _activeSite.searchable) {
+        try {
+          final res = await widget.client
+              .fetchSearch(_activeSite, base)
+              .timeout(const Duration(seconds: 8));
+          if (mounted && res.videos.isNotEmpty) {
+            _mergeSeasonCandidates(_activeSite, res.videos);
+          }
+        } catch (_) {}
+      }
+      if (mounted && _relatedSeasons.length < 2) {
+        final isPriv = _activeSite.isEffectivelyPrivate;
+        final allSites =
+            widget.storage.config?.supportedSites ?? const <CmsSite>[];
+        final siblingSites = allSites
+            .where(
+              (s) =>
+                  s.key != _activeSite.key &&
+                  s.searchable &&
+                  s.isEffectivelyPrivate == isPriv &&
+                  (s.group == _activeSite.group || !isPriv),
+            )
+            .take(4)
+            .toList(growable: false);
+        if (siblingSites.isNotEmpty) {
+          await Future.wait(
+            siblingSites.map((s) async {
+              try {
+                final res = await widget.client
+                    .fetchSearch(s, base)
+                    .timeout(const Duration(seconds: 6));
+                if (mounted && res.videos.isNotEmpty) {
+                  _mergeSeasonCandidates(s, res.videos);
+                }
+              } catch (_) {}
+            }),
+          );
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _discoveringSeasons = false;
+        });
+      }
+    }
+  }
+
+  void _mergeSeasonCandidates(
+    CmsSite candidateSite,
+    List<CmsVideo> candidates,
+  ) {
+    final bySeason = <int,
+        ({int seasonNumber, String seasonLabel, CmsSite site, CmsVideo video})>{
+      for (final item in _relatedSeasons) item.seasonNumber: item,
+    };
+    final curInfo = CmsParser.parseSeriesSeasonInfo(_video.title);
+    bySeason[curInfo.seasonNumber] = (
+      seasonNumber: curInfo.seasonNumber,
+      seasonLabel: curInfo.seasonLabel,
+      site: _activeSite,
+      video: _video,
+    );
+    for (final cand in candidates) {
+      if (!CmsParser.isSameFranchiseSeasonCandidate(_video.title, cand.title)) {
+        continue;
+      }
+      final candInfo = CmsParser.parseSeriesSeasonInfo(cand.title);
+      if (!curInfo.hasExplicitSeason &&
+          !candInfo.hasExplicitSeason &&
+          cand.id != _video.id) {
+        continue;
+      }
+      final existing = bySeason[candInfo.seasonNumber];
+      if (existing == null) {
+        bySeason[candInfo.seasonNumber] = (
+          seasonNumber: candInfo.seasonNumber,
+          seasonLabel: candInfo.seasonLabel,
+          site: candidateSite,
+          video: cand,
+        );
+      } else if (existing.video.id == _video.id &&
+          existing.site.key == _activeSite.key) {
+        bySeason[candInfo.seasonNumber] = (
+          seasonNumber: candInfo.seasonNumber,
+          seasonLabel: candInfo.seasonLabel,
+          site: _activeSite,
+          video: _video,
+        );
+      } else if (existing.site.key != _activeSite.key &&
+          candidateSite.key == _activeSite.key) {
+        bySeason[candInfo.seasonNumber] = (
+          seasonNumber: candInfo.seasonNumber,
+          seasonLabel: candInfo.seasonLabel,
+          site: candidateSite,
+          video: cand,
+        );
+      }
+    }
+    final sorted = bySeason.values.toList()
+      ..sort((a, b) => a.seasonNumber.compareTo(b.seasonNumber));
+    if (mounted) {
+      setState(() {
+        _relatedSeasons = sorted;
+      });
+    } else {
+      _relatedSeasons = sorted;
+    }
+  }
+
+  void _switchToRelatedSeason(
+    ({int seasonNumber, String seasonLabel, CmsSite site, CmsVideo video})
+        option,
+  ) {
+    if (option.video.id == _video.id && option.site.key == _activeSite.key) {
+      if (_selectedInLineSeason != null) {
+        setState(() {
+          _selectedInLineSeason = null;
+          _selectedPage = 0;
+        });
+      }
+      return;
+    }
+    setState(() {
+      _activeSite = option.site;
+      _video = option.video;
+      _selectedLine = 0;
+      _selectedPage = 0;
+      _selectedInLineSeason = null;
+      _externalSynopsis = '';
+      _isFavorite = widget.storage.isFavorite(
+        _activeSite.key,
+        _video.id,
+        forPrivate: _activeSite.isEffectivelyPrivate,
+      );
+    });
+    final immediateBytes = PosterLoader.peekMemory(
+      _video.poster,
+      title: _video.title,
+      preferHd: true,
+    );
+    if (immediateBytes != null) {
+      final cachedColor = PosterLoader.peekAmbientColor(immediateBytes);
+      if (cachedColor != null) {
+        _posterAmbientColor = cachedColor;
+      } else {
+        unawaited(_updateAmbientFromBytes(immediateBytes));
+      }
+    }
+    _loadDetail();
+    _warmExternalMetadata(_video.title);
+  }
+
+  String _currentSeasonLabel([CmsLine? activeLine]) {
+    if (activeLine != null) {
+      final inLine = CmsParser.extractInLineSeasons(activeLine.episodes);
+      if (inLine.length >= 2) {
+        final activeNum = _selectedInLineSeason ?? inLine.first.seasonNumber;
+        final matched = inLine.where((s) => s.seasonNumber == activeNum);
+        if (matched.isNotEmpty) {
+          return matched.first.seasonLabel;
+        }
+        return inLine.first.seasonLabel;
+      }
+    }
+    return CmsParser.parseSeriesSeasonInfo(_video.title).seasonLabel;
+  }
+
   WatchHistoryEntry? _findBookmark() {
-    if (widget.site.isEffectivelyPrivate) return null;
+    if (_activeSite.isEffectivelyPrivate) return null;
     for (final item in widget.storage.getWatchHistory()) {
-      if (item.site == widget.site.key && item.id == _video.id) {
+      if (item.site == _activeSite.key && item.id == _video.id) {
         return item;
       }
     }
@@ -351,7 +560,7 @@ class _DetailScreenState extends State<DetailScreen> {
         .push(
           CupertinoPageRoute<void>(
             builder: (_) => PlayerScreen(
-              site: widget.site,
+              site: _activeSite,
               video: _video,
               initialLineIndex: lineIdx,
               initialEpisodeIndex: epIdx,
@@ -363,6 +572,20 @@ class _DetailScreenState extends State<DetailScreen> {
         .then((_) {
           if (mounted) setState(() {});
         });
+  }
+
+  List<int> _activeEpisodeIndicesFor(CmsLine line) {
+    final inLine = CmsParser.extractInLineSeasons(line.episodes);
+    if (inLine.length >= 2) {
+      final activeNum = _selectedInLineSeason ?? inLine.first.seasonNumber;
+      for (final s in inLine) {
+        if (s.seasonNumber == activeNum) {
+          return s.episodeIndexes;
+        }
+      }
+      return inLine.first.episodeIndexes;
+    }
+    return List<int>.generate(line.episodes.length, (i) => i, growable: false);
   }
 
   void _playPrimaryAction(WatchHistoryEntry? bookmark) {
@@ -383,7 +606,9 @@ class _DetailScreenState extends State<DetailScreen> {
       );
     } else {
       final lineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
-      _openPlayer(lineIdx, 0);
+      final indices = _activeEpisodeIndicesFor(_video.lines[lineIdx]);
+      final firstEpIdx = indices.isNotEmpty ? indices.first : 0;
+      _openPlayer(lineIdx, firstEpIdx);
     }
   }
 
@@ -409,48 +634,232 @@ class _DetailScreenState extends State<DetailScreen> {
   void _showLinePickerSheet() {
     if (_video.lines.isEmpty) return;
     final safeLineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
+    final currentLine = _video.lines[safeLineIdx];
+    final inLineSeasons = CmsParser.extractInLineSeasons(currentLine.episodes);
+    final hasInLineSeasons = inLineSeasons.length >= 2;
+    final activeInLineSeasonNum = hasInLineSeasons
+        ? (_selectedInLineSeason ?? inLineSeasons.first.seasonNumber)
+        : null;
+    final curSeasonInfo = CmsParser.parseSeriesSeasonInfo(_video.title);
+    final totalSeasons = hasInLineSeasons
+        ? inLineSeasons.length
+        : _relatedSeasons.length;
+
     showAppleModalSheet<void>(
       context: context,
-      title: '切换播放线路 (${_video.lines.length})',
-      builder: (ctx) => ListView.separated(
+      title: '选择季数与播放源',
+      builder: (ctx) => ListView(
         shrinkWrap: true,
-        padding: const EdgeInsets.all(16),
-        itemCount: _video.lines.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 8),
-        itemBuilder: (ctx, i) {
-          final line = _video.lines[i];
-          final selected = i == safeLineIdx;
-          return Container(
-            decoration: BoxDecoration(
-              color: selected
-                  ? const Color(0x330A84FF)
-                  : AppleColors.groupedSecondary,
-              borderRadius: BorderRadius.circular(12),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+        children: [
+          // 1. Season Selector Section
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Row(
+              children: [
+                const Icon(
+                  CupertinoIcons.rectangle_stack_fill,
+                  color: AppleColors.systemBlue,
+                  size: 15,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  totalSeasons > 1
+                      ? '连续剧集选季（共 $totalSeasons 季）'
+                      : '当前季数',
+                  style: const TextStyle(
+                    color: AppleColors.labelSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (_discoveringSeasons) ...[
+                  const SizedBox(width: 8),
+                  const CupertinoActivityIndicator(radius: 7),
+                ],
+              ],
             ),
-            child: AppleGroupedTile(
-              icon: CupertinoIcons.layers_alt_fill,
-              iconBgColor: selected
-                  ? AppleColors.systemBlue
-                  : AppleColors.groupedTertiary,
-              title: line.name,
-              subtitle: '共 ${line.episodes.length} 集 · ${widget.site.name}',
-              trailing: selected
-                  ? const Icon(
-                      CupertinoIcons.checkmark_alt,
-                      color: AppleColors.systemBlue,
-                      size: 18,
-                    )
-                  : null,
-              onTap: () {
-                Navigator.of(ctx).pop();
-                setState(() {
-                  _selectedLine = i;
-                  _selectedPage = 0;
-                });
+          ),
+          if (hasInLineSeasons)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final s in inLineSeasons)
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      setState(() {
+                        _selectedInLineSeason = s.seasonNumber;
+                        _selectedPage = 0;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: s.seasonNumber == activeInLineSeasonNum
+                            ? AppleColors.systemBlue
+                            : AppleColors.groupedSecondary,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: s.seasonNumber == activeInLineSeasonNum
+                              ? AppleColors.systemBlue
+                              : AppleColors.glassBorder,
+                          width: 0.7,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            s.seasonLabel,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13.5,
+                              fontWeight:
+                                  s.seasonNumber == activeInLineSeasonNum
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '(${s.episodeIndexes.length}集)',
+                            style: TextStyle(
+                              color: s.seasonNumber == activeInLineSeasonNum
+                                  ? const Color(0xE6FFFFFF)
+                                  : AppleColors.labelSecondary,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            )
+          else
+            Column(
+              children: [
+                for (int idx = 0; idx < _relatedSeasons.length; idx++) ...[
+                  if (idx > 0) const SizedBox(height: 8),
+                  Builder(
+                    builder: (_) {
+                      final opt = _relatedSeasons[idx];
+                      final isCurrentSeason =
+                          (opt.video.id == _video.id &&
+                                  opt.site.key == _activeSite.key) ||
+                              opt.seasonNumber == curSeasonInfo.seasonNumber;
+                      final subParts = <String>[
+                        opt.video.title,
+                        if (opt.video.remarks.trim().isNotEmpty)
+                          opt.video.remarks.trim(),
+                        opt.site.name,
+                      ];
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: isCurrentSeason
+                              ? const Color(0x330A84FF)
+                              : AppleColors.groupedSecondary,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: AppleGroupedTile(
+                          icon: CupertinoIcons.tv_fill,
+                          iconBgColor: isCurrentSeason
+                              ? AppleColors.systemBlue
+                              : AppleColors.groupedTertiary,
+                          title: opt.seasonLabel,
+                          subtitle: subParts.join(' · '),
+                          trailing: isCurrentSeason
+                              ? const Icon(
+                                  CupertinoIcons.checkmark_alt,
+                                  color: AppleColors.systemBlue,
+                                  size: 18,
+                                )
+                              : const Icon(
+                                  CupertinoIcons.chevron_right,
+                                  color: AppleColors.labelTertiary,
+                                  size: 15,
+                                ),
+                          onTap: () {
+                            Navigator.of(ctx).pop();
+                            _switchToRelatedSeason(opt);
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ],
+            ),
+          const SizedBox(height: 18),
+
+          // 2. Playback Source / Line Selector Section
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Row(
+              children: [
+                const Icon(
+                  CupertinoIcons.layers_alt_fill,
+                  color: AppleColors.systemBlue,
+                  size: 15,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '切换播放线路 (${_video.lines.length})',
+                  style: const TextStyle(
+                    color: AppleColors.labelSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          for (int i = 0; i < _video.lines.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            Builder(
+              builder: (_) {
+                final line = _video.lines[i];
+                final selected = i == safeLineIdx;
+                return Container(
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? const Color(0x330A84FF)
+                        : AppleColors.groupedSecondary,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: AppleGroupedTile(
+                    icon: CupertinoIcons.layers_alt_fill,
+                    iconBgColor: selected
+                        ? AppleColors.systemBlue
+                        : AppleColors.groupedTertiary,
+                    title: line.name,
+                    subtitle: '共 ${line.episodes.length} 集 · ${_activeSite.name}',
+                    trailing: selected
+                        ? const Icon(
+                            CupertinoIcons.checkmark_alt,
+                            color: AppleColors.systemBlue,
+                            size: 18,
+                          )
+                        : null,
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      setState(() {
+                        _selectedLine = i;
+                        _selectedPage = 0;
+                        _selectedInLineSeason = null;
+                      });
+                    },
+                  ),
+                );
               },
             ),
-          );
-        },
+          ],
+        ],
       ),
     );
   }
@@ -459,10 +868,11 @@ class _DetailScreenState extends State<DetailScreen> {
     if (_video.lines.isEmpty) return;
     final safeLineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
     final line = _video.lines[safeLineIdx];
-    final total = line.episodes.length;
+    final activeIndices = _activeEpisodeIndicesFor(line);
+    final total = activeIndices.length;
     showAppleModalSheet<void>(
       context: context,
-      title: '全部剧集 · ${line.name} ($total)',
+      title: '全部剧集 · ${_currentSeasonLabel(line)} · ${line.name} ($total)',
       builder: (ctx) => GridView.builder(
         shrinkWrap: true,
         padding: const EdgeInsets.all(16),
@@ -474,7 +884,8 @@ class _DetailScreenState extends State<DetailScreen> {
         ),
         itemCount: total,
         itemBuilder: (ctx, idx) {
-          final originalIdx = _descending ? (total - 1 - idx) : idx;
+          final posIdx = _descending ? (total - 1 - idx) : idx;
+          final originalIdx = activeIndices[posIdx];
           final ep = line.episodes[originalIdx];
           final isBookmarked = bookmark != null &&
               bookmark.line == line.name &&
@@ -536,7 +947,7 @@ class _DetailScreenState extends State<DetailScreen> {
           final total = line.episodes.length;
           final downloadable = <int>[
             for (int i = 0; i < total; i++)
-              if (service.taskFor(widget.site.key, _video.id, line.name, i) ==
+              if (service.taskFor(_activeSite.key, _video.id, line.name, i) ==
                   null)
                 i,
           ];
@@ -597,7 +1008,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   itemBuilder: (context, i) {
                     final ep = line.episodes[i];
                     final task = service.taskFor(
-                      widget.site.key,
+                      _activeSite.key,
                       _video.id,
                       line.name,
                       i,
@@ -685,7 +1096,7 @@ class _DetailScreenState extends State<DetailScreen> {
                         : () {
                             final list = selected.toList()..sort();
                             final added = service.enqueue(
-                              site: widget.site,
+                              site: _activeSite,
                               video: _video,
                               line: line,
                               episodeIndexes: list,
@@ -1095,7 +1506,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 minSize: 32,
                 onPressed: () async {
                   final fav = await widget.storage.toggleFavorite(
-                    widget.site,
+                    _activeSite,
                     _video,
                   );
                   if (mounted) {
@@ -1258,7 +1669,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    widget.site.name,
+                    _activeSite.name,
                     style: const TextStyle(
                       color: Color(0xCCFFFFFF),
                       fontSize: 12,
@@ -1329,11 +1740,14 @@ class _DetailScreenState extends State<DetailScreen> {
       playLabel = '播放 · $cleanEp';
     } else if (hasLines) {
       final safeLineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
-      final eps = _video.lines[safeLineIdx].episodes;
-      if (eps.isNotEmpty) {
-        final (cleanFirst, _) = _parseEpisodeDisplay(eps.first.name, 1);
-        playLabel = eps.length > 1
-            ? '播放 · 第 1 季 · $cleanFirst'
+      final line = _video.lines[safeLineIdx];
+      final indices = _activeEpisodeIndicesFor(line);
+      if (indices.isNotEmpty) {
+        final firstEp = line.episodes[indices.first];
+        final (cleanFirst, _) = _parseEpisodeDisplay(firstEp.name, 1);
+        final sLabel = _currentSeasonLabel(line);
+        playLabel = line.episodes.length > 1
+            ? '播放 · $sLabel · $cleanFirst'
             : '播放 · $cleanFirst';
       } else {
         playLabel = '立即播放';
@@ -1436,7 +1850,10 @@ class _DetailScreenState extends State<DetailScreen> {
   Widget _buildPortraitEpisodesSection(WatchHistoryEntry? bookmark) {
     final safeLineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
     final line = _video.lines[safeLineIdx];
-    final total = line.episodes.length;
+    final inLineSeasons = CmsParser.extractInLineSeasons(line.episodes);
+    final hasInLineSeasons = inLineSeasons.length >= 2;
+    final activeIndices = _activeEpisodeIndicesFor(line);
+    final total = activeIndices.length;
     final pageCount =
         (total + CmsParser.episodePageSize - 1) ~/ CmsParser.episodePageSize;
     final safePage = _selectedPage.clamp(0, pageCount > 0 ? pageCount - 1 : 0);
@@ -1444,18 +1861,25 @@ class _DetailScreenState extends State<DetailScreen> {
     final end = (start + CmsParser.episodePageSize).clamp(0, total);
     final currentActiveEpIdx =
         (bookmark != null && bookmark.line == line.name)
-            ? bookmark.index.clamp(0, total - 1)
-            : 0;
+            ? bookmark.index.clamp(0, line.episodes.length - 1)
+            : (activeIndices.isNotEmpty ? activeIndices.first : 0);
+    final seasonLabel = _currentSeasonLabel(line);
+    final totalSeasons =
+        hasInLineSeasons ? inLineSeasons.length : _relatedSeasons.length;
+    final curSeasonInfo = CmsParser.parseSeriesSeasonInfo(_video.title);
+    final activeInLineSeasonNum = hasInLineSeasons
+        ? (_selectedInLineSeason ?? inLineSeasons.first.seasonNumber)
+        : null;
 
     // Check if any episode in the current range has an authentic plot summary
     bool anyHasSummary = false;
     for (int idx = 0; idx < (end - start); idx++) {
       final visualIdx = start + idx;
-      final originalIdx = _descending ? (total - 1 - visualIdx) : visualIdx;
+      final posIdx = _descending ? (total - 1 - visualIdx) : visualIdx;
+      final originalIdx = activeIndices[posIdx];
       final ep = line.episodes[originalIdx];
-      final (cleanTitle, _) = _parseEpisodeDisplay(ep.name, originalIdx + 1);
-      if (_resolveAuthenticEpisodeSummary(originalIdx + 1, cleanTitle)
-          .isNotEmpty) {
+      final (cleanTitle, _) = _parseEpisodeDisplay(ep.name, posIdx + 1);
+      if (_resolveAuthenticEpisodeSummary(posIdx + 1, cleanTitle).isNotEmpty) {
         anyHasSummary = true;
         break;
       }
@@ -1467,30 +1891,58 @@ class _DetailScreenState extends State<DetailScreen> {
         // 1. Season / Line Selector Header + Sort + All Episodes Grid trigger
         Row(
           children: [
-            GestureDetector(
-              onTap: _showLinePickerSheet,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '第 1 季 · ${line.name}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
+            Flexible(
+              child: GestureDetector(
+                key: const ValueKey('season_line_picker_button'),
+                onTap: _showLinePickerSheet,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '$seasonLabel · ${line.name}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 5),
-                  const Icon(
-                    CupertinoIcons.chevron_down,
-                    color: Color(0xCCFFFFFF),
-                    size: 15,
-                  ),
-                ],
+                    if (totalSeasons > 1) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0x2EFFFFFF),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '共$totalSeasons季',
+                          style: const TextStyle(
+                            color: Color(0xF2FFFFFF),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 5),
+                    const Icon(
+                      CupertinoIcons.chevron_down,
+                      color: Color(0xCCFFFFFF),
+                      size: 15,
+                    ),
+                  ],
+                ),
               ),
             ),
-            const Spacer(),
+            const SizedBox(width: 8),
             GestureDetector(
               onTap: () {
                 final next = !_descending;
@@ -1575,6 +2027,104 @@ class _DetailScreenState extends State<DetailScreen> {
             ),
           ],
         ),
+
+        // 1b. Direct Multi-Season Selector Strip (visible whenever >= 2 seasons exist)
+        if (totalSeasons > 1) ...[
+          const SizedBox(height: 11),
+          SizedBox(
+            height: 32,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: totalSeasons,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (ctx, sIdx) {
+                if (hasInLineSeasons) {
+                  final s = inLineSeasons[sIdx];
+                  final isSelected = s.seasonNumber == activeInLineSeasonNum;
+                  return GestureDetector(
+                    key: ValueKey('season_pill_inline_${s.seasonNumber}'),
+                    onTap: () {
+                      setState(() {
+                        _selectedInLineSeason = s.seasonNumber;
+                        _selectedPage = 0;
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? Colors.white
+                            : const Color(0x24FFFFFF),
+                        borderRadius: BorderRadius.circular(999),
+                        border: isSelected
+                            ? null
+                            : Border.all(
+                                color: const Color(0x30FFFFFF),
+                                width: 0.5,
+                              ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '${s.seasonLabel} (${s.episodeIndexes.length})',
+                        style: TextStyle(
+                          color: isSelected
+                              ? const Color(0xFF121215)
+                              : const Color(0xE6FFFFFF),
+                          fontSize: 12.5,
+                          fontWeight:
+                              isSelected ? FontWeight.w800 : FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                final opt = _relatedSeasons[sIdx];
+                final isSelected = (opt.video.id == _video.id &&
+                        opt.site.key == _activeSite.key) ||
+                    opt.seasonNumber == curSeasonInfo.seasonNumber;
+                return GestureDetector(
+                  key: ValueKey('season_pill_${opt.seasonNumber}'),
+                  onTap: () => _switchToRelatedSeason(opt),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color:
+                          isSelected ? Colors.white : const Color(0x24FFFFFF),
+                      borderRadius: BorderRadius.circular(999),
+                      border: isSelected
+                          ? null
+                          : Border.all(
+                              color: const Color(0x30FFFFFF),
+                              width: 0.5,
+                            ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      opt.seasonLabel,
+                      style: TextStyle(
+                        color: isSelected
+                            ? const Color(0xFF121215)
+                            : const Color(0xE6FFFFFF),
+                        fontSize: 12.5,
+                        fontWeight:
+                            isSelected ? FontWeight.w800 : FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
 
         // 2. Quick Episode Number Strip (12 13 14 [15] 16 17 ...)
@@ -1586,8 +2136,8 @@ class _DetailScreenState extends State<DetailScreen> {
             separatorBuilder: (_, __) => const SizedBox(width: 7),
             itemBuilder: (ctx, idx) {
               final visualIdx = start + idx;
-              final originalIdx =
-                  _descending ? (total - 1 - visualIdx) : visualIdx;
+              final posIdx = _descending ? (total - 1 - visualIdx) : visualIdx;
+              final originalIdx = activeIndices[posIdx];
               final isCurrent = originalIdx == currentActiveEpIdx;
               return GestureDetector(
                 onTap: () => _openPlayer(safeLineIdx, originalIdx),
@@ -1609,7 +2159,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   ),
                   alignment: Alignment.center,
                   child: Text(
-                    '${originalIdx + 1}',
+                    '${posIdx + 1}',
                     style: TextStyle(
                       color: isCurrent
                           ? const Color(0xFF121215)
@@ -1637,23 +2187,23 @@ class _DetailScreenState extends State<DetailScreen> {
             separatorBuilder: (_, __) => const SizedBox(width: 14),
             itemBuilder: (ctx, idx) {
               final visualIdx = start + idx;
-              final originalIdx =
-                  _descending ? (total - 1 - visualIdx) : visualIdx;
+              final posIdx = _descending ? (total - 1 - visualIdx) : visualIdx;
+              final originalIdx = activeIndices[posIdx];
               final ep = line.episodes[originalIdx];
               final isCurrent = originalIdx == currentActiveEpIdx;
               final (cleanTitle, specBadge) =
-                  _parseEpisodeDisplay(ep.name, originalIdx + 1);
+                  _parseEpisodeDisplay(ep.name, posIdx + 1);
               final unitLabel =
-                  _isVarietyShow ? '第${originalIdx + 1}期' : '第${originalIdx + 1}集';
+                  _isVarietyShow ? '第${posIdx + 1}期' : '第${posIdx + 1}集';
               final subMeta = [
                 if (_video.year.trim().isNotEmpty) _video.year.trim(),
                 unitLabel,
                 if (specBadge != null) specBadge,
               ].join(' · ');
               final headline =
-                  _formatEpisodeCardHeadline(cleanTitle, originalIdx + 1);
+                  _formatEpisodeCardHeadline(cleanTitle, posIdx + 1);
               final epDesc = _resolveAuthenticEpisodeSummary(
-                originalIdx + 1,
+                posIdx + 1,
                 cleanTitle,
               );
 
@@ -1686,7 +2236,7 @@ class _DetailScreenState extends State<DetailScreen> {
                               children: [
                                 EpisodeStillImage(
                                   seriesTitle: _video.title,
-                                  episodeIndex: originalIdx,
+                                  episodeIndex: posIdx,
                                   fallbackPosterUrl: _video.poster,
                                   placeholder: _posterPlaceholder(
                                     _resolveBaseAmbientColor(),
@@ -1761,7 +2311,7 @@ class _DetailScreenState extends State<DetailScreen> {
                                             ),
                                             const SizedBox(width: 3),
                                             Text(
-                                              'E${(originalIdx + 1).toString().padLeft(2, '0')}',
+                                              'E${(posIdx + 1).toString().padLeft(2, '0')}',
                                               style: TextStyle(
                                                 color: isCurrent
                                                     ? const Color(0xFF121215)
@@ -2131,7 +2681,7 @@ class _DetailScreenState extends State<DetailScreen> {
                           ),
                           alignment: Alignment.center,
                           child: Text(
-                            widget.site.name,
+                            _activeSite.name,
                             style: const TextStyle(
                               color: Color(0xE6FFFFFF),
                               fontSize: 12.5,
