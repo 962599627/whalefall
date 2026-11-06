@@ -1405,7 +1405,11 @@ final class MobileShell {
         LinearLayout card = a.row();
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(a.dp(10), a.dp(10), a.dp(10), a.dp(10));
-        card.setBackground(a.strokeBg(0xff1b1d28, 0xff2e3244, 14, 1));
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setColor(0xff1b1d28);
+        cardBg.setCornerRadius(a.dp(14));
+        cardBg.setStroke(a.dp(1), 0xff2e3244);
+        card.setBackground(cardBg);
         MobileDetailScreen.bindTouchFeedback(card);
 
         // Left: Smart Callsign Badge
