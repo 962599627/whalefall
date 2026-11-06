@@ -499,7 +499,7 @@ public final class MainActivity extends Activity {
         return d;
     }
 
-    TextView text(String s, int size, int color) {
+    TextView text(String s, float size, int color) {
         TextView t = new TextView(this);
         t.setText(s);
         t.setTextColor(color);
