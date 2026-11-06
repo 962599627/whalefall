@@ -7,13 +7,17 @@ import android.widget.*;
 
 /** Custom anchored controls; no platform alert/list chrome. */
 final class PlayerBubble {
+    interface IntAction {
+        void accept(int index);
+    }
+
     static Dialog show(
             MainActivity a,
             View anchor,
             String title,
             String[] labels,
             int selected,
-            java.util.function.IntConsumer action,
+            IntAction action,
             Runnable closed) {
         return show(a, anchor, title, labels, selected, action, closed, "");
     }
@@ -24,7 +28,7 @@ final class PlayerBubble {
             String title,
             String[] labels,
             int selected,
-            java.util.function.IntConsumer action,
+            IntAction action,
             Runnable closed,
             String message) {
         Dialog dialog = new Dialog(a);
@@ -163,7 +167,7 @@ final class PlayerBubble {
         dialog.setOnDismissListener(
                 d -> {
                     closed.run();
-                    if (anchor.isAttachedToWindow()) anchor.requestFocus();
+                    if (UiCompat.isAttached(anchor)) anchor.requestFocus();
                 });
         dialog.show();
         Window window = dialog.getWindow();

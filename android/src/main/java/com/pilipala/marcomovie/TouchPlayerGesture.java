@@ -36,7 +36,7 @@ final class TouchPlayerGesture implements View.OnTouchListener {
         this.hud.setTag("player-touch-hud");
         this.hud.setGravity(Gravity.CENTER);
         this.hud.setPadding(activity.dp(18), activity.dp(10), activity.dp(18), activity.dp(10));
-        this.hud.setBackground(activity.bg(0xd8202026, 20));
+        UiCompat.setBackground(this.hud, activity.bg(0xd8202026, 20));
         this.hud.setVisibility(View.GONE);
         FrameLayout.LayoutParams lp =
                 new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
@@ -92,7 +92,6 @@ final class TouchPlayerGesture implements View.OnTouchListener {
     static void attach(MainActivity activity, View surfaceView) {
         TouchPlayerGesture listener = new TouchPlayerGesture(activity);
         activity.root.setOnTouchListener(listener);
-        if (surfaceView != null) surfaceView.setOnTouchListener(listener);
     }
 
     private void showHud(String text) {
@@ -112,9 +111,10 @@ final class TouchPlayerGesture implements View.OnTouchListener {
         detector.onTouchEvent(event);
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
-            downX = event.getX();
-            downY = event.getY();
+            downX = event.getRawX();
+            downY = event.getRawY();
             dragMode = SeekGesture.MODE_NONE;
+            if (a.playbackControls != null) a.playbackControls.touchSeeking = false;
             if (a.player != null && a.prepared) {
                 startPositionMs = a.player.getCurrentPosition();
                 durationMs = a.player.getDuration();
@@ -135,8 +135,8 @@ final class TouchPlayerGesture implements View.OnTouchListener {
         }
         if (action == MotionEvent.ACTION_MOVE) {
             if (speedBoosting) return true;
-            float dx = event.getX() - downX;
-            float dy = event.getY() - downY;
+            float dx = event.getRawX() - downX;
+            float dy = event.getRawY() - downY;
             int width = Math.max(1, a.windowWidth());
             int height = Math.max(1, a.windowHeight());
             if (dragMode == SeekGesture.MODE_NONE) {
@@ -144,11 +144,21 @@ final class TouchPlayerGesture implements View.OnTouchListener {
                 if (dragMode == SeekGesture.MODE_SEEK && (a.isLive() || durationMs <= 0)) {
                     dragMode = SeekGesture.MODE_NONE;
                 }
+                if (dragMode != SeekGesture.MODE_NONE && v.getParent() != null) {
+                    v.getParent().requestDisallowInterceptTouchEvent(true);
+                }
             }
             if (dragMode == SeekGesture.MODE_SEEK && a.player != null && a.prepared) {
                 targetSeekMs = SeekGesture.dragSeekTarget(startPositionMs, durationMs, dx, width);
                 if (a.playbackControls != null) {
+                    a.playbackControls.touchSeeking = true;
                     a.playbackControls.timeline.setProgress(targetSeekMs);
+                }
+                if (a.playClock != null) {
+                    a.playClock.setText(
+                            PlaybackController.formatTime(targetSeekMs)
+                                    + " / "
+                                    + PlaybackController.formatTime(durationMs));
                 }
                 showHud(
                         (dx >= 0 ? "快进至 " : "快退至 ")
@@ -174,6 +184,7 @@ final class TouchPlayerGesture implements View.OnTouchListener {
             return true;
         }
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            if (a.playbackControls != null) a.playbackControls.touchSeeking = false;
             if (speedBoosting) {
                 speedBoosting = false;
                 if (a.player != null && a.prepared) {
@@ -185,11 +196,17 @@ final class TouchPlayerGesture implements View.OnTouchListener {
                 hideHud();
                 return true;
             }
-            if (dragMode == SeekGesture.MODE_SEEK
-                    && action == MotionEvent.ACTION_UP
-                    && a.player != null
-                    && a.prepared) {
+            if (dragMode == SeekGesture.MODE_SEEK && a.player != null && a.prepared) {
+                if (a.playbackControls != null) {
+                    a.playbackControls.recordUserSeek(targetSeekMs);
+                }
                 a.player.seekTo(targetSeekMs);
+                if (a.playClock != null && durationMs > 0) {
+                    a.playClock.setText(
+                            PlaybackController.formatTime(targetSeekMs)
+                                    + " / "
+                                    + PlaybackController.formatTime(durationMs));
+                }
                 a.scheduleHide();
             }
             dragMode = SeekGesture.MODE_NONE;

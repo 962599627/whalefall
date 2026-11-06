@@ -80,7 +80,7 @@ final class DanmakuData {
                 } catch (Exception ignored) {
                 }
         }
-        out.sort(Comparator.comparingLong(c -> c.time));
+        Collections.sort(out, (a, b) -> a.time < b.time ? -1 : (a.time > b.time ? 1 : 0));
         return out;
     }
 

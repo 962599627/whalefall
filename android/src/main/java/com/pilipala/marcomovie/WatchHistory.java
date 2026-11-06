@@ -67,7 +67,9 @@ final class WatchHistory {
 
     static String upsert(String text, Entry entry) {
         List<Entry> entries = read(text);
-        entries.removeIf(e -> e.key().equals(entry.key()));
+        for (Iterator<Entry> it = entries.iterator(); it.hasNext(); ) {
+            if (it.next().key().equals(entry.key())) it.remove();
+        }
         entries.add(0, entry);
         JSONArray a = new JSONArray();
         for (int i = 0; i < Math.min(LIMIT, entries.size()); i++)

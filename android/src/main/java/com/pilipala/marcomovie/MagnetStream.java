@@ -621,7 +621,7 @@ public final class MagnetStream implements Closeable {
         String absolute = file.getAbsolutePath();
         if (!absolute.equals(prefix.substring(0, prefix.length() - 1))
                 && !absolute.startsWith(prefix)) return;
-        if (java.nio.file.Files.isSymbolicLink(file.toPath())) {
+        if (isSymlink(file)) {
             file.delete();
             return;
         }
@@ -633,5 +633,16 @@ public final class MagnetStream implements Closeable {
             if (children != null) for (File child : children) deleteOwned(child, prefix);
         }
         file.delete();
+    }
+
+    private static boolean isSymlink(File file) throws IOException {
+        File canon;
+        if (file.getParent() == null) {
+            canon = file;
+        } else {
+            File canonDir = file.getParentFile().getCanonicalFile();
+            canon = new File(canonDir, file.getName());
+        }
+        return !canon.getCanonicalFile().equals(canon.getAbsoluteFile());
     }
 }

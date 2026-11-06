@@ -166,6 +166,7 @@ final class HomeScreen {
         status.setText("正在整理片单…");
         more.setVisibility(View.GONE);
         int token = ++request;
+        a.prefs.edit().putString(Prefs.LOADING_SITE, site.key).commit();
         a.submitPage(
                 () -> {
                     try {
@@ -181,7 +182,7 @@ final class HomeScreen {
                             try {
                                 list = Cms.listing(engine.homeVideos());
                                 clean(list.videos);
-                            } catch (Exception ignored) {
+                            } catch (Throwable ignored) {
                             }
                         String skip = "";
                         if (list.videos.isEmpty() && !categories.isEmpty()) {
@@ -193,21 +194,25 @@ final class HomeScreen {
                                 new Snapshot(list.videos, categories, skip, list.pageCount);
                         a.ui.post(
                                 () -> {
+                                    a.prefs.edit().putString(Prefs.LOADING_SITE, "").apply();
                                     if (!active() || token != request) return;
                                     busy = false;
                                     snapshot = result;
                                     a.homeData.put(site.key, result);
                                     renderSnapshot();
                                 });
-                    } catch (Exception e) {
+                    } catch (Throwable e) {
+                        AppLog.w("HomeScreen", "loadHome failed for " + site.key, e);
                         a.ui.post(
                                 () -> {
+                                    a.prefs.edit().putString(Prefs.LOADING_SITE, "").apply();
                                     if (!active() || token != request) return;
                                     busy = false;
                                     status.setText(a.message(e));
                                     more.setText("重新加载");
                                     more.setVisibility(View.VISIBLE);
                                     wireNavigation();
+                                    if (source != null) source.requestFocus();
                                 });
                     }
                 });
@@ -558,7 +563,8 @@ final class HomeScreen {
                                             && a.current.focus.startsWith("home-video:"))
                                         restoreFocus();
                                 });
-                    } catch (Exception e) {
+                    } catch (Throwable e) {
+                        AppLog.w("HomeScreen", "loadCategory failed for " + site.key, e);
                         a.ui.post(
                                 () -> {
                                     if (!active() || token != request) return;
@@ -575,7 +581,13 @@ final class HomeScreen {
 
     static void clean(List<Cms.Video> videos) {
         Set<String> ids = new HashSet<>();
-        videos.removeIf(v -> v == null || v.id == null || v.id.trim().isEmpty() || !ids.add(v.id));
+        Iterator<Cms.Video> it = videos.iterator();
+        while (it.hasNext()) {
+            Cms.Video v = it.next();
+            if (v == null || v.id == null || v.id.trim().isEmpty() || !ids.add(v.id)) {
+                it.remove();
+            }
+        }
     }
 
     void cancelGrid() {

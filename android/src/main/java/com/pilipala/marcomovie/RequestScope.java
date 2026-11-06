@@ -17,8 +17,11 @@ final class RequestScope {
                         t.setDaemon(true);
                         return t;
                     });
-    final Set<HttpURLConnection> connections = ConcurrentHashMap.newKeySet();
-    final Set<Runnable> cancelListeners = ConcurrentHashMap.newKeySet();
+    final Set<HttpURLConnection> connections =
+            java.util.Collections.newSetFromMap(
+                    new ConcurrentHashMap<HttpURLConnection, Boolean>());
+    final Set<Runnable> cancelListeners =
+            java.util.Collections.newSetFromMap(new ConcurrentHashMap<Runnable, Boolean>());
     volatile boolean cancelled;
 
     static RequestScope current() {

@@ -221,13 +221,20 @@ final class CatalogScreen {
                 line = candidate;
                 break;
             }
+        if (line == null && !video.lines.isEmpty()) {
+            line = video.lines.get(0);
+        }
         Cms.Episode episode = null;
-        if (line != null)
+        if (line != null) {
             for (Cms.Episode candidate : line.episodes)
                 if (candidate.name.equals(bookmark.episode)) {
                     episode = candidate;
                     break;
                 }
+            if (episode == null && bookmark.index >= 0 && bookmark.index < line.episodes.size()) {
+                episode = line.episodes.get(bookmark.index);
+            }
+        }
         if (episode == null) {
             a.notice("上次的线路或集数已变更，请在下方重新选集。");
             return;

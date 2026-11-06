@@ -41,11 +41,10 @@ final class ImageLoader {
 
     static void trimMemory(MainActivity a, int level) {
         if (a.images == null) return;
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
-                || level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND || level >= 15) {
             a.images.evictAll();
-        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
-            a.images.trimToSize(a.images.maxSize() / 2);
+        } else if (level >= 10) {
+            UiCompat.trimCache(a.images, a.images.maxSize() / 2);
         }
     }
 
@@ -206,7 +205,10 @@ final class ImageLoader {
                                             }
                                         }
                                     });
-                    a.artworkRequests.removeIf(Future::isDone);
+                    for (java.util.Iterator<Future<?>> it = a.artworkRequests.iterator();
+                            it.hasNext(); ) {
+                        if (it.next().isDone()) it.remove();
+                    }
                     a.artworkRequests.add(request);
                 });
     }

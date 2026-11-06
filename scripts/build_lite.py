@@ -1,20 +1,38 @@
-"""Build the isolated API14 proof of concept; does not alter full-edition outputs."""
+"""Build the Android 4.0+ (API 14+) Lite APK alongside the standard release."""
 from pathlib import Path
-import os,sys,hashlib,json,zipfile,urllib.request
+import os,sys,hashlib,json,shutil,zipfile,urllib.request,xml.etree.ElementTree as ET
 from build_android import ROOT,JDK,SDK,ENV,run,exe
 SRC=ROOT/'lite/src/main';BUILD=ROOT/'android/build/lite';DIST=ROOT/'dist/lite'
-API14=Path(os.environ.get('MARCOMOVIE_API14_JAR',str(ROOT/'tools/android-14/android.jar')))
+API14_URL='https://dl.google.com/android/repository/android-14_r04.zip'
+API14_ARCHIVE_SHA1='d4f1d8fbca25225b5f0e7a0adf0d39c3d6e60b3c'
+API14_JAR_SHA256='1fbb4b4e493389f99e27dff98dbfed1b134855f204948229f4f31cb66908205f'
+
+def prepare_api14():
+ env_jar=os.environ.get('MARCOMOVIE_API14_JAR')
+ if env_jar and Path(env_jar).exists():return Path(env_jar)
+ dest=ROOT/'tools/android-14/android.jar'
+ if dest.exists() and hashlib.sha256(dest.read_bytes()).hexdigest()==API14_JAR_SHA256:return dest
+ archive=ROOT/'tools/android-platform-14.zip';archive.parent.mkdir(parents=True,exist_ok=True)
+ if not archive.exists():urllib.request.urlretrieve(API14_URL,archive)
+ if hashlib.sha1(archive.read_bytes()).hexdigest()!=API14_ARCHIVE_SHA1:raise RuntimeError('API14 platform archive checksum mismatch')
+ with zipfile.ZipFile(archive) as pkg:
+  name=next(n for n in pkg.namelist() if n.endswith('/android.jar'));data=pkg.read(name)
+ if hashlib.sha256(data).hexdigest()!=API14_JAR_SHA256:raise RuntimeError('API14 android.jar checksum mismatch')
+ dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data)
+ return dest
+
+API14=prepare_api14()
 
 def build():
  candidate='--candidate' in sys.argv
  global BUILD,DIST
  if candidate:BUILD=ROOT/'android/build/lite-candidate';DIST=ROOT/'verification/private/lite-candidate'
- for d in (BUILD/'classes',BUILD/'dex',BUILD/'generated',DIST):d.mkdir(parents=True,exist_ok=True)
+ for d in (BUILD/'classes',BUILD/'dex',BUILD/'generated',DIST,ROOT/'dist'):d.mkdir(parents=True,exist_ok=True)
  for folder in ('classes','dex','generated'):
   for p in (BUILD/folder).rglob('*'):
    if p.is_file() and p.suffix in ('.class','.dex','.java'):
     assert p.resolve().is_relative_to(BUILD.resolve());p.unlink()
- dep=ROOT/'tools/java-dependencies/core-3.2.1.jar'
+ dep=ROOT/'tools/java-dependencies/core-3.2.1.jar';dep.parent.mkdir(parents=True,exist_ok=True)
  if not dep.exists():dep.write_bytes(urllib.request.urlopen('https://repo.maven.apache.org/maven2/com/google/zxing/core/3.2.1/core-3.2.1.jar',timeout=30).read())
  pin=ROOT/'lite/zxing.sha256'
  digest=hashlib.sha256(dep.read_bytes()).hexdigest()
@@ -51,6 +69,13 @@ def build():
  run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','sign','--min-sdk-version','14','--ks',ROOT/'android/private/development.p12','--ks-key-alias','marcomovie','--ks-pass','env:MARCOMOVIE_KEY_PASSWORD','--out',apk,BUILD/'aligned.apk')
  signature=run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','verify','--min-sdk-version','14','--verbose',apk,capture=True)
  run(exe(SDK,'zipalign'),'-c','4',apk)
- result=dict(package='com.pilipala.marcomovie.lite',experimental_candidate=candidate,compile_api=14,min_api=14,bytes=apk.stat().st_size,sha256=hashlib.sha256(apk.read_bytes()).hexdigest(),signature=signature,physical_tv_tested=False)
- (BUILD/'build-report.json').write_text(json.dumps(result,indent=2),encoding='utf8');apk.with_suffix('.apk.sha256').write_text(result['sha256']+'  '+apk.name+'\n');print(json.dumps(result,indent=2))
+ sha=hashlib.sha256(apk.read_bytes()).hexdigest()
+ apk.with_suffix('.apk.sha256').write_text(sha+'  '+apk.name+'\n')
+ if not candidate:
+  version=ET.parse(SRC/'AndroidManifest.xml').getroot().get('{http://schemas.android.com/apk/res/android}versionName','0.4.34')
+  release_apk=ROOT/'dist'/f'MarcoMovie-{version}-lite.apk'
+  shutil.copy2(apk,release_apk)
+  release_apk.with_suffix('.apk.sha256').write_text(sha+'  '+release_apk.name+'\n',encoding='utf8')
+ result=dict(package='com.pilipala.marcomovie.lite',experimental_candidate=candidate,compile_api=14,min_api=14,bytes=apk.stat().st_size,sha256=sha,signature=signature,physical_tv_tested=False)
+ (BUILD/'build-report.json').write_text(json.dumps(result,indent=2),encoding='utf8');print(json.dumps(result,indent=2))
 if __name__=='__main__':build()

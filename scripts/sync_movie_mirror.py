@@ -24,6 +24,7 @@ PLATFORM_LIMIT = 300 * 1024 * 1024
 # (file name pattern, button label, short note). Mirrored only when the release carries the
 # package together with its official .sha256 file.
 PLATFORMS = (
+    ('MarcoMovie-{version}-lite.apk', 'Android 4.0+ 轻量版', 'Android 4.0+ (API 14+) · 适配老旧电视/盒子/老手机 · 独立包名可共存'),
     ('MarcoMovie-{version}-windows-x64.zip', 'Windows 版', 'Windows 10 / 11 · 64 位 · 解压后运行 marco_movie.exe'),
     ('MarcoMovie-{version}-macos.zip', 'macOS 版', 'macOS · 解压后拖入“应用程序”；未公证，首次打开请右键选择“打开”'),
     ('MarcoMovie-{version}-ios-unsigned.ipa', 'iPhone / iPad 版', 'iOS / iPadOS · 未签名，需要用自己的 Apple ID 自签后安装'),

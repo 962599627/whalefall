@@ -84,7 +84,13 @@ public final class SearchCoordinator implements AutoCloseable {
     private static synchronized void onJobWedged(String siteKey) {
         wedgedWorkers++;
         if (siteKey != null && !siteKey.isEmpty()) {
-            WEDGED_SITES.computeIfAbsent(siteKey, k -> new AtomicInteger()).incrementAndGet();
+            AtomicInteger counter = WEDGED_SITES.get(siteKey);
+            if (counter == null) {
+                AtomicInteger created = new AtomicInteger();
+                AtomicInteger prev = WEDGED_SITES.putIfAbsent(siteKey, created);
+                counter = prev != null ? prev : created;
+            }
+            counter.incrementAndGet();
         }
         syncPoolCapacity();
     }

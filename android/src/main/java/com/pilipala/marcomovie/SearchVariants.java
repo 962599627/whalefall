@@ -1,16 +1,18 @@
 package com.pilipala.marcomovie;
 
 import java.util.*;
-import java.util.function.Predicate;
 
 /** Keep the first useful response; a later spelling fallback must not erase already found items. */
 final class SearchVariants {
+    interface Match {
+        boolean test(String title);
+    }
+
     interface Fetch {
         List<Cms.Video> get(String term) throws Exception;
     }
 
-    static List<Cms.Video> run(
-            String query, List<String> variants, Predicate<String> matches, Fetch fetch)
+    static List<Cms.Video> run(String query, List<String> variants, Match matches, Fetch fetch)
             throws Exception {
         Exception failure = null;
         int attempts = 0;

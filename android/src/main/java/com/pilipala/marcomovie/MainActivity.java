@@ -53,6 +53,7 @@ public final class MainActivity extends Activity {
     GlobalSearchScreen searchScreen;
     Dialog sourceDialog, accountDialog;
     MagnetStream magnetStream;
+    static volatile PhoneticSearchIndex sharedPhonetic;
     volatile PhoneticSearchIndex phonetic;
     final CountDownLatch phoneticReady = new CountDownLatch(1);
     ConfigStore configStore;
@@ -173,7 +174,13 @@ public final class MainActivity extends Activity {
         final Thread main = android.os.Looper.getMainLooper().getThread();
         Thread.setDefaultUncaughtExceptionHandler(
                 (thread, error) -> {
-                    if (isPluginBackgroundCrash(thread, error, main)) {
+                    boolean bgPlugin =
+                            isPluginBackgroundCrash(thread, error, main)
+                                    || (thread != null
+                                            && thread != main
+                                            && thread.getContextClassLoader()
+                                                    instanceof dalvik.system.DexClassLoader);
+                    if (bgPlugin) {
                         AppLog.w(
                                 "PluginGuard",
                                 "extension thread failed: " + thread.getName(),
@@ -186,6 +193,48 @@ public final class MainActivity extends Activity {
                                             activity.toast("来源扩展出错，已拦截，应用继续运行");
                                     });
                         return;
+                    }
+                    if (thread == main && ListingRoute.hasPluginFrame(error)) {
+                        AppLog.w("PluginGuard", "extension main-thread callback failed", error);
+                        MainActivity activity = activeActivity;
+                        if (activity != null && activity.prefs != null) {
+                            activity.prefs
+                                    .edit()
+                                    .putString(Prefs.LOADING_SITE, "")
+                                    .putString(Prefs.SELECTED_SITE, "")
+                                    .commit();
+                            activity.ui.post(
+                                    () -> {
+                                        if (!activity.isFinishing())
+                                            activity.toast("片源扩展异常已拦截，请切换其他片源");
+                                    });
+                        }
+                        while (true) {
+                            try {
+                                android.os.Looper.loop();
+                                return;
+                            } catch (Throwable nextError) {
+                                if (!ListingRoute.hasPluginFrame(nextError)) {
+                                    if (previous != null)
+                                        previous.uncaughtException(thread, nextError);
+                                    return;
+                                }
+                                AppLog.w(
+                                        "PluginGuard",
+                                        "extension main-thread follow-up error",
+                                        nextError);
+                            }
+                        }
+                    }
+                    MainActivity activity = activeActivity;
+                    if (activity != null && activity.prefs != null) {
+                        String currentSite = activity.prefs.getString(Prefs.SELECTED_SITE, "");
+                        if (currentSite != null && !currentSite.isEmpty()) {
+                            activity.prefs
+                                    .edit()
+                                    .putString(Prefs.LOADING_SITE, currentSite)
+                                    .commit();
+                        }
                     }
                     if (previous != null) previous.uncaughtException(thread, error);
                 });
@@ -384,32 +433,39 @@ public final class MainActivity extends Activity {
         }
         // Phone / tablet only: restore the offline download queue (never started on TV).
         if (!isTvDevice()) DownloadManager.get(this);
-        worker.execute(
-                () -> {
-                    try {
-                        PhoneticSearchIndex index =
-                                new PhoneticSearchIndex(
-                                        getAssets().open("search/pinyin-characters.tsv"),
-                                        getAssets().open("search/pinyin-phrases.dict.yaml"),
-                                        getAssets().open("search/title-phrases.txt"));
+        if (sharedPhonetic != null) {
+            phonetic = sharedPhonetic;
+            phoneticReady.countDown();
+        } else {
+            worker.execute(
+                    () -> {
                         try {
-                            org.json.JSONArray old =
-                                    new org.json.JSONArray(
-                                            prefs.getString(Prefs.PHONETIC_TITLES, "[]"));
-                            for (int i = 0; i < old.length(); i++) index.learn(old.optString(i));
-                            org.json.JSONArray history =
-                                    new org.json.JSONArray(
-                                            prefs.getString(Prefs.GLOBAL_SEARCH_HISTORY, "[]"));
-                            for (int i = history.length() - 1; i >= 0; i--)
-                                index.prefer(history.optString(i));
-                        } catch (Exception ignored) {
+                            PhoneticSearchIndex index =
+                                    new PhoneticSearchIndex(
+                                            getAssets().open("search/pinyin-characters.tsv"),
+                                            getAssets().open("search/pinyin-phrases.dict.yaml"),
+                                            getAssets().open("search/title-phrases.txt"));
+                            try {
+                                org.json.JSONArray old =
+                                        new org.json.JSONArray(
+                                                prefs.getString(Prefs.PHONETIC_TITLES, "[]"));
+                                for (int i = 0; i < old.length(); i++)
+                                    index.learn(old.optString(i));
+                                org.json.JSONArray history =
+                                        new org.json.JSONArray(
+                                                prefs.getString(Prefs.GLOBAL_SEARCH_HISTORY, "[]"));
+                                for (int i = history.length() - 1; i >= 0; i--)
+                                    index.prefer(history.optString(i));
+                            } catch (Throwable ignored) {
+                            }
+                            sharedPhonetic = index;
+                            phonetic = index;
+                        } catch (Throwable ignored) {
+                        } finally {
+                            phoneticReady.countDown();
                         }
-                        phonetic = index;
-                    } catch (Exception ignored) {
-                    } finally {
-                        phoneticReady.countDown();
-                    }
-                });
+                    });
+        }
         layoutIntro = b == null || b.getBoolean("layout_initial_launch", false);
         root = new FrameLayout(this);
         root.setBackgroundColor(DARK);
@@ -437,7 +493,8 @@ public final class MainActivity extends Activity {
                                         height,
                                         prefs.getInt(Prefs.UI_SCALE_PERCENT, 100),
                                         formFactor);
-                        if (expected != getResources().getDisplayMetrics().densityDpi) {
+                        if (viewportHint == null
+                                && expected != getResources().getDisplayMetrics().densityDpi) {
                             android.util.DisplayMetrics display = new android.util.DisplayMetrics();
                             getWindowManager().getDefaultDisplay().getMetrics(display);
                             viewportHint =
@@ -450,10 +507,22 @@ public final class MainActivity extends Activity {
                         ui.post(
                                 () -> {
                                     if (isFinishing() || isDestroyed()) return;
+                                    String crashedSite = prefs.getString(Prefs.LOADING_SITE, "");
+                                    boolean recoveredFromCrash =
+                                            crashedSite != null && !crashedSite.isEmpty();
+                                    if (recoveredFromCrash) {
+                                        prefs.edit()
+                                                .putString(Prefs.LOADING_SITE, "")
+                                                .putString(Prefs.SELECTED_SITE, "")
+                                                .commit();
+                                    }
                                     open(new Screen(() -> home()), false);
                                     layoutReady = true;
-                                    if (layoutIntro && isTvDevice())
+                                    if (recoveredFromCrash) {
+                                        toast("上次加载该片源时异常退出，已自动重置片源选择");
+                                    } else if (layoutIntro && isTvDevice()) {
                                         StartupIntro.show(MainActivity.this);
+                                    }
                                 });
                     }
                 });
@@ -888,7 +957,9 @@ public final class MainActivity extends Activity {
 
     Future<?> submitPage(Runnable task) {
         Future<?> request = RequestScope.submit(worker, task);
-        pageRequests.removeIf(Future::isDone);
+        for (int i = pageRequests.size() - 1; i >= 0; i--) {
+            if (pageRequests.get(i).isDone()) pageRequests.remove(i);
+        }
         pageRequests.add(request);
         return request;
     }
@@ -901,7 +972,7 @@ public final class MainActivity extends Activity {
         SourceController.load(this, label, task, done);
     }
 
-    String message(Exception e) {
+    String message(Throwable e) {
         return SourceController.message(e);
     }
 

@@ -1,5 +1,8 @@
 package com.pilipala.marcomovie;
 
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Choreographer;
 import java.util.ArrayList;
 
@@ -12,21 +15,50 @@ final class MotionLoop {
     private static final ArrayList<Step> active = new ArrayList<>(), frame = new ArrayList<>();
     private static boolean scheduled;
     private static long last;
-    private static final Choreographer.FrameCallback callback = MotionLoop::tick;
+    private static final Handler legacyHandler = new Handler(Looper.getMainLooper());
+    private static final Runnable legacyTick = () -> tick(System.nanoTime());
+
+    private static final class Api16Clock {
+        private static final Choreographer.FrameCallback callback = MotionLoop::tick;
+
+        static void post() {
+            Choreographer.getInstance().postFrameCallback(callback);
+        }
+
+        static void remove() {
+            Choreographer.getInstance().removeFrameCallback(callback);
+        }
+    }
+
+    private static void scheduleNextFrame() {
+        if (Build.VERSION.SDK_INT >= 16) {
+            Api16Clock.post();
+        } else {
+            legacyHandler.postDelayed(legacyTick, 16);
+        }
+    }
+
+    private static void cancelNextFrame() {
+        if (Build.VERSION.SDK_INT >= 16) {
+            Api16Clock.remove();
+        } else {
+            legacyHandler.removeCallbacks(legacyTick);
+        }
+    }
 
     static void add(Step step) {
         if (!active.contains(step)) active.add(step);
         if (!scheduled) {
             scheduled = true;
             last = 0;
-            Choreographer.getInstance().postFrameCallback(callback);
+            scheduleNextFrame();
         }
     }
 
     static void remove(Step step) {
         active.remove(step);
         if (active.isEmpty()) {
-            Choreographer.getInstance().removeFrameCallback(callback);
+            cancelNextFrame();
             scheduled = false;
             last = 0;
         }
@@ -42,6 +74,6 @@ final class MotionLoop {
         if (active.isEmpty()) {
             scheduled = false;
             last = 0;
-        } else Choreographer.getInstance().postFrameCallback(callback);
+        } else scheduleNextFrame();
     }
 }

@@ -51,7 +51,11 @@ public final class PhoneticSearchIndex {
                 String py = line.substring(0, split), chars = line.substring(split + 1);
                 for (int i = 0; i < chars.length(); ) {
                     int cp = chars.codePointAt(i);
-                    List<String> p = readings.computeIfAbsent(cp, k -> new ArrayList<>());
+                    List<String> p = readings.get(cp);
+                    if (p == null) {
+                        p = new ArrayList<>();
+                        readings.put(cp, p);
+                    }
                     if (!p.contains(py)) p.add(py);
                     i += Character.charCount(cp);
                 }
@@ -67,18 +71,27 @@ public final class PhoneticSearchIndex {
                     Entry e = new Entry(parts[0], parts[1], Integer.parseInt(parts[2]));
                     if (e.full.isEmpty() || e.text.length() > 12) continue;
                     if (e.text.codePointCount(0, e.text.length()) == 1) {
-                        List<String> p =
-                                readings.computeIfAbsent(
-                                        e.text.codePointAt(0), k -> new ArrayList<>());
+                        int firstCp = e.text.codePointAt(0);
+                        List<String> p = readings.get(firstCp);
+                        if (p == null) {
+                            p = new ArrayList<>();
+                            readings.put(firstCp, p);
+                        }
                         if (!p.contains(e.full)) p.add(e.full);
                     }
                     entries.add(e);
-                    words.computeIfAbsent(e.full.charAt(0), k -> new ArrayList<>()).add(e);
+                    char firstChar = e.full.charAt(0);
+                    List<Entry> wList = words.get(firstChar);
+                    if (wList == null) {
+                        wList = new ArrayList<>();
+                        words.put(firstChar, wList);
+                    }
+                    wList.add(e);
                 } catch (NumberFormatException ignored) {
                 }
             }
         }
-        entries.sort((a, b) -> Integer.compare(b.weight, a.weight));
+        Collections.sort(entries, (a, b) -> Integer.compare(b.weight, a.weight));
         if (titlePhrases != null)
             try (BufferedReader reader =
                     new BufferedReader(new InputStreamReader(titlePhrases, "UTF-8"))) {
@@ -124,8 +137,10 @@ public final class PhoneticSearchIndex {
         String q = normalize(query);
         if (title.toLowerCase(Locale.ROOT).contains(q)) return true;
         learn(title);
-        for (Entry e : titles.getOrDefault(title, Collections.emptyList()))
-            if (e.full.contains(q) || e.initials.contains(q)) return true;
+        List<Entry> titleEntries = titles.get(title);
+        if (titleEntries != null)
+            for (Entry e : titleEntries)
+                if (e.full.contains(q) || e.initials.contains(q)) return true;
         return false;
     }
 
@@ -157,11 +172,14 @@ public final class PhoneticSearchIndex {
                                     - e.text.length();
                     int recent = preferred.indexOf(e.text);
                     if (recent >= 0) rank += 1000 - recent;
+                    Integer prevRank = ranks.get(e.text);
                     ranks.put(
-                            e.text, Math.max(rank, ranks.getOrDefault(e.text, Integer.MIN_VALUE)));
+                            e.text,
+                            Math.max(rank, prevRank != null ? prevRank : Integer.MIN_VALUE));
                 }
         List<String> ranked = new ArrayList<>(ranks.keySet());
-        ranked.sort(
+        Collections.sort(
+                ranked,
                 (a, b) -> {
                     int rank = Integer.compare(ranks.get(b), ranks.get(a));
                     return rank != 0 ? rank : a.compareTo(b);
@@ -207,7 +225,9 @@ public final class PhoneticSearchIndex {
         best.get(0).add(new Path("", 0));
         for (int start = 0; start < query.length(); start++) {
             if (best.get(start).isEmpty()) continue;
-            for (Entry e : words.getOrDefault(query.charAt(start), Collections.emptyList())) {
+            List<Entry> bucket = words.get(query.charAt(start));
+            if (bucket == null) continue;
+            for (Entry e : bucket) {
                 if (!query.startsWith(e.full, start)) continue;
                 int end = start + e.full.length();
                 List<Path> target = best.get(end);
@@ -218,7 +238,7 @@ public final class PhoneticSearchIndex {
                                     previous.score
                                             + Math.log(Math.max(1, e.weight))
                                             - (e.text.length() == 1 ? 12 : 0)));
-                target.sort((a, b) -> Double.compare(b.score, a.score));
+                Collections.sort(target, (a, b) -> Double.compare(b.score, a.score));
                 while (target.size() > 3) target.remove(target.size() - 1);
             }
         }

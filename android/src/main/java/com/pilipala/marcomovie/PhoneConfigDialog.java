@@ -32,12 +32,19 @@ final class PhoneConfigDialog {
     static String lanAddress() throws Exception {
         List<NetworkInterface> interfaces =
                 Collections.list(NetworkInterface.getNetworkInterfaces());
-        interfaces.sort(
-                Comparator.comparingInt(
-                        n ->
-                                n.getName().startsWith("wlan")
-                                        ? 0
-                                        : n.getName().startsWith("eth") ? 1 : 2));
+        Collections.sort(
+                interfaces,
+                (a, b) -> {
+                    int pa =
+                            a.getName().startsWith("wlan")
+                                    ? 0
+                                    : a.getName().startsWith("eth") ? 1 : 2;
+                    int pb =
+                            b.getName().startsWith("wlan")
+                                    ? 0
+                                    : b.getName().startsWith("eth") ? 1 : 2;
+                    return pa < pb ? -1 : (pa > pb ? 1 : 0);
+                });
         for (NetworkInterface network : interfaces)
             if (network.isUp() && !network.isLoopback())
                 for (InetAddress ip : Collections.list(network.getInetAddresses()))

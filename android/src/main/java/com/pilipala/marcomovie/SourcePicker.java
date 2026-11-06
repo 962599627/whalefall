@@ -58,7 +58,11 @@ final class SourcePicker {
                                     a.notice("这个片源需要启用来源扩展，或仍有接口待适配。可以在设置中查看。");
                                     return;
                                 }
-                                a.prefs.edit().putString(Prefs.SELECTED_SITE, site.key).apply();
+                                a.prefs
+                                        .edit()
+                                        .putString(Prefs.SELECTED_SITE, site.key)
+                                        .putString(Prefs.LOADING_SITE, site.key)
+                                        .commit();
                                 dialog.dismiss();
                                 a.back.clear();
                                 a.open(new MainActivity.Screen(a::home), false);

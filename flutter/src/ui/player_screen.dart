@@ -40,7 +40,8 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> {
+class _PlayerScreenState extends State<PlayerScreen>
+    with WidgetsBindingObserver {
   late final Player _player;
   late final VideoController _controller;
   final CmsClient _client = CmsClient();
@@ -65,8 +66,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _loading = true;
   bool _buffering = false;
   double _dragStartPosMs = 0;
+  double _dragStartX = 0;
+  int _dragTargetPosMs = 0;
+  bool _isDraggingSeek = false;
+  bool _isSliderDragging = false;
+  double _sliderDragPosMs = 0;
   int _playSession = 0;
   int _pendingResumeMs = 0;
+  int _lastKnownPositionMs = 0;
+  int _lastKnownDurationMs = 0;
   bool _introSkippedForSession = false;
   bool _outroSkippedForSession = false;
 
@@ -83,6 +91,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _lineIndex =
         widget.initialLineIndex.clamp(0, widget.video.lines.length - 1);
     _episodeIndex = widget.initialEpisodeIndex
@@ -104,7 +113,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _player.stream.position.listen((pos) {
       if (!mounted) return;
       setState(() {
-        _position = pos;
+        if (!_isDraggingSeek && !_isSliderDragging) {
+          // Do not snap UI position back to 0 while a resume seek is still pending
+          if (_pendingResumeMs > 0 && pos.inMilliseconds < 2000) {
+            _position = Duration(milliseconds: _pendingResumeMs);
+          } else {
+            _position = pos;
+          }
+        }
+        if (pos.inMilliseconds >= 1000) {
+          _lastKnownPositionMs = pos.inMilliseconds;
+        }
         if (pos > Duration.zero && _loading) {
           _loading = false;
         }
@@ -124,15 +143,34 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (!mounted) return;
       setState(() {
         _duration = dur;
+        if (dur.inMilliseconds > 0) {
+          _lastKnownDurationMs = dur.inMilliseconds;
+        }
         if (dur > Duration.zero && _loading) {
           _loading = false;
         }
       });
       if (dur > Duration.zero && _pendingResumeMs > 0) {
-        final targetMs = _pendingResumeMs.clamp(0, dur.inMilliseconds);
+        final sessionAtSeek = _playSession;
+        final maxSeek = math.max(0, dur.inMilliseconds - 2000);
+        final targetMs = _pendingResumeMs.clamp(0, maxSeek);
         _pendingResumeMs = 0;
         _introSkippedForSession = true;
-        _player.seek(Duration(milliseconds: targetMs));
+        if (targetMs > 0) {
+          _lastKnownPositionMs = targetMs;
+          setState(() {
+            _position = Duration(milliseconds: targetMs);
+          });
+          _player.seek(Duration(milliseconds: targetMs));
+          _showHud('已为您续播至 ${_formatDuration(Duration(milliseconds: targetMs))}');
+          // Reinforce seek after 550ms in case an HLS stream resets to 0 on initial segment decode
+          Future.delayed(const Duration(milliseconds: 550), () {
+            if (!mounted || sessionAtSeek != _playSession) return;
+            if (_position.inMilliseconds < targetMs - 3000) {
+              _player.seek(Duration(milliseconds: targetMs));
+            }
+          });
+        }
       } else if (dur > Duration.zero &&
           !_introSkippedForSession &&
           _skipIntroSec > 0 &&
@@ -149,6 +187,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
           _playing = playing;
           if (playing) _loading = false;
         });
+        if (!playing) {
+          _saveProgress();
+        }
       }
     });
 
@@ -164,9 +205,36 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     _openCurrentEpisode(resumeMs: widget.initialPositionMs);
     _historyTimer = Timer.periodic(
-      const Duration(seconds: 5),
+      const Duration(seconds: 3),
       (_) => _saveProgress(),
     );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      _saveProgress();
+    }
+  }
+
+  int _lookupSavedResumeForCurrentEpisode() {
+    if (widget.site.isEffectivelyPrivate) return 0;
+    for (final entry in widget.storage.getWatchHistory()) {
+      if (entry.site == widget.site.key && entry.id == widget.video.id) {
+        if ((entry.line == _currentLine.name &&
+                entry.index == _episodeIndex) ||
+            entry.episode == _currentEpisode.name) {
+          if (entry.duration > 0) {
+            _lastKnownDurationMs = entry.duration;
+          }
+          return entry.resumePosition;
+        }
+        break;
+      }
+    }
+    return 0;
   }
 
   void _handleEpisodeEnd() {
@@ -182,15 +250,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
       } else if (_repeatMode == 'all' && _currentLine.episodes.isNotEmpty) {
         _saveProgress();
         setState(() => _episodeIndex = 0);
-        _openCurrentEpisode();
+        _openCurrentEpisode(resumeMs: 0);
       }
     }
   }
 
-  Future<void> _openCurrentEpisode({int resumeMs = 0}) async {
+  Future<void> _openCurrentEpisode({int? resumeMs}) async {
     final session = ++_playSession;
-    _pendingResumeMs = resumeMs > 0 ? resumeMs : 0;
-    _introSkippedForSession = resumeMs > 0;
+    final effectiveResumeMs =
+        (resumeMs != null && resumeMs > 0)
+            ? resumeMs
+            : (resumeMs == null ? _lookupSavedResumeForCurrentEpisode() : 0);
+    _pendingResumeMs = effectiveResumeMs > 0 ? effectiveResumeMs : 0;
+    _lastKnownPositionMs = _pendingResumeMs;
+    _lastKnownDurationMs = 0;
+    _lookupSavedResumeForCurrentEpisode();
+    _introSkippedForSession = _pendingResumeMs > 0;
     _outroSkippedForSession = false;
 
     if (!_currentEpisode.isDirectPlayable) {
@@ -210,7 +285,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (mounted) {
       setState(() {
         _loading = true;
-        _position = Duration.zero;
+        _position = _pendingResumeMs > 0
+            ? Duration(milliseconds: _pendingResumeMs)
+            : Duration.zero;
         _duration = Duration.zero;
       });
     }
@@ -228,29 +305,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ...resolvedEpisode.headers,
     };
     await _player.open(
-      Media(resolvedEpisode.url, httpHeaders: headers),
+      Media(
+        resolvedEpisode.url,
+        httpHeaders: headers,
+        start: _pendingResumeMs > 0
+            ? Duration(milliseconds: _pendingResumeMs)
+            : null,
+      ),
       play: true,
     );
     if (!mounted || session != _playSession) return;
     await _player.setRate(_normalSpeed);
     if (!mounted || session != _playSession) return;
-    if (_pendingResumeMs > 0) {
-      Future.delayed(const Duration(milliseconds: 600), () {
-        if (!mounted || session != _playSession || _pendingResumeMs <= 0) {
-          return;
-        }
-        final targetMs = _pendingResumeMs;
-        _pendingResumeMs = 0;
-        _player.seek(Duration(milliseconds: targetMs));
-      });
-    }
     _scheduleHide();
   }
 
   Future<void> _saveProgress() async {
-    if (widget.site.key == 'live' ||
-        widget.site.isEffectivelyPrivate ||
-        _duration.inMilliseconds <= 0) {
+    if (_isLiveStream ||
+        widget.site.key == 'live' ||
+        widget.site.isEffectivelyPrivate) {
+      return;
+    }
+    final livePosMs = _position.inMilliseconds;
+    final effectivePosMs = _pendingResumeMs > 0
+        ? _pendingResumeMs
+        : (livePosMs >= 1000 ? livePosMs : _lastKnownPositionMs);
+    final effectiveDurMs = _duration.inMilliseconds > 0
+        ? _duration.inMilliseconds
+        : _lastKnownDurationMs;
+    if (effectiveDurMs <= 0 && effectivePosMs <= 0) {
       return;
     }
     await widget.storage.upsertWatchHistory(
@@ -262,8 +345,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
         line: _currentLine.name,
         episode: _currentEpisode.name,
         index: _episodeIndex,
-        position: _position.inMilliseconds,
-        duration: _duration.inMilliseconds,
+        position: effectivePosMs,
+        duration: effectiveDurMs,
         updated: DateTime.now().millisecondsSinceEpoch,
       ),
     );
@@ -308,7 +391,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (next < 0 || next >= _currentLine.episodes.length) return;
     _saveProgress();
     setState(() => _episodeIndex = next);
-    _openCurrentEpisode();
+    _openCurrentEpisode(resumeMs: 0);
   }
 
   void _seekRelative(int seconds) {
@@ -357,6 +440,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _hideTimer?.cancel();
     _historyTimer?.cancel();
     _saveProgress();
@@ -427,25 +511,50 @@ class _PlayerScreenState extends State<PlayerScreen> {
               });
             }
           },
-          onHorizontalDragStart: (_) {
-            if (_isLiveStream) return;
+          onHorizontalDragStart: (details) {
+            if (_isLiveStream || _duration.inMilliseconds <= 0) return;
             _dragStartPosMs = _position.inMilliseconds.toDouble();
+            _dragStartX = details.localPosition.dx;
+            _dragTargetPosMs = _position.inMilliseconds;
+            _isDraggingSeek = true;
           },
           onHorizontalDragUpdate: (details) {
-            if (_isLiveStream || _duration.inMilliseconds <= 0) return;
+            if (_isLiveStream ||
+                _duration.inMilliseconds <= 0 ||
+                !_isDraggingSeek) {
+              return;
+            }
             final width = MediaQuery.sizeOf(context).width.clamp(200.0, 4000.0);
-            final deltaMs = (details.localPosition.dx / width - 0.5) * 120000;
+            final dx = details.localPosition.dx - _dragStartX;
+            final spanMs =
+                (_duration.inMilliseconds / 5.0).clamp(60000.0, 300000.0);
+            final deltaMs = (dx / width) * spanMs;
             final previewMs = (_dragStartPosMs + deltaMs)
                 .round()
                 .clamp(0, _duration.inMilliseconds);
             setState(() {
+              _dragTargetPosMs = previewMs;
               _hudText =
-                  '跳转至 ${_formatDuration(Duration(milliseconds: previewMs))}';
+                  '${dx >= 0 ? "快进至" : "快退至"} ${_formatDuration(Duration(milliseconds: previewMs))} / ${_formatDuration(_duration)}';
             });
           },
           onHorizontalDragEnd: (_) {
-            if (_isLiveStream) return;
-            setState(() => _hudText = '');
+            if (_isLiveStream || !_isDraggingSeek) return;
+            final targetMs = _dragTargetPosMs.clamp(0, _duration.inMilliseconds);
+            setState(() {
+              _isDraggingSeek = false;
+              _position = Duration(milliseconds: targetMs);
+              _hudText = '';
+            });
+            _player.seek(Duration(milliseconds: targetMs));
+            _scheduleHide();
+          },
+          onHorizontalDragCancel: () {
+            if (!_isDraggingSeek) return;
+            setState(() {
+              _isDraggingSeek = false;
+              _hudText = '';
+            });
           },
           child: Stack(
             fit: StackFit.expand,
@@ -806,9 +915,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final maxMs = _duration.inMilliseconds > 0
         ? _duration.inMilliseconds.toDouble()
         : 1.0;
-    final curMs = _position.inMilliseconds.toDouble().clamp(0.0, maxMs);
-    final remaining = _duration > _position
-        ? _duration - _position
+    final activePosMs = _isDraggingSeek
+        ? _dragTargetPosMs.toDouble()
+        : (_isSliderDragging
+            ? _sliderDragPosMs
+            : _position.inMilliseconds.toDouble());
+    final curMs = activePosMs.clamp(0.0, maxMs);
+    final activeDuration = Duration(milliseconds: curMs.round());
+    final remaining = _duration > activeDuration
+        ? _duration - activeDuration
         : Duration.zero;
 
     return ConstrainedBox(
@@ -820,7 +935,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: Row(
           children: [
             Text(
-              _formatDuration(_position),
+              _formatDuration(activeDuration),
               style: const TextStyle(
                 color: AppleColors.labelSecondary,
                 fontSize: 12,
@@ -845,8 +960,29 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   value: curMs,
                   min: 0,
                   max: maxMs,
+                  onChangeStart: (value) {
+                    setState(() {
+                      _isSliderDragging = true;
+                      _sliderDragPosMs = value;
+                    });
+                    _hideTimer?.cancel();
+                  },
                   onChanged: (value) {
-                    _player.seek(Duration(milliseconds: value.round()));
+                    setState(() {
+                      _isSliderDragging = true;
+                      _sliderDragPosMs = value;
+                    });
+                  },
+                  onChangeEnd: (value) {
+                    final targetMs = value.round().clamp(
+                      0,
+                      _duration.inMilliseconds,
+                    );
+                    setState(() {
+                      _isSliderDragging = false;
+                      _position = Duration(milliseconds: targetMs);
+                    });
+                    _player.seek(Duration(milliseconds: targetMs));
                     _scheduleHide();
                   },
                 ),
@@ -1425,6 +1561,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     : null,
                 onTap: () {
                   Navigator.of(ctx).pop();
+                  final keepPos = _position.inMilliseconds >= 1000
+                      ? _position.inMilliseconds
+                      : _lastKnownPositionMs;
+                  _saveProgress();
                   setState(() {
                     _lineIndex = i;
                     _episodeIndex = _episodeIndex.clamp(
@@ -1432,7 +1572,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       widget.video.lines[i].episodes.length - 1,
                     );
                   });
-                  _openCurrentEpisode();
+                  _openCurrentEpisode(resumeMs: keepPos);
                 },
               );
             }),
@@ -1458,11 +1598,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
         activeEpisodeIndex: _episodeIndex,
         onSelect: (lineIdx, epIdx) {
           Navigator.of(ctx).pop();
+          final sameEpisode = epIdx == _episodeIndex;
+          final keepPos = sameEpisode
+              ? (_position.inMilliseconds >= 1000
+                  ? _position.inMilliseconds
+                  : _lastKnownPositionMs)
+              : 0;
+          _saveProgress();
           setState(() {
             _lineIndex = lineIdx;
             _episodeIndex = epIdx;
           });
-          _openCurrentEpisode();
+          _openCurrentEpisode(resumeMs: keepPos);
         },
       ),
     );

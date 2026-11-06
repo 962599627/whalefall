@@ -107,7 +107,7 @@ final class ConfigTransferServer implements Closeable {
                 reply(out, 410, "text/plain", "二维码已过期，请在电视上重新打开");
                 return;
             }
-            String host = headers.getOrDefault("host", "");
+            String host = headers.containsKey("host") ? headers.get("host") : "";
             String expected = s.getLocalAddress().getHostAddress() + ":" + socket.getLocalPort();
             if (!host.equals(expected)) {
                 reply(out, 403, "text/plain", "请使用电视上的二维码地址");
@@ -126,15 +126,20 @@ final class ConfigTransferServer implements Closeable {
                 reply(out, 403, "text/plain", "页面来源不匹配");
                 return;
             }
-            if (!headers.getOrDefault("content-type", "")
-                            .startsWith("application/x-www-form-urlencoded")
+            String contentType =
+                    headers.containsKey("content-type") ? headers.get("content-type") : "";
+            if (!contentType.startsWith("application/x-www-form-urlencoded")
                     || headers.containsKey("transfer-encoding")) {
                 reply(out, 415, "text/plain", "请使用配置页面提交");
                 return;
             }
             int length;
             try {
-                length = Integer.parseInt(headers.getOrDefault("content-length", "-1"));
+                String lenVal =
+                        headers.containsKey("content-length")
+                                ? headers.get("content-length")
+                                : "-1";
+                length = Integer.parseInt(lenVal);
             } catch (NumberFormatException e) {
                 length = -1;
             }

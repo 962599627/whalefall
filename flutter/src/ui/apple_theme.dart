@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// Apple iOS 27 Liquid Glass design tokens (iOS / iPadOS / macOS dark appearance):
 /// deep obsidian canvas, refractive translucent glass materials, specular rims.
@@ -430,9 +431,10 @@ class AppleGlassSurface extends StatelessWidget {
 /// iOS 27 Liquid Glass tab bar (Dock):
 /// - Portrait: floating glass bar (`64dp`) above the home indicator.
 /// - Landscape: compact vertical glass bar on the right edge.
-/// The selected tab sits on a lighter glass "lens" that glides between items;
-/// the selected icon and label take the system tint like iOS 27.
-class AppleLiquidGlassDock extends StatelessWidget {
+/// - Supports both discrete taps AND continuous press-and-slide (`按住左右/上下滑动聚焦切换`):
+///   holding and sliding across the dock smoothly glides the lighter glass lens
+///   under the finger and switches tabs live with haptic selection clicks.
+class AppleLiquidGlassDock extends StatefulWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelect;
   final bool isLandscape;
@@ -461,9 +463,47 @@ class AppleLiquidGlassDock extends StatelessWidget {
   }
 
   @override
+  State<AppleLiquidGlassDock> createState() => _AppleLiquidGlassDockState();
+}
+
+class _AppleLiquidGlassDockState extends State<AppleLiquidGlassDock> {
+  double? _dragLensSlot;
+  int? _lastDragSelectedIndex;
+
+  int get _safeIndex => widget.items.isEmpty
+      ? 0
+      : widget.selectedIndex.clamp(0, widget.items.length - 1);
+
+  void _updateSlidePosition(double coord, double itemExtent) {
+    final n = widget.items.length;
+    if (n <= 0 || itemExtent <= 0) return;
+    final relative = coord - AppleLiquidGlassDock._pad;
+    final rawSlot = ((relative - itemExtent * 0.5) / itemExtent)
+        .clamp(0.0, (n - 1).toDouble());
+    final targetIndex = (relative / itemExtent).floor().clamp(0, n - 1);
+    setState(() {
+      _dragLensSlot = rawSlot;
+    });
+    final currentSelected = _lastDragSelectedIndex ?? _safeIndex;
+    if (targetIndex != currentSelected) {
+      _lastDragSelectedIndex = targetIndex;
+      HapticFeedback.selectionClick();
+      widget.onSelect(targetIndex);
+    }
+  }
+
+  void _endSlide() {
+    if (_dragLensSlot == null && _lastDragSelectedIndex == null) return;
+    setState(() {
+      _dragLensSlot = null;
+      _lastDragSelectedIndex = null;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final safe = MediaQuery.paddingOf(context);
-    final margin = isLandscape
+    final margin = widget.isLandscape
         ? EdgeInsets.only(
             right: safe.right > 0 ? safe.right + 4 : 10,
             top: 12,
@@ -476,16 +516,13 @@ class AppleLiquidGlassDock extends StatelessWidget {
           );
     return Padding(
       padding: margin,
-      child: isLandscape ? _buildVertical() : _buildHorizontal(),
+      child: widget.isLandscape ? _buildVertical() : _buildHorizontal(),
     );
   }
 
-  int get _safeIndex =>
-      items.isEmpty ? 0 : selectedIndex.clamp(0, items.length - 1);
-
   Widget _shell({required Widget child}) {
     return LiquidGlass(
-      borderRadius: _dockRadius,
+      borderRadius: AppleLiquidGlassDock._dockRadius,
       tint: const Color(0x52141418),
       blur: 20,
       saturation: 1.8,
@@ -496,39 +533,61 @@ class AppleLiquidGlassDock extends StatelessWidget {
   Widget _buildHorizontal() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final n = math.max(items.length, 1);
+        final n = math.max(widget.items.length, 1);
         final available =
             constraints.maxWidth.isFinite ? constraints.maxWidth : 360.0;
         // Shortened, compact iOS 27 pill length in portrait mode
         final width = math.min(available * 0.82, 284.0).clamp(248.0, 288.0);
-        final itemW = (width - _pad * 2) / n;
+        final itemW = (width - AppleLiquidGlassDock._pad * 2) / n;
+        final isSliding = _dragLensSlot != null;
+        final lensSlot = _dragLensSlot ?? _safeIndex.toDouble();
         return _shell(
-          child: SizedBox(
-            width: width,
-            height: _itemH + _pad * 2,
-            child: Stack(
-              children: [
-                AnimatedPositioned(
-                  duration: _motion,
-                  curve: _curve,
-                  left: _pad + itemW * _safeIndex,
-                  top: _pad,
-                  width: itemW,
-                  height: _itemH,
-                  child: const _DockSelectionLens(),
-                ),
-                Positioned.fill(
-                  child: Padding(
-                    padding: const EdgeInsets.all(_pad),
-                    child: Row(
-                      children: [
-                        for (int i = 0; i < items.length; i++)
-                          Expanded(child: _item(i)),
-                      ],
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragStart: (d) =>
+                _updateSlidePosition(d.localPosition.dx, itemW),
+            onHorizontalDragUpdate: (d) =>
+                _updateSlidePosition(d.localPosition.dx, itemW),
+            onHorizontalDragEnd: (_) => _endSlide(),
+            onHorizontalDragCancel: _endSlide,
+            child: SizedBox(
+              width: width,
+              height:
+                  AppleLiquidGlassDock._itemH + AppleLiquidGlassDock._pad * 2,
+              child: Stack(
+                children: [
+                  AnimatedPositioned(
+                    duration: isSliding
+                        ? const Duration(milliseconds: 32)
+                        : AppleLiquidGlassDock._motion,
+                    curve: isSliding
+                        ? Curves.linear
+                        : AppleLiquidGlassDock._curve,
+                    left: AppleLiquidGlassDock._pad + itemW * lensSlot,
+                    top: AppleLiquidGlassDock._pad,
+                    width: itemW,
+                    height: AppleLiquidGlassDock._itemH,
+                    child: AnimatedScale(
+                      scale: isSliding ? 1.05 : 1.0,
+                      duration: const Duration(milliseconds: 140),
+                      curve: Curves.easeOutCubic,
+                      child: const _DockSelectionLens(),
                     ),
                   ),
-                ),
-              ],
+                  Positioned.fill(
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.all(AppleLiquidGlassDock._pad),
+                      child: Row(
+                        children: [
+                          for (int i = 0; i < widget.items.length; i++)
+                            Expanded(child: _item(i)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -539,39 +598,63 @@ class AppleLiquidGlassDock extends StatelessWidget {
   Widget _buildVertical() {
     return Builder(
       builder: (context) {
-        final n = math.max(items.length, 1);
+        final n = math.max(widget.items.length, 1);
         final screenH = MediaQuery.sizeOf(context).height;
         // Lengthened vertical dock in landscape mode
-        final targetTotalH =
-            (screenH * 0.74).clamp(_itemH * n + _pad * 2 + 44.0, 324.0);
-        final vItemH = (targetTotalH - _pad * 2) / n;
+        final targetTotalH = (screenH * 0.74).clamp(
+          AppleLiquidGlassDock._itemH * n + AppleLiquidGlassDock._pad * 2 + 44.0,
+          324.0,
+        );
+        final vItemH = (targetTotalH - AppleLiquidGlassDock._pad * 2) / n;
+        final isSliding = _dragLensSlot != null;
+        final lensSlot = _dragLensSlot ?? _safeIndex.toDouble();
         return _shell(
-          child: SizedBox(
-            width: _itemW + _pad * 2,
-            height: targetTotalH,
-            child: Stack(
-              children: [
-                AnimatedPositioned(
-                  duration: _motion,
-                  curve: _curve,
-                  left: _pad,
-                  top: _pad + vItemH * _safeIndex,
-                  width: _itemW,
-                  height: vItemH,
-                  child: const _DockSelectionLens(),
-                ),
-                Positioned.fill(
-                  child: Padding(
-                    padding: const EdgeInsets.all(_pad),
-                    child: Column(
-                      children: [
-                        for (int i = 0; i < items.length; i++)
-                          SizedBox(height: vItemH, child: _item(i)),
-                      ],
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onVerticalDragStart: (d) =>
+                _updateSlidePosition(d.localPosition.dy, vItemH),
+            onVerticalDragUpdate: (d) =>
+                _updateSlidePosition(d.localPosition.dy, vItemH),
+            onVerticalDragEnd: (_) => _endSlide(),
+            onVerticalDragCancel: _endSlide,
+            child: SizedBox(
+              width:
+                  AppleLiquidGlassDock._itemW + AppleLiquidGlassDock._pad * 2,
+              height: targetTotalH,
+              child: Stack(
+                children: [
+                  AnimatedPositioned(
+                    duration: isSliding
+                        ? const Duration(milliseconds: 32)
+                        : AppleLiquidGlassDock._motion,
+                    curve: isSliding
+                        ? Curves.linear
+                        : AppleLiquidGlassDock._curve,
+                    left: AppleLiquidGlassDock._pad,
+                    top: AppleLiquidGlassDock._pad + vItemH * lensSlot,
+                    width: AppleLiquidGlassDock._itemW,
+                    height: vItemH,
+                    child: AnimatedScale(
+                      scale: isSliding ? 1.05 : 1.0,
+                      duration: const Duration(milliseconds: 140),
+                      curve: Curves.easeOutCubic,
+                      child: const _DockSelectionLens(),
                     ),
                   ),
-                ),
-              ],
+                  Positioned.fill(
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.all(AppleLiquidGlassDock._pad),
+                      child: Column(
+                        children: [
+                          for (int i = 0; i < widget.items.length; i++)
+                            SizedBox(height: vItemH, child: _item(i)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -580,13 +663,13 @@ class AppleLiquidGlassDock extends StatelessWidget {
   }
 
   Widget _item(int index) {
-    final item = items[index];
+    final item = widget.items[index];
     return _DockItem(
       icon: item.$1,
       selectedIcon: item.$2,
       label: item.$3,
       selected: index == _safeIndex,
-      onTap: () => onSelect(index),
+      onTap: () => widget.onSelect(index),
     );
   }
 }

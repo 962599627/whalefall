@@ -2,8 +2,8 @@ package com.pilipala.marcomovie;
 
 import android.app.Activity;
 import android.os.*;
-import android.webkit.*;
 import android.view.*;
+import android.webkit.*;
 import java.util.*;
 import org.json.*;
 
@@ -22,6 +22,45 @@ public final class WebResolver {
     final String origin;
     boolean stopped;
 
+    private final class LegacyClient extends WebViewClient {
+        @Override
+        @SuppressWarnings("deprecation")
+        public WebResourceResponse shouldInterceptRequest(WebView web, String url) {
+            if (url != null && isMedia(url)) found(url, Collections.<String, String>emptyMap());
+            return null;
+        }
+
+        @Override
+        public void onPageFinished(WebView web, String url) {
+            scan();
+        }
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public boolean shouldOverrideUrlLoading(WebView web, String url) {
+            return url == null || !Cms.isHttp(url);
+        }
+    }
+
+    private final class Api21Client extends WebViewClient {
+        @Override
+        public WebResourceResponse shouldInterceptRequest(WebView web, WebResourceRequest request) {
+            String url = request.getUrl().toString();
+            if (isMedia(url)) found(url, request.getRequestHeaders());
+            return null;
+        }
+
+        @Override
+        public void onPageFinished(WebView web, String url) {
+            scan();
+        }
+
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView web, WebResourceRequest r) {
+            return !Cms.isHttp(r.getUrl().toString());
+        }
+    }
+
     public WebResolver(
             Activity activity, String address, Map<String, String> headers, Listener listener) {
         origin = address;
@@ -33,30 +72,15 @@ public final class WebResolver {
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
-        settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+        if (Build.VERSION.SDK_INT >= 17) {
+            settings.setMediaPlaybackRequiresUserGesture(false);
+        }
+        if (Build.VERSION.SDK_INT >= 21) {
+            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+        }
         if (headers.containsKey("User-Agent"))
             settings.setUserAgentString(headers.get("User-Agent"));
-        view.setWebViewClient(
-                new WebViewClient() {
-                    @Override
-                    public WebResourceResponse shouldInterceptRequest(
-                            WebView web, WebResourceRequest request) {
-                        String url = request.getUrl().toString();
-                        if (isMedia(url)) found(url, request.getRequestHeaders());
-                        return null;
-                    }
-
-                    @Override
-                    public void onPageFinished(WebView web, String url) {
-                        scan();
-                    }
-
-                    @Override
-                    public boolean shouldOverrideUrlLoading(WebView web, WebResourceRequest r) {
-                        return !Cms.isHttp(r.getUrl().toString());
-                    }
-                });
+        view.setWebViewClient(Build.VERSION.SDK_INT >= 21 ? new Api21Client() : new LegacyClient());
         main.postDelayed(
                 () -> {
                     if (!stopped) {
@@ -79,24 +103,26 @@ public final class WebResolver {
 
     void scan() {
         if (stopped) return;
-        view.evaluateJavascript(
-                "JSON.stringify(Array.from(document.querySelectorAll('video,audio')).map(function(v){return v.currentSrc||v.src;}))",
-                value -> {
-                    if (stopped) return;
-                    try {
-                        Object decoded = new JSONTokener(value).nextValue();
-                        JSONArray urls = new JSONArray(String.valueOf(decoded));
-                        for (int i = 0; i < urls.length(); i++) {
-                            String u = urls.optString(i);
-                            if (Cms.isHttp(u)) {
-                                found(u, Collections.emptyMap());
-                                return;
+        if (Build.VERSION.SDK_INT >= 19) {
+            view.evaluateJavascript(
+                    "JSON.stringify(Array.from(document.querySelectorAll('video,audio')).map(function(v){return v.currentSrc||v.src;}))",
+                    value -> {
+                        if (stopped) return;
+                        try {
+                            Object decoded = new JSONTokener(value).nextValue();
+                            JSONArray urls = new JSONArray(String.valueOf(decoded));
+                            for (int i = 0; i < urls.length(); i++) {
+                                String u = urls.optString(i);
+                                if (Cms.isHttp(u)) {
+                                    found(u, Collections.<String, String>emptyMap());
+                                    return;
+                                }
                             }
+                        } catch (Exception ignored) {
                         }
-                    } catch (Exception ignored) {
-                    }
-                    main.postDelayed(this::scan, 1500);
-                });
+                        main.postDelayed(this::scan, 1500);
+                    });
+        }
     }
 
     void found(String url, Map<String, String> captured) {

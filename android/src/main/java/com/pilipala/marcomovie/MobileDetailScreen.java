@@ -721,7 +721,9 @@ final class MobileDetailScreen {
                     playBtnWrap.removeAllViews();
                     detailsBody.removeAllViews();
 
-                    v.lines.removeIf(line -> line.episodes.isEmpty());
+                    for (java.util.Iterator<Cms.Line> it = v.lines.iterator(); it.hasNext(); ) {
+                        if (it.next().episodes.isEmpty()) it.remove();
+                    }
                     int firstLineCount = v.lines.isEmpty() ? 0 : v.lines.get(0).episodes.size();
                     populateHeroPills(a, pillsRow, v, firstLineCount);
 
@@ -808,7 +810,14 @@ final class MobileDetailScreen {
                     String playLabel;
                     if (remembered != null) {
                         EpisodeDisplay remDisp = parseEpisodeDisplay(remembered.episode, 1);
-                        playLabel = "▶   播放 · " + remDisp.cleanTitle;
+                        int resumePos = remembered.resume();
+                        playLabel =
+                                resumePos > 0
+                                        ? "▶   播放 · "
+                                                + remDisp.cleanTitle
+                                                + " · 续播 "
+                                                + PlaybackController.formatTime(resumePos)
+                                        : "▶   播放 · " + remDisp.cleanTitle;
                     } else if (v.lines.get(0).episodes.size() > 1) {
                         playLabel =
                                 "▶   播放 · " + curSeason.seasonLabel + " · " + firstDisp.cleanTitle;
@@ -836,11 +845,19 @@ final class MobileDetailScreen {
                     playBtnWrap.addView(playBtn, new LinearLayout.LayoutParams(-1, a.dp(48)));
 
                     if (remembered != null) {
-                        TextView bmInfo =
-                                a.text(
-                                        "已观看 [" + remembered.episode + "] · 线路：" + remembered.line,
-                                        12,
-                                        0xccffffff);
+                        String bmSummary =
+                                remembered.position > 0
+                                        ? "已观看 ["
+                                                + remembered.episode
+                                                + "] 至 "
+                                                + PlaybackController.formatTime(remembered.position)
+                                                + " · 线路："
+                                                + remembered.line
+                                        : "已观看 ["
+                                                + remembered.episode
+                                                + "] · 线路："
+                                                + remembered.line;
+                        TextView bmInfo = a.text(bmSummary, 12, 0xccffffff);
                         bmInfo.setGravity(Gravity.CENTER);
                         bmInfo.setPadding(0, a.dp(8), 0, 0);
                         playBtnWrap.addView(bmInfo, new LinearLayout.LayoutParams(-1, -2));

@@ -65,6 +65,7 @@ jobs:
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           export MARCOMOVIE_BUILD_TOOLS="$BUILD_TOOLS"
           python scripts/build_android.py
+          python scripts/build_lite.py
       - uses: actions/upload-artifact@v4
         with:
           name: MarcoMovie-Android-APK

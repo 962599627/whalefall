@@ -286,6 +286,29 @@ public class MoviePlayer {
                 });
     }
 
+    public void configureDefaultAudio() {
+        if (android.os.Build.VERSION.SDK_INT >= 21) {
+            setAudioAttributes(
+                    new android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MOVIE)
+                            .build());
+        }
+    }
+
+    void bindSubtitles(final SubtitleOverlayView view, final SubtitleListener textCallback) {
+        setCuesListener(
+                group -> {
+                    if (view != null) {
+                        view.setCues(group.cues);
+                    }
+                    if (textCallback != null) {
+                        textCallback.text(
+                                group.cues.isEmpty() ? "" : String.valueOf(group.cues.get(0).text));
+                    }
+                });
+    }
+
     public void setAudioAttributes(android.media.AudioAttributes attributes) {
         onMain(
                 () -> {

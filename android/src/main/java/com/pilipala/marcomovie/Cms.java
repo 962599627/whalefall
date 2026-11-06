@@ -95,9 +95,11 @@ public final class Cms {
             out.headers.put(key, value.substring(start));
             out.url = value.substring(0, first);
         }
-        out.headers
-                .entrySet()
-                .removeIf(e -> e.getValue().contains("\r") || e.getValue().contains("\n"));
+        for (Iterator<Map.Entry<String, String>> it = out.headers.entrySet().iterator();
+                it.hasNext(); ) {
+            String val = it.next().getValue();
+            if (val.contains("\r") || val.contains("\n")) it.remove();
+        }
         return out;
     }
 

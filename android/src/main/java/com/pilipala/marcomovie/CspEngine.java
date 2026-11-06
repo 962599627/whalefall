@@ -118,8 +118,17 @@ public final class CspEngine implements SourceEngine {
         final List<Application.ActivityLifecycleCallbacks> added = new ArrayList<>();
         for (Object callback : after)
             if (!before.contains(callback)
-                    && callback instanceof Application.ActivityLifecycleCallbacks)
-                added.add((Application.ActivityLifecycleCallbacks) callback);
+                    && callback instanceof Application.ActivityLifecycleCallbacks) {
+                Application.ActivityLifecycleCallbacks rawCb =
+                        (Application.ActivityLifecycleCallbacks) callback;
+                Application.ActivityLifecycleCallbacks safeCb = wrapLifecycleCallback(rawCb);
+                try {
+                    app.unregisterActivityLifecycleCallbacks(rawCb);
+                    app.registerActivityLifecycleCallbacks(safeCb);
+                } catch (Throwable ignored) {
+                }
+                added.add(safeCb);
+            }
         if (added.isEmpty()) return;
         new android.os.Handler(android.os.Looper.getMainLooper())
                 .post(
@@ -138,6 +147,74 @@ public final class CspEngine implements SourceEngine {
                                             error);
                                 }
                         });
+    }
+
+    private static Application.ActivityLifecycleCallbacks wrapLifecycleCallback(
+            final Application.ActivityLifecycleCallbacks delegate) {
+        return new Application.ActivityLifecycleCallbacks() {
+            @Override
+            public void onActivityCreated(android.app.Activity a, android.os.Bundle b) {
+                try {
+                    delegate.onActivityCreated(a, b);
+                } catch (Throwable e) {
+                    AppLog.w("CspEngine", "plugin onActivityCreated failed", e);
+                }
+            }
+
+            @Override
+            public void onActivityStarted(android.app.Activity a) {
+                try {
+                    delegate.onActivityStarted(a);
+                } catch (Throwable e) {
+                    AppLog.w("CspEngine", "plugin onActivityStarted failed", e);
+                }
+            }
+
+            @Override
+            public void onActivityResumed(android.app.Activity a) {
+                try {
+                    delegate.onActivityResumed(a);
+                } catch (Throwable e) {
+                    AppLog.w("CspEngine", "plugin onActivityResumed failed", e);
+                }
+            }
+
+            @Override
+            public void onActivityPaused(android.app.Activity a) {
+                try {
+                    delegate.onActivityPaused(a);
+                } catch (Throwable e) {
+                    AppLog.w("CspEngine", "plugin onActivityPaused failed", e);
+                }
+            }
+
+            @Override
+            public void onActivityStopped(android.app.Activity a) {
+                try {
+                    delegate.onActivityStopped(a);
+                } catch (Throwable e) {
+                    AppLog.w("CspEngine", "plugin onActivityStopped failed", e);
+                }
+            }
+
+            @Override
+            public void onActivitySaveInstanceState(android.app.Activity a, android.os.Bundle b) {
+                try {
+                    delegate.onActivitySaveInstanceState(a, b);
+                } catch (Throwable e) {
+                    AppLog.w("CspEngine", "plugin onActivitySaveInstanceState failed", e);
+                }
+            }
+
+            @Override
+            public void onActivityDestroyed(android.app.Activity a) {
+                try {
+                    delegate.onActivityDestroyed(a);
+                } catch (Throwable e) {
+                    AppLog.w("CspEngine", "plugin onActivityDestroyed failed", e);
+                }
+            }
+        };
     }
 
     public static boolean eligible(Cms.Site s) {
@@ -314,7 +391,12 @@ public final class CspEngine implements SourceEngine {
         File folder = new File(app.getFilesDir(), "csp");
         if (!folder.exists() && !folder.mkdirs()) throw new IOException("插件目录不可用");
         String key = hex(declaration.getBytes("UTF-8"));
-        Object lock = ARTIFACT_LOCKS.computeIfAbsent(key, k -> new Object());
+        Object lock = ARTIFACT_LOCKS.get(key);
+        if (lock == null) {
+            Object candidate = new Object();
+            Object prev = ARTIFACT_LOCKS.putIfAbsent(key, candidate);
+            lock = prev != null ? prev : candidate;
+        }
         synchronized (lock) {
             File identity = new File(folder, "selection-" + key + ".txt");
             if (identity.exists()) {

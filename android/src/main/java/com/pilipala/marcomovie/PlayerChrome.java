@@ -119,7 +119,7 @@ final class PlayerChrome {
         GradientDrawable glass = a.bg(0xed262629, 26);
         glass.setStroke(a.dp(1), 0x30ffffff);
         dock.setBackground(glass);
-        dock.setElevation(a.dp(10));
+        UiCompat.setElevation(dock, a.dp(10));
         FrameLayout.LayoutParams bottom =
                 mobileLandscape
                         ? new FrameLayout.LayoutParams(
@@ -172,7 +172,7 @@ final class PlayerChrome {
         GradientDrawable loadingBg = a.bg(0xf022232a, 24);
         loadingBg.setStroke(a.dp(1), 0x26ffffff);
         loadingPill.setBackground(loadingBg);
-        loadingPill.setElevation(a.dp(10));
+        UiCompat.setElevation(loadingPill, a.dp(10));
         loadingPill.addView(
                 new PlaybackLoading.Ring(a), new LinearLayout.LayoutParams(a.dp(26), a.dp(26)));
         String epTitle =
@@ -199,9 +199,20 @@ final class PlayerChrome {
                 v -> {
                     if (a.player != null && a.prepared) {
                         int dur = Math.max(1, a.player.getDuration());
-                        int next =
-                                Math.max(0, Math.min(dur, a.player.getCurrentPosition() + deltaMs));
+                        int cur =
+                                a.playbackControls != null
+                                        ? a.playbackControls.displayPosition(
+                                                a.player.getCurrentPosition())
+                                        : a.player.getCurrentPosition();
+                        int next = Math.max(0, Math.min(dur, cur + deltaMs));
+                        if (a.playbackControls != null) a.playbackControls.recordUserSeek(next);
                         a.player.seekTo(next);
+                        if (a.playClock != null && dur > 1) {
+                            a.playClock.setText(
+                                    PlaybackController.formatTime(next)
+                                            + " / "
+                                            + PlaybackController.formatTime(dur));
+                        }
                     }
                     a.showControls(true);
                 });
@@ -296,18 +307,12 @@ final class PlayerChrome {
             }
             if (a.playing) {
                 canvas.drawRoundRect(
-                        cx - a.dp(10),
-                        cy - a.dp(13),
-                        cx - a.dp(3),
-                        cy + a.dp(13),
+                        new RectF(cx - a.dp(10), cy - a.dp(13), cx - a.dp(3), cy + a.dp(13)),
                         a.dp(2),
                         a.dp(2),
                         paint);
                 canvas.drawRoundRect(
-                        cx + a.dp(3),
-                        cy - a.dp(13),
-                        cx + a.dp(10),
-                        cy + a.dp(13),
+                        new RectF(cx + a.dp(3), cy - a.dp(13), cx + a.dp(10), cy + a.dp(13)),
                         a.dp(2),
                         a.dp(2),
                         paint);

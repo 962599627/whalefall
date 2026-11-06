@@ -144,11 +144,11 @@ final class SourceController {
                                             try {
                                                 done.accept(video);
                                                 a.root.postOnAnimation(timing::ready);
-                                            } catch (Exception error) {
+                                            } catch (Throwable error) {
                                                 a.paragraph("详情数据无法显示，请返回后重试。");
                                             }
                                         });
-                            } catch (Exception error) {
+                            } catch (Throwable error) {
                                 if (Thread.currentThread().isInterrupted()) return;
                                 a.ui.post(
                                         () -> {
@@ -167,7 +167,9 @@ final class SourceController {
                                         });
                             }
                         });
-        a.pageRequests.removeIf(Future::isDone);
+        for (int i = a.pageRequests.size() - 1; i >= 0; i--) {
+            if (a.pageRequests.get(i).isDone()) a.pageRequests.remove(i);
+        }
         a.pageRequests.add(request);
     }
 
@@ -186,11 +188,11 @@ final class SourceController {
                                     a.body.removeView(loading);
                                     try {
                                         done.accept(value);
-                                    } catch (Exception e) {
+                                    } catch (Throwable e) {
                                         a.notice("数据格式不符合此版本支持的格式。");
                                     }
                                 });
-                    } catch (Exception e) {
+                    } catch (Throwable e) {
                         a.ui.post(
                                 () -> {
                                     if (a.isFinishing() || ticket != a.generation) return;
@@ -202,9 +204,12 @@ final class SourceController {
                 });
     }
 
-    static String message(Exception e) {
+    static String message(Throwable e) {
+        if (e == null) return "连接超时、来源不可达或数据格式不受支持。请检查配置与网络后重试。";
         String s = e.getMessage();
         if (e instanceof CspEngine.EngineException) return s;
+        if (e instanceof OutOfMemoryError) return "设备运行内存不足，已保护性中止加载。建议切换轻量片源。";
+        if (e instanceof LinkageError) return "此片源扩展与当前电视系统版本不兼容，请切换其他片源。";
         if (s != null
                 && (s.startsWith("配置")
                         || s.startsWith("来源返回 HTTP")
@@ -276,12 +281,13 @@ final class SourceController {
                                                 new org.json.JSONObject(response);
                                         if (result.has("list")) {
                                             Cms.Listing list = Cms.listing(response);
+                                            String[] titles = new String[list.videos.size()];
+                                            for (int i = 0; i < list.videos.size(); i++)
+                                                titles[i] = list.videos.get(i).title;
                                             new AppDialog.Builder(a)
                                                     .setTitle(site.name)
                                                     .setItems(
-                                                            list.videos.stream()
-                                                                    .map(v -> v.title)
-                                                                    .toArray(String[]::new),
+                                                            titles,
                                                             (dialog, index) ->
                                                                     a.openListing(
                                                                             site,
@@ -293,11 +299,11 @@ final class SourceController {
                                                     result.optString(
                                                             "msg",
                                                             result.optString("message", response)));
-                                    } catch (Exception ignored) {
+                                    } catch (Throwable ignored) {
                                         a.notice(response);
                                     }
                                 });
-                    } catch (Exception error) {
+                    } catch (Throwable error) {
                         a.ui.post(
                                 () -> {
                                     if (ticket == a.generation) a.notice(a.message(error));

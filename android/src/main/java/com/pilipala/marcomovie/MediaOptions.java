@@ -52,7 +52,9 @@ final class MediaOptions {
 
     static void put(Map<String, String> target, String key, String value) {
         if (!key.matches("[A-Za-z0-9-]+") || value.contains("\r") || value.contains("\n")) return;
-        target.keySet().removeIf(existing -> existing.equalsIgnoreCase(key));
+        for (Iterator<String> it = target.keySet().iterator(); it.hasNext(); ) {
+            if (it.next().equalsIgnoreCase(key)) it.remove();
+        }
         target.put(key, value);
     }
 

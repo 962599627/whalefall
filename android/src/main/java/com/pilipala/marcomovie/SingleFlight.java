@@ -18,8 +18,10 @@ final class SingleFlight<T> {
         } catch (ExecutionException failure) {
             Throwable cause = failure.getCause();
             if (cause instanceof Exception) throw (Exception) cause;
-            if (cause instanceof Error) throw (Error) cause;
-            throw new IllegalStateException(cause);
+            if (cause != null)
+                throw new java.io.IOException(
+                        "运行环境或扩展异常：" + cause.getClass().getSimpleName(), cause);
+            throw new IllegalStateException(failure);
         } finally {
             // A cancelled waiter must not remove an initialization still used by others.
             if (task.isDone()) pending.remove(key, task);

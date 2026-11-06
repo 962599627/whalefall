@@ -14,7 +14,7 @@ final class PlaybackControls {
     final Cms.Video video;
     final Cms.Episode resolved;
     final SeekBar timeline;
-    final androidx.media3.ui.SubtitleView subtitle;
+    final SubtitleOverlayView subtitle;
     final VideoOutput surface;
     final PlaybackEffects effects = new PlaybackEffects();
     final DanmakuView danmaku;
@@ -24,7 +24,30 @@ final class PlaybackControls {
     View menuAnchor;
     String lastSubtitle = "";
     boolean dialogOpen, transitioning;
+    boolean touchSeeking, sliderSeeking;
+    long lastSeekTimeMs;
+    int lastSeekTargetMs = -1;
+    int pendingResumeMs;
     int videoWidth, videoHeight;
+
+    boolean isUserSeeking() {
+        return touchSeeking || sliderSeeking;
+    }
+
+    void recordUserSeek(int targetMs) {
+        lastSeekTimeMs = android.os.SystemClock.uptimeMillis();
+        lastSeekTargetMs = Math.max(0, targetMs);
+        timeline.setProgress(lastSeekTargetMs);
+    }
+
+    int displayPosition(int actualPositionMs) {
+        if (lastSeekTargetMs >= 0
+                && android.os.SystemClock.uptimeMillis() - lastSeekTimeMs < 3500
+                && Math.abs(actualPositionMs - lastSeekTargetMs) > 2500) {
+            return lastSeekTargetMs;
+        }
+        return actualPositionMs;
+    }
 
     PlaybackControls(
             MainActivity host,
@@ -53,7 +76,7 @@ final class PlaybackControls {
                         });
         a.playbackLayer.addView(danmaku, 1, new FrameLayout.LayoutParams(-1, -1));
         danmaku.enabled(false);
-        subtitle = new androidx.media3.ui.SubtitleView(a);
+        subtitle = new SubtitleOverlayView(a);
         subtitle.setFractionalTextSize(
                 Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45)) / 1000f);
         subtitle.setUserDefaultStyle();
@@ -78,24 +101,49 @@ final class PlaybackControls {
                                 MainActivity.WHITE,
                                 false,
                                 1));
-        timeline.setProgressTintList(ColorStateList.valueOf(0xfff5f5f7));
-        timeline.setThumbTintList(ColorStateList.valueOf(Color.WHITE));
+        UiCompat.tintSeekBar(timeline, 0xfff5f5f7, Color.WHITE);
         timeline.setKeyProgressIncrement(15000);
         progress.addView(timeline, new LinearLayout.LayoutParams(-1, a.dp(32)));
         timeline.setOnSeekBarChangeListener(
                 new SeekBar.OnSeekBarChangeListener() {
                     public void onStartTrackingTouch(SeekBar b) {
+                        sliderSeeking = true;
                         a.finishSeek(false);
                         a.scheduleHide();
                     }
 
                     public void onStopTrackingTouch(SeekBar b) {
+                        boolean wasDragging = sliderSeeking;
+                        sliderSeeking = false;
+                        if (wasDragging && a.prepared && a.player != null) {
+                            int target = b.getProgress();
+                            recordUserSeek(target);
+                            a.player.seekTo(target);
+                            if (a.playClock != null && a.player.getDuration() > 0) {
+                                a.playClock.setText(
+                                        PlaybackController.formatTime(target)
+                                                + " / "
+                                                + PlaybackController.formatTime(
+                                                        a.player.getDuration()));
+                            }
+                        }
                         a.scheduleHide();
                     }
 
                     public void onProgressChanged(SeekBar b, int position, boolean user) {
                         if (user && a.prepared && a.player != null) {
-                            a.player.seekTo(position);
+                            if (sliderSeeking) {
+                                if (a.playClock != null && a.player.getDuration() > 0) {
+                                    a.playClock.setText(
+                                            PlaybackController.formatTime(position)
+                                                    + " / "
+                                                    + PlaybackController.formatTime(
+                                                            a.player.getDuration()));
+                                }
+                            } else {
+                                recordUserSeek(position);
+                                a.player.seekTo(position);
+                            }
                             a.scheduleHide();
                         }
                     }
@@ -177,9 +225,9 @@ final class PlaybackControls {
                     });
         }
         add(row, "更多", "more", () -> more());
-        timeline.setId(View.generateViewId());
+        timeline.setId(UiCompat.generateViewId());
         List<Button> all = new ArrayList<>(buttons.values());
-        for (Button b : all) b.setId(View.generateViewId());
+        for (Button b : all) b.setId(UiCompat.generateViewId());
         for (Button b : all) b.setNextFocusUpId(timeline.getId());
         timeline.setNextFocusDownId(all.get(0).getId());
         all.get(0).setNextFocusLeftId(all.get(all.size() - 1).getId());
@@ -249,8 +297,7 @@ final class PlaybackControls {
         return a.activeLine == null ? -1 : a.activeLine.episodes.indexOf(a.activeEpisode);
     }
 
-    void choose(
-            String title, String[] labels, int selected, java.util.function.IntConsumer action) {
+    void choose(String title, String[] labels, int selected, PlayerBubble.IntAction action) {
         showBubble(title, labels, selected, action, "");
     }
 
@@ -262,13 +309,13 @@ final class PlaybackControls {
             String title,
             String[] labels,
             int selected,
-            java.util.function.IntConsumer action,
+            PlayerBubble.IntAction action,
             String message) {
         if (activeDialog != null) {
             activeDialog.dismiss();
             activeDialog = null;
         }
-        if (menuAnchor == null || !menuAnchor.isAttachedToWindow())
+        if (menuAnchor == null || !UiCompat.isAttached(menuAnchor))
             menuAnchor = buttons.get("more");
         dialogOpen = true;
         if (a.hideControls != null) a.ui.removeCallbacks(a.hideControls);
@@ -684,11 +731,17 @@ final class PlaybackControls {
                             reload(true);
                             break;
                         case 3:
+                            pendingResumeMs = 0;
+                            if (a.playingBookmark != null) a.playingBookmark.position = 0;
                             if (a.player != null && a.prepared) {
+                                recordUserSeek(0);
                                 a.player.seekTo(0);
                                 a.player.start();
                                 a.playing = true;
-                            } else reload(false);
+                            } else {
+                                a.resumeAt = -1;
+                                reload(false);
+                            }
                             break;
                         case 4:
                             if (!step(-1)) message("已经是第一集。");
@@ -771,12 +824,32 @@ final class PlaybackControls {
         timeline.setEnabled(duration > 0);
         timeline.setMax(Math.max(1, duration));
         timeline.setKeyProgressIncrement(15000);
+        boolean explicitRestart = a.resumeAt < 0;
+        boolean historyResume = a.resumeAt > 0;
         int seek =
-                "live".equals(site.key)
+                ("live".equals(site.key) || explicitRestart)
                         ? 0
-                        : a.resumeAt > 0 ? a.resumeAt : a.prefs.getInt(Prefs.SKIP_INTRO, 0) * 1000;
+                        : historyResume ? a.resumeAt : a.prefs.getInt(Prefs.SKIP_INTRO, 0) * 1000;
         a.resumeAt = 0;
-        if (duration > 0 && seek > 0 && seek < duration - 1000) a.player.seekTo(seek);
+        if (seek > 0) {
+            if (duration > 0) {
+                if (seek < duration - 1000) {
+                    pendingResumeMs = 0;
+                    recordUserSeek(seek);
+                    a.player.seekTo(seek);
+                    if (historyResume) {
+                        a.toast("已为您续播至 " + PlaybackController.formatTime(seek));
+                    }
+                }
+            } else {
+                pendingResumeMs = seek;
+                recordUserSeek(seek);
+                a.player.seekTo(seek);
+                if (historyResume) {
+                    a.toast("已为您续播至 " + PlaybackController.formatTime(seek));
+                }
+            }
+        }
         a.player.setSpeed(a.prefs.getFloat(Prefs.PLAY_SPEED, 1));
         a.player.setRepeatOne(
                 a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 1
@@ -785,8 +858,18 @@ final class PlaybackControls {
 
     void tick() {
         if ("live".equals(site.key)) return;
-        if (a.player == null || !a.prepared) return;
-        int duration = a.player.getDuration(), position = a.player.getCurrentPosition();
+        if (a.player == null || !a.prepared || isUserSeeking()) return;
+        int duration = a.player.getDuration();
+        if (pendingResumeMs > 0 && duration > 0) {
+            int target = pendingResumeMs;
+            pendingResumeMs = 0;
+            if (target < duration - 1000
+                    && a.player.getCurrentPosition() < Math.min(target - 2000, 5000)) {
+                recordUserSeek(target);
+                a.player.seekTo(target);
+            }
+        }
+        int position = displayPosition(a.player.getCurrentPosition());
         timeline.setMax(Math.max(1, duration));
         timeline.setProgress(position);
         int tail = a.prefs.getInt(Prefs.SKIP_OUTRO, 0) * 1000;

@@ -1,5 +1,25 @@
 # 版本记录
 
+## 0.4.34 Preview — 2026-11-06
+
+- **底部液态玻璃 Dock 栏支持按住左右/上下滑动连续聚焦切换（iOS / Android 全平台）**：
+  - **iPhone / 跨平台端（`AppleLiquidGlassDock`）**：支持在底部悬浮液态玻璃胶囊 Dock（及横屏右侧垂直 Dock）上直接按住手指左右/上下滑动，高光透镜（`_DockSelectionLens`）实时跟随手指平滑游走并带微幅放大动效，滑入对应栏目时立即触发触感反馈（`HapticFeedback.selectionClick`）并无感切换「主页 · 直播 · 片库 · 设置」，无需离散点击。
+  - **Android 手机/平板端（`MobileShell.buildNavigationBar`）**：为四栏胶囊 Dock 引入滑动手势拦截与坐标槽位计算，按住左右滑动即可连续切换底部栏目并伴随触感反馈。
+- **全面修复 Android 6.0（`API 23`）设备启动即闪退的问题**：
+  - 针对全工程 110 个编译后 `.class` 字节码进行 `API 23` 逐指令集扫描，彻底清除在无 `desugar_jdk_libs` 环境下由 `D8` 直接生成的 Android 7.0+（`API 24+`）接口调用（包括 `Collection.removeIf`、`Map.computeIfAbsent`、`Map.getOrDefault`、`List.sort`、`Comparator.comparingInt`）及 Android 8.0+/9.0+/11+ 方法（`Map.ofEntries`、`String.join`、`File.toPath`、`Files.isSymbolicLink`、`MediaPlayer$OnSubtitleDataListener` 合成 Lambda 类），确保 Android 6.0 手机与电视盒子 100% 正常启动运行。
+- **优化观看历史断点续播，精准恢复至上次退出的时间节点（全平台）**：
+  - **Flutter（iOS / 跨平台端 `player_screen.dart` & `detail_screen.dart`）**：修复此前 600ms 延迟定时器在 `.m3u8` 流尚未解析出时长前就提前清空 `_pendingResumeMs` 导致跳转失效的问题；改为向 `Media` 传入原生 `start` 起始时间点、在 `duration > 0` 时精准执行 `seek` 并带 550ms 二次校验防回跳，同时在暂停、切集、退后台及退出播放时立即持久化进度，防止加载期 `00:00` 覆盖已有进度；详情页主播放按钮（直接显示 `续播 xx:xx`）、集数胶囊、16:9 剧集卡片与全部剧集网格点击已看集数时均自动恢复至上次退出秒数。
+  - **Android 原生端（`PlaybackController.java`、`PlaybackControls.java`、`CatalogScreen.java`、`MobileDetailScreen.java`）**：修复 `onPrepared` 中异步 `seekTo` 后立即执行 `savePlaybackHistoryOnPrepared` 将历史进度重置为 `0` 的缺陷；在 `resolvePlayer` 中自动关联当前剧集已存断点、在 `prepared()` 与 `tick()` 中双重保障 HLS 流跳转并调用 `recordUserSeek` 锁定进度显示，切源/退后台/退出时严禁以 `0` 覆盖有效历史时间戳。
+- **新增 Android 4.0+（`API 14+`）老设备专属轻量版安装包（`MarcoMovie-0.4.34-lite.apk`）**：
+  - 独立模块 `com.pilipala.marcomovie.lite`（`minSdkVersion="14"`，支持 Android 4.0 Ice Cream Sandwich 及以上老旧电视、机顶盒与老手机，可与标准版并存安装），直接基于官方 API 14 平台库编译并强制单 DEX（Single-DEX）与 v1（JAR）+ v2 全签名兼容。
+  - 支持局域网手机扫码推送配置与直接输入 HTTP(S) 配置地址、带注释 JSON 配置解析、分类标签筛选、关键词搜索、多线路选集以及遥控器方向键 / 触屏手势（滑动快进快退、进度条拖动）播放控制。
+- **修复创维/酷开等电视切换片源显示「加载失败」后持续闪退死循环的问题**：
+  - **片源加载闪退保护锁（`Prefs.LOADING_SITE`）**：在启动自动加载或手动切换片源前写入持久化哨兵标记，仅当片源完成加载响应后清除；若某个片源在初始化或扩展执行期间触发底层崩溃/闪退，下次启动应用时会自动检测并重置问题片源选择、安全回到片源选择首页并提示用户，彻底杜绝因单一问题片源导致应用每次打开即闪退的死循环。
+  - **主线程与后台插件崩溃双重隔离**：在 `CspEngine` 中将第三方 `spider.jar` 注册的 `Application.ActivityLifecycleCallbacks` 全面包裹异常隔离代理，并在 `MainActivity.installPluginCrashGuard` 中拦截插件 `DexClassLoader` 线程及主线程回调抛出的未捕获异常；同时将 `SingleFlight`、`HomeScreen`、`SourceController` 与 `MobileShell` 的异常捕获范围提升至 `Throwable`（涵盖 `OutOfMemoryError`、`LinkageError`、`NoSuchMethodError` 等 `Error` 子类）。
+- **修复手机端播放时左右滑动屏幕快进/快退松手后未实际生效的问题（iOS / Android 全平台）**：
+  - **Flutter（iOS / 跨平台端 `player_screen.dart`）**：修复水平滑动手势 `onHorizontalDragEnd` 仅清除 HUD 提示文字而未调用 `_player.seek(...)` 的问题，改为基于按下起点坐标计算滑动时间偏移、实时同步预览底部进度条位置，并在松手或手势取消时立即向播放器提交 `seek` 跳转；同时为底部进度条滑块引入拖拽预览态（`_isSliderDragging`），防止播放位置流在拖拽中将滑块拉回原位。
+  - **Android 原生端（`TouchPlayerGesture.java` & `PlaybackControls.java`）**：移除 `surfaceView` 与 `root` 的重复手势监听绑定并改为基于 `getRawX()`/`getRawY()` 与 `requestDisallowInterceptTouchEvent(true)` 精确追踪水平滑动；新增 `touchSeeking` / `sliderSeeking` 状态锁与 `recordUserSeek` 跳转位置保持期，确保松手触发 `player.seekTo(targetSeekMs)` 后每秒定时器不会在 HLS 切片缓冲完成前将进度条闪回旧位置。
+
 ## 0.4.33 Preview — 2026-11-06
 
 - **Android 手机/平板竖屏 UI 1:1 对齐 iPhone 液态玻璃视觉体系（`MobileShell` & `MobileDetailScreen`）**：

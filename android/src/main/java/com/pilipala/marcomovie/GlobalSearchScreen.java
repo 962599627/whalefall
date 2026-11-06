@@ -530,13 +530,13 @@ public final class GlobalSearchScreen implements AutoCloseable {
     void startSources(List<Cms.Site> sources, String query, List<String> variants, int serial) {
         final int total = sources.size();
         searchVariants = variants;
-        if (variants.size() > 1)
-            status.setText(
-                    "搜索全部 "
-                            + total
-                            + " 个来源 · 自动匹配 "
-                            + String.join(
-                                    " / ", variants.subList(0, Math.min(2, variants.size()))));
+        if (variants.size() > 1) {
+            String joined =
+                    variants.size() >= 2
+                            ? variants.get(0) + " / " + variants.get(1)
+                            : variants.get(0);
+            status.setText("搜索全部 " + total + " 个来源 · 自动匹配 " + joined);
+        }
         SearchCoordinator.configureThreads(a.prefs.getInt(Prefs.SEARCH_THREADS, 6));
         coordinator =
                 new SearchCoordinator(

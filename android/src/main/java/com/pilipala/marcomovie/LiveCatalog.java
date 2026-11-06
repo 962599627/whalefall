@@ -287,13 +287,17 @@ public final class LiveCatalog {
                 Map<String, String> attrs = attrs(metadata);
                 pending = new Channel();
                 pending.options.putAll(attrs);
+                String tvgName = attrs.get("tvg-name");
                 pending.name =
                         comma < 0
-                                ? attrs.getOrDefault("tvg-name", "未命名频道")
+                                ? (tvgName != null ? tvgName : "未命名频道")
                                 : line.substring(comma + 1).trim();
-                pending.logo = resolve(out.origin, attrs.getOrDefault("tvg-logo", ""));
-                pending.id = attrs.getOrDefault("tvg-id", "");
-                group = attrs.getOrDefault("group-title", "默认");
+                String tvgLogo = attrs.get("tvg-logo");
+                pending.logo = resolve(out.origin, tvgLogo != null ? tvgLogo : "");
+                String tvgId = attrs.get("tvg-id");
+                pending.id = tvgId != null ? tvgId : "";
+                String grp = attrs.get("group-title");
+                group = grp != null ? grp : "默认";
                 local.clear();
                 opts.clear();
                 header(local, "User-Agent", attrs.get("http-user-agent"));

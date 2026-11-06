@@ -558,17 +558,43 @@ class _DetailScreenState extends State<DetailScreen> {
     return '';
   }
 
-  void _openPlayer(int lineIdx, int epIdx, {int resumeMs = 0}) {
+  String _formatBookmarkTime(int ms) {
+    final totalSec = ms <= 0 ? 0 : ms ~/ 1000;
+    final h = totalSec ~/ 3600;
+    final m = (totalSec % 3600) ~/ 60;
+    final s = totalSec % 60;
+    if (h > 0) {
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  void _openPlayer(int lineIdx, int epIdx, {int? resumeMs}) {
     if (_video.lines.isEmpty) return;
+    final safeLine = lineIdx.clamp(0, _video.lines.length - 1);
+    final line = _video.lines[safeLine];
+    if (line.episodes.isEmpty) return;
+    final safeEp = epIdx.clamp(0, line.episodes.length - 1);
+    int effectiveResumeMs = resumeMs ?? 0;
+    if (resumeMs == null) {
+      final bm = _findBookmark();
+      if (bm != null) {
+        final ep = line.episodes[safeEp];
+        if ((bm.line == line.name && bm.index == safeEp) ||
+            bm.episode == ep.name) {
+          effectiveResumeMs = bm.resumePosition;
+        }
+      }
+    }
     Navigator.of(context)
         .push(
           CupertinoPageRoute<void>(
             builder: (_) => PlayerScreen(
               site: _activeSite,
               video: _video,
-              initialLineIndex: lineIdx,
-              initialEpisodeIndex: epIdx,
-              initialPositionMs: resumeMs,
+              initialLineIndex: safeLine,
+              initialEpisodeIndex: safeEp,
+              initialPositionMs: effectiveResumeMs,
               storage: widget.storage,
             ),
           ),
@@ -599,9 +625,11 @@ class _DetailScreenState extends State<DetailScreen> {
           _video.lines.indexWhere((l) => l.name == bookmark.line);
       final lineIdx = (foundLine < 0 ? _selectedLine : foundLine)
           .clamp(0, _video.lines.length - 1);
-      final epIdx = bookmark.index.clamp(
+      final eps = _video.lines[lineIdx].episodes;
+      final byNameIdx = eps.indexWhere((e) => e.name == bookmark.episode);
+      final epIdx = (byNameIdx >= 0 ? byNameIdx : bookmark.index).clamp(
         0,
-        _video.lines[lineIdx].episodes.length - 1,
+        eps.length - 1,
       );
       _openPlayer(
         lineIdx,
@@ -1836,7 +1864,10 @@ class _DetailScreenState extends State<DetailScreen> {
     } else if (bookmark != null) {
       final (cleanEp, _) =
           _parseEpisodeDisplay(bookmark.episode, bookmark.index + 1);
-      playLabel = '播放 · $cleanEp';
+      final resumeMs = bookmark.resumePosition;
+      playLabel = resumeMs > 0
+          ? '播放 · $cleanEp · 续播 ${_formatBookmarkTime(resumeMs)}'
+          : '播放 · $cleanEp';
     } else if (hasLines) {
       final safeLineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
       final line = _video.lines[safeLineIdx];
@@ -1920,7 +1951,9 @@ class _DetailScreenState extends State<DetailScreen> {
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                '已观看 [${bookmark.episode}] · 线路：${bookmark.line}',
+                bookmark.position > 0
+                    ? '已观看 [${bookmark.episode}] 至 ${_formatBookmarkTime(bookmark.position)} · 线路：${bookmark.line}'
+                    : '已观看 [${bookmark.episode}] · 线路：${bookmark.line}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(

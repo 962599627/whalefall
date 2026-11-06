@@ -118,30 +118,34 @@ public final class SystemPlayer extends MoviePlayer {
                             (player, text) -> {
                                 if (!released) caption(text == null ? "" : text.getText());
                             });
-                    if (Build.VERSION.SDK_INT >= 28)
-                        nativePlayer.setOnSubtitleDataListener(
-                                (player, data) -> {
-                                    if (released || data == null) return;
-                                    MediaPlayer.TrackInfo[] tracks = player.getTrackInfo();
-                                    int index = data.getTrackIndex();
-                                    if (index < 0 || index >= tracks.length) return;
-                                    String mime = mime(tracks[index]);
-                                    if (!textMime(mime)) return;
-                                    String text =
-                                            new String(data.getData(), StandardCharsets.UTF_8);
-                                    caption(plainCaption(text));
-                                    int version = captionVersion;
-                                    main.postDelayed(
-                                            () -> {
-                                                if (!released
-                                                        && prepared
-                                                        && version == captionVersion) caption("");
-                                            },
-                                            Math.max(100, data.getDurationUs() / 1000));
-                                },
-                                main);
+                    if (Build.VERSION.SDK_INT >= 28) Api28SubtitleHelper.attach(this);
                     return null;
                 });
+    }
+
+    private static final class Api28SubtitleHelper {
+        static void attach(final SystemPlayer owner) {
+            owner.nativePlayer.setOnSubtitleDataListener(
+                    (player, data) -> {
+                        if (owner.released || data == null) return;
+                        MediaPlayer.TrackInfo[] tracks = player.getTrackInfo();
+                        int index = data.getTrackIndex();
+                        if (index < 0 || index >= tracks.length) return;
+                        String mime = owner.mime(tracks[index]);
+                        if (!textMime(mime)) return;
+                        String text = new String(data.getData(), StandardCharsets.UTF_8);
+                        owner.caption(plainCaption(text));
+                        int version = owner.captionVersion;
+                        owner.main.postDelayed(
+                                () -> {
+                                    if (!owner.released
+                                            && owner.prepared
+                                            && version == owner.captionVersion) owner.caption("");
+                                },
+                                Math.max(100, data.getDurationUs() / 1000));
+                    },
+                    owner.main);
+        }
     }
 
     @Override
@@ -580,12 +584,15 @@ public final class SystemPlayer extends MoviePlayer {
                     connection.disconnect();
                     throw new IOException("字幕重定向协议不受支持");
                 }
-                if (!next.getHost().equalsIgnoreCase(redirected.getHost()))
-                    request.keySet()
-                            .removeIf(
-                                    key ->
-                                            key.equalsIgnoreCase("Cookie")
-                                                    || key.equalsIgnoreCase("Authorization"));
+                if (!next.getHost().equalsIgnoreCase(redirected.getHost())) {
+                    for (Iterator<String> it = request.keySet().iterator(); it.hasNext(); ) {
+                        String key = it.next();
+                        if (key.equalsIgnoreCase("Cookie")
+                                || key.equalsIgnoreCase("Authorization")) {
+                            it.remove();
+                        }
+                    }
+                }
                 connection.disconnect();
                 next = redirected;
                 continue;

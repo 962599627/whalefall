@@ -302,8 +302,21 @@ public final class ReviewFixChecks {
                                 worker, new RuntimeException("wrap", pluginError), main)
                         && !ListingRoute.isPluginBackgroundCrash(main, pluginError, main)
                         && !ListingRoute.isPluginBackgroundCrash(worker, appError, main)
-                        && !ListingRoute.isPluginBackgroundCrash(null, pluginError, main),
+                        && !ListingRoute.isPluginBackgroundCrash(null, pluginError, main)
+                        && ListingRoute.hasPluginFrame(pluginError)
+                        && !ListingRoute.hasPluginFrame(appError),
                 "only extension crashes on background threads are contained");
+        boolean linkageWrapped = false;
+        try {
+            flight.get(
+                    "linkage-error",
+                    () -> {
+                        throw new NoSuchMethodError("plugin method");
+                    });
+        } catch (IOException expected) {
+            linkageWrapped = expected.getCause() instanceof NoSuchMethodError;
+        }
+        check(linkageWrapped, "SingleFlight wraps Error into IOException for caller containment");
 
         System.out.println(
                 "OK " + checks + " review regression checks; no device performance claim.");

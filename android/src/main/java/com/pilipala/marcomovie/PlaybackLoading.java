@@ -72,10 +72,7 @@ final class PlaybackLoading extends FrameLayout {
             super.onDraw(c);
             float inset = paint.getStrokeWidth();
             c.drawArc(
-                    inset,
-                    inset,
-                    getWidth() - inset,
-                    getHeight() - inset,
+                    new RectF(inset, inset, getWidth() - inset, getHeight() - inset),
                     angle,
                     260,
                     false,

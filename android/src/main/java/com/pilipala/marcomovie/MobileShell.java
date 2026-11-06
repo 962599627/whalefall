@@ -415,10 +415,71 @@ final class MobileShell {
 
     /**
      * Builds the iOS 27 Floating Liquid Glass 4-Tab Pill Dock (`主页` · `直播` · `片库` · `设置`), with an
-     * inner translucent glass lens on the active tab.
+     * inner translucent glass lens on the active tab and continuous press-and-slide tab switching.
      */
-    private LinearLayout buildNavigationBar(boolean verticalRail) {
-        LinearLayout bar = verticalRail ? a.vertical() : a.row();
+    private LinearLayout buildNavigationBar(final boolean verticalRail) {
+        final int touchSlop = a.dp(7);
+        LinearLayout bar =
+                new LinearLayout(a) {
+                    private float downX;
+                    private float downY;
+                    private boolean sliding;
+
+                    @Override
+                    public boolean onInterceptTouchEvent(android.view.MotionEvent ev) {
+                        int action = ev.getActionMasked();
+                        if (action == android.view.MotionEvent.ACTION_DOWN) {
+                            downX = ev.getX();
+                            downY = ev.getY();
+                            sliding = false;
+                        } else if (action == android.view.MotionEvent.ACTION_MOVE) {
+                            float delta =
+                                    verticalRail
+                                            ? Math.abs(ev.getY() - downY)
+                                            : Math.abs(ev.getX() - downX);
+                            if (delta > touchSlop) {
+                                sliding = true;
+                                return true;
+                            }
+                        }
+                        return super.onInterceptTouchEvent(ev);
+                    }
+
+                    @Override
+                    public boolean onTouchEvent(android.view.MotionEvent ev) {
+                        int action = ev.getActionMasked();
+                        if (action == android.view.MotionEvent.ACTION_DOWN
+                                || action == android.view.MotionEvent.ACTION_MOVE) {
+                            int count = DOCK_TAB_INDICES.length;
+                            float pad = a.dp(6);
+                            float span = (verticalRail ? getHeight() : getWidth()) - pad * 2f;
+                            float coord = (verticalRail ? ev.getY() : ev.getX()) - pad;
+                            if (span > 0 && count > 0) {
+                                int slot =
+                                        Math.max(
+                                                0,
+                                                Math.min(
+                                                        count - 1,
+                                                        (int) Math.floor((coord / span) * count)));
+                                int targetTab = DOCK_TAB_INDICES[slot];
+                                int currentDockTab = activeTab == 1 ? 0 : activeTab;
+                                if (targetTab != currentDockTab) {
+                                    performHapticFeedback(
+                                            android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+                                    switchTab(targetTab);
+                                }
+                            }
+                            return true;
+                        }
+                        if (action == android.view.MotionEvent.ACTION_UP
+                                || action == android.view.MotionEvent.ACTION_CANCEL) {
+                            sliding = false;
+                            return true;
+                        }
+                        return super.onTouchEvent(ev);
+                    }
+                };
+        bar.setOrientation(verticalRail ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         bar.setTag("home-dock");
         bar.setGravity(Gravity.CENTER);
         bar.setPadding(a.dp(6), a.dp(6), a.dp(6), a.dp(6));
@@ -677,6 +738,9 @@ final class MobileShell {
                     final String catSnapshot = selectedCategoryId;
                     final int pageSnapshot = currentPage;
                     final int ticket = a.generation;
+                    if (catSnapshot.isEmpty() && pageSnapshot == 1 && siteSnapshot != null) {
+                        a.prefs.edit().putString(Prefs.LOADING_SITE, siteSnapshot.key).commit();
+                    }
                     a.submitPage(
                             () -> {
                                 try {
@@ -693,7 +757,7 @@ final class MobileShell {
                                         if (list.videos.isEmpty()) {
                                             try {
                                                 list = Cms.listing(eng.homeVideos());
-                                            } catch (Exception ignored) {
+                                            } catch (Throwable ignored) {
                                             }
                                         }
                                         if (list.videos.isEmpty() && !cats.isEmpty()) {
@@ -711,6 +775,10 @@ final class MobileShell {
                                     a.learnTitles(finalList.videos);
                                     a.ui.post(
                                             () -> {
+                                                a.prefs
+                                                        .edit()
+                                                        .putString(Prefs.LOADING_SITE, "")
+                                                        .apply();
                                                 if (ticket != a.generation || a.isFinishing())
                                                     return;
                                                 loadingPage[0] = false;
@@ -757,9 +825,14 @@ final class MobileShell {
                                                     loadMoreBtn.setVisibility(View.GONE);
                                                 }
                                             });
-                                } catch (Exception e) {
+                                } catch (Throwable e) {
+                                    AppLog.w("MobileShell", "fetchCategoryPage failed", e);
                                     a.ui.post(
                                             () -> {
+                                                a.prefs
+                                                        .edit()
+                                                        .putString(Prefs.LOADING_SITE, "")
+                                                        .apply();
                                                 if (ticket != a.generation || a.isFinishing())
                                                     return;
                                                 loadingPage[0] = false;

@@ -1,7 +1,6 @@
 package com.pilipala.marcomovie;
 
 import android.graphics.Color;
-import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.SystemClock;
 import android.view.Gravity;
@@ -108,6 +107,36 @@ final class PlaybackController {
         a.toast(message);
     }
 
+    static WatchHistory.Entry lookupSavedBookmark(
+            MainActivity a, Cms.Site s, Cms.Video v, Cms.Line line, Cms.Episode ep) {
+        if (a == null
+                || s == null
+                || s.key == null
+                || "live".equals(s.key)
+                || v == null
+                || v.id == null
+                || ep == null) {
+            return null;
+        }
+        int epIdx = line != null ? line.episodes.indexOf(ep) : -1;
+        for (WatchHistory.Entry entry : a.watchHistory()) {
+            if (s.key.equals(entry.site) && v.id.equals(entry.id)) {
+                boolean sameName = ep.name != null && ep.name.equals(entry.episode);
+                boolean sameIndex =
+                        line != null
+                                && line.name != null
+                                && line.name.equals(entry.line)
+                                && epIdx >= 0
+                                && epIdx == entry.index;
+                if (sameName || sameIndex) {
+                    return entry;
+                }
+                break;
+            }
+        }
+        return null;
+    }
+
     static void resolvePlayer(
             MainActivity a, Cms.Site s, Cms.Video v, Cms.Line line, Cms.Episode ep) {
         if (a.miniMode) {
@@ -116,6 +145,12 @@ final class PlaybackController {
         }
         a.activeLine = line;
         a.activeEpisode = ep;
+        if (a.resumeAt == 0) {
+            WatchHistory.Entry saved = lookupSavedBookmark(a, s, v, line, ep);
+            if (saved != null) {
+                a.resumeAt = saved.resume();
+            }
+        }
         if (s.supported()) {
             openPlayer(a, s, v, ep);
             return;
@@ -197,7 +232,7 @@ final class PlaybackController {
                 ((ViewGroup) a.playbackLoading.getParent()).removeView(a.playbackLoading);
             a.playbackLoading = null;
             if (a.playerChrome != null) a.playerChrome.update();
-            if (a.playbackLoadingFocus != null && a.playbackLoadingFocus.isAttachedToWindow())
+            if (a.playbackLoadingFocus != null && UiCompat.isAttached(a.playbackLoadingFocus))
                 a.playbackLoadingFocus.requestFocus();
             a.playbackLoadingFocus = null;
         }
@@ -404,7 +439,7 @@ final class PlaybackController {
             a.miniDetails.remove();
             a.miniDetails = null;
         }
-        a.playbackLayer.setClipToOutline(false);
+        UiCompat.setClipToOutline(a.playbackLayer, false);
         a.playbackLayer.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
         a.playbackControls.subtitle.setVisibility(View.VISIBLE);
         a.playbackControls.danmaku.setVisibility(View.VISIBLE);
@@ -437,6 +472,11 @@ final class PlaybackController {
                 && v.id != null
                 && a.activeLine != null
                 && a.activeEpisode != null) {
+            WatchHistory.Entry saved = lookupSavedBookmark(a, s, v, a.activeLine, a.activeEpisode);
+            int initialResume =
+                    a.resumeAt > 0
+                            ? a.resumeAt
+                            : (a.resumeAt < 0 ? 0 : (saved != null ? saved.resume() : 0));
             a.playingBookmark = new WatchHistory.Entry();
             a.playingBookmark.site = s.key;
             a.playingBookmark.id = v.id;
@@ -445,6 +485,8 @@ final class PlaybackController {
             a.playingBookmark.line = a.activeLine.name;
             a.playingBookmark.episode = a.activeEpisode.name;
             a.playingBookmark.index = a.activeLine.episodes.indexOf(a.activeEpisode);
+            a.playingBookmark.position = Math.max(0, initialResume);
+            a.playingBookmark.duration = saved != null ? Math.max(0, saved.duration) : 0;
         }
         a.generation++;
         final int ticket = a.generation;
@@ -501,12 +543,7 @@ final class PlaybackController {
                                                                         ep.media.optInt(
                                                                                 "_fallbackMode", 2))
                                                                 : new MoviePlayer(a);
-                                        candidate.setAudioAttributes(
-                                                new AudioAttributes.Builder()
-                                                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                                                        .setContentType(
-                                                                AudioAttributes.CONTENT_TYPE_MOVIE)
-                                                        .build());
+                                        candidate.configureDefaultAudio();
                                         candidate.setDataSource(
                                                 a,
                                                 Uri.parse(
@@ -528,21 +565,12 @@ final class PlaybackController {
                                                     }
                                                     a.player = ready;
                                                     ready.setSurface(renderSurface);
-                                                    ready.setCuesListener(
-                                                            group -> {
+                                                    ready.bindSubtitles(
+                                                            controls.subtitle,
+                                                            text -> {
                                                                 if (ticket == a.generation) {
-                                                                    controls.subtitle.setCues(
-                                                                            group.cues);
                                                                     controls.lastSubtitle =
-                                                                            group.cues.isEmpty()
-                                                                                    ? ""
-                                                                                    : String
-                                                                                            .valueOf(
-                                                                                                    group
-                                                                                                            .cues
-                                                                                                            .get(
-                                                                                                                    0)
-                                                                                                            .text);
+                                                                            String.valueOf(text);
                                                                 }
                                                             });
                                                     ready.setOnPreparedListener(
@@ -552,11 +580,11 @@ final class PlaybackController {
                                                                 if (a.playerChrome != null)
                                                                     a.playerChrome.setLoading(
                                                                             false);
-                                                                controls.prepared();
-                                                                savePlaybackHistoryOnPrepared(a);
                                                                 a.playing = a.foreground;
                                                                 if (a.foreground) mp.start();
                                                                 else mp.pause();
+                                                                controls.prepared();
+                                                                savePlaybackHistoryOnPrepared(a);
                                                                 a.playStatus.setText(
                                                                         a.foreground
                                                                                 ? ("live"
@@ -711,17 +739,15 @@ final class PlaybackController {
                         .setDuration(a.reduced ? 0 : 180)
                         .start();
             } else {
-                a.playerOverlay
-                        .animate()
-                        .alpha(0)
-                        .translationY(0)
-                        .setDuration(a.reduced ? 0 : 150)
-                        .withEndAction(
-                                () -> {
-                                    if (!a.controlsVisible && a.playerOverlay != null)
-                                        a.playerOverlay.setVisibility(View.GONE);
-                                })
-                        .start();
+                long hideDur = a.reduced ? 0 : 150;
+                UiCompat.startWithEndAction(
+                        a.playerOverlay.animate().alpha(0).translationY(0).setDuration(hideDur),
+                        a.playerOverlay,
+                        hideDur,
+                        () -> {
+                            if (!a.controlsVisible && a.playerOverlay != null)
+                                a.playerOverlay.setVisibility(View.GONE);
+                        });
                 a.root.requestFocus();
             }
         }
@@ -748,9 +774,14 @@ final class PlaybackController {
         savePlaybackHistory(a, false);
         try {
             if (a.seekGesture.active) previewSeek(a);
-            else {
+            else if (a.playbackControls == null || !a.playbackControls.isUserSeeking()) {
+                int rawPos = a.player.getCurrentPosition();
+                int displayPos =
+                        a.playbackControls != null
+                                ? a.playbackControls.displayPosition(rawPos)
+                                : rawPos;
                 a.playClock.setText(
-                        formatTime(a.player.getCurrentPosition())
+                        formatTime(displayPos)
                                 + " / "
                                 + (a.player.getDuration() > 0
                                         ? formatTime(a.player.getDuration())
@@ -830,8 +861,23 @@ final class PlaybackController {
     static void savePlaybackHistoryOnPrepared(MainActivity a) {
         if (a.player == null || !a.prepared || a.playingBookmark == null) return;
         try {
-            a.playingBookmark.position = Math.max(0, a.player.getCurrentPosition());
-            a.playingBookmark.duration = Math.max(0, a.player.getDuration());
+            int rawPos = a.player.getCurrentPosition();
+            int displayPos =
+                    a.playbackControls != null
+                            ? a.playbackControls.displayPosition(rawPos)
+                            : rawPos;
+            if (a.playbackControls != null
+                    && a.playbackControls.pendingResumeMs > 0
+                    && displayPos < 2000) {
+                displayPos = a.playbackControls.pendingResumeMs;
+            }
+            if (displayPos >= 1000 || a.playingBookmark.position <= 0) {
+                a.playingBookmark.position = Math.max(0, displayPos);
+            }
+            int dur = a.player.getDuration();
+            if (dur > 0) {
+                a.playingBookmark.duration = dur;
+            }
             a.playingBookmark.updated = System.currentTimeMillis();
             a.prefs
                     .edit()
@@ -852,10 +898,25 @@ final class PlaybackController {
         long now = System.currentTimeMillis();
         if (!force && now - a.lastBookmarkSave < 5000) return;
         try {
-            int position = a.player.getCurrentPosition();
+            int rawPos = a.player.getCurrentPosition();
+            int position =
+                    a.playbackControls != null
+                            ? a.playbackControls.displayPosition(rawPos)
+                            : rawPos;
+            if (a.playbackControls != null
+                    && a.playbackControls.pendingResumeMs > 0
+                    && position < 2000) {
+                position = a.playbackControls.pendingResumeMs;
+            }
             if (position < 1000 && a.playingBookmark.position == 0) return;
-            a.playingBookmark.position = position;
-            a.playingBookmark.duration = a.player.getDuration();
+            if (position < 1000 && a.playingBookmark.position >= 3000) {
+                position = a.playingBookmark.position;
+            }
+            a.playingBookmark.position = Math.max(0, position);
+            int dur = a.player.getDuration();
+            if (dur > 0) {
+                a.playingBookmark.duration = dur;
+            }
             a.playingBookmark.updated = now;
             a.prefs
                     .edit()

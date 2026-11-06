@@ -1,10 +1,13 @@
 package com.pilipala.marcomovie;
 
 import java.util.*;
-import java.util.function.LongSupplier;
 
 /** Memory-only detail responses; no player() resolution results. Parse a fresh model on each use. */
 final class DetailCache {
+    interface Clock {
+        long getAsLong();
+    }
+
     static final long TTL_MS = 5 * 60 * 1000;
     static final int MAX_ENTRIES = 24, MAX_CHARS = 1024 * 1024;
 
@@ -21,14 +24,14 @@ final class DetailCache {
     }
 
     final LinkedHashMap<String, Entry> entries = new LinkedHashMap<>(32, .75f, true);
-    final LongSupplier clock;
+    final Clock clock;
     int chars;
 
     DetailCache() {
         this(() -> System.nanoTime() / 1000000);
     }
 
-    DetailCache(LongSupplier time) {
+    DetailCache(Clock time) {
         clock = time;
     }
 

@@ -166,7 +166,9 @@ final class DetailScreen {
                                                 : "加入收藏");
                             });
                     a.addButton(info, favorite);
-                    v.lines.removeIf(line -> line.episodes.isEmpty());
+                    for (java.util.Iterator<Cms.Line> it = v.lines.iterator(); it.hasNext(); ) {
+                        if (it.next().episodes.isEmpty()) it.remove();
+                    }
                     if (v.lines.isEmpty()) {
                         info.addView(a.text("这部影片没有返回可识别的播放线路。", 15, MainActivity.MUTED));
                         favorite.requestFocus();

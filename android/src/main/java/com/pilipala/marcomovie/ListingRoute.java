@@ -17,10 +17,19 @@ final class ListingRoute {
      */
     static boolean isPluginBackgroundCrash(Thread thread, Throwable error, Thread mainThread) {
         if (thread == null || error == null || thread == mainThread) return false;
+        return hasPluginFrame(error);
+    }
+
+    static boolean hasPluginFrame(Throwable error) {
+        if (error == null) return false;
         int depth = 0;
         for (Throwable t = error; t != null && depth < 16; t = t.getCause(), depth++) {
-            for (StackTraceElement e : t.getStackTrace())
-                if (e.getClassName().startsWith("com.github.catvod.")) return true;
+            for (StackTraceElement e : t.getStackTrace()) {
+                String cls = e.getClassName();
+                if (cls.startsWith("com.github.catvod.")
+                        || cls.startsWith("com.github.tvbox.")
+                        || cls.startsWith("com.fongmi.")) return true;
+            }
             if (t.getCause() == t) break;
         }
         return false;

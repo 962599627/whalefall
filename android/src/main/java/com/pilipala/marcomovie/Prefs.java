@@ -47,6 +47,7 @@ final class Prefs {
     // Runtime state & user data keys (excluded from settings-only reset/restore).
     static final String ORIGIN = "origin";
     static final String SELECTED_SITE = "selected_site";
+    static final String LOADING_SITE = "loading_site";
     static final String EXPERIMENTAL_CSP = "experimental_csp";
     static final String FAVORITES = "favorites";
     static final String WATCH_HISTORY = "watch_history";

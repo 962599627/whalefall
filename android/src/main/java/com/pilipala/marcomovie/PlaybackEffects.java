@@ -5,7 +5,7 @@ import android.media.audiofx.*;
 import android.view.View;
 
 /** Effects apply only to this player's audio session and rendering view. */
-final class PlaybackEffects implements AutoCloseable {
+final class PlaybackEffects implements java.io.Closeable {
     Equalizer equalizer;
     BassBoost bass;
 
@@ -45,7 +45,7 @@ final class PlaybackEffects implements AutoCloseable {
             return;
         }
         if (preset == 0) {
-            view.setLayerPaint(null);
+            UiCompat.setLayerPaint(view, null);
             return;
         }
         ColorMatrix color = new ColorMatrix();
@@ -79,7 +79,7 @@ final class PlaybackEffects implements AutoCloseable {
         color.postConcat(exposure);
         Paint paint = new Paint();
         paint.setColorFilter(new ColorMatrixColorFilter(color));
-        view.setLayerPaint(paint);
+        UiCompat.setLayerPaint(view, paint);
     }
 
     @Override

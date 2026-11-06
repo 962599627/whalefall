@@ -61,7 +61,14 @@ final class Favorites {
 
     static String toggle(String raw, String site, Cms.Video video) {
         List<Entry> list = read(raw);
-        boolean removed = list.removeIf(e -> e.site.equals(site) && e.id.equals(video.id));
+        boolean removed = false;
+        for (Iterator<Entry> it = list.iterator(); it.hasNext(); ) {
+            Entry cur = it.next();
+            if (cur.site.equals(site) && cur.id.equals(video.id)) {
+                it.remove();
+                removed = true;
+            }
+        }
         if (!removed) {
             Entry e = new Entry();
             e.site = site;
