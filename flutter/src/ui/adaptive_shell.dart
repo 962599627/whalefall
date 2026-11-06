@@ -6906,7 +6906,7 @@ class _SwipeToDeleteHistoryTileState extends State<_SwipeToDeleteHistoryTile> {
                   iconBgColor: AppleColors.systemBlue,
                   title: h.title,
                   subtitle:
-                      '${h.episode.isEmpty ? "第 ${h.index + 1} 集" : h.episode} · 已看 ${(h.progress * 100).round()}%',
+                      '${h.episode.isEmpty ? "第 ${h.index + 1} 集" : h.episode} · 已看 ${(h.progressFraction * 100).round()}%',
                   trailingText: '继续播放',
                   onTap: () {
                     if (_dragOffset <= -10) {

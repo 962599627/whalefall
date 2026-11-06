@@ -103,7 +103,7 @@ class _DetailScreenState extends State<DetailScreen> {
 
   bool get _isVarietyShow {
     final metaText =
-        '${_video.typeName} ${_video.tag} ${_video.remarks}'.toLowerCase();
+        '${_video.tag} ${_video.remarks} ${_video.title}'.toLowerCase();
     if (metaText.contains('综艺') ||
         metaText.contains('真人秀') ||
         metaText.contains('脱口秀') ||
