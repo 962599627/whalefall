@@ -245,7 +245,8 @@ class _DetailScreenState extends State<DetailScreen> {
                   _relatedSeasons.length < info.seasonNumber))) {
         final isPriv = _activeSite.isEffectivelyPrivate;
         final allSites =
-            widget.storage.config?.supportedSites ?? const <CmsSite>[];
+            widget.storage.loadSavedConfig()?.supportedSites ??
+                const <CmsSite>[];
         final siblingSites = allSites
             .where(
               (s) =>
@@ -687,7 +688,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     minSize: 24,
                     onPressed: () {
                       Navigator.of(ctx).pop();
-                      _discoveredFranchiseKey = null;
+                      _discoveredFranchiseKey = '';
                       unawaited(_discoverRelatedSeasons(_video.title));
                       _toast('正在重新检索同系列季数…');
                     },
