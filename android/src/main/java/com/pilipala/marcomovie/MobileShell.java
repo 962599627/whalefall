@@ -1097,7 +1097,7 @@ final class MobileShell {
     }
 
     // =========================================================================
-    // TAB 2: MOBILE LIVE TV (Two-Column Group & Channel Selector)
+    // TAB 2: MOBILE LIVE TV (Two-Tier Group Pills + Multi-Column Card Grid)
     // =========================================================================
     private void renderLiveTab() {
         LinearLayout page = a.vertical();
@@ -1119,40 +1119,83 @@ final class MobileShell {
             return;
         }
 
-        // Top Horizontal Source Selector
+        // Row 1: Top Header with Live Source Selector Pills + Quick Channel Filter
+        LinearLayout topHeader = a.vertical();
+        topHeader.setBackgroundColor(0xff15161e);
+        topHeader.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(8));
+        page.addView(topHeader, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout titleSearchRow = a.row();
+        titleSearchRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView titleView = a.text("电视直播", 19, Color.WHITE);
+        titleView.setTypeface(null, Typeface.BOLD);
+        titleSearchRow.addView(titleView, new LinearLayout.LayoutParams(0, -2, 1));
+
+        final EditText searchInput = new EditText(a);
+        searchInput.setHint("搜索频道…");
+        searchInput.setHintTextColor(0xff6b7280);
+        searchInput.setTextColor(Color.WHITE);
+        searchInput.setTextSize(12.5f);
+        searchInput.setSingleLine(true);
+        searchInput.setPadding(a.dp(12), a.dp(5), a.dp(12), a.dp(5));
+        searchInput.setBackground(a.bg(0xff232533, 999));
+        titleSearchRow.addView(searchInput, new LinearLayout.LayoutParams(a.dp(168), -2));
+        topHeader.addView(titleSearchRow, new LinearLayout.LayoutParams(-1, -2));
+
         HorizontalScrollView srcScroll = new HorizontalScrollView(a);
         srcScroll.setHorizontalScrollBarEnabled(false);
-        srcScroll.setBackgroundColor(0xff15161e);
-        srcScroll.setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8));
+        srcScroll.setPadding(0, a.dp(8), 0, a.dp(2));
         final LinearLayout srcRow = a.row();
         srcScroll.addView(srcRow);
-        page.addView(srcScroll, new LinearLayout.LayoutParams(-1, -2));
+        topHeader.addView(srcScroll, new LinearLayout.LayoutParams(-1, -2));
+
+        // Row 2: Horizontal Channel Group Selector Pills
+        HorizontalScrollView groupScroll = new HorizontalScrollView(a);
+        groupScroll.setHorizontalScrollBarEnabled(false);
+        groupScroll.setPadding(0, a.dp(6), 0, a.dp(2));
+        final LinearLayout groupRow = a.row();
+        groupScroll.addView(groupRow);
+        topHeader.addView(groupScroll, new LinearLayout.LayoutParams(-1, -2));
 
         final TextView stateView = a.text("正在加载直播频道…", 13, MainActivity.MUTED);
         stateView.setPadding(a.dp(16), a.dp(16), a.dp(16), a.dp(16));
         page.addView(stateView);
 
-        final LinearLayout splitRow = a.row();
-        splitRow.setGravity(Gravity.TOP);
-        page.addView(splitRow, new LinearLayout.LayoutParams(-1, 0, 1));
-
-        ScrollView groupScroll = new ScrollView(a);
-        groupScroll.setVerticalScrollBarEnabled(false);
-        groupScroll.setBackgroundColor(0xff14151d);
-        final LinearLayout groupCol = a.vertical();
-        groupCol.setPadding(a.dp(6), a.dp(8), a.dp(6), a.dp(20));
-        groupScroll.addView(groupCol);
-        splitRow.addView(groupScroll, new LinearLayout.LayoutParams(a.dp(116), -1));
-
+        // Main Multi-Column Channel Card Grid Area
         ScrollView channelScroll = new ScrollView(a);
         channelScroll.setVerticalScrollBarEnabled(false);
-        final LinearLayout channelCol = a.vertical();
-        channelCol.setPadding(a.dp(10), a.dp(8), a.dp(12), a.dp(24));
-        channelScroll.addView(channelCol);
-        splitRow.addView(channelScroll, new LinearLayout.LayoutParams(0, -1, 1));
+        final LinearLayout channelGridCol = a.vertical();
+        channelGridCol.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(28));
+        channelScroll.addView(channelGridCol);
+        page.addView(channelScroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         final int[] activeSrcIdx = {0};
+        final int[] activeGroupIdx = {0};
+        final LiveCatalog.Catalog[] activeCatalog = {null};
         final Runnable[] loadSource = new Runnable[1];
+
+        searchInput.addTextChangedListener(
+                new android.text.TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(
+                            CharSequence s, int start, int count, int after) {}
+
+                    @Override
+                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+                    @Override
+                    public void afterTextChanged(android.text.Editable s) {
+                        if (activeCatalog[0] != null) {
+                            renderLiveGroupsAndChannels(
+                                    sources.get(activeSrcIdx[0]),
+                                    activeCatalog[0],
+                                    activeGroupIdx,
+                                    s.toString().trim(),
+                                    groupRow,
+                                    channelGridCol);
+                        }
+                    }
+                });
 
         loadSource[0] =
                 () -> {
@@ -1161,13 +1204,15 @@ final class MobileShell {
                         final int idx = i;
                         boolean active = i == activeSrcIdx[0];
                         TextView chip =
-                                a.text(sources.get(i).name, 13, active ? Color.WHITE : 0xff9ca3af);
-                        chip.setPadding(a.dp(14), a.dp(6), a.dp(14), a.dp(6));
-                        chip.setBackground(a.bg(active ? 0xff3b82f6 : 0xff222430, 16));
+                                a.text(sources.get(i).name, 12, active ? Color.WHITE : 0xff9ca3af);
+                        chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
+                        chip.setPadding(a.dp(13), a.dp(5), a.dp(13), a.dp(5));
+                        chip.setBackground(a.bg(active ? 0xff3b82f6 : 0xff222430, 999));
                         MobileDetailScreen.bindTouchFeedback(chip);
                         chip.setOnClickListener(
                                 v -> {
                                     activeSrcIdx[0] = idx;
+                                    activeGroupIdx[0] = 0;
                                     loadSource[0].run();
                                 });
                         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
@@ -1175,8 +1220,8 @@ final class MobileShell {
                         srcRow.addView(chip, lp);
                     }
 
-                    groupCol.removeAllViews();
-                    channelCol.removeAllViews();
+                    groupRow.removeAllViews();
+                    channelGridCol.removeAllViews();
                     stateView.setVisibility(View.VISIBLE);
                     stateView.setText("正在加载频道列表…");
                     final LiveCatalog.Source selectedSource = sources.get(activeSrcIdx[0]);
@@ -1196,15 +1241,17 @@ final class MobileShell {
                                             () -> {
                                                 if (ticket != a.generation || a.isFinishing())
                                                     return;
+                                                activeCatalog[0] = catalog;
                                                 a.liveSession =
                                                         new LiveSession(selectedSource, catalog);
                                                 stateView.setVisibility(View.GONE);
                                                 renderLiveGroupsAndChannels(
                                                         selectedSource,
                                                         catalog,
-                                                        0,
-                                                        groupCol,
-                                                        channelCol);
+                                                        activeGroupIdx,
+                                                        searchInput.getText().toString().trim(),
+                                                        groupRow,
+                                                        channelGridCol);
                                             });
                                 } catch (Exception e) {
                                     a.ui.post(
@@ -1224,62 +1271,228 @@ final class MobileShell {
     private void renderLiveGroupsAndChannels(
             final LiveCatalog.Source source,
             final LiveCatalog.Catalog catalog,
-            final int selectedGroupIdx,
-            final LinearLayout groupCol,
-            final LinearLayout channelCol) {
-        groupCol.removeAllViews();
-        channelCol.removeAllViews();
+            final int[] selectedGroupHolder,
+            final String searchQuery,
+            final LinearLayout groupRow,
+            final LinearLayout channelGridCol) {
+        groupRow.removeAllViews();
+        channelGridCol.removeAllViews();
         if (catalog.groups.isEmpty()) return;
+
+        final int selectedGroupIdx = selectedGroupHolder[0];
+        final String qLower = searchQuery == null ? "" : searchQuery.toLowerCase();
+
+        // Pill 0: All Channels
+        boolean allActive = qLower.isEmpty() && selectedGroupIdx == -1;
+        TextView allBtn =
+                a.text(
+                        "全部 (" + catalog.channelCount() + ")",
+                        12,
+                        allActive ? 0xff111216 : 0xffd1d5db);
+        allBtn.setTypeface(null, allActive ? Typeface.BOLD : Typeface.NORMAL);
+        allBtn.setPadding(a.dp(12), a.dp(5), a.dp(12), a.dp(5));
+        allBtn.setBackground(a.bg(allActive ? Color.WHITE : 0xff232533, 999));
+        MobileDetailScreen.bindTouchFeedback(allBtn);
+        allBtn.setOnClickListener(
+                v -> {
+                    selectedGroupHolder[0] = -1;
+                    renderLiveGroupsAndChannels(
+                            source, catalog, selectedGroupHolder, "", groupRow, channelGridCol);
+                });
+        LinearLayout.LayoutParams allLp = new LinearLayout.LayoutParams(-2, -2);
+        allLp.rightMargin = a.dp(7);
+        groupRow.addView(allBtn, allLp);
 
         for (int i = 0; i < catalog.groups.size(); i++) {
             final int gIdx = i;
-            boolean active = i == selectedGroupIdx;
+            boolean active = qLower.isEmpty() && i == selectedGroupIdx;
             LiveCatalog.Group g = catalog.groups.get(i);
             TextView gBtn =
                     a.text(
                             g.name + " (" + g.channels.size() + ")",
-                            13,
-                            active ? Color.WHITE : 0xff9ca3af);
+                            12,
+                            active ? 0xff111216 : 0xffd1d5db);
             gBtn.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
             gBtn.setSingleLine(true);
-            gBtn.setEllipsize(TextUtils.TruncateAt.END);
-            gBtn.setPadding(a.dp(10), a.dp(11), a.dp(10), a.dp(11));
-            gBtn.setBackground(a.bg(active ? 0xff28354a : Color.TRANSPARENT, 10));
+            gBtn.setPadding(a.dp(12), a.dp(5), a.dp(12), a.dp(5));
+            gBtn.setBackground(a.bg(active ? Color.WHITE : 0xff232533, 999));
             MobileDetailScreen.bindTouchFeedback(gBtn);
             gBtn.setOnClickListener(
-                    v -> renderLiveGroupsAndChannels(source, catalog, gIdx, groupCol, channelCol));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.bottomMargin = a.dp(4);
-            groupCol.addView(gBtn, lp);
-        }
-
-        LiveCatalog.Group activeGroup = catalog.groups.get(selectedGroupIdx);
-        for (int i = 0; i < activeGroup.channels.size(); i++) {
-            final LiveCatalog.Channel ch = activeGroup.channels.get(i);
-            LinearLayout row = a.row();
-            row.setPadding(a.dp(12), a.dp(12), a.dp(12), a.dp(12));
-            row.setBackground(a.bg(0xff181922, 12));
-            MobileDetailScreen.bindTouchFeedback(row);
-
-            TextView name = a.text(ch.name, 14, MainActivity.WHITE);
-            name.setTypeface(null, Typeface.BOLD);
-            name.setSingleLine(true);
-            name.setEllipsize(TextUtils.TruncateAt.END);
-            row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
-
-            TextView lineCount = a.text(ch.streams.size() + " 条线路 ›", 12, 0xff8ab4f8);
-            row.addView(lineCount);
-
-            row.setOnClickListener(
                     v -> {
-                        if (ch.streams.isEmpty()) return;
-                        a.playLive(source, ch, ch.streams.get(0));
+                        selectedGroupHolder[0] = gIdx;
+                        renderLiveGroupsAndChannels(
+                                source, catalog, selectedGroupHolder, "", groupRow, channelGridCol);
                     });
-
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.bottomMargin = a.dp(8);
-            channelCol.addView(row, lp);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.rightMargin = a.dp(7);
+            groupRow.addView(gBtn, lp);
         }
+
+        // Collect channels to display
+        List<LiveCatalog.Channel> displayList = new ArrayList<>();
+        List<String> displayGroups = new ArrayList<>();
+        if (!qLower.isEmpty()) {
+            for (LiveCatalog.Group g : catalog.groups) {
+                for (LiveCatalog.Channel ch : g.channels) {
+                    if (ch.name.toLowerCase().contains(qLower)
+                            || g.name.toLowerCase().contains(qLower)) {
+                        displayList.add(ch);
+                        displayGroups.add(g.name);
+                    }
+                }
+            }
+        } else if (selectedGroupIdx == -1) {
+            for (LiveCatalog.Group g : catalog.groups) {
+                for (LiveCatalog.Channel ch : g.channels) {
+                    displayList.add(ch);
+                    displayGroups.add(g.name);
+                }
+            }
+        } else {
+            int safeIdx = Math.max(0, Math.min(selectedGroupIdx, catalog.groups.size() - 1));
+            LiveCatalog.Group g = catalog.groups.get(safeIdx);
+            for (LiveCatalog.Channel ch : g.channels) {
+                displayList.add(ch);
+                displayGroups.add(g.name);
+            }
+        }
+
+        if (displayList.isEmpty()) {
+            TextView empty = a.text("未找到匹配的直播频道", 13, MainActivity.MUTED);
+            empty.setPadding(a.dp(8), a.dp(24), a.dp(8), a.dp(24));
+            channelGridCol.addView(empty);
+            return;
+        }
+
+        // Responsive column count: 2 on phone portrait (<580dp), 3 on medium (580..880dp), 4 on
+        // wide tablet (>=880dp)
+        int swDp = a.getResources().getConfiguration().screenWidthDp;
+        final int cols = swDp >= 880 ? 4 : (swDp >= 580 ? 3 : 2);
+        LinearLayout currentRow = null;
+
+        for (int i = 0; i < displayList.size(); i++) {
+            if (i % cols == 0) {
+                currentRow = a.row();
+                currentRow.setBaselineAligned(false);
+                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+                rowLp.bottomMargin = a.dp(10);
+                channelGridCol.addView(currentRow, rowLp);
+            }
+            final LiveCatalog.Channel ch = displayList.get(i);
+            final String groupName = displayGroups.get(i);
+            LinearLayout card = buildMobileLiveChannelCard(source, ch, groupName);
+            LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(0, -2, 1f);
+            if (i % cols != cols - 1) {
+                cardLp.rightMargin = a.dp(10);
+            }
+            currentRow.addView(card, cardLp);
+        }
+        int remainder = displayList.size() % cols;
+        if (remainder != 0 && currentRow != null) {
+            for (int pad = remainder; pad < cols; pad++) {
+                View spacer = new View(a);
+                LinearLayout.LayoutParams spLp = new LinearLayout.LayoutParams(0, 1, 1f);
+                if (pad != cols - 1) {
+                    spLp.rightMargin = a.dp(10);
+                }
+                currentRow.addView(spacer, spLp);
+            }
+        }
+    }
+
+    private LinearLayout buildMobileLiveChannelCard(
+            final LiveCatalog.Source source, final LiveCatalog.Channel ch, final String groupName) {
+        LinearLayout card = a.row();
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(a.dp(10), a.dp(10), a.dp(10), a.dp(10));
+        card.setBackground(a.strokeBg(0xff1b1d28, 0xff2e3244, 14, 1));
+        MobileDetailScreen.bindTouchFeedback(card);
+
+        // Left: Smart Callsign Badge
+        TextView badge = buildSmartChannelBadgeView(a, ch.name);
+        LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(a.dp(40), a.dp(40));
+        badgeLp.rightMargin = a.dp(9);
+        card.addView(badge, badgeLp);
+
+        // Middle: Two-Line Info
+        LinearLayout infoCol = a.vertical();
+        TextView name = a.text(ch.name, 13, MainActivity.WHITE);
+        name.setTypeface(null, Typeface.BOLD);
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        infoCol.addView(name);
+
+        LinearLayout subRow = a.row();
+        subRow.setGravity(Gravity.CENTER_VERTICAL);
+        subRow.setPadding(0, a.dp(3), 0, 0);
+        TextView sub =
+                a.text(
+                        groupName
+                                + " · "
+                                + (ch.streams.size() > 1 ? ch.streams.size() + "源" : "直连"),
+                        11,
+                        0xff9ca3af);
+        sub.setSingleLine(true);
+        sub.setEllipsize(TextUtils.TruncateAt.END);
+        subRow.addView(sub, new LinearLayout.LayoutParams(0, -2, 1f));
+        infoCol.addView(subRow);
+
+        card.addView(infoCol, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        card.setOnClickListener(
+                v -> {
+                    if (ch.streams.isEmpty()) return;
+                    a.playLive(source, ch, ch.streams.get(0));
+                });
+        if (ch.streams.size() > 1) {
+            card.setOnLongClickListener(
+                    v -> {
+                        String[] names = new String[ch.streams.size()];
+                        for (int n = 0; n < names.length; n++) names[n] = "线路 " + (n + 1);
+                        new AppDialog.Builder(a)
+                                .setTitle(ch.name + " · 选择线路")
+                                .setItems(
+                                        names,
+                                        (dialog, n) -> a.playLive(source, ch, ch.streams.get(n)))
+                                .show();
+                        return true;
+                    });
+        }
+        return card;
+    }
+
+    static TextView buildSmartChannelBadgeView(MainActivity a, String rawName) {
+        String name = rawName == null ? "TV" : rawName.trim();
+        String upper = name.toUpperCase();
+        int bgColor = 0xff2563eb;
+        String label;
+        if (upper.startsWith("CCTV")) {
+            bgColor = 0xffe11d48;
+            String num = upper.replaceFirst("^CCTV[-\\s]*", "").replaceAll("[^0-9A-Z+]", "");
+            if (num.length() > 3) num = num.substring(0, 3);
+            label = num.isEmpty() ? "CCTV" : "CC\n" + num;
+        } else if (name.contains("卫视")) {
+            bgColor = 0xffd97706;
+            String prefix = name.replaceAll("卫视.*$", "").trim();
+            label = prefix.length() >= 2 ? prefix.substring(0, 2) : "卫视";
+        } else if (name.contains("翡翠")
+                || name.contains("明珠")
+                || name.contains("凤凰")
+                || upper.contains("TVB")) {
+            bgColor = 0xff059669;
+            label = name.contains("凤凰") ? "凤凰" : "TVB";
+        } else if (upper.contains("4K") || upper.contains("8K")) {
+            bgColor = 0xff7c3aed;
+            label = upper.contains("8K") ? "8K" : "4K";
+        } else {
+            String clean = name.replaceAll("[\\[\\(（【].*?[\\]\\)）】]", "").trim();
+            label = clean.length() >= 2 ? clean.substring(0, 2) : (clean.isEmpty() ? "TV" : clean);
+        }
+        TextView tv = a.text(label, 11, Color.WHITE);
+        tv.setTypeface(null, Typeface.BOLD);
+        tv.setGravity(Gravity.CENTER);
+        tv.setBackground(a.bg(bgColor, 10));
+        return tv;
     }
 
     // =========================================================================

@@ -1896,7 +1896,13 @@ class CmsParser {
   static List<LiveGroup> parseLivePlaylist(String content) {
     final lines = const LineSplitter().convert(content);
     final groups = <String, Map<String, List<String>>>{};
-    void addStream(String groupName, String channelName, String url) {
+    final logos = <String, String>{};
+    void addStream(
+      String groupName,
+      String channelName,
+      String url, {
+      String logo = '',
+    }) {
       final g = groupName.trim().isEmpty ? '默认频道' : groupName.trim();
       final c = channelName.trim().isEmpty ? '未命名频道' : channelName.trim();
       final u = url.trim();
@@ -1911,24 +1917,36 @@ class CmsParser {
       if (!urlList.contains(u)) {
         urlList.add(u);
       }
+      if (logo.startsWith('http') && !logos.containsKey('$g|$c')) {
+        logos['$g|$c'] = logo;
+      }
     }
     String currentGroup = '精选频道';
     String pendingM3uTitle = '';
     String pendingM3uGroup = '';
+    String pendingM3uLogo = '';
     for (final rawLine in lines) {
       final line = rawLine.trim();
       if (line.isEmpty) continue;
       if (line.startsWith('#EXTINF')) {
         final groupMatch = RegExp(r'group-title="([^"]*)"').firstMatch(line);
         pendingM3uGroup = groupMatch?.group(1)?.trim() ?? '直播频道';
+        final logoMatch = RegExp(r'tvg-logo="([^"]*)"').firstMatch(line);
+        pendingM3uLogo = logoMatch?.group(1)?.trim() ?? '';
         final comma = line.lastIndexOf(',');
         pendingM3uTitle = comma >= 0 ? line.substring(comma + 1).trim() : '频道';
         continue;
       }
       if (line.startsWith('#')) continue;
       if (pendingM3uTitle.isNotEmpty) {
-        addStream(pendingM3uGroup, pendingM3uTitle, line);
+        addStream(
+          pendingM3uGroup,
+          pendingM3uTitle,
+          line,
+          logo: pendingM3uLogo,
+        );
         pendingM3uTitle = '';
+        pendingM3uLogo = '';
         continue;
       }
       if (line.toLowerCase().endsWith(',#genre#')) {
@@ -1955,6 +1973,7 @@ class CmsParser {
                     name: c.key,
                     group: g.key,
                     urls: c.value,
+                    logo: logos['${g.key}|${c.key}'] ?? '',
                   ),
                 )
                 .toList(growable: false),

@@ -379,10 +379,12 @@ class LiveChannel {
   final String name;
   final String group;
   final List<String> urls;
+  final String logo;
   const LiveChannel({
     required this.name,
     required this.group,
     required this.urls,
+    this.logo = '',
   });
 }
 class LiveGroup {

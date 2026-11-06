@@ -69,6 +69,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   VoidCallback? _searchSheetListener;
   // Live state
   int _selectedLiveSource = 0;
+  int _selectedLiveGroup = 0;
+  final TextEditingController _liveSearchController = TextEditingController();
+  String _liveSearchQuery = '';
   List<LiveGroup> _liveGroups = const [];
   bool _liveLoading = false;
   String? _liveError;
@@ -106,6 +109,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   void dispose() {
     _searchSubscription?.cancel();
     _searchController.dispose();
+    _liveSearchController.dispose();
     super.dispose();
   }
   void _reloadSavedConfig() {
@@ -409,6 +413,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final epoch = ++_liveEpoch;
     setState(() {
       _selectedLiveSource = sourceIndex;
+      _selectedLiveGroup = 0;
       _liveLoading = true;
       _liveError = null;
     });
@@ -3302,30 +3307,118 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         ),
       );
     }
+
+    final totalChannelCount = _liveGroups.fold<int>(
+      0,
+      (sum, g) => sum + g.channels.length,
+    );
+    final safeGroupIdx = _liveGroups.isEmpty
+        ? -1
+        : (_selectedLiveGroup >= _liveGroups.length ? 0 : _selectedLiveGroup);
+    final queryLower = _liveSearchQuery.trim().toLowerCase();
+
+    final visibleChannels = <LiveChannel>[];
+    if (queryLower.isNotEmpty) {
+      for (final g in _liveGroups) {
+        for (final ch in g.channels) {
+          if (ch.name.toLowerCase().contains(queryLower) ||
+              ch.group.toLowerCase().contains(queryLower)) {
+            visibleChannels.add(ch);
+          }
+        }
+      }
+    } else if (safeGroupIdx == -1) {
+      for (final g in _liveGroups) {
+        visibleChannels.addAll(g.channels);
+      }
+    } else if (safeGroupIdx >= 0 && safeGroupIdx < _liveGroups.length) {
+      visibleChannels.addAll(_liveGroups[safeGroupIdx].channels);
+    }
+
     return SafeArea(
       bottom: useSidebar,
       child: Padding(
         padding: EdgeInsets.fromLTRB(
           pad,
-          useSidebar && _isMacOS ? 28 : 14,
+          useSidebar && _isMacOS ? 28 : 12,
           pad,
           0,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '电视直播',
-              style: TextStyle(
-                color: AppleColors.labelPrimary,
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.6,
-              ),
+            // Header Row: Title + Channel Count + Quick Channel Filter Search Box
+            Row(
+              children: [
+                const Text(
+                  '电视直播',
+                  style: TextStyle(
+                    color: AppleColors.labelPrimary,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.6,
+                  ),
+                ),
+                if (totalChannelCount > 0) ...[
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0x1FFFFFFF),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: const Color(0x28FFFFFF),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Text(
+                      '$totalChannelCount 频道',
+                      style: const TextStyle(
+                        color: AppleColors.labelSecondary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: useSidebar ? 260 : 185,
+                  ),
+                  child: SizedBox(
+                    height: 34,
+                    child: CupertinoSearchTextField(
+                      controller: _liveSearchController,
+                      placeholder: '搜索频道…',
+                      style: const TextStyle(
+                        color: AppleColors.labelPrimary,
+                        fontSize: 13,
+                      ),
+                      placeholderStyle: const TextStyle(
+                        color: AppleColors.labelTertiary,
+                        fontSize: 12.5,
+                      ),
+                      backgroundColor: const Color(0x24FFFFFF),
+                      borderRadius: BorderRadius.circular(999),
+                      onChanged: (v) => setState(() => _liveSearchQuery = v),
+                      onSuffixTap: () {
+                        _liveSearchController.clear();
+                        setState(() => _liveSearchQuery = '');
+                      },
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
+
+            // Row 1: Live Subscription Source Pills
             SizedBox(
-              height: 36,
+              height: 34,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: lives.length,
@@ -3337,7 +3430,54 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
               ),
             ),
-            const SizedBox(height: 14),
+
+            // Row 2: Channel Group Pills (`全部` + each group)
+            if (!_liveLoading && _liveError == null && _liveGroups.isNotEmpty) ...[
+              const SizedBox(height: 9),
+              SizedBox(
+                height: 32,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _liveGroups.length + 1,
+                  separatorBuilder: (_, __) => const SizedBox(width: 7),
+                  itemBuilder: (ctx, idx) {
+                    if (idx == 0) {
+                      final isAllSelected =
+                          queryLower.isEmpty && safeGroupIdx == -1;
+                      return _buildCategoryPill(
+                        label: '全部 ($totalChannelCount)',
+                        selected: isAllSelected,
+                        onTap: () => setState(() {
+                          _selectedLiveGroup = -1;
+                          if (_liveSearchQuery.isNotEmpty) {
+                            _liveSearchController.clear();
+                            _liveSearchQuery = '';
+                          }
+                        }),
+                      );
+                    }
+                    final gIdx = idx - 1;
+                    final g = _liveGroups[gIdx];
+                    final isSelected =
+                        queryLower.isEmpty && safeGroupIdx == gIdx;
+                    return _buildCategoryPill(
+                      label: '${g.name} (${g.channels.length})',
+                      selected: isSelected,
+                      onTap: () => setState(() {
+                        _selectedLiveGroup = gIdx;
+                        if (_liveSearchQuery.isNotEmpty) {
+                          _liveSearchController.clear();
+                          _liveSearchQuery = '';
+                        }
+                      }),
+                    );
+                  },
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+
+            // Main Multi-Column Channel Card Grid
             if (_liveLoading)
               const Expanded(
                 child: Center(child: CupertinoActivityIndicator(radius: 14)),
@@ -3351,65 +3491,65 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   ),
                 ),
               )
+            else if (visibleChannels.isEmpty)
+              const Expanded(
+                child: Center(
+                  child: Text(
+                    '未找到匹配的直播频道',
+                    style: TextStyle(
+                      color: AppleColors.labelSecondary,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              )
             else
               Expanded(
-                child: ListView.separated(
-                  padding: EdgeInsets.only(bottom: useSidebar ? 24 : 124),
-                  itemCount: _liveGroups.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 18),
-                  itemBuilder: (ctx, gIdx) {
-                    final group = _liveGroups[gIdx];
-                    return AppleGroupedSection(
-                      header: '${group.name} (${group.channels.length})',
-                      children: group.channels.map((ch) {
-                        return AppleGroupedTile(
-                          icon: CupertinoIcons.tv_fill,
-                          iconBgColor: AppleColors.systemIndigo,
-                          title: ch.name,
-                          trailingText: '${ch.urls.length} 线路',
-                          onTap: () {
-                            final safeIdx = _selectedLiveSource.clamp(
-                              0,
-                              lives.length - 1,
-                            );
-                            final liveSite = CmsSite(
-                              key: 'live',
-                              name: lives[safeIdx].name,
-                              type: 1,
-                              api: '',
-                              headers: lives[safeIdx].headers,
-                            );
-                            final liveVideo = CmsVideo(
-                              id: ch.name,
-                              title: ch.name,
-                              lines: [
-                                CmsLine(
-                                  name: group.name,
-                                  episodes: List.generate(
-                                    ch.urls.length,
-                                    (idx) => CmsEpisode(
-                                      name: '线路 ${idx + 1}',
-                                      url: ch.urls[idx],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            );
-                            Navigator.of(context).push(
-                              CupertinoPageRoute<void>(
-                                builder: (_) => PlayerScreen(
-                                  site: liveSite,
-                                  video: liveVideo,
-                                  initialLineIndex: 0,
-                                  initialEpisodeIndex: 0,
-                                  storage: widget.storage,
-                                  isLive: true,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      }).toList(),
+                child: LayoutBuilder(
+                  builder: (ctx, constraints) {
+                    final availW = constraints.maxWidth;
+                    final int cols = availW >= 1240
+                        ? 5
+                        : availW >= 920
+                            ? 4
+                            : availW >= 580
+                                ? 3
+                                : 2;
+                    final double aspect = cols == 2 ? 2.42 : 2.52;
+                    return ShaderMask(
+                      blendMode: BlendMode.dstIn,
+                      shaderCallback: (rect) => const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color(0x00FFFFFF),
+                          Color(0xD9FFFFFF),
+                          Color(0xFFFFFFFF),
+                        ],
+                        stops: [0.0, 0.025, 0.055],
+                      ).createShader(rect),
+                      child: GridView.builder(
+                        physics: const BouncingScrollPhysics(),
+                        padding: EdgeInsets.only(
+                          top: 4,
+                          bottom: useSidebar ? 28 : 124,
+                        ),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: cols,
+                          mainAxisSpacing: 10,
+                          crossAxisSpacing: 10,
+                          childAspectRatio: aspect,
+                        ),
+                        itemCount: visibleChannels.length,
+                        itemBuilder: (ctx, cIdx) {
+                          final ch = visibleChannels[cIdx];
+                          return _buildLiveChannelCard(
+                            context,
+                            channel: ch,
+                            lives: lives,
+                          );
+                        },
+                      ),
                     );
                   },
                 ),
@@ -3418,6 +3558,418 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         ),
       ),
     );
+  }
+
+  void _openLiveChannelStream(
+    List<LiveSource> lives,
+    LiveChannel ch,
+    int lineIdx,
+  ) {
+    if (lives.isEmpty || ch.urls.isEmpty) return;
+    final safeIdx = _selectedLiveSource.clamp(0, lives.length - 1);
+    final liveSite = CmsSite(
+      key: 'live',
+      name: lives[safeIdx].name,
+      type: 1,
+      api: '',
+      headers: lives[safeIdx].headers,
+    );
+    final liveVideo = CmsVideo(
+      id: ch.name,
+      title: ch.name,
+      lines: [
+        CmsLine(
+          name: ch.group,
+          episodes: List.generate(
+            ch.urls.length,
+            (idx) => CmsEpisode(
+              name: '线路 ${idx + 1}',
+              url: ch.urls[idx],
+            ),
+          ),
+        ),
+      ],
+    );
+    Navigator.of(context).push(
+      CupertinoPageRoute<void>(
+        builder: (_) => PlayerScreen(
+          site: liveSite,
+          video: liveVideo,
+          initialLineIndex: 0,
+          initialEpisodeIndex: lineIdx.clamp(0, ch.urls.length - 1),
+          storage: widget.storage,
+          isLive: true,
+        ),
+      ),
+    );
+  }
+
+  void _showLiveChannelLinesSheet(
+    List<LiveSource> lives,
+    LiveChannel ch,
+  ) {
+    showAppleModalSheet<void>(
+      context: context,
+      title: '${ch.name} · 选择直播线路',
+      maxWidth: 460,
+      builder: (ctx) => ListView.separated(
+        shrinkWrap: true,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 22),
+        itemCount: ch.urls.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (ctx, idx) {
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              Navigator.of(ctx).pop();
+              _openLiveChannelStream(lives, ch, idx);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: ShapeDecoration(
+                color: const Color(0x22FFFFFF),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(13),
+                  side: const BorderSide(
+                    color: Color(0x2EFFFFFF),
+                    width: 0.6,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: AppleColors.systemGreen,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '线路 ${idx + 1}',
+                      style: const TextStyle(
+                        color: AppleColors.labelPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    CupertinoIcons.play_fill,
+                    color: AppleColors.labelSecondary,
+                    size: 14,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLiveChannelCard(
+    BuildContext context, {
+    required LiveChannel channel,
+    required List<LiveSource> lives,
+  }) {
+    final upper = channel.name.toUpperCase();
+    final String? qualityTag = upper.contains('8K')
+        ? '8K'
+        : upper.contains('4K') || upper.contains('UHD')
+            ? '4K'
+            : upper.contains('50FPS') || upper.contains('60FPS')
+                ? '高帧'
+                : upper.contains('FHD') || upper.contains('高清')
+                    ? 'HD'
+                    : null;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openLiveChannelStream(lives, channel, 0),
+      onLongPress: channel.urls.length > 1
+          ? () => _showLiveChannelLinesSheet(lives, channel)
+          : null,
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xEB222430),
+              Color(0xEB171821),
+            ],
+          ),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(
+              color: Color(0x2BFFFFFF),
+              width: 0.65,
+            ),
+          ),
+          shadows: const [
+            BoxShadow(
+              color: Color(0x36000000),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+          child: Row(
+            children: [
+              _buildLiveChannelBadge(channel),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            channel.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                        if (qualityTag != null) ...[
+                          const SizedBox(width: 5),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1.5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: qualityTag == '4K' || qualityTag == '8K'
+                                  ? const Color(0x38F59E0B)
+                                  : const Color(0x28FFFFFF),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: qualityTag == '4K' || qualityTag == '8K'
+                                    ? const Color(0x80F59E0B)
+                                    : const Color(0x36FFFFFF),
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Text(
+                              qualityTag,
+                              style: TextStyle(
+                                color: qualityTag == '4K' || qualityTag == '8K'
+                                    ? const Color(0xFFFBBF24)
+                                    : const Color(0xD9FFFFFF),
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF34D399),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            channel.group,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppleColors.labelSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        if (channel.urls.length > 1)
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () =>
+                                _showLiveChannelLinesSheet(lives, channel),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0x26FFFFFF),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '${channel.urls.length}源 ▾',
+                                style: const TextStyle(
+                                  color: Color(0xE6FFFFFF),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          const Text(
+                            '直连',
+                            style: TextStyle(
+                              color: AppleColors.labelTertiary,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLiveChannelBadge(LiveChannel channel) {
+    final name = channel.name.trim();
+    final upper = name.toUpperCase();
+    List<Color> gradientColors;
+    String topLine = '';
+    String mainText = '';
+
+    final cctvMatch =
+        RegExp(r'CCTV[-\s]*(\d+\+?|[A-Z0-9]+)', caseSensitive: false)
+            .firstMatch(upper);
+    if (cctvMatch != null) {
+      gradientColors = const [Color(0xFFE11D48), Color(0xFF9F1239)];
+      topLine = 'CCTV';
+      mainText = cctvMatch.group(1)!;
+    } else if (name.contains('卫视')) {
+      gradientColors = const [Color(0xFFF59E0B), Color(0xFFB45309)];
+      final prefix = name.replaceAll(RegExp(r'卫视.*$'), '').trim();
+      mainText = prefix.length >= 2
+          ? prefix.substring(0, 2)
+          : (prefix.isNotEmpty ? prefix : '卫视');
+      topLine = '卫视';
+    } else if (RegExp(r'翡翠|明珠|凤凰|TVB|无线|莲花|澳视|香港|台湾|纬来|东森')
+        .hasMatch(name)) {
+      gradientColors = const [Color(0xFF10B981), Color(0xFF047857)];
+      if (upper.contains('TVB') || name.contains('翡翠') || name.contains('明珠')) {
+        topLine = 'TVB';
+        mainText = name.contains('明珠') ? '明珠' : '翡翠';
+      } else if (name.contains('凤凰')) {
+        topLine = 'PHOENIX';
+        mainText = '凤凰';
+      } else {
+        mainText = name.length >= 2 ? name.substring(0, 2) : name;
+      }
+    } else if (upper.contains('4K') || upper.contains('8K')) {
+      gradientColors = const [Color(0xFF8B5CF6), Color(0xFF5B21B6)];
+      topLine = 'UHD';
+      mainText = upper.contains('8K') ? '8K' : '4K';
+    } else if (RegExp(r'体育|足球|篮球|赛事|咪咕|CCTV5').hasMatch(name)) {
+      gradientColors = const [Color(0xFF06B6D4), Color(0xFF0E7490)];
+      topLine = 'SPORT';
+      mainText = name.length >= 2 ? name.substring(0, 2) : '体育';
+    } else {
+      gradientColors = const [Color(0xFF3B82F6), Color(0xFF1D4ED8)];
+      final cleaned = name.replaceAll(RegExp(r'[\[\(（【].*?[\]\)）】]'), '').trim();
+      mainText = cleaned.length >= 2
+          ? cleaned.substring(0, 2)
+          : (cleaned.isNotEmpty ? cleaned : 'TV');
+    }
+
+    final fallbackBadge = Container(
+      width: 42,
+      height: 42,
+      decoration: ShapeDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: gradientColors,
+        ),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(11),
+          side: const BorderSide(
+            color: Color(0x36FFFFFF),
+            width: 0.5,
+          ),
+        ),
+      ),
+      alignment: Alignment.center,
+      child: topLine.isNotEmpty
+          ? Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  topLine,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    color: Color(0xCCFFFFFF),
+                    fontSize: 8.0,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                    height: 1.05,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  mainText,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: mainText.length >= 3 ? 11.0 : 12.5,
+                    fontWeight: FontWeight.w900,
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            )
+          : Text(
+              mainText,
+              maxLines: 1,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+    );
+
+    if (channel.logo.isNotEmpty) {
+      return SizedBox(
+        width: 42,
+        height: 42,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(11),
+          child: DecoratedBox(
+            decoration: const BoxDecoration(color: Color(0xFF1E202B)),
+            child: PosterImage(
+              url: channel.logo,
+              fit: BoxFit.contain,
+              fadeIn: false,
+              placeholder: fallbackBadge,
+            ),
+          ),
+        ),
+      );
+    }
+    return fallbackBadge;
   }
   void _showWatchHistorySheet() {
     if (_privateSessionUnlocked) return;

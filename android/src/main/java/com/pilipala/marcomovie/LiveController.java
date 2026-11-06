@@ -24,9 +24,21 @@ final class LiveController {
         }
         try {
             List<LiveCatalog.Source> sources = LiveCatalog.sources(a.config.raw, a.configOrigin);
-            for (LiveCatalog.Source source : sources)
-                a.addButton(
-                        a.body,
+            if (sources.isEmpty()) {
+                a.paragraph("当前配置没有直播列表。");
+                return;
+            }
+            int cols = 3;
+            LinearLayout row = null;
+            for (int i = 0; i < sources.size(); i++) {
+                if (i % cols == 0) {
+                    row = a.row();
+                    LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
+                    rlp.bottomMargin = a.dp(10);
+                    a.body.addView(row, rlp);
+                }
+                LiveCatalog.Source source = sources.get(i);
+                TextView btn =
                         a.button(
                                 source.name,
                                 "live-source:" + source.name,
@@ -34,8 +46,11 @@ final class LiveController {
                                         a.open(
                                                 new MainActivity.Screen(
                                                         () -> liveGroups(a, source)),
-                                                true)));
-            if (sources.isEmpty()) a.paragraph("当前配置没有直播列表。");
+                                                true));
+                LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(0, -2, 1f);
+                if (i % cols != cols - 1) blp.rightMargin = a.dp(10);
+                row.addView(btn, blp);
+            }
         } catch (Exception e) {
             AppLog.w("LiveController", "parse live sources failed", e);
             a.paragraph("无法读取直播配置。");
@@ -58,9 +73,17 @@ final class LiveController {
                 catalog -> {
                     a.liveSession = new LiveSession(source, catalog);
                     a.paragraph(catalog.channelCount() + " 个频道 · 选择分组");
-                    for (LiveCatalog.Group group : catalog.groups)
-                        a.addButton(
-                                a.body,
+                    int cols = 4;
+                    LinearLayout row = null;
+                    for (int i = 0; i < catalog.groups.size(); i++) {
+                        if (i % cols == 0) {
+                            row = a.row();
+                            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
+                            rlp.bottomMargin = a.dp(10);
+                            a.body.addView(row, rlp);
+                        }
+                        LiveCatalog.Group group = catalog.groups.get(i);
+                        TextView btn =
                                 a.button(
                                         group.name + "  ·  " + group.channels.size(),
                                         "group:" + group.name,
@@ -71,20 +94,37 @@ final class LiveController {
                                                                         liveChannels(
                                                                                 a, source, group,
                                                                                 0)),
-                                                        true)));
+                                                        true));
+                        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(0, -2, 1f);
+                        if (i % cols != cols - 1) blp.rightMargin = a.dp(10);
+                        row.addView(btn, blp);
+                    }
                 });
     }
 
     static void liveChannels(
             MainActivity a, LiveCatalog.Source source, LiveCatalog.Group group, int page) {
         a.renderPage(group.name, "LIVE CHANNELS");
-        int start = page * 30, end = Math.min(group.channels.size(), start + 30);
+        int pageSize = 40;
+        int start = page * pageSize, end = Math.min(group.channels.size(), start + pageSize);
+        int cols = 4;
+        LinearLayout row = null;
         for (int i = start; i < end; i++) {
+            int offset = i - start;
+            if (offset % cols == 0) {
+                row = a.row();
+                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
+                rlp.bottomMargin = a.dp(10);
+                a.body.addView(row, rlp);
+            }
             LiveCatalog.Channel channel = group.channels.get(i);
-            a.addButton(
-                    a.body,
+            String label =
+                    channel.streams.size() > 1
+                            ? channel.name + "  ·  " + channel.streams.size() + "源"
+                            : channel.name;
+            TextView btn =
                     a.button(
-                            channel.name,
+                            label,
                             "channel:" + i,
                             () -> {
                                 if (channel.streams.size() == 1)
@@ -105,7 +145,10 @@ final class LiveController {
                                                                     channel.streams.get(n)))
                                             .show();
                                 }
-                            }));
+                            });
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(0, -2, 1f);
+            if (offset % cols != cols - 1) blp.rightMargin = a.dp(10);
+            row.addView(btn, blp);
         }
         LinearLayout pages = a.row();
         if (page > 0)
