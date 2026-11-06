@@ -101,6 +101,38 @@ class _DetailScreenState extends State<DetailScreen> {
     }
   }
 
+  bool get _isVarietyShow {
+    final metaText =
+        '${_video.typeName} ${_video.tag} ${_video.remarks}'.toLowerCase();
+    if (metaText.contains('综艺') ||
+        metaText.contains('真人秀') ||
+        metaText.contains('脱口秀') ||
+        metaText.contains('晚会') ||
+        metaText.contains('选秀') ||
+        metaText.contains('演唱会')) {
+      return true;
+    }
+    if (_video.lines.isNotEmpty) {
+      final eps = _video.lines.first.episodes;
+      int issueLikeCount = 0;
+      final sampleCount = eps.length < 6 ? eps.length : 6;
+      for (int i = 0; i < sampleCount; i++) {
+        final n = eps[i].name;
+        if (n.contains('期') ||
+            n.contains('先导') ||
+            n.contains('加更') ||
+            n.contains('纯享') ||
+            RegExp(r'\b20\d{6}\b').hasMatch(n)) {
+          issueLikeCount++;
+        }
+      }
+      if (sampleCount > 0 && issueLikeCount * 2 >= sampleCount) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   Future<void> _warmExternalMetadata(String title) async {
     if (title.trim().isEmpty) return;
     unawaited(
@@ -113,7 +145,9 @@ class _DetailScreenState extends State<DetailScreen> {
         }
       }),
     );
-    unawaited(PosterLoader.fetchSeriesEpisodeMetadata(title));
+    if (!_isVarietyShow) {
+      unawaited(PosterLoader.fetchSeriesEpisodeMetadata(title));
+    }
     unawaited(PosterLoader.fetchSeriesEpisodeStills(title));
   }
 
@@ -187,17 +221,20 @@ class _DetailScreenState extends State<DetailScreen> {
     final ext = _externalSynopsis.trim().isNotEmpty
         ? _externalSynopsis.trim()
         : PosterLoader.peekSeriesSynopsis(_video.title).trim();
-    // If CMS description is just a short one-line slogan (e.g. "正式启动！"),
-    // prefer the full encyclopedia synopsis when available.
-    final isShortSlogan = raw.length < 38 ||
+    // Always preserve the CMS's own authentic description unless it is empty
+    // or a generic placeholder slogan (e.g. "正式启动！", "敬请期待", "暂无简介").
+    final isPlaceholderSlogan = raw.length < 14 ||
         raw.contains('正式启动') ||
         raw.contains('敬请期待') ||
-        raw.contains('即将开播');
-    if (isShortSlogan && ext.length > raw.length) {
+        raw.contains('即将开播') ||
+        raw.contains('暂无简介') ||
+        raw.contains('暂缺');
+    if (!isPlaceholderSlogan) {
+      return raw;
+    }
+    if (ext.isNotEmpty && ext.length > raw.length) {
       return ext;
     }
-    if (raw.length >= 12) return raw;
-    if (ext.isNotEmpty) return ext;
     return raw;
   }
 
@@ -259,10 +296,19 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   /// Builds a clean, authentic episode card headline:
-  /// 1. Uses real subtitle from CMS episode name if present
-  /// 2. Uses real episode title from 360 Baike / Bilibili PGC / Bangumi if present
-  /// 3. Falls back cleanly to `第 X 集` (never fabricated text)
+  /// 1. For variety shows (`综艺`), preserves the real issue/date/guest name (e.g. `20261105期`, `先导片`)
+  /// 2. Uses real subtitle from CMS episode name if present
+  /// 3. Uses real episode title from verified 360 Baike / Bilibili PGC / Bangumi if present
+  /// 4. Falls back cleanly to `第 X 集` / `第 X 期` (never fabricated text)
   String _formatEpisodeCardHeadline(String cleanEpName, int oneBasedIndex) {
+    if (_isVarietyShow) {
+      final trimmed = cleanEpName.trim();
+      if (trimmed.isNotEmpty &&
+          !RegExp(r'^(?:[Ee][Pp]?\s*)?\d+$').hasMatch(trimmed)) {
+        return trimmed;
+      }
+      return '第 $oneBasedIndex 期';
+    }
     final embedded = _extractEmbeddedSubtitle(cleanEpName);
     if (embedded.isNotEmpty) {
       return 'E$oneBasedIndex · $embedded';
@@ -276,11 +322,18 @@ class _DetailScreenState extends State<DetailScreen> {
 
   /// Resolves the authentic per-episode plot synopsis (`分集剧情`).
   /// Returns an empty string if no real per-episode plot exists yet so we NEVER
-  /// display fake/repeated series slogans under every episode card.
+  /// display fake/repeated series slogans or mismatched plots under episode cards.
   String _resolveAuthenticEpisodeSummary(
     int oneBasedIndex,
     String cleanEpName,
   ) {
+    if (_isVarietyShow) {
+      final embedded = _extractEmbeddedSubtitle(cleanEpName);
+      if (embedded.length >= 16 && embedded != cleanEpName.trim()) {
+        return embedded;
+      }
+      return '';
+    }
     final realMeta = PosterLoader.peekEpisodeMeta(_video.title, oneBasedIndex);
     if (realMeta != null && realMeta.summary.trim().isNotEmpty) {
       return realMeta.summary.trim();
@@ -1613,9 +1666,11 @@ class _DetailScreenState extends State<DetailScreen> {
               final isCurrent = originalIdx == currentActiveEpIdx;
               final (cleanTitle, specBadge) =
                   _parseEpisodeDisplay(ep.name, originalIdx + 1);
+              final unitLabel =
+                  _isVarietyShow ? '第${originalIdx + 1}期' : '第${originalIdx + 1}集';
               final subMeta = [
                 if (_video.year.trim().isNotEmpty) _video.year.trim(),
-                '第${originalIdx + 1}集',
+                unitLabel,
                 if (specBadge != null) specBadge,
               ].join(' · ');
               final headline =

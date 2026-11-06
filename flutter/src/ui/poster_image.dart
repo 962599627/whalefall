@@ -220,6 +220,80 @@ class PosterLoader {
         .trim();
   }
 
+  static int? _extractSeasonNumber(String rawTitle) {
+    final cnMap = <String, int>{
+      '一': 1,
+      '二': 2,
+      '三': 3,
+      '四': 4,
+      '五': 5,
+      '六': 6,
+      '七': 7,
+      '八': 8,
+      '九': 9,
+      '十': 10,
+    };
+    final mCn =
+        RegExp(r'第\s*([0-9一二三四五六七八九十]+)\s*[季部]').firstMatch(rawTitle);
+    if (mCn != null) {
+      final token = mCn.group(1)!;
+      final asInt = int.tryParse(token);
+      if (asInt != null) return asInt;
+      if (cnMap.containsKey(token)) return cnMap[token];
+    }
+    final mEn =
+        RegExp(r'\bSeason\s*(\d+)\b', caseSensitive: false).firstMatch(rawTitle);
+    if (mEn != null) {
+      return int.tryParse(mEn.group(1)!);
+    }
+    return null;
+  }
+
+  /// Strict work-title matcher so external encyclopedias (360 Baike, Baidu Baike,
+  /// Bilibili PGC, Bangumi) never attach an unrelated drama/anime synopsis or
+  /// per-episode plot to a variety show or different title.
+  static bool _isSameWorkTitle(String candidateRaw, String targetRaw) {
+    final candNoHtml = candidateRaw
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll(RegExp(r'_360百科.*$|-360百科.*$|_百度百科.*$'), '')
+        .trim();
+    if (candNoHtml.isEmpty || targetRaw.trim().isEmpty) return false;
+
+    final candSeason = _extractSeasonNumber(candNoHtml);
+    final targetSeason = _extractSeasonNumber(targetRaw);
+    if (candSeason != null &&
+        targetSeason != null &&
+        candSeason != targetSeason) {
+      return false;
+    }
+
+    String normalizeCore(String s) {
+      return _cleanTitle(s)
+          .replaceAll(RegExp(r'[《》〈〉「」『』"“”\x27‘’：:·—\-\s_!！?？,，.。]'), '')
+          .toLowerCase();
+    }
+
+    final cNorm = normalizeCore(candNoHtml);
+    final tNorm = normalizeCore(targetRaw);
+    if (cNorm.isEmpty || tNorm.isEmpty) return false;
+    if (cNorm == tNorm) return true;
+
+    // Also allow matching against subtitle/base variants when sufficiently specific (>= 4 chars)
+    final variants = _queryVariantsForTitle(targetRaw)
+        .map(normalizeCore)
+        .where((v) => v.length >= 3)
+        .toList();
+    for (final v in variants) {
+      if (cNorm == v) return true;
+      if (v.length >= 4 && (cNorm.startsWith(v) || v.startsWith(cNorm))) {
+        final shorter = cNorm.length < v.length ? cNorm.length : v.length;
+        final longer = cNorm.length > v.length ? cNorm.length : v.length;
+        if (shorter / longer >= 0.72) return true;
+      }
+    }
+    return false;
+  }
+
   /// Generates ordered search query variants from most specific to core title,
   /// e.g. `斗罗大陆2：绝世唐门2023` -> `['斗罗大陆2：绝世唐门', '斗罗大陆2绝世唐门', '绝世唐门', '斗罗大陆']`.
   static List<String> _queryVariantsForTitle(String rawTitle) {
@@ -718,19 +792,26 @@ class PosterLoader {
                     final data = decoded['data'];
                     final list = data is Map ? data['result'] : null;
                     if (list is List && list.isNotEmpty) {
-                      final first = list.first;
-                      if (first is Map) {
-                        final desc = (first['styles'] ?? '').toString().trim();
+                      Map? matchedItem;
+                      for (final item in list) {
+                        if (item is Map) {
+                          final rawItemTitle =
+                              (item['title'] ?? '').toString().trim();
+                          if (_isSameWorkTitle(rawItemTitle, rawTitle) ||
+                              _isSameWorkTitle(rawItemTitle, clean)) {
+                            matchedItem = item;
+                            break;
+                          }
+                        }
+                      }
+                      if (matchedItem != null) {
                         final evaluate =
-                            (first['desc'] ?? '').toString().trim();
+                            (matchedItem['desc'] ?? '').toString().trim();
                         if (evaluate.length >= 16 &&
                             !_titleSynopsisCache.containsKey(clean)) {
                           _titleSynopsisCache[clean] = evaluate;
-                        } else if (desc.length >= 16 &&
-                            !_titleSynopsisCache.containsKey(clean)) {
-                          _titleSynopsisCache[clean] = desc;
                         }
-                        final eps = first['eps'];
+                        final eps = matchedItem['eps'];
                         if (eps is List && eps.isNotEmpty) {
                           for (int i = 0; i < eps.length; i++) {
                             final ep = eps[i];
@@ -804,18 +885,23 @@ class PosterLoader {
                 for (final item in list) {
                   if (item is Map) {
                     final t = item['type'];
-                    if (t == 2 || t == 6) {
+                    if (t != 2 && t != 6) continue;
+                    final nameCn = (item['name_cn'] ?? '').toString().trim();
+                    final name = (item['name'] ?? '').toString().trim();
+                    if (_isSameWorkTitle(nameCn, rawTitle) ||
+                        _isSameWorkTitle(name, rawTitle) ||
+                        _isSameWorkTitle(nameCn, clean) ||
+                        _isSameWorkTitle(name, clean)) {
                       matchedSubject = item;
                       break;
                     }
                   }
                 }
-                matchedSubject ??=
-                    list.isNotEmpty && list.first is Map ? list.first as Map : null;
                 if (matchedSubject != null) {
                   final summary =
                       (matchedSubject['summary'] ?? '').toString().trim();
-                  if (summary.length >= 16) {
+                  if (summary.length >= 16 &&
+                      !_titleSynopsisCache.containsKey(clean)) {
                     _titleSynopsisCache[clean] = summary;
                   }
                   final sid = matchedSubject['id'];
@@ -929,6 +1015,19 @@ class PosterLoader {
           .bind(resp)
           .join()
           .timeout(const Duration(milliseconds: 3000));
+
+      // Verify that this 360 Baike document is actually for [cleanTitle]
+      // (prevents variety shows without `tvplot` from matching a random TV drama)
+      final titleTagMatch =
+          RegExp(r'<title>(.*?)</title>', dotAll: true).firstMatch(doc);
+      final h1Match =
+          RegExp(r'<h1[^>]*>(.*?)</h1>', dotAll: true).firstMatch(doc);
+      final docTitleText =
+          (titleTagMatch?.group(1) ?? h1Match?.group(1) ?? '').trim();
+      if (docTitleText.isEmpty ||
+          !_isSameWorkTitle(docTitleText, cleanTitle)) {
+        return;
+      }
 
       // Collect anti-scrape hidden CSS class names from <style> blocks
       final hiddenClasses = <String>{};
@@ -1481,6 +1580,12 @@ class PosterLoader {
                     final t = item['type'];
                     // Prefer anime (type=2) and TV/film (type=6), skip books (type=1)
                     if (t != 2 && t != 6) continue;
+                    final nameCn = (item['name_cn'] ?? '').toString().trim();
+                    final name = (item['name'] ?? '').toString().trim();
+                    if (!_isSameWorkTitle(nameCn, cleanTitle) &&
+                        !_isSameWorkTitle(name, cleanTitle)) {
+                      continue;
+                    }
                     final images = item['images'];
                     if (images is Map) {
                       final large = (images['large'] ?? '').toString().trim();
@@ -1531,16 +1636,22 @@ class PosterLoader {
                   .timeout(const Duration(milliseconds: 2500));
               final decoded = jsonDecode(body);
               if (decoded is Map) {
+                final lemmaTitle = (decoded['title'] ?? '').toString().trim();
+                final titleMatches = lemmaTitle.isEmpty ||
+                    _isSameWorkTitle(lemmaTitle, cleanTitle) ||
+                    _isSameWorkTitle(lemmaTitle, qv);
                 final abstractText =
                     (decoded['abstract'] ?? '').toString().trim();
                 final isNovelEntry = abstractText.contains('所著的') &&
                     abstractText.contains('小说');
-                if (abstractText.length >= 18 && !isNovelEntry) {
+                if (titleMatches &&
+                    abstractText.length >= 18 &&
+                    !isNovelEntry) {
                   _titleSynopsisCache[cleanTitle] = abstractText;
                   metadataRevision.value++;
                 }
                 final rawImg = (decoded['image'] ?? '').toString().trim();
-                if (rawImg.startsWith('http') && !isNovelEntry) {
+                if (titleMatches && rawImg.startsWith('http') && !isNovelEntry) {
                   addPrimaryHd(rawImg);
                   break;
                 }

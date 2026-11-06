@@ -668,29 +668,56 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         ? const <WatchHistoryEntry>[]
         : widget.storage.getWatchHistory();
     final horizontalPad = useSidebar ? 24.0 : 16.0;
+    final topSafePad = MediaQuery.paddingOf(context).top;
     final activeFilterCount = _currentFilter.activeDimensionCount;
     return SafeArea(
+      top: false,
       bottom: false,
       right: !useSidebar,
-      child: CustomScrollView(
-        physics: const BouncingScrollPhysics(
-          parent: AlwaysScrollableScrollPhysics(),
-        ),
-        slivers: [
-          CupertinoSliverRefreshControl(
-            onRefresh: _loadSiteHome,
-          ),
-          // Horizontal padding is applied per block so the horizontal shelves
-          // (继续观看 / 分类) can run edge-to-edge with a soft fade instead of
-          // being hard-clipped by the page margin.
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              0,
-              useSidebar && _isMacOS ? 24 : 12,
-              0,
-              12,
-            ),
-            sliver: SliverToBoxAdapter(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxH =
+              constraints.maxHeight > 0 ? constraints.maxHeight : 800.0;
+          final s1 = ((topSafePad * 0.35) / maxH).clamp(0.008, 0.045);
+          final s2 = ((topSafePad * 0.78) / maxH).clamp(0.020, 0.085);
+          final s3 = ((topSafePad + 16.0) / maxH).clamp(0.038, 0.13);
+          return ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (rect) => LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: const [
+                Color(0x00FFFFFF),
+                Color(0x1EFFFFFF),
+                Color(0x88FFFFFF),
+                Color(0xFFFFFFFF),
+                Color(0xFFFFFFFF),
+                Color(0x00FFFFFF),
+              ],
+              stops: [0.0, s1, s2, s3, 0.968, 1.0],
+            ).createShader(rect),
+            child: CustomScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              slivers: [
+                SliverPadding(
+                  padding: EdgeInsets.only(top: topSafePad),
+                  sliver: CupertinoSliverRefreshControl(
+                    onRefresh: _loadSiteHome,
+                  ),
+                ),
+                // Horizontal padding is applied per block so the horizontal shelves
+                // (继续观看 / 分类) can run edge-to-edge with a soft fade instead of
+                // being hard-clipped by the page margin.
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    0,
+                    useSidebar && _isMacOS ? 24 : 12,
+                    0,
+                    12,
+                  ),
+                  sliver: SliverToBoxAdapter(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1194,6 +1221,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             ),
           ],
         ],
+      ),
+          );
+        },
       ),
     );
   }
@@ -2202,7 +2232,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       ),
     );
   }
-  Widget _buildVideoCard(CmsSite site, CmsVideo video, {String? badge}) {
+  Widget _buildVideoCard(
+    CmsSite site,
+    CmsVideo video, {
+    String? badge,
+    VoidCallback? onTap,
+  }) {
     final isNetdiskQr = video.id.startsWith('netdisk_qr:');
     final qrDriveKey =
         isNetdiskQr ? video.id.substring('netdisk_qr:'.length).trim() : '';
@@ -2210,7 +2245,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         'vcard_${site.key}_${video.id.isNotEmpty ? video.id : video.title}_${badge ?? ""}';
     return GestureDetector(
       key: ValueKey(cardKey),
-      onTap: () => _openVideoDetail(site, video),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap ?? () => _openVideoDetail(site, video),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2509,18 +2545,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                               itemCount: _searchResults.length,
                               itemBuilder: (ctx, i) {
                                 final (site, video) = _searchResults[i];
-                                return GestureDetector(
+                                return _buildVideoCard(
+                                  site,
+                                  video,
+                                  badge: site.name,
                                   onTap: () {
                                     Navigator.of(ctx).pop();
                                     _openVideoDetail(site, video);
                                   },
-                                  child: IgnorePointer(
-                                    child: _buildVideoCard(
-                                      site,
-                                      video,
-                                      badge: site.name,
-                                    ),
-                                  ),
                                 );
                               },
                             ),
@@ -6735,12 +6767,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
 /// iOS-style left-swipe row that reveals a red "删除" action button on the right,
 /// and also supports full swipe or tapping the red delete button to remove a single watch history item.
 class _SwipeToDeleteHistoryTile extends StatefulWidget {
-  final Widget child;
+  final WatchHistoryEntry entry;
+  final VoidCallback onTap;
   final VoidCallback onDelete;
 
   const _SwipeToDeleteHistoryTile({
     super.key,
-    required this.child,
+    required this.entry,
+    required this.onTap,
     required this.onDelete,
   });
 
@@ -6789,6 +6823,7 @@ class _SwipeToDeleteHistoryTileState extends State<_SwipeToDeleteHistoryTile> {
 
   @override
   Widget build(BuildContext context) {
+    final h = widget.entry;
     final revealProgress = (-_dragOffset / _actionWidth).clamp(0.0, 1.0);
     return ClipRRect(
       borderRadius: BorderRadius.circular(14),
@@ -6866,7 +6901,21 @@ class _SwipeToDeleteHistoryTileState extends State<_SwipeToDeleteHistoryTile> {
                     _closeIfOpen();
                   }
                 },
-                child: widget.child,
+                child: AppleGroupedTile(
+                  icon: CupertinoIcons.play_circle_fill,
+                  iconBgColor: AppleColors.systemBlue,
+                  title: h.title,
+                  subtitle:
+                      '${h.episode.isEmpty ? "第 ${h.index + 1} 集" : h.episode} · 已看 ${(h.progress * 100).round()}%',
+                  trailingText: '继续播放',
+                  onTap: () {
+                    if (_dragOffset <= -10) {
+                      _closeIfOpen();
+                      return;
+                    }
+                    widget.onTap();
+                  },
+                ),
               ),
             ),
           ],
@@ -6878,11 +6927,11 @@ class _SwipeToDeleteHistoryTileState extends State<_SwipeToDeleteHistoryTile> {
 
 /// Full-screen iOS 27 Liquid Glass Cyber-Aurora portal animation played when entering Privacy Mode.
 class _PrivacyModePortalAnimation extends StatefulWidget {
-  final VoidCallback onCompleted;
+  final VoidCallback onFinished;
 
   const _PrivacyModePortalAnimation({
     super.key,
-    required this.onCompleted,
+    required this.onFinished,
   });
 
   @override
@@ -6903,7 +6952,7 @@ class _PrivacyModePortalAnimationState
       duration: const Duration(milliseconds: 1280),
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed) {
-          widget.onCompleted();
+          widget.onFinished();
         }
       });
     _controller.forward();
