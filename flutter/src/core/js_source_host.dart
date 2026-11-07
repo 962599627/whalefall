@@ -172,6 +172,7 @@ class _SourceWorker {
   Future<void> _tail = Future.value();
   Future<void>? _closing;
   final _exited = Completer<void>();
+  final _exitEvents = StreamController<void>.broadcast(sync: true);
   bool _closed = false;
   int _pending = 0;
   int _nextId = 0;
@@ -185,6 +186,8 @@ class _SourceWorker {
     lifecycle.listen((_) {
       _closed = true;
       if (!_exited.isCompleted) _exited.complete();
+      _exitEvents.add(null);
+      unawaited(_exitEvents.close());
       JsSourceHost._notifyCapacity();
       lifecycle.close();
     });
@@ -197,17 +200,33 @@ class _SourceWorker {
       );
       return await _whileAlive(ready.first) as SendPort;
     } catch (_) {
+      _closed = true;
+      if (!_exited.isCompleted) {
+        _exited.complete();
+        unawaited(_exitEvents.close());
+      }
       lifecycle.close();
+      JsSourceHost._notifyCapacity();
       rethrow;
     } finally {
       ready.close();
     }
   }();
 
-  Future<dynamic> _whileAlive(Future<dynamic> result) => Future.any([
-    result,
-    _exited.future.then((_) => throw StateError('脚本运行环境已退出')),
-  ]);
+  Future<dynamic> _whileAlive(Future<dynamic> result) async {
+    if (_exited.isCompleted) throw StateError('脚本运行环境已退出');
+    final ended = Completer<dynamic>();
+    final listener = _exitEvents.stream.listen((_) {
+      ended.completeError(StateError('脚本运行环境已退出'));
+    });
+    try {
+      return await Future.any([result, ended.future]);
+    } finally {
+      // A Future listener cannot be detached. Keeping one on the worker's exit
+      // future per call would retain completed results for the session's life.
+      await listener.cancel();
+    }
+  }
 
   Future<String> invoke(
     String method,
@@ -263,7 +282,11 @@ class _SourceWorker {
     _closed = true;
     return _closing ??= () async {
       final ready = _ready;
-      if (ready == null) return;
+      if (ready == null) {
+        if (!_exited.isCompleted) _exited.complete();
+        await _exitEvents.close();
+        return;
+      }
       final reply = ReceivePort();
       try {
         SendPort port;

@@ -96,6 +96,27 @@ earlier `19f993f` checks do not cover it. FY still needs its actual parser/modul
 and verification flow, so this lifecycle repair does not enable that route or
 establish arbitrary Python-source compatibility.
 
+[Runtime run 42384846761](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42384846761)
+at `f4c2aae` passed 30 checks on both ARM64/iOS 26.2 and Intel/iOS 18.5,
+including renewed native and Python operation clocks. The earlier `53bad49`
+full-build test exposed Python's clock counting idle time between calls; an
+8.2-second idle interval reproduced it locally before the fix. The earlier
+Intel run at `37fcab4` timed out during simulator installation, before app tests;
+the successful new run retains separate evidence rather than counting that
+setup failure as a pass.
+
+[Full iOS build 42384849189](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42384849189)
+at `f4c2aae` passed 179 Flutter tests and produced a validation IPA. Independent
+inspection verified its checksum/ZIP integrity, 17 pinned DRPY assets and the
+shared host/Python assets, 37 arm64 iOS binaries with deployment targets no newer
+than iOS 14, and the actual exported `_jsSetOperationTimeout` native symbol.
+The IPA SHA-256 is
+`623a54d4f9018b3270305999ab530343c69ee85c65ff5ff9d84773198b74da6a`.
+This validation package predates the subsequent Dart exit-listener cleanup;
+that cleanup has separate local full-suite/focused lifecycle coverage. No
+official release or mirror installer update was made. Remaining plugin routes,
+Python dependencies and physical-device playback acceptance still apply.
+
 T4 now extracts each site's encrypted extension as data from an exact reviewed
 artifact, then runs the CMS protocol in the local DRPY worker. Pagination and
 opaque catalogue/episode identifiers are retained. The original T4 category
