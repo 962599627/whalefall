@@ -18,6 +18,27 @@ ABIS = {'arm': ('armeabi-v7a', 'arm-linux-androideabi'),
         'x86_64': ('x86_64', 'x86_64-linux-android')}
 
 
+def patch_libuv_android_barriers(source):
+    """Use libuv's mutex/condition barrier on Android versions lacking pthread barriers.
+
+    Bionic exposes the serial-thread macro and type even for API 23, while its
+    barrier functions are only available from API 24. Both the public type and
+    implementation must choose libuv's existing fallback with identical guards.
+    """
+    guard = '#if defined(_AIX) || \\\n    defined(__OpenBSD__) || \\\n    !defined(PTHREAD_BARRIER_SERIAL_THREAD)'
+    replacement = guard.replace('    !defined(PTHREAD_BARRIER_SERIAL_THREAD)',
+        '    (defined(__ANDROID__) && __ANDROID_API__ < 24) || \\\n    !defined(PTHREAD_BARRIER_SERIAL_THREAD)')
+    changes = []
+    for relative in ('deps/uv/include/uv/unix.h', 'deps/uv/src/unix/thread.c'):
+        path = source / relative
+        text = path.read_text()
+        if text.count(guard) != 1:
+            raise ValueError('Upstream libuv barrier patch context changed: ' + relative)
+        changes.append((path, text.replace(guard, replacement)))
+    for path, text in changes:
+        path.write_text(text)
+
+
 def build(source, ndk, output, arch):
     source, ndk, output = source.resolve(), ndk.resolve(), output.resolve()
     if subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip() != SOURCE_COMMIT:
@@ -52,6 +73,7 @@ def build(source, ndk, output, arch):
             raise ValueError('Upstream c-ares feature patch context changed: '+feature)
         features = features.replace(old, f'#if __ANDROID_API__ >= {api}\n{old}#endif\n')
     cares.write_text(features)
+    patch_libuv_android_barriers(source)
     # V8's inspector used basic_string<uint16_t>, which libc++ 19 no longer
     # supports. Backport the upstream char16_t fix rather than changing the NDK
     # or weakening the 16 KB checks. The FreeBSD Node 18 backport preserves the
@@ -82,7 +104,7 @@ def build(source, ndk, output, arch):
         shutil.copy2(path, target/name)
         records.append({'name': name, 'sha256': hashlib.sha256(data).hexdigest(), **evidence})
     shutil.copy2(source/'LICENSE', output/'LICENSE')
-    (output/f'provenance-{abi}.json').write_text(json.dumps({'source': 'https://github.com/nodejs-mobile/nodejs-mobile', 'commit': SOURCE_COMMIT, 'ndk': NDK_VERSION, 'api': 23, 'abi': abi, 'v8_char16_patch_sha256': patch_sha, 'libraries': records}, indent=2)+'\n')
+    (output/f'provenance-{abi}.json').write_text(json.dumps({'source': 'https://github.com/nodejs-mobile/nodejs-mobile', 'commit': SOURCE_COMMIT, 'ndk': NDK_VERSION, 'api': 23, 'abi': abi, 'v8_char16_patch_sha256': patch_sha, 'libuv_android_pre24_barrier_fallback': True, 'libraries': records}, indent=2)+'\n')
 
 
 if __name__ == '__main__':
