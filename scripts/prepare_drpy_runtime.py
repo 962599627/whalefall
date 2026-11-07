@@ -186,6 +186,13 @@ def main():
         'Remove the upstream remote placeholder image from empty category results',
         'Split PEM serializer delimiter literals by equivalent string concatenation; no scanner exemption for private values']
     provenance['generated'] = {name: sha((OUT / name).read_bytes()) for name in ['drpy-core.js', 'drpy-dependencies.js']}
+    provenance['appOwnedAdapters'] = [{
+        'adapter': 'dm84-v1', 'license': 'GPL-3.0-only',
+        'implementation': 'Original endpoint-parameterized interoperability adapter and bounded ZIP/DEX data reader; no plugin binaries or endpoint constants distributed.',
+        'reviewedImportedArtifactSha256': 'e7375830bcd065b264239e1f0e7da4c99d75abf71e1b6edf50e225ae8b0f4b7e',
+        'selection': 'Exact reviewed artifact hash; unknown artifacts fail explicitly.',
+        'execution': 'Bootstrap never executes imported bytecode or native code.',
+    }]
     (OUT / 'drpy-provenance.json').write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
     from update_drpy_assets import update
     update()

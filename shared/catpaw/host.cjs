@@ -58,12 +58,72 @@ if (!isMainThread) {
   const loading = new Map();
   const releases = new Map();
   let loadQueue = Promise.resolve();
+  let bootstrap = null;
   let closing = false;
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
   const respond = (res, status, body) => {
     res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(body));
   };
+  async function portBootstrap(req, res) {
+    if (bootstrap) { req.resume(); return respond(res, 429, { error: 'bootstrap_busy' }); }
+    const task = { worker: null, cancel: null };
+    bootstrap = task;
+    const cancelled = () => { task.cancel?.(); };
+    res.once('close', cancelled);
+    try {
+      const body = await new Promise((resolve, reject) => {
+        const chunks = []; let size = 0, finished = false;
+        const done = (error, value) => {
+          if (finished) return; finished = true;
+          clearTimeout(timer); req.off('data', data); req.off('end', end); req.off('error', failed);
+          task.cancel = null;
+          if (error) reject(error); else resolve(value);
+        };
+        const data = chunk => { size += chunk.length; if (size > 512) { req.resume(); done(Error('bootstrap_request')); } else chunks.push(chunk); };
+        const end = () => { try { done(null, JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch (_) { done(Error('bootstrap_request')); } };
+        const failed = () => done(Error('bootstrap_cancelled'));
+        const timer = setTimeout(() => { req.resume(); done(Error('bootstrap_timeout')); }, 2000);
+        task.cancel = failed;
+        req.on('data', data); req.once('end', end); req.once('error', failed);
+      });
+      if (!body || Array.isArray(body) || Object.keys(body).sort().join(',') !== 'adapter,artifactHash,version' ||
+          body.version !== 1 || body.adapter !== 'dm84-v1' || typeof body.artifactHash !== 'string' || !HASH.test(body.artifactHash)) throw Error('bootstrap_request');
+      if (res.destroyed || closing) throw Error('bootstrap_cancelled');
+      const imports = path.join(root, 'imports');
+      try { if (fs.lstatSync(imports).isSymbolicLink() || !fs.lstatSync(imports).isDirectory()) throw Error(); }
+      catch (_) { throw Error('guard_artifact_invalid'); }
+      const worker = task.worker = new Worker(path.join(__dirname, 'drpy-bootstrap-worker.cjs'), {
+        workerData: { file: path.join(imports, body.artifactHash + '.jar'), hash: body.artifactHash },
+        resourceLimits: { maxOldGenerationSizeMb: 96, maxYoungGenerationSizeMb: 16, stackSizeMb: 2 },
+        stdout: true, stderr: true,
+      });
+      worker.stdout.resume(); worker.stderr.resume();
+      const result = await new Promise((resolve, reject) => {
+        let settled = false;
+        const done = (error, value) => {
+          if (settled) return; settled = true; clearTimeout(timer); task.cancel = null;
+          if (error) reject(error); else resolve(value);
+        };
+        const timer = setTimeout(() => done(Error('bootstrap_timeout')), 2000);
+        task.cancel = () => done(Error('bootstrap_cancelled'));
+        worker.once('message', value => done(null, value));
+        worker.once('error', () => done(Error('guard_artifact_invalid')));
+        worker.once('exit', () => done(Error('guard_artifact_invalid')));
+      });
+      if (result.error) throw Error(result.error);
+      if (!res.destroyed && !closing) respond(res, 200, result);
+    } catch (error) {
+      if (!res.destroyed && !closing) {
+        const code = ['guard_artifact_unsupported', 'guard_artifact_integrity', 'guard_artifact_invalid', 'bootstrap_timeout', 'bootstrap_request'].includes(error.message) ? error.message : 'guard_artifact_invalid';
+        respond(res, code === 'bootstrap_request' ? 400 : code === 'bootstrap_timeout' ? 504 : 422, { error: code });
+      }
+    } finally {
+      res.off('close', cancelled);
+      await task.worker?.terminate();
+      if (bootstrap === task) bootstrap = null;
+    }
+  }
   async function stop(instance) {
     instance.http?.close(); clearTimeout(instance.callTimer); instance.manager?.close();
     await instance.worker.terminate();
@@ -230,6 +290,7 @@ if (!isMainThread) {
     }
     const route = req.url.slice(secret.length + 2);
     if (route === 'health' && req.method === 'GET') return respond(res, 200, { version: 1 });
+    if (route === '_port-bootstrap' && req.method === 'POST') return portBootstrap(req, res);
     const match = /^([a-f0-9]{64})(\/.*)$/.exec(route);
     if (!match) return respond(res, 404, { error: 'route' });
     const hash = match[1], resource = match[2];
@@ -329,6 +390,7 @@ if (!isMainThread) {
   const close = async () => {
     if (closing) return;
     closing = true;
+    bootstrap?.cancel?.();
     server.close(); server.closeAllConnections();
     await Promise.all([...runtimes.values()].map(stop));
     try { fs.unlinkSync(readyFile); } catch (_) { }

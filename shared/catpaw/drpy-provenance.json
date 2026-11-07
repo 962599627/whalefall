@@ -302,5 +302,15 @@
   "generated": {
     "drpy-core.js": "dab10808793047c6b15e78ccf809d7aa46580c2e128e87b08cb449bef4186a57",
     "drpy-dependencies.js": "d72880e3506074dfce8b87804a3a15a3ef663a4e399bfb477ad51d1c1f238417"
-  }
+  },
+  "appOwnedAdapters": [
+    {
+      "adapter": "dm84-v1",
+      "license": "GPL-3.0-only",
+      "implementation": "Original endpoint-parameterized interoperability adapter and bounded ZIP/DEX data reader; no plugin binaries or endpoint constants distributed.",
+      "reviewedImportedArtifactSha256": "e7375830bcd065b264239e1f0e7da4c99d75abf71e1b6edf50e225ae8b0f4b7e",
+      "selection": "Exact reviewed artifact hash; unknown artifacts fail explicitly.",
+      "execution": "Bootstrap never executes imported bytecode or native code."
+    }
+  ]
 }

@@ -39,8 +39,23 @@
     },
     {
       "name": "drpy-provenance.json",
-      "bytes": 11933,
-      "sha256": "2e036c8d806f8df581f204a49de3b9cf26ecefca19ea6c49dc54fd7b2b39e49b"
+      "bytes": 12481,
+      "sha256": "5b9574513fc190bb5cff55fd242fc4e9fbc71fcd8a621088ce3c9357fe493cac"
+    },
+    {
+      "name": "drpy-guard-extractor.cjs",
+      "bytes": 11630,
+      "sha256": "fe93c7aa9f086557d0822de9aa694bee307b2b0640ad910d253f55abf975726b"
+    },
+    {
+      "name": "drpy-dm84-adapter.cjs",
+      "bytes": 5266,
+      "sha256": "75d5fadc33bd9906247d38723a87adf63f1dd0707d98ed5b212855b50ff1b63b"
+    },
+    {
+      "name": "drpy-bootstrap-worker.cjs",
+      "bytes": 1601,
+      "sha256": "67988ad6b8d57dba8c558a8030459b3c25ca9ad77995f88d9049c28905fa1379"
     }
   ]
 }

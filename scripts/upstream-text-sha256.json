@@ -24,6 +24,6 @@
   "shared/catpaw/drpy-dependencies.js": "d72880e3506074dfce8b87804a3a15a3ef663a4e399bfb477ad51d1c1f238417",
   "shared/catpaw/drpy-dependencies-LICENSE.txt": "b0387c2d584d7a4e0ac040b2f75d22c42971f632b24a9d83d714778e5142166e",
   "shared/catpaw/drpy-package-lock.json": "78aa74b7031e2a96e5efadc4ba5f1934f0d25effba2ef0b8f055e685570bc7e2",
-  "shared/catpaw/drpy-provenance.json": "2e036c8d806f8df581f204a49de3b9cf26ecefca19ea6c49dc54fd7b2b39e49b",
+  "shared/catpaw/drpy-provenance.json": "5b9574513fc190bb5cff55fd242fc4e9fbc71fcd8a621088ce3c9357fe493cac",
   "shared/catpaw/drpy-upstream/drpy2.js": "de90c78a761d8c612f26caefde6141d1a57fc1b8be131294ca03fc1319fc45f4"
 }

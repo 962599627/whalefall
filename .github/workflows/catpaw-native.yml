@@ -1,12 +1,12 @@
 name: Validate CatPaw 16 KB runtime
 on:
   workflow_dispatch:
-  push:
-    branches: ['fix/plugin-ports-16kb-*']
-    paths:
-      - '.github/workflows/catpaw-native.yml'
-      - 'scripts/native/**'
-      - 'scripts/test_catpaw_node_patches.py'
+    inputs:
+      arch:
+        description: Architecture to rebuild (all for a complete runtime set)
+        type: choice
+        default: all
+        options: [all, arm, arm64, x86_64]
 permissions:
   contents: read
 jobs:
@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [arm, arm64, x86_64]
+        arch: ${{ fromJSON(inputs.arch != 'all' && format('["{0}"]', inputs.arch) || '["arm","arm64","x86_64"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4

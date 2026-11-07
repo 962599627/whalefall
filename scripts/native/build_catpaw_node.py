@@ -99,7 +99,9 @@ def build(source, ndk, output, arch):
     for name, path in [('libnode.so', library), ('libc++_shared.so', toolchain/'sysroot/usr/lib'/triple/'libc++_shared.so')]:
         data = path.read_bytes()
         evidence = inspect_elf(data)
-        if not evidence['compatible_16kb']:
+        # Android's large-page ABI applies only to 64-bit processes. The pinned
+        # NDK's ARMv7 C++ runtime uses 4 KB pages and must retain its original bytes.
+        if evidence['bits'] == 64 and not evidence['compatible_16kb']:
             raise ValueError('Built library is not 16 KB aligned: '+name)
         shutil.copy2(path, target/name)
         records.append({'name': name, 'sha256': hashlib.sha256(data).hexdigest(), **evidence})
