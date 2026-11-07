@@ -1,5 +1,8 @@
 name: Embedded Node source runtime regression
 on:
+  push:
+    branches: ['fix/plugin-ports-16kb-20261107']
+    paths: ['.github/workflows/native-source-runtime.yml']
   workflow_dispatch:
     inputs:
       runtime_build_run_id:
@@ -45,7 +48,7 @@ jobs:
         with:
           name: catpaw-16kb-x86_64
           path: node-runtime
-          run-id: ${{ inputs.runtime_build_run_id }}
+          run-id: ${{ inputs.runtime_build_run_id || '42361059731' }}
           github-token: ${{ github.token }}
       - name: Build production code and verified isolated Node fixture
         run: |
