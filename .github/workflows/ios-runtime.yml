@@ -1,6 +1,17 @@
 name: iOS embedded source runtime regression
 on:
   workflow_dispatch:
+  push:
+    branches: ['main', 'fix/plugin-ports-16kb-*']
+    paths:
+      - '.github/workflows/ios-runtime.yml'
+      - 'scripts/ios_runtime/**'
+      - 'scripts/run_ios_runtime_probe.py'
+      - 'flutter/packages/catpaw_runtime/ios/Classes/**'
+      - 'shared/catpaw/**'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
