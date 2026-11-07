@@ -613,7 +613,7 @@ class CmsClient {
     return '';
   }
 
-  bool _usesJs(CmsSite site) => GuardSource.supports(site) || site.isDrpySource || site.isPythonSource || site.isJavaScriptSource &&
+  bool _usesJs(CmsSite site) => GuardSource.supports(site) || site.isDrpySource || site.isPythonSource || (site.isJavaScriptSource || site.isRemoteScriptSource) &&
       !(CspBridge.isHuyaSite(site) || CspBridge.isDouyuSite(site) ||
         CspBridge.isTuxiaobeiSite(site));
 
@@ -691,7 +691,7 @@ class CmsClient {
       modules[entry] = await _getText(entry, headers: site.headers);
       try { extension = jsonDecode(site.ext); } on FormatException { /* Plain-text extension. */ }
     }
-    if (site.isPythonSource) {
+    if (site.isPythonSource || CmsParser.looksLikePythonScript(modules[entry]!)) {
       final prelude = await loadPythonSourcePrelude();
       return JsSourceHost.invoke(entry: entry, modules: modules, method: method, arguments: args,
           extension: extension, headers: site.headers, pythonPrelude: prelude,
@@ -699,6 +699,10 @@ class CmsClient {
     }
     if (CmsParser.looksLikeDrpyRule(modules[entry]!)) {
       return _drpy.invoke(site, method, args, rule: modules[entry], origin: entry, cancellation: cancellation);
+    }
+    if (site.isRemoteScriptSource && !site.isJavaScriptSource &&
+        !CmsParser.looksLikeScript(modules[entry]!)) {
+      throw const FormatException('片源接口未返回可识别的脚本，请检查订阅中的接口类型');
     }
     // Preload static ES imports for the synchronous QuickJS module loader.
     var total = 0;

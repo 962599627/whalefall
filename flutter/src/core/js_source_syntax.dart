@@ -5,6 +5,26 @@ class JsSourceSyntax {
     final tokens = _JsModuleLexer(source).scan();
     for (var i = 0; i < tokens.length; i++) {
       final token = tokens[i];
+      // A Python `import requests` also starts like an incomplete JS import.
+      // Recognize actual Spider declarations after consuming comments/literals,
+      // so examples embedded in a JS template cannot select the Python host.
+      if (token.identifier &&
+          (i == 0 || token.newLine) &&
+          i + 2 < tokens.length) {
+        final name = tokens[i + 1], next = tokens[i + 2];
+        if (token.text == 'class' &&
+            name.identifier &&
+            name.text == 'Spider' &&
+            (next.text == ':' || next.text == '(')) {
+          hasPythonSpider = true;
+        }
+        if (token.text == 'def' &&
+            name.identifier &&
+            const {'homeContent', 'searchContent'}.contains(name.text) &&
+            next.text == '(') {
+          hasPythonSpider = true;
+        }
+      }
       if (!token.literal && token.identifier) {
         final previous = i == 0 ? null : tokens[i - 1];
         if (previous?.text != '.') {
@@ -104,6 +124,7 @@ class JsSourceSyntax {
   bool hasCommonJsExports = false;
   bool hasRuleDeclaration = false;
   bool hasCatSpider = false;
+  bool hasPythonSpider = false;
   bool get hasSpiderExports => isModule || hasCommonJsExports || hasCatSpider;
   bool get hasDrpyRule => hasRuleDeclaration && !hasSpiderExports;
   final references = <String>[];

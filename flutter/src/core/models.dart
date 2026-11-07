@@ -256,7 +256,7 @@ class CmsSite {
 
   bool get isScriptOrJarApi {
     final lower = api.trim().toLowerCase().split('?').first;
-    return lower.startsWith('csp_') ||
+    return isRemoteScriptSource || lower.startsWith('csp_') ||
         lower.endsWith('.js') ||
         lower.endsWith('.mjs') ||
         lower.endsWith('.jar') ||
@@ -270,6 +270,11 @@ class CmsSite {
             isHttpApi &&
             (path.endsWith('.js') || path.endsWith('.mjs')));
   }
+
+  /// TVBox type 3 declares a script, even when a gateway hides its extension.
+  /// Android JARs still require their own runtime/explicit portable adapter.
+  bool get isRemoteScriptSource => type == 3 && isHttpApi &&
+      Uri.tryParse(api)?.path.toLowerCase().endsWith('.jar') != true;
 
   bool get isDrpySource => api == 'csp_LocalRule.js' || api.toLowerCase() == 'csp_drpy';
 

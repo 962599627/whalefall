@@ -847,12 +847,13 @@ class CmsParser {
     return entries;
   }
 
+  static bool looksLikePythonScript(String raw) => JsSourceSyntax(raw).hasPythonSpider;
+
   /// Script documents may be retained as subscriptions without claiming a runtime.
   static bool looksLikeScript(String raw) {
     final trimmed = raw.trimLeft();
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) return false;
-    if (RegExp(r'^\s*(?:class\s+Spider\b|def\s+(?:homeContent|searchContent)\s*\()',
-        multiLine: true).hasMatch(raw)) return true;
+    if (looksLikePythonScript(raw)) return true;
     final syntax = JsSourceSyntax(raw);
     return syntax.hasSpiderExports || syntax.hasDrpyRule;
   }
@@ -879,7 +880,7 @@ class CmsParser {
     }
 
     if (looksLikeScript(trimmedUnpacked)) {
-      final python = RegExp(r'^\s*(?:class\s+Spider\b|def\s+)', multiLine: true).hasMatch(trimmedUnpacked);
+      final python = looksLikePythonScript(trimmedUnpacked);
       return CmsConfig(sites: [CmsSite(
         key: 'script_${subscriptionId.isEmpty ? 'imported' : subscriptionId}',
         name: defaultName.isEmpty ? (python ? 'Python 订阅' : 'JavaScript 订阅') : defaultName,
