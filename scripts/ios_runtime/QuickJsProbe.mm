@@ -5,6 +5,7 @@
 extern "C" {
   JSRuntime *jsNewRuntime(void *(*channel)(JSContext *, size_t, void *), int64_t timeout);
   JSContext *jsNewContext(JSRuntime *);
+  void jsSetOperationTimeout(JSRuntime *, int64_t timeout);
   JSValue *jsEval(JSContext *, const char *, size_t, const char *, int32_t);
   int32_t jsExecutePendingJob(JSRuntime *);
   void jsFreeValue(JSContext *, JSValue *, int32_t);
@@ -76,6 +77,12 @@ NSArray *runQuickJsProbe(NSString *assets) {
   } @finally {jsFreeContext(ctx);jsFreeRuntime(rt);}
   rt=jsNewRuntime(channel,100);ctx=jsNewContext(rt);
   @try {
+    evaluate(ctx,@"globalThis.retainedCounter=1;");
+    [NSThread sleepForTimeInterval:.15];
+    jsSetOperationTimeout(rt,1000);
+    evaluate(ctx,@"retainedCounter++;");
+    [checks addObject:@{@"name":@"quickjs_native_renewed_operation_deadline",@"passed":@(boolean(ctx,@"retainedCounter===2"))}];
+    jsSetOperationTimeout(rt,100);
     const char *loop="while(true){}";
     JSValue *value=jsEval(ctx,loop,strlen(loop),"deadline.js",JS_EVAL_TYPE_GLOBAL);
     [checks addObject:@{@"name":@"quickjs_native_deadline",@"passed":@(JS_IsException(*value))}];

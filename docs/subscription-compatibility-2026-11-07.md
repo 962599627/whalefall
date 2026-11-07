@@ -87,6 +87,6 @@ dispatch because its live catalogue/episode/media path remains unverified.
 Python Session cookies retain object attributes and binary request bodies are
 preserved across Flutter/Android transport. The [iPhone evidence and remaining
 gaps](ios-source-acceptance.md) record the native simulator checks, missing Python
-dependencies and outstanding per-call session lifetime issue. The original 33
+dependencies and the follow-up source-scoped session lifecycle repair. The original 33
 route acceptance obligations remain open; adding a protocol adapter does not
 complete that ledger.

@@ -133,6 +133,12 @@ class QuickJsRuntime2 extends JavascriptRuntime {
     _ctx = jsNewContext(rt);
   }
 
+  /// Renew the native interrupt deadline before each retained source operation.
+  void setOperationTimeout(Duration budget) {
+    _ensureEngine();
+    jsSetOperationTimeout(_rt!, budget.inMilliseconds.clamp(1, 0x7fffffff));
+  }
+
   /// Free Runtime and Context which can be recreate when evaluate again.
   close() {
     final rt = _rt;
@@ -222,6 +228,9 @@ class QuickJsRuntime2 extends JavascriptRuntime {
       close(); // close engine
     } on JSError catch (e) {
       print(e); // catch reference leak exception
+    } finally {
+      JavascriptRuntime.channelFunctionsRegistered.remove(getEngineInstanceId());
+      localContext.clear();
     }
   }
 

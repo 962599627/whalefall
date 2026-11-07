@@ -72,8 +72,26 @@ Python binary request bodies now cross the host boundary as bounded, validated
 Base64 and are written as bytes by Flutter and Android. Session cookies expose
 their names, values, domains, paths and flags without confusing same-name cookies
 from different domains. These additions do not supply BeautifulSoup, subprocess,
-native OCR or a complete CPython standard library. Cross-call Python session and
-play-cache persistence also remains an outstanding compatibility issue.
+native OCR or a complete CPython standard library.
+
+The subsequent Flutter lifecycle fix keeps JS/Python state in a source-owned
+isolate across catalogue, detail and the player's separate client instance.
+Configuration, subscription identity and privacy scope form the session key.
+Calls to one source are serialized; cancellation or failure discards that
+runtime. Native deadlines restart per operation. Pending timers and transport
+requests cannot leak into the next operation. Locking private space, removing
+subscriptions and closing the shell release the corresponding sessions, while
+generation checks reject source loads that finish after removal.
+
+This is bounded in-memory state, not persistent cookie files: at most six source
+contexts are retained, idle contexts may be evicted for a newly selected source,
+and app exit clears them. Local Flutter regressions exercise real loopback HTTP
+cookies and episode-cache continuity, separate subscription/private contexts,
+deadline renewal, cancellation, close-while-busy and timer cleanup. Native iOS
+and full-build evidence for this new change must be recorded separately; the
+earlier `19f993f` checks do not cover it. FY still needs its actual parser/module
+and verification flow, so this lifecycle repair does not enable that route or
+establish arbitrary Python-source compatibility.
 
 T4 now extracts each site's encrypted extension as data from an exact reviewed
 artifact, then runs the CMS protocol in the local DRPY worker. Pagination and

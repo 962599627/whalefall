@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -611,12 +612,28 @@ class CmsClient {
       !(CspBridge.isHuyaSite(site) || CspBridge.isDouyuSite(site) ||
         CspBridge.isTuxiaobeiSite(site));
 
+  static String _scriptSessionKey(CmsSite site) => sha256.convert(utf8.encode(jsonEncode([
+    site.subscriptionId, site.sourceKey, site.isEffectivelyPrivate,
+    site.api, site.ext, site.pluginReference, site.headers,
+  ]))).toString();
+
+  /// Shared by catalogue, detail, and the player's separate CmsClient instance.
+  static Future<void> retainScriptSessions(Iterable<CmsSite> sites) =>
+      JsSourceHost.retainSessions(sites.map(_scriptSessionKey).toSet());
+
+  static Future<void> closeScriptSessions() => JsSourceHost.closeAll();
+
   Future<String> _callJs(CmsSite site, String method, List<Object?> args) async {
     final cancellation = Zone.current[_cancelKey] as Completer<void>?;
+    final generation = JsSourceHost.generation;
     if (GuardSource.supports(site)) return _guard.invoke(site, method, args, cancellation: cancellation);
     if (site.isDrpySource) return _drpy.invoke(site, method, args, cancellation: cancellation);
     final cachedRule = await _drpy.callCached(site, method, args, cancellation: cancellation);
     if (cachedRule != null) return cachedRule;
+    final sessionKey = _scriptSessionKey(site);
+    final cachedScript = await JsSourceHost.callCached(sessionKey: sessionKey,
+        method: method, arguments: args, cancellation: cancellation);
+    if (cachedScript != null) return cachedScript;
     var entry = site.api;
     Object? extension = site.ext;
     final modules = <String, String>{};
@@ -635,7 +652,8 @@ class CmsClient {
       final prelude = await Future.wait(['skulpt.min.js', 'skulpt-stdlib.js', 'spider.js']
           .map((name) => rootBundle.loadString('assets/python-host/$name')));
       return JsSourceHost.invoke(entry: entry, modules: modules, method: method, arguments: args,
-          extension: extension, headers: site.headers, pythonPrelude: prelude);
+          extension: extension, headers: site.headers, pythonPrelude: prelude,
+          sessionKey: sessionKey, expectedGeneration: generation, cancellation: cancellation);
     }
     if (CmsParser.looksLikeDrpyRule(modules[entry]!)) {
       return _drpy.invoke(site, method, args, rule: modules[entry], origin: entry, cancellation: cancellation);
@@ -687,9 +705,10 @@ class CmsClient {
     }
     final cat = JsSourceHost.isCatSpider(modules[entry]!) && !JsSourceHost.isEsModule(modules[entry]!);
     return JsSourceHost.invoke(entry: entry, modules: modules, method: method,
-      arguments: cat && method == 'detail' ? [args] : args,
+      arguments: args, catDetails: cat,
       extension: cat ? {'stype': 3, 'skey': site.key, 'ext': extension} : extension,
-      headers: site.headers);
+      headers: site.headers, sessionKey: sessionKey, expectedGeneration: generation,
+      cancellation: cancellation);
   }
 
   String _wrapJsEpisodeIds(String raw, {String scheme = 'mmjs'}) {

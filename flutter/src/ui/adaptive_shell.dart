@@ -117,6 +117,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   @override
   void dispose() {
     _searchSubscription?.cancel();
+    unawaited(CmsClient.closeScriptSessions());
     _searchController.dispose();
     _liveSearchController.dispose();
     super.dispose();
@@ -136,6 +137,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     _searching = false;
     final saved = widget.storage.loadSavedConfig();
     _config = saved;
+    unawaited(CmsClient.retainScriptSessions(
+      (saved?.sites ?? const <CmsSite>[]).where((site) =>
+        _privateSessionUnlocked || !site.isEffectivelyPrivate),
+    ));
     final availableSites = saved == null
         ? const <CmsSite>[]
         : (_privateSessionUnlocked
@@ -7158,6 +7163,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                     });
                                   } else {
                                     widget.storage.setSelectedSiteKey(s.key);
+                                    unawaited(CmsClient.retainScriptSessions(
+                                      _config?.publicSupportedSites ?? const <CmsSite>[],
+                                    ));
                                     setState(() {
                                       _privateSessionUnlocked = false;
                                       _activeSite = s;

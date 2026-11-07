@@ -408,6 +408,17 @@ extern "C"
         return rt;
     }
 
+    // Called on the owning isolate before each source operation. A retained
+    // runtime must not inherit the first operation's expired deadline.
+    DLLEXPORT void jsSetOperationTimeout(JSRuntime *rt, int64_t timeout)
+    {
+        auto *state = static_cast<SourceRuntime *>(JS_GetRuntimeOpaque(rt));
+        state->deadline = timeout > 0 ?
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout) :
+            std::chrono::steady_clock::time_point::max();
+        JS_SetInterruptHandler(rt, timeout > 0 ? movieInterrupt : nullptr, state);
+    }
+
     DLLEXPORT uint32_t jsNewClass(JSContext *ctx, const char *name)
     {
         JSClassID QJSClassId = 0;

@@ -244,6 +244,12 @@ Pointer<JSRuntime> jsNewRuntime(
   return rt;
 }
 
+final void Function(Pointer<JSRuntime>, int) jsSetOperationTimeout = _qjsLib
+    .lookup<NativeFunction<Void Function(Pointer<JSRuntime>, Int64)>>(
+      'jsSetOperationTimeout',
+    )
+    .asFunction();
+
 /// DLLEXPORT void jsSetMaxStackSize(JSRuntime *rt, size_t stack_size)
 final void Function(
   Pointer<JSRuntime>,
