@@ -68,6 +68,9 @@ select `experiment: cpython` to run the independent experimental job. The defaul
 `native` selection preserves the existing engine validation. Push events never run
 the CPython job; the two experiment modes have separate concurrency groups. No
 Marco Movie application is built or released by this experimental job.
+The `probe_arch` choice defaults to `both`; `arm64` or `x86_64` runs only the
+selected experimental architecture when investigating a failure. Final acceptance
+still requires both architectures, and the native-engine job ignores this choice.
 Its two Mac runner labels are accompanied by recorded actual CPU architecture;
 runner labels alone are not evidence that both architectures executed.
 
@@ -110,7 +113,9 @@ Every invocation creates a new directory under `probe-output/` containing:
 * `result.json`: host phase, selected simulator/runtime, actual host/runner CPU,
   `GITHUB_SHA`, GitHub run ID, result and failure data.
 * `diagnostics/`: only this probe app's recent crash reports and process-filtered
-  system log, if available. CI uploads these and the evidence JSON files; it does
+  system log, native stderr/faulthandler and per-import/check progress, if available.
+  CrashReporter collection is limited to files named for this app. CI uploads
+  these and the evidence JSON files; it does
   not upload the SDK, support archive, Python wheels or whole app.
 
 Native acceptance requires process exit zero, `result.json.passed == true`,

@@ -8,6 +8,12 @@ on:
         required: true
         default: native
         options: [native, cpython]
+      probe_arch:
+        description: CPython experiment architecture (ignored for native)
+        type: choice
+        required: true
+        default: both
+        options: [both, arm64, x86_64]
   push:
     branches: ['main', 'fix/plugin-ports-16kb-*']
     paths:
@@ -58,7 +64,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-15, macos-15-intel]
+        include: >-
+          ${{ fromJSON(inputs.probe_arch == 'arm64' && '[{"runner":"macos-15","arch":"arm64"}]' ||
+          inputs.probe_arch == 'x86_64' && '[{"runner":"macos-15-intel","arch":"x86_64"}]' ||
+          '[{"runner":"macos-15","arch":"arm64"},{"runner":"macos-15-intel","arch":"x86_64"}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     env:
@@ -76,6 +85,7 @@ jobs:
       - name: Run independent native CPython app
         run: >-
           python scripts/ios_cpython/run_cpython_probe.py
+          --arch '${{ matrix.arch }}'
           --output-dir "$RUNNER_TEMP/ios-cpython-results"
           --cache-dir "$RUNNER_TEMP/ios-cpython-downloads"
       - name: Upload execution evidence only

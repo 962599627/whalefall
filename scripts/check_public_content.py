@@ -31,6 +31,7 @@ TEST_AUTHORITIES = {
     'android/tests/JsHttpChecks.java': {'new:secret@', 'us%40er:pa%2Bss@'},
     'flutter/test/python_host_compat_test.dart': {'user:pass@[::1]:8443'},
     'scripts/test_python_host.js': {'user:pass@[::1]:8443', '127.0.0.2', '127.0.0.2:'},
+    'scripts/test_python_proxy.js': {'0.0.0.0:18345'},
     'scripts/test_t4_adapter.cjs': {'name:secret@127.0.0.1'},
     'scripts/test_t4_adapter.py': {'name:secret@example.invalid'},
 }

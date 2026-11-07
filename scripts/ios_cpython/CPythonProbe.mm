@@ -122,6 +122,21 @@ static void addCheck(NSMutableArray *checks, NSString *name, BOOL passed) {
     report[@"runtime"]=[NSString stringWithUTF8String:Py_GetVersion()];
     addCheck(checks,@"pinned_python_3_14_10",[report[@"runtime"] hasPrefix:@"3.14.10 "]);
     {
+        checkpoint(@"faulthandler_enable");
+        PyObject *fault=PyImport_ImportModule("faulthandler");
+        if (!fault) { failure=pythonError();goto done; }
+        // Explicit fd 2 avoids relying on the iOS system logger's Python stream.
+        // It was redirected above to this app's own native-stderr.log.
+        PyObject *enabled=PyObject_CallMethod(fault,"enable","i",2);Py_DECREF(fault);
+        if (!enabled) { failure=pythonError();goto done; }
+        Py_DECREF(enabled);
+        PyObject *path=PyUnicode_FromString([[documents stringByAppendingPathComponent:@"python-progress.log"] UTF8String]);
+        if (!path || PySys_SetObject("_marco_probe_progress",path)<0) {
+            Py_XDECREF(path);failure=pythonError();goto done;
+        }
+        Py_DECREF(path);
+    }
+    {
         checkpoint(@"fixture_import_and_run");
         PyObject *module=PyImport_ImportModule("probe_fixture");
         if (!module) { failure=pythonError();goto done; }

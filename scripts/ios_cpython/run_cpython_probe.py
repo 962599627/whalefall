@@ -76,16 +76,24 @@ def collect_diagnostics(out, progress, start_time):
         return
     folder = out / "diagnostics"
     folder.mkdir(exist_ok=True)
-    for source in (Path.home() / "Library/Logs/DiagnosticReports").glob("CPythonProbe*"):
-        if source.is_file() and source.stat().st_mtime >= start_time - 5 and source.stat().st_size <= 5 * 1024 * 1024:
-            shutil.copyfile(source, folder / source.name)
+    crash_roots = [("host", Path.home() / "Library/Logs/DiagnosticReports")]
+    if progress.get("simulator_udid"):
+        crash_roots.append(("simulator", Path.home() / "Library/Developer/CoreSimulator/Devices"
+                            / progress["simulator_udid"] / "data/Library/Logs/CrashReporter"))
+    copied = 0
+    for origin, crash_root in crash_roots:
+        for source in sorted(crash_root.glob("CPythonProbe*")):
+            if (source.is_file() and not source.is_symlink() and source.stat().st_mtime >= start_time - 5
+                    and source.stat().st_size <= 5 * 1024 * 1024 and copied < 10):
+                shutil.copyfile(source, folder / (origin + "-" + source.name))
+                copied += 1
     if progress.get("simulator_udid"):
         log = folder / "CPythonProbe-unified.log"
         try:
             with log.open("w", encoding="utf-8") as output:
                 subprocess.run(["xcrun", "simctl", "spawn", progress["simulator_udid"], "log", "show",
                                 "--last", "5m", "--style", "compact", "--info", "--debug",
-                                "--predicate", 'process == "CPythonProbe"'],
+                                "--predicate", 'process == "CPythonProbe" OR eventMessage CONTAINS "com.pilipala.experimental.cpythonprobe"'],
                                check=False, stdout=output, stderr=subprocess.STDOUT, text=True, timeout=25)
             if log.stat().st_size > 5 * 1024 * 1024:
                 with log.open("rb") as source:
@@ -317,7 +325,7 @@ def simulator_run(app, udid, progress):
     watchdog_file = container / "Documents/watchdog.json"
     result_file.unlink(missing_ok=True)
     watchdog_file.unlink(missing_ok=True)
-    for name in ("progress.json", "exception.json", "native-stderr.log", "native-stdout.log"):
+    for name in ("progress.json", "exception.json", "native-stderr.log", "native-stdout.log", "python-progress.log"):
         (container / "Documents" / name).unlink(missing_ok=True)
     launched = False
     try:
@@ -335,7 +343,7 @@ def simulator_run(app, udid, progress):
     finally:
         diagnostics = app.parent / "diagnostics"
         diagnostics.mkdir(exist_ok=True)
-        for name in ("progress.json", "exception.json", "native-stderr.log", "native-stdout.log"):
+        for name in ("progress.json", "exception.json", "native-stderr.log", "native-stdout.log", "python-progress.log"):
             source = container / "Documents" / name
             if source.is_file() and not source.is_symlink():
                 with source.open("rb") as stream:

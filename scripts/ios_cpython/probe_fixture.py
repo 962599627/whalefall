@@ -1,19 +1,44 @@
 """Owned synthetic fixture. No real subscription, external service or media."""
-import hashlib
-import importlib
-import importlib.metadata
-import io
-import json
-import os
-from pathlib import Path
-import socket
-import ssl
 import sys
+
+
+def _checkpoint(phase):
+    path = getattr(sys, "_marco_probe_progress", None)
+    if path:
+        with open(path, "a", encoding="utf-8") as output:
+            output.write(phase + "\n")
+            output.flush()
+
+
+_checkpoint("import_hashlib")
+import hashlib
+_checkpoint("import_importlib")
+import importlib
+_checkpoint("import_importlib_metadata")
+import importlib.metadata
+_checkpoint("import_io")
+import io
+_checkpoint("import_json")
+import json
+_checkpoint("import_os")
+import os
+_checkpoint("import_pathlib")
+from pathlib import Path
+_checkpoint("import_socket")
+import socket
+_checkpoint("import_ssl")
+import ssl
+_checkpoint("import_threading")
 import threading
+_checkpoint("import_time")
 import time
+_checkpoint("import_http_server")
 from http.server import BaseHTTPRequestHandler, HTTPServer
+_checkpoint("import_urllib_parse")
 from urllib.parse import parse_qs, urlencode, urlsplit
+_checkpoint("import_urllib_request")
 from urllib.request import ProxyHandler, Request, build_opener
+_checkpoint("fixture_imported")
 
 
 class LocalFixture(BaseHTTPRequestHandler):
@@ -111,10 +136,12 @@ class Spider:
 
 
 def run_probe(root):
+    _checkpoint("run_probe")
     checks = []
 
     def check(name, passed):
         checks.append({"name": name, "passed": bool(passed)})
+        _checkpoint("check:" + name + ":" + str(bool(passed)))
         if not passed:
             raise AssertionError(name)
 
@@ -136,8 +163,11 @@ def run_probe(root):
         if sys.platform == "ios":
             check("ios_framework_" + name, ".framework/" in (module.__spec__.origin or ""))
 
+    _checkpoint("import_requests")
     import requests
+    _checkpoint("import_bs4")
     from bs4 import BeautifulSoup
+    _checkpoint("import_certifi")
     import certifi
     check("certifi_trust_store", ssl.create_default_context(cafile=certifi.where()).cert_store_stats()["x509_ca"] > 0)
     soup = BeautifulSoup('<div><a class="item" data-n="1">中文</a><a>other</a></div>', "html.parser")
