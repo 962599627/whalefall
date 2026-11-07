@@ -177,8 +177,23 @@ class CmsParser {
       final decoded = _tryDecodeBase64Json(tailAscii);
       if (decoded != null) return decoded;
     }
-    final text = utf8.decode(bytes, allowMalformed: true);
+    final text = decodeTextDocument(bytes);
     return unpackConfigText(text);
+  }
+
+  /// Windows-exported text subscriptions often carry a UTF-16 BOM.
+  static String decodeTextDocument(List<int> bytes) {
+    if (bytes.length >= 2 &&
+        (bytes[0] == 0xff && bytes[1] == 0xfe ||
+         bytes[0] == 0xfe && bytes[1] == 0xff)) {
+      if (bytes.length.isOdd) throw const FormatException('UTF-16 文本长度无效');
+      final little = bytes[0] == 0xff;
+      return String.fromCharCodes([
+        for (var i = 2; i < bytes.length; i += 2)
+          little ? bytes[i] | bytes[i + 1] << 8 : bytes[i] << 8 | bytes[i + 1],
+      ]);
+    }
+    return utf8.decode(bytes, allowMalformed: true).replaceFirst(RegExp(r'^\uFEFF'), '');
   }
   /// Unpacks obfuscated or encrypted config strings into clean JSON text.
   static String unpackConfigText(String rawText) {
@@ -187,6 +202,9 @@ class CmsParser {
       s = s.substring(1).trim();
     }
     if (s.isEmpty) return '';
+    // `exports...` happens to decode to a leading '{' as Base64. A known
+    // script must remain source text rather than becoming corrupt pseudo-JSON.
+    if (looksLikeScript(s)) return s;
     // 1. Check for `**` + Base64 inside text
     final starIdx = s.lastIndexOf('**');
     if (starIdx >= 0 && starIdx + 2 < s.length) {
@@ -822,9 +840,15 @@ class CmsParser {
 
   /// Script documents may be retained as subscriptions without claiming a runtime.
   static bool looksLikeScript(String raw) =>
+      !raw.trimLeft().startsWith('{') && !raw.trimLeft().startsWith('[') && (
       RegExp(r'^\s*function\s+__jsEvalReturn\s*\(', multiLine: true).hasMatch(raw) ||
       RegExp(r'^\s*(?:class\s+Spider\b|def\s+(?:homeContent|searchContent)\s*\()', multiLine: true).hasMatch(raw) ||
-      RegExp(r'^\s*(?:(?:var|let|const)\s+rule\s*=|export\s+default\b)', multiLine: true).hasMatch(raw);
+      RegExp(r'^\s*(?:(?:var|let|const)\s+rule\s*=|export\s+(?:default\b|(?:async\s+)?function\b|(?:const|let|var)\b|\{))', multiLine: true).hasMatch(raw) ||
+      RegExp(r'\b(?:module\s*\.\s*exports\s*=|exports\s*\.\s*\w+\s*=)').hasMatch(raw));
+
+  static bool isExecutableJs(String raw) => raw.contains('__jsEvalReturn') ||
+      RegExp(r'\bexport\s+(?:default\b|(?:async\s+)?function\b|(?:const|let|var)\b|\{)').hasMatch(raw) ||
+      RegExp(r'\b(?:module\s*\.\s*exports\s*=|exports\s*\.\s*\w+\s*=)').hasMatch(raw);
 
   /// Parses TVBox JSON, Multi-Depot JSON, Direct MacCMS VOD JSON/XML, M3U/M3U8, or TXT subscriptions.
   static CmsConfig parseConfig(
@@ -849,7 +873,7 @@ class CmsParser {
         key: 'script_${subscriptionId.isEmpty ? 'imported' : subscriptionId}',
         name: defaultName.isEmpty ? (python ? 'Python 订阅' : 'JavaScript 订阅') : defaultName,
         type: 3, api: python ? 'csp_LocalScript.py' :
-            (trimmedUnpacked.contains('export default') || trimmedUnpacked.contains('__jsEvalReturn')
+            (isExecutableJs(trimmedUnpacked)
                 ? 'csp_LocalScript.js' : 'csp_LocalRule.js'),
         ext: jsonEncode({'script': trimmedUnpacked, 'origin': origin}),
         group: groupLabel, isPrivate: isPrivate, subscriptionId: subscriptionId,
@@ -1119,7 +1143,7 @@ class CmsParser {
     required String subscriptionId,
     required String defaultName,
   }) {
-    final groups = parseLivePlaylist(content);
+    final groups = parseLivePlaylist(content, origin: origin);
     if (groups.isEmpty) return null;
     final baseName = defaultName.trim().isNotEmpty
         ? defaultName.trim()
@@ -1201,12 +1225,12 @@ class CmsParser {
   }
 
   /// Builds `(categories, listing)` from an `m3u_vod://` site's M3U/TXT or inline VOD payload.
-  static (List<CmsCategory>, CmsListing) parseM3uVodHome(String content) {
+  static (List<CmsCategory>, CmsListing) parseM3uVodHome(String content, {String origin = ''}) {
     final trimmed = content.trim();
     if (trimmed.startsWith('{') || trimmed.startsWith('<')) {
       return (parseCategories(trimmed), parseListing(trimmed));
     }
-    final groups = parseLivePlaylist(trimmed);
+    final groups = parseLivePlaylist(trimmed, origin: origin);
     final categories = <CmsCategory>[
       for (int i = 0; i < groups.length; i++)
         CmsCategory(id: groups[i].name, name: groups[i].name),
@@ -1893,7 +1917,7 @@ class CmsParser {
     }
     return lines;
   }
-  static List<LiveGroup> parseLivePlaylist(String content) {
+  static List<LiveGroup> parseLivePlaylist(String content, {String origin = ''}) {
     final lines = const LineSplitter().convert(content);
     final groups = <String, Map<String, List<String>>>{};
     final logos = <String, String>{};
@@ -1902,10 +1926,20 @@ class CmsParser {
       String channelName,
       String url, {
       String logo = '',
+      bool m3uEntry = false,
     }) {
       final g = groupName.trim().isEmpty ? '默认频道' : groupName.trim();
       final c = channelName.trim().isEmpty ? '未命名频道' : channelName.trim();
-      final u = url.trim();
+      final base = Uri.tryParse(origin);
+      final canResolve = base != null && (base.scheme == 'https' || base.scheme == 'http');
+      final value = url.trim();
+      if (value.isEmpty) return;
+      // TXT has no entry marker; do not reinterpret an error CSV as a URL.
+      if (canResolve && !m3uEntry && !(Uri.tryParse(value)?.hasScheme ?? false) &&
+          !value.startsWith('/') && !value.startsWith('./') && !value.startsWith('../') &&
+          !RegExp(r'^[^\s?#]+\.(?:m3u8?|mp4|mkv|ts|flv|mp3|aac)(?:[?#]|$)', caseSensitive: false).hasMatch(value)) return;
+      final u = canResolve ? resolveUrl(origin, value) : value;
+      if (canResolve && logo.isNotEmpty) logo = resolveUrl(origin, logo);
       if (!u.startsWith('http://') &&
           !u.startsWith('https://') &&
           !u.startsWith('rtmp://') &&
@@ -1944,6 +1978,7 @@ class CmsParser {
           pendingM3uTitle,
           line,
           logo: pendingM3uLogo,
+          m3uEntry: true,
         );
         pendingM3uTitle = '';
         pendingM3uLogo = '';

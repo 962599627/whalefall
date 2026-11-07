@@ -206,7 +206,12 @@ public final class LiveCatalog {
                 }
                 try {
                     return parse(
-                            new String(bytes, Charset.forName(charset)),
+                            bytes.length >= 2
+                                            && ((bytes[0] & 255) == 255 && (bytes[1] & 255) == 254
+                                                    || (bytes[0] & 255) == 254
+                                                            && (bytes[1] & 255) == 255)
+                                    ? Cms.document(bytes)
+                                    : new String(bytes, Charset.forName(charset)),
                             next.toString(),
                             source.headers);
                 } catch (java.nio.charset.UnsupportedCharsetException e) {
@@ -468,7 +473,7 @@ public final class LiveCatalog {
         value = value.trim();
         if (value.matches("^[A-Za-z][A-Za-z0-9+.-]*:.*")) return value;
         try {
-            return new URL(new URL(origin), value).toString();
+            return Cms.resolve(origin, value);
         } catch (Exception ignored) {
             return value;
         }

@@ -791,14 +791,15 @@ final class PlaybackControls {
                 };
         syncState.run();
 
-        final java.util.function.IntConsumer stepSize =
+        // java.util.function.IntConsumer is unavailable on Android 6 (API 23).
+        final PlayerBubble.IntAction stepSize =
                 delta -> {
                     int cur = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
                     int next = Prefs.clampSubtitleSize(cur + delta);
                     a.prefs.edit().putInt(Prefs.SUBTITLE_SIZE, next).apply();
                     syncState.run();
                 };
-        final java.util.function.IntConsumer stepBottom =
+        final PlayerBubble.IntAction stepBottom =
                 delta -> {
                     int cur = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
                     int next = Prefs.clampSubtitleBottom(cur + delta);
@@ -1004,7 +1005,7 @@ final class PlaybackControls {
         card.addView(bar, new LinearLayout.LayoutParams(-1, a.dp(36)));
         a.gap(card, 12);
 
-        final java.util.function.IntConsumer applySec =
+        final PlayerBubble.IntAction applySec =
                 sec -> {
                     int clamped = Prefs.clampSkipSeconds(sec);
                     a.prefs.edit().putInt(key, clamped).apply();

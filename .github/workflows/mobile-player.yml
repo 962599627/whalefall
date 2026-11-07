@@ -27,6 +27,7 @@ jobs:
         run: |
           export MARCOMOVIE_BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           python scripts/build_android.py
+          python android/tests/run_api23_callback_checks.py
           python scripts/build_device_probe.py MobilePlayerProbe
       - name: Enable emulator acceleration
         run: |

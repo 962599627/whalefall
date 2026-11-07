@@ -70,19 +70,33 @@ public final class LiteCatalog {
      if(!before.getAuthority().equals(after.getAuthority()))headers=null;current=next;continue;}
     if(status!=200)throw new IOException("服务器返回 HTTP "+status);
     InputStream in=c.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] b=new byte[8192];int n;
-    while((n=in.read(b))!=-1){if(Thread.currentThread().isInterrupted()||System.nanoTime()>deadlineNs)throw new InterruptedIOException();if(out.size()+n>MAX_BYTES)throw new IOException("配置或列表超过大小限制");out.write(b,0,n);}return new String(out.toByteArray(),"UTF-8");
+    while((n=in.read(b))!=-1){if(Thread.currentThread().isInterrupted()||System.nanoTime()>deadlineNs)throw new InterruptedIOException();if(out.size()+n>MAX_BYTES)throw new IOException("配置或列表超过大小限制");out.write(b,0,n);}return decodeText(out.toByteArray());
    }finally{IN_FLIGHT.remove(c);c.disconnect();}
   }throw new IOException("重定向过多");
+ }
+ public static String decodeText(byte[] bytes)throws IOException {
+  if(bytes.length>=2&&(bytes[0]&255)==255&&(bytes[1]&255)==254)return new String(bytes,2,bytes.length-2,"UTF-16LE");
+  if(bytes.length>=2&&(bytes[0]&255)==254&&(bytes[1]&255)==255)return new String(bytes,2,bytes.length-2,"UTF-16BE");
+  return new String(bytes,"UTF-8");
  }
  public static JSONObject decodeConfig(String raw)throws Exception {
   String cleaned=withoutComments(raw).trim();
   if(cleaned.startsWith("\ufeff"))cleaned=cleaned.substring(1).trim();
   int star=cleaned.indexOf("**");
-  if(!cleaned.startsWith("{")&&star>=0){
+  if(!cleaned.startsWith("{")&&!cleaned.startsWith("[")&&star>=0){
    try{
     String decoded=new String(android.util.Base64.decode(cleaned.substring(star+2).replaceAll("\\s+",""),android.util.Base64.DEFAULT),"UTF-8");
-    if(decoded.trim().startsWith("{"))cleaned=withoutComments(decoded).trim();
+    if(decoded.trim().startsWith("{")||decoded.trim().startsWith("["))cleaned=withoutComments(decoded).trim();
    }catch(Exception ignored){}
+  }
+  if(cleaned.startsWith("[")){
+   JSONArray sites=new JSONArray(cleaned);
+   if(sites.length()==0)throw new IOException("配置数组需要包含带 api 的来源对象");
+   for(int i=0;i<sites.length();i++){
+    JSONObject item=sites.optJSONObject(i);Object api=item==null?null:item.opt("api");
+    if(!(api instanceof String)||((String)api).trim().length()==0)throw new IOException("配置数组需要包含带 api 的来源对象");
+   }
+   return new JSONObject().put("sites",sites);
   }
   return new JSONObject(cleaned);
  }
@@ -95,7 +109,9 @@ public final class LiteCatalog {
  public static List<Site> parse(String raw,String base)throws Exception {
   JSONObject document=decodeConfig(raw);
   base=document.optString(com.pilipala.source.Warehouse.ORIGIN,base);
-  JSONArray rows=document.optJSONArray("sites");if(rows==null||rows.length()==0)throw new IOException("配置没有 sites 列表");
+  JSONArray rows=document.optJSONArray("sites");
+  if((rows==null||rows.length()==0)&&document.optString("api").length()>0)rows=new JSONArray().put(document);
+  if(rows==null||rows.length()==0)throw new IOException("配置没有 sites 列表");
   List<Site> sites=new ArrayList<Site>();
   for(int i=0;i<rows.length()&&i<500;i++){JSONObject row=rows.getJSONObject(i);Site s=new Site();
    s.name=row.optString("name","未命名");s.key=row.optString("key",s.name+"_"+i);s.type=row.optInt("type",-1);s.api=row.optString("api");

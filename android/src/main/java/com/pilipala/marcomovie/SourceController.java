@@ -743,11 +743,7 @@ final class SourceController {
                             a.ui.post(
                                     () -> {
                                         try {
-                                            saveConfig(a, pkg.config, pkg.origin);
-                                            a.toast(
-                                                    "本地包导入成功（共 "
-                                                            + pkg.config.sites.size()
-                                                            + " 个片源）");
+                                            applyLocalPackage(a, pkg);
                                         } catch (Exception ex) {
                                             a.toast("保存本地包配置失败：" + a.message(ex));
                                         }
@@ -857,6 +853,22 @@ final class SourceController {
                         a.ui.post(() -> a.toast("文件读取失败：" + a.message(e)));
                     }
                 });
+    }
+
+    static void applyLocalPackage(MainActivity a, LocalSourcePackage pkg) throws Exception {
+        if (pkg.liveChannels > 0) {
+            a.prefs
+                    .edit()
+                    .putString(Prefs.LIVE_URL, pkg.origin)
+                    .putString(Prefs.LIVE_NAME, "本地包直播 (" + pkg.liveChannels + "台)")
+                    .apply();
+            a.toast("本地播放列表导入成功（共 " + pkg.liveChannels + " 个频道）");
+            if (!a.isTvDevice()) MobileShell.show(a);
+            else a.refresh();
+        } else {
+            saveConfig(a, pkg.config, pkg.origin);
+            a.toast("本地包导入成功（共 " + pkg.config.sites.size() + " 个片源）");
+        }
     }
 
     static void saveConfig(MainActivity a, Cms.Config c, String origin) throws Exception {

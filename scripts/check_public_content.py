@@ -18,6 +18,15 @@ ALLOWED_HOSTS={'nodejs.org','api.github.com','release-assets.githubusercontent.c
 # file goes through normal host review again. Private-value scanning remains active.
 UPSTREAM_TEXT = json.loads((ROOT/'scripts/upstream-text-sha256.json').read_text(encoding='utf-8'))
 
+# Exact synthetic authorities used to test URL authentication/IPv6 and a second
+# loopback origin. Never allow their apparent username-as-host globally, and do
+# not suppress any of the private-value checks above the URL review below.
+TEST_AUTHORITIES = {
+    'android/tests/JsHttpChecks.java': {'new:secret@', 'us%40er:pa%2Bss@'},
+    'flutter/test/python_host_compat_test.dart': {'user:pass@[::1]:8443'},
+    'scripts/test_python_host.js': {'user:pass@[::1]:8443', '127.0.0.2', '127.0.0.2:'},
+}
+
 def paths():
     if (ROOT/'.git').exists():
         result=subprocess.run(['git','ls-files','-z'],cwd=ROOT,check=True,capture_output=True)
@@ -48,6 +57,7 @@ for p in files:
     if UPSTREAM_TEXT.get(relative.as_posix()) == hashlib.sha256(text.replace('\r\n','\n').encode('utf-8')).hexdigest():
         continue
     for authority in re.findall(r'https?://([^/\s\"\'<>\\)]+)',text):
+        if authority in TEST_AUTHORITIES.get(relative.as_posix(), set()):continue
         host=authority.split(':')[0].lower().rstrip('.,;')
         if relative.as_posix() == 'flutter/pubspec.lock' and host in {'pub.dev','dart.dev'}:continue
         if host not in ALLOWED_HOSTS and not host.endswith(('.test','.example','.invalid')):

@@ -935,7 +935,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           : _buildPluginOnlyConfigNotice(context),
                     ),
                   ] else ...[
-                    // Up Next ("继续观看") Shelf — Strictly hidden in Privacy Mode
+                    // History shelf — newest first; hidden in Privacy Mode.
                     if (!_privateSessionUnlocked &&
                         widget.storage.showContinueWatching &&
                         history.isNotEmpty) ...[
@@ -946,7 +946,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         child: Row(
                           children: [
                             const Text(
-                              '继续观看',
+                              '历史记录',
                               style: TextStyle(
                                 color: AppleColors.labelPrimary,
                                 fontSize: 19,
@@ -4980,7 +4980,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         AppleGroupedTile(
           icon: CupertinoIcons.play_rectangle_fill,
           iconBgColor: AppleColors.systemGreen,
-          title: '首页「继续观看」快捷栏',
+          title: '首页「历史记录」快捷栏',
           subtitle: '在首页顶部显示最近观看进度卡片以便一键续播',
           trailing: CupertinoSwitch(
             value: widget.storage.showContinueWatching,

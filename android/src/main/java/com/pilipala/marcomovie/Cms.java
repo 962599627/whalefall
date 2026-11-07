@@ -164,6 +164,9 @@ public final class Cms {
     }
 
     public static boolean looksLikeJsSpider(String text, String origin) {
+        String content = text == null ? "" : text.trim().replaceFirst("^\\uFEFF", "");
+        if (content.startsWith("{") || content.startsWith("[") || content.startsWith("<"))
+            return false;
         String cleanOrigin =
                 origin == null ? "" : origin.split("[?#]", 2)[0].toLowerCase(Locale.ROOT);
         if (cleanOrigin.endsWith(".js") || cleanOrigin.endsWith(".mjs")) return true;
@@ -171,10 +174,22 @@ public final class Cms {
         String t = text.trim();
         return t.contains("__jsEvalReturn")
                 || t.contains("export default")
+                || java.util.regex.Pattern.compile(
+                                "\\bmodule\\s*\\.\\s*exports\\b|\\bexports\\s*(?:\\.|\\[)")
+                        .matcher(t)
+                        .find()
+                || java.util.regex.Pattern.compile(
+                                "\\bexport\\s+(?:(?:async\\s+)?function|const|let|var)\\s+(?:init|home|homeVod|category|search|detail|play)\\b")
+                        .matcher(t)
+                        .find()
+                || java.util.regex.Pattern.compile("\\bexport\\s*(?:\\{|\\*)").matcher(t).find()
                 || (t.contains("var rule") && t.contains("host"));
     }
 
     public static boolean looksLikePySpider(String text, String origin) {
+        String content = text == null ? "" : text.trim().replaceFirst("^\\uFEFF", "");
+        if (content.startsWith("{") || content.startsWith("[") || content.startsWith("<"))
+            return false;
         String cleanOrigin =
                 origin == null ? "" : origin.split("[?#]", 2)[0].toLowerCase(Locale.ROOT);
         if (cleanOrigin.endsWith(".py")) return true;
@@ -217,6 +232,7 @@ public final class Cms {
                                 .put("name", title)
                                 .put("type", 3)
                                 .put("api", origin)
+                                .put("ext", new JSONObject().put("_mm_entrySource", trimmed))
                                 .put("searchable", 1);
                 JSONObject synth = new JSONObject().put("sites", new JSONArray().put(siteObj));
                 return parseConfig(synth.toString(), origin);
@@ -244,7 +260,15 @@ public final class Cms {
                 return parseConfig(synth.toString(), origin);
             }
         }
-        JSONObject root = new JSONObject(withoutComments(trimmed));
+        String json = withoutComments(trimmed);
+        JSONObject root;
+        if (json.trim().startsWith("[")) {
+            JSONArray array = new JSONArray(json);
+            if (!isSiteArray(array)) throw new IOException("配置数组需要包含带 api 的来源对象");
+            root = new JSONObject().put("sites", array);
+        } else {
+            root = new JSONObject(json);
+        }
         JSONArray sites = root.optJSONArray("sites");
         if ((sites == null || sites.length() == 0)
                 && root.has("api")
@@ -328,6 +352,16 @@ public final class Cms {
         return out;
     }
 
+    static boolean isSiteArray(JSONArray entries) {
+        if (entries.length() == 0) return false;
+        for (int i = 0; i < entries.length(); i++) {
+            JSONObject item = entries.optJSONObject(i);
+            Object api = item == null ? null : item.opt("api");
+            if (!(api instanceof String) || ((String) api).trim().isEmpty()) return false;
+        }
+        return true;
+    }
+
     public static String withoutComments(String source) throws IOException {
         StringBuilder clean = new StringBuilder();
         boolean quoted = false, escaped = false;
@@ -395,8 +429,14 @@ public final class Cms {
             if (marker < 0) throw new IOException("配置图片中没有受支持的 JSON 载荷");
             return decodeBase64Range(bytes, marker, bytes.length);
         }
-        String text = new String(bytes, "UTF-8");
+        String text;
+        if (bytes.length >= 2 && (bytes[0] & 255) == 255 && (bytes[1] & 255) == 254)
+            text = new String(bytes, 2, bytes.length - 2, "UTF-16LE");
+        else if (bytes.length >= 2 && (bytes[0] & 255) == 254 && (bytes[1] & 255) == 255)
+            text = new String(bytes, 2, bytes.length - 2, "UTF-16BE");
+        else text = new String(bytes, "UTF-8");
         String trimmed = text.trim().replaceFirst("^\\uFEFF", "");
+        if (looksLikeJsSpider(trimmed, "") || looksLikePySpider(trimmed, "")) return text;
         if (!trimmed.startsWith("{") && !trimmed.startsWith("[") && !trimmed.startsWith("/")) {
             int star = trimmed.lastIndexOf("**");
             if (star >= 0 && star + 2 < trimmed.length()) {
@@ -565,10 +605,14 @@ public final class Cms {
     public static String searchTitle(Video v) {
         if (v.id != null && v.id.startsWith("msearch:")) {
             String[] parts = v.id.substring(8).split("###", -1);
-            for (String part : parts)
-                if (!part.trim().isEmpty() && !isHttp(part)) return part.trim();
+            for (String part : parts) {
+                String text = part.trim();
+                // Some catalogue spiders put a Douban/TMDB id before the title.
+                // That id is metadata, not a title to prefill into global search.
+                if (!text.isEmpty() && !isHttp(text) && !text.matches("[0-9]+")) return text;
+            }
         }
-        return v.title;
+        return v.title == null ? "" : v.title.trim();
     }
 
     private static Video video(JSONObject j) {

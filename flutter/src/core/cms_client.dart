@@ -108,7 +108,7 @@ class CmsClient {
       requestTimeout: requestTimeout,
       defaultUa: tvBoxUserAgent,
     );
-    return utf8.decode(bytes, allowMalformed: true);
+    return CmsParser.decodeTextDocument(bytes);
   }
   Uri _appendQuery(
     String baseUrl,
@@ -130,37 +130,89 @@ class CmsClient {
       final archive = ZipDecoder().decodeBytes(bytes);
       if (archive.files.length > 2048) throw const FormatException('ZIP 文件数量超过限制');
       final files = <String, ArchiveFile>{};
+      var unpackedSize = 0;
       for (final item in archive.files.where((f) => f.isFile)) {
+        // Check before any .content access: archive entries decompress lazily.
+        unpackedSize += item.size;
+        if (item.size < 0 || unpackedSize > maxResponseBytes) {
+          throw const FormatException('ZIP 解压后的内容超过 6 MB');
+        }
         final path = item.name.replaceAll('\\', '/');
         if (path.startsWith('/') || path.contains(':') || path.split('/').contains('..') ||
             files.containsKey(path)) throw const FormatException('ZIP 路径无效或重复');
         files[path] = item;
       }
-      final configs = files.values.where((f) => f.name.toLowerCase().endsWith('.json')).toList();
+      final configs = files.values.where((f) {
+        if (!f.name.toLowerCase().endsWith('.json')) return false;
+        if (f.size > maxResponseBytes) return false;
+        try {
+          final doc = jsonDecode(CmsParser.stripJsonComments(CmsParser.decodeConfigDocument(f.content)));
+          bool site(dynamic value) => value is Map && value['api'] is String &&
+              (value['name'] != null || value['key'] != null);
+          bool records(dynamic value, String field) => value is List &&
+              value.any((entry) => entry is Map && entry.containsKey(field));
+          return doc is List ? doc.any(site) : doc is Map &&
+              (site(doc) || ['sites','lives','urls','depots','storeHouse'].any(doc.containsKey) ||
+               records(doc['list'], 'vod_id') || records(doc['class'], 'type_id') ||
+               doc['code'] != null && (doc['list'] is List || doc['class'] is List));
+        } on FormatException { return false; }
+      }).toList();
       int rank(ArchiveFile f) {
         const names = ['config.json', 'tv.json', 'api.json', 'index.json', 'main.json'];
         final i = names.indexOf(f.name.toLowerCase().replaceAll('\\', '/').split('/').last);
         return i < 0 ? names.length : i;
       }
       configs.sort((a, b) => rank(a).compareTo(rank(b)));
-      final playlists = files.values.where((f) => RegExp(r'\.(m3u8?|txt)$', caseSensitive: false).hasMatch(f.name)).toList();
+      final playlists = files.values.where((f) => RegExp(r'\.(m3u8?|txt)$', caseSensitive: false).hasMatch(f.name) &&
+          f.size <= maxResponseBytes && CmsParser.parseLivePlaylist(CmsParser.decodeTextDocument(f.content)).isNotEmpty).toList();
       if (configs.isEmpty && playlists.length == 1) {
         final file = playlists.single;
         if (file.size > maxResponseBytes) throw const FormatException('ZIP 中的播放列表过大');
-        final text = utf8.decode(file.content);
+        final text = CmsParser.decodeTextDocument(file.content);
         if (CmsParser.parseLivePlaylist(text).isEmpty) throw const FormatException('播放列表没有可用频道');
         // Keep the playlist inline even after refreshing a remote ZIP subscription.
         return jsonEncode({'sites': [{'name': '播放列表', 'key': 'playlist', 'type': 1,
           'api': 'm3u_vod://playlist', 'ext': text}], 'lives': [{'name':'播放列表',
           'url': Uri.dataFromString(text, mimeType:'text/plain', encoding:utf8, base64:true).toString()}]});
       }
-      if (configs.isEmpty || configs.length > 1 && rank(configs.first) == rank(configs[1])) {
+      if (configs.isEmpty) {
+        final scripts = files.entries.where((e) => RegExp(r'\.(?:m?js|py)$', caseSensitive: false).hasMatch(e.key)).toList();
+        final preferred = scripts.where((e) => RegExp(r'^(?:main|index|spider)\.(?:m?js|py)$', caseSensitive: false).hasMatch(e.key.split('/').last)).toList();
+        final entry = scripts.length == 1 ? scripts.single : preferred.length == 1 ? preferred.single : null;
+        if (entry == null || scripts.length > 32) {
+          throw const FormatException('ZIP 需要明确的配置、播放列表或唯一的 main/index/spider 脚本入口');
+        }
+        final modules = <String, String>{};
+        var size = 0;
+        final resources = files.entries.where((e) => RegExp(r'\.(?:m?js|py|json)$', caseSensitive: false).hasMatch(e.key));
+        for (final script in resources) {
+          if (modules.length >= 32) throw const FormatException('ZIP 模块数量超过限制');
+          size += script.value.size;
+          if (size > maxResponseBytes) throw const FormatException('ZIP 脚本总大小超过 6 MB');
+          modules[Uri(scheme: 'pkg', host: 'archive', path: '/${script.key}').toString()] = CmsParser.decodeTextDocument(script.value.content);
+        }
+        final origin = Uri(scheme: 'pkg', host: 'archive', path: '/${entry.key}').toString();
+        final source = modules.remove(origin)!;
+        final python = entry.key.toLowerCase().endsWith('.py');
+        if (!python && !CmsParser.isExecutableJs(source)) {
+          throw const FormatException('ZIP 脚本需要兼容的 Spider 接口，当前不支持此规则宿主');
+        }
+        final result = jsonEncode({'sites': [{'key': 'local_script', 'name': '本地脚本', 'type': 3,
+          'api': python ? 'csp_LocalScript.py' : 'csp_LocalScript.js',
+          'ext': {'script': source, 'origin': origin, 'modules': modules}}]});
+        if (utf8.encode(result).length > maxResponseBytes) throw const FormatException('展开的订阅超过 6 MB');
+        return result;
+      }
+      if (configs.length > 1 && rank(configs.first) == rank(configs[1])) {
         throw const FormatException('ZIP 需要一个明确的订阅入口，例如 config.json');
       }
       final file = configs.first;
       if (file.size > maxResponseBytes) throw const FormatException('ZIP 中的配置过大');
       var decoded = CmsParser.decodeConfigDocument(file.content);
-      final doc = jsonDecode(CmsParser.stripJsonComments(decoded));
+      var doc = jsonDecode(CmsParser.stripJsonComments(decoded));
+      if (doc is List) doc = <String, dynamic>{'sites': doc};
+      if (doc is Map && doc['sites'] == null && doc['api'] != null &&
+          (doc['name'] != null || doc['key'] != null)) doc = <String, dynamic>{'sites': [doc]};
       if (doc is Map) {
         final entryPath = file.name.replaceAll('\\', '/');
         final base = Uri(scheme: 'pkg', host: 'archive', path: '/$entryPath');
@@ -175,12 +227,13 @@ class CmsClient {
             if (ref == null || ref.hasScheme || !scriptFile.hasMatch(ref.path)) continue;
             if (ref.hasAuthority || ref.path.startsWith('/')) throw const FormatException('ZIP 脚本路径无效');
             if (scripts.isEmpty) {
-              for (final f in files.entries.where((e) => scriptFile.hasMatch(e.key))) {
+              for (final f in files.entries.where((e) => e.key != entryPath &&
+                  (scriptFile.hasMatch(e.key) || e.key.toLowerCase().endsWith('.json')))) {
                 if (scripts.length >= 32 || f.value.size > maxResponseBytes - total) {
                   throw const FormatException('ZIP 脚本数量或总大小超过限制');
                 }
                 total += f.value.size;
-                scripts[Uri(scheme: 'pkg', host: 'archive', path: '/${f.key}').toString()] = utf8.decode(f.value.content);
+                scripts[Uri(scheme: 'pkg', host: 'archive', path: '/${f.key}').toString()] = CmsParser.decodeTextDocument(f.value.content);
               }
             }
             final origin = base.resolveUri(ref).toString();
@@ -204,7 +257,7 @@ class CmsClient {
             throw const FormatException('ZIP 内的播放列表不存在或过大');
           }
           total += target.size;
-          final text = utf8.decode(target.content);
+          final text = CmsParser.decodeTextDocument(target.content);
           if (CmsParser.parseLivePlaylist(text).isEmpty) throw const FormatException('ZIP 播放列表没有可用频道');
           live['url'] = Uri.dataFromString(text, mimeType: 'text/plain', encoding: utf8, base64: true).toString();
         }
@@ -280,6 +333,7 @@ class CmsClient {
       trimmedUrl = '';
     } else if (trimmedUrl.isEmpty &&
         !CmsParser.looksLikeScript(trimmedText) &&
+        CmsParser.parseLivePlaylist(trimmedText).isEmpty &&
         !trimmedText.startsWith('{') &&
         !trimmedText.startsWith('[') &&
         !trimmedText.startsWith('<') &&
@@ -310,7 +364,7 @@ class CmsClient {
         } else {
         if (!CmsParser.looksLikeScript(verified.source)) throw const FormatException('已校验的文件没有兼容的来源入口');
         // Keep only the verified body and credential-free module base in the subscription.
-        final executable = verified.source.contains('export default') || verified.source.contains('__jsEvalReturn');
+        final executable = CmsParser.isExecutableJs(verified.source);
         rawConfig = jsonEncode({'sites':[{'key':'verified_script','name': defaultName.isEmpty ? verified.script.host : defaultName,
           'type':3,'api':executable ? 'csp_LocalScript.js' : 'csp_LocalRule.js',
           'ext':{'script':verified.source,'origin':verified.script.toString()}}]});
@@ -544,7 +598,6 @@ class CmsClient {
           extension: extension, headers: site.headers, pythonPrelude: prelude);
     }
     // Preload static ES imports for the synchronous QuickJS module loader.
-    final imports = RegExp(r'''(?:^|[;\n])\s*(?:import|export)\s+(?:(?:[^;'"]*?\s+from\s*)?['"])([^'"]+)['"]''', multiLine: true);
     var total = 0;
     final queue = [entry];
     final visited = <String>{};
@@ -555,21 +608,41 @@ class CmsClient {
       final text = modules[parent]!;
       total += utf8.encode(text).length;
       if (total > maxResponseBytes) throw const FormatException('脚本模块总大小超过 6 MB');
-      for (final match in imports.allMatches(text)) {
-        final ref = match.group(1)!;
-        final url = Uri.parse(parent).resolve(ref);
+      if (Uri.parse(parent).path.toLowerCase().endsWith('.json')) continue;
+      final required = JsSourceHost.commonJsReferences(text).toSet();
+      final references = {...JsSourceHost.esModuleReferences(text), ...required};
+      for (final ref in references) {
+        final common = required.contains(ref);
+        if (common && !ref.startsWith('.') && !ref.startsWith('https://') && !ref.startsWith('http://')) {
+          throw FormatException('不支持的 Node 模块：$ref');
+        }
+        var url = Uri.parse(parent).resolve(ref);
+        final candidates = [url, if (common && !RegExp(r'\.(?:m?js|json)$', caseSensitive: false).hasMatch(url.path)) ...[
+          url.replace(path: '${url.path}.js'), url.replace(path: '${url.path}.json'),
+          url.replace(path: '${url.path}/index.js'),
+        ]];
+        for (final candidate in candidates) {
+          if (modules.containsKey(candidate.toString())) { url = candidate; break; }
+        }
         if (!modules.containsKey(url.toString())) {
           if (url.scheme != 'https' && url.scheme != 'http') {
             throw FormatException('本地包缺少脚本模块：$ref');
           }
-          final sameOrigin = Uri.parse(parent).authority == url.authority &&
-              Uri.parse(parent).scheme == url.scheme;
-          modules[url.toString()] = await _getText(url.toString(), headers: sameOrigin ? site.headers : {});
+          for (var i = 0; i < candidates.length; i++) {
+            url = candidates[i];
+            final sameOrigin = Uri.parse(parent).authority == url.authority && Uri.parse(parent).scheme == url.scheme;
+            try {
+              modules[url.toString()] = await _getText(url.toString(), headers: sameOrigin ? site.headers : {});
+              break;
+            } on HttpException catch (error) {
+              if (error.message != 'HTTP 404' || i == candidates.length - 1) rethrow;
+            }
+          }
         }
         queue.add(url.toString());
       }
     }
-    final cat = modules[entry]!.contains('__jsEvalReturn') && !modules[entry]!.contains('export default');
+    final cat = modules[entry]!.contains('__jsEvalReturn') && !JsSourceHost.isEsModule(modules[entry]!);
     return JsSourceHost.invoke(entry: entry, modules: modules, method: method,
       arguments: cat && method == 'detail' ? [args] : args,
       extension: cat ? {'stype': 3, 'skey': site.key, 'ext': extension} : extension,
@@ -626,7 +699,7 @@ class CmsClient {
     }
     if (site.isM3uVodApi) {
       final content = await _resolveM3uVodPayload(site);
-      return CmsParser.parseM3uVodHome(content);
+      return CmsParser.parseM3uVodHome(content, origin: site.api.substring('m3u_vod://'.length));
     }
     if (CspBridge.canHandleSite(site)) {
       return CspBridge.fetchHome(site, _getText);
@@ -681,7 +754,7 @@ class CmsClient {
     }
     if (site.isM3uVodApi) {
       final content = await _resolveM3uVodPayload(site);
-      final (_, homeListing) = CmsParser.parseM3uVodHome(content);
+      final (_, homeListing) = CmsParser.parseM3uVodHome(content, origin: site.api.substring('m3u_vod://'.length));
       var videos = homeListing.videos;
       if (categoryId.isNotEmpty) {
         videos = videos
@@ -771,7 +844,7 @@ class CmsClient {
     if (_usesJs(site)) return CmsParser.parseListing(await _callJs(site, 'search', [keyword, false, page]));
     if (site.isM3uVodApi) {
       final content = await _resolveM3uVodPayload(site);
-      final (_, homeListing) = CmsParser.parseM3uVodHome(content);
+      final (_, homeListing) = CmsParser.parseM3uVodHome(content, origin: site.api.substring('m3u_vod://'.length));
       final kw = keyword.trim().toLowerCase();
       final matched = homeListing.videos
           .where((v) => v.title.toLowerCase().contains(kw))
@@ -942,7 +1015,7 @@ class CmsClient {
       }
     }
     final raw = await _getText(u, headers: source.headers);
-    return CmsParser.parseLivePlaylist(raw);
+    return CmsParser.parseLivePlaylist(raw, origin: u);
   }
   Stream<(CmsSite, List<CmsVideo>)> searchAcrossSites(
     List<CmsSite> sites,

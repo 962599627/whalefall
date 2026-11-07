@@ -71,6 +71,11 @@ jobs:
           python scripts/test_movie_mirror.py
           python scripts/test_platform_packages.py
           python scripts/test_catpaw_host.py
+      - name: Shared script runtime and native patch checks
+        run: |
+          node scripts/test_js_module_interop.cjs
+          node scripts/test_python_host.js
+          python scripts/test_catpaw_node_patches.py
       - name: Check CatPaw without JIT or WebAssembly
         env:
           MARCOMOVIE_NODE_FLAGS: --jitless --experimental-permission --allow-worker --allow-fs-read=* --allow-fs-write=*
@@ -95,6 +100,7 @@ jobs:
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           export MARCOMOVIE_BUILD_TOOLS="$BUILD_TOOLS"
           python scripts/build_android.py
+          python android/tests/run_api23_callback_checks.py
           python scripts/build_lite.py
       - uses: actions/upload-artifact@v4
         with:

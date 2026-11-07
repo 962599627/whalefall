@@ -40,6 +40,7 @@ flutter:
   shaders:
     - shaders/glasswork.frag
   assets:
+    - assets/js-host/module-interop.js
     - assets/catpaw/
     - assets/python-host/
     - assets/logo_mark.png

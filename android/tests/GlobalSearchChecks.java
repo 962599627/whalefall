@@ -32,6 +32,25 @@ public final class GlobalSearchChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        Cms.Video redirect = video("msearch:36809913");
+        redirect.title = "折月亮";
+        check(
+                Cms.searchTitle(redirect).equals("折月亮"),
+                "catalogue id redirects search by movie title");
+        redirect.id = "msearch:36809913###折月亮###https://fixture.invalid/poster.jpg";
+        check(Cms.searchTitle(redirect).equals("折月亮"), "cross-search id metadata is skipped");
+        redirect.id = "msearch:###三体###https://fixture.invalid/poster.jpg";
+        check(
+                Cms.searchTitle(redirect).equals("三体"),
+                "explicit cross-search title remains preferred");
+        redirect.id = "msearch:1917";
+        redirect.title = "1917";
+        check(Cms.searchTitle(redirect).equals("1917"), "numeric movie titles remain valid");
+        redirect.id = "msearch:36809913";
+        redirect.title = null;
+        check(
+                Cms.searchTitle(redirect).isEmpty(),
+                "missing movie name does not expose metadata id as query");
         PinyinKeyboardModel model =
                 new PinyinKeyboardModel(
                         Files.newInputStream(

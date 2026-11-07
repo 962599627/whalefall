@@ -440,7 +440,7 @@ class CspBridge {
     }
 
     // Cross-source search by title (used by `豆豆┃片单`, `我的云盘`, and any card needing multi-source lines)
-    final searchTitle = _extractSearchTitle(fallback);
+    final searchTitle = searchTitleForVideo(fallback);
     if (searchTitle.isNotEmpty) {
       final resolved = await resolveCrossSourceVideo(
         fallback,
@@ -1424,15 +1424,19 @@ class CspBridge {
     return const CmsListing();
   }
 
-  static String _extractSearchTitle(CmsVideo video) {
+  /// Listing redirects may contain a catalogue ID before the actual title.
+  static String searchTitleForVideo(CmsVideo video) {
     if (video.id.startsWith('msearch:')) {
       final afterPrefix = video.id.substring('msearch:'.length).trim();
-      if (afterPrefix.startsWith('###')) {
-        final parts = afterPrefix.split('###').where((s) => s.trim().isNotEmpty).toList();
-        if (parts.isNotEmpty) return parts.first.trim();
+      for (final part in afterPrefix.split('###')) {
+        final candidate = part.trim();
+        if (candidate.isEmpty || RegExp(r'^\d+$').hasMatch(candidate)) continue;
+        final scheme = Uri.tryParse(candidate)?.scheme.toLowerCase();
+        if (scheme == 'http' || scheme == 'https') continue;
+        return candidate;
       }
-      if (afterPrefix.isNotEmpty) return afterPrefix;
     }
+    // Numeric titles such as 1917 remain valid when supplied as vod_name.
     return video.title.trim();
   }
 

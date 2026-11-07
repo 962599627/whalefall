@@ -37,11 +37,33 @@ public final class JsEngine implements SourceEngine {
     private volatile long deadline;
     private boolean catApi;
 
+    static boolean isCommonJs(String source) {
+        return java.util.regex.Pattern.compile(
+                        "\\b(?:module\\s*\\.\\s*exports\\b|exports\\s*(?:\\.|\\[))")
+                .matcher(source)
+                .find();
+    }
+
+    static boolean isEsModule(String source) {
+        return java.util.regex.Pattern.compile(
+                        "(?:^|[;\\n])\\s*(?:export\\s*(?:default\\b|(?:async\\s+)?function\\b|class\\b|const\\b|let\\b|var\\b|\\{|\\*)|import(?=\\s|['\"{*]))",
+                        java.util.regex.Pattern.MULTILINE)
+                .matcher(source)
+                .find();
+    }
+
     public static boolean eligible(Cms.Site s) {
         if (s.type == 3 && "csp_LocalPython".equals(s.api) && s.ext instanceof String) return true;
+        boolean checkedScript =
+                s.ext instanceof JSONObject
+                        && ((JSONObject) s.ext).opt("_mm_entrySource") instanceof String
+                        && !((JSONObject) s.ext).optString("_mm_entrySource").isEmpty();
         return s.type == 3
                 && (Cms.isHttp(s.api) || (s.api != null && s.api.startsWith("file://")))
-                && s.api.split("[?#]", 2)[0].toLowerCase(Locale.ROOT).matches(".*\\.(m?js|py)");
+                && (checkedScript
+                        || s.api.split("[?#]", 2)[0]
+                                .toLowerCase(Locale.ROOT)
+                                .matches(".*\\.(m?js|py)"));
     }
 
     public JsEngine(Application application, Cms.Config config, Cms.Site selected)
@@ -154,6 +176,7 @@ public final class JsEngine implements SourceEngine {
                         + URLEncoder.encode(site.key, "UTF-8")
                         + (ProxyAddress.token.isEmpty() ? "" : "&_mm_token=" + ProxyAddress.token));
         context.evaluate(asset("js-host/bootstrap.js"), "host-bootstrap.js");
+        context.evaluate(asset("js-host/module-interop.js"), "module-interop.js");
         context.evaluate(asset("js-host/crypto-js.js"), "crypto-js.js");
         context.setModuleLoader(
                 new QuickJSContext.DefaultModuleLoader() {
@@ -183,7 +206,7 @@ public final class JsEngine implements SourceEngine {
         if (checkedScript)
             modules.put(site.api, ((JSONObject) site.ext).getString("_mm_entrySource"));
         String source = inlinePython ? (String) site.ext : module(site.api);
-        catApi = source.contains("__jsEvalReturn") && !source.contains("export default");
+        catApi = source.contains("__jsEvalReturn") && !isEsModule(source);
         if (inlinePython || site.api.split("[?#]", 2)[0].toLowerCase(Locale.ROOT).endsWith(".py")) {
             catApi = false;
             bind(
@@ -210,23 +233,77 @@ public final class JsEngine implements SourceEngine {
         } else if (catApi) {
             context.evaluate(source, site.api);
             context.evaluate("globalThis.__movieSpider=__jsEvalReturn();");
-        } else
+        } else if (isEsModule(source))
             context.evaluateModule(
-                    "import spider from "
+                    "import * as spider from "
                             + JSONObject.quote(site.api)
-                            + ";globalThis.__movieSpider=spider;",
+                            + ";globalThis.__movieSpider=__movieSelectSpider(spider);",
                     site.api + ".host-entry.mjs");
+        else if (isCommonJs(source)) {
+            bind(
+                    global,
+                    "__hostCommonJsModule",
+                    args -> commonJsModule(string(args, 0), string(args, 1)));
+            context.evaluate(
+                    "globalThis.__movieSpider=__movieSelectSpider(__movieLoadCommonJS("
+                            + JSONObject.quote(site.api)
+                            + ",(name,parent)=>JSON.parse(__hostCommonJsModule(name,parent))));void 0;",
+                    "commonjs-entry.js");
+        } else throw new IOException("脚本没有兼容的 Spider 模块入口；DRPY rule 需要对应宿主适配");
         Object ext = inlinePython || checkedScript || site.ext == null ? "" : site.ext;
         String value =
                 ext instanceof JSONObject || ext instanceof JSONArray
                         ? ext.toString()
                         : JSONObject.quote(String.valueOf(ext));
         if (catApi) value = "{stype:3,skey:" + JSONObject.quote(site.key) + ",ext:" + value + "}";
-        context.evaluate(
-                "__movieSpider.init("
+        evaluateSettled(
+                context,
+                "(async()=>{if(typeof __movieSpider.init==='function') await __movieSpider.init("
                         + value
-                        + ");if(typeof __movieSpider.getRule==='function'){const r=__movieSpider.getRule();if(!r||(!r.host&&!r.title&&!r.class_name))throw new Error('DRPY rule failed to initialize');}",
+                        + ");if(typeof __movieSpider.getRule==='function'){const r=await __movieSpider.getRule();if(!r||(!r.host&&!r.title&&!r.class_name))throw new Error('DRPY rule failed to initialize');}})()",
                 "source-init.js");
+        checkBudget();
+    }
+
+    private String commonJsModule(String reference, String parent) throws Exception {
+        if (!(reference.startsWith(".")
+                || Cms.isHttp(reference)
+                || reference.startsWith("file://")))
+            throw new IOException("CommonJS 不提供 Node 内置模块：" + reference);
+        String resolved = Cms.resolve(parent, reference);
+        String[] candidates = commonJsCandidates(resolved);
+        Exception missing = null;
+        for (String candidate : candidates) {
+            try {
+                return new JSONObject()
+                        .put("name", candidate)
+                        .put("source", module(candidate))
+                        .toString();
+            } catch (FileNotFoundException error) {
+                missing = error;
+            } catch (IOException error) {
+                // A missing local candidate may use another standard suffix.
+                // Do not turn a network/auth/timeout error into unrelated requests.
+                if (!candidate.startsWith("file://") || new File(URI.create(candidate)).exists())
+                    throw error;
+                missing = error;
+            }
+        }
+        throw new IOException("CommonJS 依赖未找到：" + reference, missing);
+    }
+
+    static String[] commonJsCandidates(String resolved) {
+        String path = URI.create(resolved).getPath();
+        if (path != null && path.toLowerCase(Locale.ROOT).matches(".*\\.(m?js|json)$"))
+            return new String[] {resolved};
+        int query = resolved.indexOf('?'), fragment = resolved.indexOf('#');
+        int end = resolved.length();
+        if (query >= 0) end = Math.min(end, query);
+        if (fragment >= 0) end = Math.min(end, fragment);
+        String base = resolved.substring(0, end), suffix = resolved.substring(end);
+        return new String[] {
+            resolved, base + ".js" + suffix, base + ".json" + suffix, base + "/index.js" + suffix
+        };
     }
 
     private interface HostCall {
@@ -297,6 +374,7 @@ public final class JsEngine implements SourceEngine {
             }
         JSONObject response = new JSONObject(request(address, "{}"));
         int code = response.getInt("code");
+        if (code == 404) throw new FileNotFoundException("JS 模块返回 HTTP 404");
         if (code < 200 || code >= 300) throw new IOException("JS 模块返回 HTTP " + code);
         String codeText = response.getString("content");
         if (codeText.length() > 2 * 1024 * 1024) throw new IOException("JS 模块超过大小限制");
@@ -316,6 +394,15 @@ public final class JsEngine implements SourceEngine {
         if (!Arrays.asList("GET", "POST", "HEAD", "PUT", "DELETE", "PATCH").contains(method))
             throw new IOException("不支持的请求方式");
         URL next = new URL(Cms.normalizeHttp(address));
+        String urlAuthorization = null;
+        if (next.getUserInfo() != null) {
+            String credentials = URLDecoder.decode(next.getUserInfo().replace("+", "%2B"), "UTF-8");
+            urlAuthorization =
+                    "Basic " + Base64.encodeToString(credentials.getBytes("UTF-8"), Base64.NO_WRAP);
+            // Credentials belong in the header, never in a transport or returned response URL.
+            next = new URL(next.getProtocol(), next.getHost(), next.getPort(), next.getFile());
+        }
+        boolean forwardCookies = true;
         byte[] body = null;
         Object payload = opts.opt("body");
         if (payload == null) payload = opts.opt("data");
@@ -336,24 +423,42 @@ public final class JsEngine implements SourceEngine {
             checkBudget();
             HttpURLConnection connection = (HttpURLConnection) next.openConnection();
             connection.setInstanceFollowRedirects(false);
-            int timeout = Math.max(1000, Math.min(opts.optInt("timeout", 15000), 20000));
+            int remaining =
+                    (int) Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
+            int requested = opts.optInt("timeout", 15000);
+            int timeout =
+                    Math.max(
+                            1,
+                            Math.min(
+                                    remaining, Math.min(requested > 0 ? requested : 15000, 20000)));
             connection.setConnectTimeout(timeout);
             connection.setReadTimeout(timeout);
             connection.setRequestMethod(method);
             connection.setRequestProperty("User-Agent", Cms.USER_AGENT);
+            boolean explicitAuthorization = false;
             if (inputHeaders != null) {
                 Iterator<String> keys = inputHeaders.keys();
                 while (keys.hasNext()) {
                     String key = keys.next(), v = inputHeaders.optString(key);
-                    if (!key.contains("\n") && !v.contains("\r") && !v.contains("\n"))
+                    if (!key.contains("\r")
+                            && !key.contains("\n")
+                            && !v.contains("\r")
+                            && !v.contains("\n")) {
                         connection.setRequestProperty(key, v);
+                        if (key.equalsIgnoreCase("Authorization")) explicitAuthorization = true;
+                    }
                 }
             }
+            if (!explicitAuthorization && urlAuthorization != null)
+                connection.setRequestProperty("Authorization", urlAuthorization);
             URI uri = next.toURI();
-            for (Map.Entry<String, List<String>> h : cookies.get(uri, new HashMap<>()).entrySet())
-                if (!h.getValue().isEmpty() && connection.getRequestProperty(h.getKey()) == null)
-                    connection.setRequestProperty(
-                            h.getKey(), android.text.TextUtils.join("; ", h.getValue()));
+            if (forwardCookies)
+                for (Map.Entry<String, List<String>> h :
+                        cookies.get(uri, new HashMap<>()).entrySet())
+                    if (!h.getValue().isEmpty()
+                            && connection.getRequestProperty(h.getKey()) == null)
+                        connection.setRequestProperty(
+                                h.getKey(), android.text.TextUtils.join("; ", h.getValue()));
             try {
                 RequestScope.attach(connection);
                 if (body != null && !method.equals("GET") && !method.equals("HEAD")) {
@@ -368,8 +473,35 @@ public final class JsEngine implements SourceEngine {
                         && opts.optInt("redirect", 1) != 0) {
                     String location = connection.getHeaderField("Location");
                     if (location == null) throw new IOException("JS 重定向缺少地址");
-                    next = new URL(next, location);
-                    if (!Cms.isHttp(next.toString())) throw new IOException("JS 重定向协议不支持");
+                    URL redirected = new URL(next, location);
+                    if (!Cms.isHttp(redirected.toString())) throw new IOException("JS 重定向协议不支持");
+                    if (redirected.getUserInfo() != null)
+                        throw new IOException("JS 重定向地址不能包含用户名密码");
+                    boolean sameOrigin =
+                            next.getProtocol().equalsIgnoreCase(redirected.getProtocol())
+                                    && next.getHost().equalsIgnoreCase(redirected.getHost())
+                                    && (next.getPort() < 0 ? next.getDefaultPort() : next.getPort())
+                                            == (redirected.getPort() < 0
+                                                    ? redirected.getDefaultPort()
+                                                    : redirected.getPort());
+                    if (!sameOrigin) {
+                        urlAuthorization = null;
+                        forwardCookies = false;
+                        if (inputHeaders != null) {
+                            JSONObject forwarded = new JSONObject();
+                            Iterator<String> keys = inputHeaders.keys();
+                            while (keys.hasNext()) {
+                                String key = keys.next();
+                                if (!key.equalsIgnoreCase("Authorization")
+                                        && !key.equalsIgnoreCase("Proxy-Authorization")
+                                        && !key.equalsIgnoreCase("Cookie")
+                                        && !key.equalsIgnoreCase("Cookie2"))
+                                    forwarded.put(key, inputHeaders.opt(key));
+                            }
+                            inputHeaders = forwarded;
+                        }
+                    }
+                    next = redirected;
                     if (code == 303 || code == 302 && method.equals("POST")) {
                         method = "GET";
                         body = null;
@@ -479,16 +611,27 @@ public final class JsEngine implements SourceEngine {
                     JSONArray a = new JSONArray();
                     for (Object value : args) a.put(value);
                     String invocation =
-                            "(()=>{const r=__movieSpider["
+                            "(()=>{const fn=__movieSpider["
                                     + JSONObject.quote(function)
-                                    + "](..."
+                                    + "];if(typeof fn!=='function')throw new Error('Spider API is missing: ' + "
+                                    + JSONObject.quote(function)
+                                    + ");return fn.apply(__movieSpider,"
                                     + a.toString()
-                                    + ");if(r&&typeof r.then==='function')throw new Error('Promise-based spider API is not supported');return typeof r==='string'?r:JSON.stringify(r);})()";
-                    Object result = context.evaluate(invocation, "source-" + function + ".js");
+                                    + ");})()";
+                    Object result =
+                            evaluateSettled(context, invocation, "source-" + function + ".js");
+                    checkBudget();
                     if (!(result instanceof String) || ((String) result).isEmpty())
                         throw new IOException("JS 来源未返回数据");
                     return (String) result;
                 });
+    }
+
+    static Object evaluateSettled(QuickJSContext runtime, String expression, String name) {
+        // wrapper-android 3.2.3 calls JS_ExecutePendingJob before evaluate() returns.
+        // The second evaluation reads the settled value without spinning or using timers.
+        runtime.evaluate("__movieBeginCall(()=> (" + expression + "));void 0;", name);
+        return runtime.evaluate("__movieFinishCall()", name + ".result");
     }
 
     public String home() throws Exception {

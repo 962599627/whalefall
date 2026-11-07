@@ -318,11 +318,7 @@ final class MobileShell {
                                 a.ui.post(
                                         () -> {
                                             try {
-                                                a.saveConfig(pkg.config, pkg.origin);
-                                                a.toast(
-                                                        "压缩包配置导入成功（共 "
-                                                                + pkg.config.sites.size()
-                                                                + " 个片源）");
+                                                SourceController.applyLocalPackage(a, pkg);
                                             } catch (Exception ex) {
                                                 a.toast("保存配置失败：" + a.message(ex));
                                             }
@@ -758,13 +754,13 @@ final class MobileShell {
         // 1. Scrollable Top Header Row (Brand + Site Capsule + Netdisk Capsule + Search Icon)
         body.addView(buildHomeTopHeaderRow(), new LinearLayout.LayoutParams(-1, -2));
 
-        // 2. Continue Watching Shelf ("继续观看")
+        // 2. History shelf; the newest entry remains first and resumes on tap.
         List<WatchHistory.Entry> history = a.watchHistory();
         if (!history.isEmpty()) {
             LinearLayout histHeader = a.row();
             histHeader.setGravity(Gravity.CENTER_VERTICAL);
             histHeader.setPadding(a.dp(16), a.dp(14), a.dp(16), a.dp(8));
-            TextView hTitle = a.text("继续观看", 18, MainActivity.WHITE);
+            TextView hTitle = a.text("历史记录", 18, MainActivity.WHITE);
             hTitle.setTypeface(null, Typeface.BOLD);
             histHeader.addView(hTitle, new LinearLayout.LayoutParams(0, -2, 1));
             TextView moreHist = a.text("查看全部", 13, 0xff0a84ff);

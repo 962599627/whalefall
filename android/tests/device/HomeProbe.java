@@ -414,20 +414,25 @@ public final class HomeProbe extends Instrumentation {
                                             && tag("home-tab:0").isSelected()));
             check("initial_focus_on_recommended", ui(() -> tag("home-tab:0").hasFocus()));
             check(
-                    "history_right_has_three_cards",
+                    "history_has_four_cards_in_one_list",
                     ui(
                             () ->
-                                    ((ViewGroup) tag("home-history-list")).getChildCount() == 3
+                                    ((ViewGroup) tag("home-history-list")).getChildCount() == 4
                                             && tag("home-history:3") != null
                                             && tag("home-history:4") == null));
             check(
-                    "history_to_right_of_continue",
+                    "newest_history_is_first_and_resumable",
                     ui(
                             () -> {
-                                int[] left = {0, 0}, right = {0, 0};
-                                tag("home-history:0").getLocationOnScreen(left);
-                                tag("home-history-list").getLocationOnScreen(right);
-                                return right[0] > left[0] + tag("home-history:0").getWidth();
+                                ViewGroup historyRow = (ViewGroup) tag("home-history-list");
+                                return historyRow.getChildAt(0) == tag("home-history:0")
+                                        && historyRow.getChildAt(0).hasOnClickListeners()
+                                        && ((TextView) tag("home-history-title"))
+                                                .getText()
+                                                .toString()
+                                                .equals("历史记录")
+                                        && ((ViewGroup) tag("home-history-section")).getChildCount()
+                                                == 3;
                             }));
             check(
                     "history_does_not_duplicate_latest",
@@ -869,6 +874,23 @@ public final class HomeProbe extends Instrumentation {
             check("history_hides_nav", ui(this::noNav));
             key(KeyEvent.KEYCODE_BACK);
             await(() -> tag("home-history:0") != null);
+            final String singleRecord = new JSONArray().put(records.getJSONObject(0)).toString();
+            runOnMainSync(
+                    () -> {
+                        a.prefs.edit().putString("watch_history", singleRecord).commit();
+                        a.refresh();
+                    });
+            await(() -> tag("home-video:11") != null);
+            check(
+                    "one_history_entry_has_no_empty_continuation_area",
+                    ui(
+                            () ->
+                                    ((ViewGroup) tag("home-history-list")).getChildCount() == 1
+                                            && tag("home-history:0") != null
+                                            && tag("home-history:1") == null
+                                            && ((ViewGroup) tag("home-history-section"))
+                                                            .getChildCount()
+                                                    == 3));
             runOnMainSync(
                     () -> {
                         a.prefs.edit().putString("watch_history", "[]").commit();

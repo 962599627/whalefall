@@ -15,7 +15,7 @@ import android.widget.TextView;
 import java.util.*;
 import org.json.JSONObject;
 
-/** Compact continue-watching cards above one category-based, vertically browsed library. */
+/** Recent history above one category-based, vertically browsed library. */
 final class HomeScreen {
     static final int MAX_RETAINED_CARDS = 120;
     final MainActivity a;
@@ -319,32 +319,12 @@ final class HomeScreen {
         List<WatchHistory.Entry> entries = a.watchHistory();
         if (entries.isEmpty()) return;
         boolean compactStack = a.useBottomDock();
-        LinearLayout section = compactStack ? a.vertical() : a.row();
+        LinearLayout section = a.vertical();
         section.setTag("home-history-section");
         section.setGravity(Gravity.TOP);
         section.setClipChildren(false);
         a.body.addView(section);
-        LinearLayout resume = a.vertical(), past = a.vertical();
-        resume.setClipChildren(false);
-        resume.setClipToPadding(false);
-        past.setClipChildren(false);
-        past.setClipToPadding(false);
         section.setClipToPadding(false);
-        if (compactStack) {
-            LinearLayout.LayoutParams top = new LinearLayout.LayoutParams(-1, -2);
-            top.bottomMargin = a.dp(10);
-            section.addView(resume, top);
-            section.addView(past, new LinearLayout.LayoutParams(-1, -2));
-        } else {
-            LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, -2, 1);
-            left.rightMargin = a.dp(20);
-            section.addView(resume, left);
-            section.addView(past, new LinearLayout.LayoutParams(0, -2, 3));
-        }
-        TextView title = a.text("继续播放", 17, MainActivity.WHITE);
-        title.setTypeface(null, Typeface.BOLD);
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        resume.addView(title, new LinearLayout.LayoutParams(-1, a.dp(30)));
         LinearLayout heading = a.row();
         heading.setClipChildren(false);
         heading.setClipToPadding(false);
@@ -358,26 +338,22 @@ final class HomeScreen {
                         "home-history-all",
                         () -> a.open(new MainActivity.Screen(a::historyPage), true));
         heading.addView(allHistory, new LinearLayout.LayoutParams(-2, a.dp(30)));
-        past.addView(heading);
-        a.gap(resume, 6);
-        a.gap(past, 6);
-        LinearLayout recent = a.row();
+        section.addView(heading);
+        a.gap(section, 6);
+        LinearLayout recent = compactStack ? a.vertical() : a.row();
+        if (!compactStack) recent.setWeightSum(4);
         recent.setTag("home-history-list");
         recent.setClipChildren(false);
         recent.setClipToPadding(false);
-        past.addView(recent);
-        if (entries.size() == 1) {
-            TextView empty = a.text("更多观看记录会显示在这里", 12, MainActivity.MUTED);
-            empty.setGravity(Gravity.CENTER_VERTICAL);
-            recent.addView(empty, new LinearLayout.LayoutParams(-1, a.dp(72)));
-        }
+        section.addView(recent);
         for (int i = 0; i < Math.min(4, entries.size()); i++) {
-            LinearLayout row = i == 0 ? resume : recent;
             LinearLayout.LayoutParams cell =
-                    i == 0
+                    compactStack
                             ? new LinearLayout.LayoutParams(-1, a.dp(72))
                             : new LinearLayout.LayoutParams(0, a.dp(72), 1);
-            cell.rightMargin = a.dp(i == 0 || i == Math.min(3, entries.size() - 1) ? 0 : 12);
+            boolean last = i == Math.min(3, entries.size() - 1);
+            cell.rightMargin = a.dp(compactStack || last ? 0 : 12);
+            cell.bottomMargin = a.dp(compactStack && !last ? 10 : 0);
             WatchHistory.Entry e = entries.get(i);
             LinearLayout card = a.row();
             card.setPadding(a.dp(9), a.dp(6), a.dp(12), a.dp(6));
@@ -432,7 +408,7 @@ final class HomeScreen {
                     && ambient != null
                     && (ambient.wanted == null || !ambient.wanted.isAttachedToWindow()))
                 ambient.follow(image);
-            row.addView(card, cell);
+            recent.addView(card, cell);
             historyCards.add(card);
         }
         a.gap(a.body, 4);
@@ -1031,18 +1007,35 @@ final class HomeScreen {
     void wireNavigation(int firstRow) {
         View nav = a.root.findViewWithTag("nav-home");
         if (nav != null && nav.getId() == View.NO_ID) nav.setId(View.generateViewId());
+        boolean stackedHistory = a.useBottomDock();
         horizontal(historyCards);
-        for (View h : historyCards) {
-            h.setNextFocusUpId(h.getId());
-            h.setNextFocusDownId(source.getId());
+        for (int i = 0; i < historyCards.size(); i++) {
+            View card = historyCards.get(i);
+            card.setNextFocusUpId(
+                    stackedHistory
+                            ? (i == 0 ? allHistory : historyCards.get(i - 1)).getId()
+                            : card.getId());
+            card.setNextFocusDownId(
+                    stackedHistory && i + 1 < historyCards.size()
+                            ? historyCards.get(i + 1).getId()
+                            : source.getId());
+            if (stackedHistory) {
+                card.setNextFocusLeftId(card.getId());
+                card.setNextFocusRightId(card.getId());
+            }
         }
         if (!historyCards.isEmpty()) {
-            historyCards.get(historyCards.size() - 1).setNextFocusRightId(allHistory.getId());
-            allHistory.setNextFocusLeftId(historyCards.get(historyCards.size() - 1).getId());
-            allHistory.setNextFocusDownId(source.getId());
+            View lastHistory = historyCards.get(historyCards.size() - 1);
+            if (!stackedHistory) lastHistory.setNextFocusRightId(allHistory.getId());
+            allHistory.setNextFocusLeftId(
+                    stackedHistory ? allHistory.getId() : lastHistory.getId());
+            allHistory.setNextFocusDownId(
+                    stackedHistory ? historyCards.get(0).getId() : source.getId());
         }
         source.setNextFocusUpId(
-                historyCards.isEmpty() ? source.getId() : historyCards.get(0).getId());
+                historyCards.isEmpty()
+                        ? source.getId()
+                        : historyCards.get(stackedHistory ? historyCards.size() - 1 : 0).getId());
         source.setNextFocusDownId(selectedTab().getId());
         for (int r = 0; r < filters.lines.size(); r++) {
             List<View> line = filters.lines.get(r);
