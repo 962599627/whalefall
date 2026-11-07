@@ -150,6 +150,8 @@ public final class SubtitleProbe extends Instrumentation {
                     Cms.Site site = new Cms.Site();
                     site.key = "api23-subtitle-fixture";
                     site.name = "Local subtitle fixture";
+                    site.api = "";
+                    site.playUrl = "";
                     Cms.Video video = new Cms.Video();
                     video.title = "Local subtitle preview";
                     Cms.Episode episode = new Cms.Episode();

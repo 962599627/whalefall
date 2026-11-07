@@ -634,14 +634,23 @@ public final class HomeProbe extends Instrumentation {
             check(
                     "ambient_colors_follow_art_and_stay_dim",
                     warm[0] != cool[0] && Color.red(warm[0]) <= 64 && Color.blue(cool[0]) <= 64);
-            runOnMainSync(
-                    () -> {
-                        a.reduced = true;
-                        a.homeAmbient.transition(warm[0], cool[0]);
-                    });
             check(
                     "ambient_reduced_motion_is_static",
-                    ui(() -> a.homeAmbient.animation == null && a.homeAmbient.left == warm[0]));
+                    ui(
+                            () -> {
+                                a.reduced = true;
+                                a.homeAmbient.transition(warm[0], cool[0]);
+                                // Check the requested colors in the same UI task: a queued
+                                // posterReady may legitimately choose new colors afterwards.
+                                return a.homeAmbient.animation == null
+                                        && a.homeAmbient.fraction == 1
+                                        && a.homeAmbient.left == warm[0]
+                                        && a.homeAmbient.right == cool[0];
+                            }));
+            SystemClock.sleep(250);
+            check(
+                    "ambient_pending_poster_remains_static",
+                    ui(() -> a.homeAmbient.animation == null && a.homeAmbient.fraction == 1));
             runOnMainSync(() -> a.reduced = a.prefs.getBoolean("reduced", false));
             frame("overview");
             runOnMainSync(() -> tag("home-video:0").requestFocus());
