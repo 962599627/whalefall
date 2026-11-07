@@ -11,6 +11,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: python scripts/check_public_content.py
+      - run: python scripts/test_drpy_assets.py
+      - run: python scripts/update_drpy_assets.py --check
 
   format:
     runs-on: ubuntu-latest

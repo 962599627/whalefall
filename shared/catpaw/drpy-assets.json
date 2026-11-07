@@ -79,13 +79,13 @@
     },
     {
       "name": "drpy-t4-extractor.cjs",
-      "bytes": 5880,
-      "sha256": "f66d7a1eb1d5707d4c5f201746df818c08cbbfe38d7d45d318652c63bb6c3d1b"
+      "bytes": 5789,
+      "sha256": "dc05191cffd7ce21e3a96e0cd445888c8c605dfbfeb35558e48c7b55df97b8dd"
     },
     {
       "name": "drpy-t4-adapter.cjs",
-      "bytes": 10169,
-      "sha256": "117644c6f24b5a82fce9848b847c4a56a9b9afedd410a492a1005c92df945d71"
+      "bytes": 10010,
+      "sha256": "c3a08f04bb52d0fb950dcec3141ffbc77d9c95ad446cfd86a45cc373cfef63a8"
     }
   ]
 }
