@@ -325,7 +325,12 @@ if (!isMainThread) {
       catch (_) { return respond(res,503,{error:'settings_unavailable'}); }
     }
     // Only data/playback routes are exposed to the player, never the source's admin panel.
-    if (!/^\/(t4(?:\?|$)|api\/|proxy(?:\/|\?)|videos\/|stream\.)/.test(resource)) {
+    // CatPaw also returns signed HLS proxies under /spider/<site>/<version>/proxy/.
+    // Check the normalized path, so dot segments cannot turn this into an admin route.
+    const normalizedPath = new URL('http://127.0.0.1' + resource).pathname;
+    const spiderProxy = ['GET','HEAD'].includes(req.method) &&
+      /^\/spider\/[A-Za-z0-9_-]+\/[0-9]+\/proxy\/[A-Za-z0-9._~/-]+$/.test(normalizedPath);
+    if (!spiderProxy && !/^\/(t4(?:\?|$)|api\/|proxy(?:\/|\?)|videos\/|stream\.)/.test(resource)) {
       return respond(res, 403, { error: 'route_not_exposed' });
     }
     let instance;
@@ -339,7 +344,7 @@ if (!isMainThread) {
       return;
     }
     instance.active++; instance.used=Date.now();
-    if (/[?&]play=/.test(resource)||/^\/proxy(?:\?|$)/.test(resource)) instance.played=Date.now();
+    if (spiderProxy||/[?&]play=/.test(resource)||/^\/proxy(?:\?|$)/.test(resource)) instance.played=Date.now();
     res.once('close',()=>{
       instance.active--;
       if(instance.kind==='drpy' && resource==='/api/drpy' && !res.writableFinished && !instance.active) {

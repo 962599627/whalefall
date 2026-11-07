@@ -38,3 +38,13 @@ client now merges those responses with the selected catalogue item, retaining it
 identity for history/reopen without replacing returned episode lists. Non-Error
 script exceptions retain their original failure instead of producing a Dart cast
 error.
+
+CatPaw signed media routes under `/spider/<site>/<version>/proxy/` now retain
+their source-scoped local address, signature query, relative HLS segments and
+keys. Only GET/HEAD playback access is allowed through this additional route;
+normalized traversal and management paths remain rejected. Private checks on the
+supplied package reproduced a local `route_not_exposed` failure and, after this
+fix, retrieved the returned HLS manifest. This is protocol evidence, not decoder
+or physical-iPhone acceptance. A different sampled route still returned an empty
+playback URL; another returned HTTP 401. Those source results are not counted as
+working playback.

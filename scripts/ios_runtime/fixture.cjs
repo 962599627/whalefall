@@ -12,6 +12,15 @@ exports.start=async()=>{
     }else if(req.url==='/api/fetch'){
       const response=await fetch(base+'/api/bytes');res.end(Buffer.from(await response.arrayBuffer()));
     }else if(req.url==='/api/bytes'){res.end(Buffer.from([0,1,255,42]));}
+    else if(req.url==='/api/play'){
+      res.setHeader('Content-Type','application/json');
+      res.end(JSON.stringify({url:base+'/spider/demo/3/proxy/token/hls/index.m3u8?sig=fixture'}));
+    }else if(req.url==='/spider/demo/3/proxy/token/hls/index.m3u8?sig=fixture'){
+      res.setHeader('Content-Type','application/vnd.apple.mpegurl');
+      res.end('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="../key?sig=fixture"\n../key?sig=fixture\n');
+    }else if(req.url==='/spider/demo/3/proxy/token/key?sig=fixture'){
+      res.setHeader('Content-Type','application/octet-stream');res.end(Buffer.from([0,1,255,42]));
+    }
     else{res.statusCode=404;res.end();}
   });
   await new Promise(resolve=>server.listen(9321,'0.0.0.0',resolve));

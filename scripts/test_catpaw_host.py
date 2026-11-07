@@ -34,6 +34,14 @@ exports.start = async () => {
       res.end(Buffer.from(await response.arrayBuffer()));
     } else if (req.url === '/api/redirect') {
       res.writeHead(302,{Location:'/api/segment.ts'});res.end();
+    } else if (req.url === '/api/demo?play=fixture') {
+      res.setHeader('Content-Type','application/json');
+      res.end(JSON.stringify({parse:0,url:base+'/spider/demo/3/proxy/token/hls/index.m3u8?sig=fixture'}));
+    } else if (req.url === '/spider/demo/3/proxy/token/hls/index.m3u8?sig=fixture') {
+      res.setHeader('Content-Type','application/vnd.apple.mpegurl');
+      res.end('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="../key?sig=fixture"\n../segment.ts?sig=fixture\n');
+    } else if (/^\/spider\/demo\/3\/proxy\/token\/(key|segment\.ts)\?sig=fixture$/.test(req.url)) {
+      res.setHeader('Content-Type','application/octet-stream');res.end(Buffer.from([0,1,255,42]));
     } else if (req.url === '/api/demo?headers') {
       res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.headers));
     } else {res.statusCode=404;res.end();}
@@ -135,6 +143,26 @@ class HostChecks(unittest.TestCase):
     def test_08_network_fetch_without_jit_or_wasm(self):
         with self.get('/'+self.hash+'/api/network') as response:
             self.assertEqual(response.read(),bytes([0,1,255,42]))
+
+    def test_signed_spider_proxy_keeps_playlist_segments_and_blocks_admin(self):
+        with self.get('/'+self.hash+'/api/demo?play=fixture') as response:
+            play=json.load(response)['url']
+        with urllib.request.urlopen(play,timeout=8) as response:
+            text=response.read().decode()
+        stem=self.base+'/'+self.hash+'/spider/demo/3/proxy/token/'
+        self.assertIn(stem+'key?sig=fixture',text)
+        self.assertIn(stem+'segment.ts?sig=fixture',text)
+        with urllib.request.urlopen(stem+'segment.ts?sig=fixture',timeout=8) as response:
+            self.assertEqual(response.read(),bytes([0,1,255,42]))
+        for suffix in ['/spider/demo/3/website','/spider/demo/3/proxy/../../website',
+                       '/spider/demo/3/proxy/%2e%2e/%2e%2e/website',
+                       '/spider/demo/3/proxy/%2f..%2fwebsite']:
+            with self.assertRaises(urllib.error.HTTPError) as failure:
+                self.get('/'+self.hash+suffix)
+            self.assertEqual(failure.exception.code,403)
+        with self.assertRaises(urllib.error.HTTPError) as failure:
+            urllib.request.urlopen(urllib.request.Request(play,data=b'',method='POST'),timeout=8)
+        self.assertEqual(failure.exception.code,403)
 
     def test_09_settings_requires_ticket_and_rejects_foreign_origin(self):
         request=urllib.request.Request(self.base+'/'+self.hash+'/_manage',data=b'',method='POST')

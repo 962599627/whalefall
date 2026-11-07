@@ -58,7 +58,8 @@ static id call(NSString *base,NSString *key,NSString *method,NSArray *args) {
   self.window=[[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
   UIViewController *view=[UIViewController new];view.view.backgroundColor=UIColor.blackColor;
   self.window.rootViewController=view;[self.window makeKeyAndVisible];
-  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{ [self runProbe]; });
+  NSThread *probe=[[NSThread alloc] initWithBlock:^{ @autoreleasepool { [self runProbe]; } }];
+  probe.stackSize=8*1024*1024;probe.name=@"source-runtime-probe";[probe start];
   return YES;
 }
 - (void)runProbe {
@@ -95,6 +96,11 @@ static id call(NSString *base,NSString *key,NSString *method,NSArray *args) {
     NSData *fetched=request([catBase stringByAppendingString:@"/api/fetch"],@"GET",nil,@{});
     const unsigned char expected[]={0,1,255,42};
     check([fetched isEqualToData:[NSData dataWithBytes:expected length:4]],@"jitless_fetch_binary");
+    NSDictionary *signedPlay=json(request([catBase stringByAppendingString:@"/api/play"],@"GET",nil,@{}));
+    NSString *signedPlaylist=[[NSString alloc] initWithData:request(signedPlay[@"url"],@"GET",nil,@{}) encoding:NSUTF8StringEncoding];
+    NSString *signedKey=[catBase stringByAppendingString:@"/spider/demo/3/proxy/token/key?sig=fixture"];
+    check([signedPlaylist hasPrefix:@"#EXTM3U"]&&[signedPlaylist containsString:signedKey],@"catpaw_signed_hls_proxy");
+    check([request(signedKey,@"GET",nil,@{}) isEqualToData:[NSData dataWithBytes:expected length:4]],@"catpaw_signed_proxy_key");
     NSDictionary *ruleData=@{@"title":@"iOS fixture",@"host":@"https://fixture.invalid",
       @"class_name":@"电影",@"class_url":@"films",@"url":@"/category/fyclass",@"searchUrl":@"/search?wd=**",@"searchable":@2,
       @"预处理":@"js:require(\"./helpers/entry.js\");",

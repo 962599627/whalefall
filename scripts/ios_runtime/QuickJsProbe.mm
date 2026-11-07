@@ -12,15 +12,20 @@ extern "C" {
   void jsFreeRuntime(JSRuntime *);
 }
 static void *channel(JSContext *ctx, size_t kind, void *value) { return nullptr; }
-static void evaluate(JSContext *ctx, NSString *source, int flags=JS_EVAL_TYPE_GLOBAL) {
-  NSData *data=[source dataUsingEncoding:NSUTF8StringEncoding];
-  JSValue *value=jsEval(ctx,(const char *)data.bytes,data.length,"ios-fixture.js",flags);
+static void evaluate(JSContext *ctx, NSString *source, int flags=JS_EVAL_TYPE_GLOBAL, NSString *name=@"ios-fixture.js") {
+  const char *code=source.UTF8String;
+  JSValue *value=jsEval(ctx,code,strlen(code),name.UTF8String,flags);
   BOOL failed=JS_IsException(*value);jsFreeValue(ctx,value,1);
-  if(failed) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"quickjs_evaluation" userInfo:nil];
+  if(failed){
+    JSValue error=JS_GetException(ctx);const char *text=JS_ToCString(ctx,error);
+    NSString *message=text?[NSString stringWithUTF8String:text]:@"unknown";
+    if(text)JS_FreeCString(ctx,text);JS_FreeValue(ctx,error);
+    @throw [NSException exceptionWithName:@"QuickJsProbe" reason:[NSString stringWithFormat:@"quickjs_evaluation [%@]: %@",name,message] userInfo:nil];
+  }
 }
 static BOOL boolean(JSContext *ctx, NSString *source) {
-  NSData *data=[source dataUsingEncoding:NSUTF8StringEncoding];
-  JSValue *value=jsEval(ctx,(const char *)data.bytes,data.length,"ios-assert.js",JS_EVAL_TYPE_GLOBAL);
+  const char *code=source.UTF8String;
+  JSValue *value=jsEval(ctx,code,strlen(code),"ios-assert.js",JS_EVAL_TYPE_GLOBAL);
   BOOL result=!JS_IsException(*value)&&JS_ToBool(ctx,*value)==1;
   jsFreeValue(ctx,value,1);return result;
 }
@@ -31,6 +36,7 @@ static NSString *literal(id value) {
 NSArray *runQuickJsProbe(NSString *assets) {
   NSMutableArray *checks=[NSMutableArray array];
   JSRuntime *rt=jsNewRuntime(channel,10000);JSContext *ctx=jsNewContext(rt);
+  JS_SetMaxStackSize(rt,512*1024);JS_SetMemoryLimit(rt,48*1024*1024);
   @try {
     evaluate(ctx,@"globalThis.global=globalThis;globalThis.window=globalThis;globalThis.self=globalThis;globalThis.console={log(){},warn(){},error(){}};");
     evaluate(ctx,@"export const title='iOS 模块'; globalThis.moduleTitle=title;",JS_EVAL_TYPE_MODULE);
@@ -40,7 +46,7 @@ NSArray *runQuickJsProbe(NSString *assets) {
       NSString *file=[[assets stringByAppendingPathComponent:@"python-host"] stringByAppendingPathComponent:name];
       NSString *source=[NSString stringWithContentsOfFile:file encoding:NSUTF8StringEncoding error:nil];
       if(!source) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"python_asset_missing" userInfo:nil];
-      evaluate(ctx,source);
+      evaluate(ctx,source,JS_EVAL_TYPE_GLOBAL,name);
     }
     // HTTP response is synthetic here; the separate Node test uses a real socket.
     evaluate(ctx,@"globalThis.req=async()=>({code:200,headers:{'Content-Type':'application/json'},content:'{\"list\":[{\"vod_id\":\"one\",\"vod_name\":\"Python HTTP\"}]}'});");
@@ -53,6 +59,9 @@ NSArray *runQuickJsProbe(NSString *assets) {
     [checks addObject:@{@"name":@"python_native_local_module",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pyHome.list[0].vod_name==='Python 本机模块'"))}];
     [checks addObject:@{@"name":@"python_native_async_response",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pySearch.list[0].vod_name==='Python HTTP'"))}];
     [checks addObject:@{@"name":@"python_native_binary_play_result",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pyPlay.url==='https://fixture.invalid/video.mp4'"))}];
+  } @catch(NSException *error) {
+    [checks addObject:@{@"name":error.reason?:@"quickjs_exception",@"passed":@NO}];
+    return checks;
   } @finally {jsFreeContext(ctx);jsFreeRuntime(rt);}
   rt=jsNewRuntime(channel,100);ctx=jsNewContext(rt);
   @try {
