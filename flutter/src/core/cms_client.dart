@@ -16,6 +16,7 @@ import 'catpaw_host.dart';
 import 'drpy_source.dart';
 import 'guard_source.dart';
 import 'source_playback.dart';
+import 'source_verification.dart';
 import 'models.dart';
 /// HTTP CMS client with TVBox `okhttp/3.15` User-Agent parity, system certificate validation for third-party
 /// CMS hosts, multi-depot (`urls`/`storeHouse`) resolution, and bounded concurrent search.
@@ -627,6 +628,44 @@ class CmsClient {
 
   static Future<void> closeScriptSessions() => JsSourceHost.closeAll();
 
+  static bool canVerifySource(CmsSite site) =>
+      GuardSource.supports(site) && CspBridge.guardAdapterFor(site) == 'fy-v1';
+
+  static bool needsSourceVerification(CmsSite site, Object? error) =>
+      canVerifySource(site) && error is DrpySourceException &&
+      error.code == 'drpy_verification_required';
+
+  Future<Map<String, dynamic>> sourceVerificationAction(
+    CmsSite site, Map<String, Object?> action, {Completer<void>? cancellation}
+  ) async {
+    if (!canVerifySource(site)) throw const FormatException('此片源暂不支持图片验证');
+    if (cancellation?.isCompleted == true) throw const FormatException('验证已取消');
+    final raw = await runZoned(() => _callJs(site, 'action', [jsonEncode(action)]),
+        zoneValues: {_cancelKey: cancellation});
+    if (cancellation?.isCompleted == true) throw const FormatException('验证已取消');
+    final value = jsonDecode(raw);
+    if (value is! Map<String, dynamic>) throw const FormatException('验证响应无效');
+    return value;
+  }
+
+  Future<SourceImageChallenge> loadSourceChallenge(
+    CmsSite site, {Completer<void>? cancellation}
+  ) async => SourceImageChallenge.fromResponse(await sourceVerificationAction(site,
+      {'type': 'verification', 'operation': 'challenge'}, cancellation: cancellation));
+
+  Future<bool> submitSourceChallenge(CmsSite site, String id, String code,
+      {Completer<void>? cancellation}) async {
+    if (!RegExp(r'^[a-zA-Z0-9_-]{1,128}$').hasMatch(id) ||
+        !RegExp(r'^[a-zA-Z0-9]{4,6}$').hasMatch(code)) {
+      throw const FormatException('请输入图片中的 4 至 6 位字符');
+    }
+    final value = await sourceVerificationAction(site,
+        {'type': 'verification', 'operation': 'submit', 'id': id, 'code': code},
+        cancellation: cancellation);
+    if (value['verified'] is! bool) throw const FormatException('验证响应无效');
+    return value['verified'] as bool;
+  }
+
   Future<String> _callJs(CmsSite site, String method, List<Object?> args) async {
     final cancellation = Zone.current[_cancelKey] as Completer<void>?;
     final generation = JsSourceHost.generation;
@@ -755,7 +794,9 @@ class CmsClient {
       var listing = CmsParser.parseListing(raw);
       if (listing.videos.isEmpty) {
         try { listing = CmsParser.parseListing(await _callJs(site, 'homeVod', [])); }
-        catch (_) { if (categories.isEmpty) rethrow; }
+        catch (error) {
+          if (categories.isEmpty || needsSourceVerification(site, error)) rethrow;
+        }
         if (listing.videos.isEmpty && categories.isNotEmpty) {
           listing = await fetchCategory(site, categories.first.id, 1);
         }

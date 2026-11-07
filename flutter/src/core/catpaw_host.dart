@@ -362,6 +362,7 @@ class CatPawHost {
           'auete-v1',
           'bttwoo-v1',
           't4-v1',
+          'fy-v1',
         ].contains(adapter) ||
         bytes.isEmpty ||
         bytes.length > _maxBundleBytes ||
@@ -779,6 +780,10 @@ class CatPawHost {
         } catch (_) {}
         const messages = {
           'drpy_verification_required': '此片源需要完成网站验证码，暂时无法加载',
+          'drpy_action_invalid': '验证码已失效或格式不正确，请刷新后重试',
+          'drpy_verification_unavailable': '暂时无法获取验证码图片，请稍后重试',
+          'drpy_unsupported_filter': '此片源不支持当前筛选条件',
+          'drpy_invalid_id': '此片源的影片标识无效，请重新打开影片',
           'drpy_local_proxy_not_supported': '此片源需要的本地代理暂不支持',
           'drpy_media_protocol': '此片源返回的播放地址协议暂不支持',
           'drpy_media_unresolved': '此片源暂未解析出可播放地址',

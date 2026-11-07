@@ -25,6 +25,7 @@ import 'detail_screen.dart';
 import 'netdisk_sheet.dart';
 import 'player_screen.dart';
 import 'poster_image.dart';
+import 'source_verification_dialog.dart';
 /// Apple HIG adaptive shell:
 /// - macOS / iPadOS / Desktop (`width >= 700`): Translucent sidebar with traffic-light inset & source card
 /// - iOS (`width < 700`): Frosted-glass top navigation bar and translucent Cupertino bottom tab bar
@@ -58,6 +59,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   bool _homeLoading = false;
   bool _loadingMore = false;
   String? _homeError;
+  Object? _homeErrorCause;
+  Future<void> Function()? _retryHomeError;
   int _homeEpoch = 0;
   int _categoryEpoch = 0;
   // 5-tap logo privacy state
@@ -71,6 +74,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   final TextEditingController _searchController = TextEditingController();
   final List<(CmsSite, CmsVideo)> _searchResults = [];
   final Map<String, String> _searchNotices = {};
+  final Map<String, CmsSite> _searchVerificationSites = {};
+  String _searchKeyword = '';
   bool _searchPerformed = false;
   bool _searching = false;
   int _searchEpoch = 0;
@@ -133,6 +138,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     _searchSubscription = null;
     _searchResults.clear();
     _searchNotices.clear();
+    _searchVerificationSites.clear();
     _searchPerformed = false;
     _searching = false;
     final saved = widget.storage.loadSavedConfig();
@@ -223,6 +229,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         _homeLoading = false;
         _loadingMore = false;
         _homeError = '读取片源「${site.name}」失败：$e';
+        _homeErrorCause = e;
+        _retryHomeError = _loadSiteHome;
       });
     }
   }
@@ -394,8 +402,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       setState(() {
         _homeLoading = false;
         _loadingMore = false;
-        if (page == 1) {
+        if (page == 1 || CmsClient.needsSourceVerification(site, e)) {
           _homeError = '加载分类失败：$e';
+          _homeErrorCause = e;
+          _retryHomeError = () => _reloadFilteredListing(page: page);
         }
       });
     }
@@ -419,6 +429,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       _searching = true;
       _searchResults.clear();
       _searchNotices.clear();
+      _searchVerificationSites.clear();
+      _searchKeyword = trimmed;
       _searchPerformed = true;
     });
     _searchSheetListener?.call();
@@ -431,6 +443,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             setState(() {
               _searchNotices['${site.subscriptionId}:${site.key}'] =
                   '${site.name}：${searchSourceNotice(error)}';
+              if (CmsClient.needsSourceVerification(site, error)) {
+                _searchVerificationSites['${site.subscriptionId}:${site.key}'] = site;
+              }
             });
             _searchSheetListener?.call();
           },
@@ -461,6 +476,28 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           },
         );
   }
+  Future<void> _retryVerifiedSearch(CmsSite site) async {
+    final epoch = _searchEpoch;
+    final key = '${site.subscriptionId}:${site.key}';
+    try {
+      final listing = await widget.client.fetchSearch(site, _searchKeyword);
+      if (!mounted || epoch != _searchEpoch) return;
+      setState(() {
+        _searchResults.removeWhere((v) => v.$1.key == site.key && v.$1.subscriptionId == site.subscriptionId);
+        _searchResults.addAll(listing.videos.map((v) => (site, v)));
+        _searchNotices.remove(key);
+        _searchVerificationSites.remove(key);
+      });
+    } catch (error) {
+      if (!mounted || epoch != _searchEpoch) return;
+      setState(() {
+        _searchNotices[key] = '${site.name}：${searchSourceNotice(error)}';
+        if (!CmsClient.needsSourceVerification(site, error)) _searchVerificationSites.remove(key);
+      });
+    }
+    _searchSheetListener?.call();
+  }
+
   Future<void> _loadLivePlaylist(int sourceIndex) async {
     final lives = _visibleLives;
     if (sourceIndex < 0 || sourceIndex >= lives.length) return;
@@ -1202,8 +1239,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                               icon: CupertinoIcons.refresh,
                               primary: true,
                               compact: true,
-                              onPressed: _loadSiteHome,
+                              onPressed: _retryHomeError ?? _loadSiteHome,
                             ),
+                            if (CmsClient.needsSourceVerification(_activeSite!, _homeErrorCause))
+                              SourceVerificationButton(client: widget.client, site: _activeSite!,
+                                onVerified: _retryHomeError ?? _loadSiteHome),
                             AppleCapsuleButton(
                               label: '切换其他片源',
                               icon: CupertinoIcons.layers_alt,
@@ -2568,11 +2608,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     if (_searchNotices.isNotEmpty)
                       ConstrainedBox(
                         constraints: BoxConstraints(
-                          maxHeight: (size.height * 0.12).clamp(36.0, 96.0),
+                          maxHeight: (size.height * 0.20).clamp(72.0, 156.0),
                         ),
                         child: SingleChildScrollView(
                           padding: const EdgeInsets.only(bottom: 10),
-                          child: Text(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(
                             _searchNotices.values.join('\n'),
                             key: const ValueKey('search-source-notices'),
                             style: const TextStyle(
@@ -2580,6 +2620,17 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                               fontSize: 12,
                             ),
                           ),
+                            for (final site in _searchVerificationSites.values)
+                              Padding(padding: const EdgeInsets.only(top: 8),
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text(site.name, style: const TextStyle(color: AppleColors.labelSecondary, fontSize: 12)),
+                                  const SizedBox(height: 4),
+                                  SourceVerificationButton(
+                                    key: ValueKey('$_searchEpoch:${site.subscriptionId}:${site.key}'),
+                                    client: widget.client, site: site,
+                                    onVerified: () => _retryVerifiedSearch(site)),
+                                ])),
+                          ]),
                         ),
                       ),
                     Expanded(

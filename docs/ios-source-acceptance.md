@@ -191,11 +191,22 @@ parser configuration. No Android DEX, native library or original Python module
 is executed. Seven data-contract tests and nine production-host tests pass
 under Node 18 without JIT, including catalogue/detail/play, persistent scoped
 cookies, parser fallback, manual image-verification actions and redirect limits.
-The same synthetic protocol fixture is included in the iOS native probe; its
-new native result is pending and must not be inferred from `3589662`.
+The same synthetic protocol fixture passed in the iOS native probe at
+`39e6adf`: [run 42390812235](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42390812235)
+passed all 60 checks on ARM64/iOS 26.2 and Intel/iOS 18.5, with every recorded
+production/fixture hash checked against the exact commit. Its nine FY checks
+cover image verification, retained cookies, catalogue/detail and parser/HLS
+manifest requests. They do not exercise a real external service or decoder.
 
-FY remains disabled in the application's portable-adapter dispatcher: the
-verification interface and live-source/device acceptance are still outstanding.
+The subsequent Flutter change enables the exact FY aliases and provides a
+user-operated Glasswork verification dialog in home/detail/search/player error
+states. The full local Flutter suite passes 194 tests, including 12 new response,
+interaction and retry checks. Search retries only the verified source; filtering
+keeps its current selection. Dismissing/removing the owner cancels the dialog's
+requests and ignores late results. No background request opens it automatically.
+Android's native dispatcher/interface and live-source/device acceptance remain
+outstanding. The Flutter interface requires its own full iOS build evidence;
+the preceding native probe must not be used as UI acceptance.
 Current anonymous upstream attempts fail during connection establishment.
 These implementation and fixture results do not increase the accepted count
 of the original 33 playable plugin-route obligations.

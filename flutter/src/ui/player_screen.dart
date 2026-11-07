@@ -13,6 +13,7 @@ import '../core/models.dart';
 import '../core/storage_service.dart';
 import 'apple_theme.dart';
 import 'desktop_player_window.dart';
+import 'source_verification_dialog.dart';
 
 /// Apple AVPlayerViewController / Apple TV+ inspired video player with:
 /// - Large center transport controls (Rewind 15s, Play/Pause, Fast-Forward 15s)
@@ -62,6 +63,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _speedBoosting = false;
   String _hudText = '';
   String _playbackError = '';
+  Object? _playbackErrorCause;
   bool _allowEvents = false;
   DesktopPlayerWindow? _desktopWindow;
   Future<void> _mediaChanges = Future<void>.value();
@@ -358,7 +360,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  void _failPlayback() {
+  void _failPlayback([Object? error]) {
     if (!mounted) return;
     _embySession?.stop(_position.inMilliseconds);
     _embySession = null;
@@ -370,6 +372,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       _playing = false;
       _controlsVisible = true;
       _playbackError = '播放失败，请重试或切换线路';
+      _playbackErrorCause = error;
+      if (CmsClient.needsSourceVerification(widget.site, error)) {
+        _playbackError = '此片源需要完成验证码后继续播放';
+      }
     });
     _player.pause();
   }
@@ -390,6 +396,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _allowHistory = false;
     _allowEvents = false;
     _playbackError = '';
+    _playbackErrorCause = null;
     try {
       await _changeMedia(session, () => _player.stop());
     } catch (_) {
@@ -483,8 +490,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       await _player.setRate(_normalSpeed);
       if (!mounted || session != _playSession) return;
       _scheduleHide();
-    } catch (_) {
-      if (mounted && session == _playSession) _failPlayback();
+    } catch (error) {
+      if (mounted && session == _playSession) _failPlayback(error);
     }
   }
 
@@ -893,6 +900,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                       children: [
                         Text(_playbackError, textAlign: TextAlign.center),
                         const SizedBox(height: 12),
+                        if (CmsClient.needsSourceVerification(widget.site, _playbackErrorCause))
+                          SourceVerificationButton(key: ValueKey('verification-$_playSession'),
+                            client: _client, site: widget.site,
+                            onVerified: () => _openCurrentEpisode(resumeMs: _pendingResumeMs)),
                         TextButton(
                           onPressed: () => _openCurrentEpisode(),
                           child: const Text('重试播放'),

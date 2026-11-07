@@ -11,6 +11,7 @@ import '../core/storage_service.dart';
 import 'apple_theme.dart';
 import 'player_screen.dart';
 import 'poster_image.dart';
+import 'source_verification_dialog.dart';
 
 /// Apple TV+ / Infuse inspired responsive video detail page for iPhone, iPad, Mac, and Windows.
 /// Features:
@@ -94,6 +95,7 @@ class _DetailScreenState extends State<DetailScreen> {
   late CmsVideo _video;
   bool _loading = true;
   String? _error;
+  Object? _errorCause;
   int _selectedLine = 0;
   int _selectedPage = 0;
   int? _selectedInLineSeason;
@@ -228,6 +230,7 @@ class _DetailScreenState extends State<DetailScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _errorCause = null;
     });
     try {
       final (owner, detailed) = await widget.client.playableDetail(
@@ -262,13 +265,25 @@ class _DetailScreenState extends State<DetailScreen> {
         unawaited(_discoverRelatedSeasons(detailed.title));
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || targetSite != _activeSite || targetVideo.id != _video.id) return;
       setState(() {
         _loading = false;
         _error = '读取详情失败：$e';
+        _errorCause = e;
       });
     }
   }
+
+  Widget _buildDetailError() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 12),
+    child: Column(children: [
+      Text(_error!, textAlign: TextAlign.center,
+          style: const TextStyle(color: AppleColors.systemRed, fontSize: 14)),
+      if (CmsClient.needsSourceVerification(_activeSite, _errorCause))
+        Padding(padding: const EdgeInsets.only(top: 12), child: SourceVerificationButton(
+          client: widget.client, site: _activeSite, onVerified: _loadDetail)),
+    ]),
+  );
 
   Future<void> _discoverRelatedSeasons(String title) async {
     if (_activeSite.isEmby) return;
@@ -1504,18 +1519,7 @@ class _DetailScreenState extends State<DetailScreen> {
                                   ),
                                 )
                               else if (_error != null)
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 12),
-                                  child: Text(
-                                    _error!,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: AppleColors.systemRed,
-                                      fontSize: 13.5,
-                                    ),
-                                  ),
-                                )
+                                _buildDetailError()
                               else if (_video.lines.isEmpty)
                                 const Padding(
                                   padding: EdgeInsets.symmetric(vertical: 20),
@@ -2776,17 +2780,7 @@ class _DetailScreenState extends State<DetailScreen> {
                                   ),
                                 )
                               else if (_error != null)
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 12),
-                                  child: Text(
-                                    _error!,
-                                    style: const TextStyle(
-                                      color: AppleColors.systemRed,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                )
+                                _buildDetailError()
                               else if (_video.lines.isEmpty)
                                 const Padding(
                                   padding: EdgeInsets.symmetric(vertical: 20),

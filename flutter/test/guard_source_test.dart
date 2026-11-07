@@ -105,6 +105,8 @@ void main() {
         'csp_Bttwoo',
         'csp_T4Guard',
         'csp_T4',
+        'csp_FyGuard',
+        'csp_Fy',
       ]) {
         final source = site(
           'https://import.invalid/plugin.jar',
@@ -118,6 +120,7 @@ void main() {
         'csp_BttwooOtherGuard',
         'csp_Dm84Guard/extra',
         'csp_T4OtherGuard',
+        'csp_FyOtherGuard',
         'csp_AppgzGuard',
       ]) {
         final source = site(
