@@ -4,6 +4,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cerrno>
+#include <signal.h>
+#include <unistd.h>
 
 static std::atomic<int> heartbeat{0};
 static std::atomic<bool> finished{false};
@@ -60,6 +63,12 @@ static void addCheck(NSMutableArray *checks, NSString *name, BOOL passed) {
     [checks addObject:@{@"name":name,@"passed":@(passed)}];
 }
 
+static NSString *signalDisposition(const struct sigaction &action) {
+    if (action.sa_handler==SIG_DFL) return @"default";
+    if (action.sa_handler==SIG_IGN) return @"ignored";
+    return @"custom";
+}
+
 @interface CPythonProbeDelegate : UIResponder <UIApplicationDelegate>
 @property(nonatomic,strong) UIWindow *window;
 @end
@@ -102,6 +111,31 @@ static void addCheck(NSMutableArray *checks, NSString *name, BOOL passed) {
     config.write_bytecode=0;config.buffered_stdio=0;config.install_signal_handlers=0;
     config.site_import=0;config.parse_argv=0;config.use_system_logger=1;
     BOOL initialized=NO;
+    struct sigaction pipeBefore={},pipePolicy={},pipeAfter={},interruptBefore={},interruptAfter={};
+    checkpoint(@"host_signal_policy");
+    if (sigaction(SIGPIPE,NULL,&pipeBefore)!=0 || sigaction(SIGINT,NULL,&interruptBefore)!=0) {
+        failure=@"Could not inspect host signal dispositions";goto done;
+    }
+    report[@"sigpipe_before_policy"]=signalDisposition(pipeBefore);
+    report[@"sigint_before_python"]=signalDisposition(interruptBefore);
+    // Isolated embedding disables CPython's signal installation, including its
+    // normal SIGPIPE ignore. Own only this disposable host's SIGPIPE policy:
+    // disconnected writes must raise EPIPE, not terminate the UIKit process.
+    // SIGINT remains with the host; this is not a production app signal change.
+    pipePolicy.sa_handler=SIG_IGN;sigemptyset(&pipePolicy.sa_mask);
+    if (sigaction(SIGPIPE,&pipePolicy,NULL)!=0 || sigaction(SIGPIPE,NULL,&pipeAfter)!=0) {
+        failure=@"Could not configure host SIGPIPE policy";goto done;
+    }
+    report[@"sigpipe_after_policy"]=signalDisposition(pipeAfter);
+    addCheck(checks,@"host_sigpipe_ignored_before_python",pipeAfter.sa_handler==SIG_IGN);
+    {
+        int descriptors[2];
+        if (pipe(descriptors)!=0) { failure=@"Could not create owned closed-pipe fixture";goto done; }
+        close(descriptors[0]);errno=0;
+        const ssize_t written=write(descriptors[1],"x",1);const int writeError=errno;
+        close(descriptors[1]);
+        addCheck(checks,@"closed_pipe_returns_epipe",written==-1 && writeError==EPIPE);
+    }
     checkpoint(@"python_preinitialize");
     if (!statusOK(Py_PreInitialize(&pre),&failure)) goto done;
     if (!statusOK(PyConfig_SetBytesString(&config,&config.home,[[bundle stringByAppendingPathComponent:@"python"] UTF8String]),&failure)) goto done;
@@ -119,6 +153,14 @@ static void addCheck(NSMutableArray *checks, NSString *name, BOOL passed) {
     if (!statusOK(Py_InitializeFromConfig(&config),&failure)) goto done;
     initialized=YES;
     checkpoint(@"python_initialized");
+    if (sigaction(SIGPIPE,NULL,&pipeAfter)!=0 || sigaction(SIGINT,NULL,&interruptAfter)!=0) {
+        failure=@"Could not verify embedded signal dispositions";goto done;
+    }
+    report[@"sigpipe_after_python"]=signalDisposition(pipeAfter);
+    report[@"sigint_after_python"]=signalDisposition(interruptAfter);
+    addCheck(checks,@"python_preserves_host_signal_dispositions",
+             pipeAfter.sa_handler==SIG_IGN && interruptAfter.sa_handler==interruptBefore.sa_handler
+             && interruptAfter.sa_flags==interruptBefore.sa_flags);
     report[@"runtime"]=[NSString stringWithUTF8String:Py_GetVersion()];
     addCheck(checks,@"pinned_python_3_14_10",[report[@"runtime"] hasPrefix:@"3.14.10 "]);
     {

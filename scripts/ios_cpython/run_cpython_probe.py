@@ -37,6 +37,8 @@ REQUIRED_CHECKS = frozenset((
     "fixture_thread_joined", "cooperative_python_loop_timeout",
     "blocking_c_call_exceeds_trace_deadline", "isolated_interpreter_pure_dependencies",
     "main_interpreter_state_preserved", "ui_main_thread_remained_responsive",
+    "host_sigpipe_ignored_before_python", "closed_pipe_returns_epipe",
+    "python_preserves_host_signal_dispositions", "closed_socket_raises_broken_pipe",
     *("stdlib_extension_" + name for name in ("_socket", "_ssl", "_hashlib", "_json", "_elementtree", "pyexpat", "zlib", "_sqlite3")),
     *("ios_framework_" + name for name in ("_socket", "_ssl", "_hashlib", "_json", "_elementtree", "pyexpat", "zlib", "_sqlite3")),
 ))

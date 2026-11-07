@@ -101,6 +101,14 @@ subinterpreter importing the same pure dependencies, module-global separation,
 return to the main interpreter, and a responsive UIKit main loop. The probe does
 not finalize/reinitialize the process-wide runtime after each call.
 
+The disposable host keeps `install_signal_handlers=0` and explicitly ignores
+`SIGPIPE`, matching CPython's ordinary disconnected-write behavior without taking
+over the host's `SIGINT` handler. Reports record the actual dispositions before
+the policy and after Python initialization. Required regressions check native
+closed-pipe `EPIPE`, Python closed-socket `BrokenPipeError`, and preservation of
+the host's interrupt disposition. This closes an embedding policy gap; it does
+not by itself establish the cause of any earlier intermittent simulator exit.
+
 ## Output and acceptance
 
 Every invocation creates a new directory under `probe-output/` containing:
@@ -155,5 +163,6 @@ Official references:
 * https://docs.python.org/3.14/library/intro.html#ios
 * https://docs.python.org/3.14/c-api/subinterpreters.html
 * https://docs.python.org/3.14/c-api/threads.html
+* https://docs.python.org/3.14/library/signal.html#note-on-sigpipe
 * https://github.com/beeware/Python-Apple-support/tree/3.14
 * https://briefcase.beeware.org/en/latest/reference/platforms/iOS/xcode/

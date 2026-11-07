@@ -155,6 +155,21 @@ def run_probe(root):
     file.write_text('{"name":"中文"}', encoding="utf-8")
     check("os_path_local_file", os.path.basename(file) == "中文.json" and json.loads(file.read_text(encoding="utf-8"))["name"] == "中文")
     check("ssl_context", ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT).verify_mode == ssl.CERT_REQUIRED)
+    if sys.platform == "ios":
+        # The native host has explicitly ignored SIGPIPE. Exercise the ordinary
+        # socket path without MSG_NOSIGNAL or an exception-hiding request shim.
+        left, right = socket.socketpair()
+        try:
+            right.close()
+            try:
+                left.sendall(b"closed-peer")
+            except BrokenPipeError:
+                check("closed_socket_raises_broken_pipe", True)
+            else:
+                check("closed_socket_raises_broken_pipe", False)
+        finally:
+            left.close()
+            right.close()
     extension_origins = {}
     for name in ("_socket", "_ssl", "_hashlib", "_json", "_elementtree", "pyexpat", "zlib", "_sqlite3"):
         module = importlib.import_module(name)
