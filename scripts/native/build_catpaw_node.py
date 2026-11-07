@@ -41,6 +41,17 @@ def build(source, ndk, output, arch):
         raise ValueError('Upstream minimum API patch context changed')
     text = text.replace(old, 'if int(sys.argv[2]) < 23:')
     config.write_text(text)
+    # c-ares ships a generated Android feature table for newer APIs. These
+    # optional probes must match the actual sysroot; its existing fallback
+    # paths handle interface enumeration and random bytes on older systems.
+    cares = source/'deps/cares/config/android/ares_config.h'
+    features = cares.read_text()
+    for feature, api in [('HAVE_GETIFADDRS', 24), ('HAVE_GETRANDOM', 28)]:
+        old = '#define '+feature+'\n'
+        if features.count(old) != 1:
+            raise ValueError('Upstream c-ares feature patch context changed: '+feature)
+        features = features.replace(old, f'#if __ANDROID_API__ >= {api}\n{old}#endif\n')
+    cares.write_text(features)
     env = dict(os.environ, CC_host=str(toolchain/'bin/clang'), CXX_host=str(toolchain/'bin/clang++'),
                LDFLAGS='-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384',
                PATH=str(toolchain/'bin')+os.pathsep+os.environ['PATH'])
