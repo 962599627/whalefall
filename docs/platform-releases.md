@@ -2,6 +2,8 @@
 
 The owner allows each platform to release independently after its own checks. Version numbers do not have to match. A release must name its platform, build commit, tested fixes and remaining limitations.
 
+**iPhone publication is explicitly on hold:** the owner subsequently requires all requested subscription types and plugin routes to work before an iPhone release. The 0.5.1 iOS workflow artifact is validation-only. Do not create an official iOS release or change its mirror download until the requested import, catalogue, search, detail and playback paths work independently on that platform. UI tests and a successful IPA build alone do not meet this gate. The 33 outstanding Guard plugin ports remain incomplete.
+
 Desktop/Apple tags use `windows-vX.Y.Z`, `ios-vX.Y.Z` and `macos-vX.Y.Z`. They do not trigger the legacy `v*` all-platform publisher. Build the desired platform with the existing workflow dispatch, verify the artifact, and attach the package, SHA-256 file and corresponding source archive before publishing. Do not replace existing versioned assets. Keep the legacy all-platform release as GitHub's global latest so old clients are not directed to another platform's package.
 
 Clients from 0.5.1 first read their own `movie/updates/{platform}.json` feed, then select the newest matching official GitHub release containing that platform's package. Other platform versions, drafts and prereleases are ignored. Clients at 0.5.0 still use the legacy shared feed; install the first independent platform update from the download page, then subsequent updates use the new platform feed.
