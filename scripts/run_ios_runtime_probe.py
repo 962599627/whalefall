@@ -130,7 +130,7 @@ def main():
     print(json.dumps({'passed': report['passed'], 'checks': report['checks'],
                       'runtime': report['runtime'], 'failure': report['failure']}, ensure_ascii=False))
     package_cases = len(json.loads((ROOT/'scripts/fixtures/python_package_expected.json').read_text(encoding='utf-8')))
-    if not report['passed'] or len(report['checks']) < 120 + package_cases:
+    if not report['passed'] or len(report['checks']) < 123 + package_cases:
         raise RuntimeError('iOS runtime behavior verification failed')
 
 

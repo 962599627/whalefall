@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'js_source_syntax.dart';
+import 'script_proxy_protocol.dart';
+import 'script_proxy_server.dart';
 
 import 'package:flutter/services.dart';
 import 'package:quickjs_engine/quickjs_engine.dart';
@@ -33,6 +35,8 @@ class JsSourceHost {
   ).allMatches(source).map((match) => match.group(1)!);
 
   static final _sessions = <String, _SourceWorker>{};
+  static final _playbackPins = <String, Set<Object>>{};
+  static ScriptProxyServer? _proxyServer;
   static int _generation = 0;
   static int get generation => _generation;
   static const _maxSessions = 6;
@@ -44,10 +48,58 @@ class JsSourceHost {
     changed.complete();
   }
 
+  /// A paused player still owns its source's state and proxy callbacks. An
+  /// identity token makes a late release harmless after removal/re-import.
+  static void Function() pinForPlayback(String sessionKey) {
+    final pins = _playbackPins.putIfAbsent(sessionKey, () => <Object>{});
+    final token = Object();
+    pins.add(token);
+    return () {
+      if (!pins.remove(token)) return;
+      if (pins.isEmpty && identical(_playbackPins[sessionKey], pins)) {
+        _playbackPins.remove(sessionKey);
+      }
+      _notifyCapacity();
+    };
+  }
+
+  /// Only this live source's capability route may receive local-player header
+  /// adaptation. An unrelated loopback service or stale URL is never included.
+  static bool ownsProxyUrl(String sessionKey, Uri uri) {
+    final worker = _sessions[sessionKey];
+    final proxy = worker?._proxy;
+    if (worker == null ||
+        worker._closed ||
+        proxy == null ||
+        !proxy.isActive ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasFragment ||
+        uri.scheme != proxy.url.scheme ||
+        uri.host != proxy.url.host ||
+        uri.port != proxy.url.port) {
+      return false;
+    }
+    final path = uri.pathSegments;
+    final expected = proxy.url.pathSegments;
+    return path.length >= 3 &&
+        path[0] == expected[0] &&
+        path[1] == expected[1] &&
+        !path.any(
+          (part) =>
+              part == '.' ||
+              part == '..' ||
+              RegExp(
+                r'[/\\\x00-\x1f\x7f]|%(?:2e|2f|5c|00)',
+                caseSensitive: false,
+              ).hasMatch(part),
+        );
+  }
+
   /// Removal is synchronous; teardown follows on each runtime's owning isolate.
   /// A loader started before this boundary cannot recreate a deleted session.
   static Future<void> retainSessions(Set<String> keys) {
     _generation++;
+    _playbackPins.removeWhere((key, _) => !keys.contains(key));
     final removed = _sessions.keys.where((key) => !keys.contains(key)).toList();
     final closing = <Future<void>>[];
     for (final key in removed) {
@@ -57,7 +109,12 @@ class JsSourceHost {
     return Future.wait(closing);
   }
 
-  static Future<void> closeAll() => retainSessions({});
+  static Future<void> closeAll() async {
+    final server = _proxyServer;
+    _proxyServer = null;
+    await retainSessions({});
+    await server?.close();
+  }
 
   static Future<String?> callCached({
     required String sessionKey,
@@ -105,7 +162,9 @@ class JsSourceHost {
       if (_sessions[sessionKey]?._closed == true) _sessions.remove(sessionKey);
       while (!_sessions.containsKey(sessionKey) &&
           _sessions.length >= _maxSessions) {
-        final idle = _sessions.entries.where((item) => !item.value.busy);
+        final idle = _sessions.entries.where(
+          (item) => !item.value.busy && !_playbackPins.containsKey(item.key),
+        );
         if (idle.isEmpty) {
           final remaining = budget - waiting.elapsed;
           if (remaining <= Duration.zero) throw TimeoutException('等待脚本运行环境超时');
@@ -178,6 +237,7 @@ class _SourceWorker {
   bool _closed = false;
   int _pending = 0;
   int _nextId = 0;
+  ScriptProxyRegistration? _proxy;
   bool get busy => _pending > 0;
 
   _SourceWorker(this.configuration, {required this.catDetails});
@@ -187,6 +247,7 @@ class _SourceWorker {
     final lifecycle = ReceivePort();
     lifecycle.listen((_) {
       _closed = true;
+      unawaited(_proxy?.unregister());
       if (!_exited.isCompleted) _exited.complete();
       _exitEvents.add(null);
       unawaited(_exitEvents.close());
@@ -194,15 +255,50 @@ class _SourceWorker {
       lifecycle.close();
     });
     try {
+      final proxy = await (JsSourceHost._proxyServer ??= ScriptProxyServer())
+          .register((request) async {
+            final params = <String, String>{
+              for (final entry in request.queryParametersAll.entries)
+                entry.key: entry.value.last,
+              ...request.headers,
+            };
+            final upstreamOrigin = params.remove('x-marcomovie-proxy-origin');
+            if (upstreamOrigin != null) params['origin'] = upstreamOrigin;
+            if (request.path != '/proxy') {
+              params.putIfAbsent('path', () => request.path);
+            }
+            final result = await invoke(
+              'proxy',
+              [params],
+              const Duration(seconds: 18),
+              request.cancellation,
+            );
+            return ScriptProxyProtocol.decode(result);
+          });
+      _proxy = proxy;
+      if (_closed) {
+        await proxy.unregister();
+        throw StateError('脚本会话已关闭');
+      }
+      final base = proxy.url.replace(
+        queryParameters: {
+          'do': (configuration[4] as List).isNotEmpty ? 'py' : 'js',
+          'siteKey': proxy.url.pathSegments[1],
+        },
+      );
       await Isolate.spawn(
         _sourceWorkerMain,
-        [ready.sendPort, configuration],
+        [
+          ready.sendPort,
+          [...configuration, base.toString()],
+        ],
         onExit: lifecycle.sendPort,
         onError: lifecycle.sendPort,
       );
       return await _whileAlive(ready.first) as SendPort;
     } catch (_) {
       _closed = true;
+      await _proxy?.unregister();
       if (!_exited.isCompleted) {
         _exited.complete();
         unawaited(_exitEvents.close());
@@ -263,7 +359,15 @@ class _SourceWorker {
           budget.inMilliseconds,
         ]);
         final result = await _whileAlive(reply.first) as List;
-        if (cancellation?.isCompleted == true || _closed) {
+        final fatal = result.length > 2 && result[2] == true;
+        if (fatal) {
+          // Revoke synchronously when the reply arrives. Waiting for onExit
+          // leaves a gap where a following call can target a closed port.
+          _closed = true;
+          unawaited(_proxy?.unregister());
+          JsSourceHost._notifyCapacity();
+        }
+        if (cancellation?.isCompleted == true || (_closed && !fatal)) {
           throw StateError('脚本操作已取消');
         }
         if (result[0] != true) throw StateError(result[1].toString());
@@ -282,7 +386,9 @@ class _SourceWorker {
 
   Future<void> close() {
     _closed = true;
+    final revoke = _proxy?.unregister();
     return _closing ??= () async {
+      await revoke;
       final ready = _ready;
       if (ready == null) {
         if (!_exited.isCompleted) _exited.complete();
@@ -345,19 +451,35 @@ void _sourceWorkerMain(List<Object?> startup) {
           );
           reply.send([true, result]);
         } catch (error) {
-          // A partially executed or interrupted script is never reused.
-          try {
-            session?.dispose();
-          } finally {
-            session = null;
-            reply.send([false, error.toString()]);
+          final recovered =
+              error is _ProxyCallCancelled && error.reusable && !closing;
+          if (!recovered) {
+            // Any runtime reset invalidates its proxy state, including a
+            // catalogue/detail failure while a player still holds the URL.
+            try {
+              session?.dispose();
+            } catch (_) {
+              // Preserve the original failure and still revoke the worker.
+            } finally {
+              session = null;
+            }
+            closing = true;
+            messages.close();
           }
+          reply.send([false, error.toString(), !recovered]);
         } finally {
           activeId = null;
         }
       });
     }
   });
+}
+
+class _ProxyCallCancelled implements Exception {
+  final bool reusable;
+  const _ProxyCallCancelled(this.reusable);
+  @override
+  String toString() => '脚本代理请求已取消';
 }
 
 class _JsRuntimeSession {
@@ -369,6 +491,7 @@ class _JsRuntimeSession {
   final List<String> pythonPrelude;
   final String interop;
   final Map<String, Object?> pythonPackage;
+  final String proxyBase;
   late final QuickJsRuntime2 runtime;
   late HttpClient client;
   final watch = Stopwatch();
@@ -381,6 +504,7 @@ class _JsRuntimeSession {
   bool _initialized = false;
   bool _cancelled = false;
   bool _active = false;
+  bool _recoverableProxyCall = false;
 
   _JsRuntimeSession(List configuration)
     : entry = configuration[0] as String,
@@ -389,7 +513,8 @@ class _JsRuntimeSession {
       headers = configuration[3] as Map<String, String>,
       pythonPrelude = configuration[4] as List<String>,
       interop = configuration[5] as String,
-      pythonPackage = configuration[6] as Map<String, Object?> {
+      pythonPackage = configuration[6] as Map<String, Object?>,
+      proxyBase = configuration[7] as String {
     runtime = QuickJsRuntime2(
       memoryLimit: 48 * 1024 * 1024,
       stackSize: 512 * 1024,
@@ -461,6 +586,7 @@ class _JsRuntimeSession {
       ..start();
     _cancelled = false;
     _active = true;
+    _recoverableProxyCall = false;
     requests.clear();
     _networkRequestCount = 0;
     client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
@@ -470,15 +596,20 @@ class _JsRuntimeSession {
         await initialize();
         _initialized = true;
       }
+      _recoverableProxyCall = method == 'proxy';
       final output = await checked(
         'Promise.resolve().then(() => { '
         'const fn = __movieSpider[${jsonEncode(method)}]; '
         'if (typeof fn !== "function") throw new Error("脚本缺少 $method 接口"); '
         'return fn.apply(__movieSpider, ${jsonEncode(arguments)}); '
-        '}).then(v => typeof v === "string" ? v : JSON.stringify(v))',
+        '}).then(v => { ${method == 'proxy' ? 'v = __movieEncodeProxyResult(v);' : ''} '
+        'return typeof v === "string" ? v : JSON.stringify(v); })',
       );
       final text = output?.toString() ?? '';
-      if (utf8.encode(text).length > maxBytes) {
+      final resultLimit = method == 'proxy'
+          ? 8 * 1024 * 1024 + 32 * 1024
+          : maxBytes;
+      if (utf8.encode(text).length > resultLimit) {
         throw const FormatException('脚本结果过大');
       }
       return text;
@@ -492,11 +623,17 @@ class _JsRuntimeSession {
       await Future.wait(requests);
       // Settle transport completions on the same isolate before the next call.
       runtime.executePendingJob();
-      runtime.evaluate('__NATIVE_FLUTTER_JS__setTimeoutCallbacks = {};');
+      final cleanup = runtime.evaluate(
+        '__NATIVE_FLUTTER_JS__setTimeoutCallbacks = {};',
+      );
+      if (_recoverableProxyCall && cleanup.isError) {
+        throw StateError('脚本代理清理失败');
+      }
     }
   }
 
   Future<void> initialize() async {
+    await checked('globalThis.__movieProxyBase = ${jsonEncode(proxyBase)};');
     await checked(r'''
         globalThis.global = globalThis;
         globalThis.window = globalThis;
@@ -506,6 +643,46 @@ class _JsRuntimeSession {
         globalThis.console = {log(){}, info(){}, warn(){}, error(){}};
         globalThis.log = () => {};
         globalThis.print = log;
+        globalThis.getProxy = function(local = true) {
+          if (typeof local !== 'boolean') throw new TypeError('local must be boolean');
+          return __movieProxyBase;
+        };
+        globalThis.proxyUrl = function(params = {}) {
+          if (params === null) params = {};
+          if (typeof params !== 'object' || Array.isArray(params)) throw new TypeError('proxy params must be an object');
+          let url = __movieProxyBase;
+          for (const key of Object.keys(params)) {
+            if (key === 'do' || key === 'siteKey') throw new TypeError('reserved proxy parameter');
+            if (!['string', 'number', 'boolean'].includes(typeof params[key])) throw new TypeError('proxy values must be scalar');
+            url += '&' + encodeURIComponent(key) + '=' + encodeURIComponent(params[key]);
+          }
+          return url;
+        };
+        globalThis.__movieEncodeProxyResult = function(value) {
+          if (!Array.isArray(value) || value.length < 3 || value.length > 5) return value;
+          if (value.length === 5 && value[4] !== 0 && value[4] !== 1)
+            throw new TypeError('invalid proxy encoding flag');
+          if (value.length > 3 && value[3] != null &&
+              (typeof value[3] !== 'object' || Array.isArray(value[3])))
+            throw new TypeError('invalid proxy response headers');
+          const body = value[2];
+          const bytes = body instanceof ArrayBuffer ? new Uint8Array(body) :
+            ArrayBuffer.isView(body) ? new Uint8Array(body.buffer, body.byteOffset, body.byteLength) :
+            Array.isArray(body) && body.every(v => Number.isInteger(v) && v >= 0 && v <= 255) ? new Uint8Array(body) : null;
+          if (!bytes) return value;
+          if (bytes.length > 6 * 1024 * 1024) throw new Error('proxy body too large');
+          const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+          const chunks = []; let part = '';
+          for (let i = 0; i < bytes.length; i += 3) {
+            const a=bytes[i], b=bytes[i+1] || 0, c=bytes[i+2] || 0;
+            part += alphabet[a >> 2] + alphabet[((a & 3) << 4) | (b >> 4)] +
+              (i+1 < bytes.length ? alphabet[((b & 15) << 2) | (c >> 6)] : '=') +
+              (i+2 < bytes.length ? alphabet[c & 63] : '=');
+            if (part.length >= 4096) { chunks.push(part); part = ''; }
+          }
+          chunks.push(part);
+          return [value[0], value[1], chunks.join(''), value[3] ?? {}, 1];
+        };
       ''');
     final source = modules[entry]!;
     await checked(interop);
@@ -774,7 +951,12 @@ class _JsRuntimeSession {
   }
 
   Future<dynamic> checked(String code, {bool module = false}) async {
-    if (_cancelled) throw StateError('脚本操作已取消');
+    if (_cancelled) {
+      if (_recoverableProxyCall && requests.isEmpty && watch.elapsed < budget) {
+        throw const _ProxyCallCancelled(true);
+      }
+      throw StateError('脚本操作已取消');
+    }
     final evaluated = runtime.evaluate(
       code,
       name: '$entry.host.mjs',
@@ -797,12 +979,58 @@ class _JsRuntimeSession {
       },
     );
     while (!done) {
-      if (_cancelled) throw StateError('脚本操作已取消');
+      if (_cancelled) {
+        if (_recoverableProxyCall) {
+          throw _ProxyCallCancelled(await _settleCancelledProxy(() => done));
+        }
+        throw StateError('脚本操作已取消');
+      }
       if (watch.elapsed >= budget) throw TimeoutException('脚本请求超时');
       runtime.executePendingJob();
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
+    if (_cancelled && _recoverableProxyCall) {
+      throw _ProxyCallCancelled(await _settleCancelledProxy(() => done));
+    }
     if (failure != null) throw StateError(failure.toString());
     return value;
+  }
+
+  Future<bool> _settleCancelledProxy(bool Function() settled) async {
+    final remaining = budget - watch.elapsed;
+    if (remaining <= Duration.zero) return false;
+    final limit = remaining < const Duration(milliseconds: 500)
+        ? remaining
+        : const Duration(milliseconds: 500);
+    final recovery = Stopwatch()..start();
+    client.close(force: true);
+    for (final timer in _timers.values) {
+      timer.cancel();
+    }
+    _timers.clear();
+    var transportSettled = false;
+    Future.wait(requests).then(
+      (_) => transportSettled = true,
+      onError: (Object _) => transportSettled = true,
+    );
+    // Never extend the original execution budget for a cancellation handler.
+    runtime.setOperationTimeout(limit);
+    try {
+      while (recovery.elapsed < limit) {
+        runtime.executePendingJob();
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        if (settled() && transportSettled) {
+          // Let bridge completions and their chained microtasks finish before
+          // the next queued segment touches the same source state.
+          runtime.executePendingJob();
+          await Future<void>.delayed(Duration.zero);
+          runtime.executePendingJob();
+          return recovery.elapsed < limit;
+        }
+      }
+    } catch (_) {
+      /* Interrupted or unsettled work requires source teardown. */
+    }
+    return false;
   }
 }

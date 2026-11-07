@@ -75,6 +75,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _allowEvents = false;
   DesktopPlayerWindow? _desktopWindow;
   Future<void> _mediaChanges = Future<void>.value();
+  void Function()? _releaseSourceSession;
   List<CmsEpisode> _qualityChoices = const [];
   bool get _desktop =>
       Platform.isWindows || Platform.isMacOS || Platform.isLinux;
@@ -153,6 +154,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       _desktopWindow!.initialize().catchError(_windowError);
     }
     _player = Player();
+    // Keep one source lease for this page, including pause and overlapping
+    // episode/quality transitions. Release only after the decoder is disposed.
+    _releaseSourceSession = _client.pinPlaybackSource(widget.site);
     _controller = VideoController(_player);
 
     _player.stream.width.listen((w) {
@@ -725,7 +729,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     _desktopWindow?.close().catchError((Object error) {
       debugPrint('Player window restore failed: $error');
     });
-    _mediaChanges.whenComplete(() => _player.dispose());
+    final releaseSource = _releaseSourceSession;
+    _releaseSourceSession = null;
+    _mediaChanges.whenComplete(() async {
+      try { await _player.dispose(); } finally { releaseSource?.call(); }
+    });
     super.dispose();
   }
 

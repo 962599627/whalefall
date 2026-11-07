@@ -1,12 +1,35 @@
 // The same Python Spider protocol runs over the device-local JS engine on each
 // host. A suspended HTTP request becomes a Promise only on asynchronous hosts.
 function createPythonSpider(source, files = {}, readSibling, packageData) {
+  // Capture the host-owned route before importing user code. The local=False
+  // compatibility argument never changes this app's loopback-only boundary.
+  const suppliedProxyBase = typeof globalThis.__movieProxyBase === 'string' ? globalThis.__movieProxyBase : '';
+  const proxyMatch = /^http:\/\/127\.0\.0\.1:([1-9]\d{0,4})\/[^\s?#]*\?[^\s#]*$/.exec(suppliedProxyBase);
+  const proxyQuery = suppliedProxyBase.substring(suppliedProxyBase.indexOf('?') + 1);
+  const proxyBase = proxyMatch && Number(proxyMatch[1]) <= 65535 &&
+    /(?:^|&)do=py(?:&|$)/.test(proxyQuery) && /(?:^|&)siteKey=[^&]+(?:&|$)/.test(proxyQuery)
+    ? suppliedProxyBase : '';
   const baseSpider = [
     "import requests",
+    "from urllib.parse import urlencode",
+    "_movie_proxy_base = " + JSON.stringify(proxyBase),
     "class Spider:",
     "    def init(self, extend=''): pass",
     "    def fetch(self, url, **kwargs): return requests.get(url, **kwargs)",
     "    def post(self, url, **kwargs): return requests.post(url, **kwargs)",
+    "    def _movieProxyUrl(self, params):",
+    "        if not _movie_proxy_base: raise NotImplementedError('Python local proxy bridge is unavailable')",
+    "        if 'do' in params or 'siteKey' in params: raise ValueError('Reserved proxy parameter')",
+    "        return _movie_proxy_base + ('&' + urlencode(params) if params else '')",
+    "    def getProxyUrl(self, params=None, local=True):",
+    "        if isinstance(params, bool): local, params = params, None",
+    "        params = {} if params is None else dict(params)",
+    "        return self._movieProxyUrl(params)",
+    "    def proxyUrl(self, params=None, local=True):",
+    "        params = {} if params is None else params",
+    "        if not isinstance(params, dict) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in params.items()): raise TypeError('Proxy parameters require a dict with string keys and values')",
+    "        if not isinstance(local, bool): raise TypeError('Proxy local flag requires a boolean')",
+    "        return self._movieProxyUrl(params)",
   ].join("\n");
   const requestsModule = [
     "import _movie_http, base64, json",
@@ -566,21 +589,59 @@ function createPythonSpider(source, files = {}, readSibling, packageData) {
   localPackage.activate();
   let instance;
   const py = Sk.ffi.remapToPy;
-  function run(call) {
+  function run(call, convert = Sk.ffi.remapToJs) {
     const value = call();
     if (value && value.$isSuspension) {
-      return Sk.misceval.asyncToPromise(() => value).then(v => Sk.ffi.remapToJs(v));
+      return Sk.misceval.asyncToPromise(() => value).then(convert);
     }
-    return Sk.ffi.remapToJs(value);
+    return convert(value);
   }
-  function invoke(name, args, optional) {
+  function invoke(name, args, optional, convert) {
     // Keep the execution limit, but exclude time spent browsing between calls.
     // A retained Spider must receive a fresh clock for each top-level operation.
     Sk.execStart = Sk.lastYield = Date.now();
     const fn = instance.tp$getattr(new Sk.builtin.str(name));
     if (!fn && optional) return {};
     if (!fn) throw new Error("Python Spider 缺少 " + name);
-    return run(() => Sk.misceval.callsimOrSuspendArray(fn, args.map(x => py(x))));
+    return run(() => Sk.misceval.callsimOrSuspendArray(fn, args.map(x => py(x))), convert);
+  }
+  function proxyResult(value) {
+    if (!(value instanceof Sk.builtin.list || value instanceof Sk.builtin.tuple) ||
+        value.v.length < 3 || value.v.length > 5) {
+      throw new Error('Python proxy requires [status, MIME, body, headers?, base64?]');
+    }
+    const result = Sk.ffi.remapToJs(value);
+    if (!Number.isInteger(result[0]) || result[0] < 200 || result[0] > 599 ||
+        typeof result[1] !== 'string' || !result[1] || result[1].length > 256 || /[\r\n\0]/.test(result[1]) ||
+        (result.length === 5 && result[4] !== 0 && result[4] !== 1)) {
+      throw new Error('Invalid Python proxy response metadata');
+    }
+    if (result.length > 3 && result[3] != null &&
+        (typeof result[3] !== 'object' || Array.isArray(result[3]) ||
+          Object.keys(result[3]).length > 64 || Object.values(result[3]).some(v => typeof v !== 'string'))) {
+      throw new Error('Invalid Python proxy response headers');
+    }
+    const body = value.v[2];
+    if (body instanceof Sk.builtin.bytes) {
+      const input = body.v;
+      if (input.length > 6 * 1024 * 1024) throw new Error('Python proxy body exceeds 6 MiB');
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+      let encoded = '';
+      for (let i = 0; i < input.length; i += 3) {
+        const bits = (input[i] << 16) | ((input[i + 1] || 0) << 8) | (input[i + 2] || 0);
+        encoded += alphabet[(bits >>> 18) & 63] + alphabet[(bits >>> 12) & 63] +
+          (i + 1 < input.length ? alphabet[(bits >>> 6) & 63] : '=') +
+          (i + 2 < input.length ? alphabet[bits & 63] : '=');
+      }
+      // Python bytes would otherwise become Uint8Array, whose JSON form has
+      // numeric object keys. Keep a portable, explicit five-item wire result.
+      return [result[0], result[1], encoded, result.length > 3 ? result[3] : null, 1];
+    }
+    if (typeof result[2] !== 'string' && !(Array.isArray(result[2]) &&
+        result[2].length <= 6 * 1024 * 1024 && result[2].every(v => Number.isInteger(v) && v >= 0 && v <= 255))) {
+      throw new Error('Python proxy body must be text or bytes');
+    }
+    return result;
   }
   return {
     init(ext) {
@@ -611,5 +672,10 @@ function createPythonSpider(source, files = {}, readSibling, packageData) {
       return invoke("searchContent", argc >= 4 ? [word, quick, String(page)] : [word, quick]);
     },
     play(flag, id, vip) { return invoke("playerContent", [flag, id, vip]); },
+    proxy(params) {
+      const legacy = instance.tp$getattr(new Sk.builtin.str('localProxy'));
+      const name = legacy !== undefined && legacy !== Sk.builtin.none.none$ ? 'localProxy' : 'proxy';
+      return invoke(name, [params], false, proxyResult);
+    },
   };
 }

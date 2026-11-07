@@ -123,6 +123,15 @@ NSArray *runQuickJsProbe(NSString *assets) {
       [checks addObject:check];
     }
     }
+    NSString *proxySource=@"from base.spider import Spider as Base\nclass Spider(Base):\n def init(self, ext): self.ticket='retained'\n def homeContent(self, filter): return [self.getProxyUrl({'ticket':'a b'}), self.proxyUrl({'ticket':'new'})]\n def localProxy(self, params):\n  assert self.ticket == 'retained' and params['range'] == 'bytes=1-2'\n  return [200,'application/octet-stream',bytes([0,255,128,65]),{'X-State':self.ticket}]\n";
+    evaluate(ctx,[NSString stringWithFormat:@"globalThis.__movieProxyBase='http://127.0.0.1:8191/_spider/fixture/proxy?do=py&siteKey=native';globalThis.proxyDone=false;globalThis.proxyError='';globalThis.proxySpider=createPythonSpider(%@);Promise.resolve(proxySpider.init('')).then(()=>proxySpider.home(true)).then(value=>{globalThis.proxyUrls=value;return proxySpider.proxy({range:'bytes=1-2'});}).then(value=>{globalThis.proxyValue=value;proxyDone=true;}).catch(error=>{proxyError=String(error);proxyDone=true;});",literal(proxySource)],JS_EVAL_TYPE_GLOBAL,@"python-proxy.js");
+    until=[NSDate dateWithTimeIntervalSinceNow:8];
+    while(!boolean(ctx,@"proxyDone")&&until.timeIntervalSinceNow>0){
+      while(jsExecutePendingJob(rt)>0){} [NSThread sleepForTimeInterval:.001];
+    }
+    [checks addObject:@{@"name":@"python_native_proxy_url_abis",@"passed":@(boolean(ctx,@"proxyDone&&!proxyError&&proxyUrls[0]===__movieProxyBase+'&ticket=a+b'&&proxyUrls[1]===__movieProxyBase+'&ticket=new'"))}];
+    [checks addObject:@{@"name":@"python_native_proxy_binary_wire",@"passed":@(boolean(ctx,@"proxyDone&&!proxyError&&proxyValue[2]==='AP+AQQ=='&&proxyValue[4]===1"))}];
+    [checks addObject:@{@"name":@"python_native_proxy_state_and_headers",@"passed":@(boolean(ctx,@"proxyDone&&!proxyError&&proxyValue[0]===200&&proxyValue[1]==='application/octet-stream'&&proxyValue[3]['X-State']==='retained'"))}];
   } @catch(NSException *error) {
     [checks addObject:@{@"name":error.reason?:@"quickjs_exception",@"passed":@NO}];
     return checks;

@@ -26,8 +26,9 @@ does not implement the operating-system module or filesystem APIs.
 - `BytesIO` accepts immutable Python `bytes`. Mutable exported views,
   `getbuffer`, `readinto`, general buffer-protocol objects and native extensions
   are not supplied.
-- These buffers are not files. This change adds no `open`, persistent cookie
-  storage, `os`, subprocesses, Pillow or other native modules.
+- These buffers are not host files. The separate package reader described below
+  adds bounded read-only `open`; persistent cookie storage, `os`, subprocesses,
+  Pillow and other native modules remain outside this implementation.
 
 ## Verification
 
@@ -41,3 +42,20 @@ sending exact binary request bytes to a loopback server.
 The iOS simulator fixture and Android API 23 fixture include the same production
 assets. Their latest run results must be checked separately; passing local tests
 or building an IPA does not establish a physical iPhone's playback behavior.
+
+## Imported package files
+
+Python ZIP imports now retain their JSON, text and binary data alongside Python
+modules. `open` and `io.open` read these bytes locally; `__file__` points to each
+module under `/__package__/`. Relative paths start beside the entry script.
+Missing package resources cannot fall back to a host file or a network request.
+Android mounts only its validated imported package directory; Flutter passes an
+isolated in-memory package to the same shared Python adapter.
+
+The package limit is 256 files, 2 MiB per decoded file and 6 MiB total, additionally
+subject to the importer's serialized-size and source runtime memory limits.
+Reads support binary data, UTF-8/UTF-8-sig, standard newline modes, seeking,
+iteration and contexts. Writes and other encodings fail explicitly. This is not
+`os`, `pathlib` or a full CPython filesystem. The [independent fixture
+contract](../scripts/fixtures/python_package_README.md) documents all limits and
+how to reproduce the 65 CPython comparisons.

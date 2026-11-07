@@ -659,6 +659,9 @@ class CmsClient {
 
   static Future<void> closeScriptSessions() => JsSourceHost.closeAll();
 
+  void Function() pinPlaybackSource(CmsSite site) =>
+      _usesJs(site) ? JsSourceHost.pinForPlayback(_scriptSessionKey(site)) : () {};
+
   static bool canVerifySource(CmsSite site) =>
       GuardSource.supports(site) && CspBridge.guardAdapterFor(site) == 'fy-v1';
 
@@ -1152,16 +1155,45 @@ class CmsClient {
           RegExp(r'\.(mp4|m3u8|mpd|webm|flv)$', caseSensitive: false).hasMatch(url.path)) {
         payload['parse'] = 0;
       }
-      return SourcePlayback.decode(payload, episode,
+      final resolved = await SourcePlayback.decode(payload, episode,
           localUrl: _scriptHost.resolve,
           // A plugin's import headers are not the adapted media server's
           // credentials. The reviewed adapter returns explicit playback headers.
           sourceHeaders: GuardSource.supports(site) ? const {} : site.headers,
           sourceOrigin: GuardSource.supports(site) ? null : _sourceCredentialOrigin(site));
+      return _localScriptPlaybackHeaders(site, resolved);
     }
     final resolved = await CspBridge.resolveEpisodeForPlayback(site, episode, _getText);
     return SourcePlayback.inheritSourceHeaders(resolved,
         sourceHeaders: site.headers, sourceOrigin: _sourceCredentialOrigin(site));
+  }
+
+  CmsEpisode _localScriptPlaybackHeaders(CmsSite site, CmsEpisode episode) {
+    final headers = Map<String, String>.of(episode.headers);
+    final uri = Uri.tryParse(episode.url);
+    if (uri != null && JsSourceHost.ownsProxyUrl(_scriptSessionKey(site), uri)) {
+      String? origin;
+      final connectionHeaders = <String>{};
+      for (final entry in headers.entries) {
+        if (entry.key.toLowerCase() == 'origin') origin = entry.value;
+        if (entry.key.toLowerCase() == 'connection') {
+          connectionHeaders.addAll(entry.value.toLowerCase().split(',').map((v) => v.trim()));
+        }
+      }
+      headers.removeWhere((key, _) => const {
+        'origin', 'host', 'content-length', 'connection', 'keep-alive',
+        'proxy-connection', 'transfer-encoding', 'te', 'trailer', 'upgrade',
+      }.contains(key.toLowerCase()) || connectionHeaders.contains(key.toLowerCase()));
+      // The listener rejects browser Origin headers. Preserve the source's
+      // upstream value as private transport metadata for its own callback.
+      if (origin != null) {
+        headers.removeWhere((key, _) => key.toLowerCase() == 'x-marcomovie-proxy-origin');
+        headers['X-MarcoMovie-Proxy-Origin'] = origin;
+      }
+    }
+    return CmsEpisode(name: episode.name, url: episode.url, headers: headers,
+        playbackSession: episode.playbackSession, externalAudioUrl: episode.externalAudioUrl,
+        variants: episode.variants.map((e) => _localScriptPlaybackHeaders(site, e)).toList());
   }
   Future<List<LiveGroup>> fetchLiveGroups(LiveSource source) async {
     final u = source.url.trim();

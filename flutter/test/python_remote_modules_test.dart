@@ -117,13 +117,12 @@ class Spider:
         await request.response.close();
       });
       final entry = 'http://127.0.0.1:${server.port}/main.py';
+      const source =
+          'import missing\nclass Spider:\n def homeContent(self, filter): return {"value":missing.VALUE}';
       final abort = Completer<void>();
       final future = JsSourceHost.invoke(
         entry: entry,
-        modules: {
-          entry:
-              'import missing\nclass Spider:\n def homeContent(self, filter): return {"value":missing.VALUE}',
-        },
+        modules: {entry: source},
         pythonPrelude: await loadPythonSourcePrelude(),
         method: 'home',
         arguments: [true],
@@ -142,6 +141,19 @@ class Spider:
           sessionKey: 'cancelled-python-module',
           method: 'home',
           arguments: [true],
+        ),
+        isNull,
+      );
+      // A failed worker is gone, including its proxy capability. The client
+      // loads a new worker after this cache miss; late bytes cannot enter it.
+      expect(
+        await JsSourceHost.invoke(
+          entry: entry,
+          modules: {entry: source},
+          pythonPrelude: await loadPythonSourcePrelude(),
+          method: 'home',
+          arguments: [true],
+          sessionKey: 'cancelled-python-module',
         ),
         '{"value":"fresh"}',
       );

@@ -9,7 +9,7 @@ This is an acceptance checklist, **not a declaration of compatibility**. The 0.5
 | TXT / M3U | Content-based playlist parsing | Actual supplied playlists load their groups/channels and play on iPhone, including relative URLs and required request headers |
 | JSON / XML | CMS interfaces and subscription configuration parsing | Supplied subscriptions complete catalogue, search, detail, episode selection and playback; failures of individual sites stay distinguishable |
 | JS | QuickJS Spider / ES module host; local CatPaw host for matching packages | Requested scripts, modules and synchronous DRPY APIs work end to end; script import alone is insufficient |
-| Python | Skulpt Spider, requests / bounded JSON, local and asynchronous remote sibling modules | Requested Python modules and parser dependencies work; lxml/native extensions/full CPython are not currently claimed supported |
+| Python | Skulpt Spider, requests / bounded JSON, read-only package data, local and asynchronous remote sibling modules, local proxy callbacks | Requested Python modules and parser dependencies work; lxml/native extensions/full CPython are not currently claimed supported |
 | PHP / extensionless endpoints | Fetch endpoint and parse its actual response content | The supplied endpoint is reachable and its actual configuration/API format works; `.php` does not identify a client-side executable format |
 | Local package | ZIP entry configuration, relative script/module paths and lists; Flutter DRPY packages retain nested local helpers and JSON data | Each requested package's entrypoint, dependencies, files and playback resolve on iPhone without an external device |
 | Multi-repository | Nested warehouse import and ownership | The supplied warehouse and selected child subscriptions pass the same playback checks, not just directory import |
@@ -29,6 +29,18 @@ Local packages never fall back to remote module lookup. Modules are retained onl
 inside their source session; cancelled loads cannot populate a replacement
 session. Local HTTP/QuickJS fixtures cover these behaviors. Real supplied sources
 and physical playback remain separate acceptance requirements.
+
+The general [script proxy bridge](script-proxy-compatibility.md) retains the source
+instance while the player uses it, preserves binary callback bodies and handles
+request cancellation without silently reusing a stale playback address. The
+[package reader](python-io-compatibility.md#imported-package-files) supplies
+read-only script-local files. These are shared protocol capabilities, not a list
+of copied media URLs or a declaration that every plugin now works.
+
+An [isolated CPython experiment](../scripts/ios_cpython/README.md) evaluates a
+full native interpreter and locked pure-Python dependencies. It is separate from
+the product runtime; its simulator results do not enable full CPython support
+in the application or satisfy the release gate above.
 
 ## Embedded runtime follow-up
 
