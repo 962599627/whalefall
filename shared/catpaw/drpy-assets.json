@@ -49,8 +49,8 @@
     },
     {
       "name": "drpy-dm84-adapter.cjs",
-      "bytes": 5266,
-      "sha256": "75d5fadc33bd9906247d38723a87adf63f1dd0707d98ed5b212855b50ff1b63b"
+      "bytes": 5933,
+      "sha256": "df9f4f3797d7b30fe281fbab78c893d3719945e25d38d7da2ed375b68d50b327"
     },
     {
       "name": "drpy-bootstrap-worker.cjs",

@@ -88,6 +88,18 @@ final class SourceController {
                             && DrpyEngine.eligible(s)
                             && snapshot != null) raw = new DrpyEngine(a, snapshot, s);
                     else if (a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true)
+                            && GuardEngine.eligible(s)
+                            && snapshot != null) {
+                        raw =
+                                GuardEngine.open(
+                                        a,
+                                        snapshot,
+                                        s,
+                                        () -> {
+                                            ensureProxy(a, snapshot);
+                                            return new CspEngine(a.getApplication(), snapshot, s);
+                                        });
+                    } else if (a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true)
                             && !JsEngine.eligible(s)
                             && CspEngine.eligible(s)
                             && snapshot != null) {

@@ -9,6 +9,12 @@ import org.json.*;
 
 /** On-device CatPaw transport. Persist logical URLs, never the local capability or port. */
 public final class CatPawHost {
+    public static final class UnsupportedGuardArtifactException extends IOException {
+        UnsupportedGuardArtifactException() {
+            super("此插件版本尚未提供本机移植适配");
+        }
+    }
+
     public interface ConnectionObserver {
         void opened(HttpURLConnection connection) throws IOException;
 
@@ -185,6 +191,92 @@ public final class CatPawHost {
     public String post(String address, JSONObject body, ConnectionObserver observer)
             throws Exception {
         return read(address, "POST", body.toString().getBytes("UTF-8"), observer);
+    }
+
+    /** Decode only a reviewed imported artifact; never execute its Android bytecode. */
+    public JSONObject bootstrapGuard(byte[] artifact, ConnectionObserver observer)
+            throws Exception {
+        if (artifact.length == 0 || artifact.length > 16 * 1024 * 1024)
+            throw new IOException("移植插件包超过大小限制");
+        String artifactHash = hash(artifact);
+        File imports = new File(root, "imports");
+        synchronized (CatPawHost.class) {
+            if (!imports.isDirectory() && !imports.mkdirs()) throw new IOException("插件导入目录不可用");
+            File stored = new File(imports, artifactHash + ".jar");
+            if (stored.isFile()) {
+                if (!hash(bytes(new FileInputStream(stored), 16 * 1024 * 1024))
+                        .equals(artifactHash)) throw new IOException("已导入插件内容校验失败");
+            } else {
+                File temporary = File.createTempFile("import-", ".tmp", imports);
+                try {
+                    write(temporary, artifact);
+                    if (!temporary.renameTo(stored)) throw new IOException("无法保存导入插件");
+                    stored.setReadOnly();
+                } finally {
+                    temporary.delete();
+                }
+            }
+        }
+        byte[] body =
+                new JSONObject()
+                        .put("version", 1)
+                        .put("adapter", "dm84-v1")
+                        .put("artifactHash", artifactHash)
+                        .toString()
+                        .getBytes("UTF-8");
+        HttpURLConnection connection =
+                (HttpURLConnection) new URL(start() + "/_port-bootstrap").openConnection();
+        try {
+            if (observer != null) observer.opened(connection);
+            connection.setRequestMethod("POST");
+            connection.setInstanceFollowRedirects(false);
+            connection.setConnectTimeout(8000);
+            connection.setReadTimeout(10000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            connection.setFixedLengthStreamingMode(body.length);
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(body);
+            }
+            int status = connection.getResponseCode();
+            InputStream response =
+                    status == 200 ? connection.getInputStream() : connection.getErrorStream();
+            String raw =
+                    response == null
+                            ? "{}"
+                            : new String(
+                                    bytes(response, status == 200 ? 8 * 1024 * 1024 : 65536),
+                                    "UTF-8");
+            JSONObject result;
+            try {
+                result = new JSONObject(raw);
+            } catch (JSONException malformed) {
+                throw new IOException("插件移植服务响应格式无效", malformed);
+            }
+            if (status == 422
+                    && result.length() == 1
+                    && "guard_artifact_unsupported".equals(result.optString("error")))
+                throw new UnsupportedGuardArtifactException();
+            if (status != 200) throw new IOException("插件移植服务拒绝处理（HTTP " + status + "）");
+            if (result.length() != 3
+                    || !(result.opt("version") instanceof Number)
+                    || result.getDouble("version") != 1
+                    || !(result.opt("rule") instanceof String)
+                    || !(result.opt("origin") instanceof String)
+                    || result.getString("rule").trim().isEmpty()
+                    || result.getString("rule").getBytes("UTF-8").length > 6 * 1024 * 1024)
+                throw new IOException("插件移植服务响应字段无效");
+            URI origin = new URI(result.getString("origin"));
+            if (!("http".equals(origin.getScheme()) || "https".equals(origin.getScheme()))
+                    || origin.getHost() == null
+                    || origin.getUserInfo() != null
+                    || origin.getFragment() != null
+                    || origin.toString().length() > 8192) throw new IOException("插件移植服务返回无效来源");
+            return result;
+        } finally {
+            if (observer != null) observer.closed(connection);
+            connection.disconnect();
+        }
     }
 
     public void release(String address) throws Exception {

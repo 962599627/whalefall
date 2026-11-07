@@ -481,17 +481,24 @@ public final class CspEngine implements SourceEngine {
         return true;
     }
 
-    static File obtain(Application app, String declaration) throws Exception {
+    static File obtain(Context app, String declaration) throws Exception {
         if (declaration == null || declaration.trim().isEmpty())
             throw new IOException("配置没有声明 spider 插件");
-        String[] parts = declaration.split(";md5;", 2);
+        String[] parts = declaration.split("(?i);md5;", 2);
         String address = parts[0];
-        if (address.startsWith("file://")) {
+        // An explicit checksum is mandatory even when empty. Do not trim it or
+        // treat a malformed declaration as an unchecked cache lookup.
+        if (parts.length == 2 && !parts[1].matches("[0-9a-fA-F]{32}"))
+            throw new IOException("插件 MD5 声明无效");
+        String expected = parts.length == 2 ? parts[1].toLowerCase(Locale.ROOT) : "";
+        if (address.startsWith("file:")) {
             File localFile = new File(URI.create(address));
             String allowedPrefix = app.getFilesDir().getCanonicalPath() + File.separator;
             if (!localFile.exists() || !localFile.getCanonicalPath().startsWith(allowedPrefix)) {
                 throw new IOException("本地 spider 插件不存在或不在受保护目录内");
             }
+            if (!expected.isEmpty() && !expected.equals(digest(localFile, "MD5")))
+                throw new IOException("插件 MD5 与配置不一致，已拒绝加载");
             try (ZipFile zip = new ZipFile(localFile)) {
                 if (zip.getEntry("classes.dex") == null)
                     throw new IOException("本地插件不含 classes.dex");
@@ -499,9 +506,6 @@ public final class CspEngine implements SourceEngine {
             return localFile;
         }
         if (!Cms.isHttp(address)) throw new IOException("spider 需要 HTTP(S) 插件地址");
-        String expected = parts.length == 2 ? parts[1].trim().toLowerCase(Locale.ROOT) : "";
-        if (!expected.isEmpty() && !expected.matches("[0-9a-f]{32}"))
-            throw new IOException("插件 MD5 声明无效");
         File folder = new File(app.getFilesDir(), "csp");
         if (!folder.exists() && !folder.mkdirs()) throw new IOException("插件目录不可用");
         String key = hex(declaration.getBytes("UTF-8"));
@@ -526,14 +530,28 @@ public final class CspEngine implements SourceEngine {
             File temp = File.createTempFile("incoming-", ".tmp", folder);
             try {
                 URL next = new URL(Cms.normalizeHttp(address));
+                String authorization = null;
+                if (next.getUserInfo() != null) {
+                    authorization =
+                            Cms.basicAuthorization(
+                                    URLDecoder.decode(
+                                            next.getUserInfo().replace("+", "%2B"), "UTF-8"));
+                    next =
+                            new URL(
+                                    next.getProtocol(),
+                                    next.getHost(),
+                                    next.getPort(),
+                                    next.getFile());
+                }
                 boolean done = false;
                 for (int redirect = 0; redirect < 5 && !done; redirect++) {
-                    RequestScope.current().check();
+                    checkRequest();
                     HttpURLConnection c = (HttpURLConnection) next.openConnection();
                     c.setConnectTimeout(12000);
                     c.setReadTimeout(20000);
                     c.setInstanceFollowRedirects(false);
                     c.setRequestProperty("User-Agent", Cms.USER_AGENT);
+                    if (authorization != null) c.setRequestProperty("Authorization", authorization);
                     RequestScope.attach(c);
                     try {
                         int code = c.getResponseCode();
@@ -544,8 +562,14 @@ public final class CspEngine implements SourceEngine {
                                 || code == 308) {
                             String loc = c.getHeaderField("Location");
                             if (loc == null) throw new IOException("插件重定向无地址");
-                            next = new URL(next, loc);
-                            if (!Cms.isHttp(next.toString())) throw new IOException("插件重定向协议不受支持");
+                            URL target = new URL(next, loc);
+                            if (!Cms.isHttp(target.toString()))
+                                throw new IOException("插件重定向协议不受支持");
+                            if (target.getUserInfo() != null)
+                                throw new IOException("插件重定向不能注入登录凭据");
+                            if (!Cms.sameOrigin(next.toString(), target.toString()))
+                                authorization = null;
+                            next = target;
                             continue;
                         }
                         if (code < 200 || code >= 300) throw new IOException("插件下载失败 HTTP " + code);
@@ -554,7 +578,7 @@ public final class CspEngine implements SourceEngine {
                             byte[] b = new byte[8192];
                             int n, total = 0;
                             while ((n = in.read(b)) != -1) {
-                                RequestScope.current().check();
+                                checkRequest();
                                 total += n;
                                 if (total > 20 * 1024 * 1024)
                                     throw new IOException("插件超过 20 MB 限制");
@@ -591,6 +615,12 @@ public final class CspEngine implements SourceEngine {
                 temp.delete();
             }
         }
+    }
+
+    private static void checkRequest() throws IOException {
+        RequestScope scope = RequestScope.current();
+        if (scope != null) scope.check();
+        else if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException();
     }
 
     static String hex(byte[] bytes) throws Exception {

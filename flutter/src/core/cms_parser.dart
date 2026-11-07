@@ -602,6 +602,14 @@ class CmsParser {
       return trimmed;
     }
   }
+  /// Resolve only the JAR address. The digest suffix is an integrity constraint,
+  /// not URL syntax; preserve it even when malformed so a loader can reject it.
+  static String normalizeJarDeclaration(String origin, String declaration) {
+    final marker = RegExp(';md5;', caseSensitive: false).firstMatch(declaration);
+    if (marker == null) return resolveUrl(origin, declaration);
+    return resolveUrl(origin, declaration.substring(0, marker.start)) +
+        declaration.substring(marker.start);
+  }
   static int _asInt(dynamic raw, int fallback) {
     if (raw is int) return raw;
     if (raw is num) return raw.toInt();
@@ -997,6 +1005,7 @@ class CmsParser {
         decoded['api'] != null &&
         (decoded['name'] != null || decoded['key'] != null)) {
       decoded = <String, dynamic>{
+        'spider': decoded['spider'] ?? '',
         'sites': [decoded],
       };
     }
@@ -1038,6 +1047,8 @@ class CmsParser {
     }
     final sites = <CmsSite>[];
     final seenKeys = <String>{};
+    final spider = normalizeJarDeclaration(
+        origin, (decoded['spider'] ?? '').toString());
     final rawSites = decoded['sites'];
     if (rawSites is List) {
       for (int i = 0; i < rawSites.length; i++) {
@@ -1068,6 +1079,8 @@ class CmsParser {
             playUrl: (item['playUrl'] ?? '').toString().trim(),
             searchable: _asBool(item['searchable'], true),
             ext: extStr,
+            jar: normalizeJarDeclaration(origin, (item['jar'] ?? '').toString()),
+            spider: spider,
             headers: _stringHeaders(item['headers'] ?? item['header']),
             group: itemGroup.isEmpty ? groupLabel : itemGroup,
             isPrivate: itemPrivate,
@@ -1130,7 +1143,6 @@ class CmsParser {
         }
       }
     }
-    final spider = resolveUrl(origin, (decoded['spider'] ?? '').toString());
     if (sites.isEmpty && lives.isEmpty && depots.isEmpty) {
       throw const FormatException('配置中未找到可用的 sites（片源）、lives（直播）或 urls（多仓列表）');
     }

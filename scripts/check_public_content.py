@@ -23,8 +23,11 @@ UPSTREAM_TEXT = json.loads((ROOT/'scripts/upstream-text-sha256.json').read_text(
 # not suppress any of the private-value checks above the URL review below.
 TEST_AUTHORITIES = {
     'android/tests/DrpyChecks.java': {'new:login@127.0.0.1:', 'user:p%2Bss@', 'user:pass@', 'user:p%2Bss@source.test', 'user:pass@source.test'},
+    'android/tests/GuardChecks.java': {'user:pass@media.test'},
     'flutter/test/drpy_cancellation_test.dart': {'user:pass@fixture.invalid'},
     'flutter/test/drpy_host_test.dart': {'user:secret@fixture.invalid'},
+    'flutter/test/guard_bootstrap_host_test.dart': {'user:secret@fixture.invalid'},
+    'flutter/test/subscription_redirect_test.dart': {'injected:secret@127.0.0.1:${origin.port}'},
     'android/tests/JsHttpChecks.java': {'new:secret@', 'us%40er:pa%2Bss@'},
     'flutter/test/python_host_compat_test.dart': {'user:pass@[::1]:8443'},
     'scripts/test_python_host.js': {'user:pass@[::1]:8443', '127.0.0.2', '127.0.0.2:'},

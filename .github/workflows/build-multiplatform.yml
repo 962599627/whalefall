@@ -103,6 +103,8 @@ jobs:
           export MARCOMOVIE_BUILD_TOOLS="$BUILD_TOOLS"
           python scripts/build_android.py
           python android/tests/run_api23_callback_checks.py
+          python android/tests/run_checks.py
+          python android/tests/run_guard_checks.py
           python scripts/build_lite.py
       - uses: actions/upload-artifact@v4
         with:

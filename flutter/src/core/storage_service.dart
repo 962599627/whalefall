@@ -883,6 +883,7 @@ class StorageService {
       'sites': [for (final s in parsed.sites.where((s) => !s.isEffectivelyPrivate)) {
         'key': s.key, 'name': s.name, 'api': s.api, 'type': s.type,
         'playUrl': s.playUrl, 'ext': s.ext, 'header': s.headers, 'group': s.group, 'searchable': s.searchable,
+        if (s.pluginReference.isNotEmpty) 'jar': s.pluginReference,
       }],
       'lives': [for (final l in parsed.publicLives) {'name': l.name, 'url': l.url, 'header': l.headers, 'group': l.group}],
     });

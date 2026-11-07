@@ -37,3 +37,15 @@ The engine uses a rebuilt, pinned dependency facade with recorded licenses. Thre
 - Shared router tests exercise the actual pinned DRPY core on Node 22 and Node 18 with JIT disabled. Flutter client tests cover import through catalogue/search/detail and multiple returned media qualities using local HTTP fixtures. They do not replace iPhone installation/playback acceptance.
 
 The 16 KB source build is a separate validation path. Large-page startup remains blocked unless an APK includes capability evidence matching the actual Node, bridge and C++ library hashes. ELF alignment alone does not establish runtime behavior on a 16 KB device.
+
+## Reviewed Dm84 adapter and embedded runtime evidence
+
+Dm84 now has a shared, parameterized implementation dispatched by Android and Flutter. Its endpoint constants are extracted as data from one exact reviewed imported JAR version. The bootstrap does not execute that JAR, Java bytecode, or native loader. Unknown artifacts remain explicitly unsupported on Flutter; Android retains its original local plugin host only after successful integrity validation and an exact unsupported-artifact or pre-start runtime-unavailable result. Invalid checksums, malformed bootstrap results and protocol errors do not trigger this fallback.
+
+Each Flutter site retains its own subscription's plugin declaration and any site-specific override, including the original MD5 constraint. Reordering, merging subscriptions, backup and restart therefore cannot attach a route to a different subscription's global plugin. Import authentication is scoped to the download origin and is removed on cross-origin redirects.
+
+The private Windows Flutter client check exercised the actual importer, shared bootstrap, pinned DRPY engine, home, two category pages, exact-title search, details and playback resolution using the imported plugin. A bounded 64 KiB media response returned HTTP 206 with an ISO-BMFF video header. This verifies the client and media retrieval path for one sample; it is not decoder, audio/video sync, seek, HLS proxy or iPhone playback evidence. Public fixtures contain no supplied endpoints, plugin binary or resolved media addresses.
+
+[Embedded Node regression at a3347c0](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42366622265) passed all twelve behavior checks on API 23/4 KB, API 35/4 KB and API 35/16 KB: DRPY catalogue/filter/Unicode search/detail/play, CatPaw import/worker calls, and release/reopen. The initial 16 KB fixture failed while the linker loaded the bridge through Android's incremental installation path. Full installation fixed that failure with identical library hashes. This derivative contains the production application bytecode and the isolated Node libraries; it does not validate the full APK's other native decoders or Xiaomi firmware.
+
+The proprietary-route ledger remains unchanged: these checks do not complete all 33 routes or satisfy the iPhone publication gate. The production runtime pin and capability packaging are tracked separately from this isolated runtime evidence.

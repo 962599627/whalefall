@@ -2,6 +2,13 @@ package com.pilipala.catpaw;
 
 /** One embedded Node engine for the application; subscriptions run in worker isolates. */
 public final class NodeRuntime {
+    /** The runtime cannot start on this installation; no subscription code has executed. */
+    public static final class RuntimeUnavailableException extends java.io.IOException {
+        RuntimeUnavailableException(String message) {
+            super(message);
+        }
+    }
+
     private static boolean started, exited;
     private static String rootPath;
 
@@ -18,12 +25,12 @@ public final class NodeRuntime {
         if (started) return;
         long pageSize = android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE);
         if (pageSize > 4096 && !verifiedPageSize(context, pageSize))
-            throw new java.io.IOException("当前 CatPaw 运行组件尚不支持此设备的 16 KB 内存页，请使用其他片源");
+            throw new RuntimeUnavailableException("当前 CatPaw 运行组件尚不支持此设备的 16 KB 内存页，请使用其他片源");
         try {
             System.loadLibrary("node");
             System.loadLibrary("marco_node");
         } catch (UnsatisfiedLinkError error) {
-            throw new java.io.IOException("安装包缺少兼容的 CatPaw 本机运行组件");
+            throw new RuntimeUnavailableException("安装包缺少兼容的 CatPaw 本机运行组件");
         }
         new java.io.File(ready).delete();
         rootPath = root;

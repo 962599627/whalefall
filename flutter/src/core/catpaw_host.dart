@@ -6,6 +6,11 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+class GuardBootstrapException extends FormatException {
+  final String code;
+  const GuardBootstrapException(this.code, String message) : super(message);
+}
+
 /// Stable subscriptions reference verified local bytes, never an ephemeral port.
 class CatPawHost {
   static CatPawHost instance = CatPawHost();
@@ -303,6 +308,155 @@ class CatPawHost {
       await _writeAtomic(file, bytes);
     }
     return 'catpaw://$hash/api/drpy';
+  }
+
+  /// Extract data from one explicitly supported plugin artifact. Download and
+  /// declared MD5 validation belong to the caller; this boundary never receives
+  /// the remote address, request headers, or credentials used to acquire it.
+  Future<Map<String, dynamic>> bootstrapGuard(
+    List<int> bytes, {
+    String adapter = 'dm84-v1',
+    Completer<void>? cancellation,
+  }) async {
+    _checkCancellation(cancellation);
+    if (adapter != 'dm84-v1' ||
+        bytes.isEmpty ||
+        bytes.length > _maxBundleBytes ||
+        bytes.any((b) => b < 0 || b > 255)) {
+      throw const FormatException('插件适配器或文件大小无效');
+    }
+    final artifact = Uint8List.fromList(bytes);
+    final hash = sha256.convert(artifact).toString();
+    final root = await _withCancellation(_storage(), cancellation);
+    _checkCancellation(cancellation);
+    final folder = Directory('${root.path}/imports');
+    await _withCancellation(folder.create(recursive: true), cancellation);
+    _checkCancellation(cancellation);
+    final file = File('${folder.path}/$hash.jar');
+    if (await file.exists()) {
+      if (await file.length() > _maxBundleBytes ||
+          sha256.convert(await file.readAsBytes()).toString() != hash) {
+        throw const FormatException('本机插件文件校验失败');
+      }
+    } else {
+      await _withCancellation(_writeAtomic(file, artifact), cancellation);
+    }
+    _checkCancellation(cancellation);
+    final base = await _withCancellation(_ensure(), cancellation);
+    _checkCancellation(cancellation);
+    final deadline = DateTime.now().add(const Duration(seconds: 2));
+    var backoffMs = 80;
+    while (true) {
+      try {
+        return await _requestGuardBootstrap(base, hash, adapter, cancellation);
+      } on GuardBootstrapException catch (error) {
+        if (error.code != 'bootstrap_busy' ||
+            !DateTime.now().isBefore(deadline)) {
+          rethrow;
+        }
+        final remaining = deadline.difference(DateTime.now()).inMilliseconds;
+        if (remaining <= 0) rethrow;
+        await _withCancellation(
+          Future<void>.delayed(
+            Duration(
+              milliseconds: remaining < backoffMs ? remaining : backoffMs,
+            ),
+          ),
+          cancellation,
+        );
+        backoffMs = (backoffMs * 2).clamp(80, 250);
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> _requestGuardBootstrap(
+    Uri base,
+    String hash,
+    String adapter,
+    Completer<void>? cancellation,
+  ) async {
+    _checkCancellation(cancellation);
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    var finished = false;
+    cancellation?.future.then((_) {
+      if (!finished) client.close(force: true);
+    });
+    final timer = Timer(
+      const Duration(seconds: 10),
+      () => client.close(force: true),
+    );
+    try {
+      final request = await _withCancellation(
+        client.postUrl(base.replace(path: '${base.path}/_port-bootstrap')),
+        cancellation,
+      );
+      _checkCancellation(cancellation);
+      request.followRedirects = false;
+      request.headers.contentType = ContentType.json;
+      final body = utf8.encode(
+        jsonEncode({'version': 1, 'adapter': adapter, 'artifactHash': hash}),
+      );
+      request.contentLength = body.length;
+      request.add(body);
+      final response = await _withCancellation(request.close(), cancellation);
+      final output = BytesBuilder(copy: false);
+      await for (final chunk in response) {
+        _checkCancellation(cancellation);
+        if (output.length + chunk.length > _maxBundleBytes) {
+          throw const FormatException('插件解析响应过大');
+        }
+        output.add(chunk);
+      }
+      _checkCancellation(cancellation);
+      final decoded = jsonDecode(utf8.decode(output.takeBytes()));
+      if (response.statusCode != 200) {
+        const errors = {
+          'guard_artifact_unsupported': '当前插件版本尚未完成本机移植',
+          'guard_artifact_integrity': '插件文件校验失败',
+          'guard_artifact_invalid': '插件包格式无效',
+          'bootstrap_busy': '插件解析正在进行，请稍后重试',
+          'bootstrap_timeout': '插件解析超时',
+          'bootstrap_request': '插件解析请求无效',
+        };
+        final code = decoded is Map ? decoded['error'] : null;
+        throw GuardBootstrapException(
+          errors.containsKey(code) ? code as String : 'bootstrap_http',
+          errors.containsKey(code)
+              ? '${errors[code]}（$code）'
+              : '插件解析失败（HTTP ${response.statusCode}）',
+        );
+      }
+      if (decoded is! Map<String, dynamic> ||
+          decoded['version'] != 1 ||
+          decoded.keys.any(
+            (key) => !const ['version', 'rule', 'origin'].contains(key),
+          ) ||
+          decoded['rule'] is! String ||
+          decoded['origin'] is! String) {
+        throw const FormatException('插件解析结果格式无效');
+      }
+      final rule = decoded['rule'] as String;
+      final origin = decoded['origin'] as String;
+      final uri = Uri.tryParse(origin);
+      if (rule.trim().isEmpty ||
+          utf8.encode(rule).length > 6 * 1024 * 1024 ||
+          origin.length > 8192 ||
+          uri == null ||
+          !const ['http', 'https'].contains(uri.scheme) ||
+          uri.host.isEmpty ||
+          uri.userInfo.isNotEmpty ||
+          uri.hasFragment) {
+        throw const FormatException('插件解析规则或来源无效');
+      }
+      return decoded;
+    } catch (_) {
+      _checkCancellation(cancellation);
+      rethrow;
+    } finally {
+      finished = true;
+      timer.cancel();
+      client.close(force: true);
+    }
   }
 
   static Uri _drpyAddress(String address) {

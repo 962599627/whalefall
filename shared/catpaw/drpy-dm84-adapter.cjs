@@ -59,12 +59,24 @@ var rule={
       vod_director:pdfh(html,'meta[name="og:video:director"]&&content'),vod_content:pdfh(html,'meta[property="og:description"]&&content'),
       vod_remarks:pdfh(html,'p.v_desc > span.desc&&Text'),vod_play_from:from.join('$$$'),vod_play_url:episodes.join('$$$')};
   },
+  _address:function(value){
+    if(typeof value!=='string'||!value||/[\\x00-\\x20\\x7f\\\\]/.test(value))unsupportedFeature('drpy_media_protocol');
+    var normalized;
+    try{normalized=joinUrl(cfg.origin,value);}catch(e){unsupportedFeature('drpy_media_protocol');}
+    var match=/^(https?):\\/\\/([^/?#]+)([^?#]*)(?:[?#]|$)/i.exec(normalized);
+    if(!match||match[2].indexOf('@')!==-1)unsupportedFeature('drpy_media_protocol');
+    return {url:normalized,origin:match[1].toLowerCase()+'://'+match[2].toLowerCase(),pathname:match[3]||'/'};
+  },
   _play:function(url){
-    var html=request(url),iframe=pd(html,'iframe&&src',cfg.origin),resolved='';
-    if(iframe.indexOf('m3u8')!==-1)resolved=iframe;
-    // Current pages moved the same bootstrap into the configured parser iframe.
-    // Fetch only that explicit origin; never execute the page's obfuscated scripts.
-    if(!resolved && iframe.indexOf(cfg.parserOrigin+'/')===0)html=request(iframe);
+    var page=this._address(url),html=request(page.url),iframe=pdfh(html,'iframe&&src'),resolved='';
+    var parser=this._address(cfg.parser);
+    // The parser may itself have a media URL in its query. Its exact origin
+    // takes precedence over extension detection; never run page scripts.
+    if(iframe){
+      var frame=this._address(iframe);
+      if(frame.origin===parser.origin)html=request(frame.url);
+      else if(/\\.(?:m3u8|mp4)$/i.test(frame.pathname))resolved=frame.url;
+    }
     if(!resolved){
       var scripts=pdfa(html,'script');
       for(var i=0;i<scripts.length;i++){
@@ -73,15 +85,15 @@ var rule={
         var start=text.indexOf('{'),end=text.lastIndexOf('}');
         if(start<0||end<=start)continue;
         var data=JSON.parse(text.substring(start,end+1));
-        var response=req(cfg.parser,{method:'POST',headers:{'User-Agent':cfg.userAgent,'Origin':cfg.parserOrigin,
+        var response=req(parser.url,{method:'POST',headers:{'User-Agent':cfg.userAgent,'Origin':parser.origin,
           'Content-Type':'application/json'},body:JSON.stringify({url:data.url,t:Number(data.t)||0,key:data.key,client_fallback:false}),timeout:8000});
         if(response.code!==200)throw new Error('Dm84 parser HTTP '+response.code);
         resolved=JSON.parse(response.content).url||'';
         if(resolved)break;
       }
     }
-    if(!resolved)throw new Error('Dm84 did not return a media URL');
-    return {parse:0,url:resolved,header:{'User-Agent':cfg.userAgent}};
+    if(!resolved)unsupportedFeature('drpy_media_unresolved');
+    return {parse:0,url:this._address(resolved).url,header:{'User-Agent':cfg.userAgent}};
   }
 };`;
 };

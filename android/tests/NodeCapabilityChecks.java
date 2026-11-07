@@ -31,6 +31,12 @@ public final class NodeCapabilityChecks {
         Context context = new Context(root);
         File capability = new File(root, "catpaw/runtime-capabilities.json");
         check(!NodeRuntime.verifiedPageSize(context, 16384), "missing evidence retains block");
+        try {
+            NodeRuntime.start(context, "unused", "unused", "unused");
+            throw new AssertionError("unverified runtime started");
+        } catch (NodeRuntime.RuntimeUnavailableException expected) {
+            check(true, "pre-start capability failure has an explicit fallback type");
+        }
         JSONObject hashes = new JSONObject();
         Map<String, byte[]> libraries = new LinkedHashMap<>();
         for (String name : new String[] {"libnode.so", "libmarco_node.so", "libc++_shared.so"}) {

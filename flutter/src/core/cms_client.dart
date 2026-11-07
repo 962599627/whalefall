@@ -13,6 +13,7 @@ import 'emby_library.dart';
 import 'checksum_source.dart';
 import 'catpaw_host.dart';
 import 'drpy_source.dart';
+import 'guard_source.dart';
 import 'source_playback.dart';
 import 'models.dart';
 /// HTTP CMS client with TVBox `okhttp/3.15` User-Agent parity, system certificate validation for third-party
@@ -29,6 +30,8 @@ class CmsClient {
   final CatPawHost _scriptHost;
   late final DrpySource _drpy = DrpySource(host: _scriptHost,
       read: (url, headers) => _getText(url, headers: headers));
+  late final GuardSource _guard = GuardSource(host: _scriptHost, drpy: _drpy,
+      read: (url, headers) => _getBytes(url, headers: headers, byteLimit: GuardSource.maxArtifactBytes));
   CmsClient({
     http.Client? client,
     CatPawHost? scriptHost,
@@ -61,6 +64,7 @@ class CmsClient {
     Map<String, String> headers = const {},
     Duration? requestTimeout,
     String defaultUa = tvBoxUserAgent,
+    int byteLimit = maxResponseBytes,
   }) async {
     final normalized = CmsParser.normalizeUrl(url);
     final uri = Uri.parse(normalized);
@@ -78,19 +82,43 @@ class CmsClient {
     sessionAbort?.future.then((_) => cancel());
     final deadline = Timer(requestTimeout ?? timeout, cancel);
     try {
-      final request = http.AbortableRequest('GET', uri, abortTrigger: abort.future)
-        ..headers.addAll(_buildHeaders(headers, defaultUa: defaultUa));
-      final response = await transport.send(request);
+      final requestHeaders = _buildHeaders(headers, defaultUa: defaultUa);
+      if (uri.userInfo.isNotEmpty &&
+          !requestHeaders.keys.any((name) => name.toLowerCase() == 'authorization')) {
+        requestHeaders['Authorization'] = 'Basic ${base64Encode(utf8.encode(Uri.decodeComponent(uri.userInfo)))}';
+      }
+      var current = uri.replace(userInfo: '').removeFragment();
+      late http.StreamedResponse response;
+      for (var redirects = 0; ; redirects++) {
+        final request = http.AbortableRequest('GET', current, abortTrigger: abort.future)
+          ..followRedirects = false
+          ..headers.addAll(requestHeaders);
+        response = await transport.send(request);
+        final location = response.headers['location'];
+        if (![301, 302, 303, 307, 308].contains(response.statusCode) || location == null) break;
+        await response.stream.listen(null).cancel();
+        if (redirects >= 5) throw const FormatException('来源跳转次数过多');
+        final next = Uri.parse(CmsParser.normalizeUrl(current.resolve(location).toString())).removeFragment();
+        if (!['http', 'https'].contains(next.scheme) || next.host.isEmpty || next.userInfo.isNotEmpty) {
+          throw const FormatException('来源返回了不支持的跳转地址');
+        }
+        if (current.scheme != next.scheme || current.host != next.host || current.port != next.port) {
+          requestHeaders.removeWhere((name, _) => const [
+            'authorization', 'proxy-authorization', 'cookie', 'cookie2',
+          ].contains(name.toLowerCase()));
+        }
+        current = next;
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException('HTTP ${response.statusCode}');
       }
-      if ((response.contentLength ?? 0) > maxResponseBytes) {
-        throw const FormatException('响应体超过大小上限（6 MB）');
+      if ((response.contentLength ?? 0) > byteLimit) {
+        throw FormatException('响应体超过大小上限（${byteLimit ~/ (1024 * 1024)} MB）');
       }
       final data = BytesBuilder(copy: false);
       await for (final bytes in response.stream) {
-        if (data.length + bytes.length > maxResponseBytes) {
-          throw const FormatException('响应体超过大小上限（6 MB）');
+        if (data.length + bytes.length > byteLimit) {
+          throw FormatException('响应体超过大小上限（${byteLimit ~/ (1024 * 1024)} MB）');
         }
         data.add(bytes);
       }
@@ -579,12 +607,13 @@ class CmsClient {
     return '';
   }
 
-  bool _usesJs(CmsSite site) => site.isDrpySource || site.isPythonSource || site.isJavaScriptSource &&
+  bool _usesJs(CmsSite site) => GuardSource.supports(site) || site.isDrpySource || site.isPythonSource || site.isJavaScriptSource &&
       !(CspBridge.isHuyaSite(site) || CspBridge.isDouyuSite(site) ||
         CspBridge.isTuxiaobeiSite(site));
 
   Future<String> _callJs(CmsSite site, String method, List<Object?> args) async {
     final cancellation = Zone.current[_cancelKey] as Completer<void>?;
+    if (GuardSource.supports(site)) return _guard.invoke(site, method, args, cancellation: cancellation);
     if (site.isDrpySource) return _drpy.invoke(site, method, args, cancellation: cancellation);
     final cachedRule = await _drpy.callCached(site, method, args, cancellation: cancellation);
     if (cachedRule != null) return cachedRule;
@@ -764,6 +793,7 @@ class CmsClient {
     if (_usesJs(site)) {
       final extend = <String, String>{
         if (filter != null && filter.genreLabel.isNotEmpty) 'class': filter.genreLabel,
+        if (GuardSource.supports(site) && filter != null && filter.genreLabel.isNotEmpty) 'type': filter.genreLabel,
         if (filter != null && filter.area.isNotEmpty) 'area': filter.area,
         if (filter != null && filter.year.isNotEmpty) 'year': filter.year,
       };
@@ -1024,7 +1054,11 @@ class CmsClient {
         payload['parse'] = 0;
       }
       return SourcePlayback.decode(payload, episode,
-          localUrl: _scriptHost.resolve, sourceHeaders: site.headers, sourceOrigin: _sourceCredentialOrigin(site));
+          localUrl: _scriptHost.resolve,
+          // A plugin's import headers are not the adapted media server's
+          // credentials. The reviewed adapter returns explicit playback headers.
+          sourceHeaders: GuardSource.supports(site) ? const {} : site.headers,
+          sourceOrigin: GuardSource.supports(site) ? null : _sourceCredentialOrigin(site));
     }
     return CspBridge.resolveEpisodeForPlayback(site, episode, _getText);
   }

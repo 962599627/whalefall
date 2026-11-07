@@ -25,6 +25,7 @@ class DrpySource {
             site.sourceKey,
             site.isEffectivelyPrivate,
             site.api,
+            site.pluginReference,
             site.ext,
             site.headers,
           ]),
@@ -152,7 +153,7 @@ class DrpySource {
               site.sourceKey,
               site.isEffectivelyPrivate,
               if (site.subscriptionId.isEmpty) ...[
-                site.api, origin,
+                site.api, site.pluginReference, origin,
                 if (uri.scheme == 'pkg') sha256.convert(utf8.encode(rule)).toString(),
               ],
             ]),

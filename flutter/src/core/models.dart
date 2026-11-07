@@ -187,6 +187,11 @@ class CmsSite {
   final String playUrl;
   final bool searchable;
   final String ext;
+  /// Site override and the owning subscription's plugin declaration, respectively.
+  /// Keep both on the site: a merged subscription has no single global plugin.
+  final String jar;
+  final String spider;
+  String get pluginReference => jar.isNotEmpty ? jar : spider;
   final Map<String, String> headers;
   final String group;
   final bool isPrivate;
@@ -200,6 +205,8 @@ class CmsSite {
     this.playUrl = '',
     this.searchable = true,
     this.ext = '',
+    this.jar = '',
+    this.spider = '',
     this.headers = const {},
     this.group = '默认分组',
     this.isPrivate = false,
@@ -213,6 +220,8 @@ class CmsSite {
     String? playUrl,
     bool? searchable,
     String? ext,
+    String? jar,
+    String? spider,
     Map<String, String>? headers,
     String? group,
     bool? isPrivate,
@@ -227,6 +236,8 @@ class CmsSite {
       playUrl: playUrl ?? this.playUrl,
       searchable: searchable ?? this.searchable,
       ext: ext ?? this.ext,
+      jar: jar ?? this.jar,
+      spider: spider ?? this.spider,
       headers: headers ?? this.headers,
       group: group ?? this.group,
       isPrivate: isPrivate ?? this.isPrivate,

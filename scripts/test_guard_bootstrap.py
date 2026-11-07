@@ -25,13 +25,20 @@ class AdapterFixture(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        self.server.requests.append(self.path)
         if self.path.startswith('/list-'):
             body = '<ul class="list_filter"><li><div><a>全部</a><a>动作</a></div></li><li><div><a>全部</a><a>2025</a></div></li><li><div><a>按时间</a><a>按评分</a></div></li></ul>'
         elif self.path.startswith('/v/'):
             body = '<h1 class="v_title">Fixture</h1><ul class="tab_control"><li>Line</li></ul><ul class="play_list"><li><a href="/p/42">One</a></li></ul>'
         elif self.path.startswith('/p/'):
-            body = '<iframe src="'+self.server.origin+'/iframe"></iframe>'
-        elif self.path == '/iframe':
+            modes = {'wrapper':self.server.origin+'/iframe?url=https%3A%2F%2Fexample.invalid%2Fvideo.m3u8',
+                     'direct':'http://127.0.0.1:9/media.m3u8?token=fixture',
+                     'query':'http://127.0.0.1:9/unknown?url=video.m3u8',
+                     'foreign':self.server.origin.replace('127.0.0.1','127.0.0.1.example.invalid')+'/iframe?url=video.m3u8',
+                     'userinfo':self.server.origin.replace('://','://fixture:secret@')+'/iframe',
+                     'javascript':'javascript:void(0)', 'file':'file:///fixture.m3u8', 'ftp':'ftp://example.invalid/video.m3u8'}
+            body = '<iframe src="'+modes.get(self.path.split('/')[-1], self.server.origin+'/iframe')+'"></iframe>'
+        elif self.path.startswith('/iframe'):
             body = '<script>window.__HHJX_BOOTSTRAP__={"url":"fixture-token","t":42,"key":"fixture-key"};</script>'
         else:
             body = '<ul class="nav_row"><li><a href="/list-12.html">Fixture</a></li></ul><div class="item"><a class="title" href="/v/42">Fixture</a><a class="cover" data-bg="/poster.png"></a><span class="desc">Test</span></div>'
@@ -51,7 +58,7 @@ class AdapterFixture(BaseHTTPRequestHandler):
             body = self.rfile.read(int(self.headers['Content-Length']))
         self.server.payload = json.loads(body)
         self.server.parser_headers = dict(self.headers)
-        data = json.dumps({'url': self.server.origin+'/never-download.mp4'}).encode()
+        data = json.dumps({'url': getattr(self.server,'media_url',self.server.origin+'/never-download.mp4')}).encode()
         self.send_response(200); self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
 
 def uleb(value):
@@ -227,6 +234,7 @@ class HostChecks(unittest.TestCase):
     def test_parameterized_adapter_real_drpy_router(self):
         fixture = ThreadingHTTPServer(('127.0.0.1', 0), AdapterFixture)
         fixture.daemon_threads = True
+        fixture.requests = []
         fixture.origin = 'http://127.0.0.1:'+str(fixture.server_port)
         threading.Thread(target=fixture.serve_forever, daemon=True).start()
         try:
@@ -254,6 +262,22 @@ class HostChecks(unittest.TestCase):
             self.assertEqual(play['parse'], 0); self.assertEqual(play['url'], fixture.origin+'/never-download.mp4')
             self.assertEqual(fixture.payload, {'url':'fixture-token','t':42,'key':'fixture-key','client_fallback':False})
             self.assertEqual({k.lower():v for k,v in fixture.parser_headers.items()}['origin'], fixture.origin)
+            wrapper = call('play', ['Line',fixture.origin+'/p/wrapper',[]])
+            self.assertEqual(wrapper['parse'],0)
+            self.assertEqual(wrapper['url'],fixture.origin+'/never-download.mp4')
+            self.assertTrue(any(path.startswith('/iframe?url=') for path in fixture.requests))
+            direct = call('play', ['Line',fixture.origin+'/p/direct',[]])
+            self.assertEqual(direct['parse'],0)
+            self.assertEqual(direct['url'],'http://127.0.0.1:9/media.m3u8?token=fixture')
+            for mode in ('query','foreign','userinfo','javascript','file','ftp'):
+                status,value = self.request({'version':1,'method':'play','args':['Line',fixture.origin+'/p/'+mode,[]]},path=path)
+                self.assertEqual(status,422,(mode,value))
+                self.assertEqual(value['error'],'drpy_media_unresolved' if mode in ('query','foreign') else 'drpy_media_protocol')
+                self.assertNotIn('secret',json.dumps(value))
+            for unsafe in ['file:///fixture.mp4',fixture.origin.replace('://','://fixture:secret@')+'/media.mp4']:
+                fixture.media_url=unsafe
+                status,value=self.request({'version':1,'method':'play','args':['Line',fixture.origin+'/p/42',[]]},path=path)
+                self.assertEqual((status,value),(422,{'error':'drpy_media_protocol'}))
         finally:
             fixture.shutdown(); fixture.server_close()
 
