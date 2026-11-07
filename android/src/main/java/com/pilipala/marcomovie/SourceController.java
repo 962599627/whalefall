@@ -241,8 +241,13 @@ final class SourceController {
         if (e instanceof CspEngine.EngineException) return s;
         if (e instanceof OutOfMemoryError) return "设备运行内存不足，已保护性中止加载。建议切换轻量片源。";
         if (e instanceof LinkageError) return "此片源扩展与当前电视系统版本不兼容，请切换其他片源。";
+        if (e instanceof java.net.UnknownHostException) return "无法解析来源域名，请检查网络或切换其他来源。";
+        if (e instanceof javax.net.ssl.SSLException) return "与来源建立安全连接失败，请检查设备时间或切换其他来源。";
+        if (e instanceof java.net.SocketTimeoutException) return "来源响应超时，请重试或切换其他来源。";
+        if (e instanceof java.net.ConnectException) return "无法连接来源服务，请重试或切换其他来源。";
         if (s != null
-                && (s.startsWith("配置")
+                && (s.startsWith("直播列表")
+                        || s.startsWith("配置")
                         || s.startsWith("来源返回 HTTP")
                         || s.startsWith("来源没有")
                         || s.startsWith("来源重定向")
@@ -255,6 +260,7 @@ final class SourceController {
     }
 
     static void learnTitles(MainActivity a, List<Cms.Video> videos) {
+        if (a.privateMode) return;
         if (a.phonetic == null || videos == null || videos.isEmpty()) return;
         for (Cms.Video video : videos)
             if (video.title != null && !video.title.isEmpty()) a.pendingTitles.add(video.title);

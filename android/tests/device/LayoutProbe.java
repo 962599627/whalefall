@@ -134,9 +134,22 @@ public final class LayoutProbe extends Instrumentation {
                             v.title = "适配验证 · 清晰可读的影片名称";
                             Cms.Episode e = new Cms.Episode();
                             e.name = "第 1 集";
-                            PlayerChrome chrome = new PlayerChrome(a, v, e);
+                            // A previously browsed live list must not hide a VOD timeline.
+                            a.liveSession =
+                                    new LiveSession(
+                                            new LiveCatalog.Source(), new LiveCatalog.Catalog());
+                            PlayerChrome chrome = new PlayerChrome(a, v, e, false);
+                            if (chrome.progress.getVisibility() != View.VISIBLE)
+                                throw new AssertionError("VOD progress hidden after live browsing");
+                            a.liveSession = null;
                             a.playerChrome = chrome;
-                            chrome.dock.addView(a.button("下集", "test-next", () -> {}));
+                            Cms.Site site = new Cms.Site();
+                            site.key = "layout-vod";
+                            VideoOutput surface = new VideoOutput(a, true);
+                            a.playbackControls =
+                                    new PlaybackControls(
+                                            a, chrome.dock, chrome.progress, surface, site, v, e);
+                            chrome.relayout();
                         });
                 waitForIdleSync();
                 SystemClock.sleep(250);
@@ -146,6 +159,8 @@ public final class LayoutProbe extends Instrumentation {
                                         inside(a.playerChrome.dock)
                                                 && inside(a.playerChrome.heading)
                                                 && inside(a.playerChrome.progress)
+                                                && inside(a.playbackControls.timeline)
+                                                && a.playbackControls.timeline.isShown()
                                                 && a.playerChrome.dock.getWidth()
                                                         < a.root.getWidth());
                 check("player_regions_fit_" + scale, fits[0]);
@@ -162,6 +177,8 @@ public final class LayoutProbe extends Instrumentation {
                 }
                 runOnMainSync(
                         () -> {
+                            a.playbackControls.close();
+                            a.playbackControls = null;
                             a.playerChrome = null;
                             a.playerOverlay = null;
                             a.playbackLayer = null;

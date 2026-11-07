@@ -726,7 +726,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
                             if (Thread.currentThread().isInterrupted()) return;
                             final PhoneticSearchIndex index = a.phonetic;
                             if (index != null && !query.matches("[A-Za-z0-9' -]+"))
-                                index.prefer(query);
+                                if (!a.privateMode) index.prefer(query);
                             final List<String> variants =
                                     index == null
                                             ? Collections.singletonList(query)
@@ -1194,6 +1194,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
     }
 
     void saveHistory(String query) {
+        if (a.privateMode) return;
         List<String> previous = history();
         previous.remove(query);
         previous.add(0, query);

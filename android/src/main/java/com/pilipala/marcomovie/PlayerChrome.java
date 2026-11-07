@@ -18,7 +18,7 @@ final class PlayerChrome {
     final TextView resolution;
     boolean loading = true;
 
-    PlayerChrome(MainActivity host, Cms.Video video, Cms.Episode episode) {
+    PlayerChrome(MainActivity host, Cms.Video video, Cms.Episode episode, boolean live) {
         a = host;
         overlay = new FrameLayout(a);
         overlay.setTag("player-chrome");
@@ -110,7 +110,6 @@ final class PlayerChrome {
         progress.addView(clockRow, new LinearLayout.LayoutParams(-1, -2));
         int width = a.windowWidth();
         boolean mobileLandscape = !a.isTvDevice() && !a.isPortrait();
-        boolean isLive = a.liveSession != null;
         FrameLayout.LayoutParams track =
                 new FrameLayout.LayoutParams(
                         Math.min(
@@ -120,7 +119,9 @@ final class PlayerChrome {
                         Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         track.bottomMargin = a.dp(mobileLandscape ? 20 : 94);
         if (mobileLandscape) track.rightMargin = a.dp(36);
-        if (isLive) progress.setVisibility(View.GONE);
+        // Browsing live channels leaves a live session available for returning.
+        // Only the currently playing source decides whether seeking is hidden.
+        progress.setVisibility(live ? View.GONE : View.VISIBLE);
         overlay.addView(progress, track);
 
         dock = a.vertical();
@@ -228,7 +229,7 @@ final class PlayerChrome {
     }
 
     void relayout() {
-        int width = a.windowWidth();
+        int width = a.windowWidth() - overlay.getPaddingLeft() - overlay.getPaddingRight();
         boolean mobileLandscape = !a.isTvDevice() && !a.isPortrait();
         if (titleView != null) {
             titleView.setTextSize(a.isPortrait() ? 20 : 26);
@@ -261,7 +262,15 @@ final class PlayerChrome {
             FrameLayout.LayoutParams fd = (FrameLayout.LayoutParams) d;
             if (mobileLandscape) {
                 fd.width = a.dp(76);
-                fd.height = Math.min(a.dp(360), Math.max(a.dp(180), a.windowHeight() - a.dp(40)));
+                fd.height =
+                        Math.min(
+                                a.dp(360),
+                                Math.max(
+                                        a.dp(80),
+                                        a.windowHeight()
+                                                - overlay.getPaddingTop()
+                                                - overlay.getPaddingBottom()
+                                                - a.dp(40)));
                 fd.gravity = Gravity.RIGHT | Gravity.CENTER_VERTICAL;
                 fd.rightMargin = a.dp(8);
                 fd.bottomMargin = 0;

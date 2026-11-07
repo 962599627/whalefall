@@ -155,6 +155,7 @@ public final class LiveCatalog {
             for (Map.Entry<String, String> h : requestHeaders.entrySet())
                 connection.setRequestProperty(h.getKey(), h.getValue());
             try {
+                RequestScope.attach(connection);
                 int status = connection.getResponseCode();
                 if (status == 301
                         || status == 302
@@ -166,8 +167,12 @@ public final class LiveCatalog {
                     URL target = new URL(next, location);
                     if (!Cms.isHttp(target.toString())) throw new IOException("直播列表重定向协议不受支持");
                     if (!sameOrigin(next, target)) {
-                        requestHeaders.remove("Cookie");
-                        requestHeaders.remove("Authorization");
+                        Iterator<String> keys = requestHeaders.keySet().iterator();
+                        while (keys.hasNext()) {
+                            String key = keys.next();
+                            if (key.equalsIgnoreCase("Cookie")
+                                    || key.equalsIgnoreCase("Authorization")) keys.remove();
+                        }
                     }
                     next = target;
                     continue;
@@ -208,6 +213,7 @@ public final class LiveCatalog {
                     throw new IOException("直播列表字符编码不受支持", e);
                 }
             } finally {
+                RequestScope.detach(connection);
                 connection.disconnect();
             }
         }

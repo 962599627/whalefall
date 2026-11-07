@@ -438,6 +438,10 @@ final class SettingsScreen {
     }
 
     void pick(int request, String mime, boolean create) {
+        if (a.privateMode && (request == 45 || request == 46)) {
+            a.toast("请先退出隐私空间，再导出或恢复公开备份");
+            return;
+        }
         try {
             Intent intent =
                     new Intent(
@@ -531,6 +535,7 @@ final class SettingsScreen {
     static final String[] KEYS = Prefs.KEYS;
 
     static void result(MainActivity a, int request, Uri uri) {
+        if (a.privateMode && (request == 45 || request == 46)) return;
         a.worker.execute(
                 () -> {
                     try {

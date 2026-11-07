@@ -138,6 +138,8 @@ class CspBridge {
   /// Extracts user-configured HTTP/HTTPS endpoints from `site.api` or `site.ext` without
   /// any built-in hardcoded VOD URLs.
   static List<({String name, String api})> backendsForSite(CmsSite site) {
+    // SixV's ext is an HTML website root, not a MacCMS JSON endpoint.
+    if (RegExp(r'^csp_sixv(?:guard)?$', caseSensitive: false).hasMatch(site.api.trim())) return [];
     final endpoints = <({String name, String api})>[];
     final seen = <String>{};
     void addCandidate(String raw) {
@@ -1434,30 +1436,6 @@ class CspBridge {
     return video.title.trim();
   }
 
-  static List<String> _netdiskLineOrderForSite(String siteHint) {
-    final lower = siteHint.toLowerCase();
-    if (lower.contains('夸父') || lower.contains('盘她')) {
-      return const ['夸父智1', '夸父无限1', '优汐智1', '嘟嘟无限2', '阿狸原画'];
-    }
-    if (lower.contains('嘟嘟') || lower.contains('盘他')) {
-      return const ['嘟嘟无限2', '嘟嘟无限3', '优汐智1', '夸父智1', '阿狸原画'];
-    }
-    if (lower.contains('优汐')) {
-      return const ['优汐智1', '优汐无限1', '夸父智1', '嘟嘟无限2', '阿狸原画'];
-    }
-    if (lower.contains('阿狸')) {
-      return const ['阿狸原画', '优汐智1', '夸父智1', '嘟嘟无限2'];
-    }
-    return const [
-      '优汐智1',
-      '夸父智1',
-      '嘟嘟无限2',
-      '优汐无限1',
-      '夸父无限1',
-      '阿狸原画',
-    ];
-  }
-
   static Future<CmsVideo> resolveCrossSourceVideo(
     CmsVideo fallback,
     String searchTitle,
@@ -1541,35 +1519,8 @@ class CspBridge {
       }
     }
 
-    // Build TV-consistent Netdisk 4K lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `阿狸原画`)
-    // with TV-style `[5.20GB]E08.mkv` episode names at the top, followed by direct lines
-    final lines = <CmsLine>[];
-    if (directLines.isNotEmpty) {
-      final netdiskNames = _netdiskLineOrderForSite(siteHint);
-      for (int i = 0; i < netdiskNames.length; i++) {
-        final sourceLine = directLines[i % directLines.length];
-        final totalCount = sourceLine.episodes.length;
-        final formattedEpisodes = <CmsEpisode>[
-          for (int epIdx = 0; epIdx < totalCount; epIdx++)
-            CmsEpisode(
-              name: CmsParser.formatNetdiskEpisodeName(
-                sourceLine.episodes[epIdx].name,
-                epIdx,
-                totalCount,
-              ),
-              url: sourceLine.episodes[epIdx].url,
-              headers: sourceLine.episodes[epIdx].headers,
-            ),
-        ];
-        lines.add(
-          CmsLine(
-            name: netdiskNames[i],
-            episodes: formattedEpisodes,
-          ),
-        );
-      }
-      lines.addAll(directLines);
-    }
+    // Preserve the actual source and episode metadata; never synthesize cloud providers.
+    final lines = directLines;
 
     return CmsVideo(
       id: fallback.id,

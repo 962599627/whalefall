@@ -698,21 +698,22 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       right: !useSidebar,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final splitHeader = constraints.maxWidth <
-              600 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
+          final compactHeader = constraints.maxWidth < 600;
           final sourceControls = Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               if (depots.isNotEmpty) ...[
                 Flexible(child: _buildHeaderCapsule(
+                compact: compactHeader,
                   icon: CupertinoIcons.archivebox_fill,
-                  label: widget.storage.activeDepotName.isEmpty
-                      ? '切换仓库' : widget.storage.activeDepotName,
+                  label: compactHeader ? '' : (widget.storage.activeDepotName.isEmpty
+                      ? '切换仓库' : widget.storage.activeDepotName),
                   onTap: _showDepotPickerDialog,
                 )),
                 const SizedBox(width: 6),
               ],
               Flexible(child: _buildHeaderCapsule(
+                compact: compactHeader,
                 icon: _privateSessionUnlocked
                     ? CupertinoIcons.lock_shield_fill : CupertinoIcons.layers_alt_fill,
                 label: _activeSite?.name ??
@@ -773,15 +774,15 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     child: Row(
                       children: [
                         Flexible(
-                          flex: splitHeader ? 1 : 0,
+                          flex: 0,
                           child: GestureDetector(
                             key: const ValueKey('home-brand-logo'),
                             behavior: HitTestBehavior.opaque,
                             onTap: _handleHomeLogoTap,
                             child: MarcoBrandLogo(
-                              iconSize: 28,
-                              fontSize: 16.5,
-                              showWordmark: !_privateSessionUnlocked || !splitHeader,
+                              iconSize: compactHeader ? 24 : 28,
+                              fontSize: compactHeader ? 14 : 16.5,
+                              showWordmark: !_privateSessionUnlocked || !compactHeader,
                             ),
                           ),
                         ),
@@ -831,7 +832,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           ),
                         ],
                         const SizedBox(width: 8),
-                        if (!splitHeader) Expanded(child: sourceControls),
+                        Expanded(child: sourceControls),
                         const SizedBox(width: 6),
                         GestureDetector(
                           key: const ValueKey('home-netdisk-button'),
@@ -864,16 +865,16 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                   width: 0.7,
                                 ),
                               ),
-                              child: const Row(
+                              child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
+                                  const Icon(
                                     CupertinoIcons.qrcode_viewfinder,
                                     color: AppleColors.systemBlue,
                                     size: 13.5,
                                   ),
-                                  SizedBox(width: 4),
-                                  Text(
+                                  if (!compactHeader) const SizedBox(width: 4),
+                                  if (!compactHeader) const Text(
                                     '网盘',
                                     style: TextStyle(
                                       color: AppleColors.labelPrimary,
@@ -923,10 +924,6 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         ),
                       ],
                     ),
-                  ),
-                  if (splitHeader) Padding(
-                    padding: EdgeInsets.fromLTRB(horizontalPad, 10, horizontalPad, 0),
-                    child: sourceControls,
                   ),
                   // If config has only Android JAR (`csp_*`) sites and no direct HTTP sites
                   if (_activeSite == null) ...[
@@ -1489,6 +1486,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }
   Widget _buildHeaderCapsule({
     required IconData icon,
+    bool compact = false,
     required String label,
     required VoidCallback onTap,
   }) {
@@ -1498,7 +1496,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         borderRadius: BorderRadius.circular(999),
         child: Container(
           constraints: const BoxConstraints(maxWidth: 126),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10, vertical: 9),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topCenter,
@@ -1517,8 +1515,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: AppleColors.labelSecondary, size: 13.5),
-              const SizedBox(width: 5),
+              if (!compact || label.isEmpty) Icon(icon, color: AppleColors.labelSecondary, size: 13.5),
+              if (!compact) const SizedBox(width: 5),
               Flexible(
                 child: Text(
                   label,
@@ -1531,8 +1529,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
-              const Icon(
+              if (!compact) const SizedBox(width: 4),
+              if (!compact) const Icon(
                 CupertinoIcons.chevron_down,
                 color: AppleColors.labelSecondary,
                 size: 11.5,
@@ -2843,36 +2841,13 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     ];
     return Material(
       color: Colors.transparent,
-      child: ClipRRect(
+      child: AppleGlassSurface(
+        key: const ValueKey('privacy-pin-glass'),
+        width: 326,
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
         borderRadius: BorderRadius.circular(32),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 36, sigmaY: 36),
-          child: Container(
-            width: 326,
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xE01F1C2E),
-                  Color(0xEB111019),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(32),
-              border: Border.all(
-                color: const Color(0x4DA78BFA),
-                width: 0.9,
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x80000000),
-                  blurRadius: 36,
-                  offset: Offset(0, 16),
-                ),
-              ],
-            ),
-            child: Column(
+        elevated: true,
+        child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
@@ -2997,8 +2972,6 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   ],
                 ),
               ],
-            ),
-          ),
         ),
       ),
     );
@@ -4740,6 +4713,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           AppleGroupedSection(
             children: [
               AppleGroupedTile(
+                minHeight: 88,
                 icon: CupertinoIcons.paintbrush_fill,
                 iconBgColor: AppleColors.systemPurple,
                 title: '外观与视觉风格',
@@ -4750,6 +4724,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
               ),
               AppleGroupedTile(
+                minHeight: 88,
                 icon: CupertinoIcons.square_grid_2x2_fill,
                 iconBgColor: AppleColors.systemBlue,
                 title: '首页与排版布局',
@@ -4760,6 +4735,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
               ),
               AppleGroupedTile(
+                minHeight: 88,
                 icon: CupertinoIcons.play_rectangle_fill,
                 iconBgColor: AppleColors.systemOrange,
                 title: '播放与画质偏好',
@@ -4770,6 +4746,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
               ),
               AppleGroupedTile(
+                minHeight: 88,
                 icon: CupertinoIcons.cloud_fill,
                 iconBgColor: AppleColors.systemGreen,
                 title: '云盘、订阅与数据维护',
@@ -6847,9 +6824,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final supported = inPrivacyMode
         ? (_config?.privateSupportedSites ?? const <CmsSite>[])
         : (_config?.publicSupportedSites ?? const <CmsSite>[]);
-    final groupCounts = <String, int>{'全部': supported.length};
+    final allSites = (_config?.sites ?? const <CmsSite>[])
+        .where((s) => inPrivacyMode ? s.isEffectivelyPrivate : !s.isEffectivelyPrivate)
+        .toList();
+    final groupCounts = <String, int>{'全部': allSites.length};
     final groups = <String>['全部'];
-    for (final s in supported) {
+    for (final s in allSites) {
       if (!inPrivacyMode && s.isEffectivelyPrivate) continue;
       if (inPrivacyMode && !s.isEffectivelyPrivate) continue;
       final g = s.group.trim().isEmpty ? defaultGroupName : s.group.trim();
@@ -6921,7 +6901,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setPickerState) {
           final size = MediaQuery.sizeOf(ctx);
-          final filteredSites = supported.where((s) {
+          bool matchesFilter(CmsSite s) {
             final g =
                 s.group.trim().isEmpty ? defaultGroupName : s.group.trim();
             final groupMatch = selectedGroup == '全部' || g == selectedGroup;
@@ -6931,7 +6911,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             return s.name.toLowerCase().contains(q) ||
                 g.toLowerCase().contains(q) ||
                 s.api.toLowerCase().contains(q);
-          }).toList();
+          }
+          final filteredSites = supported.where(matchesFilter).toList();
+          final filteredPlugins = plugins.where(matchesFilter).toList();
 
           String siteBadgeLabel(CmsSite s) {
             final lower = '${s.name} ${s.api} ${s.key}'.toLowerCase();
@@ -7092,7 +7074,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   const SizedBox(height: 12),
                     ],
                   )),
-                  if (filteredSites.isEmpty)
+                  if (filteredSites.isEmpty && filteredPlugins.isEmpty)
                     const SliverToBoxAdapter(child: Padding(
                       padding: EdgeInsets.all(24),
                       child: Text('未找到匹配的片源', style: TextStyle(
@@ -7132,16 +7114,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                   _loadSiteHome();
                                 },
                               ),
-                              if (plugins.isNotEmpty &&
-                                  selectedGroup == '全部' &&
-                                  searchQuery.isEmpty) ...[
+                              if (filteredPlugins.isNotEmpty) ...[
                                 SliverToBoxAdapter(
                                   child: Padding(
                                     padding: const EdgeInsets.only(top: 16),
                                     child: AppleGroupedSection(
                                       header:
-                                          '当前设备未适配 (${plugins.length})',
-                                      children: plugins.map((s) {
+                                          '当前设备未适配 (${filteredPlugins.length})',
+                                      children: filteredPlugins.map((s) {
                                         return AppleGroupedTile(
                                           icon:
                                               CupertinoIcons.lock_shield_fill,

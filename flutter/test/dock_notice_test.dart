@@ -27,6 +27,14 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('设置').last);
     await tester.pump(const Duration(milliseconds: 500));
+    final settingRows = find.byType(AppleGroupedTile);
+    expect(settingRows, findsNWidgets(4));
+    for (final row in settingRows.evaluate()) {
+      expect(
+        tester.getSize(find.byWidget(row.widget)).height,
+        greaterThanOrEqualTo(88),
+      );
+    }
     final scaffold = tester.state<ScaffoldState>(find.byType(Scaffold).first);
     ScaffoldMessenger.of(scaffold.context).showSnackBar(
       const SnackBar(
@@ -43,9 +51,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
   for (final size in [const Size(320, 740), const Size(740, 320)]) {
-  testWidgets(
-    'source modal at $size with enlarged text remains usable',
-    (tester) async {
+    testWidgets('source modal at $size with enlarged text remains usable', (
+      tester,
+    ) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -53,7 +61,7 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       final storage = await StorageService.init();
       await storage.saveConfig(
-        '{"sites":[{"key":"long","name":"很长的线路名称高清影视完整显示","type":1,"api":"https://source.example/api"}]}',
+        '{"sites":[{"key":"long","name":"很长的线路名称高清影视完整显示","type":1,"api":"https://source.example/api"},{"key":"pending","name":"未移植测试线路","type":3,"api":"csp_TestPendingGuard","group":"扩展分组"}]}',
       );
       final client = CmsClient(
         client: MockClient(
@@ -72,6 +80,11 @@ void main() {
         ),
       );
       await tester.pump(const Duration(milliseconds: 500));
+      final brand = tester.getRect(
+        find.byKey(const ValueKey('home-brand-logo')),
+      );
+      final sourceLabel = tester.getRect(find.text('很长的线路名称高清影视完整显示').first);
+      expect(sourceLabel.center.dy, closeTo(brand.center.dy, 3));
       await tester.tap(find.text('很长的线路名称高清影视完整显示').first);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
@@ -84,9 +97,46 @@ void main() {
       await tester.pump();
       expect(storage.preferredSiteKey, 'long');
       expect(find.byTooltip('取消默认偏好源'), findsOneWidget);
+      await tester.drag(find.byType(CustomScrollView).last, const Offset(0, 600));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(EditableText).first, '未移植');
+      await tester.pumpAndSettle();
+      expect(find.text('未移植测试线路'), findsOneWidget);
+      expect(find.text('当前设备未适配 (1)'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
-    },
-  );
+    });
   }
+  testWidgets('five logo taps open a Glasswork PIN dialog', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({});
+    final storage = await StorageService.init();
+    await storage.saveConfig(
+      '{"sites":[{"key":"test","name":"测试源","type":1,"api":"https://source.example/api"}]}',
+    );
+    final client = CmsClient(
+      client: MockClient(
+        (_) async => http.Response('{"class":[],"list":[]}', 200),
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AdaptiveShell(storage: storage, client: client),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    for (var i = 0; i < 5; i++) {
+      await tester.tap(find.byKey(const ValueKey('home-brand-logo')));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.pump(const Duration(milliseconds: 500));
+    final pin = find.byKey(const ValueKey('privacy-pin-glass'));
+    expect(pin, findsOneWidget);
+    expect(tester.widget(pin), isA<AppleGlassSurface>());
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

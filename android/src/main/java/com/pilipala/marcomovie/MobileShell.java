@@ -90,6 +90,35 @@ final class MobileShell {
     private int totalPages = 1;
     private final List<Cms.Video> currentVideos = new ArrayList<>();
     private List<Cms.Category> currentCategories = new ArrayList<>();
+    private String filterSchema = "{}";
+    private final java.util.Map<String, String> selectedFilters = new java.util.LinkedHashMap<>();
+    private int homeRequest;
+    private boolean homeReady;
+    private Runnable resumeHome;
+    private FrameLayout retainedRoot;
+    private int retainedWidth, retainedHeight, retainedEpoch;
+
+    boolean resume() {
+        if (!homeReady
+                || activeTab != 0
+                || retainedRoot == null
+                || retainedEpoch != a.engineEpoch
+                || retainedWidth != a.windowWidth()
+                || retainedHeight != a.windowHeight()) return false;
+        a.cancelPageRequests();
+        a.cancelArtwork();
+        a.releasePlayer();
+        a.generation++;
+        ++homeRequest;
+        if (resumeHome != null) resumeHome.run();
+        a.root = retainedRoot;
+        a.setContentView(retainedRoot);
+        a.applyMobileSystemBars(false);
+        a.scroll = homeScroll;
+        a.body = homeBody;
+        if (a.current != null) a.current.home = true;
+        return true;
+    }
 
     MobileShell(MainActivity activity) {
         this.a = activity;
@@ -409,6 +438,11 @@ final class MobileShell {
         }
 
         switchTab(activeTab);
+        retainedRoot = a.root;
+        retainedWidth = a.windowWidth();
+        retainedHeight = a.windowHeight();
+        retainedEpoch = a.engineEpoch;
+        if (a.current != null) a.current.mobileHome = this;
     }
 
     private void resolveActiveSite() {
@@ -450,9 +484,24 @@ final class MobileShell {
         logoLp.rightMargin = a.dp(8);
         brandRow.addView(logo, logoLp);
 
-        TextView brandTitle = a.text("Marco", 16, Color.WHITE);
+        boolean compactBrand =
+                a.windowWidth() < a.dp(360) || a.getResources().getConfiguration().fontScale > 1.2f;
+        TextView brandTitle =
+                a.text(
+                        a.privateMode ? "隐私 · 退出" : compactBrand ? "Marco\nMovie" : "Marco Movie",
+                        compactBrand ? 12 : 14,
+                        Color.WHITE);
         brandTitle.setTypeface(null, Typeface.BOLD);
+        brandTitle.setSingleLine(!compactBrand);
+        brandTitle.setMaxLines(compactBrand ? 2 : 1);
+        brandTitle.setContentDescription(a.privateMode ? "退出隐私空间" : "Marco Movie");
         brandRow.addView(brandTitle);
+        brandRow.setMinimumHeight(a.dp(44));
+        brandRow.setOnClickListener(
+                v -> {
+                    if (a.privateMode) PrivacySpace.switchSpace(a, false);
+                    else PrivacySpace.logoTap(a);
+                });
         bar.addView(brandRow, new LinearLayout.LayoutParams(-2, -2));
 
         // Flexible middle slot: keeps `sitePill` right-aligned and guarantees it shrinks/truncates
@@ -470,7 +519,7 @@ final class MobileShell {
         sitePill.setTypeface(null, Typeface.BOLD);
         sitePill.setSingleLine(true);
         sitePill.setEllipsize(TextUtils.TruncateAt.END);
-        int maxSiteWidth = Math.max(a.dp(72), Math.min(a.dp(136), a.windowWidth() - a.dp(232)));
+        int maxSiteWidth = Math.max(a.dp(48), Math.min(a.dp(136), a.windowWidth() - a.dp(250)));
         sitePill.setMaxWidth(maxSiteWidth);
         sitePill.setGravity(Gravity.CENTER);
         sitePill.setPadding(a.dp(11), a.dp(7), a.dp(11), a.dp(7));
@@ -632,8 +681,12 @@ final class MobileShell {
 
     private int homeScrollY;
     private ScrollView homeScroll;
+    private LinearLayout homeBody;
 
     void switchTab(int index) {
+        ++homeRequest;
+        homeReady = false;
+        ++a.generation;
         if (activeTab == 0 && homeScroll != null) homeScrollY = homeScroll.getScrollY();
         activeTab = Math.max(0, Math.min(4, index));
         a.cancelPageRequests();
@@ -697,6 +750,8 @@ final class MobileShell {
         contentContainer.addView(scrollView, new FrameLayout.LayoutParams(-1, -1));
 
         final LinearLayout body = a.vertical();
+        a.body = body;
+        homeBody = body;
         body.setPadding(0, statusBarHeight() + a.dp(8), 0, a.dp(106));
         scrollView.addView(body, new ScrollView.LayoutParams(-1, -2));
 
@@ -802,7 +857,17 @@ final class MobileShell {
         final LinearLayout catRow = a.row();
         catRow.setGravity(Gravity.CENTER_VERTICAL);
         catScroll.addView(catRow);
-        body.addView(catScroll, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout categoryBar = a.row();
+        categoryBar.addView(catScroll, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView filterButton = a.text("筛选", 13, MainActivity.WHITE);
+        filterButton.setTag("home-filters");
+        filterButton.setGravity(Gravity.CENTER);
+        filterButton.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
+        a.glass(filterButton, 999);
+        LinearLayout.LayoutParams filterSize = new LinearLayout.LayoutParams(-2, -2);
+        filterSize.rightMargin = a.dp(16);
+        categoryBar.addView(filterButton, filterSize);
+        body.addView(categoryBar, new LinearLayout.LayoutParams(-1, -2));
 
         // 5. Status & 3-Column Poster Grid Container
         final TextView statusText = a.text("正在加载片单…", 13, MainActivity.MUTED);
@@ -828,11 +893,26 @@ final class MobileShell {
         body.addView(loadMoreBtn, moreLp);
 
         final boolean[] loadingPage = {false};
+        final boolean[] pageFailed = {false};
+        final int[] completedPage = {0};
+        resumeHome =
+                () -> {
+                    if (!loadingPage[0]) return;
+                    loadingPage[0] = false;
+                    pageFailed[0] = false;
+                    currentPage = Math.max(1, completedPage[0]);
+                    loadMoreBtn.setVisibility(currentPage < totalPages ? View.VISIBLE : View.GONE);
+                    loadMoreBtn.setText("加载更多影片 (" + currentPage + "/" + totalPages + ")");
+                };
         final Runnable[] fetchCategoryPage = new Runnable[1];
         final Runnable renderCategoryChips =
                 new Runnable() {
                     @Override
                     public void run() {
+                        filterButton.setText(
+                                selectedFilters.isEmpty()
+                                        ? "筛选"
+                                        : "筛选 · " + selectedFilters.size());
                         catRow.removeAllViews();
                         addCategoryChip(catRow, "推荐", "", this, fetchCategoryPage[0]);
                         for (Cms.Category c : currentCategories) {
@@ -841,8 +921,26 @@ final class MobileShell {
                     }
                 };
 
+        filterButton.setOnClickListener(
+                v ->
+                        VideoFilterDialog.show(
+                                a,
+                                mobileFilterDefinitions(),
+                                selectedFilters,
+                                () -> {
+                                    if (selectedCategoryId.isEmpty()
+                                            && !currentCategories.isEmpty())
+                                        selectedCategoryId = currentCategories.get(0).id;
+                                    currentPage = 1;
+                                    filterButton.setText(
+                                            selectedFilters.isEmpty()
+                                                    ? "筛选"
+                                                    : "筛选 · " + selectedFilters.size());
+                                    fetchCategoryPage[0].run();
+                                }));
         fetchCategoryPage[0] =
                 () -> {
+                    final int request = ++homeRequest;
                     loadingPage[0] = true;
                     if (currentPage == 1) {
                         statusText.setVisibility(View.VISIBLE);
@@ -855,7 +953,12 @@ final class MobileShell {
                     final Cms.Site siteSnapshot = currentSite;
                     final String catSnapshot = selectedCategoryId;
                     final int pageSnapshot = currentPage;
+                    final java.util.Map<String, String> filterSnapshot =
+                            new java.util.LinkedHashMap<>(selectedFilters);
+                    final List<VideoFilters.Definition> definitions = mobileFilterDefinitions();
                     final int ticket = a.generation;
+                    final HomeScreen.Snapshot cached =
+                            siteSnapshot == null ? null : a.homeData.get(siteSnapshot.key);
                     if (catSnapshot.isEmpty() && pageSnapshot == 1 && siteSnapshot != null) {
                         a.prefs.edit().putString(Prefs.LOADING_SITE, siteSnapshot.key).commit();
                     }
@@ -865,13 +968,27 @@ final class MobileShell {
                                     SourceEngine eng = a.engine(siteSnapshot);
                                     List<Cms.Category> cats = currentCategories;
                                     Cms.Listing list;
+                                    HomeScreen.Snapshot homeSnapshot = null;
                                     if (catSnapshot.isEmpty() && pageSnapshot == 1) {
-                                        String raw = eng.home();
+                                        String raw =
+                                                cached != null
+                                                                && System.currentTimeMillis()
+                                                                                - cached.time
+                                                                        < 300000
+                                                        ? cached.filterSchema
+                                                        : eng.home();
                                         cats = Cms.categories(raw);
                                         list =
                                                 new JSONObject(raw).has("list")
                                                         ? Cms.listing(raw)
                                                         : new Cms.Listing();
+                                        if (list.videos.isEmpty()
+                                                && cached != null
+                                                && System.currentTimeMillis() - cached.time
+                                                        < 300000) {
+                                            list.videos.addAll(cached.videos);
+                                            list.pageCount = cached.pages;
+                                        }
                                         if (list.videos.isEmpty()) {
                                             try {
                                                 list = Cms.listing(eng.homeVideos());
@@ -881,29 +998,57 @@ final class MobileShell {
                                         if (list.videos.isEmpty() && !cats.isEmpty()) {
                                             list = Cms.listing(eng.category(cats.get(0).id, 1));
                                         }
+                                        HomeScreen.Snapshot saved =
+                                                new HomeScreen.Snapshot(
+                                                        list.videos, cats, "", list.pageCount);
+                                        saved.filterSchema = raw;
+                                        homeSnapshot = saved;
                                     } else {
                                         String targetCat =
                                                 catSnapshot.isEmpty() && !cats.isEmpty()
                                                         ? cats.get(0).id
                                                         : catSnapshot;
-                                        list = Cms.listing(eng.category(targetCat, pageSnapshot));
+                                        list =
+                                                Cms.listing(
+                                                        eng.category(
+                                                                targetCat,
+                                                                pageSnapshot,
+                                                                VideoFilters.remoteValues(
+                                                                        definitions,
+                                                                        filterSnapshot)));
                                     }
+                                    final HomeScreen.Snapshot finalHomeSnapshot = homeSnapshot;
                                     final List<Cms.Category> finalCats = cats;
                                     final Cms.Listing finalList = list;
+                                    final List<Cms.Video> filtered =
+                                            VideoFilters.apply(
+                                                    list.videos, definitions, filterSnapshot);
                                     a.learnTitles(finalList.videos);
                                     a.ui.post(
                                             () -> {
+                                                if (ticket != a.generation
+                                                        || a.isFinishing()
+                                                        || request != homeRequest) return;
                                                 a.prefs
                                                         .edit()
                                                         .putString(Prefs.LOADING_SITE, "")
                                                         .apply();
-                                                if (ticket != a.generation || a.isFinishing())
-                                                    return;
+                                                if (ticket != a.generation
+                                                        || a.isFinishing()
+                                                        || request != homeRequest) return;
                                                 loadingPage[0] = false;
+                                                pageFailed[0] = false;
+                                                completedPage[0] = pageSnapshot;
+                                                homeReady = true;
+                                                if (finalHomeSnapshot != null) {
+                                                    filterSchema = finalHomeSnapshot.filterSchema;
+                                                    a.homeData.put(
+                                                            siteSnapshot.key, finalHomeSnapshot);
+                                                }
                                                 currentCategories = finalCats;
                                                 renderCategoryChips.run();
                                                 if (pageSnapshot == 1) currentVideos.clear();
-                                                for (Cms.Video v : finalList.videos) {
+                                                for (Cms.Video v : filtered) {
                                                     if (v.action == null || v.action.isEmpty()) {
                                                         currentVideos.add(v);
                                                     }
@@ -914,7 +1059,10 @@ final class MobileShell {
                                                                 ? View.VISIBLE
                                                                 : View.GONE);
                                                 if (currentVideos.isEmpty()) {
-                                                    statusText.setText("当前分类暂无影片");
+                                                    statusText.setText(
+                                                            selectedFilters.isEmpty()
+                                                                    ? "当前分类暂无影片"
+                                                                    : "当前筛选暂无匹配，可继续加载更多影片");
                                                 }
                                                 // Render Featured Hero Showcase on Recommend tab
                                                 if (catSnapshot.isEmpty()
@@ -947,13 +1095,19 @@ final class MobileShell {
                                     AppLog.w("MobileShell", "fetchCategoryPage failed", e);
                                     a.ui.post(
                                             () -> {
+                                                if (ticket != a.generation
+                                                        || a.isFinishing()
+                                                        || request != homeRequest) return;
                                                 a.prefs
                                                         .edit()
                                                         .putString(Prefs.LOADING_SITE, "")
                                                         .apply();
-                                                if (ticket != a.generation || a.isFinishing())
-                                                    return;
+                                                if (ticket != a.generation
+                                                        || a.isFinishing()
+                                                        || request != homeRequest) return;
                                                 loadingPage[0] = false;
+                                                pageFailed[0] = true;
+                                                homeReady = !currentVideos.isEmpty();
                                                 statusText.setVisibility(View.VISIBLE);
                                                 statusText.setText("加载失败：" + a.message(e));
                                                 loadMoreBtn.setVisibility(View.VISIBLE);
@@ -966,7 +1120,7 @@ final class MobileShell {
         loadMoreBtn.setOnClickListener(
                 v -> {
                     if (loadingPage[0]) return;
-                    if (currentPage < totalPages) currentPage++;
+                    if (!pageFailed[0] && currentPage < totalPages) currentPage++;
                     fetchCategoryPage[0].run();
                 });
 
@@ -975,7 +1129,8 @@ final class MobileShell {
                 .getViewTreeObserver()
                 .addOnScrollChangedListener(
                         () -> {
-                            if (loadingPage[0] || currentPage >= totalPages) return;
+                            if (loadingPage[0] || pageFailed[0] || currentPage >= totalPages)
+                                return;
                             View child = scrollView.getChildAt(0);
                             if (child == null) return;
                             int diff =
@@ -1093,6 +1248,19 @@ final class MobileShell {
         return card;
     }
 
+    private List<VideoFilters.Definition> mobileFilterDefinitions() {
+        String category =
+                selectedCategoryId.isEmpty() && !currentCategories.isEmpty()
+                        ? currentCategories.get(0).id
+                        : selectedCategoryId;
+        List<VideoFilters.Definition> defs =
+                VideoFilters.definitions(filterSchema, category, currentVideos);
+        if (currentSite != null && currentSite.supported())
+            for (VideoFilters.Definition def : defs)
+                if (!VideoFilters.allowedKey(def.key)) def.remote = false;
+        return defs;
+    }
+
     /**
      * Builds a category pill 1:1 with iPhone `_buildCategoryPill`: white stadium pill with black
      * bold text when selected, translucent dark glass pill with white text when unselected.
@@ -1118,6 +1286,7 @@ final class MobileShell {
                 v -> {
                     if (selectedCategoryId.equals(catId)) return;
                     selectedCategoryId = catId;
+                    selectedFilters.clear();
                     currentPage = 1;
                     refreshChips.run();
                     loadPage.run();
@@ -1257,8 +1426,24 @@ final class MobileShell {
 
         ImageView logo = new ImageView(a);
         logo.setImageResource(R.drawable.logo_mark);
+        logo.setContentDescription(a.privateMode ? "退出隐私空间" : "Marco Movie");
+        logo.setOnClickListener(
+                v -> {
+                    if (a.privateMode) PrivacySpace.switchSpace(a, false);
+                    else PrivacySpace.logoTap(a);
+                });
         card.addView(logo, new LinearLayout.LayoutParams(a.dp(64), a.dp(64)));
         a.gap(card, 12);
+
+        if (a.privateMode) {
+            addMobileActionBtn(
+                    card,
+                    "退出隐私空间",
+                    0xff1e2724,
+                    MainActivity.WHITE,
+                    () -> PrivacySpace.switchSpace(a, false));
+            a.gap(card, 12);
+        }
 
         TextView heading = a.text("把今晚，留给好故事。", 23, MainActivity.WHITE);
         heading.setTypeface(null, Typeface.BOLD);
@@ -1506,22 +1691,24 @@ final class MobileShell {
                     } catch (Exception ignored) {
                     }
 
-                    // Save to search history
-                    try {
-                        JSONArray old =
-                                new JSONArray(a.prefs.getString(Prefs.GLOBAL_SEARCH_HISTORY, "[]"));
-                        JSONArray updated = new JSONArray();
-                        updated.put(kw);
-                        for (int i = 0; i < old.length() && updated.length() < 16; i++) {
-                            String item = old.optString(i);
-                            if (!item.isEmpty() && !item.equals(kw)) updated.put(item);
+                    // Private queries never enter history or the shared phonetic dictionary.
+                    if (!a.privateMode)
+                        try {
+                            JSONArray old =
+                                    new JSONArray(
+                                            a.prefs.getString(Prefs.GLOBAL_SEARCH_HISTORY, "[]"));
+                            JSONArray updated = new JSONArray();
+                            updated.put(kw);
+                            for (int i = 0; i < old.length() && updated.length() < 16; i++) {
+                                String item = old.optString(i);
+                                if (!item.isEmpty() && !item.equals(kw)) updated.put(item);
+                            }
+                            a.prefs
+                                    .edit()
+                                    .putString(Prefs.GLOBAL_SEARCH_HISTORY, updated.toString())
+                                    .apply();
+                        } catch (Exception ignored) {
                         }
-                        a.prefs
-                                .edit()
-                                .putString(Prefs.GLOBAL_SEARCH_HISTORY, updated.toString())
-                                .apply();
-                    } catch (Exception ignored) {
-                    }
                     renderHistoryChips.run();
 
                     a.cancelPageRequests();
@@ -1783,6 +1970,7 @@ final class MobileShell {
         final int[] activeGroupIdx = {0};
         final LiveCatalog.Catalog[] activeCatalog = {null};
         final Runnable[] loadSource = new Runnable[1];
+        final int[] liveRequest = {0};
 
         searchInput.addTextChangedListener(
                 new android.text.TextWatcher() {
@@ -1809,6 +1997,9 @@ final class MobileShell {
 
         loadSource[0] =
                 () -> {
+                    final int request = ++liveRequest[0];
+                    a.cancelPageRequests();
+                    activeCatalog[0] = null;
                     srcRow.removeAllViews();
                     for (int i = 0; i < sources.size(); i++) {
                         final int idx = i;
@@ -1866,8 +2057,9 @@ final class MobileShell {
                                             LiveCatalog.load(selectedSource);
                                     a.ui.post(
                                             () -> {
-                                                if (ticket != a.generation || a.isFinishing())
-                                                    return;
+                                                if (ticket != a.generation
+                                                        || a.isFinishing()
+                                                        || request != liveRequest[0]) return;
                                                 activeCatalog[0] = catalog;
                                                 a.liveSession =
                                                         new LiveSession(selectedSource, catalog);
@@ -1883,8 +2075,9 @@ final class MobileShell {
                                 } catch (Exception e) {
                                     a.ui.post(
                                             () -> {
-                                                if (ticket != a.generation || a.isFinishing())
-                                                    return;
+                                                if (ticket != a.generation
+                                                        || a.isFinishing()
+                                                        || request != liveRequest[0]) return;
                                                 stateView.setVisibility(View.VISIBLE);
                                                 stateView.setText("读取直播源失败：" + a.message(e));
                                             });

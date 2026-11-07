@@ -43,6 +43,10 @@ final class MobileDownloads {
 
     /** Renders the download list into the 我的 tab and keeps it refreshed while visible. */
     static void render(MainActivity a, LinearLayout parent) {
+        if (a.privateMode) {
+            parent.addView(a.text("隐私空间不保存下载记录，退出后可查看公开下载。", 15, MainActivity.MUTED));
+            return;
+        }
         MobileDownloads view = new MobileDownloads(a, parent);
         view.rebuild();
         a.ui.postDelayed(view::tick, 1000);
@@ -434,6 +438,10 @@ final class MobileDownloads {
             MainActivity a, Cms.Site s, Cms.Video v, Cms.Line line, List<Cms.Episode> picked) {
         if (picked.isEmpty()) {
             a.toast("请至少选择一集");
+            return;
+        }
+        if (a.privateMode) {
+            a.toast("隐私空间不加入公共下载列表");
             return;
         }
         int added = DownloadManager.get(a).enqueue(s, v, line, picked);

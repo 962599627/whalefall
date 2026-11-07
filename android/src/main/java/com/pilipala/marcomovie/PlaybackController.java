@@ -797,7 +797,40 @@ final class PlaybackController {
         a.playbackLayer.setTag("playback-layer");
         a.root.addView(a.playbackLayer, new FrameLayout.LayoutParams(-1, -1));
         a.playbackLayer.addView(surface, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
-        a.playerChrome = new PlayerChrome(a, v, ep);
+        a.playerChrome = new PlayerChrome(a, v, ep, "live".equals(s.key));
+        if (!a.isTvDevice()) {
+            final PlayerChrome chrome = a.playerChrome;
+            a.root.setOnApplyWindowInsetsListener(
+                    (view, insets) -> {
+                        int left = insets.getSystemWindowInsetLeft();
+                        int top = insets.getSystemWindowInsetTop();
+                        int right = insets.getSystemWindowInsetRight();
+                        int bottom = insets.getSystemWindowInsetBottom();
+                        if (android.os.Build.VERSION.SDK_INT >= 30) {
+                            android.graphics.Insets safe =
+                                    insets.getInsets(
+                                            android.view.WindowInsets.Type.systemBars()
+                                                    | android.view.WindowInsets.Type.displayCutout()
+                                                    | android.view.WindowInsets.Type
+                                                            .systemGestures());
+                            left = safe.left;
+                            top = safe.top;
+                            right = safe.right;
+                            bottom = safe.bottom;
+                        } else if (android.os.Build.VERSION.SDK_INT >= 28
+                                && insets.getDisplayCutout() != null) {
+                            android.view.DisplayCutout cutout = insets.getDisplayCutout();
+                            left = Math.max(left, cutout.getSafeInsetLeft());
+                            top = Math.max(top, cutout.getSafeInsetTop());
+                            right = Math.max(right, cutout.getSafeInsetRight());
+                            bottom = Math.max(bottom, cutout.getSafeInsetBottom());
+                        }
+                        chrome.overlay.setPadding(left, top, right, bottom);
+                        chrome.relayout();
+                        return insets;
+                    });
+            a.root.requestApplyInsets();
+        }
         a.playbackControls =
                 new PlaybackControls(
                         a, a.playerChrome.dock, a.playerChrome.progress, surface, s, v, ep);
@@ -1260,6 +1293,7 @@ final class PlaybackController {
     }
 
     static void savePlaybackHistoryOnPrepared(MainActivity a) {
+        if (a.privateMode) return;
         if (a.player == null || !a.prepared || a.playingBookmark == null) return;
         try {
             int rawPos = a.player.getCurrentPosition();
@@ -1295,6 +1329,7 @@ final class PlaybackController {
     }
 
     static void savePlaybackHistory(MainActivity a, boolean force) {
+        if (a.privateMode) return;
         if (a.player == null || !a.prepared || a.playingBookmark == null) return;
         long now = System.currentTimeMillis();
         if (!force && now - a.lastBookmarkSave < 5000) return;

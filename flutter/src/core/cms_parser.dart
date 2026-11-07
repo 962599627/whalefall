@@ -1689,38 +1689,10 @@ class CmsParser {
     return trimmed;
   }
 
-  /// Formats an episode label in TV netdisk 4K MKV style (e.g. `[5.20GB]E08.mkv`)
-  /// so netdisk lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `阿狸原画`) match Android TV.
-  static String formatNetdiskEpisodeName(
-    String rawName,
-    int index,
-    int totalCount,
-  ) {
-    final trimmed = rawName.trim();
-    if (trimmed.startsWith('[') && trimmed.toUpperCase().contains('GB]')) {
-      return trimmed;
-    }
-    final numMatch =
-        RegExp(r'(?:第\s*(\d+)\s*[集话期章节]|^[Ee]?0*(\d+)$)').firstMatch(trimmed);
-    int? epNum;
-    if (numMatch != null) {
-      epNum = int.tryParse(numMatch.group(1) ?? numMatch.group(2) ?? '');
-    } else if (totalCount > 1) {
-      epNum = index + 1;
-    }
-    if (epNum != null && epNum > 0) {
-      final epCode = 'E${epNum.toString().padLeft(2, '0')}';
-      final double sizeGb;
-      if (epNum == 8) {
-        sizeGb = 5.20;
-      } else if (epNum == 1) {
-        sizeGb = 5.17;
-      } else {
-        sizeGb = 4.65 + ((epNum * 19 + 7) % 115) / 100.0;
-      }
-      return '[${sizeGb.toStringAsFixed(2)}GB]$epCode.mkv';
-    }
-    return '[8.64GB]4K.2160p.HDR.mkv';
+  /// Keep source-provided names intact. Size, resolution and container require metadata.
+  static String formatNetdiskEpisodeName(String rawName, int index, int totalCount) {
+    final name = rawName.trim();
+    return name.isNotEmpty ? name : (totalCount > 1 ? '第 ${index + 1} 集' : '正片');
   }
 
   static String upgradePosterUrlToHd(String rawUrl) {

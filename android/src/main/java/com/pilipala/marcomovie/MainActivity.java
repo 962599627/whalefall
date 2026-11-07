@@ -87,6 +87,26 @@ public final class MainActivity extends Activity {
     Screen current;
     Cms.Config config;
     android.content.SharedPreferences prefs;
+    boolean privateMode, switchingPrivacy;
+
+    @Override
+    public File getFilesDir() {
+        File base = super.getFilesDir();
+        if (!privateMode) return base;
+        File scoped = new File(base, "private-space");
+        scoped.mkdirs();
+        return scoped;
+    }
+
+    @Override
+    public File getCacheDir() {
+        File base = super.getCacheDir();
+        if (!privateMode) return base;
+        File scoped = new File(base, "private-space");
+        scoped.mkdirs();
+        return scoped;
+    }
+
     boolean reduced, prepared, playing, foreground;
     int generation;
     static final int MAX_HOME_SNAPSHOTS = 8;
@@ -137,6 +157,7 @@ public final class MainActivity extends Activity {
             };
 
     static final class Screen {
+        MobileShell mobileHome;
         Runnable render;
         String focus, homeReturnFocus;
         int scroll;
@@ -458,6 +479,8 @@ public final class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle b) {
         super.onCreate(b);
+        privateMode = PrivacySpace.active;
+        if (privateMode) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
         activeActivity = this;
         installPluginCrashGuard();
         android.util.DisplayMetrics rawScreen = new android.util.DisplayMetrics();
@@ -475,7 +498,7 @@ public final class MainActivity extends Activity {
         } else {
             applyMobileSystemBars(false);
         }
-        prefs = getSharedPreferences(Prefs.FILE, MODE_PRIVATE);
+        prefs = getSharedPreferences(privateMode ? "movie-private" : Prefs.FILE, MODE_PRIVATE);
         reduced = prefs.getBoolean(Prefs.REDUCED, false);
         configOrigin = prefs.getString("origin", "");
         try {
@@ -946,6 +969,7 @@ public final class MainActivity extends Activity {
     }
 
     void renderReturn(Screen screen) {
+        if (!isTvDevice() && screen.mobileHome != null && screen.mobileHome.resume()) return;
         if (isTvDevice() && screen.retainedHome != null && screen.retainedHome.resume()) return;
         screen.render.run();
     }
@@ -1367,7 +1391,9 @@ public final class MainActivity extends Activity {
     }
 
     java.util.List<WatchHistory.Entry> watchHistory() {
-        return WatchHistory.read(prefs.getString(Prefs.WATCH_HISTORY, "[]"));
+        return privateMode
+                ? java.util.Collections.emptyList()
+                : WatchHistory.read(prefs.getString(Prefs.WATCH_HISTORY, "[]"));
     }
 
     void savePlaybackHistory(boolean force) {
@@ -1498,6 +1524,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onStop() {
+        PrivacySpace.cancelPrompt(this);
         finishSeek(false);
         if (playbackLoading != null) {
             clearPlaybackLoading();
@@ -1529,6 +1556,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (privateMode && isFinishing() && !switchingPrivacy) PrivacySpace.active = false;
         if (activeActivity == this) activeActivity = null;
         clearPlaybackLoading();
         if (phoneConfig != null) phoneConfig.close();

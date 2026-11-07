@@ -1,8 +1,25 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marco_movie/core/models.dart';
 import 'package:marco_movie/core/source_playback.dart';
+import 'package:marco_movie/core/csp_bridge.dart';
 
 void main() {
+  test('cross-source results preserve real providers and episode names', () async {
+    const original = CmsVideo(id: 'one', title: 'Fixture', lines: [
+      CmsLine(name: '真实来源', episodes: [CmsEpisode(name: '第08集', url: 'https://media.test/e8.mp4')]),
+    ]);
+    final resolved = await CspBridge.resolveCrossSourceVideo(original, 'Fixture',
+      (String url, {Map<String, String> headers = const {}, Duration? requestTimeout}) async => throw StateError('unexpected request'));
+    expect(resolved.lines.length, 1);
+    expect(resolved.lines.single.name, '真实来源');
+    expect(resolved.lines.single.episodes.single.name, '第08集');
+    expect(resolved.lines.single.episodes.single.url, original.lines.single.episodes.single.url);
+  });
+  test('HTML plugin website is not advertised as a JSON source adapter', () {
+    const site = CmsSite(key: 'html', name: 'HTML', type: 3, api: 'csp_SixVGuard', ext: 'https://example.test/');
+    expect(CspBridge.backendsForSite(site), isEmpty);
+    expect(site.canBrowse, isFalse);
+  });
   const episode=CmsEpisode(name:'Episode',url:'mmpaw://play?id=one');
   Future<Uri> local(String value) async => Uri.parse('http://127.0.0.1:1234/local.mp4');
   test('alternating qualities keep labels, headers and local playback routes',()async{

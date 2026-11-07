@@ -76,6 +76,8 @@ def main():
     else:
         print(report)
     failures = [r['path'] for r in rows if r['bits'] == 64 and not (r['compatible_16kb'] and r.get('zip_16kb_aligned', True))]
+    if args.require_16kb and not any(r['bits'] == 64 for r in rows):
+        raise SystemExit('No 64-bit native libraries found; 16KB support cannot be verified')
     if args.require_16kb and failures:
         raise SystemExit('Non-16KB native libraries: ' + ', '.join(failures))
 

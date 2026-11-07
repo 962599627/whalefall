@@ -215,14 +215,14 @@ void main() {
     );
   });
 
-  test('normalizes raw MacCMS line codes, broken poster domains, and TV netdisk 4K episode names', () async {
+  test('normalizes raw MacCMS line codes, broken poster domains, and preserves episode metadata', () async {
     expect(CmsParser.friendlyLineName('modum3u8'), '魔都超清');
     expect(CmsParser.friendlyLineName('bfzym3u8'), '暴风蓝光');
     expect(CmsParser.friendlyLineName('dyttm3u8'), '电影天堂');
     expect(CmsParser.isBrokenPosterUrl('https://www.mdzypic.com/upload/vod/1.jpg'), isTrue);
     expect(CmsParser.isBrokenPosterUrl('https://img.example/poster.jpg'), isFalse);
-    expect(CmsParser.formatNetdiskEpisodeName('第08集', 7, 24), '[5.20GB]E08.mkv');
-    expect(CmsParser.formatNetdiskEpisodeName('第1集', 0, 24), '[5.17GB]E01.mkv');
+    expect(CmsParser.formatNetdiskEpisodeName('第08集', 7, 24), '第08集');
+    expect(CmsParser.formatNetdiskEpisodeName('第1集', 0, 24), '第1集');
 
     const myDriveSite = CmsSite(
       key: 'csp_MyDriveGuard',

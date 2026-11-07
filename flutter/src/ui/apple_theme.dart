@@ -1072,6 +1072,7 @@ class AppleGroupedSection extends StatelessWidget {
 /// Settings-style list row with a rounded icon badge, title, subtitle and trailing widget.
 class AppleGroupedTile extends StatelessWidget {
   final IconData icon;
+  final double minHeight;
   final Color iconBgColor;
   final String title;
   final String? subtitle;
@@ -1081,6 +1082,7 @@ class AppleGroupedTile extends StatelessWidget {
   const AppleGroupedTile({
     super.key,
     required this.icon,
+    this.minHeight = 68,
     this.iconBgColor = AppleColors.systemBlue,
     required this.title,
     this.subtitle,
@@ -1090,8 +1092,10 @@ class AppleGroupedTile extends StatelessWidget {
   });
   @override
   Widget build(BuildContext context) {
-    final content = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+    final content = ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minHeight),
+      child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       child: Row(
         children: [
           DecoratedBox(
@@ -1102,8 +1106,8 @@ class AppleGroupedTile extends StatelessWidget {
               ),
             ),
             child: SizedBox(
-              width: 30,
-              height: 30,
+              width: 34,
+              height: 34,
               child: Icon(icon, color: Colors.white, size: 17),
             ),
           ),
@@ -1116,7 +1120,7 @@ class AppleGroupedTile extends StatelessWidget {
                   title,
                   style: const TextStyle(
                     color: AppleColors.labelPrimary,
-                    fontSize: 15,
+                    fontSize: 16,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -1157,6 +1161,7 @@ class AppleGroupedTile extends StatelessWidget {
             ),
           ],
         ],
+      ),
       ),
     );
     if (onTap == null) return content;
