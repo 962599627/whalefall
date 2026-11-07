@@ -235,7 +235,13 @@ public final class JsEngine implements SourceEngine {
                                 || !sibling.isFile()) return null;
                         return module(Cms.fileUri(sibling));
                     });
-            for (String file : new String[] {"skulpt.min.js", "skulpt-stdlib.js", "spider.js"})
+            context.evaluate(
+                    "globalThis.__moviePythonHtmlParser=function(){const navigator={appName:'Netscape'};\n"
+                            + asset("catpaw/drpy-dependencies.js")
+                            + "\nglobalThis.__moviePythonHtmlParser=()=>DRPYDeps.cheerio;return DRPYDeps.cheerio;};",
+                    "python-html-loader.js");
+            for (String file :
+                    new String[] {"skulpt.min.js", "skulpt-stdlib.js", "html.js", "spider.js"})
                 context.evaluate(asset("python-host/" + file), file);
             context.evaluate(
                     "globalThis.__movieSpider=createPythonSpider("

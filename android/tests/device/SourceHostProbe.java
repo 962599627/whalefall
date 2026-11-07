@@ -324,13 +324,20 @@ public final class SourceHostProbe extends Instrumentation {
                     engine(
                             "fixture.py",
                             "from base.spider import Spider as Base\n"
+                                    + "from bs4 import BeautifulSoup\n"
                                     + "class Spider(Base):\n"
                                     + "    def init(self, ext): self.ready = ext\n"
-                                    + "    def homeContent(self, filter): return {'list':[{'vod_id':self.ready,'vod_name':'Python'}]}\n"
+                                    + "    def homeContent(self, filter):\n"
+                                    + "        self.soup = BeautifulSoup('<div class=slide><a href=\"/a?x=1&amp;y=2\"> One &amp; <em>二</em> </a></div><div class=duplicate>bad</div>', 'html.parser')\n"
+                                    + "        link = self.soup.select_one('.slide:not(.duplicate) a')\n"
+                                    + "        return {'list':[{'vod_id':self.ready,'vod_name':'Python'}], 'html':link.get_text(' ', strip=True), 'href':link.get('href')}\n"
                                     + "    def searchContent(self, key, quick, pg='1'): return {'list':[{'vod_id':pg,'vod_name':key}]}\n"
                                     + "    def detailContent(self, ids): return {'list':[{'vod_id':ids[0],'vod_play_from':'Main','vod_play_url':'Film$fixture'}]}\n"
                                     + "    def playerContent(self, flag, id, vip): return {'url':'https://fixture.invalid/'+id+'.mp4'}\n");
             check("python_init_home", first(py.home()).getString("vod_id").equals("ready"));
+            JSONObject html = new JSONObject(py.home());
+            check("python_html_selector_text", html.getString("html").equals("One & 二"));
+            check("python_html_entity_attribute", html.getString("href").equals("/a?x=1&y=2"));
             check("python_search", first(py.search("中文", 2)).getString("vod_name").equals("中文"));
             check("python_detail", first(py.detail("42")).getString("vod_id").equals("42"));
             check(

@@ -4,12 +4,12 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'cms_parser.dart';
 import 'csp_bridge.dart';
 import 'js_source_host.dart';
+import 'python_source_assets.dart';
 import 'emby_library.dart';
 import 'checksum_source.dart';
 import 'catpaw_host.dart';
@@ -173,7 +173,9 @@ class CmsClient {
         }
         final path = item.name.replaceAll('\\', '/');
         if (path.startsWith('/') || path.contains(':') || path.split('/').contains('..') ||
-            files.containsKey(path)) throw const FormatException('ZIP 路径无效或重复');
+            files.containsKey(path)) {
+          throw const FormatException('ZIP 路径无效或重复');
+        }
         files[path] = item;
       }
       final configs = files.values.where((f) {
@@ -246,7 +248,9 @@ class CmsClient {
       var doc = jsonDecode(CmsParser.stripJsonComments(decoded));
       if (doc is List) doc = <String, dynamic>{'sites': doc};
       if (doc is Map && doc['sites'] == null && doc['api'] != null &&
-          (doc['name'] != null || doc['key'] != null)) doc = <String, dynamic>{'sites': [doc]};
+          (doc['name'] != null || doc['key'] != null)) {
+        doc = <String, dynamic>{'sites': [doc]};
+      }
       if (doc is Map) {
         final entryPath = file.name.replaceAll('\\', '/');
         final base = Uri(scheme: 'pkg', host: 'archive', path: '/$entryPath');
@@ -649,8 +653,7 @@ class CmsClient {
       try { extension = jsonDecode(site.ext); } on FormatException { /* Plain-text extension. */ }
     }
     if (site.isPythonSource) {
-      final prelude = await Future.wait(['skulpt.min.js', 'skulpt-stdlib.js', 'spider.js']
-          .map((name) => rootBundle.loadString('assets/python-host/$name')));
+      final prelude = await loadPythonSourcePrelude();
       return JsSourceHost.invoke(entry: entry, modules: modules, method: method, arguments: args,
           extension: extension, headers: site.headers, pythonPrelude: prelude,
           sessionKey: sessionKey, expectedGeneration: generation, cancellation: cancellation);

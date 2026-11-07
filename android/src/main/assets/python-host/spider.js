@@ -325,6 +325,7 @@ function createPythonSpider(source, files = {}, readSibling) {
     })};
   };`;
   const library = Object.assign(Object.create(null), Sk.builtinFiles.files);
+  if (typeof installPythonHtml === 'function') installPythonHtml(library);
   // Skulpt ships placeholder base64/urllib modules. Implement the byte and URL
   // primitives locally; no platform process or external service is involved.
   library["src/lib/_movie_codec.js"] = `var $builtinmodule = function() {

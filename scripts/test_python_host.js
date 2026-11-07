@@ -68,7 +68,10 @@ class Spider(Base):
 
 function context(req, script = source, inspect = () => {}) {
   const context = vm.createContext({req, console, setTimeout, clearTimeout});
-  for (const name of ['skulpt.min.js', 'skulpt-stdlib.js', 'spider.js']) {
+  const dependencies = fs.readFileSync(path.join(__dirname, '../shared/catpaw/drpy-dependencies.js'), 'utf8');
+  vm.runInContext("globalThis.__moviePythonHtmlParser=function(){const navigator={appName:'Netscape'};\n" + dependencies +
+    "\nglobalThis.__moviePythonHtmlParser=()=>DRPYDeps.cheerio;return DRPYDeps.cheerio;};", context);
+  for (const name of ['skulpt.min.js', 'skulpt-stdlib.js', 'html.js', 'spider.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../android/src/main/assets/python-host', name), 'utf8'), context, {filename:name});
   }
   inspect(context);
@@ -233,6 +236,33 @@ async function exerciseSession(req, origin, mode) {
 }
 
 async function main() {
+  const htmlSource = fs.readFileSync(path.join(__dirname, 'fixtures/python_html_contract.py'), 'utf8');
+  const htmlExpected = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/python_html_expected.json'), 'utf8'));
+  const htmlSpider = context(() => { throw Error('HTML parser must not make network requests'); }, htmlSource);
+  await htmlSpider.init('');
+  assert.deepEqual(JSON.parse(JSON.stringify(await htmlSpider.home(true))), htmlExpected);
+  const htmlBounds = context(() => { throw Error('unexpected HTTP'); }, `
+from bs4 import BeautifulSoup
+class Spider:
+ def homeContent(self, filter):
+  errors = []
+  for operation in range(7):
+   try:
+    if operation == 0: BeautifulSoup('x' * (2 * 1024 * 1024 + 1), 'html.parser')
+    if operation == 1: BeautifulSoup('<i></i>' * 50001, 'html.parser')
+    if operation == 2: BeautifulSoup('<i></i>' * 10001, 'html.parser').select('i')
+    if operation == 3: BeautifulSoup('<p>x</p>', 'html.parser').select('[')
+    if operation == 4: BeautifulSoup('<p>x</p>', 'html.parser').select('x' * 2049)
+    if operation == 5: BeautifulSoup('<p>x</p>', 'lxml')
+    if operation == 6: BeautifulSoup(42, 'html.parser')
+   except (ValueError, NotImplementedError, TypeError): errors.append(operation)
+  soup = BeautifulSoup('<i>first</i>' + '<i></i>' * 10001, 'html.parser')
+  assert soup.select_one('i').text == 'first'
+  return errors
+`);
+  await htmlBounds.init('');
+  assert.deepEqual(Array.from(await htmlBounds.home(true)), [0, 1, 2, 3, 4, 5, 6]);
+  console.log('PASS Python local HTML selectors, text, entities and attributes against CPython/BeautifulSoup; size and feature limits');
   let retainedRuntime;
   const retained = context(() => { throw new Error('unexpected request'); }, `class Spider:
  def init(self, ext): self.count = 0

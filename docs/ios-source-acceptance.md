@@ -72,7 +72,9 @@ Python binary request bodies now cross the host boundary as bounded, validated
 Base64 and are written as bytes by Flutter and Android. Session cookies expose
 their names, values, domains, paths and flags without confusing same-name cookies
 from different domains. These additions do not supply BeautifulSoup, subprocess,
-native OCR or a complete CPython standard library.
+native OCR or a complete CPython standard library. A subsequent scoped
+[read-only HTML adapter](python-html-compatibility.md) adds the verified subset
+of BeautifulSoup operations; it does not supply the remaining native modules.
 
 The subsequent Flutter lifecycle fix keeps JS/Python state in a source-owned
 isolate across catalogue, detail and the player's separate client instance.
@@ -130,3 +132,22 @@ Appgz's original encrypted protocol has a separate experimental implementation
 and synthetic tests. It is distinct from a similarly named CatPaw entry. Actual
 upstream requests have not completed the catalogue/episode/playback path, so it
 is not advertised or enabled by the application's portable-adapter dispatcher.
+
+## Read-only Python HTML follow-up
+
+The shared Python host now supplies the documented [HTML subset](python-html-compatibility.md)
+on Android and Flutter. Twenty oracle outputs match CPython/BeautifulSoup 4.15.0;
+the Node 18 no-JIT regression also checks malformed selectors and bounded input,
+node and result counts. The full local Flutter suite passes 181 tests, including
+actual Python import, loopback HTTP catalogue/detail/play and retained DOM nodes.
+Native iOS/Android coverage for this change remains pending until its workflow
+results are recorded. FY's files, remaining modules, verification flow and plugin
+dispatch are still incomplete; this does not increase the accepted route count.
+
+The preceding lifecycle-only [iOS build 42386308316](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42386308316)
+at `3c9c449` succeeded. Its validation IPA is 35,172,252 bytes with SHA-256
+`09ce8f1fd499869fd8d5b9511288cb39d6851c62e8a3d14a239b7628aed9314a`.
+ZIP integrity, all 17 manifest assets, source-host bytes against that exact
+commit, 37 device ARM64 Mach-O images and the exported renewed-deadline function
+passed inspection. It includes the exit-listener cleanup but predates the HTML
+adapter. It remains unpublished and is not physical-iPhone acceptance.

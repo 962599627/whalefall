@@ -43,7 +43,10 @@ NSArray *runQuickJsProbe(NSString *assets) {
     evaluate(ctx,@"export const title='iOS 模块'; globalThis.moduleTitle=title;",JS_EVAL_TYPE_MODULE);
     while(jsExecutePendingJob(rt)>0){}
     [checks addObject:@{@"name":@"quickjs_native_es_module",@"passed":@(boolean(ctx,@"moduleTitle==='iOS 模块'"))}];
-    for(NSString *name in @[@"skulpt.min.js",@"skulpt-stdlib.js",@"spider.js"]){
+    NSString *dependencies=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:@"runtime/drpy-dependencies.js"] encoding:NSUTF8StringEncoding error:nil];
+    if(!dependencies) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"html_dependency_missing" userInfo:nil];
+    evaluate(ctx,[@"globalThis.__moviePythonHtmlParser=function(){const navigator={appName:'Netscape'};\n" stringByAppendingFormat:@"%@\nglobalThis.__moviePythonHtmlParser=()=>DRPYDeps.cheerio;return DRPYDeps.cheerio;};", dependencies]);
+    for(NSString *name in @[@"skulpt.min.js",@"skulpt-stdlib.js",@"html.js",@"spider.js"]){
       NSString *file=[[assets stringByAppendingPathComponent:@"python-host"] stringByAppendingPathComponent:name];
       NSString *source=[NSString stringWithContentsOfFile:file encoding:NSUTF8StringEncoding error:nil];
       if(!source) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"python_asset_missing" userInfo:nil];
@@ -72,6 +75,20 @@ NSArray *runQuickJsProbe(NSString *assets) {
     [checks addObject:@{@"name":@"python_native_cookie_objects",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pyHome.cookie_ok===true"))}];
     [checks addObject:@{@"name":@"python_native_binary_request_bridge",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&binaryBodySeen"))}];
     [checks addObject:@{@"name":@"python_native_renewed_operation_clock",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&Sk.execLimit===8000&&pySearch.list[0].vod_name==='Python HTTP'"))}];
+    NSString *htmlSource=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:@"python_html_contract.py"] encoding:NSUTF8StringEncoding error:nil];
+    NSData *htmlExpectedData=[NSData dataWithContentsOfFile:[assets stringByAppendingPathComponent:@"python_html_expected.json"]];
+    NSDictionary *htmlExpected=htmlExpectedData?[NSJSONSerialization JSONObjectWithData:htmlExpectedData options:0 error:nil]:nil;
+    if(!htmlSource||htmlExpected.count!=20) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"html_contract_fixture_missing" userInfo:nil];
+    jsSetOperationTimeout(rt,8000);
+    evaluate(ctx,[NSString stringWithFormat:@"globalThis.htmlDone=false;globalThis.htmlError='';globalThis.htmlSpider=createPythonSpider(%@);Promise.resolve(htmlSpider.init('')).then(()=>htmlSpider.home(true)).then(value=>{globalThis.htmlResult=value;htmlDone=true;}).catch(error=>{htmlError=String(error);htmlDone=true;});globalThis.htmlExpected=%@;",literal(htmlSource),literal(htmlExpected)]);
+    until=[NSDate dateWithTimeIntervalSinceNow:8];
+    while(!boolean(ctx,@"htmlDone")&&until.timeIntervalSinceNow>0){
+      while(jsExecutePendingJob(rt)>0){} [NSThread sleepForTimeInterval:.001];
+    }
+    for(NSString *key in htmlExpected){
+      NSString *condition=[NSString stringWithFormat:@"htmlDone&&!htmlError&&JSON.stringify(htmlResult[%@])===JSON.stringify(htmlExpected[%@])",literal(key),literal(key)];
+      [checks addObject:@{@"name":[@"python_native_html_" stringByAppendingString:key],@"passed":@(boolean(ctx,condition))}];
+    }
   } @catch(NSException *error) {
     [checks addObject:@{@"name":error.reason?:@"quickjs_exception",@"passed":@NO}];
     return checks;
