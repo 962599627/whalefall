@@ -60,6 +60,7 @@ jobs:
           python android/tests/run_update_checks.py
           python scripts/test_movie_mirror.py
           python scripts/test_native_elf.py
+          python scripts/test_catpaw_runtime_bundle.py
       - name: Shared script runtime and native patch checks
         run: |
           node scripts/test_js_module_interop.cjs

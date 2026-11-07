@@ -26,6 +26,16 @@ ASSETS = {
 
 
 def archive(kind):
+    if kind == 'android':
+        local = os.environ.get('MARCOMOVIE_ANDROID_RUNTIME_ARCHIVE')
+        local_sha = os.environ.get('MARCOMOVIE_ANDROID_RUNTIME_SHA256')
+        if bool(local) != bool(local_sha):
+            raise ValueError('Android runtime override requires both archive and SHA-256')
+        if local:
+            from native.catpaw_runtime_bundle import verify_bundle
+            path = Path(local).resolve()
+            verify_bundle(path, local_sha)
+            return path
     url, expected = ASSETS[kind]
     cache = Path(os.environ.get('MARCOMOVIE_RUNTIME_CACHE', ROOT/'tools/catpaw'))
     cache.mkdir(parents=True, exist_ok=True)
@@ -63,7 +73,22 @@ def prepare(kind, destination):
         entitlements.write_bytes(plistlib.dumps({'com.apple.security.app-sandbox':True,'com.apple.security.inherit':True}))
         subprocess.run(['codesign','--force','--sign','-','--entitlements',str(entitlements),str(destination/'bin/node')],check=True)
     else:
-        with zipfile.ZipFile(archive(kind)) as source:
+        path = archive(kind)
+        manifest = None
+        if kind == 'android':
+            from native.catpaw_runtime_bundle import MANIFEST, verify_bundle
+            with zipfile.ZipFile(path) as source:
+                if MANIFEST in source.namelist():
+                    # The archive was authenticated by the explicit pin above. Independently
+                    # validate source, NDK, each ABI, library digest and 64-bit ELF evidence.
+                    manifest = verify_bundle(path, hashlib.sha256(path.read_bytes()).hexdigest())
+            if manifest is None:
+                # Reusing a cache folder must not carry a newer runtime claim into a legacy build.
+                for name in (MANIFEST, 'provenance-armeabi-v7a.json', 'provenance-arm64-v8a.json', 'provenance-x86_64.json'):
+                    marker = destination / name
+                    if marker.is_file():
+                        marker.unlink()
+        with zipfile.ZipFile(path) as source:
             for member in source.infolist():
                 target=(destination/member.filename).resolve()
                 if not target.is_relative_to(destination.resolve()):raise ValueError('Unsafe archive path')
@@ -72,6 +97,7 @@ def prepare(kind, destination):
                     target.parent.mkdir(parents=True,exist_ok=True)
                     target.write_bytes(source.read(member))
     print('Prepared pinned CatPaw runtime:',kind)
+    return manifest if kind == 'android' else None
 
 
 if __name__=='__main__':
