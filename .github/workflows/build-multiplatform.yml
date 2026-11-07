@@ -62,6 +62,8 @@ jobs:
           python android/tests/run_tv_input_checks.py
           python android/tests/run_local_package_checks.py
           python android/tests/run_emby_checks.py
+          python android/tests/run_compat_checks.py
+          python android/tests/run_favorites_checks.py
           python android/tests/run_warehouse_checks.py
           python android/tests/run_video_filter_checks.py
           python android/tests/run_glasswork_checks.py
@@ -318,5 +320,9 @@ jobs:
           VERSION="${VERSION%-preview}"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" --repo "${{ github.repository }}" release-artifacts/MarcoMovie-*-windows-setup.exe* release-artifacts/MarcoMovie-*-windows-x64.zip* release-artifacts/MarcoMovie-*-macos.zip* release-artifacts/MarcoMovie-*-ios-unsigned.ipa* --clobber
-            gh release edit "$TAG" --repo "${{ github.repository }}" --prerelease=false --latest --title "Marco Movie $VERSION"
+            # Keep draft releases private until all official-signed APKs, source,
+            # platform packages and checksums have been verified together.
+            if [ "$(gh release view "$TAG" --repo "${{ github.repository }}" --json isDraft --jq .isDraft)" = "false" ]; then
+              gh release edit "$TAG" --repo "${{ github.repository }}" --prerelease=false --latest --title "Marco Movie $VERSION"
+            fi
           fi

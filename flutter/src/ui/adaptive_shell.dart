@@ -5214,7 +5214,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           icon: CupertinoIcons.arrow_down_circle_fill,
           iconBgColor: AppleColors.systemOrange,
           title: '检查版本更新',
-          subtitle: '当前正式版 0.4.36 · 支持 Windows 安装包自动下载升级',
+          subtitle: '当前正式版 0.5.0 · 支持 Windows 安装包自动下载升级',
           trailingText: '检测更新',
           onTap: _showUpdateCheckSheet,
         ),
@@ -5879,7 +5879,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
 
-  static const String _currentAppVersion = '0.4.36';
+  static const String _currentAppVersion = '0.5.0';
 
   static bool _isRemoteVersionNewer(String remote, String current) {
     List<int> parseParts(String v) => v
