@@ -23,6 +23,13 @@ Markdown is rendered as escaped headings, lists and paragraphs while the full
 original text stays archived. Future automatic package updates preserve this
 layout and update the visible version together with the package URL and hash.
 
+The layout was deployed from mirror commit `acf776a`. Checks retained all eight
+package/checksum URLs and hashes plus 47 historical release records. The live
+375-pixel and 1280-pixel layouts, download and release filters were verified;
+13 sync/rendering tests passed. [The subsequent automatic-sync
+run](https://github.com/Pilipala9919/mtv/actions/runs/42381304827) also passed.
+This website deployment did not replace any application installer.
+
 ## Published Windows update
 
 [Windows 0.5.1](https://github.com/Pilipala9919/MarcoMovie/releases/tag/windows-v0.5.1) was published from `56b2eb80b93bae98b8754952d779bff1b7a9582a` after [build 42356451432](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42356451432) passed 83 Flutter tests and produced the installer/portable packages. Downloaded packages passed checksum/ZIP checks, the app and installer report 0.5.1, and all six uploaded package/source/checksum files match the local verified bytes. Native fullscreen UI evidence is recorded in `desktop-fullscreen-2026-11-07.md`.

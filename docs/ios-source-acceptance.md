@@ -58,6 +58,16 @@ Python cookie iteration and binary-body bridging. Python socket transport is
 tested separately with local HTTP fixtures; its native probe response is
 synthetic. Neither result establishes physical-iPhone video decoding.
 
+The T4 follow-up at `19f993f` passed [28 native checks on both simulator
+architectures](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42380192628),
+including the generated adapter's catalogue, pagination, opaque detail ID and
+local HLS-manifest request. [Full iOS build
+42380195025](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42380195025)
+also passed 172 Flutter tests and produced a validation IPA. The first attempt
+was blocked by a CRLF/LF asset hash mismatch; asset generation now normalizes
+the bytes and CI checks the manifest before building. No official iPhone
+release was created by either workflow.
+
 Python binary request bodies now cross the host boundary as bounded, validated
 Base64 and are written as bytes by Flutter and Android. Session cookies expose
 their names, values, domains, paths and flags without confusing same-name cookies
