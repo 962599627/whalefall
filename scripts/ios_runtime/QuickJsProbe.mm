@@ -92,14 +92,19 @@ NSArray *runQuickJsProbe(NSString *assets) {
     for(NSString *contract in @[@"html",@"json"]) {
     NSString *htmlSource=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:[NSString stringWithFormat:@"python_%@_contract.py",contract]] encoding:NSUTF8StringEncoding error:nil];
     NSData *htmlExpectedData=[NSData dataWithContentsOfFile:[assets stringByAppendingPathComponent:[NSString stringWithFormat:@"python_%@_expected.json",contract]]];
+    NSString *htmlExpectedText=htmlExpectedData?[[NSString alloc] initWithData:htmlExpectedData encoding:NSUTF8StringEncoding]:nil;
     NSDictionary *htmlExpected=htmlExpectedData?[NSJSONSerialization JSONObjectWithData:htmlExpectedData options:0 error:nil]:nil;
     if(!htmlSource||htmlExpected.count!=([contract isEqualToString:@"html"]?21:28)) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:[contract stringByAppendingString:@"_contract_fixture_missing"] userInfo:nil];
     jsSetOperationTimeout(rt,8000);
-    evaluate(ctx,[NSString stringWithFormat:@"globalThis.htmlDone=false;globalThis.htmlError='';globalThis.htmlSpider=createPythonSpider(%@);Promise.resolve(htmlSpider.init('')).then(()=>htmlSpider.home(true)).then(value=>{globalThis.htmlResult=value;htmlDone=true;}).catch(error=>{htmlError=String(error);htmlDone=true;});globalThis.htmlExpected=%@;",literal(htmlSource),literal(htmlExpected)],JS_EVAL_TYPE_GLOBAL,@"python-oracle.js");
+    // Keep the oracle's original UTF-8 text: Foundation's parsed string path
+    // removes a leading U+FEFF inside an expected value on iOS. Re-serializing
+    // that dictionary corrupts the BOM error case before the comparison.
+    evaluate(ctx,[NSString stringWithFormat:@"globalThis.htmlDone=false;globalThis.htmlError='';globalThis.htmlSpider=createPythonSpider(%@);Promise.resolve(htmlSpider.init('')).then(()=>htmlSpider.home(true)).then(value=>{globalThis.htmlResult=value;htmlDone=true;}).catch(error=>{htmlError=String(error);htmlDone=true;});globalThis.htmlExpected=%@;",literal(htmlSource),htmlExpectedText],JS_EVAL_TYPE_GLOBAL,@"python-oracle.js");
     until=[NSDate dateWithTimeIntervalSinceNow:8];
     while(!boolean(ctx,@"htmlDone")&&until.timeIntervalSinceNow>0){
       while(jsExecutePendingJob(rt)>0){} [NSThread sleepForTimeInterval:.001];
     }
+    if([contract isEqualToString:@"json"]) [checks addObject:@{@"name":@"python_json_oracle_utf8_preserved",@"passed":@(boolean(ctx,@"htmlExpected.errors[11][0]==='\\ufeff{}'"))}];
     for(NSString *key in htmlExpected){
       NSString *condition=[NSString stringWithFormat:@"htmlDone&&!htmlError&&((actual,expected)=>typeof expected==='object'&&!Array.isArray(expected)&&expected!==null?Object.keys(expected).every(k=>JSON.stringify(actual[k])===JSON.stringify(expected[k])):JSON.stringify(actual)===JSON.stringify(expected))(htmlResult[%@],htmlExpected[%@])",literal(key),literal(key)];
       BOOL passed=boolean(ctx,condition);
