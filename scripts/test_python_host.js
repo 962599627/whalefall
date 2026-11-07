@@ -66,11 +66,12 @@ class Spider(Base):
         return errors
 `;
 
-function context(req, script = source) {
+function context(req, script = source, inspect = () => {}) {
   const context = vm.createContext({req, console, setTimeout, clearTimeout});
   for (const name of ['skulpt.min.js', 'skulpt-stdlib.js', 'spider.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../android/src/main/assets/python-host', name), 'utf8'), context, {filename:name});
   }
+  inspect(context);
   return context.createPythonSpider(script);
 }
 
@@ -232,6 +233,20 @@ async function exerciseSession(req, origin, mode) {
 }
 
 async function main() {
+  let retainedRuntime;
+  const retained = context(() => { throw new Error('unexpected request'); }, `class Spider:
+ def init(self, ext): self.count = 0
+ def homeContent(self, filter):
+  self.count += 1
+  return self.count
+`, runtime => { retainedRuntime = runtime; });
+  await retained.init('');
+  assert.equal(await retained.home(true), 1);
+  retainedRuntime.Sk.execStart -= 9000;
+  retainedRuntime.Sk.lastYield -= 9000;
+  assert.equal(await retained.home(true), 2);
+  assert.equal(retainedRuntime.Sk.execLimit, 8000);
+  console.log('PASS retained Python renews operation clocks without removing its execution limit');
   const cookieObjects = context(() => { throw new Error('Cookie object fixture must stay offline'); }, `import requests
 from requests.cookies import CookieConflictError
 class Spider:

@@ -55,6 +55,8 @@ class Spider:
       );
       final site = config.config.sites.single;
       final video = (await client.fetchHome(site)).$2.videos.single;
+      // Browsing time must not count against Skulpt's per-operation 8 s limit.
+      await Future<void>.delayed(const Duration(milliseconds: 8200));
       final detail = await client.fetchDetail(site, video);
       final playable = await CmsClient().resolveEpisodeForPlayback(
         site,

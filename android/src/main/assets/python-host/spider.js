@@ -575,6 +575,9 @@ function createPythonSpider(source, files = {}, readSibling) {
     return Sk.ffi.remapToJs(value);
   }
   function invoke(name, args, optional) {
+    // Keep the execution limit, but exclude time spent browsing between calls.
+    // A retained Spider must receive a fresh clock for each top-level operation.
+    Sk.execStart = Sk.lastYield = Date.now();
     const fn = instance.tp$getattr(new Sk.builtin.str(name));
     if (!fn && optional) return {};
     if (!fn) throw new Error("Python Spider 缺少 " + name);
@@ -582,6 +585,7 @@ function createPythonSpider(source, files = {}, readSibling) {
   }
   return {
     init(ext) {
+      Sk.execStart = Sk.lastYield = Date.now();
       const boot = Sk.importMainWithBody("<source>", false, source, true);
       function initialize(mod) {
         if (!mod.$d.Spider) throw new Error("Python 来源缺少 Spider 类");
