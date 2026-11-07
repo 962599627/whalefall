@@ -63,8 +63,6 @@ jobs:
     timeout-minutes: 20
     env:
       PYTHONDONTWRITEBYTECODE: "1"
-      CPYTHON_EXPERIMENT_OUTPUT: ${{ runner.temp }}/ios-cpython-results
-      CPYTHON_EXPERIMENT_CACHE: ${{ runner.temp }}/ios-cpython-downloads
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -78,8 +76,8 @@ jobs:
       - name: Run independent native CPython app
         run: >-
           python scripts/ios_cpython/run_cpython_probe.py
-          --output-dir "$CPYTHON_EXPERIMENT_OUTPUT"
-          --cache-dir "$CPYTHON_EXPERIMENT_CACHE"
+          --output-dir "$RUNNER_TEMP/ios-cpython-results"
+          --cache-dir "$RUNNER_TEMP/ios-cpython-downloads"
       - name: Upload execution evidence only
         if: always()
         uses: actions/upload-artifact@v4
@@ -88,8 +86,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
           path: |
-            ${{ env.CPYTHON_EXPERIMENT_OUTPUT }}/**/inputs.json
-            ${{ env.CPYTHON_EXPERIMENT_OUTPUT }}/**/app-result.json
-            ${{ env.CPYTHON_EXPERIMENT_OUTPUT }}/**/app-watchdog.json
-            ${{ env.CPYTHON_EXPERIMENT_OUTPUT }}/**/result.json
-            ${{ env.CPYTHON_EXPERIMENT_OUTPUT }}/**/diagnostics/*
+            ${{ runner.temp }}/ios-cpython-results/**/inputs.json
+            ${{ runner.temp }}/ios-cpython-results/**/app-result.json
+            ${{ runner.temp }}/ios-cpython-results/**/app-watchdog.json
+            ${{ runner.temp }}/ios-cpython-results/**/result.json
+            ${{ runner.temp }}/ios-cpython-results/**/diagnostics/*
