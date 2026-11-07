@@ -253,7 +253,10 @@ jobs:
           cmake -S packages/quickjs_engine/native -B packages/quickjs_engine/native/build -DCMAKE_BUILD_TYPE=Release
           cmake --build packages/quickjs_engine/native/build --parallel 4
           flutter test
-          flutter build ios --release --no-codesign
+          if ! flutter build ios --release --no-codesign --verbose > build/ios-build.log 2>&1; then
+            tail -n 160 build/ios-build.log
+            exit 1
+          fi
           python3 patch_ios_ipa.py build/ios/iphoneos/Runner.app
           VERSION=$(sed -n 's/^version:[[:space:]]*\([^+]*\).*/\1/p' pubspec.yaml)
           IPA_NAME="MarcoMovie-$VERSION-ios-unsigned.ipa"
@@ -267,6 +270,16 @@ jobs:
           path: |
             flutter/dist/*.ipa
             flutter/dist/*.sha256
+
+      - name: Retain iOS build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS-build-diagnostics
+          retention-days: 7
+          path: |
+            flutter/build/ios-build.log
+            flutter/ios/Pods/Target Support Files/catpaw_runtime/*.xcconfig
 
   publish-release:
     name: Attach Multiplatform Assets & Promote Official Release

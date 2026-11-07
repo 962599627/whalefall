@@ -10,5 +10,10 @@ Pod::Spec.new do |s|
   s.dependency 'Flutter'
   s.platform = :ios, '14.0'
   s.vendored_frameworks = 'Frameworks/NodeMobile.xcframework'
-  s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'ENABLE_BITCODE' => 'NO' }
+  s.pod_target_xcconfig = {
+    'DEFINES_MODULE' => 'YES',
+    'ENABLE_BITCODE' => 'NO',
+    # The bridge itself calls node_start; linking only the final Runner is too late.
+    'OTHER_LDFLAGS' => '$(inherited) -framework NodeMobile',
+  }
 end
