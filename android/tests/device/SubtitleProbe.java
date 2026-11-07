@@ -169,6 +169,11 @@ public final class SubtitleProbe extends Instrumentation {
             check(
                     "emulator_runtime",
                     "goldfish".equals(Build.HARDWARE) || "ranchu".equals(Build.HARDWARE));
+            check(
+                    "television_runtime",
+                    ((UiModeManager) getTargetContext().getSystemService(Context.UI_MODE_SERVICE))
+                                    .getCurrentModeType()
+                            == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION);
             boolean legacyRejected = false;
             try {
                 LegacyCallback.invoke();
@@ -251,16 +256,30 @@ public final class SubtitleProbe extends Instrumentation {
         } catch (Throwable error) {
             try {
                 result.put("passed", false).put("error", error.toString());
-                if (a != null) capture("subtitles-failure");
             } catch (Exception ignored) {
             }
+            try {
+                if (a != null) capture("subtitles-failure");
+            } catch (Throwable captureError) {
+                try {
+                    result.put("failure_capture_error", captureError.toString());
+                } catch (Exception ignored) {
+                }
+            }
         } finally {
-            if (a != null)
-                runOnMainSync(
-                        () -> {
-                            a.releasePlayer();
-                            a.finish();
-                        });
+            try {
+                if (a != null)
+                    runOnMainSync(
+                            () -> {
+                                a.releasePlayer();
+                                a.finish();
+                            });
+            } catch (Throwable cleanupError) {
+                try {
+                    result.put("passed", false).put("cleanup_error", cleanupError.toString());
+                } catch (Exception ignored) {
+                }
+            }
         }
         Bundle summary = new Bundle();
         summary.putString("result", result.toString());

@@ -1,6 +1,6 @@
 """Build isolated API 23 UI/source-host fixtures after build_android.py.
 
-The app keeps production bytecode/resources but only includes pinned x86_64
+The app keeps production bytecode/resources but only includes pinned x86
 QuickJS JNI. No ARM decoder/Node claims and no files are written to dist/.
 """
 
@@ -82,7 +82,7 @@ def main():
         for entry in production.infolist():
             if not entry.filename.startswith("lib/"):
                 apk.writestr(entry, production.read(entry.filename))
-        apk.writestr("lib/x86_64/libquickjs-android-wrapper.so", jni.read("jni/x86_64/libquickjs-android-wrapper.so"))
+        apk.writestr("lib/x86/libquickjs-android-wrapper.so", jni.read("jni/x86/libquickjs-android-wrapper.so"))
     fixture = sign(OUT / "fixture-unsigned.apk", "fixture")
     (OUT / "scope.json").write_text(json.dumps({
         "scope": "API 23 TV UI, local system-player subtitles, synthetic home/history and QuickJS/Python JNI only. No ARM decoder or CatPaw Node acceptance. Not distributable.",
@@ -90,6 +90,7 @@ def main():
         "production_classes_sha256": hashlib.sha256(app_classes.read_bytes()).hexdigest(),
         "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
         "probes": list(PROBES),
+        "fixture_abi": "x86",
     }, indent=2) + "\n", encoding="utf-8")
     print(OUT)
 
