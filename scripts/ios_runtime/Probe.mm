@@ -65,8 +65,10 @@ static id call(NSString *base,NSString *key,NSString *method,NSArray *args) {
 - (void)runProbe {
   checks=[NSMutableArray array];NSString *failure=nil;NSString *runtimeVersion=@"";
   @try {
-    for(NSDictionary *result in runQuickJsProbe(NSBundle.mainBundle.resourcePath))
-      check([result[@"passed"] boolValue],result[@"name"]);
+    NSArray *quickChecks=runQuickJsProbe(NSBundle.mainBundle.resourcePath);
+    [checks addObjectsFromArray:quickChecks];
+    for(NSDictionary *result in quickChecks)
+      if(![result[@"passed"] boolValue]) @throw [NSException exceptionWithName:@"ProbeFailure" reason:result[@"name"] userInfo:nil];
     NSFileManager *fm=NSFileManager.defaultManager;
     NSString *root=[[NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory,NSUserDomainMask,YES) firstObject]
       stringByAppendingPathComponent:NSUUID.UUID.UUIDString];

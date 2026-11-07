@@ -30,6 +30,14 @@ static BOOL boolean(JSContext *ctx, NSString *source) {
   BOOL result=!JS_IsException(*value)&&JS_ToBool(ctx,*value)==1;
   jsFreeValue(ctx,value,1);return result;
 }
+static NSString *diagnostic(JSContext *ctx, NSString *source) {
+  const char *code=source.UTF8String;
+  JSValue *value=jsEval(ctx,code,strlen(code),"ios-diagnostic.js",JS_EVAL_TYPE_GLOBAL);
+  const char *text=JS_IsException(*value)?nullptr:JS_ToCString(ctx,*value);
+  NSString *result=text?[NSString stringWithUTF8String:text]:@"evaluation failed";
+  if(text)JS_FreeCString(ctx,text);jsFreeValue(ctx,value,1);
+  return result.length>8192?[result substringToIndex:8192]:result;
+}
 static NSString *literal(id value) {
   NSData *data=[NSJSONSerialization dataWithJSONObject:value options:NSJSONWritingFragmentsAllowed error:nil];
   return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
@@ -94,7 +102,10 @@ NSArray *runQuickJsProbe(NSString *assets) {
     }
     for(NSString *key in htmlExpected){
       NSString *condition=[NSString stringWithFormat:@"htmlDone&&!htmlError&&((actual,expected)=>typeof expected==='object'&&!Array.isArray(expected)&&expected!==null?Object.keys(expected).every(k=>JSON.stringify(actual[k])===JSON.stringify(expected[k])):JSON.stringify(actual)===JSON.stringify(expected))(htmlResult[%@],htmlExpected[%@])",literal(key),literal(key)];
-      [checks addObject:@{@"name":[NSString stringWithFormat:@"python_native_%@_%@",contract,key],@"passed":@(boolean(ctx,condition))}];
+      BOOL passed=boolean(ctx,condition);
+      NSMutableDictionary *check=[@{@"name":[NSString stringWithFormat:@"python_native_%@_%@",contract,key],@"passed":@(passed)} mutableCopy];
+      if(!passed) check[@"diagnostic"]=diagnostic(ctx,[NSString stringWithFormat:@"JSON.stringify({done:htmlDone,error:htmlError,actual:typeof htmlResult==='undefined'?null:htmlResult[%@],expected:htmlExpected[%@]})",literal(key),literal(key)]);
+      [checks addObject:check];
     }
     }
   } @catch(NSException *error) {

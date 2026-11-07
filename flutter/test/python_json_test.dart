@@ -10,6 +10,36 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   tearDown(JsSourceHost.closeAll);
 
+  test('Python JSON matches the complete CPython oracle in QuickJS', () async {
+    const entry = 'pkg://fixture/contract.py';
+    final fixture = Directory('../scripts/fixtures');
+    final source = File(
+      '${fixture.path}/python_json_contract.py',
+    ).readAsStringSync();
+    final expected =
+        jsonDecode(
+              File(
+                '${fixture.path}/python_json_expected.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final actual =
+        jsonDecode(
+              await JsSourceHost.invoke(
+                entry: entry,
+                modules: {entry: source},
+                pythonPrelude: await loadPythonSourcePrelude(),
+                method: 'home',
+                arguments: [true],
+              ),
+            )
+            as Map<String, dynamic>;
+    expect(actual.keys.toSet(), expected.keys.toSet());
+    for (final key in expected.keys) {
+      expect(actual[key], expected[key], reason: key);
+    }
+  });
+
   test(
     'Python JSON preserves signed payloads and errors through the real client',
     () async {
