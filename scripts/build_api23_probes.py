@@ -12,6 +12,7 @@ import wave
 import zipfile
 
 from build_android import ROOT, BUILD, JDK, SDK, ANDROID, run, exe
+from build_quickjs_deadline import build as build_quickjs_deadline
 
 
 OUT = BUILD / "api23-probes"
@@ -78,11 +79,13 @@ def main():
     wrapper = ROOT / "tools/java-dependencies" / wrapper_name
     if hashlib.sha256(wrapper.read_bytes()).hexdigest() != dependency["sha256"]:
         raise RuntimeError("Pinned QuickJS JNI digest mismatch")
+    deadline_files = build_quickjs_deadline()
     with zipfile.ZipFile(source) as production, zipfile.ZipFile(wrapper) as jni, zipfile.ZipFile(OUT / "fixture-unsigned.apk", "w") as apk:
         for entry in production.infolist():
             if not entry.filename.startswith("lib/"):
                 apk.writestr(entry, production.read(entry.filename))
         apk.writestr("lib/x86/libquickjs-android-wrapper.so", jni.read("jni/x86/libquickjs-android-wrapper.so"))
+        apk.writestr("lib/x86/libmovie-quickjs-deadline.so", deadline_files['lib/x86/libmovie-quickjs-deadline.so'])
     fixture = sign(OUT / "fixture-unsigned.apk", "fixture")
     (OUT / "scope.json").write_text(json.dumps({
         "scope": "API 23 TV UI, local system-player subtitles, synthetic home/history and QuickJS/Python JNI only. No ARM decoder or CatPaw Node acceptance. Not distributable.",

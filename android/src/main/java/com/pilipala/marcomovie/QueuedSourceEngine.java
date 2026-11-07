@@ -10,7 +10,7 @@ final class QueuedSourceEngine implements SourceEngine {
     }
 
     boolean isWedged() {
-        return gate.isWedged();
+        return gate.isWedged() || delegate.isClosed();
     }
 
     public String home() throws Exception {

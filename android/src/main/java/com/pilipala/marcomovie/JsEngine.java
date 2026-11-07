@@ -45,6 +45,19 @@ public final class JsEngine implements SourceEngine {
     private final CookieManager cookies =
             new CookieManager(null, CookiePolicy.ACCEPT_ORIGINAL_SERVER);
     private QuickJSContext context;
+    private QuickJsDeadline nativeDeadline;
+    private final long operationTimeoutMillis;
+
+    private static final class OperationState {
+        volatile QuickJsDeadline.Operation operation;
+
+        void cancel() {
+            QuickJsDeadline.Operation current = operation;
+            if (current != null) current.cancel();
+        }
+    }
+
+    private volatile OperationState activeOperation;
     private volatile boolean closed;
     private volatile long deadline;
     private boolean catApi;
@@ -81,6 +94,14 @@ public final class JsEngine implements SourceEngine {
 
     public JsEngine(Application application, Cms.Config config, Cms.Site selected)
             throws Exception {
+        this(application, config, selected, 45000);
+    }
+
+    JsEngine(Application application, Cms.Config config, Cms.Site selected, long timeoutMillis)
+            throws Exception {
+        if (timeoutMillis < 100 || timeoutMillis > 45000)
+            throw new IllegalArgumentException("Invalid source operation deadline");
+        operationTimeoutMillis = timeoutMillis;
         app = application;
         site = selected;
         storage = app.getSharedPreferences("js-source-" + hash(site.key), 0);
@@ -100,25 +121,60 @@ public final class JsEngine implements SourceEngine {
     private <T> T execute(Callable<T> job) throws Exception {
         if (closed) throw new IOException("JavaScript 来源已关闭");
         RequestScope scope = RequestScope.current();
+        OperationState operation = new OperationState();
         Future<T> pending =
                 executor.submit(
                         () -> {
-                            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
-                            return scope == null ? job.call() : scope.call(job);
+                            Callable<T> run = () -> runOperation(job, operation);
+                            return scope == null ? run.call() : scope.call(run);
                         });
         try {
             return pending.get(48, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
+            operation.cancel();
             pending.cancel(true);
             Thread.currentThread().interrupt();
             throw e;
         } catch (TimeoutException e) {
+            operation.cancel();
             pending.cancel(true);
+            close();
             throw new IOException("JavaScript 来源请求超时；请切换来源", e);
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof Exception) throw (Exception) cause;
             throw new IOException("JavaScript 运行异常：" + cause.getClass().getSimpleName(), cause);
+        }
+    }
+
+    private void armDeadline() {
+        OperationState state = activeOperation;
+        if (nativeDeadline == null || state == null) return;
+        long remaining = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+        state.operation = nativeDeadline.begin(Math.max(1, remaining));
+        RequestScope scope = RequestScope.current();
+        if (closed || Thread.currentThread().isInterrupted() || scope != null && scope.cancelled)
+            state.cancel();
+    }
+
+    private <T> T runOperation(Callable<T> job, OperationState state) throws Exception {
+        if (closed) throw new IOException("JavaScript 来源已关闭");
+        deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(operationTimeoutMillis);
+        activeOperation = state;
+        Runnable cancelled = state::cancel;
+        RequestScope.onCancel(cancelled);
+        try {
+            armDeadline();
+            return job.call();
+        } finally {
+            RequestScope.offCancel(cancelled);
+            int reason = state.operation == null ? 0 : state.operation.finish();
+            activeOperation = null;
+            if (reason != 0) {
+                close();
+                throw new IOException(
+                        reason == 1 ? "脚本执行超过时间限制，已关闭此来源；请重试重新加载" : "脚本请求已取消，已关闭此来源；请重试重新加载");
+            }
         }
     }
 
@@ -130,6 +186,8 @@ public final class JsEngine implements SourceEngine {
     private void initialize() throws Exception {
         QuickJSLoader.init();
         context = QuickJSContext.create();
+        nativeDeadline = new QuickJsDeadline(context);
+        armDeadline();
         context.setMemoryLimit(48 * 1024 * 1024);
         context.setMaxStackSize(512 * 1024);
         JSObject global = context.getGlobalObject();
@@ -909,6 +967,10 @@ public final class JsEngine implements SourceEngine {
         }
     }
 
+    public boolean isClosed() {
+        return closed;
+    }
+
     public static Object[] proxyFor(Map<String, String> params) throws Exception {
         boolean python = "py".equalsIgnoreCase(params.get("do"));
         String key = params.get(python ? "siteKey" : "site");
@@ -925,9 +987,15 @@ public final class JsEngine implements SourceEngine {
             ACTIVE.remove(proxyKey, this);
             CURRENT.remove(site.key, this);
         }
+        OperationState running = activeOperation;
+        if (running != null) running.cancel();
         try {
             executor.execute(
                     () -> {
+                        if (nativeDeadline != null) {
+                            nativeDeadline.close();
+                            nativeDeadline = null;
+                        }
                         if (context != null) {
                             context.destroy();
                             context = null;

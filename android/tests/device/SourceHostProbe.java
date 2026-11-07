@@ -51,6 +51,10 @@ public final class SourceHostProbe extends Instrumentation {
     }
 
     JsEngine engine(String name, String source) throws Exception {
+        return engine(name, source, 45000);
+    }
+
+    JsEngine engine(String name, String source, long timeoutMillis) throws Exception {
         File file = write(name, source);
         Cms.Site site = new Cms.Site();
         site.key = "source-host-probe-" + name;
@@ -62,7 +66,8 @@ public final class SourceHostProbe extends Instrumentation {
                 new JsEngine(
                         (Application) getTargetContext().getApplicationContext(),
                         new Cms.Config(),
-                        site);
+                        site,
+                        timeoutMillis);
         engines.add(engine);
         return engine;
     }
@@ -236,6 +241,104 @@ public final class SourceHostProbe extends Instrumentation {
                     "8".equals(proxyRequest(jsUrl, "GET", null).count));
             js.close();
             check("js_proxy_close_revokes_url", proxyRequest(jsUrl, "GET", null).status == 502);
+        }
+    }
+
+    void exerciseNativeDeadlines() throws Exception {
+        Application app = (Application) getTargetContext().getApplicationContext();
+        try (LocalProxy proxy = new LocalProxy(app, new Cms.Config())) {
+            JsEngine looping =
+                    engine(
+                            "deadline.js",
+                            "module.exports={play(){return {url:getProxy()};},home(){while(true){}}};",
+                            1500);
+            looping.activate();
+            String oldUrl = new JSONObject(looping.player("Main", "1")).getString("url");
+            QueuedSourceEngine queued = new QueuedSourceEngine(looping);
+            long started = android.os.SystemClock.elapsedRealtime();
+            fails("native_instruction_deadline", "时间限制", queued::home);
+            long elapsed = android.os.SystemClock.elapsedRealtime() - started;
+            check("native_deadline_before_java_wait", elapsed >= 500 && elapsed < 7000);
+            check(
+                    "native_deadline_invalidates_cached_source",
+                    looping.isClosed() && queued.isWedged());
+            check("native_deadline_revokes_proxy", proxyRequest(oldUrl, "GET", null).status == 502);
+            // Same logical key, as SourceController recreates after isWedged().
+            JsEngine fresh =
+                    engine(
+                            "deadline.js",
+                            "module.exports={home(){return {list:[{vod_id:'fresh'}]}}};",
+                            1500);
+            fresh.activate();
+            check(
+                    "native_deadline_recreated_source",
+                    first(fresh.home()).getString("vod_id").equals("fresh"));
+            Thread.sleep(1600);
+            check(
+                    "native_deadline_resets_each_operation",
+                    first(fresh.home()).getString("vod_id").equals("fresh"));
+            fresh.close();
+            fresh.close();
+            check("native_deadline_close_idempotent", fresh.isClosed());
+            fails(
+                    "native_module_init_deadline",
+                    "时间限制",
+                    () -> engine("deadline-init.js", "while(true){};module.exports={};", 1500));
+
+            String name = "deadline-cancel.js";
+            byte[] keyHash =
+                    java.security.MessageDigest.getInstance("SHA-256")
+                            .digest(("source-host-probe-" + name).getBytes("UTF-8"));
+            StringBuilder hash = new StringBuilder();
+            for (byte value : keyHash) hash.append(String.format(Locale.ROOT, "%02x", value & 255));
+            android.content.SharedPreferences storage =
+                    app.getSharedPreferences("js-source-" + hash, 0);
+            storage.edit().clear().commit();
+            JsEngine cancelled =
+                    engine(
+                            name,
+                            "module.exports={home(){local.set('probe','entered','yes');while(true){}}};");
+            cancelled.activate();
+            RequestScope scope = new RequestScope();
+            java.util.concurrent.atomic.AtomicReference<Throwable> error =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            Thread request =
+                    new Thread(
+                            () -> {
+                                try {
+                                    scope.call(cancelled::home);
+                                } catch (Throwable failure) {
+                                    error.set(failure);
+                                }
+                            },
+                            "native-deadline-cancel-probe");
+            request.setDaemon(true);
+            request.start();
+            long waitUntil = android.os.SystemClock.elapsedRealtime() + 5000;
+            while (!"yes".equals(storage.getString("probe\nentered", ""))
+                    && request.isAlive()
+                    && android.os.SystemClock.elapsedRealtime() < waitUntil) Thread.sleep(10);
+            boolean entered = "yes".equals(storage.getString("probe\nentered", ""));
+            scope.cancel();
+            request.join(5000);
+            check("native_cancel_entered_instruction_loop", entered);
+            check(
+                    "native_scope_cancel_interrupts_cpu",
+                    !request.isAlive()
+                            && error.get() != null
+                            && error.get().toString().contains("取消"));
+            check("native_cancel_source_closed", cancelled.isClosed());
+            JsEngine afterCancel =
+                    engine(
+                            name,
+                            "module.exports={home(){return {list:[{vod_id:'after-cancel'}]}}};");
+            afterCancel.activate();
+            scope.cancel(); // Late cancellation of an old operation must not affect its successor.
+            check(
+                    "native_cancel_new_source_unaffected",
+                    first(afterCancel.home()).getString("vod_id").equals("after-cancel"));
+            afterCancel.close();
+            storage.edit().clear().commit();
         }
     }
 
@@ -594,6 +697,7 @@ public final class SourceHostProbe extends Instrumentation {
                 check("python_empty_binary_body", server.empty != null && server.empty.length == 0);
             }
             exerciseScriptProxy();
+            exerciseNativeDeadlines();
             report.put("passed", true);
         } catch (Throwable failure) {
             try {

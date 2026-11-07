@@ -30,4 +30,8 @@ public interface SourceEngine {
     }
 
     default void close() {}
+
+    default boolean isClosed() {
+        return false;
+    }
 }

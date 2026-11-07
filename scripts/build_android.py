@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib, json, os, re, subprocess, zipfile, urllib.request
 import xml.etree.ElementTree as ET
 from build_catpaw_android import build as build_catpaw, assets_for_package
+from build_quickjs_deadline import build as build_quickjs_deadline
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'android/src/main'
@@ -70,6 +71,9 @@ def main():
                             native_files_mobile[name]=data
                         elif name.startswith('lib/arm64-v8a/'):
                             native_files_mobile[name]=data
+    deadline_files = build_quickjs_deadline()
+    native_files.update({k:v for k,v in deadline_files.items() if k.startswith('lib/armeabi-v7a/')})
+    native_files_mobile.update({k:v for k,v in deadline_files.items() if k.startswith(('lib/armeabi-v7a/','lib/arm64-v8a/'))})
     catpaw_files, catpaw_assets = build_catpaw()
     native_files.update({k:v for k,v in catpaw_files.items() if k.startswith('lib/armeabi-v7a/')})
     native_files_mobile.update(catpaw_files)

@@ -2,7 +2,20 @@
 
 The owner requires working TXT, JS, JSON, Python, PHP endpoints and local packages before the next iPhone package is published. This includes the previously requested multi-repository subscriptions, authenticated CatPaw `.js.md5`, Emby, and outstanding plugin routes. All runtimes must execute locally; a desktop/Android bridge is not an acceptable substitute.
 
-This is an acceptance checklist, **not a declaration of compatibility**. The 0.5.1 IPA produced by workflow 42356166467 is validation-only and must not replace the official 0.5.0 iPhone download.
+This is an acceptance checklist, **not a declaration of compatibility**. The 0.5.1 IPA produced by workflow 42403618700 is validation-only and must not replace the official 0.5.0 iPhone download.
+
+The current validation build at `4a05051` passed all 255 Flutter tests. Its IPA
+SHA-256 is `ac6beefa350743bde9e171ffcb1c4b3726e90a72bdb0f1d76c096da5bb1f2c76`.
+Independent package inspection verified ZIP integrity, 19 pinned DRPY assets,
+the exact shared JS/Python host assets, 37 device ARM64 binaries with deployment
+targets no newer than iOS 14, and the exported native execution-deadline symbol.
+[Native runtime run 42404468117](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42404468117)
+at `f2af2ae` passed 188 unique checks on each of ARM64/iOS 26.2 and Intel/iOS 18.5;
+all 29 production and 11 fixture input hashes matched that commit. The prior
+Intel proxy check exhausted a previous operation's test budget; the follow-up
+renews the same eight-second budget before that separate test. Neither these
+simulator results nor the validation package establish physical-iPhone playback
+or complete the source-specific release requirements below.
 
 | Input | Existing implementation | Evidence still required before release |
 | --- | --- | --- |
