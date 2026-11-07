@@ -56,7 +56,9 @@ def main():
     shutil.copytree(ROOT/'android/src/main/assets/python-host', APP/'python-host', dirs_exist_ok=True)
     for name in ('python_html_contract.py', 'python_html_expected.json',
                  'python_json_contract.py', 'python_json_expected.json',
-                 'python_io_contract.py', 'python_io_expected.json'):
+                 'python_io_contract.py', 'python_io_expected.json',
+                 'python_package_contract.py', 'python_package_expected.json',
+                 'python_package_fixture.json'):
         shutil.copyfile(ROOT/'scripts/fixtures'/name, APP/name)
     info = {'CFBundleIdentifier': IDENTIFIER, 'CFBundleExecutable': 'RuntimeProbe',
             'CFBundleName': 'RuntimeProbe', 'CFBundlePackageType': 'APPL',
@@ -127,7 +129,8 @@ def main():
     (OUT/'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf8')
     print(json.dumps({'passed': report['passed'], 'checks': report['checks'],
                       'runtime': report['runtime'], 'failure': report['failure']}, ensure_ascii=False))
-    if not report['passed'] or len(report['checks']) < 120:
+    package_cases = len(json.loads((ROOT/'scripts/fixtures/python_package_expected.json').read_text(encoding='utf-8')))
+    if not report['passed'] or len(report['checks']) < 120 + package_cases:
         raise RuntimeError('iOS runtime behavior verification failed')
 
 

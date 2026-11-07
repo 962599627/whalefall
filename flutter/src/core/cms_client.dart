@@ -159,6 +159,35 @@ class CmsClient {
     merged.addAll(params);
     return base.replace(queryParameters: merged);
   }
+  static String _archivePath(String name) {
+    final path = name.replaceAll('\\', '/');
+    if (path.startsWith('/') || path.contains(':') ||
+        RegExp(r'[\x00-\x1f\x7f]').hasMatch(path) || path.split('/').contains('..')) {
+      throw const FormatException('ZIP 路径无效');
+    }
+    final normalized = path.split('/').where((part) => part.isNotEmpty && part != '.').join('/');
+    if (normalized.isEmpty) throw const FormatException('ZIP 路径无效');
+    return normalized;
+  }
+
+  static Map<String, Object> _pythonPackageData(Map<String, ArchiveFile> files, String entry) {
+    if (files.length > 256) throw const FormatException('Python 本地包文件数量超过 256');
+    final data = <String, String>{};
+    var total = 0;
+    for (final item in files.entries) {
+      if (item.key.contains("'") || item.key.contains('"')) {
+        throw const FormatException('Python 本地包路径不能包含引号');
+      }
+      if (item.value.size > 2 * 1024 * 1024) {
+        throw const FormatException('Python 本地包单个文件超过 2 MB');
+      }
+      total += item.value.size;
+      if (total > maxResponseBytes) throw const FormatException('Python 本地包内容超过 6 MB');
+      data[item.key] = base64Encode(item.value.content);
+    }
+    return {'entry': entry, 'files': data};
+  }
+
   static String readSubscriptionFile(List<int> bytes, String name) {
     if (bytes.length > maxResponseBytes) throw const FormatException('订阅文件超过 6 MB');
     if (bytes.length >= 4 && bytes[0] == 0x50 && bytes[1] == 0x4b && bytes[2] == 3 && bytes[3] == 4) {
@@ -172,9 +201,8 @@ class CmsClient {
         if (item.size < 0 || unpackedSize > maxResponseBytes) {
           throw const FormatException('ZIP 解压后的内容超过 6 MB');
         }
-        final path = item.name.replaceAll('\\', '/');
-        if (path.startsWith('/') || path.contains(':') || path.split('/').contains('..') ||
-            files.containsKey(path)) {
+        final path = _archivePath(item.name);
+        if (files.containsKey(path)) {
           throw const FormatException('ZIP 路径无效或重复');
         }
         files[path] = item;
@@ -221,7 +249,8 @@ class CmsClient {
         }
         final modules = <String, String>{};
         var size = 0;
-        final resources = files.entries.where((e) => RegExp(r'\.(?:m?js|py|json)$', caseSensitive: false).hasMatch(e.key));
+        final python = entry.key.toLowerCase().endsWith('.py');
+        final resources = files.entries.where((e) => RegExp(python ? r'\.py$' : r'\.(?:m?js|py|json)$', caseSensitive: false).hasMatch(e.key));
         for (final script in resources) {
           if (modules.length >= 32) throw const FormatException('ZIP 模块数量超过限制');
           size += script.value.size;
@@ -230,13 +259,13 @@ class CmsClient {
         }
         final origin = Uri(scheme: 'pkg', host: 'archive', path: '/${entry.key}').toString();
         final source = modules.remove(origin)!;
-        final python = entry.key.toLowerCase().endsWith('.py');
         if (!python && !CmsParser.isExecutableJs(source) && !CmsParser.looksLikeDrpyRule(source)) {
           throw const FormatException('ZIP 脚本需要兼容的 Spider 接口，当前不支持此规则宿主');
         }
         final result = jsonEncode({'sites': [{'key': 'local_script', 'name': '本地脚本', 'type': 3,
           'api': python ? 'csp_LocalScript.py' : CmsParser.looksLikeDrpyRule(source) ? 'csp_LocalRule.js' : 'csp_LocalScript.js',
-          'ext': {'script': source, 'origin': origin, 'modules': modules}}]});
+          'ext': {'script': source, 'origin': origin, 'modules': modules,
+            if (python) 'package': _pythonPackageData(files, entry.key)}}]});
         if (utf8.encode(result).length > maxResponseBytes) throw const FormatException('展开的订阅超过 6 MB');
         return result;
       }
@@ -253,7 +282,7 @@ class CmsClient {
         doc = <String, dynamic>{'sites': [doc]};
       }
       if (doc is Map) {
-        final entryPath = file.name.replaceAll('\\', '/');
+        final entryPath = _archivePath(file.name);
         final base = Uri(scheme: 'pkg', host: 'archive', path: '/$entryPath');
         var total = file.size;
         final sites = doc['sites'];
@@ -284,7 +313,9 @@ class CmsClient {
             if (expanded > maxResponseBytes) throw const FormatException('展开的订阅超过 6 MB');
             site['api'] = ref.path.toLowerCase().endsWith('.py') ? 'csp_LocalScript.py' : CmsParser.looksLikeDrpyRule(source) ? 'csp_LocalRule.js' : 'csp_LocalScript.js';
             site['ext'] = {'script': source, 'origin': origin,
-              'modules': Map.of(scripts)..remove(origin), 'ext': explicitRule ? '' : site['ext'] ?? ''};
+              'modules': Map.of(scripts)..remove(origin), 'ext': explicitRule ? '' : site['ext'] ?? '',
+              if (site['api'] == 'csp_LocalScript.py')
+                'package': _pythonPackageData(files, base.resolveUri(ref).pathSegments.join('/'))};
           }
         }
         final lives = doc['lives'];
@@ -680,12 +711,14 @@ class CmsClient {
     var entry = site.api;
     Object? extension = site.ext;
     final modules = <String, String>{};
+    var pythonPackage = <String, Object?>{};
     if (entry.startsWith('csp_LocalScript.')) {
       final local = jsonDecode(site.ext) as Map;
       entry = (local['origin'] as String?) ?? '';
       if (entry.isEmpty) entry = site.isPythonSource ? 'pkg://local/source.py' : 'pkg://local/source.js';
       modules[entry] = local['script'] as String;
       if (local['modules'] is Map) modules.addAll(Map<String, String>.from(local['modules'] as Map));
+      if (local['package'] is Map) pythonPackage = Map<String, Object?>.from(local['package'] as Map);
       extension = local['ext'] ?? '';
     } else {
       modules[entry] = await _getText(entry, headers: site.headers);
@@ -695,6 +728,7 @@ class CmsClient {
       final prelude = await loadPythonSourcePrelude();
       return JsSourceHost.invoke(entry: entry, modules: modules, method: method, arguments: args,
           extension: extension, headers: site.headers, pythonPrelude: prelude,
+          pythonPackage: pythonPackage,
           sessionKey: sessionKey, expectedGeneration: generation, cancellation: cancellation);
     }
     if (CmsParser.looksLikeDrpyRule(modules[entry]!)) {
@@ -1125,7 +1159,9 @@ class CmsClient {
           sourceHeaders: GuardSource.supports(site) ? const {} : site.headers,
           sourceOrigin: GuardSource.supports(site) ? null : _sourceCredentialOrigin(site));
     }
-    return CspBridge.resolveEpisodeForPlayback(site, episode, _getText);
+    final resolved = await CspBridge.resolveEpisodeForPlayback(site, episode, _getText);
+    return SourcePlayback.inheritSourceHeaders(resolved,
+        sourceHeaders: site.headers, sourceOrigin: _sourceCredentialOrigin(site));
   }
   Future<List<LiveGroup>> fetchLiveGroups(LiveSource source) async {
     final u = source.url.trim();

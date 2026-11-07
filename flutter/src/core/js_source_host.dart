@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:quickjs_engine/quickjs_engine.dart';
 
 /// Source-scoped ES module / Cat / Python host. Each retained source owns one
-/// isolated runtime; no filesystem, process, Android, or account APIs are exposed.
+/// isolated runtime; no host filesystem, process, Android, or account APIs are exposed.
 class JsSourceHost {
   static const maxBytes = 6 * 1024 * 1024;
 
@@ -81,6 +81,7 @@ class JsSourceHost {
     Map<String, String> headers = const {},
     Duration budget = const Duration(seconds: 12),
     List<String> pythonPrelude = const [],
+    Map<String, Object?> pythonPackage = const {},
     String? sessionKey,
     int? expectedGeneration,
     bool catDetails = false,
@@ -129,6 +130,7 @@ class JsSourceHost {
           Map<String, String>.from(headers),
           List<String>.from(pythonPrelude),
           interop,
+          Map<String, Object?>.from(pythonPackage),
         ], catDetails: catDetails);
     if (sessionKey != null) _sessions[sessionKey] = selected;
     try {
@@ -366,6 +368,7 @@ class _JsRuntimeSession {
   final Map<String, String> headers;
   final List<String> pythonPrelude;
   final String interop;
+  final Map<String, Object?> pythonPackage;
   late final QuickJsRuntime2 runtime;
   late HttpClient client;
   final watch = Stopwatch();
@@ -385,7 +388,8 @@ class _JsRuntimeSession {
       extension = configuration[2],
       headers = configuration[3] as Map<String, String>,
       pythonPrelude = configuration[4] as List<String>,
-      interop = configuration[5] as String {
+      interop = configuration[5] as String,
+      pythonPackage = configuration[6] as Map<String, Object?> {
     runtime = QuickJsRuntime2(
       memoryLimit: 48 * 1024 * 1024,
       stackSize: 512 * 1024,
@@ -526,7 +530,8 @@ class _JsRuntimeSession {
       };
       await checked(
         'globalThis.__movieSpider = createPythonSpider(${jsonEncode(source)},${jsonEncode(siblings)}, '
-        'async path => JSON.parse(await sendMessage("pythonModule", JSON.stringify(path)))); void 0;',
+        'async path => JSON.parse(await sendMessage("pythonModule", JSON.stringify(path))), '
+        '${pythonPackage.isEmpty ? 'null' : jsonEncode(pythonPackage)}); void 0;',
       );
     } else if (JsSourceHost.isCatSpider(source) &&
         !JsSourceHost.isEsModule(source)) {

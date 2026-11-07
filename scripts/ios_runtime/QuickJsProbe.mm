@@ -91,7 +91,7 @@ NSArray *runQuickJsProbe(NSString *assets) {
     [checks addObject:@{@"name":@"python_native_cookie_objects",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pyHome.cookie_ok===true"))}];
     [checks addObject:@{@"name":@"python_native_binary_request_bridge",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&binaryBodySeen"))}];
     [checks addObject:@{@"name":@"python_native_renewed_operation_clock",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&Sk.execLimit===8000&&pySearch.list[0].vod_name==='Python HTTP'"))}];
-    for(NSString *contract in @[@"html",@"json",@"io"]) {
+    for(NSString *contract in @[@"html",@"json",@"io",@"package"]) {
     NSString *htmlSource=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:[NSString stringWithFormat:@"python_%@_contract.py",contract]] encoding:NSUTF8StringEncoding error:nil];
     NSData *htmlExpectedData=[NSData dataWithContentsOfFile:[assets stringByAppendingPathComponent:[NSString stringWithFormat:@"python_%@_expected.json",contract]]];
     NSString *htmlExpectedText=htmlExpectedData?[[NSString alloc] initWithData:htmlExpectedData encoding:NSUTF8StringEncoding]:nil;
@@ -102,7 +102,14 @@ NSArray *runQuickJsProbe(NSString *assets) {
     // Keep the oracle's original UTF-8 text: Foundation's parsed string path
     // removes a leading U+FEFF inside an expected value on iOS. Re-serializing
     // that dictionary corrupts the BOM error case before the comparison.
-    evaluate(ctx,[NSString stringWithFormat:@"globalThis.htmlDone=false;globalThis.htmlError='';globalThis.htmlSpider=createPythonSpider(%@);Promise.resolve(htmlSpider.init('')).then(()=>htmlSpider.home(true)).then(value=>{globalThis.htmlResult=value;htmlDone=true;}).catch(error=>{htmlError=String(error);htmlDone=true;});globalThis.htmlExpected=%@;",literal(htmlSource),htmlExpectedText],JS_EVAL_TYPE_GLOBAL,@"python-oracle.js");
+    NSDictionary *packageFixture=@{};
+    if([contract isEqualToString:@"package"]) {
+      NSData *fixtureData=[NSData dataWithContentsOfFile:[assets stringByAppendingPathComponent:@"python_package_fixture.json"]];
+      packageFixture=fixtureData?[NSJSONSerialization JSONObjectWithData:fixtureData options:0 error:nil]:nil;
+      if(![packageFixture[@"modules"] isKindOfClass:NSDictionary.class]||![packageFixture[@"packageData"] isKindOfClass:NSDictionary.class])
+        @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"python_package_fixture_missing" userInfo:nil];
+    }
+    evaluate(ctx,[NSString stringWithFormat:@"globalThis.htmlDone=false;globalThis.htmlError='';globalThis.htmlSpider=createPythonSpider(%@,%@,null,%@);Promise.resolve(htmlSpider.init('')).then(()=>htmlSpider.home(true)).then(value=>{globalThis.htmlResult=value;htmlDone=true;}).catch(error=>{htmlError=String(error);htmlDone=true;});globalThis.htmlExpected=%@;",literal(htmlSource),literal(packageFixture[@"modules"]?:@{}),packageFixture[@"packageData"]?literal(packageFixture[@"packageData"]):@"null",htmlExpectedText],JS_EVAL_TYPE_GLOBAL,@"python-oracle.js");
     until=[NSDate dateWithTimeIntervalSinceNow:8];
     while(!boolean(ctx,@"htmlDone")&&until.timeIntervalSinceNow>0){
       while(jsExecutePendingJob(rt)>0){} [NSThread sleepForTimeInterval:.001];

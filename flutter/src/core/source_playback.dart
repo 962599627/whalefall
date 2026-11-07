@@ -3,6 +3,39 @@ import 'models.dart';
 
 /// Normalizes the Spider protocol's URL, alternating label/URL and object forms.
 class SourcePlayback {
+  static Map<String, String> _inheritHeaders(Map<String, String> sourceHeaders,
+      Uri? sourceOrigin, Uri? target) {
+    final sameOrigin = sourceOrigin != null && target != null &&
+        sourceOrigin.scheme == target.scheme && sourceOrigin.host == target.host &&
+        sourceOrigin.port == target.port;
+    return Map.fromEntries(sourceHeaders.entries.where((entry) => sameOrigin ||
+        !const ['authorization', 'proxy-authorization', 'cookie', 'cookie2'].contains(entry.key.toLowerCase())));
+  }
+
+  static Map<String, String> _mergeHeaders(Iterable<Map<String, String>> layers) {
+    final merged = <String, String>{};
+    for (final layer in layers) {
+      for (final entry in layer.entries) {
+        merged.removeWhere((key, _) => key.toLowerCase() == entry.key.toLowerCase());
+        merged[entry.key] = entry.value;
+      }
+    }
+    return merged;
+  }
+
+  /// Apply import headers once at the resolver boundary, including plain CMS
+  /// streams. Headers explicitly returned for this media always take precedence.
+  static CmsEpisode inheritSourceHeaders(CmsEpisode episode,
+      {required Map<String, String> sourceHeaders, Uri? sourceOrigin}) {
+    return CmsEpisode(name: episode.name, url: episode.url,
+        headers: _mergeHeaders([
+          _inheritHeaders(sourceHeaders, sourceOrigin, Uri.tryParse(episode.url)), episode.headers]),
+        playbackSession: episode.playbackSession,
+        externalAudioUrl: episode.externalAudioUrl,
+        variants: episode.variants.map((item) => inheritSourceHeaders(item,
+          sourceHeaders: sourceHeaders, sourceOrigin: sourceOrigin)).toList());
+  }
+
   static Future<CmsEpisode> decode(Map raw, CmsEpisode episode,
       {required Future<Uri> Function(String) localUrl,
       Map<String,String> sourceHeaders = const {}, Uri? sourceOrigin}) async {
@@ -14,12 +47,6 @@ class SourcePlayback {
       return value is Map ? value.map((k,v)=>MapEntry(k.toString(),v.toString())) : {};
     }
     final explicit = headers(raw['header'] ?? raw['headers']);
-    Map<String, String> inherited(Uri target) {
-      final sameOrigin = sourceOrigin != null && sourceOrigin.scheme == target.scheme &&
-          sourceOrigin.host == target.host && sourceOrigin.port == target.port;
-      return Map.fromEntries(sourceHeaders.entries.where((entry) => sameOrigin ||
-          !const ['authorization', 'proxy-authorization', 'cookie', 'cookie2'].contains(entry.key.toLowerCase())));
-    }
     final choices = <CmsEpisode>[];
     final seen = <String>{};
     bool valid(dynamic value) {
@@ -34,7 +61,7 @@ class SourcePlayback {
     Future<void> add(dynamic value,String name,Map<String,String> extra) async {
       if (value is String && valid(value)) {
         final url=value.startsWith('catpaw://') ? await localUrl(value) : Uri.parse(value.trim());
-        if (seen.add(url.toString())) choices.add(CmsEpisode(name:name,url:url.toString(),headers:{...inherited(url),...explicit,...extra},externalAudioUrl:audioUrl));
+        if (seen.add(url.toString())) choices.add(CmsEpisode(name:name,url:url.toString(),headers:_mergeHeaders([_inheritHeaders(sourceHeaders, sourceOrigin, url), explicit, extra]),externalAudioUrl:audioUrl));
       } else if (value is Map) {
         await add(value['url'] ?? value['urls'] ?? value['values'] ?? value['playUrl'],
             '${value['name'] ?? value['label'] ?? name}',{...extra,...headers(value['header'] ?? value['headers'])});

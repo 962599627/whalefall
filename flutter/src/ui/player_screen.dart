@@ -40,6 +40,14 @@ class PlayerScreen extends StatefulWidget {
     this.isLive = false,
   });
 
+  /// The resolver already applies origin rules and explicit playback headers.
+  /// Re-merging subscription headers here would restore filtered credentials.
+  Media mediaForPlayback(CmsEpisode episode, {Duration? start}) => Media(
+    episode.url,
+    httpHeaders: Map<String, String>.of(episode.headers),
+    start: start,
+  );
+
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
@@ -465,16 +473,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       _activeStreamUrl = resolvedEpisode.url;
       _activeMediaUri = Media(resolvedEpisode.url).uri;
 
-      final headers = <String, String>{
-        ...widget.site.headers,
-        ...resolvedEpisode.headers,
-      };
       await _changeMedia(session, () async {
         _allowEvents = true;
         await _player.open(
-          Media(
-            resolvedEpisode.url,
-            httpHeaders: headers,
+          widget.mediaForPlayback(
+            resolvedEpisode,
             start: _pendingResumeMs > 0
                 ? Duration(milliseconds: _pendingResumeMs)
                 : null,

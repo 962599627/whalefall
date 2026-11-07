@@ -1,6 +1,6 @@
 // The same Python Spider protocol runs over the device-local JS engine on each
 // host. A suspended HTTP request becomes a Promise only on asynchronous hosts.
-function createPythonSpider(source, files = {}, readSibling) {
+function createPythonSpider(source, files = {}, readSibling, packageData) {
   const baseSpider = [
     "import requests",
     "class Spider:",
@@ -521,6 +521,7 @@ function createPythonSpider(source, files = {}, readSibling) {
   ].join("\n");
   installPythonJson(library);
   installPythonIo(library);
+  const localPackage = installPythonPackage(library, packageData);
   library["src/lib/base/__init__.py"] = "";
   library["src/lib/base/spider.py"] = baseSpider;
   library["src/lib/requests/__init__.py"] = requestsModule;
@@ -536,7 +537,8 @@ function createPythonSpider(source, files = {}, readSibling) {
   const standardRoots = new Set(Object.keys(library).map(path =>
     /^src\/lib\/([^/.]+)(?:\.|\/)/.exec(path)?.[1]).filter(Boolean));
   for (const path of Object.keys(files)) {
-    if (/^(?:[A-Za-z_]\w*\/)*[A-Za-z_]\w*\.py$/.test(path)) {
+    if (!['io', '_movie_io', '_movie_package'].includes(path.split(/[/.]/)[0]) &&
+        /^(?:[A-Za-z_]\w*\/)*[A-Za-z_]\w*\.py$/.test(path)) {
       library["src/lib/" + path] = files[path];
     }
   }
@@ -546,7 +548,7 @@ function createPythonSpider(source, files = {}, readSibling) {
     output() {},
     read(path) {
       if (Object.prototype.hasOwnProperty.call(library, path)) return library[path];
-      if (readSibling && !standardRoots.has(path.substring('src/lib/'.length).split(/[/.]/)[0]) &&
+      if (packageData == null && readSibling && !standardRoots.has(path.substring('src/lib/'.length).split(/[/.]/)[0]) &&
           /^src\/lib\/(?:[A-Za-z_]\w*\/)*[A-Za-z_]\w*\.py$/.test(path)) {
         const text = readSibling(path.substring("src/lib/".length));
         if (typeof text === "string") return text;
@@ -561,6 +563,7 @@ function createPythonSpider(source, files = {}, readSibling) {
       throw new Error("Python 模块不可用：" + path);
     }
   });
+  localPackage.activate();
   let instance;
   const py = Sk.ffi.remapToPy;
   function run(call) {

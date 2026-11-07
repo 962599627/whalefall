@@ -2,8 +2,69 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:marco_movie/core/models.dart';
 import 'package:marco_movie/core/source_playback.dart';
 import 'package:marco_movie/core/csp_bridge.dart';
+import 'package:marco_movie/core/cms_client.dart';
+import 'package:marco_movie/core/storage_service.dart';
+import 'package:marco_movie/ui/player_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  test('plain CMS streams inherit same-origin credentials only at resolution', () async {
+    SharedPreferences.setMockInitialValues({});
+    const site = CmsSite(key:'cms', name:'Fixture', type:1,
+      api:'https://source.test/api.php', headers:{'Authorization':'Source fixture',
+        'Cookie':'session=fixture', 'User-Agent':'Fixture'});
+    final screen = PlayerScreen(site:site,
+      video:const CmsVideo(id:'one', title:'Fixture'), initialLineIndex:0,
+      initialEpisodeIndex:0, storage:StorageService(await SharedPreferences.getInstance()));
+    final client = CmsClient();
+    for (final target in ['https://source.test/media.mp4', 'https://cdn.test/media.mp4',
+      'http://source.test/media.mp4', 'https://source.test:8443/media.mp4']) {
+      final resolved = await client.resolveEpisodeForPlayback(site, CmsEpisode(name:'Episode',url:target));
+      expect(screen.mediaForPlayback(resolved).httpHeaders,
+        target == 'https://source.test/media.mp4' ? site.headers : {'User-Agent':'Fixture'});
+    }
+    final explicit = await client.resolveEpisodeForPlayback(site,
+      const CmsEpisode(name:'Episode', url:'https://source.test/media.mp4',
+        headers:{'authorization':'Media fixture', 'cookie':'media=fixture'}));
+    expect(screen.mediaForPlayback(explicit).httpHeaders,
+      {'User-Agent':'Fixture', 'authorization':'Media fixture','cookie':'media=fixture'});
+  });
+  test('native player uses resolved headers without restoring source credentials', () async {
+    SharedPreferences.setMockInitialValues({});
+    const credentials = {
+      'Authorization': 'Source fixture', 'Cookie': 'session=fixture',
+      'Cookie2': 'legacy=fixture', 'Proxy-Authorization': 'Proxy fixture',
+      'User-Agent': 'Fixture',
+    };
+    const site = CmsSite(key: 'media', name: 'Fixture', type: 3,
+        api: 'https://source.test/rule.js', headers: credentials);
+    final screen = PlayerScreen(site: site,
+        video: const CmsVideo(id: 'one', title: 'Fixture'),
+        initialLineIndex: 0, initialEpisodeIndex: 0,
+        storage: StorageService(await SharedPreferences.getInstance()));
+    final resolved = await SourcePlayback.decode({'url': [
+      'https://source.test/video.mp4',
+      'https://cdn.test/video.mp4',
+      'http://source.test/video.mp4',
+      'https://source.test:8443/video.mp4',
+      'catpaw://bundle/proxy',
+      {'url': 'https://cdn.test/explicit.mp4',
+        'header': {'Authorization': 'CDN fixture', 'Cookie': 'cdn=fixture'}},
+    ]}, const CmsEpisode(name: 'Episode', url: 'mmjs://play?id=one'),
+        localUrl: (_) async => Uri.parse('http://127.0.0.1:1234/fixture/proxy'),
+        sourceOrigin: Uri.parse(site.api), sourceHeaders: credentials);
+    expect(screen.mediaForPlayback(resolved.variants.first).httpHeaders, credentials);
+    for (final choice in resolved.variants.skip(1).take(4)) {
+      expect(screen.mediaForPlayback(choice).httpHeaders, {'User-Agent': 'Fixture'},
+          reason: 'Source credentials must not be restored for ${Uri.parse(choice.url).origin}');
+    }
+    final explicit = screen.mediaForPlayback(resolved.variants.last,
+        start: const Duration(seconds: 12));
+    expect(explicit.httpHeaders, {'User-Agent': 'Fixture',
+      'Authorization': 'CDN fixture', 'Cookie': 'cdn=fixture'});
+    expect(explicit.start, const Duration(seconds: 12));
+  });
   test('cross-source results preserve real providers and episode names', () async {
     const original = CmsVideo(id: 'one', title: 'Fixture', lines: [
       CmsLine(name: '真实来源', episodes: [CmsEpisode(name: '第08集', url: 'https://media.test/e8.mp4')]),
