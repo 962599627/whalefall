@@ -16,6 +16,7 @@ Future<List<String>> _loadPrelude() async {
         'html.js',
         'regex.js',
         'json.js',
+        'io.js',
         'spider.js',
       ])
         rootBundle.loadString('assets/python-host/$name'),

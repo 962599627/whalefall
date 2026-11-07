@@ -54,7 +54,7 @@ NSArray *runQuickJsProbe(NSString *assets) {
     NSString *dependencies=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:@"runtime/drpy-dependencies.js"] encoding:NSUTF8StringEncoding error:nil];
     if(!dependencies) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"html_dependency_missing" userInfo:nil];
     evaluate(ctx,[@"globalThis.__moviePythonHtmlParser=function(){const navigator={appName:'Netscape'};\n" stringByAppendingFormat:@"%@\nglobalThis.__moviePythonHtmlParser=()=>DRPYDeps.cheerio;return DRPYDeps.cheerio;};", dependencies],JS_EVAL_TYPE_GLOBAL,@"python-parser-loader.js");
-    for(NSString *name in @[@"skulpt.min.js",@"skulpt-stdlib.js",@"html.js",@"regex.js",@"json.js",@"spider.js"]){
+    for(NSString *name in @[@"skulpt.min.js",@"skulpt-stdlib.js",@"html.js",@"regex.js",@"json.js",@"io.js",@"spider.js"]){
       NSString *file=[[assets stringByAppendingPathComponent:@"python-host"] stringByAppendingPathComponent:name];
       NSString *source=[NSString stringWithContentsOfFile:file encoding:NSUTF8StringEncoding error:nil];
       if(!source) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"python_asset_missing" userInfo:nil];
@@ -89,12 +89,13 @@ NSArray *runQuickJsProbe(NSString *assets) {
     [checks addObject:@{@"name":@"python_native_cookie_objects",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pyHome.cookie_ok===true"))}];
     [checks addObject:@{@"name":@"python_native_binary_request_bridge",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&binaryBodySeen"))}];
     [checks addObject:@{@"name":@"python_native_renewed_operation_clock",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&Sk.execLimit===8000&&pySearch.list[0].vod_name==='Python HTTP'"))}];
-    for(NSString *contract in @[@"html",@"json"]) {
+    for(NSString *contract in @[@"html",@"json",@"io"]) {
     NSString *htmlSource=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:[NSString stringWithFormat:@"python_%@_contract.py",contract]] encoding:NSUTF8StringEncoding error:nil];
     NSData *htmlExpectedData=[NSData dataWithContentsOfFile:[assets stringByAppendingPathComponent:[NSString stringWithFormat:@"python_%@_expected.json",contract]]];
     NSString *htmlExpectedText=htmlExpectedData?[[NSString alloc] initWithData:htmlExpectedData encoding:NSUTF8StringEncoding]:nil;
     NSDictionary *htmlExpected=htmlExpectedData?[NSJSONSerialization JSONObjectWithData:htmlExpectedData options:0 error:nil]:nil;
-    if(!htmlSource||htmlExpected.count!=([contract isEqualToString:@"html"]?21:28)) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:[contract stringByAppendingString:@"_contract_fixture_missing"] userInfo:nil];
+    NSUInteger expectedCount=[contract isEqualToString:@"html"]?21:[contract isEqualToString:@"json"]?28:29;
+    if(!htmlSource||htmlExpected.count!=expectedCount) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:[contract stringByAppendingString:@"_contract_fixture_missing"] userInfo:nil];
     jsSetOperationTimeout(rt,8000);
     // Keep the oracle's original UTF-8 text: Foundation's parsed string path
     // removes a leading U+FEFF inside an expected value on iOS. Re-serializing

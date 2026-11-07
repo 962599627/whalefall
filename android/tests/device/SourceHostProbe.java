@@ -350,6 +350,22 @@ public final class SourceHostProbe extends Instrumentation {
             check(
                     "python_json_big_integer",
                     jsonResult.getString("big").equals("9007199254740993123456789"));
+            JsEngine streams =
+                    engine(
+                            "streams.py",
+                            "import io, json\n"
+                                    + "class Spider:\n"
+                                    + "    def homeContent(self, filter):\n"
+                                    + "        text = io.StringIO(); json.dump({'name':'中文'}, text, ensure_ascii=False); text.seek(0)\n"
+                                    + "        binary = io.BytesIO(bytes([0,255,128,65])); binary.seek(1); binary.write(b'X'); binary.seek(0)\n"
+                                    + "        error = io.UnsupportedOperation('fixture')\n"
+                                    + "        return {'text':json.load(text)['name'], 'bytes':list(binary.read()), 'exceptions':isinstance(error,OSError) and isinstance(error,ValueError)}\n");
+            JSONObject streamResult = new JSONObject(streams.home());
+            check("python_io_json_text", streamResult.getString("text").equals("中文"));
+            check(
+                    "python_io_binary",
+                    streamResult.getJSONArray("bytes").toString().equals("[0,88,128,65]"));
+            check("python_io_exception_bases", streamResult.getBoolean("exceptions"));
             check("python_detail", first(py.detail("42")).getString("vod_id").equals("42"));
             check(
                     "python_play",

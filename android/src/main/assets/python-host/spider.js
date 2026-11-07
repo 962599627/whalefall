@@ -520,6 +520,7 @@ function createPythonSpider(source, files = {}, readSibling) {
     "    return urlunsplit((b.scheme, b.netloc, path, u.query, u.fragment))",
   ].join("\n");
   installPythonJson(library);
+  installPythonIo(library);
   library["src/lib/base/__init__.py"] = "";
   library["src/lib/base/spider.py"] = baseSpider;
   library["src/lib/requests/__init__.py"] = requestsModule;

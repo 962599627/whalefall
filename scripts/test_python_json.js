@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const root = path.join(__dirname, '..');
 async function run(source) {
   const context = vm.createContext({console, setTimeout, clearTimeout});
-  for (const file of ['skulpt.min.js', 'skulpt-stdlib.js', 'json.js', 'spider.js']) {
+  for (const file of ['skulpt.min.js', 'skulpt-stdlib.js', 'json.js', 'io.js', 'spider.js']) {
     vm.runInContext(fs.readFileSync(path.join(root, 'android/src/main/assets/python-host', file), 'utf8'), context, {filename:file});
   }
   const spider = context.createPythonSpider(source);
@@ -40,4 +40,5 @@ class Spider:
   assert.deepEqual(limits, [0, 1, 2, 3, 4]);
   console.log('PASS Python JSON nesting, size, indentation, default recursion and encoding limits');
 }
-main().catch(error => { console.error(String(error)); process.exitCode = 1; });
+module.exports = {run};
+if (require.main === module) main().catch(error => { console.error(String(error)); process.exitCode = 1; });

@@ -68,6 +68,7 @@ jobs:
           node scripts/test_js_module_interop.cjs
           node scripts/test_python_host.js
           node scripts/test_python_json.js
+          node scripts/test_python_io.js
           python scripts/test_catpaw_node_patches.py
       - name: Local CatPaw and DRPY router under jitless Node
         env:

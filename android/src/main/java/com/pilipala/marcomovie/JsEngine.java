@@ -247,6 +247,7 @@ public final class JsEngine implements SourceEngine {
                         "html.js",
                         "regex.js",
                         "json.js",
+                        "io.js",
                         "spider.js"
                     }) context.evaluate(asset("python-host/" + file), file);
             context.evaluate(
