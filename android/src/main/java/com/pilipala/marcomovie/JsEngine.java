@@ -215,7 +215,14 @@ public final class JsEngine implements SourceEngine {
                 site.ext instanceof JSONObject && ((JSONObject) site.ext).has("_mm_entrySource");
         if (checkedScript)
             modules.put(site.api, ((JSONObject) site.ext).getString("_mm_entrySource"));
-        String source = inlinePython ? (String) site.ext : module(site.api);
+        LocalSourcePackage.PythonPackage pythonPackage =
+                !inlinePython && site.api.toLowerCase(Locale.ROOT).endsWith(".py")
+                        ? LocalSourcePackage.pythonPackage(app.getFilesDir(), site.api)
+                        : null;
+        String source =
+                pythonPackage != null
+                        ? pythonPackage.source
+                        : inlinePython ? (String) site.ext : module(site.api);
         if (!inlinePython && Cms.looksLikeDrpyRule(source)) throw new DrpyRuleDetected(source);
         catApi = source.contains("__jsEvalReturn") && !isEsModule(source);
         if (inlinePython || site.api.split("[?#]", 2)[0].toLowerCase(Locale.ROOT).endsWith(".py")) {
@@ -250,10 +257,29 @@ public final class JsEngine implements SourceEngine {
                         "io.js",
                         "spider.js"
                     }) context.evaluate(asset("python-host/" + file), file);
+            JSONObject pythonModules = new JSONObject(), packageData = null;
+            if (pythonPackage != null) {
+                for (Map.Entry<String, String> module : pythonPackage.modules.entrySet())
+                    pythonModules.put(module.getKey(), module.getValue());
+                JSONObject files = new JSONObject();
+                for (Map.Entry<String, byte[]> file : pythonPackage.files.entrySet())
+                    files.put(
+                            file.getKey(), Base64.encodeToString(file.getValue(), Base64.NO_WRAP));
+                packageData =
+                        new JSONObject().put("entry", pythonPackage.entry).put("files", files);
+            }
             context.evaluate(
                     "globalThis.__movieSpider=createPythonSpider("
                             + JSONObject.quote(source)
-                            + ",{},__readPythonSibling);void 0;");
+                            + ",JSON.parse("
+                            + JSONObject.quote(pythonModules.toString())
+                            + "),__readPythonSibling,"
+                            + (packageData == null
+                                    ? "null"
+                                    : "JSON.parse("
+                                            + JSONObject.quote(packageData.toString())
+                                            + ")")
+                            + ");void 0;");
         } else if (catApi) {
             context.evaluate(source, site.api);
             context.evaluate("globalThis.__movieSpider=__jsEvalReturn();");

@@ -2,6 +2,9 @@ package com.pilipala.marcomovie;
 
 import java.io.*;
 import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.zip.*;
@@ -32,10 +35,17 @@ final class LocalSourcePackage {
         config = Cms.parseConfig(text, origin);
         liveChannels = 0;
         checkLocal(root, config.spider);
+        boolean pythonChecked = false;
         for (Cms.Site site : config.sites) {
             checkLocal(root, site.api);
             checkLocal(root, site.jar);
             if (site.ext instanceof String) checkLocal(root, (String) site.ext);
+            if (!pythonChecked
+                    && site.api.startsWith("file:")
+                    && site.api.toLowerCase(Locale.ROOT).endsWith(".py")) {
+                readPythonPackage(root, new File(new URI(site.api)));
+                pythonChecked = true;
+            }
             if (("csp_Drpy".equalsIgnoreCase(site.api)
                             || "csp_LocalRule.js".equalsIgnoreCase(site.api))
                     && site.ext instanceof String
@@ -52,6 +62,114 @@ final class LocalSourcePackage {
                     checkLocal(root, Cms.resolve(origin, (String) rule));
             }
         }
+    }
+
+    /** An immutable snapshot of this imported package, never the application files directory. */
+    static final class PythonPackage {
+        final String entry, source;
+        final Map<String, byte[]> files;
+        final Map<String, String> modules;
+
+        PythonPackage(String entry, Map<String, byte[]> files) throws IOException {
+            this.entry = entry;
+            this.files = Collections.unmodifiableMap(files);
+            source = pythonText(files.get(entry));
+            String directory =
+                    entry.contains("/") ? entry.substring(0, entry.lastIndexOf('/') + 1) : "";
+            Map<String, String> imported = new LinkedHashMap<>();
+            for (Map.Entry<String, byte[]> file : files.entrySet()) {
+                if (!file.getKey().startsWith(directory)) continue;
+                String relative = file.getKey().substring(directory.length());
+                if (relative.matches("(?:[A-Za-z_]\\w*/)*[A-Za-z_]\\w*\\.py"))
+                    imported.put(relative, pythonText(file.getValue()));
+            }
+            modules = Collections.unmodifiableMap(imported);
+        }
+    }
+
+    /** Return null for standalone/remote sources; only an installed SHA-256 package grants data. */
+    static PythonPackage pythonPackage(File filesDir, String address) throws Exception {
+        if (address == null || !address.startsWith("file:")) return null;
+        File store = new File(filesDir, "source-packages").getCanonicalFile();
+        File requested = new File(new URI(address)).getAbsoluteFile();
+        File entry = requested.getCanonicalFile();
+        String prefix = store.getPath() + File.separator;
+        if (!entry.getPath().startsWith(prefix)) {
+            if (requested.getPath().startsWith(prefix)) throw new IOException("Python 本地包路径越界");
+            return null;
+        }
+        String relative = entry.getPath().substring(prefix.length());
+        int separator = relative.indexOf(File.separatorChar);
+        if (separator < 0 || !relative.substring(0, separator).matches("[a-f0-9]{64}"))
+            throw new IOException("Python 本地包标识无效");
+        File root = new File(store, relative.substring(0, separator)).getCanonicalFile();
+        if (!root.getParentFile().equals(store)) throw new IOException("Python 本地包路径越界");
+        return readPythonPackage(root, entry);
+    }
+
+    private static PythonPackage readPythonPackage(File packageRoot, File source)
+            throws IOException {
+        File root = packageRoot.getCanonicalFile(), entry = source.getCanonicalFile();
+        if (!entry.isFile() || !entry.getPath().startsWith(root.getPath() + File.separator))
+            throw new IOException("Python 本地包缺少入口或入口越界");
+        Map<String, byte[]> files = new LinkedHashMap<>();
+        collectPythonFiles(root, root, files, new int[2]);
+        String relative = root.toURI().relativize(entry.toURI()).getPath();
+        if (!files.containsKey(relative)) throw new IOException("Python 本地包缺少入口");
+        return new PythonPackage(relative, files);
+    }
+
+    private static void collectPythonFiles(
+            File root, File directory, Map<String, byte[]> files, int[] counts) throws IOException {
+        File[] children = directory.listFiles();
+        if (children == null) throw new IOException("无法读取 Python 本地包目录");
+        Arrays.sort(children, (a, b) -> a.getName().compareTo(b.getName()));
+        for (File child : children) {
+            if (Thread.currentThread().isInterrupted())
+                throw new InterruptedIOException("Python 本地包读取已取消");
+            if (++counts[0] > 2048) throw new IOException("Python 本地包目录数量超过限制");
+            File canonical = child.getCanonicalFile();
+            if (!canonical.equals(child.getAbsoluteFile())
+                    || !canonical.getPath().startsWith(root.getPath() + File.separator))
+                throw new IOException("Python 本地包不允许链接或包外文件");
+            String relative = root.toURI().relativize(canonical.toURI()).getPath();
+            if (relative.endsWith("/")) relative = relative.substring(0, relative.length() - 1);
+            if (relative.isEmpty()
+                    || relative.length() > 512
+                    || java.util.regex.Pattern.compile("[\\\\:'\"\\x00-\\x1f\\x7f\\u2028\\u2029]")
+                            .matcher(relative)
+                            .find()) throw new IOException("Python 本地包文件名无效");
+            for (String component : relative.split("/", -1))
+                if (component.isEmpty() || component.equals(".") || component.equals(".."))
+                    throw new IOException("Python 本地包路径无效");
+            if (canonical.isDirectory()) {
+                collectPythonFiles(root, canonical, files, counts);
+                continue;
+            }
+            if (!canonical.isFile() || files.size() >= 256)
+                throw new IOException("Python 本地包最多支持 256 个文件");
+            try (InputStream in = new FileInputStream(canonical);
+                    ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[8192];
+                for (int n; (n = in.read(buffer)) != -1; ) {
+                    if (Thread.currentThread().isInterrupted())
+                        throw new InterruptedIOException("Python 本地包读取已取消");
+                    if (out.size() + n > 2 * 1024 * 1024 || (counts[1] += n) > 6 * 1024 * 1024)
+                        throw new IOException("Python 本地包单文件限 2 MiB、总计限 6 MiB");
+                    out.write(buffer, 0, n);
+                }
+                files.put(relative, out.toByteArray());
+            }
+        }
+    }
+
+    private static String pythonText(byte[] bytes) throws IOException {
+        return StandardCharsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString();
     }
 
     private static void checkLocal(File root, String address) throws Exception {
