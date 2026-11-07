@@ -651,6 +651,7 @@ class CmsClient {
   static String _scriptSessionKey(CmsSite site) => sha256.convert(utf8.encode(jsonEncode([
     site.subscriptionId, site.sourceKey, site.isEffectivelyPrivate,
     site.api, site.ext, site.pluginReference, site.headers,
+    if (site.rawExtension != null) site.rawExtension,
   ]))).toString();
 
   /// Shared by catalogue, detail, and the player's separate CmsClient instance.
@@ -713,6 +714,7 @@ class CmsClient {
     if (cachedScript != null) return cachedScript;
     var entry = site.api;
     Object? extension = site.ext;
+    var rawExtension = site.rawExtension ?? site.ext;
     final modules = <String, String>{};
     var pythonPackage = <String, Object?>{};
     if (entry.startsWith('csp_LocalScript.')) {
@@ -723,6 +725,7 @@ class CmsClient {
       if (local['modules'] is Map) modules.addAll(Map<String, String>.from(local['modules'] as Map));
       if (local['package'] is Map) pythonPackage = Map<String, Object?>.from(local['package'] as Map);
       extension = local['ext'] ?? '';
+      rawExtension = extension is String ? extension : jsonEncode(extension);
     } else {
       modules[entry] = await _getText(entry, headers: site.headers);
       try { extension = jsonDecode(site.ext); } on FormatException { /* Plain-text extension. */ }
@@ -756,6 +759,9 @@ class CmsClient {
       final required = JsSourceHost.commonJsReferences(text).toSet();
       final references = {...JsSourceHost.esModuleReferences(text), ...required};
       for (final ref in references) {
+        if (ref == 'catvod' || ref.startsWith('catvod:')) {
+          throw const FormatException('当前脚本需要 CatVod 宿主模块，该接口尚未适配');
+        }
         final common = required.contains(ref);
         if (common && !ref.startsWith('.') && !ref.startsWith('https://') && !ref.startsWith('http://')) {
           throw FormatException('不支持的 Node 模块：$ref');
@@ -790,6 +796,7 @@ class CmsClient {
     return JsSourceHost.invoke(entry: entry, modules: modules, method: method,
       arguments: args, catDetails: cat,
       extension: cat ? {'stype': 3, 'skey': site.key, 'ext': extension} : extension,
+      rawExtension: rawExtension,
       headers: site.headers, sessionKey: sessionKey, expectedGeneration: generation,
       cancellation: cancellation);
   }

@@ -272,6 +272,12 @@ public final class JsEngine implements SourceEngine {
                 site.ext instanceof JSONObject && ((JSONObject) site.ext).has("_mm_entrySource");
         if (checkedScript)
             modules.put(site.api, ((JSONObject) site.ext).getString("_mm_entrySource"));
+        String spiderOptions =
+                new JSONObject()
+                        .put(
+                                "rawExtension",
+                                site.ext instanceof String ? site.ext : JSONObject.NULL)
+                        .toString();
         LocalSourcePackage.PythonPackage pythonPackage =
                 !inlinePython && site.api.toLowerCase(Locale.ROOT).endsWith(".py")
                         ? LocalSourcePackage.pythonPackage(app.getFilesDir(), site.api)
@@ -341,12 +347,15 @@ public final class JsEngine implements SourceEngine {
                             + ");void 0;");
         } else if (catApi) {
             context.evaluate(source, site.api);
-            context.evaluate("globalThis.__movieSpider=__jsEvalReturn();");
+            context.evaluate(
+                    "globalThis.__movieSpider=__movieSelectSpider(__jsEvalReturn(),{preserveInit:true});");
         } else if (isEsModule(source))
             context.evaluateModule(
                     "import * as spider from "
                             + JSONObject.quote(site.api)
-                            + ";globalThis.__movieSpider=__movieSelectSpider(spider);",
+                            + ";globalThis.__movieSpider=__movieSelectSpider(spider,"
+                            + spiderOptions
+                            + ");",
                     site.api + ".host-entry.mjs");
         else if (isCommonJs(source)) {
             bind(
@@ -356,7 +365,9 @@ public final class JsEngine implements SourceEngine {
             context.evaluate(
                     "globalThis.__movieSpider=__movieSelectSpider(__movieLoadCommonJS("
                             + JSONObject.quote(site.api)
-                            + ",(name,parent)=>JSON.parse(__hostCommonJsModule(name,parent))));void 0;",
+                            + ",(name,parent)=>JSON.parse(__hostCommonJsModule(name,parent))),"
+                            + spiderOptions
+                            + ");void 0;",
                     "commonjs-entry.js");
         } else throw new IOException("脚本没有兼容的 Spider 模块入口；DRPY rule 需要对应宿主适配");
         Object ext = inlinePython || checkedScript || site.ext == null ? "" : site.ext;

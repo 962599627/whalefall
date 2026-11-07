@@ -187,6 +187,9 @@ class CmsSite {
   final String playUrl;
   final bool searchable;
   final String ext;
+  /// Original JSON string value for full-name JS Spider init. [ext] keeps the
+  /// existing normalized URL/plugin representation; object values have no raw string.
+  final String? rawExtension;
   /// Site override and the owning subscription's plugin declaration, respectively.
   /// Keep both on the site: a merged subscription has no single global plugin.
   final String jar;
@@ -205,6 +208,7 @@ class CmsSite {
     this.playUrl = '',
     this.searchable = true,
     this.ext = '',
+    this.rawExtension,
     this.jar = '',
     this.spider = '',
     this.headers = const {},
@@ -220,6 +224,7 @@ class CmsSite {
     String? playUrl,
     bool? searchable,
     String? ext,
+    String? rawExtension,
     String? jar,
     String? spider,
     Map<String, String>? headers,
@@ -236,6 +241,7 @@ class CmsSite {
       playUrl: playUrl ?? this.playUrl,
       searchable: searchable ?? this.searchable,
       ext: ext ?? this.ext,
+      rawExtension: rawExtension ?? (ext == null ? this.rawExtension : null),
       jar: jar ?? this.jar,
       spider: spider ?? this.spider,
       headers: headers ?? this.headers,

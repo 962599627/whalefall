@@ -28,6 +28,62 @@ console.log('PASS shared CommonJS JSON/cycle/home/detail/play/default/error boun
 
 // This checks the shipped settlement protocol; JNI job pumping has a separate Android probe.
 (async () => {
+  vm.runInContext(String.raw`
+globalThis.constructed = 0;
+class FullSpider {
+  #state;
+  constructor() { constructed++; this.#state = {count:0}; }
+  init(ext) { this.#state.ext=ext; }
+  homeContent(filter) { this.#state.count++; return {filter,ext:this.#state.ext,count:this.#state.count}; }
+  homeVideoContent() { return 'raw-string'; }
+  categoryContent(id,pg,filter,extend) { return {id,pg,filter,extend}; }
+  detailContent(ids) { return {ids,count:this.#state.count}; }
+  async searchContent(word,quick,pg) { return {word,quick,pg}; }
+  playerContent(flag,id,vip) { return {flag,id,vip}; }
+  proxy(params) { return [200,'text/plain',this.#state.ext,params]; }
+}
+globalThis.full = __movieSelectSpider({default:FullSpider}, {rawExtension:'  { "fixture": 1 }\n'});
+full.init({fixture:1});
+`, runtime);
+  const inspect = expression => JSON.parse(vm.runInContext(`JSON.stringify(${expression})`, runtime));
+  assert.deepEqual(inspect('full.home(true)'), {filter:true,ext:'  { "fixture": 1 }\n',count:1});
+  assert.equal(vm.runInContext('constructed', runtime), 1);
+  assert.equal(vm.runInContext('full.homeVod()', runtime), 'raw-string');
+  assert.deepEqual(inspect("full.category('opaque',3,true,{year:'2025'})"), {id:'opaque',pg:'3',filter:true,extend:{year:'2025'}});
+  assert.deepEqual(inspect("full.detail('x$y#z')"), {ids:['x$y#z'],count:1});
+  assert.deepEqual(inspect("full.detail(['a','a'])"), {ids:['a','a'],count:1});
+  assert.deepEqual(inspect('full.detail([])'), {ids:[],count:1});
+  assert.deepEqual(JSON.parse(JSON.stringify(await vm.runInContext("full.search('word',false)",runtime))), {word:'word',quick:false,pg:'1'});
+  assert.deepEqual(inspect("full.play('line','opaque',['vip'])"), {flag:'line',id:'opaque',vip:['vip']});
+  assert.equal(vm.runInContext('full.proxy({}).length', runtime), 4);
+  vm.runInContext(String.raw`
+globalThis.fullObject = Object.freeze({homeContent(){return this.state},state:{value:'bound'},init(ext){this.state.ext=ext}});
+globalThis.wrapped = __movieSelectSpider(fullObject, {rawExtension:null});
+wrapped.init({value:1});
+globalThis.mixed = __movieSelectSpider({init(ext){this.ext=ext},home(){return this.ext},homeContent(){throw Error('short method must win')},detailContent(ids){return ids}}, {rawExtension:'not legacy init'});
+mixed.init({legacy:true});
+globalThis.cat = __movieSelectSpider({init(ext){this.ext=ext},homeContent(){return this.ext},detailContent(ids){return ids}},{preserveInit:true,rawExtension:'not cat init'});
+cat.init({stype:3,skey:'fixture',ext:{value:1}});
+globalThis.asyncError = __movieSelectSpider({homeContent(){return Promise.reject(new Error('full method rejection'))}});
+`, runtime);
+  assert.deepEqual(inspect('wrapped.home()'), {value:'bound',ext:'{"value":1}'});
+  assert.equal(vm.runInContext('Object.hasOwn(fullObject,"home")',runtime), false);
+  assert.deepEqual(inspect('mixed.home()'), {legacy:true});
+  assert.deepEqual(inspect("mixed.detail('a')"), ['a']);
+  assert.deepEqual(inspect('cat.home()'), {stype:3,skey:'fixture',ext:{value:1}});
+  assert.deepEqual(inspect("cat.detail(['a'])"), ['a']);
+  assert.equal(vm.runInContext('typeof wrapped.play',runtime), 'undefined');
+  vm.runInContext("globalThis.shortClass=__movieSelectSpider(class {#value=0;home(){return ++this.#value}detail(id){return id}})",runtime);
+  assert.equal(vm.runInContext('shortClass.home()',runtime),1);
+  assert.equal(vm.runInContext('shortClass.home()',runtime),2);
+  assert.equal(vm.runInContext("shortClass.detail('scalar')",runtime),'scalar');
+  vm.runInContext("globalThis.fieldClass=__movieSelectSpider(class {#value=0;homeContent=()=>++this.#value})",runtime);
+  assert.equal(vm.runInContext('fieldClass.home()',runtime),1);
+  assert.equal(vm.runInContext('fieldClass.home()',runtime),2);
+  await assert.rejects(vm.runInContext('asyncError.home()', runtime), /full method rejection/);
+  assert.throws(() => vm.runInContext('__movieSelectSpider(class {constructor(){return Promise.resolve({})} homeContent(){}})',runtime), /synchronous/);
+  console.log('PASS full Spider aliases/class/private-state/raw-extension/mixed-short/cat/array/Promise boundaries');
+
   vm.runInContext("__movieBeginCall(async()=>{await Promise.resolve();return {list:[{vod_id:'async'}]}})", runtime);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(JSON.parse(vm.runInContext('__movieFinishCall()', runtime)).list[0].vod_id, 'async');

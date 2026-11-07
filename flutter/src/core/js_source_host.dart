@@ -135,6 +135,7 @@ class JsSourceHost {
     required String method,
     required List<Object?> arguments,
     Object? extension,
+    String? rawExtension,
     Map<String, String> headers = const {},
     Duration budget = const Duration(seconds: 12),
     List<String> pythonPrelude = const [],
@@ -190,6 +191,7 @@ class JsSourceHost {
           List<String>.from(pythonPrelude),
           interop,
           Map<String, Object?>.from(pythonPackage),
+          rawExtension,
         ], catDetails: catDetails);
     if (sessionKey != null) _sessions[sessionKey] = selected;
     try {
@@ -491,6 +493,7 @@ class _JsRuntimeSession {
   final List<String> pythonPrelude;
   final String interop;
   final Map<String, Object?> pythonPackage;
+  final String? rawExtension;
   final String proxyBase;
   late final QuickJsRuntime2 runtime;
   late HttpClient client;
@@ -514,7 +517,8 @@ class _JsRuntimeSession {
       pythonPrelude = configuration[4] as List<String>,
       interop = configuration[5] as String,
       pythonPackage = configuration[6] as Map<String, Object?>,
-      proxyBase = configuration[7] as String {
+      rawExtension = configuration[7] as String?,
+      proxyBase = configuration[8] as String {
     runtime = QuickJsRuntime2(
       memoryLimit: 48 * 1024 * 1024,
       stackSize: 512 * 1024,
@@ -686,6 +690,9 @@ class _JsRuntimeSession {
       ''');
     final source = modules[entry]!;
     await checked(interop);
+    final selectorOptions = jsonEncode({
+      if (rawExtension != null) 'rawExtension': rawExtension,
+    });
     if (pythonPrelude.isNotEmpty) {
       _pythonModuleBytes = modules.values.fold(
         0,
@@ -710,14 +717,20 @@ class _JsRuntimeSession {
         'async path => JSON.parse(await sendMessage("pythonModule", JSON.stringify(path))), '
         '${pythonPackage.isEmpty ? 'null' : jsonEncode(pythonPackage)}); void 0;',
       );
+    } else if (JsSourceHost.esModuleReferences(
+      source,
+    ).any((name) => name == 'catvod' || name.startsWith('catvod:'))) {
+      throw const FormatException('当前脚本需要 CatVod 宿主模块，该接口尚未适配');
     } else if (JsSourceHost.isCatSpider(source) &&
         !JsSourceHost.isEsModule(source)) {
       await checked(source);
-      await checked('globalThis.__movieSpider = __jsEvalReturn();');
+      await checked(
+        'globalThis.__movieSpider = __movieSelectSpider(__jsEvalReturn(), {preserveInit:true});',
+      );
     } else if (JsSourceHost.isEsModule(source)) {
       await checked(
         'import * as spider from ${jsonEncode(entry)}; '
-        'globalThis.__movieSpider = __movieSelectSpider(spider);',
+        'globalThis.__movieSpider = __movieSelectSpider(spider, $selectorOptions);',
         module: true,
       );
     } else if (JsSourceHost.isCommonJs(source)) {
@@ -740,7 +753,7 @@ class _JsRuntimeSession {
             if (!name || !Object.prototype.hasOwnProperty.call(__movieModules, name))
               throw new Error('Script dependency is unavailable: ' + ref);
             return {name, source: __movieModules[name]};
-          })); void 0;
+          }), $selectorOptions); void 0;
         ''');
     } else {
       throw const FormatException(

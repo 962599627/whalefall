@@ -55,13 +55,18 @@ public final class SourceHostProbe extends Instrumentation {
     }
 
     JsEngine engine(String name, String source, long timeoutMillis) throws Exception {
+        return engine(name, source, timeoutMillis, "ready");
+    }
+
+    JsEngine engine(String name, String source, long timeoutMillis, Object extension)
+            throws Exception {
         File file = write(name, source);
         Cms.Site site = new Cms.Site();
         site.key = "source-host-probe-" + name;
         site.name = name;
         site.type = 3;
         site.api = Cms.fileUri(file);
-        site.ext = "ready";
+        site.ext = extension;
         JsEngine engine =
                 new JsEngine(
                         (Application) getTargetContext().getApplicationContext(),
@@ -340,6 +345,93 @@ public final class SourceHostProbe extends Instrumentation {
             afterCancel.close();
             storage.edit().clear().commit();
         }
+    }
+
+    void exerciseFullSpiderContract() throws Exception {
+        String rawExtension = " \n { \"title\" : \"本机配置\" } \t";
+        String spiderClass =
+                "class CompleteSpider {"
+                        + "constructor(){globalThis.created++;this.calls=0;}"
+                        + "async init(ext){await Promise.resolve();this.ext=ext;}"
+                        + "homeContent(){return {list:[{vod_id:'home'}],ext:this.ext,created:globalThis.created,calls:++this.calls};}"
+                        + "categoryContent(id,pg,filtered,extend){if(typeof pg!=='string'||pg!=='2'||extend.type!=='opaque')throw Error('category ABI');this.calls++;return {list:[{vod_id:pg}]};}"
+                        + "searchContent(word,quick,pg){if(typeof pg!=='string'||pg!=='3')throw Error('search ABI');this.calls++;return {list:[{vod_id:pg}]};}"
+                        + "detailContent(ids){if(!Array.isArray(ids)||ids.length!==1||ids[0]!=='42')throw Error('detail ABI');this.calls++;return {list:[{vod_id:ids[0]}]};}"
+                        + "playerContent(flag,id,vips){if(!Array.isArray(vips))throw Error('player ABI');return {url:'https://fixture.invalid/'+id+'.mp4',calls:++this.calls};}"
+                        + "}";
+        for (String kind : new String[] {"cjs", "esm"}) {
+            String source =
+                    "globalThis.created=0;\n"
+                            + (kind.equals("cjs") ? "module.exports=" : "export default ")
+                            + spiderClass
+                            + ";";
+            JsEngine full =
+                    engine(
+                            "complete-" + kind + (kind.equals("cjs") ? ".js" : ".mjs"),
+                            source,
+                            45000,
+                            rawExtension);
+            JSONObject first = new JSONObject(full.home()), second = new JSONObject(full.home());
+            check(
+                    "complete_" + kind + "_raw_ext_instance_state",
+                    first.getString("ext").equals(rawExtension)
+                            && first.getInt("created") == 1
+                            && first.getInt("calls") == 1
+                            && second.getInt("created") == 1
+                            && second.getInt("calls") == 2);
+            java.util.Map<String, String> filters = new java.util.LinkedHashMap<>();
+            filters.put("type", "opaque");
+            check(
+                    "complete_" + kind + "_string_pages",
+                    first(full.category("movie", 2, filters)).getString("vod_id").equals("2")
+                            && first(full.search("fixture", 3)).getString("vod_id").equals("3"));
+            JSONObject detail = first(full.detail("42")),
+                    player = new JSONObject(full.player("Main", "42"));
+            check(
+                    "complete_" + kind + "_detail_array_player_state",
+                    detail.getString("vod_id").equals("42")
+                            && player.getString("url").equals("https://fixture.invalid/42.mp4")
+                            && player.getInt("calls") == 6);
+            full.close();
+        }
+        JsEngine mixed =
+                engine(
+                        "complete-short-priority.js",
+                        "module.exports={init(ext){this.ext=ext;},home(){return {list:[{vod_id:'short',kind:typeof this.ext}]};},"
+                                + "homeContent(){throw Error('wrong alias');},category(id,pg){return {list:[{vod_id:typeof pg}]};},"
+                                + "categoryContent(){throw Error('wrong category alias');}};",
+                        45000,
+                        new JSONObject().put("key", "value"));
+        check(
+                "complete_short_names_keep_legacy_contract",
+                first(mixed.home()).getString("kind").equals("object")
+                        && first(mixed.home()).getString("vod_id").equals("short")
+                        && first(mixed.category("movie", 2)).getString("vod_id").equals("number"));
+        mixed.close();
+        JsEngine objectExt =
+                engine(
+                        "complete-object-ext.js",
+                        "module.exports={init(ext){this.ext=ext;},homeContent(){return {list:[{vod_id:typeof this.ext,key:JSON.parse(this.ext).key}]};}};",
+                        45000,
+                        new JSONObject().put("key", "value"));
+        check(
+                "complete_object_extension_serialized",
+                first(objectExt.home()).getString("vod_id").equals("string")
+                        && first(objectExt.home()).getString("key").equals("value"));
+        objectExt.close();
+        JsEngine cat =
+                engine(
+                        "complete-cat.js",
+                        "function __jsEvalReturn(){return {init(cfg){if(cfg.stype!==3||cfg.skey!=='source-host-probe-complete-cat.js'||typeof cfg.ext!=='string')throw Error('cat init');this.cfg=cfg;},"
+                                + "homeContent(){return {list:[{vod_id:this.cfg.ext}]};},"
+                                + "detailContent(ids){if(!Array.isArray(ids)||ids.length!==1||typeof ids[0]!=='string')throw Error('cat detail');return {list:[{vod_id:ids[0]}]};}};}",
+                        45000,
+                        rawExtension);
+        check(
+                "complete_cat_keeps_init_metadata_and_array",
+                first(cat.home()).getString("vod_id").equals(rawExtension)
+                        && first(cat.detail("42")).getString("vod_id").equals("42"));
+        cat.close();
     }
 
     /** Two loopback requests only; independent of device Wi-Fi and mobile data. */
@@ -698,6 +790,7 @@ public final class SourceHostProbe extends Instrumentation {
             }
             exerciseScriptProxy();
             exerciseNativeDeadlines();
+            exerciseFullSpiderContract();
             report.put("passed", true);
         } catch (Throwable failure) {
             try {

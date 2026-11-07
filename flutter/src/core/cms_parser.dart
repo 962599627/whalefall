@@ -1080,6 +1080,7 @@ class CmsParser {
             playUrl: (item['playUrl'] ?? '').toString().trim(),
             searchable: _asBool(item['searchable'], true),
             ext: extStr,
+            rawExtension: item['ext'] is String ? item['ext'] as String : null,
             jar: normalizeJarDeclaration(origin, (item['jar'] ?? '').toString()),
             spider: spider,
             headers: _stringHeaders(item['headers'] ?? item['header']),
