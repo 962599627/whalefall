@@ -96,7 +96,7 @@ NSArray *runQuickJsProbe(NSString *assets) {
     NSData *htmlExpectedData=[NSData dataWithContentsOfFile:[assets stringByAppendingPathComponent:[NSString stringWithFormat:@"python_%@_expected.json",contract]]];
     NSString *htmlExpectedText=htmlExpectedData?[[NSString alloc] initWithData:htmlExpectedData encoding:NSUTF8StringEncoding]:nil;
     NSDictionary *htmlExpected=htmlExpectedData?[NSJSONSerialization JSONObjectWithData:htmlExpectedData options:0 error:nil]:nil;
-    NSUInteger expectedCount=[contract isEqualToString:@"html"]?21:[contract isEqualToString:@"json"]?28:29;
+    NSUInteger expectedCount=[contract isEqualToString:@"html"]?21:[contract isEqualToString:@"json"]?28:[contract isEqualToString:@"io"]?29:65;
     if(!htmlSource||htmlExpected.count!=expectedCount) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:[contract stringByAppendingString:@"_contract_fixture_missing"] userInfo:nil];
     jsSetOperationTimeout(rt,8000);
     // Keep the oracle's original UTF-8 text: Foundation's parsed string path
