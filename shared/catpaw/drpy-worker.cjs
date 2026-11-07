@@ -5,6 +5,7 @@ const path=require('node:path');
 const http=require('node:http');
 const vm=require('node:vm');
 const crypto=require('node:crypto');
+const rsaPkcs1=require('./drpy-rsa.cjs');
 const {parentPort,workerData}=require('node:worker_threads');
 const {MAX_RESULT,validateManifest,validateCall}=require('./drpy-schema.cjs');
 const manifest=validateManifest(workerData.manifest);
@@ -58,11 +59,13 @@ context.__local=bridge((action,namespace,key,valueText)=>{
 });
 context.__join=bridge((base,part)=>new URL(part,base||manifest.origin).href);
 context.__random=bridge(length=>{if(!Number.isInteger(length)||length<0||length>65536)throw Error('drpy_random_size');return [...crypto.randomBytes(length)];});
+context.__rsaPkcs1=bridge(rsaPkcs1);
 const bootstrap=`
 globalThis.window=globalThis; globalThis.self=globalThis; globalThis.navigator={appName:'Netscape'};
 globalThis.console={log(){},warn(){},error(){}}; globalThis.print=globalThis.log=function(){};
 function bridgeValue(text){const value=JSON.parse(text);if(value.error)throw new Error(value.error);return value.value;}
 globalThis.crypto={getRandomValues(array){const bytes=bridgeValue(__random(array.byteLength));new Uint8Array(array.buffer,array.byteOffset,array.byteLength).set(bytes);return array;}};
+globalThis.rsaPkcs1=(operation,key,input)=>{try{return bridgeValue(__rsaPkcs1(operation,key,input));}catch(e){unsupportedFeature('drpy_crypto_invalid');}};
 globalThis.req=(url,options={})=>bridgeValue(__request(String(url),JSON.stringify(options)));
 globalThis.__drpyOrigin=${JSON.stringify(manifest.origin)};
 globalThis.joinUrl=(base,part)=>bridgeValue(__join(String(base||''),String(part||'')));

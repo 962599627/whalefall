@@ -353,14 +353,27 @@ class CatPawHost {
   Future<Map<String, dynamic>> bootstrapGuard(
     List<int> bytes, {
     String adapter = 'dm84-v1',
+    String? extension,
     Completer<void>? cancellation,
   }) async {
     _checkCancellation(cancellation);
-    if (!const ['dm84-v1', 'auete-v1', 'bttwoo-v1'].contains(adapter) ||
+    if (!const [
+          'dm84-v1',
+          'auete-v1',
+          'bttwoo-v1',
+          't4-v1',
+        ].contains(adapter) ||
         bytes.isEmpty ||
         bytes.length > _maxBundleBytes ||
         bytes.any((b) => b < 0 || b > 255)) {
       throw const FormatException('插件适配器或文件大小无效');
+    }
+    if (adapter == 't4-v1'
+        ? extension == null ||
+              extension.trim().isEmpty ||
+              utf8.encode(extension).length > 16 * 1024
+        : extension != null) {
+      throw const FormatException('插件扩展配置无效');
     }
     final artifact = Uint8List.fromList(bytes);
     final hash = sha256.convert(artifact).toString();
@@ -385,7 +398,13 @@ class CatPawHost {
     var backoffMs = 80;
     while (true) {
       try {
-        return await _requestGuardBootstrap(base, hash, adapter, cancellation);
+        return await _requestGuardBootstrap(
+          base,
+          hash,
+          adapter,
+          extension,
+          cancellation,
+        );
       } on GuardBootstrapException catch (error) {
         if (error.code != 'bootstrap_busy' ||
             !DateTime.now().isBefore(deadline)) {
@@ -410,6 +429,7 @@ class CatPawHost {
     Uri base,
     String hash,
     String adapter,
+    String? extension,
     Completer<void>? cancellation,
   ) async {
     _checkCancellation(cancellation);
@@ -431,7 +451,12 @@ class CatPawHost {
       request.followRedirects = false;
       request.headers.contentType = ContentType.json;
       final body = utf8.encode(
-        jsonEncode({'version': 1, 'adapter': adapter, 'artifactHash': hash}),
+        jsonEncode({
+          'version': 1,
+          'adapter': adapter,
+          'artifactHash': hash,
+          if (extension != null) 'extension': extension,
+        }),
       );
       request.contentLength = body.length;
       request.add(body);
@@ -753,12 +778,15 @@ class CatPawHost {
           error = jsonDecode(utf8.decode(errorBytes.takeBytes()));
         } catch (_) {}
         const messages = {
-          'drpy_verification_required': '此片源搜索需要完成网站验证码，暂时无法返回结果',
+          'drpy_verification_required': '此片源需要完成网站验证码，暂时无法加载',
           'drpy_local_proxy_not_supported': '此片源需要的本地代理暂不支持',
           'drpy_media_protocol': '此片源返回的播放地址协议暂不支持',
           'drpy_media_unresolved': '此片源暂未解析出可播放地址',
           'drpy_source_origin': '此片源返回了不支持的跨站目录',
           'drpy_source_unavailable': '此片源暂时无法访问',
+          'drpy_source_response': '此片源返回了无法识别的数据',
+          'drpy_crypto_invalid': '此片源的加密响应暂不兼容',
+          'drpy_authentication_required': '此片源的访问认证尚未通过',
           'drpy_filter_not_supported': '此片源不支持当前筛选条件',
           'drpy_local_module_missing': '本地规则包缺少依赖文件，请导入完整的规则包',
         };

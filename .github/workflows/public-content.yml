@@ -75,3 +75,6 @@ jobs:
           python scripts/test_guard_bootstrap.py
           python scripts/test_auete_host.py
           python scripts/test_bttwoo_host.py
+          python scripts/test_appgz_host.py
+          node --jitless scripts/test_t4_adapter.cjs
+          python scripts/test_t4_adapter.py

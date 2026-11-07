@@ -38,6 +38,10 @@ class GuardSource {
     checkCancelled();
     final adapter = CspBridge.guardAdapterFor(site);
     if (adapter == null) throw const FormatException('此插件没有已审阅的移植适配器');
+    if (adapter == 't4-v1' &&
+        (site.ext.trim().isEmpty || utf8.encode(site.ext).length > 16 * 1024)) {
+      throw const FormatException('T4 需要订阅中的完整扩展配置');
+    }
     if (adapter == 'auete-v1' || adapter == 'bttwoo-v1') {
       Object? extension;
       try {
@@ -62,6 +66,7 @@ class GuardSource {
               site.isEffectivelyPrivate,
               site.pluginReference,
               site.headers,
+              if (adapter == 't4-v1') site.ext,
             ]),
           ),
         )
@@ -98,6 +103,7 @@ class GuardSource {
       final generated = await host.bootstrapGuard(
         bytes,
         adapter: adapter,
+        extension: adapter == 't4-v1' ? site.ext : null,
         cancellation: cancellation,
       );
       checkCancelled();

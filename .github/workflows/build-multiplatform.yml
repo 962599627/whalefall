@@ -73,6 +73,10 @@ jobs:
           python scripts/test_movie_mirror.py
           python scripts/test_platform_packages.py
           python scripts/test_catpaw_host.py
+          python scripts/test_guard_bootstrap.py
+          python scripts/test_appgz_host.py
+          node --jitless scripts/test_t4_adapter.cjs
+          python scripts/test_t4_adapter.py
       - name: Shared script runtime and native patch checks
         run: |
           node scripts/test_js_module_interop.cjs

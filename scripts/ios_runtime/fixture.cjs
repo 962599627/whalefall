@@ -9,6 +9,14 @@ exports.start=async()=>{
     if(req.url==='/t4'){
       res.setHeader('Content-Type','application/json');
       res.end(JSON.stringify({starts,sites:[{key:'fixture',name:'Fixture',type:4,api:base+'/api/demo'}]}));
+    }else if(req.url.startsWith('/api/cms')){
+      const url=new URL(req.url,base);
+      if(url.pathname==='/api/cms/media.m3u8'){
+        res.setHeader('Content-Type','application/vnd.apple.mpegurl');res.end('#EXTM3U\n#EXT-X-VERSION:3\n');return;
+      }
+      res.setHeader('Content-Type','application/json');
+      res.end(JSON.stringify({class:[{type_id:'1',type_name:'电影'}],page:2,pagecount:3,limit:1,total:3,
+        list:[{vod_id:url.searchParams.get('ids')||'opaque/$#?',vod_name:'T4 本机影片',vod_play_from:'one',vod_play_url:'第一集$'+base+'/api/cms/media.m3u8'}]}));
     }else if(req.url==='/api/fetch'){
       const response=await fetch(base+'/api/bytes');res.end(Buffer.from(await response.arrayBuffer()));
     }else if(req.url==='/api/bytes'){res.end(Buffer.from([0,1,255,42]));}

@@ -49,6 +49,8 @@ final class GuardEngine {
             return "auete-v1";
         if ("csp_BttwooGuard".equalsIgnoreCase(site.api) || "csp_Bttwoo".equalsIgnoreCase(site.api))
             return "bttwoo-v1";
+        if ("csp_T4Guard".equalsIgnoreCase(site.api) || "csp_T4".equalsIgnoreCase(site.api))
+            return "t4-v1";
         return null;
     }
 
@@ -83,6 +85,9 @@ final class GuardEngine {
                             .bootstrapGuard(
                                     data,
                                     adapter,
+                                    "t4-v1".equals(adapter) && site.ext != null
+                                            ? site.ext.toString()
+                                            : null,
                                     new CatPawHost.ConnectionObserver() {
                                         public void opened(HttpURLConnection connection)
                                                 throws IOException {

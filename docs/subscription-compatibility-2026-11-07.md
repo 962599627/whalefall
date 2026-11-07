@@ -67,3 +67,26 @@ Auete and Bttwoo keep source-specific state separate from Dm84 even when all thr
 Source-delegated category filters are no longer applied a second time against incomplete video-card metadata. For example, an opaque source value such as `dzp` need not appear in a film title or synopsis. The Flutter client and home page preserve the returned page and its actual empty state; they do not fabricate matches or probe a later page to disguise an empty source response. Static local playlists retain their ordinary metadata filtering.
 
 The Auete adapter maps a category's declared genre label to its own filter value, and leaves an already-valid value unchanged. Auete's unsupported region/year filters and Bttwoo's unsupported subfilters return an explicit error. The exact synthetic empty-category row inserted by the pinned DRPY core is normalized to an empty list; arbitrary source rows with a similar ID are retained.
+
+## T4 configuration and Python transport follow-up
+
+The shared T4 adapter handles two supplied entries by extracting their encrypted
+extension configuration as data from an exact reviewed artifact. No imported
+native loader is executed. Flutter and Android pass that configuration with the
+original subscription ownership; distinct extensions cannot reuse another
+site's generated rule. Bounded host requests, strict configuration fields,
+actual CMS pagination and opaque identifiers have regression coverage.
+
+The private Flutter client reached catalogues, details and sampled HLS manifests
+for both entries. One entry's search requires website verification; an earlier
+media request on the other entry returned HTTP 403. These outcomes remain
+distinct from client parsing errors and do not count as iPhone playback
+acceptance. The separate Appgz protocol experiment is not enabled in application
+dispatch because its live catalogue/episode/media path remains unverified.
+
+Python Session cookies retain object attributes and binary request bodies are
+preserved across Flutter/Android transport. The [iPhone evidence and remaining
+gaps](ios-source-acceptance.md) record the native simulator checks, missing Python
+dependencies and outstanding per-call session lifetime issue. The original 33
+route acceptance obligations remain open; adding a protocol adapter does not
+complete that ledger.

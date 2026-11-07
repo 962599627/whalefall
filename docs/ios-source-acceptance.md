@@ -15,7 +15,7 @@ This is an acceptance checklist, **not a declaration of compatibility**. The 0.5
 | Multi-repository | Nested warehouse import and ownership | The supplied warehouse and selected child subscriptions pass the same playback checks, not just directory import |
 | Authenticated `.js.md5` / CatPaw | Authentication, digest, local service host and proxy integration | Actual supplied service package completes local startup, catalogue, search, detail, playback/proxy and restart on iPhone |
 | Emby | Login, libraries, episodes, playback negotiation and progress reporting | Real server/session playback on iPhone with the required direct/transcode and progress behavior |
-| Android / Guard plugins | Selected explicit portable adapters; reviewed Dm84, Auete and Bttwoo paths are scoped to exact imported artifact versions | All 33 routes still require individual platform/playback acceptance. Auete search currently requires manual website verification; partial protocol/media-prefix checks do not complete this gate |
+| Android / Guard plugins | Selected explicit portable adapters; reviewed Dm84, Auete, Bttwoo and T4 paths are scoped to exact imported artifact versions | All 33 routes still require individual platform/playback acceptance. Auete and one T4 search path currently require manual website verification; Appgz remains experimental and is not enabled in application dispatch. Partial protocol/media-prefix checks do not complete this gate |
 
 For each representative source, retain separate results for import, catalogue/search, detail/episodes, resolved media, actual playback and application restart. Record the tested iPhone/iOS and package version. Mark a source as incomplete if only its file type or catalogue is recognized. Do not hide incomplete sources or relabel an ordinary HTTP adapter as a plugin port.
 
@@ -48,3 +48,33 @@ fix, retrieved the returned HLS manifest. This is protocol evidence, not decoder
 or physical-iPhone acceptance. A different sampled route still returned an empty
 playback URL; another returned HTTP 401. Those source results are not counted as
 working playback.
+
+## November 7 runtime and protocol evidence
+
+[Native runtime run 42378486540](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42378486540),
+at commit `6134540`, passed 24 checks on both ARM64/iOS 26.2 and Intel/iOS 18.5
+simulators. In addition to Node/CatPaw/DRPY, it exercised production QuickJS and
+Python cookie iteration and binary-body bridging. Python socket transport is
+tested separately with local HTTP fixtures; its native probe response is
+synthetic. Neither result establishes physical-iPhone video decoding.
+
+Python binary request bodies now cross the host boundary as bounded, validated
+Base64 and are written as bytes by Flutter and Android. Session cookies expose
+their names, values, domains, paths and flags without confusing same-name cookies
+from different domains. These additions do not supply BeautifulSoup, subprocess,
+native OCR or a complete CPython standard library. Cross-call Python session and
+play-cache persistence also remains an outstanding compatibility issue.
+
+T4 now extracts each site's encrypted extension as data from an exact reviewed
+artifact, then runs the CMS protocol in the local DRPY worker. Pagination and
+opaque catalogue/episode identifiers are retained. The original T4 category
+contract does not forward extended filters, so unsupported filters are reported
+explicitly. A private Windows Flutter client check retrieved catalogues, details
+and HLS manifests for two supplied entries; one search still required website
+verification. A separate earlier media request returned HTTP 403. These sampled
+results are not full stream/decoder or iPhone acceptance.
+
+Appgz's original encrypted protocol has a separate experimental implementation
+and synthetic tests. It is distinct from a similarly named CatPaw entry. Actual
+upstream requests have not completed the catalogue/episode/playback path, so it
+is not advertised or enabled by the application's portable-adapter dispatcher.

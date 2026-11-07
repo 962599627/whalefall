@@ -25,12 +25,15 @@ public final class CatPawHost {
     }
 
     private static String drpyErrorMessage(String code) {
-        if ("drpy_verification_required".equals(code)) return "此片源搜索需要完成网站验证码，暂时无法返回结果";
+        if ("drpy_verification_required".equals(code)) return "此片源需要完成网站验证码，暂时无法加载";
         if ("drpy_local_proxy_not_supported".equals(code)) return "此片源需要的本地代理暂不支持";
         if ("drpy_media_protocol".equals(code)) return "此片源返回的播放地址协议暂不支持";
         if ("drpy_media_unresolved".equals(code)) return "此片源暂未解析出可播放地址";
         if ("drpy_source_origin".equals(code)) return "此片源返回了不支持的跨站目录";
         if ("drpy_source_unavailable".equals(code)) return "此片源暂时无法访问";
+        if ("drpy_source_response".equals(code)) return "此片源返回了无法识别的数据";
+        if ("drpy_crypto_invalid".equals(code)) return "此片源的加密响应暂不兼容";
+        if ("drpy_authentication_required".equals(code)) return "此片源的访问认证尚未通过";
         if ("drpy_filter_not_supported".equals(code)) return "此片源不支持当前筛选条件";
         return null;
     }
@@ -233,10 +236,22 @@ public final class CatPawHost {
 
     public JSONObject bootstrapGuard(byte[] artifact, String adapter, ConnectionObserver observer)
             throws Exception {
+        return bootstrapGuard(artifact, adapter, null, observer);
+    }
+
+    public JSONObject bootstrapGuard(
+            byte[] artifact, String adapter, String extension, ConnectionObserver observer)
+            throws Exception {
         checkBootstrapInterrupted();
         if (!("dm84-v1".equals(adapter)
                 || "auete-v1".equals(adapter)
-                || "bttwoo-v1".equals(adapter))) throw new IOException("未知插件移植适配器");
+                || "bttwoo-v1".equals(adapter)
+                || "t4-v1".equals(adapter))) throw new IOException("未知插件移植适配器");
+        if ("t4-v1".equals(adapter)
+                ? extension == null
+                        || extension.trim().isEmpty()
+                        || extension.getBytes("UTF-8").length > 16 * 1024
+                : extension != null) throw new IOException("插件扩展配置无效");
         if (artifact.length == 0 || artifact.length > 16 * 1024 * 1024)
             throw new IOException("移植插件包超过大小限制");
         String artifactHash = hash(artifact);
@@ -263,6 +278,7 @@ public final class CatPawHost {
                         .put("version", 1)
                         .put("adapter", adapter)
                         .put("artifactHash", artifactHash)
+                        .put("extension", extension)
                         .toString()
                         .getBytes("UTF-8");
         String target = start() + "/_port-bootstrap";

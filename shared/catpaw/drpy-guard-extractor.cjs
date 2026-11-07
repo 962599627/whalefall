@@ -261,6 +261,27 @@ function extractKnownPlugin(bytes, adapter = 'dm84-v1') {
     return { origin: origin.origin, mediaBase: mediaBase.href,
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36' };
   }
+  if (adapter === 'appgz-v1') {
+    const className = 'Lcom/github/catvod/spider/Appgz;';
+    for (const [method, hash] of Object.entries({
+      '<init>':'e2ba5a4a37b1589bab71e7901d71d012f27e9c31230b39229752158d90907b4a',
+      'N':'2cb95ba3ee3db3f7d155ae38bdd39d8b2d4173889c8a1ee090ad9f243d620942',
+      'tF':'b0a670647f413a02a78fc1629ae8bfe0b909da50978e7dc1d843f91f0e7a7210',
+      'init':'e03aceb447f2bf177f591f8faa58665755fa1e93788d04f1bfcee0f8ac56c9c3',
+      'playerContent':'627d2eb2e82b2533258475479ed3757463116f4bf1283fe9f26da5bef49ee48a'
+    })) reader.reviewedCode(className, method, hash);
+    const values = reader.reviewedShortArray(className, '73ceb72abb62d4326e733c8d9659e17aef072981e30718f346bf2f657bb83e6e', 'short', 38, 3104);
+    const decode = (start, length, mask) => String.fromCharCode(...values.slice(start, start + length).map(value => value ^ mask));
+    const origin = endpoint(decode(1206,24,2160));
+    if (origin.pathname !== '/' || origin.search) fail();
+    const config = {origin:origin.origin,privateKey:decode(16,848,1726),publicKey:decode(864,216,1351),
+      signatureSuffix:decode(1508,36,604),utdidKey:decode(1857,44,3163),headers:{
+        'User-Agent':decode(1090,13,2573),'Version':decode(1110,7,2770),'PackageName':decode(1128,44,1606),
+        'Ver':decode(1175,7,1803),'api-ver':decode(1175,7,1803),'code':decode(1193,6,2818)}};
+    if (![config.privateKey,config.publicKey].every(v=>/^[A-Za-z0-9+/]+={0,2}$/.test(v)) ||
+        Object.values(config.headers).some(v=>!v||/[\r\n\0]/.test(v))) fail();
+    return config;
+  }
   if (adapter === 'bttwoo-v1') {
     const className = 'Lcom/github/catvod/spider/Bttwoo;';
     reader.reviewedCode(className, '<init>', 'c47d9c1c569855288c1bf15c852120bb3c99c9bee1ccba4d9c8d93088f61094b');

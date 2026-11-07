@@ -43,6 +43,12 @@ def main():
     shutil.copytree(framework, APP/'Frameworks/NodeMobile.framework', dirs_exist_ok=True)
     shutil.copytree(ROOT/'shared/catpaw', APP/'runtime', dirs_exist_ok=True)
     shutil.copyfile(ROOT/'scripts/ios_runtime/fixture.cjs', APP/'fixture.cjs')
+    # Generate the synthetic CMS rule through the production T4 adapter. The
+    # probe substitutes its authenticated local server address after startup.
+    t4 = run('node', '-e',
+        "const n=require(process.argv[1]).normalizeConfig({siteUrl:'http://fixture.invalid/api/cms',type:1});process.stdout.write(require(process.argv[2])(n));",
+        ROOT/'shared/catpaw/drpy-t4-extractor.cjs', ROOT/'shared/catpaw/drpy-t4-adapter.cjs', capture=True)
+    (APP/'t4-rule.js').write_text(t4, encoding='utf-8')
     shutil.copytree(ROOT/'android/src/main/assets/python-host', APP/'python-host', dirs_exist_ok=True)
     info = {'CFBundleIdentifier': IDENTIFIER, 'CFBundleExecutable': 'RuntimeProbe',
             'CFBundleName': 'RuntimeProbe', 'CFBundlePackageType': 'APPL',
@@ -111,7 +117,7 @@ def main():
     (OUT/'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf8')
     print(json.dumps({'passed': report['passed'], 'checks': report['checks'],
                       'runtime': report['runtime'], 'failure': report['failure']}, ensure_ascii=False))
-    if not report['passed'] or len(report['checks']) < 24:
+    if not report['passed'] or len(report['checks']) < 28:
         raise RuntimeError('iOS runtime behavior verification failed')
 
 

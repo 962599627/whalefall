@@ -131,6 +131,24 @@ static id call(NSString *base,NSString *key,NSString *method,NSArray *args) {
     NSString *keyURL=[playlist stringByReplacingOccurrencesOfString:@"kind=playlist" withString:@"kind=key"];
     NSData *range=request(keyURL,@"GET",nil,@{@"Range":@"bytes=1-2"});
     check([range isEqualToData:[NSData dataWithBytes:expected+1 length:2]],@"drpy_proxy_binary_range");
+    NSString *t4Rule=[NSString stringWithContentsOfFile:[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"t4-rule.js"] encoding:NSUTF8StringEncoding error:nil];
+    t4Rule=[t4Rule stringByReplacingOccurrencesOfString:@"http://fixture.invalid/api/cms" withString:[catBase stringByAppendingString:@"/api/cms"]];
+    NSURLComponents *local=[NSURLComponents componentsWithString:catBase];
+    NSString *localOrigin=[NSString stringWithFormat:@"%@://%@:%@",local.scheme,local.host,local.port];
+    t4Rule=[t4Rule stringByReplacingOccurrencesOfString:@"http://fixture.invalid" withString:localOrigin];
+    NSString *t4=install(root,@"drpy.json",jsonData(@{@"kind":@"drpy",@"version":@1,@"runtime":@"drpy2-ca23ffdb-1",
+      @"sourceId":[@"b" stringByPaddingToLength:64 withString:@"b" startingAtIndex:0],@"origin":[catBase stringByAppendingString:@"/api/cms"],
+      @"rule":t4Rule,@"headers":@{},@"requestTimeoutMs":@2000}));
+    NSDictionary *t4Home=call(base,t4,@"home",@[@YES]);
+    check([t4Home[@"class"] count]==1&&[t4Home[@"list"][0][@"vod_name"] isEqual:@"T4 本机影片"],@"t4_native_catalog");
+    NSDictionary *t4Category=call(base,t4,@"category",@[@"1",@2,@NO,@{}]);
+    check([t4Category[@"page"] intValue]==2&&[t4Category[@"pagecount"] intValue]==3,@"t4_native_pagination");
+    NSDictionary *t4Detail=call(base,t4,@"detail",@[@"opaque/$#?"]);
+    check([t4Detail[@"list"][0][@"vod_id"] isEqual:@"opaque/$#?"],@"t4_native_opaque_detail_id");
+    NSString *t4Media=[t4Detail[@"list"][0][@"vod_play_url"] componentsSeparatedByString:@"$"][1];
+    NSDictionary *t4Play=call(base,t4,@"play",@[@"one",t4Media,@[]]);
+    NSString *t4Playlist=[[NSString alloc] initWithData:request(t4Play[@"url"],@"GET",nil,@{}) encoding:NSUTF8StringEncoding];
+    check([t4Playlist hasPrefix:@"#EXTM3U"],@"t4_native_play_manifest");
     NSDictionary *reset=json(request([base stringByAppendingString:@"/_reset"],@"POST",@{},@{}));
     check([reset[@"reset"] boolValue],@"embedded_reset_without_process_exit");
     check([CatpawRuntimeEngine startWithRoot:root script:script ready:ready error:&error],@"native_reopen_same_root");

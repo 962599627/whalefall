@@ -362,6 +362,33 @@
       },
       "selection": "Exact reviewed artifact and code fingerprints; mismatch fails explicitly.",
       "verification": "Catalog retains original VIP exclusions; challenges fail explicitly. No device decoding claim."
+    },
+    {
+      "adapter": "appgz-v1",
+      "status": "experimental-protocol-not-device-accepted",
+      "license": "GPL-3.0-only",
+      "implementation": "Original parameterized Appgz JSON/RSA/AES interoperability adapter, distinct from the CatPaw Guazi source. Imported code is never executed; constants are data-only exact reviewed DEX slices. RSA receives only caller-provided keys and bounded 128-byte RSA blocks (1023/1024-bit modulus).",
+      "reviewedImportedArtifactSha256": "e7375830bcd065b264239e1f0e7da4c99d75abf71e1b6edf50e225ae8b0f4b7e",
+      "literalLocations": [
+        {
+          "method": "Appgz.<clinit>",
+          "codeItemSha256": "73ceb72abb62d4326e733c8d9659e17aef072981e30718f346bf2f657bb83e6e",
+          "payloadUnit": 38,
+          "elementWidth": 2,
+          "count": 3104,
+          "field": "short"
+        }
+      ],
+      "verification": "Synthetic protocol checks do not establish upstream or device playback. Source HTTP failures remain errors; no automatic identity reset, repeated registration, captcha bypass, or replacement with a different source. Android manifest ad-removal proxy behavior is not reproduced."
+    },
+    {
+      "adapter": "t4-v1",
+      "status": "implemented-pending-upstream-and-device-acceptance",
+      "license": "GPL-3.0-only",
+      "implementation": "Original CMS protocol adapter with data-only extraction of encrypted extension configuration from one reviewed user-supplied plugin. Imported native code is never executed.",
+      "reviewedImportedArtifactSha256": "e7375830bcd065b264239e1f0e7da4c99d75abf71e1b6edf50e225ae8b0f4b7e",
+      "reviewedNativeSha256": "fac9e3937d9928e437ebff79bc5164df418a6adb212494ef21c273579b045dcb",
+      "verification": "Exact artifact and native fingerprints; per-source encrypted configuration; real pagination and source identity preserved. Verification challenges and unavailable media stay explicit. No physical-device playback claim."
     }
   ]
 }

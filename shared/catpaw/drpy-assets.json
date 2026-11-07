@@ -4,8 +4,8 @@
   "files": [
     {
       "name": "drpy-worker.cjs",
-      "bytes": 11895,
-      "sha256": "a5bff41776ea086d2814cd9c407ef759cdb8b2d90dd45b3bdceb020b06ba0e92"
+      "bytes": 12130,
+      "sha256": "04761e313d229db7e80ed1d6ac2f57e1f8538570ca514119221245b7a1f69222"
     },
     {
       "name": "drpy-http.cjs",
@@ -39,13 +39,13 @@
     },
     {
       "name": "drpy-provenance.json",
-      "bytes": 14941,
-      "sha256": "1cff241bf10d0a0fc339662bb43e8a59c12b59f8a5c44123b139d8a8f91aca03"
+      "bytes": 16893,
+      "sha256": "0c55103ae399af57e87727f4194ac75f9c7f38efb723c94006ce19ff0c0f76c6"
     },
     {
       "name": "drpy-guard-extractor.cjs",
-      "bytes": 17008,
-      "sha256": "e69dcc876db8664131425869ab1e3d4f0d61d87cb0f847d7f24b6936dabd1c90"
+      "bytes": 18579,
+      "sha256": "e40cf386a6470c51a21bb0ee172aff95c62bfd33f28ede6e0c2a6f77a490b22c"
     },
     {
       "name": "drpy-dm84-adapter.cjs",
@@ -54,8 +54,8 @@
     },
     {
       "name": "drpy-bootstrap-worker.cjs",
-      "bytes": 1877,
-      "sha256": "d1ae6aa749750432bbae5559f75416b76d90606df75a1df66d8d71ccc8649fa2"
+      "bytes": 2069,
+      "sha256": "f850fef628721bacb65288640951ce3ff00aa9cd221c5724a7da76eaebdbbf0c"
     },
     {
       "name": "drpy-auete-adapter.cjs",
@@ -66,6 +66,26 @@
       "name": "drpy-bttwoo-adapter.cjs",
       "bytes": 6558,
       "sha256": "ce3c59231b1743ea3743747989907598e7ec9aa44548ae61cd24d69aba5c8009"
+    },
+    {
+      "name": "drpy-appgz-adapter.cjs",
+      "bytes": 13646,
+      "sha256": "c05b1a460e40819323b4ef1361a15321bd25cf89f62125177a797190c1a0ef9f"
+    },
+    {
+      "name": "drpy-rsa.cjs",
+      "bytes": 2363,
+      "sha256": "961cc447c8c6f817551dff5cc4728d92d171db4b169b95b76e62e41b73f4b692"
+    },
+    {
+      "name": "drpy-t4-extractor.cjs",
+      "bytes": 5880,
+      "sha256": "f66d7a1eb1d5707d4c5f201746df818c08cbbfe38d7d45d318652c63bb6c3d1b"
+    },
+    {
+      "name": "drpy-t4-adapter.cjs",
+      "bytes": 10169,
+      "sha256": "117644c6f24b5a82fce9848b847c4a56a9b9afedd410a492a1005c92df945d71"
     }
   ]
 }

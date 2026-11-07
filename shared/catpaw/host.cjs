@@ -82,21 +82,23 @@ if (!isMainThread) {
           task.cancel = null;
           if (error) reject(error); else resolve(value);
         };
-        const data = chunk => { size += chunk.length; if (size > 512) { req.resume(); done(Error('bootstrap_request')); } else chunks.push(chunk); };
+        const data = chunk => { size += chunk.length; if (size > 17 * 1024) { req.resume(); done(Error('bootstrap_request')); } else chunks.push(chunk); };
         const end = () => { try { done(null, JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch (_) { done(Error('bootstrap_request')); } };
         const failed = () => done(Error('bootstrap_cancelled'));
         const timer = setTimeout(() => { req.resume(); done(Error('bootstrap_timeout')); }, 2000);
         task.cancel = failed;
         req.on('data', data); req.once('end', end); req.once('error', failed);
       });
-      if (!body || Array.isArray(body) || Object.keys(body).sort().join(',') !== 'adapter,artifactHash,version' ||
-          body.version !== 1 || !['dm84-v1', 'auete-v1', 'bttwoo-v1'].includes(body.adapter) || typeof body.artifactHash !== 'string' || !HASH.test(body.artifactHash)) throw Error('bootstrap_request');
+      if (!body || Array.isArray(body) || Object.keys(body).sort().join(',') !==
+          (body.adapter === 't4-v1' ? 'adapter,artifactHash,extension,version' : 'adapter,artifactHash,version') ||
+          body.version !== 1 || !['dm84-v1', 'auete-v1', 'bttwoo-v1', 'appgz-v1', 't4-v1'].includes(body.adapter) || typeof body.artifactHash !== 'string' || !HASH.test(body.artifactHash) ||
+          (body.adapter === 't4-v1' && (typeof body.extension !== 'string' || !body.extension.trim() || Buffer.byteLength(body.extension) > 16 * 1024))) throw Error('bootstrap_request');
       if (res.destroyed || closing || resetting) throw Error('bootstrap_cancelled');
       const imports = path.join(root, 'imports');
       try { if (fs.lstatSync(imports).isSymbolicLink() || !fs.lstatSync(imports).isDirectory()) throw Error(); }
       catch (_) { throw Error('guard_artifact_invalid'); }
       const worker = task.worker = new Worker(path.join(__dirname, 'drpy-bootstrap-worker.cjs'), {
-        workerData: { file: path.join(imports, body.artifactHash + '.jar'), hash: body.artifactHash, adapter: body.adapter },
+        workerData: { file: path.join(imports, body.artifactHash + '.jar'), hash: body.artifactHash, adapter: body.adapter, extension: body.extension },
         resourceLimits: { maxOldGenerationSizeMb: 96, maxYoungGenerationSizeMb: 16, stackSizeMb: 2 },
         stdout: true, stderr: true,
       });

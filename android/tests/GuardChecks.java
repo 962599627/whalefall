@@ -274,7 +274,8 @@ public final class GuardChecks {
                     new String[][] {
                         {"csp_Dm84", "dm84-v1"}, {"csp_Dm84Guard", "dm84-v1"},
                         {"csp_Auete", "auete-v1"}, {"csp_AueteGuard", "auete-v1"},
-                        {"csp_Bttwoo", "bttwoo-v1"}, {"csp_BttwooGuard", "bttwoo-v1"}
+                        {"csp_Bttwoo", "bttwoo-v1"}, {"csp_BttwooGuard", "bttwoo-v1"},
+                        {"csp_T4", "t4-v1"}, {"csp_T4Guard", "t4-v1"}
                     }) {
                 Cms.Site alias = new Cms.Site();
                 alias.api = selected[0];
@@ -440,6 +441,35 @@ public final class GuardChecks {
             bttwoo.ext = new JSONObject().put("siteUrl", "");
             check(GuardEngine.eligible(bttwoo), "empty Bttwoo siteUrl keeps portable default");
             result[0] = dm84Result.toString();
+            Cms.Site t4 = new Cms.Site();
+            t4.key = site.key;
+            t4.api = "csp_T4Guard";
+            t4.type = 3;
+            t4.ext = "ZmFrZQ==";
+            check(
+                    GuardEngine.open(context, config, t4, fallback) instanceof DrpyEngine,
+                    "T4 uses local independent runtime");
+            JSONObject t4Call = calls.get(calls.size() - 1);
+            check(
+                    t4Call.getString("adapter").equals("t4-v1")
+                            && t4Call.getString("extension").equals("ZmFrZQ==")
+                            && t4Call.length() == 4,
+                    "T4 preserves exact extension in bootstrap contract");
+            int beforeInvalidExt = calls.size();
+            for (String extension :
+                    new String[] {null, "", new String(new char[6000]).replace('\0', '汉')}) {
+                rejects(
+                        () ->
+                                new CatPawHost(context)
+                                        .bootstrapGuard(artifact, "t4-v1", extension, null),
+                        "T4 missing or oversized extension rejected before request");
+            }
+            rejects(
+                    () ->
+                            new CatPawHost(context)
+                                    .bootstrapGuard(artifact, "dm84-v1", "unexpected", null),
+                    "other adapters cannot receive extra configuration");
+            check(calls.size() == beforeInvalidExt, "invalid extensions never reach bootstrap");
             File staged = new File(files, "catpaw/imports/" + digest(artifact, "SHA-256") + ".jar");
             check(
                     Arrays.equals(Files.readAllBytes(staged.toPath()), artifact),
@@ -554,7 +584,7 @@ public final class GuardChecks {
             } catch (CatPawHost.DrpySourceException expected) {
                 check(
                         expected.code.equals("drpy_verification_required")
-                                && expected.getMessage().equals("此片源搜索需要完成网站验证码，暂时无法返回结果"),
+                                && expected.getMessage().equals("此片源需要完成网站验证码，暂时无法加载"),
                         "real loopback 422 captcha has an allowlisted typed error");
             }
             drpyResponse[0] = "{\"error\":\"drpy_local_proxy_not_supported\"}";

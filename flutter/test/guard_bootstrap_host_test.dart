@@ -153,6 +153,40 @@ void main() {
     expect(await Directory('${directory.path}/state/imports').list().length, 1);
   });
 
+  test('only T4 forwards a bounded extension to the local bootstrap', () async {
+    await host.bootstrapGuard(
+      [0, 1, 255],
+      adapter: 't4-v1',
+      extension: 'ZmFrZQ==',
+    );
+    final requests = await File(
+      '${directory.path}/state/requests.txt',
+    ).readAsLines();
+    final body = (jsonDecode(requests.single) as Map)['body'] as Map;
+    expect(body['adapter'], 't4-v1');
+    expect(body['extension'], 'ZmFrZQ==');
+    expect(body.keys.toSet(), {
+      'version',
+      'adapter',
+      'artifactHash',
+      'extension',
+    });
+    for (final invalid in [null, '', '汉' * 6000]) {
+      await expectLater(
+        host.bootstrapGuard([1], adapter: 't4-v1', extension: invalid),
+        throwsFormatException,
+      );
+    }
+    await expectLater(
+      host.bootstrapGuard([1], extension: 'ZmFrZQ=='),
+      throwsFormatException,
+    );
+    expect(
+      await File('${directory.path}/state/requests.txt').readAsLines(),
+      hasLength(1),
+    );
+  });
+
   test(
     'invalid adapter and input are rejected before starting the host',
     () async {
@@ -320,7 +354,7 @@ void main() {
         throwsA(
           isA<DrpySourceException>()
               .having((e) => e.code, 'code', 'drpy_verification_required')
-              .having((e) => e.message, 'message', '此片源搜索需要完成网站验证码，暂时无法返回结果'),
+              .having((e) => e.message, 'message', '此片源需要完成网站验证码，暂时无法加载'),
         ),
       );
       await expectLater(

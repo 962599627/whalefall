@@ -18,23 +18,26 @@ class PortHost extends CatPawHost {
   Map<String, Object?>? playback;
   Map<String, dynamic>? manifest;
   final adapters = <String>[];
+  final extensions = <String?>[];
   final installed = <String, Map<String, dynamic>>{};
   final invoked = <Map<String, dynamic>>[];
   @override
   Future<Map<String, dynamic>> bootstrapGuard(
     List<int> bytes, {
     String adapter = 'dm84-v1',
+    String? extension,
     Completer<void>? cancellation,
   }) async {
     bootstraps++;
     adapters.add(adapter);
+    extensions.add(extension);
     if (failure != null)
       throw GuardBootstrapException(failure!, 'Synthetic bootstrap failure');
     return {
       'version': 1,
       'origin': 'https://catalogue.invalid/',
       'rule':
-          'var rule={title:"$adapter fixture",host:"https://catalogue.invalid"};',
+          'var rule={title:${jsonEncode('$adapter fixture ${extension ?? ''}')},host:"https://catalogue.invalid"};',
     };
   }
 
@@ -100,6 +103,8 @@ void main() {
         'csp_Auete',
         'csp_BttwooGuard',
         'csp_Bttwoo',
+        'csp_T4Guard',
+        'csp_T4',
       ]) {
         final source = site(
           'https://import.invalid/plugin.jar',
@@ -112,6 +117,8 @@ void main() {
         'csp_AueteOtherGuard',
         'csp_BttwooOtherGuard',
         'csp_Dm84Guard/extra',
+        'csp_T4OtherGuard',
+        'csp_AppgzGuard',
       ]) {
         final source = site(
           'https://import.invalid/plugin.jar',
@@ -130,6 +137,41 @@ void main() {
       );
       expect(downloads, 0);
       expect(host.bootstraps, 0);
+    },
+  );
+
+  test(
+    'T4 extension is forwarded and separates cached configuration',
+    () async {
+      final host = PortHost();
+      var downloads = 0;
+      final guard = GuardSource(
+        host: host,
+        drpy: DrpySource(host: host, read: (_, __) async => ''),
+        read: (_, __) async {
+          downloads++;
+          return bytes;
+        },
+      );
+      final first = site(
+        'https://import.invalid/plugin.jar',
+      ).copyWith(api: 'csp_T4Guard', ext: 'Zmlyc3Q=');
+      final second = first.copyWith(ext: 'c2Vjb25k');
+      await guard.invoke(first, 'home', [false]);
+      final firstRule = host.invoked.last['rule'];
+      await guard.invoke(second, 'home', [false]);
+      expect(host.invoked.last['rule'], isNot(firstRule));
+      await guard.invoke(first.copyWith(api: 'csp_T4'), 'home', [false]);
+      expect(host.invoked.last['rule'], firstRule);
+      expect(host.extensions, ['Zmlyc3Q=', 'c2Vjb25k']);
+      expect(downloads, 2);
+      for (final invalid in ['', '汉' * 6000]) {
+        await expectLater(
+          guard.invoke(first.copyWith(ext: invalid), 'home', [false]),
+          throwsFormatException,
+        );
+      }
+      expect(downloads, 2);
     },
   );
 
