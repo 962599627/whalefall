@@ -52,6 +52,16 @@ def build(source, ndk, output, arch):
             raise ValueError('Upstream c-ares feature patch context changed: '+feature)
         features = features.replace(old, f'#if __ANDROID_API__ >= {api}\n{old}#endif\n')
     cares.write_text(features)
+    # V8's inspector used basic_string<uint16_t>, which libc++ 19 no longer
+    # supports. Backport the upstream char16_t fix rather than changing the NDK
+    # or weakening the 16 KB checks. The FreeBSD Node 18 backport preserves the
+    # uint16_t protocol boundaries with explicit compatibility overloads.
+    patch = Path(__file__).with_name('v8-char16-libcxx19.patch')
+    patch_sha = hashlib.sha256(patch.read_bytes()).hexdigest()
+    if patch_sha != 'e2b3e182bcade38f99e26ebb2bd9c3086d48dcd0b1fbec3fb59ea8f08ffca40c':
+        raise ValueError('Unexpected V8 compatibility patch')
+    subprocess.run(['git', 'apply', '--check', '-p0', str(patch)], cwd=source, check=True)
+    subprocess.run(['git', 'apply', '-p0', str(patch)], cwd=source, check=True)
     env = dict(os.environ, CC_host=str(toolchain/'bin/clang'), CXX_host=str(toolchain/'bin/clang++'),
                LDFLAGS='-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384',
                PATH=str(toolchain/'bin')+os.pathsep+os.environ['PATH'])
@@ -72,7 +82,7 @@ def build(source, ndk, output, arch):
         shutil.copy2(path, target/name)
         records.append({'name': name, 'sha256': hashlib.sha256(data).hexdigest(), **evidence})
     shutil.copy2(source/'LICENSE', output/'LICENSE')
-    (output/f'provenance-{abi}.json').write_text(json.dumps({'source': 'https://github.com/nodejs-mobile/nodejs-mobile', 'commit': SOURCE_COMMIT, 'ndk': NDK_VERSION, 'api': 23, 'abi': abi, 'libraries': records}, indent=2)+'\n')
+    (output/f'provenance-{abi}.json').write_text(json.dumps({'source': 'https://github.com/nodejs-mobile/nodejs-mobile', 'commit': SOURCE_COMMIT, 'ndk': NDK_VERSION, 'api': 23, 'abi': abi, 'v8_char16_patch_sha256': patch_sha, 'libraries': records}, indent=2)+'\n')
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ on:
     branches: ['fix/plugin-ports-16kb-*']
     paths:
       - '.github/workflows/catpaw-native.yml'
-      - 'scripts/native/build_catpaw_node.py'
+      - 'scripts/native/**'
 permissions:
   contents: read
 jobs:
