@@ -20,6 +20,7 @@ on:
       - '.github/workflows/ios-runtime.yml'
       - 'scripts/ios_runtime/**'
       - 'scripts/fixtures/python_*'
+      - 'scripts/fixtures/catvod_native_*'
       - 'scripts/run_ios_runtime_probe.py'
       - 'flutter/packages/catpaw_runtime/ios/Classes/**'
       - 'flutter/packages/quickjs_engine/**'

@@ -41,6 +41,9 @@ flutter:
     - shaders/glasswork.frag
   assets:
     - assets/js-host/module-interop.js
+    - assets/js-host/catvod.mjs
+    - assets/js-host/crypto-js.js
+    - assets/js-host/crypto.LICENSE
     - assets/catpaw/
     - assets/python-host/
     - assets/logo_mark.png

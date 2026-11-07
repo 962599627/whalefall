@@ -361,13 +361,13 @@ export default class {
           entry: entry,
           modules: {
             entry:
-                "import {Spider} from 'catvod'; export default class extends Spider {homeContent(){return {}}}",
+                "import {Spider} from 'catvod:host'; export default class extends Spider {homeContent(){return {}}}",
           },
           method: 'home',
           arguments: [],
         ).timeout(const Duration(seconds: 3)),
         throwsA(
-          isA<StateError>().having(
+          isA<FormatException>().having(
             (error) => error.message.toString(),
             'reason',
             contains('CatVod'),

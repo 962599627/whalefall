@@ -30,6 +30,14 @@ public final class JsEngine implements SourceEngine {
 
     private static final ConcurrentHashMap<String, JsEngine> ACTIVE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, JsEngine> CURRENT = new ConcurrentHashMap<>();
+    private static final ScheduledThreadPoolExecutor REQUEST_TIMEOUTS =
+            new ScheduledThreadPoolExecutor(
+                    1,
+                    r -> {
+                        Thread t = new Thread(r, "movie-catvod-http-deadline");
+                        t.setDaemon(true);
+                        return t;
+                    });
     private final String proxyKey = UUID.randomUUID().toString().replace("-", "");
     private final Application app;
     private final Cms.Site site;
@@ -62,6 +70,9 @@ public final class JsEngine implements SourceEngine {
     private volatile long deadline;
     private boolean catApi;
     private boolean pythonSource;
+    private boolean catvodModule;
+    private volatile boolean initialized;
+    private volatile boolean failedOperation;
 
     static boolean isCommonJs(String source) {
         return java.util.regex.Pattern.compile(
@@ -113,6 +124,7 @@ public final class JsEngine implements SourceEngine {
                         return null;
                     });
         } catch (Exception e) {
+            failedOperation = true;
             close();
             throw e;
         }
@@ -131,11 +143,13 @@ public final class JsEngine implements SourceEngine {
         try {
             return pending.get(48, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
+            failedOperation = true;
             operation.cancel();
             pending.cancel(true);
             Thread.currentThread().interrupt();
             throw e;
         } catch (TimeoutException e) {
+            failedOperation = true;
             operation.cancel();
             pending.cancel(true);
             close();
@@ -163,18 +177,27 @@ public final class JsEngine implements SourceEngine {
         activeOperation = state;
         Runnable cancelled = state::cancel;
         RequestScope.onCancel(cancelled);
+        boolean unhandledCatvodFailure = false;
         try {
             armDeadline();
             return job.call();
+        } catch (Exception | Error failure) {
+            if (catvodModule) {
+                failedOperation = true;
+                unhandledCatvodFailure = true;
+            }
+            throw failure;
         } finally {
             RequestScope.offCancel(cancelled);
             int reason = state.operation == null ? 0 : state.operation.finish();
             activeOperation = null;
             if (reason != 0) {
+                failedOperation = true;
                 close();
                 throw new IOException(
                         reason == 1 ? "脚本执行超过时间限制，已关闭此来源；请重试重新加载" : "脚本请求已取消，已关闭此来源；请重试重新加载");
             }
+            if (unhandledCatvodFailure) close();
         }
     }
 
@@ -192,6 +215,22 @@ public final class JsEngine implements SourceEngine {
         context.setMaxStackSize(512 * 1024);
         JSObject global = context.getGlobalObject();
         bind(global, "__hostRequest", a -> request(string(a, 0), string(a, 1)));
+        global.setProperty(
+                "__hostCatvodRequest",
+                (JSCallFunction)
+                        args -> {
+                            try {
+                                return request(string(args, 0), string(args, 1), true);
+                            } catch (Exception failure) {
+                                // Throw on the JavaScript side so net.req/json can implement
+                                // their error contract without depending on JNI exception mapping.
+                                return "{\"__movieTransportError\":"
+                                        + JSONObject.quote(
+                                                "CatVod request failed: "
+                                                        + failure.getClass().getSimpleName())
+                                        + "}";
+                            }
+                        });
         bind(
                 global,
                 "__hostStorage",
@@ -243,11 +282,26 @@ public final class JsEngine implements SourceEngine {
         global.setProperty("__proxyAddress", proxyAddress(false));
         context.evaluate(asset("js-host/bootstrap.js"), "host-bootstrap.js");
         context.evaluate(proxyHelpers(), "host-proxy.js");
+        context.evaluate(
+                "(()=>{const request=__hostCatvodRequest,base="
+                        + JSONObject.quote(proxyAddress(false))
+                        + ";const proxy=params=>{let url=base;for(const key of Object.keys(params)){"
+                        + "if(['do','site','sitekey','_mm_token'].includes(key.toLowerCase()))throw new TypeError('reserved proxy parameter');"
+                        + "if(typeof params[key]!=='string')throw new TypeError('proxy values must be strings');"
+                        + "url+='&'+encodeURIComponent(key)+'='+encodeURIComponent(params[key]);}return url;};"
+                        + "Object.defineProperty(globalThis,'__movieCatvodBridge',{value:Object.freeze({siteKey:"
+                        + JSONObject.quote(proxyKey)
+                        + ",request:(url,options)=>{const result=JSON.parse(request(url,JSON.stringify(options)));"
+                        + "if(result.__movieTransportError)throw new Error(result.__movieTransportError);return result;},"
+                        + "proxyUrl:params=>proxy(params)}),writable:false,configurable:false});})();",
+                "catvod-bridge.js");
         context.evaluate(asset("js-host/module-interop.js"), "module-interop.js");
         context.evaluate(asset("js-host/crypto-js.js"), "crypto-js.js");
         context.setModuleLoader(
                 new QuickJSContext.DefaultModuleLoader() {
                     public String moduleNormalizeName(String parent, String name) {
+                        if (name.equals("catvod") || name.equals("marco:catvod-crypto"))
+                            return name;
                         if (name.startsWith("assets://")
                                 || Cms.isHttp(name)
                                 || name.startsWith("file://")) return name;
@@ -383,6 +437,7 @@ public final class JsEngine implements SourceEngine {
                         + ");if(typeof __movieSpider.getRule==='function'){const r=await __movieSpider.getRule();if(!r||(!r.host&&!r.title&&!r.class_name))throw new Error('DRPY rule failed to initialize');}})()",
                 "source-init.js");
         checkBudget();
+        initialized = true;
     }
 
     private String commonJsModule(String reference, String parent) throws Exception {
@@ -461,7 +516,15 @@ public final class JsEngine implements SourceEngine {
         String found = modules.get(name);
         if (found != null) return found;
         if (modules.size() >= 64) throw new IOException("JS 模块数量超过限制");
-        if (name.equals("assets://js/lib/cheerio.min.js"))
+        if (name.equals("catvod")) {
+            catvodModule = true;
+            found = asset("js-host/catvod.mjs");
+        } else if (name.equals("marco:catvod-crypto"))
+            found =
+                    "const module={exports:{}};let exports=module.exports;\n"
+                            + asset("js-host/crypto-js.js")
+                            + "\nexport default module.exports;";
+        else if (name.equals("assets://js/lib/cheerio.min.js"))
             found = asset("js-host/cheerio-bridge.mjs");
         else if (name.equals("assets://js/lib/crypto-js.js"))
             found = "export default globalThis.CryptoJS;";
@@ -510,12 +573,79 @@ public final class JsEngine implements SourceEngine {
     }
 
     private String request(String address, String options) throws Exception {
+        return request(address, options, false);
+    }
+
+    private static void validateCatvodOptions(JSONObject options) throws IOException {
+        Set<String> keys =
+                new HashSet<>(
+                        Arrays.asList(
+                                "method",
+                                "headers",
+                                "buffer",
+                                "redirect",
+                                "timeout",
+                                "cookie",
+                                "bodyBase64",
+                                "callTimeout"));
+        Iterator<String> names = options.keys();
+        while (names.hasNext())
+            if (!keys.contains(names.next())) throw new IOException("CatVod 请求参数不支持");
+        if (!(options.opt("method") instanceof String)
+                || !(options.opt("headers") instanceof JSONObject)
+                || !Boolean.FALSE.equals(options.opt("cookie")))
+            throw new IOException("CatVod 请求参数格式错误");
+        for (String key : new String[] {"buffer", "redirect", "timeout", "callTimeout"}) {
+            if (key.equals("callTimeout") && !options.has(key)) continue;
+            Object number = options.opt(key);
+            if (!(number instanceof Integer || number instanceof Long))
+                throw new IOException("CatVod 请求数值参数错误");
+            long value = ((Number) number).longValue();
+            if (key.equals("buffer")
+                    ? value != 2
+                    : key.equals("redirect")
+                            ? value < 0 || value > 1
+                            : value < 1 || value > Integer.MAX_VALUE)
+                throw new IOException("CatVod 请求数值参数越界");
+        }
+        JSONObject headers = options.optJSONObject("headers");
+        if (headers.toString().length() > 32768) throw new IOException("CatVod 请求头过大");
+        names = headers.keys();
+        while (names.hasNext()) {
+            String name = names.next();
+            Object value = headers.opt(name);
+            if (!name.matches("[!#$%&'*+.^_`|~0-9a-z-]+")
+                    || !(value instanceof String)
+                    || ((String) value).matches("(?s).*[\\r\\n\\x00].*")
+                    || Arrays.asList(
+                                    "host",
+                                    "content-length",
+                                    "connection",
+                                    "transfer-encoding",
+                                    "upgrade",
+                                    "trailer",
+                                    "te",
+                                    "proxy-connection")
+                            .contains(name)) throw new IOException("CatVod 请求头格式不支持");
+        }
+    }
+
+    private String request(String address, String options, boolean catvod) throws Exception {
         checkBudget();
         JSONObject opts = new JSONObject(options.isEmpty() ? "{}" : options);
+        if (catvod) validateCatvodOptions(opts);
         JSONObject inputHeaders = opts.optJSONObject("headers");
         String method = opts.optString("method", "GET").toUpperCase(Locale.ROOT);
-        if (!Arrays.asList("GET", "POST", "HEAD", "PUT", "DELETE", "PATCH").contains(method))
-            throw new IOException("不支持的请求方式");
+        if (!Arrays.asList("GET", "POST", "HEAD", "PUT", "DELETE", "PATCH").contains(method)
+                && !(catvod && method.equals("OPTIONS"))) throw new IOException("不支持的请求方式");
+        final long requestDeadline =
+                catvod && opts.has("callTimeout")
+                        ? Math.min(
+                                deadline,
+                                System.nanoTime()
+                                        + TimeUnit.MILLISECONDS.toNanos(
+                                                opts.getLong("callTimeout")))
+                        : deadline;
         URL next = new URL(Cms.normalizeHttp(address));
         String urlAuthorization = null;
         if (next.getUserInfo() != null) {
@@ -525,7 +655,7 @@ public final class JsEngine implements SourceEngine {
             // Credentials belong in the header, never in a transport or returned response URL.
             next = new URL(next.getProtocol(), next.getHost(), next.getPort(), next.getFile());
         }
-        boolean forwardCookies = true;
+        boolean forwardCookies = !catvod;
         byte[] body = null;
         Object payload = opts.opt("body");
         if (payload == null) payload = opts.opt("data");
@@ -561,12 +691,20 @@ public final class JsEngine implements SourceEngine {
         } else if (payload != null && payload != JSONObject.NULL)
             body = String.valueOf(payload).getBytes("UTF-8");
         if (body != null && body.length > maxRequestBytes) throw new IOException("脚本请求体过大");
+        if (catvod && body != null && (method.equals("GET") || method.equals("HEAD")))
+            throw new IOException("CatVod 请求方法不能携带正文");
         for (int redirect = 0; redirect < 6; redirect++) {
             checkBudget();
+            if (catvod && System.nanoTime() >= requestDeadline)
+                throw new SocketTimeoutException("CatVod 请求超时");
             HttpURLConnection connection = (HttpURLConnection) next.openConnection();
             connection.setInstanceFollowRedirects(false);
             int remaining =
-                    (int) Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
+                    (int)
+                            Math.max(
+                                    1,
+                                    TimeUnit.NANOSECONDS.toMillis(
+                                            requestDeadline - System.nanoTime()));
             int requested = opts.optInt("timeout", 15000);
             int timeout =
                     Math.max(
@@ -601,8 +739,13 @@ public final class JsEngine implements SourceEngine {
                             && connection.getRequestProperty(h.getKey()) == null)
                         connection.setRequestProperty(
                                 h.getKey(), android.text.TextUtils.join("; ", h.getValue()));
+            ScheduledFuture<?> transportDeadline = null;
             try {
                 RequestScope.attach(connection);
+                if (catvod)
+                    transportDeadline =
+                            REQUEST_TIMEOUTS.schedule(
+                                    connection::disconnect, remaining, TimeUnit.MILLISECONDS);
                 if (body != null && !method.equals("GET") && !method.equals("HEAD")) {
                     connection.setDoOutput(true);
                     try (OutputStream output = connection.getOutputStream()) {
@@ -610,7 +753,7 @@ public final class JsEngine implements SourceEngine {
                     }
                 }
                 int code = connection.getResponseCode();
-                cookies.put(uri, connection.getHeaderFields());
+                if (!catvod) cookies.put(uri, connection.getHeaderFields());
                 if (Arrays.asList(301, 302, 303, 307, 308).contains(code)
                         && opts.optInt("redirect", 1) != 0) {
                     String location = connection.getHeaderField("Location");
@@ -667,8 +810,10 @@ public final class JsEngine implements SourceEngine {
                 if (stream == null) bytes = new byte[0];
                 else
                     try (InputStream in = stream) {
-                        bytes = read(in, 8 * 1024 * 1024);
+                        bytes = read(in, catvod ? 6 * 1024 * 1024 : 8 * 1024 * 1024);
                     }
+                if (catvod && System.nanoTime() >= requestDeadline)
+                    throw new SocketTimeoutException("CatVod 请求超时");
                 JSONObject response = new JSONObject();
                 response.put("code", code);
                 response.put("headers", headers);
@@ -692,6 +837,13 @@ public final class JsEngine implements SourceEngine {
                 }
                 return response.toString();
             } finally {
+                if (transportDeadline != null) {
+                    transportDeadline.cancel(false);
+                    // API 23-compatible removal avoids retaining completed connections
+                    // (and their buffers) until the original operation deadline.
+                    if (transportDeadline instanceof Runnable)
+                        REQUEST_TIMEOUTS.remove((Runnable) transportDeadline);
+                }
                 RequestScope.detach(connection);
                 connection.disconnect();
             }
@@ -999,17 +1151,41 @@ public final class JsEngine implements SourceEngine {
             CURRENT.remove(site.key, this);
         }
         OperationState running = activeOperation;
+        boolean destroySource = initialized && catvodModule && !failedOperation && running == null;
         if (running != null) running.cancel();
         try {
             executor.execute(
                     () -> {
-                        if (nativeDeadline != null) {
-                            nativeDeadline.close();
-                            nativeDeadline = null;
-                        }
-                        if (context != null) {
-                            context.destroy();
-                            context = null;
+                        try {
+                            if (destroySource
+                                    && !failedOperation
+                                    && context != null
+                                    && nativeDeadline != null) {
+                                QuickJsDeadline.Operation cleanup =
+                                        nativeDeadline.begin(Math.min(500, operationTimeoutMillis));
+                                try {
+                                    // Route is already revoked and all host calls reject closed
+                                    // sources.
+                                    // Cleanup cannot start new network work or revive a cancelled
+                                    // source.
+                                    evaluateSettled(
+                                            context,
+                                            "typeof __movieSpider.destroy==='function'?__movieSpider.destroy():undefined",
+                                            "source-destroy.js");
+                                } finally {
+                                    cleanup.finish();
+                                }
+                            }
+                        } catch (Exception ignored) {
+                        } finally {
+                            if (nativeDeadline != null) {
+                                nativeDeadline.close();
+                                nativeDeadline = null;
+                            }
+                            if (context != null) {
+                                context.destroy();
+                                context = null;
+                            }
                         }
                     });
         } catch (RejectedExecutionException ignored) {

@@ -61,6 +61,7 @@ jobs:
           python android/tests/run_tv_input_checks.py
           python android/tests/run_python_package_checks.py
           python android/tests/run_script_proxy_checks.py
+          python android/tests/run_catvod_transport_checks.py
           python android/tests/run_update_checks.py
           python scripts/test_movie_mirror.py
           python scripts/test_native_elf.py
@@ -68,6 +69,7 @@ jobs:
       - name: Shared script runtime and native patch checks
         run: |
           node scripts/test_js_module_interop.cjs
+          node --jitless scripts/test_catvod_profile.cjs
           node scripts/test_python_host.js
           node scripts/test_python_json.js
           node scripts/test_python_io.js

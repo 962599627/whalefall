@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStreamReader;
 import java.io.InputStream;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.HttpURLConnection;
@@ -435,6 +436,243 @@ public final class SourceHostProbe extends Instrumentation {
     }
 
     /** Two loopback requests only; independent of device Wi-Fi and mobile data. */
+    static final class CatvodHttpServer implements AutoCloseable {
+        final ServerSocket listener = new ServerSocket(0, 4, InetAddress.getByName("127.0.0.1"));
+        final Thread thread;
+        volatile Throwable error;
+        volatile boolean closing;
+        volatile boolean destroyRequested;
+
+        CatvodHttpServer() throws Exception {
+            listener.setSoTimeout(10000);
+            thread =
+                    new Thread(
+                            () -> {
+                                while (!closing) {
+                                    try (Socket socket = listener.accept()) {
+                                        socket.setSoTimeout(3000);
+                                        InputStream input = socket.getInputStream();
+                                        ByteArrayOutputStream header = new ByteArrayOutputStream();
+                                        int end = 0;
+                                        while (end != 0x0d0a0d0a) {
+                                            int value = input.read();
+                                            if (value < 0 || header.size() >= 8192)
+                                                throw new IOException(
+                                                        "invalid HTTP fixture headers");
+                                            header.write(value);
+                                            end = (end << 8) | value;
+                                        }
+                                        String[] lines =
+                                                new String(header.toByteArray(), "US-ASCII")
+                                                        .split("\r\n");
+                                        String[] first = lines[0].split(" ");
+                                        int length = 0;
+                                        String cookie = "", type = "";
+                                        for (String line : lines) {
+                                            String lower = line.toLowerCase(Locale.ROOT);
+                                            if (lower.startsWith("content-length:"))
+                                                length =
+                                                        Integer.parseInt(line.substring(15).trim());
+                                            if (lower.startsWith("cookie:"))
+                                                cookie = line.substring(7).trim();
+                                            if (lower.startsWith("content-type:"))
+                                                type = line.substring(13).trim();
+                                        }
+                                        if (length < 0 || length > 4096)
+                                            throw new IOException("fixture request too large");
+                                        byte[] body = new byte[length];
+                                        for (int offset = 0; offset < length; ) {
+                                            int n = input.read(body, offset, length - offset);
+                                            if (n < 0)
+                                                throw new IOException("truncated fixture body");
+                                            offset += n;
+                                        }
+                                        if (first[1].equals("/destroy")) destroyRequested = true;
+                                        if (first[1].equals("/slow")) {
+                                            Thread.sleep(180);
+                                            continue;
+                                        }
+                                        boolean binary = first[1].equals("/binary");
+                                        JSONObject response =
+                                                new JSONObject()
+                                                        .put("method", first[0])
+                                                        .put("body", new String(body, "UTF-8"))
+                                                        .put("cookie", cookie)
+                                                        .put("type", type);
+                                        byte[] reply =
+                                                binary
+                                                        ? body
+                                                        : response.toString().getBytes("UTF-8");
+                                        OutputStream output = socket.getOutputStream();
+                                        output.write(
+                                                ("HTTP/1.1 200 OK\r\nContent-Type: "
+                                                                + (binary
+                                                                        ? "application/octet-stream"
+                                                                        : "application/json; charset=utf-8")
+                                                                + "\r\nContent-Length: "
+                                                                + reply.length
+                                                                + "\r\nConnection: close\r\n"
+                                                                + (first[1].equals("/seed")
+                                                                        ? "Set-Cookie: legacy=retained; Path=/\r\n"
+                                                                        : "")
+                                                                + "\r\n")
+                                                        .getBytes("US-ASCII"));
+                                        output.write(reply);
+                                        output.flush();
+                                    } catch (Throwable failure) {
+                                        if (!closing) error = failure;
+                                        return;
+                                    }
+                                }
+                            },
+                            "catvod-loopback");
+            thread.setDaemon(true);
+            thread.start();
+        }
+
+        @Override
+        public void close() throws Exception {
+            closing = true;
+            listener.close();
+            thread.join(1000);
+        }
+    }
+
+    void exerciseCatvodContract() throws Exception {
+        Application app = (Application) getTargetContext().getApplicationContext();
+        try (CatvodHttpServer server = new CatvodHttpServer();
+                LocalProxy proxy = new LocalProxy(app, new Cms.Config())) {
+            String base = "http://127.0.0.1:" + server.listener.getLocalPort();
+            int unavailable;
+            try (ServerSocket closedPort =
+                    new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+                unavailable = closedPort.getLocalPort();
+            }
+            write("catvod.js", "throw Error('local file must not override app catvod');");
+            write(
+                    "catvod-helper.mjs",
+                    "import {net,md5X,sha256X} from 'catvod';export const nested=(u,o)=>net.json(u,o);export const digests=()=>[md5X('abc'),sha256X('abc')];");
+            String source =
+                    "import {Spider,net} from 'catvod';\nimport {nested,digests} from './catvod-helper.mjs';\n"
+                            + "export default class Local extends Spider {#state=7;init(ext){this.config=JSON.parse(ext);}"
+                            + "async homeContent(){const b=this.config.base;"
+                            + "const json=await nested(b+'/json',{method:'POST',data:{title:'本机'}});"
+                            + "const form=await net.json(b+'/form',{method:'POST',postType:'form',data:{q:' a b '}});"
+                            + "const binary=await net.req(b+'/binary',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:[0,255,128,65],buffer:3});"
+                            + "req(b+'/seed');const old=JSON.parse(req(b+'/echo').content);"
+                            + "const clean=await net.json(b+'/echo');const explicit=await net.json(b+'/echo',{headers:{Cookie:'explicit=yes'}});"
+                            + "const options=await net.json(b+'/echo',{method:'OPTIONS'});"
+                            + "const failed=await net.req(this.config.unavailable,{timeout:200});let jsonThrows=false;try{await net.json(this.config.unavailable,{timeout:200});}catch(e){jsonThrows=true;}"
+                            + "const timeout=await net.req(b+'/slow',{timeout:1000,callTimeout:50});"
+                            + "let remoteProxy=false;try{this.proxyUrl({},false);}catch(e){remoteProxy=true;}"
+                            + "return {json,form,bytes:Array.from(new Uint8Array(binary.content)),isBuffer:binary.content instanceof ArrayBuffer,old:old.cookie,clean:clean.cookie,explicit:explicit.cookie,method:options.method,failed:!!failed.error,jsonThrows,timeout:!!timeout.error,remoteProxy,hashes:digests(),key:this.siteKey,state:this.#state};}"
+                            + "playerContent(){const previous=globalThis.__proxyAddress;try{globalThis.__proxyAddress='https://fixture.invalid/not-local';return {url:this.proxyUrl({ticket:'local'})};}finally{globalThis.__proxyAddress=previous;}}"
+                            + "proxy(p){return [200,'application/octet-stream',new Uint8Array([0,255,128,65]).buffer,{'X-Count':String(this.#state)}];}"
+                            + "async destroy(){await net.req(this.config.base+'/destroy');while(true){}}}";
+            JSONObject extension =
+                    new JSONObject()
+                            .put("base", base)
+                            .put("unavailable", "http://127.0.0.1:" + unavailable + "/offline");
+            JsEngine engine = engine("catvod-main.mjs", source, 45000, extension);
+            JSONObject home = new JSONObject(engine.home());
+            check(
+                    "catvod_nested_module_class_identity",
+                    home.getInt("state") == 7 && home.getString("key").matches("[0-9a-f]{32}"));
+            check(
+                    "catvod_json_utf8_post",
+                    new JSONObject(home.getJSONObject("json").getString("body"))
+                                    .getString("title")
+                                    .equals("本机")
+                            && home.getJSONObject("json")
+                                    .getString("type")
+                                    .startsWith("application/json"));
+            check(
+                    "catvod_form_post",
+                    home.getJSONObject("form").getString("body").equals("q=a%20b")
+                            && home.getJSONObject("form")
+                                    .getString("type")
+                                    .equals("application/x-www-form-urlencoded"));
+            check(
+                    "catvod_binary_arraybuffer_roundtrip",
+                    home.getBoolean("isBuffer")
+                            && home.getJSONArray("bytes").toString().equals("[0,255,128,65]"));
+            check(
+                    "catvod_cookie_isolated_from_legacy_req",
+                    home.getString("old").contains("legacy=retained")
+                            && home.getString("clean").isEmpty()
+                            && home.getString("explicit").equals("explicit=yes"));
+            check("catvod_options_method", home.getString("method").equals("OPTIONS"));
+            check(
+                    "catvod_transport_error_contract",
+                    home.getBoolean("failed")
+                            && home.getBoolean("jsonThrows")
+                            && home.getBoolean("timeout"));
+            check(
+                    "catvod_crypto_and_local_proxy_contract",
+                    home.getJSONArray("hashes")
+                                    .getString(0)
+                                    .equals("900150983cd24fb0d6963f7d28e17f72")
+                            && home.getJSONArray("hashes")
+                                    .getString(1)
+                                    .equals(
+                                            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+                            && home.getBoolean("remoteProxy"));
+            engine.activate();
+            String address = new JSONObject(engine.player("line", "id")).getString("url");
+            ProxyResult proxied = proxyRequest(address, "GET", null);
+            check(
+                    "catvod_proxy_retains_instance_and_binary",
+                    proxied.status == 200
+                            && "7".equals(proxied.count)
+                            && Arrays.equals(
+                                    proxied.body, new byte[] {0, (byte) 255, (byte) 128, 65}));
+            java.lang.reflect.Field field = JsEngine.class.getDeclaredField("executor");
+            field.setAccessible(true);
+            java.util.concurrent.ExecutorService executor =
+                    (java.util.concurrent.ExecutorService) field.get(engine);
+            long started = System.nanoTime();
+            engine.close();
+            engine.close();
+            boolean released = executor.awaitTermination(3, java.util.concurrent.TimeUnit.SECONDS);
+            long elapsed =
+                    java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            check("catvod_destroy_cpu_bounded_once", released && elapsed >= 250 && elapsed < 3000);
+            check(
+                    "catvod_destroy_cannot_network_or_keep_proxy",
+                    !server.destroyRequested
+                            && proxyRequest(address, "GET", null).status == 502
+                            && server.error == null);
+            JsEngine next =
+                    engine(
+                            "catvod-next.mjs",
+                            "import {Spider} from 'catvod';export default class extends Spider {homeContent(){return {key:this.siteKey};}}");
+            check(
+                    "catvod_next_source_has_separate_identity",
+                    !new JSONObject(next.home()).getString("key").equals(home.getString("key")));
+            JsEngine failure =
+                    engine(
+                            "catvod-failure.mjs",
+                            "import {Spider} from 'catvod';export default class extends Spider {homeContent(){throw Error('catvod fixture failure');}playerContent(){return {url:this.proxyUrl()};}destroy(){while(true){}}}");
+            failure.activate();
+            String failedAddress = new JSONObject(failure.player("line", "id")).getString("url");
+            String message = "";
+            try {
+                failure.home();
+            } catch (Exception expected) {
+                message = expected.toString();
+            }
+            java.util.concurrent.ExecutorService failedExecutor =
+                    (java.util.concurrent.ExecutorService) field.get(failure);
+            check(
+                    "catvod_unhandled_failure_closes_source",
+                    message.contains("catvod fixture failure")
+                            && failure.isClosed()
+                            && failedExecutor.awaitTermination(
+                                    3, java.util.concurrent.TimeUnit.SECONDS)
+                            && proxyRequest(failedAddress, "GET", null).status == 502);
+        }
+    }
+
     static final class PythonSessionServer implements AutoCloseable {
         final ServerSocket listener = new ServerSocket(0, 2, InetAddress.getByName("127.0.0.1"));
         final Thread thread;
@@ -791,6 +1029,7 @@ public final class SourceHostProbe extends Instrumentation {
             exerciseScriptProxy();
             exerciseNativeDeadlines();
             exerciseFullSpiderContract();
+            exerciseCatvodContract();
             report.put("passed", true);
         } catch (Throwable failure) {
             try {

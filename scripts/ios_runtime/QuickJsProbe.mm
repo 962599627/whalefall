@@ -204,6 +204,51 @@ globalThis.shortSpider = __movieSelectSpider({
     [checks addObject:@{@"name":error.reason?:@"quickjs_exception",@"passed":@NO}];
     return checks;
   } @finally {jsFreeContext(ctx);jsFreeRuntime(rt);}
+  // A new source owns a fresh production QuickJS VM. Keep all prior Python and
+  // Spider checks unchanged; this profile imports the original shipped modules.
+  rt=jsNewRuntime(channel,10000);ctx=jsNewContext(rt);
+  JS_SetMaxStackSize(rt,512*1024);JS_SetMemoryLimit(rt,48*1024*1024);
+  @try {
+    NSArray *groupNames=@[@"quickjs_catvod_class_lifecycle",@"quickjs_catvod_query_unicode",
+      @"quickjs_catvod_json_form",@"quickjs_catvod_raw_request_bytes",@"quickjs_catvod_response_buffer_types",
+      @"quickjs_catvod_error_contract",@"quickjs_catvod_local_proxy",@"quickjs_catvod_page_crypto"];
+    NSString *interop=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:@"js-host/module-interop.js"] encoding:NSUTF8StringEncoding error:nil];
+    NSString *crypto=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:@"js-host/crypto-js.js"] encoding:NSUTF8StringEncoding error:nil];
+    NSString *catvod=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:@"js-host/catvod.mjs"] encoding:NSUTF8StringEncoding error:nil];
+    NSString *bridge=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:@"catvod_native_bridge.js"] encoding:NSUTF8StringEncoding error:nil];
+    NSString *fixture=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:@"catvod_native_fixture.mjs"] encoding:NSUTF8StringEncoding error:nil];
+    if(!interop||!crypto||!catvod||!bridge||!fixture)
+      @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"catvod_native_asset_missing" userInfo:nil];
+    jsSetOperationTimeout(rt,8000);
+    evaluate(ctx,@"globalThis.console={log(){},warn(){},error(){}};");
+    evaluate(ctx,interop,JS_EVAL_TYPE_GLOBAL,@"module-interop.js");
+    // The bridge returns owned synthetic response bytes. It does not exercise
+    // Dart sockets or claim HTTP transport acceptance on this platform.
+    evaluate(ctx,bridge,JS_EVAL_TYPE_GLOBAL,@"catvod_native_bridge.js");
+    NSString *cryptoModule=[@"const module={exports:{}};let exports=module.exports;\n" stringByAppendingFormat:@"%@\nexport default module.exports;",crypto];
+    jsSetOperationTimeout(rt,8000);
+    evaluate(ctx,cryptoModule,JS_EVAL_TYPE_MODULE,@"marco:catvod-crypto");
+    while(jsExecutePendingJob(rt)>0){}
+    jsSetOperationTimeout(rt,8000);
+    evaluate(ctx,catvod,JS_EVAL_TYPE_MODULE,@"catvod");
+    while(jsExecutePendingJob(rt)>0){}
+    jsSetOperationTimeout(rt,8000);
+    evaluate(ctx,fixture,JS_EVAL_TYPE_MODULE,@"catvod_native_fixture.mjs");
+    while(jsExecutePendingJob(rt)>0){}
+    if(!boolean(ctx,[NSString stringWithFormat:@"JSON.stringify(__catvodNativeGroupNames)===JSON.stringify(%@)",literal(groupNames)]))
+      @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"catvod_native_group_inventory" userInfo:nil];
+    for(NSUInteger index=0;index<groupNames.count;index++) {
+      // spiderOperation resets the original eight-second operation budget.
+      spiderOperation(ctx,rt,[NSString stringWithFormat:@"__catvodRunNativeGroup(%lu)",(unsigned long)index],@"catvodNativeResult");
+      BOOL passed=boolean(ctx,[NSString stringWithFormat:@"(()=>{const r=JSON.parse(catvodNativeResult);return r.name===%@&&r.passed===true&&Number.isInteger(r.assertions)&&r.assertions>0;})()",literal(groupNames[index])]);
+      NSMutableDictionary *check=[@{@"name":groupNames[index],@"passed":@(passed),@"transport_scope":@"synthetic bridge; no socket claim"} mutableCopy];
+      if(!passed) check[@"diagnostic"]=diagnostic(ctx,@"catvodNativeResult");
+      [checks addObject:check];
+    }
+  } @catch(NSException *error) {
+    [checks addObject:@{@"name":error.reason?:@"catvod_quickjs_exception",@"passed":@NO}];
+    return checks;
+  } @finally {jsFreeContext(ctx);jsFreeRuntime(rt);}
   rt=jsNewRuntime(channel,100);ctx=jsNewContext(rt);
   @try {
     evaluate(ctx,@"globalThis.retainedCounter=1;");

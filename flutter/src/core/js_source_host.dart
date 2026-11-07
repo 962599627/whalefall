@@ -35,6 +35,7 @@ class JsSourceHost {
   ).allMatches(source).map((match) => match.group(1)!);
 
   static final _sessions = <String, _SourceWorker>{};
+  static Future<List<String>>? _catvodAssets;
   static final _playbackPins = <String, Set<Object>>{};
   static ScriptProxyServer? _proxyServer;
   static int _generation = 0;
@@ -150,6 +151,34 @@ class JsSourceHost {
     final interop = await rootBundle.loadString(
       'assets/js-host/module-interop.js',
     );
+    final ownedModules = Map<String, String>.from(modules);
+    var catvod = false;
+    if (pythonPrelude.isEmpty) {
+      for (final item in modules.entries) {
+        if (item.key == 'catvod' ||
+            item.key.startsWith('catvod:') ||
+            item.key.startsWith('marco:')) {
+          throw const FormatException('脚本不能覆盖内置宿主模块');
+        }
+        for (final ref in esModuleReferences(item.value)) {
+          if (ref == 'catvod') {
+            catvod = true;
+          } else if (ref.startsWith('catvod:') || ref.startsWith('marco:')) {
+            throw const FormatException('当前脚本需要 CatVod 宿主模块，该接口尚未适配');
+          }
+        }
+      }
+      if (catvod) {
+        final assets = await (_catvodAssets ??= Future.wait([
+          rootBundle.loadString('assets/js-host/catvod.mjs'),
+          rootBundle.loadString('assets/js-host/crypto-js.js'),
+        ]));
+        ownedModules['catvod'] = assets[0];
+        ownedModules['marco:catvod-crypto'] =
+            'const module={exports:{}};let exports=module.exports;\n'
+            '${assets[1]}\nexport default module.exports;';
+      }
+    }
     void check() {
       if (cancellation?.isCompleted == true ||
           startedGeneration != _generation) {
@@ -185,7 +214,7 @@ class JsSourceHost {
         worker ??
         _SourceWorker([
           entry,
-          Map<String, String>.from(modules),
+          ownedModules,
           extension,
           Map<String, String>.from(headers),
           List<String>.from(pythonPrelude),
@@ -429,14 +458,18 @@ void _sourceWorkerMain(List<Object?> startup) {
       if (activeId == command[1]) session?.cancel();
     } else if (command[0] == 'close') {
       closing = true;
-      session?.cancel();
-      tail.then((_) {
+      if (activeId != null) session?.cancel();
+      tail.then((_) async {
         try {
-          session?.dispose();
+          await session?.closeCatvod();
         } finally {
-          session = null;
-          messages.close();
-          (command[1] as SendPort).send(true);
+          try {
+            session?.dispose();
+          } finally {
+            session = null;
+            messages.close();
+            (command[1] as SendPort).send(true);
+          }
         }
       });
     } else if (command[0] == 'call') {
@@ -497,6 +530,7 @@ class _JsRuntimeSession {
   final String proxyBase;
   late final QuickJsRuntime2 runtime;
   late HttpClient client;
+  final _catvodClients = <HttpClient>{};
   final watch = Stopwatch();
   late Duration budget;
   final requests = <Future<dynamic>>[];
@@ -536,6 +570,13 @@ class _JsRuntimeSession {
       requests.add(pending.then<void>((_) {}, onError: (Object _) {}));
       return pending;
     });
+    runtime.onMessage('catvodRequest', (args) {
+      if (!_active || _cancelled) throw StateError('脚本操作已取消');
+      if (++_networkRequestCount > 32) throw StateError('单次脚本操作的网络请求过多');
+      final pending = request(args, catvod: true);
+      requests.add(pending.then<void>((_) {}, onError: (Object _) {}));
+      return pending;
+    });
     runtime.onMessage('pythonModule', (args) {
       // A cancelled import may probe its alternative filename while draining.
       // Complete that probe without starting transport or retaining any source.
@@ -568,6 +609,9 @@ class _JsRuntimeSession {
   void cancel() {
     _cancelled = true;
     if (_active) client.close(force: true);
+    for (final owned in _catvodClients) {
+      owned.close(force: true);
+    }
   }
 
   void dispose() {
@@ -577,6 +621,23 @@ class _JsRuntimeSession {
     }
     _timers.clear();
     runtime.dispose();
+  }
+
+  Future<void> closeCatvod() async {
+    if (!_initialized || !modules.containsKey('catvod') || _cancelled) return;
+    budget = const Duration(milliseconds: 500);
+    watch
+      ..reset()
+      ..start();
+    _active = false; // Cleanup cannot initiate network requests or timers.
+    runtime.setOperationTimeout(budget);
+    try {
+      await checked(
+        '__movieCatvodClose(); Promise.resolve(__movieSpider.destroy?.()).then(() => null)',
+      );
+    } catch (_) {
+      // A throwing or non-settling hook never prevents unconditional VM release.
+    }
   }
 
   Future<String> invoke(
@@ -624,6 +685,9 @@ class _JsRuntimeSession {
       }
       _timers.clear();
       client.close(force: true);
+      for (final owned in _catvodClients) {
+        owned.close(force: true);
+      }
       await Future.wait(requests);
       // Settle transport completions on the same isolate before the next call.
       runtime.executePendingJob();
@@ -688,6 +752,20 @@ class _JsRuntimeSession {
           return [value[0], value[1], chunks.join(''), value[3] ?? {}, 1];
         };
       ''');
+    if (modules.containsKey('catvod')) {
+      await checked('''(() => { let closed = false;
+        const base = ${jsonEncode(proxyBase)}, encode = encodeURIComponent;
+        globalThis.__movieCatvodClose = () => { closed = true; };
+        globalThis.__movieCatvodBridge = Object.freeze({
+        siteKey: ${jsonEncode(Uri.parse(proxyBase).queryParameters['siteKey'])},
+        request: (url, options) => {
+          if (closed) throw new Error('CatVod source is closed');
+          return sendMessage('catvodRequest', JSON.stringify([url, options])).then(JSON.parse);
+        },
+        proxyUrl: params => base + Object.entries(params).map(([key,value]) =>
+          '&' + encode(key) + '=' + encode(value)).join('')
+      }); })();''');
+    }
     final source = modules[entry]!;
     await checked(interop);
     final selectorOptions = jsonEncode({
@@ -717,10 +795,6 @@ class _JsRuntimeSession {
         'async path => JSON.parse(await sendMessage("pythonModule", JSON.stringify(path))), '
         '${pythonPackage.isEmpty ? 'null' : jsonEncode(pythonPackage)}); void 0;',
       );
-    } else if (JsSourceHost.esModuleReferences(
-      source,
-    ).any((name) => name == 'catvod' || name.startsWith('catvod:'))) {
-      throw const FormatException('当前脚本需要 CatVod 宿主模块，该接口尚未适配');
     } else if (JsSourceHost.isCatSpider(source) &&
         !JsSourceHost.isEsModule(source)) {
       await checked(source);
@@ -803,7 +877,7 @@ class _JsRuntimeSession {
     return jsonEncode(source);
   }
 
-  Future<String> request(dynamic raw) async {
+  Future<String> request(dynamic raw, {bool catvod = false}) async {
     if (!_active || _cancelled) throw StateError('脚本操作已取消');
     final args = raw as List;
     final uri = Uri.parse(args[0].toString());
@@ -822,20 +896,33 @@ class _JsRuntimeSession {
       final requested = Duration(milliseconds: requestedTimeout.ceil());
       if (requested < remaining) remaining = requested;
     }
+    if (catvod && options['callTimeout'] is num) {
+      final requested = Duration(
+        milliseconds: (options['callTimeout'] as num).toInt(),
+      );
+      if (requested < remaining) remaining = requested;
+    }
+    // CatVod req returns a recoverable error object. Its timeout must not close
+    // siblings or a fallback request made by the same Spider method.
+    final transport = catvod
+        ? (HttpClient()..connectionTimeout = const Duration(seconds: 4))
+        : client;
+    if (catvod) _catvodClients.add(transport);
     HttpClientRequest? active;
     final timer = Timer(remaining, () {
       active?.abort(TimeoutException('脚本请求超时'));
-      client.close(force: true);
+      transport.close(force: true);
     });
     try {
       var verb = (options['method'] ?? 'GET').toString().toUpperCase();
-      if (!const [
+      if (![
         'GET',
         'POST',
         'HEAD',
         'PUT',
         'PATCH',
         'DELETE',
+        if (catvod) 'OPTIONS',
       ].contains(verb)) {
         throw const FormatException('脚本请求方法暂不支持');
       }
@@ -892,7 +979,7 @@ class _JsRuntimeSession {
       }
       var current = uri.replace(userInfo: '').removeFragment();
       for (var hop = 0; hop <= 8; hop++) {
-        final req = active = await client.openUrl(verb, current);
+        final req = active = await transport.openUrl(verb, current);
         req.followRedirects = false;
         requestHeaders.forEach(req.headers.set);
         if (payload != null) req.add(payload);
@@ -960,6 +1047,10 @@ class _JsRuntimeSession {
       throw const HttpException('脚本请求重定向过多');
     } finally {
       timer.cancel();
+      if (catvod) {
+        transport.close(force: true);
+        _catvodClients.remove(transport);
+      }
     }
   }
 

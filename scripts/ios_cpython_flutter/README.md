@@ -73,3 +73,15 @@ Still unverified until separately exercised: actual iPhone/iOS14, background
 resume, player memory/threads and playback leases, arbitrary user Python sources,
 native third-party wheels, secure filesystem isolation, and hard cancellation of
 Python/native work. Existing production script runtimes remain unchanged.
+
+## Recorded simulator result
+
+[Run 42407978951](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42407978951)
+at `fc2eaef` completed successfully on ARM64/iOS 18.5. Python-first and Node-first
+launches each passed all 42 unique required checks, for 84 in total, with actual
+CPython 3.14.10 and Node 18.20.4. All 112 recorded repository-input hashes match
+that exact commit. Both launch orders preserve the other engine's SIGINT state
+and leave SIGPIPE ignored. The bounded readiness observation preceded the app
+run; it was not counted as an application check. Intel Flutter execution and the
+production/physical-device limitations above remain unverified. This result
+does not enable arbitrary Python subscriptions in Marco Movie.

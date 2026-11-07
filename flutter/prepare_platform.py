@@ -65,8 +65,9 @@ def main() -> None:
     python_host = REPO_ROOT / "android/src/main/assets/python-host"
     shutil.copytree(python_host, assets_dir / "python-host", dirs_exist_ok=True)
     (assets_dir / 'js-host').mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(REPO_ROOT / 'android/src/main/assets/js-host/module-interop.js',
-                    assets_dir / 'js-host/module-interop.js')
+    for name in ('module-interop.js', 'catvod.mjs', 'crypto-js.js', 'crypto.LICENSE'):
+        shutil.copyfile(REPO_ROOT / 'android/src/main/assets/js-host' / name,
+                        assets_dir / 'js-host' / name)
     if LOGO_MARK.exists():
         shutil.copy2(LOGO_MARK, assets_dir / "logo_mark.png")
     widget_test = ROOT / "test" / "widget_test.dart"

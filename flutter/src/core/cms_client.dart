@@ -759,7 +759,8 @@ class CmsClient {
       final required = JsSourceHost.commonJsReferences(text).toSet();
       final references = {...JsSourceHost.esModuleReferences(text), ...required};
       for (final ref in references) {
-        if (ref == 'catvod' || ref.startsWith('catvod:')) {
+        if (ref == 'catvod' && !required.contains(ref)) continue;
+        if (ref == 'catvod' || ref.startsWith('catvod:') || ref.startsWith('marco:')) {
           throw const FormatException('当前脚本需要 CatVod 宿主模块，该接口尚未适配');
         }
         final common = required.contains(ref);
