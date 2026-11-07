@@ -3,6 +3,7 @@
 #import <Python/Python.h>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 
 static std::atomic<int> heartbeat{0};
 static std::atomic<bool> finished{false};
@@ -11,7 +12,17 @@ static NSString *documents;
 
 static void saveJSON(NSDictionary *report, NSString *name) {
     NSData *bytes=[NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:nil];
-    [bytes writeToFile:[documents stringByAppendingPathComponent:name] atomically:YES];
+    if (![bytes writeToFile:[documents stringByAppendingPathComponent:name] atomically:YES])
+        NSLog(@"CPythonProbe could not write %@",name);
+}
+
+static void checkpoint(NSString *phase) {
+    saveJSON(@{@"phase":phase,@"heartbeat":@(heartbeat.load())},@"progress.json");
+}
+
+static void uncaughtException(NSException *exception) {
+    saveJSON(@{@"passed":@NO,@"exception":exception.name?:@"",@"reason":exception.reason?:@"",
+               @"stack":exception.callStackSymbols?:@[]},@"exception.json");
 }
 
 static NSString *pythonError(void) {
@@ -59,6 +70,14 @@ static void addCheck(NSMutableArray *checks, NSString *name, BOOL passed) {
     UIViewController *view=[UIViewController new];view.view.backgroundColor=UIColor.blackColor;
     self.window.rootViewController=view;[self.window makeKeyAndVisible];
     documents=[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES) firstObject];
+    [[NSFileManager defaultManager] createDirectoryAtPath:documents withIntermediateDirectories:YES attributes:nil error:nil];
+    // Fatal CPython startup errors can precede Python's system logger setup.
+    // Preserve libc stdout/stderr in this disposable app's own data container.
+    freopen([[documents stringByAppendingPathComponent:@"native-stderr.log"] fileSystemRepresentation],"w",stderr);
+    freopen([[documents stringByAppendingPathComponent:@"native-stdout.log"] fileSystemRepresentation],"w",stdout);
+    setvbuf(stderr,NULL,_IONBF,0);setvbuf(stdout,NULL,_IONBF,0);
+    NSSetUncaughtExceptionHandler(uncaughtException);
+    checkpoint(@"uikit_did_finish_launching");
     [NSTimer scheduledTimerWithTimeInterval:.02 repeats:YES block:^(NSTimer *) { ++heartbeat; }];
     // This watchdog records failure; it DOES NOT kill a Python thread. Only the
     // external test runner may terminate this dedicated disposable test app.
@@ -83,6 +102,7 @@ static void addCheck(NSMutableArray *checks, NSString *name, BOOL passed) {
     config.write_bytecode=0;config.buffered_stdio=0;config.install_signal_handlers=0;
     config.site_import=0;config.parse_argv=0;config.use_system_logger=1;
     BOOL initialized=NO;
+    checkpoint(@"python_preinitialize");
     if (!statusOK(Py_PreInitialize(&pre),&failure)) goto done;
     if (!statusOK(PyConfig_SetBytesString(&config,&config.home,[[bundle stringByAppendingPathComponent:@"python"] UTF8String]),&failure)) goto done;
     if (!statusOK(PyConfig_SetBytesString(&config,&config.program_name,"CPythonProbe"),&failure)) goto done;
@@ -95,11 +115,14 @@ static void addCheck(NSMutableArray *checks, NSString *name, BOOL passed) {
         if (!statusOK(status,&failure)) goto done;
     }
     config.module_search_paths_set=1;
+    checkpoint(@"python_initialize");
     if (!statusOK(Py_InitializeFromConfig(&config),&failure)) goto done;
     initialized=YES;
+    checkpoint(@"python_initialized");
     report[@"runtime"]=[NSString stringWithUTF8String:Py_GetVersion()];
     addCheck(checks,@"pinned_python_3_14_10",[report[@"runtime"] hasPrefix:@"3.14.10 "]);
     {
+        checkpoint(@"fixture_import_and_run");
         PyObject *module=PyImport_ImportModule("probe_fixture");
         if (!module) { failure=pythonError();goto done; }
         PyObject *callable=PyObject_GetAttrString(module,"run_probe");Py_DECREF(module);
@@ -114,10 +137,12 @@ static void addCheck(NSMutableArray *checks, NSString *name, BOOL passed) {
         Py_DECREF(result);
         if (![fixture isKindOfClass:NSDictionary.class]) { failure=@"Fixture did not return valid JSON";goto done; }
         report[@"fixture"]=fixture;[checks addObjectsFromArray:fixture[@"checks"]];
+        checkpoint(@"fixture_completed");
     }
     // Both examples use only owned synthetic code. The trace hook is cooperative,
     // can be removed by Python, and cannot interrupt arbitrary blocking C calls.
     {
+        checkpoint(@"cooperative_deadline_checks");
         if (!evaluate("import time\n_probe_main_marker = 'main'\n",&failure)) goto done;
         PyObject *globals=PyModule_GetDict(PyImport_AddModule("__main__"));
         auto start=std::chrono::steady_clock::now();traceDeadline=start+std::chrono::milliseconds(100);
@@ -138,6 +163,7 @@ static void addCheck(NSMutableArray *checks, NSString *name, BOOL passed) {
         report[@"non_interruptible_sleep_ms"]=@(ms);
     }
     {
+        checkpoint(@"subinterpreter_create");
         PyThreadState *mainState=PyThreadState_Get();
         PyInterpreterConfig isolation={};isolation.use_main_obmalloc=0;
         isolation.allow_fork=0;isolation.allow_exec=0;isolation.allow_threads=1;
@@ -149,11 +175,15 @@ static void addCheck(NSMutableArray *checks, NSString *name, BOOL passed) {
             if (!PyThreadState_GetUnchecked()) PyEval_RestoreThread(mainState);
             goto done;
         }
+        checkpoint(@"subinterpreter_imports");
         NSString *subFailure=nil;
         BOOL isolated=evaluate("import sys\nassert '_probe_main_marker' not in globals()\n_probe_sub_marker='sub'\nimport json, ssl, socket, requests\nfrom bs4 import BeautifulSoup\nassert BeautifulSoup('<b>ok</b>','html.parser').b.text == 'ok'\n",&subFailure);
         // No Python work remains in this interpreter, so ending it is safe here.
         // This is not cancellation of a running source.
-        Py_EndInterpreter(sub);PyEval_RestoreThread(mainState);
+        checkpoint(@"subinterpreter_end");
+        Py_EndInterpreter(sub);
+        checkpoint(@"main_interpreter_restore");
+        PyEval_RestoreThread(mainState);
         addCheck(checks,@"isolated_interpreter_pure_dependencies",isolated);
         if (!isolated) { failure=subFailure;goto done; }
         if (!evaluate("assert _probe_main_marker == 'main'\nassert '_probe_sub_marker' not in globals()\n",&failure)) goto done;
@@ -161,6 +191,7 @@ static void addCheck(NSMutableArray *checks, NSString *name, BOOL passed) {
     }
     addCheck(checks,@"ui_main_thread_remained_responsive",heartbeat.load()>=5);
 done:
+    checkpoint(@"write_result");
     PyConfig_Clear(&config);
     if (initialized) {
         // Keep process-wide CPython alive; do not finalize during active app life.

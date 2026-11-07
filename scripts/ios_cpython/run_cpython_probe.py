@@ -84,7 +84,8 @@ def collect_diagnostics(out, progress, start_time):
         try:
             with log.open("w", encoding="utf-8") as output:
                 subprocess.run(["xcrun", "simctl", "spawn", progress["simulator_udid"], "log", "show",
-                                "--last", "5m", "--style", "compact", "--predicate", 'process == "CPythonProbe"'],
+                                "--last", "5m", "--style", "compact", "--info", "--debug",
+                                "--predicate", 'process == "CPythonProbe"'],
                                check=False, stdout=output, stderr=subprocess.STDOUT, text=True, timeout=25)
             if log.stat().st_size > 5 * 1024 * 1024:
                 with log.open("rb") as source:
@@ -316,6 +317,8 @@ def simulator_run(app, udid, progress):
     watchdog_file = container / "Documents/watchdog.json"
     result_file.unlink(missing_ok=True)
     watchdog_file.unlink(missing_ok=True)
+    for name in ("progress.json", "exception.json", "native-stderr.log", "native-stdout.log"):
+        (container / "Documents" / name).unlink(missing_ok=True)
     launched = False
     try:
         run("xcrun", "simctl", "launch", "--terminate-running-process", udid, IDENTIFIER, timeout=90, progress=progress)
@@ -330,6 +333,14 @@ def simulator_run(app, udid, progress):
             time.sleep(0.25)
         raise RuntimeError("No app result. Inspect crash diagnostics; runtime is not accepted")
     finally:
+        diagnostics = app.parent / "diagnostics"
+        diagnostics.mkdir(exist_ok=True)
+        for name in ("progress.json", "exception.json", "native-stderr.log", "native-stdout.log"):
+            source = container / "Documents" / name
+            if source.is_file() and not source.is_symlink():
+                with source.open("rb") as stream:
+                    content = stream.read(5 * 1024 * 1024)
+                (diagnostics / name).write_bytes(content)
         if launched:
             # This is an external CI runner ending its own disposable app, not a
             # capability available to the production app to kill one source.
