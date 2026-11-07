@@ -29,6 +29,8 @@ public final class JsEngine implements SourceEngine {
     }
 
     private static final ConcurrentHashMap<String, JsEngine> ACTIVE = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, JsEngine> CURRENT = new ConcurrentHashMap<>();
+    private final String proxyKey = UUID.randomUUID().toString().replace("-", "");
     private final Application app;
     private final Cms.Site site;
     private final SharedPreferences storage;
@@ -46,6 +48,7 @@ public final class JsEngine implements SourceEngine {
     private volatile boolean closed;
     private volatile long deadline;
     private boolean catApi;
+    private boolean pythonSource;
 
     static boolean isCommonJs(String source) {
         return java.util.regex.Pattern.compile(
@@ -179,13 +182,9 @@ public final class JsEngine implements SourceEngine {
                     checkBudget();
                     return null;
                 });
-        global.setProperty(
-                "__proxyAddress",
-                ProxyAddress.base()
-                        + "/proxy?do=js&site="
-                        + URLEncoder.encode(site.key, "UTF-8")
-                        + (ProxyAddress.token.isEmpty() ? "" : "&_mm_token=" + ProxyAddress.token));
+        global.setProperty("__proxyAddress", proxyAddress(false));
         context.evaluate(asset("js-host/bootstrap.js"), "host-bootstrap.js");
+        context.evaluate(proxyHelpers(), "host-proxy.js");
         context.evaluate(asset("js-host/module-interop.js"), "module-interop.js");
         context.evaluate(asset("js-host/crypto-js.js"), "crypto-js.js");
         context.setModuleLoader(
@@ -227,6 +226,8 @@ public final class JsEngine implements SourceEngine {
         catApi = source.contains("__jsEvalReturn") && !isEsModule(source);
         if (inlinePython || site.api.split("[?#]", 2)[0].toLowerCase(Locale.ROOT).endsWith(".py")) {
             catApi = false;
+            pythonSource = true;
+            global.setProperty("__movieProxyBase", proxyAddress(true));
             bind(
                     global,
                     "__readPythonSibling",
@@ -690,6 +691,11 @@ public final class JsEngine implements SourceEngine {
                                     + ");return fn.apply(__movieSpider,"
                                     + a.toString()
                                     + ");})()";
+                    if (function.equals("proxy"))
+                        invocation =
+                                "Promise.resolve("
+                                        + invocation
+                                        + ").then(__movieEncodeProxyResult)";
                     Object result =
                             evaluateSettled(context, invocation, "source-" + function + ".js");
                     checkBudget();
@@ -759,40 +765,166 @@ public final class JsEngine implements SourceEngine {
     }
 
     public Object[] proxy(Map<String, String> params) throws Exception {
-        JSONArray r = new JSONArray(call("proxy", new JSONObject(params)));
-        if (r.length() < 3) throw new IOException("JS 代理返回格式错误");
-        Object content = r.get(2);
-        byte[] bytes =
-                r.optInt(4, 0) == 1
-                        ? Base64.decode(String.valueOf(content), Base64.DEFAULT)
-                        : String.valueOf(content).getBytes("UTF-8");
-        Map<String, String> headers = new LinkedHashMap<>();
-        JSONObject h = r.optJSONObject(3);
-        if (h != null) {
-            Iterator<String> k = h.keys();
-            while (k.hasNext()) {
-                String key = k.next();
-                headers.put(key, h.optString(key));
+        return decodeProxyResponse(call("proxy", new JSONObject(params)));
+    }
+
+    private String proxyAddress(boolean python) {
+        return ProxyAddress.base()
+                + "/proxy?do="
+                + (python ? "py&siteKey=" : "js&site=")
+                + proxyKey
+                + (ProxyAddress.token.isEmpty() ? "" : "&_mm_token=" + ProxyAddress.token);
+    }
+
+    /** Kept at the host boundary so ordinary scripts cannot serialize typed bytes as objects. */
+    static String proxyHelpers() {
+        return "globalThis.getProxy=function(local=true){if(typeof local!=='boolean')throw new TypeError('local must be boolean');return __proxyAddress;};\n"
+                + "globalThis.proxyUrl=function(params={}){if(params===null)params={};"
+                + "if(typeof params!=='object'||Array.isArray(params))throw new TypeError('proxy params must be an object');"
+                + "let url=__proxyAddress;for(const key of Object.keys(params)){"
+                + "if(['do','site','sitekey','_mm_token'].includes(key.toLowerCase()))throw new TypeError('reserved proxy parameter');"
+                + "if(!['string','number','boolean'].includes(typeof params[key]))throw new TypeError('proxy values must be scalar');"
+                + "url+='&'+encodeURIComponent(key)+'='+encodeURIComponent(params[key]);}return url;};\n"
+                + "globalThis.__movieEncodeProxyResult=function(value){"
+                + "if(!Array.isArray(value)||value.length<3||value.length>5)return value;"
+                + "if(value.length===5&&value[4]!==0&&value[4]!==1)throw new TypeError('invalid proxy encoding flag');"
+                + "if(value.length>3&&value[3]!=null&&(typeof value[3]!=='object'||Array.isArray(value[3])))throw new TypeError('invalid proxy response headers');"
+                + "const body=value[2];const bytes=body instanceof ArrayBuffer?new Uint8Array(body):"
+                + "ArrayBuffer.isView(body)?new Uint8Array(body.buffer,body.byteOffset,body.byteLength):null;"
+                + "if(!bytes)return value;if(bytes.length>6*1024*1024)throw new Error('proxy body too large');"
+                + "const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';const chunks=[];let part='';"
+                + "for(let i=0;i<bytes.length;i+=3){const a=bytes[i],b=bytes[i+1]||0,c=bytes[i+2]||0;"
+                + "part+=alphabet[a>>2]+alphabet[((a&3)<<4)|(b>>4)]+(i+1<bytes.length?alphabet[((b&15)<<2)|(c>>6)]:'=')+(i+2<bytes.length?alphabet[c&63]:'=');"
+                + "if(part.length>=4096){chunks.push(part);part='';}}chunks.push(part);"
+                + "return [value[0],value[1],chunks.join(''),value[3]==null?{}:value[3],1];};";
+    }
+
+    /** Buffered script ABI only; native JAR streams remain handled by LocalProxy. */
+    static Object[] decodeProxyResponse(String raw) throws IOException {
+        final int limit = 6 * 1024 * 1024;
+        try {
+            if (raw == null || raw.length() > 25 * 1024 * 1024) throw new IOException("脚本代理响应过大");
+            JSONArray result = new JSONArray(raw);
+            if (result.length() < 3 || result.length() > 5) throw new IOException("脚本代理返回格式错误");
+            Object status = result.get(0), mime = result.get(1);
+            if (!(status instanceof Integer || status instanceof Long)
+                    || ((Number) status).longValue() < 200
+                    || ((Number) status).longValue() > 599
+                    || !(mime instanceof String)
+                    || ((String) mime).length() > 256
+                    || !((String) mime)
+                            .matches(
+                                    "[!#$%&'*+.^_`|~0-9A-Za-z-]+/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?: *;[^\\r\\n]*)?")
+                    || java.util.regex.Pattern.compile("[\\x00-\\x1f\\x7f-\\uffff]")
+                            .matcher((String) mime)
+                            .find()) throw new IOException("脚本代理状态或类型无效");
+            Object flag = result.length() == 5 ? result.get(4) : Integer.valueOf(0);
+            if (!(flag instanceof Integer || flag instanceof Long)
+                    || (((Number) flag).longValue() != 0 && ((Number) flag).longValue() != 1))
+                throw new IOException("脚本代理编码标记无效");
+            Map<String, String> headers = new LinkedHashMap<>();
+            Object rawHeaders = result.length() > 3 ? result.get(3) : JSONObject.NULL;
+            if (rawHeaders != JSONObject.NULL) {
+                if (!(rawHeaders instanceof JSONObject) || ((JSONObject) rawHeaders).length() > 64)
+                    throw new IOException("脚本代理响应头无效");
+                JSONObject values = (JSONObject) rawHeaders;
+                Set<String> names = new HashSet<>();
+                int size = 0;
+                for (Iterator<String> keys = values.keys(); keys.hasNext(); ) {
+                    String key = keys.next();
+                    Object value = values.get(key);
+                    if (!key.matches("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+                            || !(value instanceof String)
+                            || java.util.regex.Pattern.compile(
+                                            "[\\x00-\\x08\\x0a-\\x1f\\x7f\\u0100-\\uffff]")
+                                    .matcher((String) value)
+                                    .find()
+                            || !names.add(key.toLowerCase(Locale.ROOT)))
+                        throw new IOException("脚本代理响应头无效");
+                    size +=
+                            key.getBytes("UTF-8").length
+                                    + ((String) value).getBytes("UTF-8").length;
+                    if (size > 16 * 1024) throw new IOException("脚本代理响应头过大");
+                    headers.put(key, (String) value);
+                }
             }
+            Object content = result.get(2);
+            byte[] bytes;
+            if (content instanceof JSONArray) {
+                JSONArray values = (JSONArray) content;
+                if (values.length() > limit) throw new IOException("脚本代理正文过大");
+                bytes = new byte[values.length()];
+                for (int i = 0; i < bytes.length; i++) {
+                    Object value = values.get(i);
+                    if (!(value instanceof Integer || value instanceof Long)
+                            || ((Number) value).longValue() < 0
+                            || ((Number) value).longValue() > 255)
+                        throw new IOException("脚本代理二进制正文无效");
+                    bytes[i] = (byte) ((Number) value).intValue();
+                }
+            } else if (content instanceof String) {
+                String value = (String) content;
+                if (((Number) flag).intValue() == 1) {
+                    int encodedLimit = ((limit + 2) / 3) * 4;
+                    if (value.length() > encodedLimit + 1280) throw new IOException("脚本代理正文过大");
+                    if (value.startsWith("data:")) {
+                        int comma = value.indexOf(',');
+                        if (comma < 0
+                                || comma > 256
+                                || !value.substring(0, comma).matches("data:[\\x20-\\x7e]*;base64"))
+                            throw new IOException("脚本代理 Base64 正文无效");
+                        value = value.substring(comma + 1);
+                    }
+                    value = value.replaceAll("[ \\t\\r\\n]", "");
+                    if (value.length() > encodedLimit
+                            || value.length() % 4 != 0
+                            || !value.matches("[A-Za-z0-9+/]*={0,2}"))
+                        throw new IOException("脚本代理 Base64 正文无效");
+                    try {
+                        bytes = Base64.decode(value, Base64.DEFAULT);
+                    } catch (IllegalArgumentException invalid) {
+                        throw new IOException("脚本代理 Base64 正文无效");
+                    }
+                    if (!Base64.encodeToString(bytes, Base64.NO_WRAP).equals(value))
+                        throw new IOException("脚本代理 Base64 正文无效");
+                } else {
+                    if (value.length() > limit) throw new IOException("脚本代理正文过大");
+                    bytes = value.getBytes("UTF-8");
+                }
+            } else throw new IOException("脚本代理正文必须是文字或字节数组");
+            if (bytes.length > limit) throw new IOException("脚本代理正文过大");
+            return new Object[] {((Number) status).intValue(), mime, bytes, headers};
+        } catch (JSONException invalid) {
+            // JSON parser diagnostics can contain private source URLs or tokens.
+            throw new IOException("脚本代理返回格式错误");
         }
-        return new Object[] {r.getInt(0), r.getString(1), new ByteArrayInputStream(bytes), headers};
     }
 
     void activate() {
-        if (closed) throw new IllegalStateException("JS source closed");
-        ACTIVE.put(site.key, this);
+        synchronized (ACTIVE) {
+            if (closed) throw new IllegalStateException("JS source closed");
+            JsEngine previous = CURRENT.put(site.key, this);
+            ACTIVE.put(proxyKey, this);
+            if (previous != null && previous != this) previous.close();
+        }
     }
 
     public static Object[] proxyFor(Map<String, String> params) throws Exception {
-        JsEngine engine = ACTIVE.get(params.get("site"));
+        boolean python = "py".equalsIgnoreCase(params.get("do"));
+        String key = params.get(python ? "siteKey" : "site");
+        JsEngine engine = key == null ? null : ACTIVE.get(key);
         if (engine == null) throw new IOException("JS 代理来源尚未打开");
+        if (engine.closed || engine.pythonSource != python) throw new IOException("脚本代理来源已失效");
         return engine.proxy(params);
     }
 
     public void close() {
-        if (closed) return;
-        closed = true;
-        ACTIVE.remove(site.key, this);
+        synchronized (ACTIVE) {
+            if (closed) return;
+            closed = true;
+            ACTIVE.remove(proxyKey, this);
+            CURRENT.remove(site.key, this);
+        }
         try {
             executor.execute(
                     () -> {

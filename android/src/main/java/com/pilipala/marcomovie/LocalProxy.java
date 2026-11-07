@@ -19,11 +19,24 @@ public final class LocalProxy implements Closeable {
     final String token = UUID.randomUUID().toString().replace("-", "");
     final ThreadPoolExecutor requests =
             new ThreadPoolExecutor(4, 32, 60, TimeUnit.SECONDS, new SynchronousQueue<Runnable>());
+    final Map<Socket, RequestScope> activeRequests = new ConcurrentHashMap<>();
+
+    interface ScriptResolver {
+        Object[] resolve(Map<String, String> params) throws Exception;
+    }
+
+    private final ScriptResolver scripts;
     volatile boolean closed;
 
     public LocalProxy(Application application, Cms.Config source) throws IOException {
+        this(application, source, JsEngine::proxyFor);
+    }
+
+    LocalProxy(Application application, Cms.Config source, ScriptResolver scripts)
+            throws IOException {
         app = application;
         config = source;
+        this.scripts = scripts;
         server = bind();
         ProxyAddress.port = server.getLocalPort();
         ProxyAddress.token = token;
@@ -33,9 +46,31 @@ public final class LocalProxy implements Closeable {
                             while (!closed)
                                 try {
                                     Socket socket = server.accept();
+                                    RequestScope scope = new RequestScope();
+                                    activeRequests.put(socket, scope);
                                     try {
-                                        requests.execute(() -> serve(socket));
+                                        if (closed) throw new RejectedExecutionException();
+                                        requests.execute(
+                                                () -> {
+                                                    try {
+                                                        scope.call(
+                                                                () -> {
+                                                                    serve(socket);
+                                                                    return null;
+                                                                });
+                                                    } catch (Exception ignored) {
+                                                    } finally {
+                                                        scope.cancel();
+                                                        activeRequests.remove(socket);
+                                                        try {
+                                                            socket.close();
+                                                        } catch (IOException ignored) {
+                                                        }
+                                                    }
+                                                });
                                     } catch (RejectedExecutionException full) {
+                                        activeRequests.remove(socket);
+                                        scope.cancel();
                                         socket.close();
                                     }
                                 } catch (IOException e) {
@@ -146,6 +181,8 @@ public final class LocalProxy implements Closeable {
             }
             Map<String, String> headers = new LinkedHashMap<>();
             Map<String, String> params = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+            Map<String, String> queryParams = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+            boolean duplicateQuery = false;
             int size = 0;
             for (; ; ) {
                 String h = line(in, 8192);
@@ -166,16 +203,35 @@ public final class LocalProxy implements Closeable {
                     if (pair.isEmpty()) continue;
                     String[] p = pair.split("=", 2);
                     try {
-                        params.put(
-                                URLDecoder.decode(p[0], "UTF-8"),
-                                p.length == 2 ? URLDecoder.decode(p[1], "UTF-8") : "");
+                        String key = URLDecoder.decode(p[0], "UTF-8");
+                        String value = p.length == 2 ? URLDecoder.decode(p[1], "UTF-8") : "";
+                        if (queryParams.containsKey(key)
+                                && Arrays.asList("do", "site", "sitekey", "_mm_token")
+                                        .contains(key.toLowerCase(Locale.ROOT)))
+                            duplicateQuery = true;
+                        queryParams.put(key, value);
+                        params.put(key, value);
                     } catch (Exception ignored) {
                         params.put(p[0], p.length == 2 ? p[1] : "");
                     }
                 }
             }
             String requestToken = params.remove("_mm_token");
-            boolean isJs = "js".equalsIgnoreCase(params.get("do"));
+            boolean isJs =
+                    "js".equalsIgnoreCase(params.get("do"))
+                            || "py".equalsIgnoreCase(params.get("do"));
+            if (isJs) {
+                String route = queryParams.get("do");
+                String key = queryParams.get("py".equalsIgnoreCase(route) ? "siteKey" : "site");
+                if (duplicateQuery
+                        || !("js".equalsIgnoreCase(route) || "py".equalsIgnoreCase(route))
+                        || key == null
+                        || !key.matches("[a-f0-9]{32}")) {
+                    simple(out, 400, "Invalid script route");
+                    return;
+                }
+                requestToken = queryParams.get("_mm_token");
+            }
             if (!ProxyAddress.isAllowedRequest(
                     headers.get("host"),
                     headers.get("origin"),
@@ -208,9 +264,22 @@ public final class LocalProxy implements Closeable {
                 headers.put("Referer", headers.get("referer"));
             }
             params.put("request-headers", new JSONObject(headers).toString());
+            if (isJs) {
+                // Python/JS dictionaries are case-sensitive even though HTTP names are not.
+                Map<String, String> scriptParams = new LinkedHashMap<>(params);
+                for (Map.Entry<String, String> header : headers.entrySet()) {
+                    String key = header.getKey().toLowerCase(Locale.ROOT);
+                    if (!Arrays.asList("do", "site", "sitekey", "_mm_token").contains(key))
+                        scriptParams.put(key, header.getValue());
+                }
+                scriptParams.put("do", queryParams.get("do").toLowerCase(Locale.ROOT));
+                String routeKey = "py".equals(scriptParams.get("do")) ? "siteKey" : "site";
+                scriptParams.put(routeKey, queryParams.get(routeKey));
+                params = scriptParams;
+            }
             Object[] response;
             try {
-                response = isJs ? JsEngine.proxyFor(params) : CspEngine.proxy(app, config, params);
+                response = isJs ? scripts.resolve(params) : CspEngine.proxy(app, config, params);
             } catch (Throwable e) {
                 AppLog.w("LocalProxy", "source proxy failed", e);
                 simple(out, 502, "Source proxy failed");
@@ -243,12 +312,48 @@ public final class LocalProxy implements Closeable {
             boolean hasAcceptRanges = false;
             Map<String, String> extraHeaders = new LinkedHashMap<>();
             if (response.length > 3 && response[3] instanceof Map) {
+                Set<String> scriptHopHeaders =
+                        new HashSet<>(
+                                Arrays.asList(
+                                        "connection",
+                                        "keep-alive",
+                                        "proxy-authenticate",
+                                        "proxy-authorization",
+                                        "te",
+                                        "trailer",
+                                        "transfer-encoding",
+                                        "upgrade",
+                                        "set-cookie",
+                                        "set-cookie2"));
+                if (isJs)
+                    for (Map.Entry<?, ?> e : ((Map<?, ?>) response[3]).entrySet())
+                        if (String.valueOf(e.getKey()).equalsIgnoreCase("Connection"))
+                            for (String name : String.valueOf(e.getValue()).split(","))
+                                scriptHopHeaders.add(name.trim().toLowerCase(Locale.ROOT));
                 for (Object item : ((Map<?, ?>) response[3]).entrySet()) {
                     Map.Entry<?, ?> e = (Map.Entry<?, ?>) item;
                     String k = String.valueOf(e.getKey());
                     String v = String.valueOf(e.getValue());
                     if (!safe(k) || !safe(v)) continue;
+                    if (isJs
+                            && (scriptHopHeaders.contains(k.toLowerCase(Locale.ROOT))
+                                    || k.toLowerCase(Locale.ROOT).startsWith("access-control-")))
+                        continue;
                     if (k.equalsIgnoreCase("Content-Length")) {
+                        if (isJs) {
+                            if (method.equals("HEAD")) {
+                                try {
+                                    long declared = Long.parseLong(v.trim());
+                                    if (declared < 0 || declared > 9007199254740991L)
+                                        throw new NumberFormatException();
+                                    contentLength = declared;
+                                } catch (NumberFormatException invalid) {
+                                    simple(out, 502, "Invalid script HEAD length");
+                                    return;
+                                }
+                            }
+                            continue; // GET always uses the buffered body's exact byte length.
+                        }
                         try {
                             long parsed = Long.parseLong(v.trim());
                             if (parsed >= 0) contentLength = parsed;
@@ -268,6 +373,19 @@ public final class LocalProxy implements Closeable {
                 }
             }
             long[] cr = parseContentRange(contentRange);
+            if (isJs
+                    && code == 206
+                    && (cr == null
+                            || fixedBytes == null
+                            || !contentRange.matches("bytes [0-9]+-[0-9]+/([0-9]+|\\*)")
+                            || (!contentRange.endsWith("/*") && (cr[2] <= 0 || cr[1] >= cr[2]))
+                            || (!method.equals("HEAD")
+                                    && cr[1] - cr[0] + 1 != fixedBytes.length))) {
+                simple(out, 502, "Invalid script byte range");
+                return;
+            }
+            if (isJs && code == 206 && method.equals("HEAD")) contentLength = cr[1] - cr[0] + 1;
+            if (isJs && code == 200) extraHeaders.remove("Content-Range");
             long clientReqEnd = parseClientRequestedEnd(headers.get("range"));
             long desiredEnd = -1L;
             boolean chainChunks = false;
@@ -275,7 +393,7 @@ public final class LocalProxy implements Closeable {
                 if (contentLength < 0) {
                     contentLength = (cr[1] - cr[0]) + 1L;
                 }
-                if (code == 206 && cr[2] > 0) {
+                if (!isJs && code == 206 && cr[2] > 0) {
                     desiredEnd =
                             clientReqEnd >= cr[0]
                                     ? Math.min(clientReqEnd, cr[2] - 1L)
@@ -299,7 +417,7 @@ public final class LocalProxy implements Closeable {
                                                 : code == 200 ? " OK" : " Response")
                                         + "\r\nConnection: close\r\n");
                 if (safe(mime)) head.append("Content-Type: ").append(mime).append("\r\n");
-                if (!hasAcceptRanges && (code == 200 || code == 206)) {
+                if (!hasAcceptRanges && (!isJs || code == 206) && (code == 200 || code == 206)) {
                     head.append("Accept-Ranges: bytes\r\n");
                 }
                 for (Map.Entry<String, String> e : extraHeaders.entrySet()) {
@@ -351,7 +469,7 @@ public final class LocalProxy implements Closeable {
                             params.put("request-headers", new JSONObject(headers).toString());
                             Object[] nextResp =
                                     isJs
-                                            ? JsEngine.proxyFor(params)
+                                            ? scripts.resolve(params)
                                             : CspEngine.proxy(app, config, params);
                             if (nextResp == null
                                     || nextResp.length < 3
@@ -409,6 +527,13 @@ public final class LocalProxy implements Closeable {
         try {
             server.close();
         } catch (IOException ignored) {
+        }
+        for (Map.Entry<Socket, RequestScope> request : activeRequests.entrySet()) {
+            request.getValue().cancel();
+            try {
+                request.getKey().close();
+            } catch (IOException ignored) {
+            }
         }
         requests.shutdownNow();
     }

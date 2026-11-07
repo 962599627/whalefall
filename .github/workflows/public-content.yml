@@ -60,6 +60,7 @@ jobs:
           python android/tests/run_decoder_checks.py
           python android/tests/run_tv_input_checks.py
           python android/tests/run_python_package_checks.py
+          python android/tests/run_script_proxy_checks.py
           python android/tests/run_update_checks.py
           python scripts/test_movie_mirror.py
           python scripts/test_native_elf.py

@@ -11,8 +11,10 @@ import java.io.InputStreamReader;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
+import java.net.HttpURLConnection;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -81,6 +83,160 @@ public final class SourceHostProbe extends Instrumentation {
 
     JSONObject first(String value) throws Exception {
         return new JSONObject(value).getJSONArray("list").getJSONObject(0);
+    }
+
+    static final class ProxyResult {
+        int status;
+        byte[] body;
+        String count;
+        String range;
+        String length;
+    }
+
+    ProxyResult proxyRequest(String address, String method, String range) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
+        connection.setConnectTimeout(3000);
+        connection.setReadTimeout(15000);
+        connection.setRequestMethod(method);
+        if (range != null) connection.setRequestProperty("Range", range);
+        try {
+            ProxyResult result = new ProxyResult();
+            result.status = connection.getResponseCode();
+            result.count = connection.getHeaderField("X-Count");
+            result.range = connection.getHeaderField("Content-Range");
+            result.length = connection.getHeaderField("Content-Length");
+            ByteArrayOutputStream body = new ByteArrayOutputStream();
+            InputStream input =
+                    result.status < 400 ? connection.getInputStream() : connection.getErrorStream();
+            if (input != null)
+                try (InputStream stream = input) {
+                    byte[] buffer = new byte[256];
+                    int read;
+                    while ((read = stream.read(buffer)) != -1) {
+                        if (body.size() + read > 4096)
+                            throw new AssertionError("proxy fixture body too large");
+                        body.write(buffer, 0, read);
+                    }
+                }
+            result.body = body.toByteArray();
+            return result;
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    void exerciseScriptProxy() throws Exception {
+        Application app = (Application) getTargetContext().getApplicationContext();
+        try (LocalProxy proxy = new LocalProxy(app, new Cms.Config())) {
+            String python =
+                    "from base.spider import Spider as Base\n"
+                            + "class Spider(Base):\n"
+                            + "    def init(self, ext):\n"
+                            + "        self.base = self.getProxyUrl(); self.count = 0\n"
+                            + "    def playerContent(self, flag, id, vipFlags):\n"
+                            + "        return {'url':self.base + '&mode=' + id}\n"
+                            + "    def localProxy(self, params):\n"
+                            + "        self.count += 1\n"
+                            + "        headers = {'X-Count':str(self.count)}\n"
+                            + "        if params.get('range') == 'bytes=1-2':\n"
+                            + "            headers['Content-Range'] = 'bytes 1-2/4'\n"
+                            + "            return [206,'application/octet-stream',bytes([255,128]),headers]\n"
+                            + "        return [200,'application/octet-stream',bytes([0,255,128,65]),headers]\n";
+            JsEngine py = engine("proxy.py", python);
+            py.activate();
+            String pyUrl = new JSONObject(py.player("Main", "bytes")).getString("url");
+            check(
+                    "python_proxy_local_route",
+                    pyUrl.startsWith(ProxyAddress.base() + "/proxy?do=py&siteKey=")
+                            && pyUrl.contains("&_mm_token="));
+            ProxyResult first = proxyRequest(pyUrl, "GET", null);
+            check(
+                    "python_proxy_jni_binary",
+                    first.status == 200
+                            && Arrays.equals(
+                                    first.body, new byte[] {0, (byte) 255, (byte) 128, 65}));
+            check(
+                    "python_proxy_jni_state",
+                    "1".equals(first.count) && "2".equals(proxyRequest(pyUrl, "GET", null).count));
+            ProxyResult pyRange = proxyRequest(pyUrl, "GET", "bytes=1-2");
+            check(
+                    "python_proxy_jni_range",
+                    pyRange.status == 206
+                            && "bytes 1-2/4".equals(pyRange.range)
+                            && Arrays.equals(pyRange.body, new byte[] {(byte) 255, (byte) 128}));
+            ProxyResult pyHead = proxyRequest(pyUrl, "HEAD", null);
+            check(
+                    "python_proxy_jni_head",
+                    pyHead.status == 200 && pyHead.body.length == 0 && "4".equals(pyHead.length));
+            JsEngine js =
+                    engine(
+                            "proxy.js",
+                            "module.exports={init(){this.base=getProxy();this.count=0;},"
+                                    + "play(flag,id){return {url:id==='bytes'?this.base+'&mode='+id:proxyUrl({mode:id})};},"
+                                    + "proxy(p){const h={'X-Count':String(++this.count)};"
+                                    + "if(p.range==='bytes=1-2'){h['Content-Range']='bytes 1-2/4';return [206,'application/octet-stream',[255,128],h];}"
+                                    + "const typed=new Uint8Array([0,255,128,65]);"
+                                    + "if(p.mode==='typed')return [200,'application/octet-stream',typed,h];"
+                                    + "if(p.mode==='buffer')return [200,'application/octet-stream',typed.buffer,h];"
+                                    + "if(p.mode==='flag')return [200,'application/octet-stream',typed,h,2];"
+                                    + "if(p.mode==='headers')return [200,'application/octet-stream',typed,false];"
+                                    + "return [200,'application/octet-stream','AP+AQQ==',h,1];}};");
+            js.activate();
+            String jsUrl = new JSONObject(js.player("Main", "bytes")).getString("url");
+            check(
+                    "js_proxy_local_route",
+                    jsUrl.startsWith(ProxyAddress.base() + "/proxy?do=js&site="));
+            ProxyResult jsFirst = proxyRequest(jsUrl, "GET", null);
+            check(
+                    "js_proxy_jni_base64",
+                    jsFirst.status == 200
+                            && "1".equals(jsFirst.count)
+                            && Arrays.equals(
+                                    jsFirst.body, new byte[] {0, (byte) 255, (byte) 128, 65}));
+            ProxyResult jsRange = proxyRequest(jsUrl, "GET", "bytes=1-2");
+            check(
+                    "js_proxy_jni_range",
+                    jsRange.status == 206
+                            && "bytes 1-2/4".equals(jsRange.range)
+                            && Arrays.equals(jsRange.body, new byte[] {(byte) 255, (byte) 128}));
+            ProxyResult jsHead = proxyRequest(jsUrl, "HEAD", null);
+            check(
+                    "js_proxy_jni_head",
+                    jsHead.status == 200 && jsHead.body.length == 0 && "4".equals(jsHead.length));
+            for (String mode : new String[] {"typed", "buffer"}) {
+                String url = new JSONObject(js.player("Main", mode)).getString("url");
+                ProxyResult result = proxyRequest(url, "GET", null);
+                check(
+                        "js_proxy_jni_" + mode,
+                        result.status == 200
+                                && Arrays.equals(
+                                        result.body, new byte[] {0, (byte) 255, (byte) 128, 65}));
+            }
+            for (String mode : new String[] {"flag", "headers"}) {
+                String url = new JSONObject(js.player("Main", mode)).getString("url");
+                check("js_proxy_jni_rejects_" + mode, proxyRequest(url, "GET", null).status == 502);
+            }
+            JsEngine replacement = engine("proxy.py", python);
+            replacement.activate();
+            String replacementUrl =
+                    new JSONObject(replacement.player("Main", "bytes")).getString("url");
+            check(
+                    "python_proxy_replacement_revokes_old",
+                    !replacementUrl.equals(pyUrl)
+                            && proxyRequest(pyUrl, "GET", null).status == 502);
+            check(
+                    "python_proxy_replacement_fresh_state",
+                    "1".equals(proxyRequest(replacementUrl, "GET", null).count));
+            replacement.close();
+            check(
+                    "python_proxy_close_revokes_url",
+                    proxyRequest(replacementUrl, "GET", null).status == 502);
+            check(
+                    "script_proxy_source_isolation",
+                    "8".equals(proxyRequest(jsUrl, "GET", null).count));
+            js.close();
+            check("js_proxy_close_revokes_url", proxyRequest(jsUrl, "GET", null).status == 502);
+        }
     }
 
     /** Two loopback requests only; independent of device Wi-Fi and mobile data. */
@@ -437,6 +593,7 @@ public final class SourceHostProbe extends Instrumentation {
                                         new byte[] {0, (byte) 255, (byte) 128, 65}));
                 check("python_empty_binary_body", server.empty != null && server.empty.length == 0);
             }
+            exerciseScriptProxy();
             report.put("passed", true);
         } catch (Throwable failure) {
             try {

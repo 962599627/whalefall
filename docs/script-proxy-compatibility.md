@@ -13,6 +13,13 @@ body limit is 6 MiB, subject to the source runtime's memory/execution budget.
 Native stream handles and CatVod's separate `js2Proxy` response protocol are not
 implied by support for this array form.
 
+Android uses the existing device-local listener and serializes callbacks on the
+same QuickJS source instance. It forwards `Range` to the source and validates a
+returned `206` response against its buffered bytes and `Content-Range`; it does
+not automatically slice a complete `200` response. `HEAD` omits the body while
+preserving valid size metadata. Closing or replacing the source revokes its old
+route, and closing the listener cancels its active request scopes and sockets.
+
 Python exposes legacy `getProxyUrl` / `localProxy` and newer `proxyUrl` / `proxy`
 interfaces. JavaScript exposes `getProxy` and `proxyUrl`. URLs belong to a specific
 live source instance; a caller cannot select another source by altering `siteKey`.
