@@ -3,16 +3,13 @@ from pathlib import Path
 import os
 import subprocess
 import tempfile
+from script_dependencies import prepare
 
 root = Path(__file__).resolve().parents[2]
 jdk = Path(os.environ.get('MARCOMOVIE_JDK') or os.environ['JAVA_HOME']) / 'bin'
 node = os.environ.get('NODE', 'node')
 src = root / 'android/src/main/java/com/pilipala/marcomovie'
-dependencies = [root / 'android/tests/lib/json-20240303.jar',
-                Path(os.environ.get('MARCOMOVIE_ANDROID_JAR', root / 'tools/android-35/android.jar')),
-                root / 'android/build/aar/wrapper-android-3.2.3/classes.jar',
-                root / 'tools/java-dependencies/wrapper-java-3.2.3.jar',
-                root / 'tools/java-dependencies/jsoup-1.18.3.jar']
+dependencies = prepare()
 classpath = os.pathsep.join(map(str, dependencies))
 with tempfile.TemporaryDirectory(prefix='script-proxy-check-') as temporary:
     work = Path(temporary)

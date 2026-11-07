@@ -1,10 +1,10 @@
 from pathlib import Path
 import os, subprocess, tempfile
+from script_dependencies import prepare
 ROOT=Path(__file__).resolve().parents[2]
 JDK=Path(os.environ.get('MARCOMOVIE_JDK',os.environ.get('JAVA_HOME', 'missing-jdk')))
-ANDROID=Path(os.environ.get('MARCOMOVIE_ANDROID_JAR',str(ROOT/'tools/android-35/android.jar')))
 test=ROOT/'android/tests';out=test/'js-player-classes';out.mkdir(exist_ok=True)
-deps=[test/'lib/json-20240303.jar',ANDROID,ROOT/'android/build/aar/wrapper-android-3.2.3/classes.jar',ROOT/'tools/java-dependencies/wrapper-java-3.2.3.jar',ROOT/'tools/java-dependencies/jsoup-1.18.3.jar']
+deps=prepare()
 classpath=os.pathsep.join(map(str,deps))
 sources=[ROOT/'android/src/main/java/com/pilipala/marcomovie'/f for f in ('Cms.java','RequestScope.java','SourceEngine.java','JsEngine.java','QuickJsDeadline.java','LocalSourcePackage.java','LiveCatalog.java','ProxyAddress.java')]
 with tempfile.TemporaryDirectory(prefix='js-http-shims-') as tmp:
