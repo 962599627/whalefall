@@ -34,6 +34,9 @@ TEST_AUTHORITIES = {
     'scripts/test_python_proxy.js': {'0.0.0.0:18345'},
     'scripts/test_t4_adapter.cjs': {'name:secret@127.0.0.1'},
     'scripts/test_t4_adapter.py': {'name:secret@example.invalid'},
+    # The URL scan stops at the escaped dot in this reviewed loopback-only regex.
+    'scripts/ios_cpython_transport/dart/fixture_http_transport.dart': {'127'},
+    'scripts/ios_cpython_transport/dart/fixture_http_transport_test.dart': {'user@127.0.0.1:${server.port}'},
 }
 
 # Pinned interpreter dependencies and their primary documentation are reviewed
@@ -42,6 +45,7 @@ EXPERIMENT_HOSTS = {
     'scripts/ios_cpython/run_cpython_probe.py': {'files.pythonhosted.org'},
     'scripts/ios_cpython/pure-dependencies.lock.json': {'files.pythonhosted.org', 'pypi.org'},
     'scripts/ios_cpython/README.md': {'docs.python.org', 'briefcase.beeware.org'},
+    'scripts/ios_cpython_transport/README.md': {'requests.readthedocs.io'},
 }
 
 def paths():

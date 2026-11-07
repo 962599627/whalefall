@@ -1,5 +1,6 @@
 // Experimental: accepts only the bundled synthetic-v1 fixture, never user code.
 #import "CPythonFixturePlugin.h"
+#import "FlutterPythonTransport.h"
 #import <Python/Python.h>
 #include <signal.h>
 
@@ -64,12 +65,14 @@ static id toJSON(PyObject *value) {
 @property(nonatomic,strong) NSDictionary *beforePython;
 @property(nonatomic,strong) NSDictionary *afterPython;
 @property(nonatomic,assign) BOOL preservedInterrupt;
+@property(nonatomic,strong) FlutterPythonTransport *transport;
 @end
 
 @implementation CPythonFixturePlugin
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar {
     FlutterMethodChannel *channel=[FlutterMethodChannel methodChannelWithName:@"marco_movie/experimental_python" binaryMessenger:registrar.messenger];
     CPythonFixturePlugin *plugin=[[self alloc] init];
+    plugin.transport=[[FlutterPythonTransport alloc] initWithChannel:channel];
     [registrar addMethodCallDelegate:plugin channel:channel];
 }
 - (instancetype)init {
@@ -123,7 +126,21 @@ failed:
     PyConfig_Clear(&config);
 }
 - (void)handleMethodCall:(FlutterMethodCall *)call result:(FlutterResult)result {
-    if (![@[@"capabilities",@"open",@"call",@"release"] containsObject:call.method]) {
+    if ([call.method isEqualToString:@"cancelTransport"]) {
+        NSDictionary *args=[call.arguments isKindOfClass:NSDictionary.class]?call.arguments:nil;
+        NSString *identity=[args[@"callId"] isKindOfClass:NSString.class]?args[@"callId"]:nil;
+        NSCharacterSet *allowed=[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"];
+        if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.pilipala.experimental.cpythonflutter"]
+                || !keysAre(args,@[@"version",@"callId"]) || ![args[@"version"] isEqual:@1]
+                || CFGetTypeID((__bridge CFTypeRef)args[@"version"])==CFBooleanGetTypeID()
+                || identity.length!=32 || [identity rangeOfCharacterFromSet:allowed.invertedSet].location!=NSNotFound) {
+            result([FlutterError errorWithCode:@"invalid_request" message:@"Invalid owned transport cancellation" details:nil]);return;
+        }
+        // Do not queue behind the Python owner: it can be waiting for this signal.
+        NSUInteger count=[self.transport cancelCall:identity];
+        result(@{@"cancelled":@(count)});return;
+    }
+    if (![@[@"capabilities",@"open",@"call",@"release",@"transportProbe"] containsObject:call.method]) {
         result(FlutterMethodNotImplemented);return;
     }
     [self performSelector:@selector(execute:) onThread:self.worker withObject:@{@"method":call.method,@"arguments":call.arguments?:NSNull.null,@"result":[result copy]} waitUntilDone:NO];
@@ -153,6 +170,44 @@ failed:
                      @"signalsBeforePython":self.beforePython?:@{},@"signalsAfterPython":self.afterPython?:@{},
                      @"pythonPreservedSigint":@(self.preservedInterrupt)};
         } else if (![args[@"version"] isEqual:@1]) { code=@"invalid_request"; }
+        else if ([method isEqualToString:@"transportProbe"]) {
+            NSArray *origins=[args[@"origins"] isKindOfClass:NSArray.class]?args[@"origins"]:nil;
+            BOOL valid=keysAre(args,@[@"version",@"origins"]) && origins.count==2
+                && CFGetTypeID((__bridge CFTypeRef)args[@"version"])!=CFBooleanGetTypeID();
+            NSMutableSet *ports=[NSMutableSet set];
+            NSRegularExpression *path=[NSRegularExpression regularExpressionWithPattern:@"^/[a-f0-9]{32}$" options:0 error:nil];
+            for (id item in origins) {
+                NSURLComponents *url=[item isKindOfClass:NSString.class]?[NSURLComponents componentsWithString:item]:nil;
+                if (!url || ![url.scheme isEqualToString:@"http"] || ![url.host isEqualToString:@"127.0.0.1"]
+                        || url.port.integerValue<=0 || url.port.integerValue>65535 || url.user || url.password || url.query || url.fragment
+                        || ![url.percentEncodedPath isEqualToString:url.path]
+                        || [path numberOfMatchesInString:url.path options:0 range:NSMakeRange(0,url.path.length)]!=1) { valid=NO;break; }
+                [ports addObject:url.port];
+            }
+            if (!valid || ports.count!=2) code=@"invalid_request";
+            else if (self.sessions.count>=2) code=@"runtime_limit";
+            else if (![self.transport beginOrigins:origins]) code=@"runtime_limit";
+            else {
+                PyEval_RestoreThread(self.mainState);
+                PyInterpreterConfig isolation={};isolation.use_main_obmalloc=0;isolation.allow_fork=0;isolation.allow_exec=0;
+                isolation.allow_threads=0;isolation.allow_daemon_threads=0;isolation.check_multi_interp_extensions=1;isolation.gil=PyInterpreterConfig_OWN_GIL;
+                PyThreadState *state=NULL;PyStatus status=Py_NewInterpreterFromConfig(&state,&isolation);
+                if (PyStatus_Exception(status)) {
+                    code=@"python_error";message=status.err_msg?[NSString stringWithUTF8String:status.err_msg]:@"Transport subinterpreter creation failed";
+                    if (!PyThreadState_GetUnchecked()) PyEval_RestoreThread(self.mainState);
+                } else {
+                    PyObject *module=PyImport_ImportModule("transport_fixture");
+                    PyObject *bridge=module?MMCreateFixtureTransportBridge(self.transport):NULL;
+                    PyObject *addresses=bridge?fromJSON(origins):NULL;
+                    PyObject *value=addresses?PyObject_CallMethod(module,"run","OO",bridge,addresses):NULL;
+                    if (value) { output=toJSON(value);Py_DECREF(value); }
+                    if (!output) { code=@"python_error";message=pyError(); }
+                    Py_XDECREF(addresses);Py_XDECREF(bridge);Py_XDECREF(module);
+                    Py_EndInterpreter(state);PyEval_RestoreThread(self.mainState);
+                }
+                self.mainState=PyEval_SaveThread();[self.transport endProbe];
+            }
+        }
         else if ([method isEqualToString:@"open"]) {
             NSURLComponents *url=[args[@"origin"] isKindOfClass:NSString.class]?[NSURLComponents componentsWithString:args[@"origin"]]:nil;
             NSRegularExpression *path=[NSRegularExpression regularExpressionWithPattern:@"^/[a-f0-9]{32}$" options:0 error:nil];

@@ -29,6 +29,8 @@ def main():
             raise AssertionError(name)
 
     accepted = {"passed": True, "checks": [{"name": name, "passed": True} for name in sorted(probe.REQUIRED)],
+        "transport": {"version": 1, "passed": True,
+                      "checks": [{"name": name, "passed": True} for name in sorted(probe.TRANSPORT_REQUIRED)]},
         "capabilities": {"arch": "arm64", "runtime": "3.14.10 (synthetic validator fixture)", "ownedFixtureOnly": True, "hardCancel": False,
                          "initialized": True, "pythonPreservedSigint": True,
                          "signalsBeforePython": {"sigpipe": "default", "sigint": "default"},
@@ -46,6 +48,11 @@ def main():
         "wrong_order": lambda v: v.update(order="node-first"),
         "missing_signal_snapshot": lambda v: v["capabilities"].pop("signalsBeforePython"),
         "sigpipe_reset_after_node": lambda v: v["after_all_signals"].update(sigpipe="default"),
+        "extra_check": lambda v: v["checks"].append({"name": "unexpected", "passed": True}),
+        "missing_transport": lambda v: v.pop("transport"),
+        "transport_boolean_version": lambda v: v["transport"].update(version=True),
+        "false_transport_check": lambda v: v["transport"]["checks"][0].update(passed=False),
+        "duplicate_transport_check": lambda v: v["transport"]["checks"].__setitem__(1, v["transport"]["checks"][0]),
     }.items():
         invalid = copy.deepcopy(accepted);mutate(invalid)
         try:

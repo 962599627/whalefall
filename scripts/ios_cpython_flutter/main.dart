@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:quickjs_engine/quickjs_engine.dart';
+import 'transport_fixture.dart';
 
 const python = MethodChannel('marco_movie/experimental_python');
 const node = MethodChannel('marco_movie/catpaw');
@@ -43,12 +44,13 @@ Future<void> runFixture() async {
   };
   String? output;
   QuickJsRuntime2? js;
+  PythonTransportFixture? pythonHttp;
   var beats = 0;
   final heartbeat = Timer.periodic(const Duration(milliseconds: 20), (_) {
     beats++;
   });
   final watchdog = Timer(const Duration(seconds: 50), () {
-    if (output != null)
+    if (output != null) {
       File(output).writeAsStringSync(
         jsonEncode({
           ...report,
@@ -57,6 +59,7 @@ Future<void> runFixture() async {
               'Flutter fixture deadline; no hard Python cancellation attempted',
         }),
       );
+    }
   });
   final http = HttpClient()..connectionTimeout = const Duration(seconds: 3);
   void check(String name, bool passed) {
@@ -67,8 +70,9 @@ Future<void> runFixture() async {
   Future<String> getText(String url) async {
     final request = await http.getUrl(Uri.parse(url));
     final response = await request.close().timeout(const Duration(seconds: 5));
-    if (response.statusCode != 200)
+    if (response.statusCode != 200) {
       throw StateError('Owned server HTTP ${response.statusCode}');
+    }
     return utf8.decode(
       await response.fold<List<int>>([], (all, bytes) => all..addAll(bytes)),
     );
@@ -307,6 +311,55 @@ Future<void> runFixture() async {
           'after',
     );
     check('flutter_main_loop_responsive', beats >= 2);
+
+    // This additive probe uses a fresh own-GIL interpreter and the real
+    // requests adapter through an asynchronous, same-process Dart transport.
+    // The original retained-source checks above remain unchanged.
+    final transportFixture = await PythonTransportFixture.start();
+    pythonHttp = transportFixture;
+    python.setMethodCallHandler(
+      (call) => transportFixture.handle(call, python),
+    );
+    final beatsBeforeTransport = beats;
+    final transportReport = await bridge('transportProbe', {
+      'version': 1,
+      'origins': transportFixture.origins.map((origin) => '$origin').toList(),
+    });
+    check('transport_ui_responsive', beats - beatsBeforeTransport >= 2);
+    report['transport'] = transportReport;
+    if (transportReport['version'] != 1 || transportReport['passed'] != true) {
+      throw StateError('Native transport probe did not complete');
+    }
+    final transportNames = <String>{};
+    for (final item in transportReport['checks'] as List) {
+      final name = item['name'] as String;
+      if (!name.startsWith('transport_') || !transportNames.add(name)) {
+        throw StateError('Malformed native transport checks');
+      }
+      check(name, item['passed'] == true);
+    }
+    // Allow the deliberately cancelled server responses to finish. Their late
+    // callbacks must not change completed calls or store cookies.
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    check(
+      'transport_native_cancel_ack',
+      transportFixture.cancellationRequests == 1 &&
+          transportFixture.nativeCancellations == 1,
+    );
+    check(
+      'transport_tasks_drained',
+      transportFixture.transport.activeRequestCount == 0,
+    );
+    check('transport_no_server_errors', transportFixture.failures.isEmpty);
+    check(
+      'transport_quickjs_survives',
+      js.evaluate('++fixtureCount').stringResult == '3',
+    );
+    check(
+      'transport_node_survives',
+      (jsonDecode(await getText('$origin/ping?q=transport')) as Map)['q'] ==
+          'transport',
+    );
     report['passed'] = true;
   } catch (error, stack) {
     report['failure'] = error.toString();
@@ -314,6 +367,8 @@ Future<void> runFixture() async {
   } finally {
     watchdog.cancel();
     heartbeat.cancel();
+    python.setMethodCallHandler(null);
+    await pythonHttp?.close();
     http.close(force: true);
     js?.dispose();
     report['heartbeat'] = beats;

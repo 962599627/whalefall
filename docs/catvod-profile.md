@@ -99,7 +99,28 @@ establish iPhone or Android behavior.
 The complete local Flutter suite passes 279 tests, including 13 new CatVod
 checks. Shared-module checks pass on Node 22 and Node 18 with JIT disabled.
 The Android transport adds 22 real-socket JVM checks; its earlier 16 player,
-13 HTTP and 46 proxy checks also pass. Thirteen new Android JNI checks and
-eight new iOS QuickJS groups are checked in, but require separate native workflow
-results before being counted as platform acceptance. None of these synthetic
-fixtures establishes that every external subscription or plugin route plays.
+13 HTTP and 46 proxy checks also pass.
+
+At commit `a89d6e0`, [Android 6 run 42408801667](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42408801667)
+passed all 80 unique source-host checks, including the 13 new CatVod checks, on
+the API 23 x86 emulator. Its 96 home and 25 subtitle assertions also passed.
+Package hashes are the same-run build records; APK bytes were not uploaded for
+independent rehashing. This is actual JNI execution, not an ARM device or decoder test.
+
+[iOS native run 42408801642](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42408801642)
+at the same commit passed all 200 unique checks on both ARM64/iOS 26.2 and
+x86_64/iOS 18.5 simulators, including eight new CatVod groups. Both reports'
+32 production and 15 fixture input hashes match that exact commit. The CatVod
+native fixture supplies a synthetic HTTP bridge; real Dart HTTP is covered by
+the separate local Flutter tests, not by this native fixture. None of these
+results establishes physical iPhone playback or every external subscription or
+plugin route.
+
+[Full iOS build 42408802415](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42408802415)
+at `a89d6e0` also passed all 279 Flutter tests. Independent inspection of its
+unpublished validation IPA verified ZIP integrity, all four declared JS host
+assets (including the crypto license), 19 pinned DRPY assets, exact shared
+Python/Node host bytes, and 37 device-arm64 Mach-O images targeting iOS 14 or
+earlier. The QuickJS operation-deadline export is present. The IPA is 35,315,507
+bytes, SHA-256 `1ddc12ae34cc5d63833a3828f047dbc5f2ad1490be84fdcee6b56e280a7a4f7d`.
+Package inspection does not establish minimum-OS runtime or physical playback.
