@@ -37,6 +37,7 @@ def main():
     shutil.copytree(framework, APP/'Frameworks/NodeMobile.framework', dirs_exist_ok=True)
     shutil.copytree(ROOT/'shared/catpaw', APP/'runtime', dirs_exist_ok=True)
     shutil.copyfile(ROOT/'scripts/ios_runtime/fixture.cjs', APP/'fixture.cjs')
+    shutil.copytree(ROOT/'android/src/main/assets/python-host', APP/'python-host', dirs_exist_ok=True)
     info = {'CFBundleIdentifier': IDENTIFIER, 'CFBundleExecutable': 'RuntimeProbe',
             'CFBundleName': 'RuntimeProbe', 'CFBundlePackageType': 'APPL',
             'CFBundleVersion': '1', 'CFBundleShortVersionString': '1.0',
@@ -47,12 +48,22 @@ def main():
     sdk = run('xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path', capture=True)
     arch = 'arm64' if platform.machine() == 'arm64' else 'x86_64'
     classes = ROOT/'flutter/packages/catpaw_runtime/ios/Classes'
+    quickjs = ROOT/'flutter/packages/quickjs_engine/native/cxx'
+    quickjs_ios = ROOT/'flutter/packages/quickjs_engine/ios/quickjs_engine/quickjs_engine_native/Sources/quickjs_engine_native'
+    objects = []
+    for name in ['quickjs.c', 'dtoa.c', 'libregexp.c', 'libunicode.c', 'libfastdev_quickjs_runtime.cpp']:
+        obj=OUT/(name+'.o'); objects.append(obj)
+        run('xcrun', '--sdk', 'iphonesimulator', 'clang++' if name.endswith('.cpp') else 'clang',
+            '-target', arch+'-apple-ios14.0-simulator', '-isysroot', sdk, '-O2', '-DNDEBUG=1',
+            '-DCONFIG_VERSION="ng-0.14.0"', '-I'+str(quickjs), '-I'+str(quickjs/'quickjs'),
+            '-std=c++17' if name.endswith('.cpp') else '-std=c11', '-c', quickjs_ios/name, '-o', obj)
     run('xcrun', '--sdk', 'iphonesimulator', 'clang++', '-fobjc-arc', '-std=c++17',
         '-target', arch+'-apple-ios14.0-simulator', '-isysroot', sdk,
-        '-I'+str(classes), '-F'+str(framework.parent), '-framework', 'NodeMobile',
+        '-I'+str(classes), '-I'+str(quickjs), '-F'+str(framework.parent), '-framework', 'NodeMobile',
         '-framework', 'Foundation', '-framework', 'UIKit',
         '-Wl,-rpath,@executable_path/Frameworks', ROOT/'scripts/ios_runtime/Probe.mm',
-        classes/'CatpawRuntimeEngine.mm', '-o', APP/'RuntimeProbe')
+        classes/'CatpawRuntimeEngine.mm', ROOT/'scripts/ios_runtime/QuickJsProbe.mm',
+        *objects, '-o', APP/'RuntimeProbe')
     run('codesign', '--force', '--sign', '-', APP/'Frameworks/NodeMobile.framework')
     run('codesign', '--force', '--sign', '-', APP)
     inventory = json.loads(run('xcrun', 'simctl', 'list', 'devices', 'available', '--json', capture=True))
@@ -81,11 +92,13 @@ def main():
                    'commit': run('git', '-C', ROOT, 'rev-parse', 'HEAD', capture=True),
                    'production_inputs': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in [classes/'CatpawRuntimeEngine.mm', *sorted((ROOT/'shared/catpaw').glob('*.cjs')),
-                               ROOT/'shared/catpaw/drpy-core.js', ROOT/'shared/catpaw/drpy-assets.json']}})
+                               ROOT/'shared/catpaw/drpy-core.js', ROOT/'shared/catpaw/drpy-assets.json',
+                               quickjs/'libfastdev_quickjs_runtime.cpp', quickjs/'quickjs/quickjs.c',
+                               *sorted((ROOT/'android/src/main/assets/python-host').glob('*.js'))]}})
     (OUT/'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf8')
     print(json.dumps({'passed': report['passed'], 'checks': report['checks'],
                       'runtime': report['runtime'], 'failure': report['failure']}, ensure_ascii=False))
-    if not report['passed'] or len(report['checks']) < 14:
+    if not report['passed'] or len(report['checks']) < 20:
         raise RuntimeError('iOS runtime behavior verification failed')
 
 

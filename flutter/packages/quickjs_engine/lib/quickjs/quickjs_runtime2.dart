@@ -195,7 +195,9 @@ class QuickJsRuntime2 extends JavascriptRuntime {
 
     if (jsIsException(jsval) != 0) {
       jsFreeValue(ctx, jsval);
-      JSError exception = _parseJSException(ctx);
+      // JavaScript may throw a string, a plain object, or a Python exception.
+      // Preserve that failure instead of replacing it with a Dart cast error.
+      final exception = JSError(_parseJSException(ctx));
       return JsEvalResult(exception.toString(), exception, isError: true);
     }
     final result = _jsToDart(ctx, jsval);

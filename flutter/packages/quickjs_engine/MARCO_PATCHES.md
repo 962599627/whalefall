@@ -9,5 +9,7 @@ Preserve upstream copyright notices in LICENSE and native/cxx/quickjs/.
 - macOS CocoaPods compiles the same patched source as all other platforms instead
   of loading the upstream prebuilt, unpatched dylib.
 - No upstream prebuilt binary is shipped in this copy.
+- Non-Error JavaScript throws (including Python host exceptions) are wrapped as
+  script failures instead of causing a Dart JSError cast failure.
 
 This is not a complete TVBox/DRPY/Python or Android JAR implementation.

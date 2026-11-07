@@ -17,7 +17,7 @@ exports.start = async () => {
     if(url.pathname==='/t4') res.end(JSON.stringify({sites:[{key:'demo',name:'Demo',type:4,api:base+'/api/demo'}]}));
     else if(url.pathname==='/website') {res.setHeader('Content-Type','text/html');res.end('<title>Source settings</title>');}
     else if(q.has('play')) res.end(JSON.stringify({parse:0,url:base+'/api/stream.mp4',header:{'X-Fixture':'one'}}));
-    else if(q.has('ids')) res.end(JSON.stringify({list:[{...card,vod_play_from:'Line',vod_play_url:'Episode$opaque-id'}]}));
+    else if(q.has('ids')) res.end(JSON.stringify({list:[{vod_name:'Synthetic movie',vod_play_from:'Line',vod_play_url:'Episode$opaque-id'}]}));
     else if(q.has('t') || q.has('wd')) res.end(JSON.stringify({list:[card],page:1,pagecount:1}));
     else if(url.pathname==='/api/stream.mp4') { res.setHeader('Content-Type','video/mp4');res.end(Buffer.from([0,1,255,42])); }
     else res.end(JSON.stringify({class:[{type_id:'1',type_name:'Movies'}],list:[]}));
@@ -54,6 +54,8 @@ void main() {
     expect(home.$2.videos.single.title,'Synthetic movie');
     final found = (await client.fetchSearch(site,'Synthetic')).videos.single;
     final detail = await client.fetchDetail(site,found);
+    expect(detail.id, found.id);
+    expect(detail.year, found.year);
     final episode = detail.lines.single.episodes.single;
     expect(episode.needsSourceResolution,isTrue);
     final play = await client.resolveEpisodeForPlayback(site,episode);

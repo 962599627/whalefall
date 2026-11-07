@@ -26,3 +26,15 @@ The user's supplied configuration/service URLs and authentication details remain
 The production iOS Node startup implementation is shared with a simulator-only native regression app. Its test scope is Node startup, real CatPaw workers, the jitless Fetch shim, DRPY catalogue/search/detail, nested local helpers, local proxy text/binary/range responses, and source reset/reopen. The workflow does not publish an IPA and must retain its actual result before being reported as passed. It does not exercise Flutter widgets, a physical iPhone, or video decoding.
 
 The local DRPY proxy implements the pinned engine's three-element status/type/body contract. Text and byte arrays are accepted; unsupported response shapes fail explicitly. Playback URLs stay tied to their source, and active proxy playback is protected from background-source eviction. Closing the iOS host clears source workers/settings sessions without terminating the process-wide Node runtime; failed cleanup must be retried before loading new sources.
+
+The same simulator fixture also compiles the production iOS QuickJS bridge and
+loads the production Python adapter assets. It checks ES modules, Python sibling
+modules, asynchronous response handling, byte codecs and the native execution
+deadline. Its Python HTTP response is synthetic; the Node Fetch check uses a real
+local socket. Neither is a claim of arbitrary native Python package support.
+
+CatPaw and script detail responses may omit catalogue IDs and metadata. The
+client now merges those responses with the selected catalogue item, retaining its
+identity for history/reopen without replacing returned episode lists. Non-Error
+script exceptions retain their original failure instead of producing a Dart cast
+error.

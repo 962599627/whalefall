@@ -85,6 +85,7 @@ void main() {
       expect(home.$2.videos.single.title, '完整本地影片');
       final found = (await client.fetchSearch(site, '影片')).videos.single;
       final detail = await client.fetchDetail(site, found);
+      expect(detail.id, found.id);
       final episode = detail.lines.single.episodes.single;
       final play = await client.resolveEpisodeForPlayback(site, episode);
       final http = HttpClient();

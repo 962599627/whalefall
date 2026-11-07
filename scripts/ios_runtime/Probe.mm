@@ -3,6 +3,7 @@
 #import <UIKit/UIKit.h>
 #import <CommonCrypto/CommonDigest.h>
 #import "CatpawRuntimeEngine.h"
+extern NSArray *runQuickJsProbe(NSString *assets);
 
 static NSMutableArray *checks;
 static void check(BOOL ok, NSString *name) {
@@ -30,7 +31,9 @@ static NSData *request(NSString *address, NSString *method, id body, NSDictionar
   long timedOut=dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_SEC));
   [session invalidateAndCancel];
   if (timedOut||failure||status<200||status>=300)
-    @throw [NSException exceptionWithName:@"TransportFailure" reason:@"local HTTP request failed" userInfo:nil];
+    @throw [NSException exceptionWithName:@"TransportFailure"
+      reason:[NSString stringWithFormat:@"local HTTP status=%ld error=%ld timeout=%ld",(long)status,(long)failure.code,timedOut]
+      userInfo:nil];
   return bytes;
 }
 static NSString *install(NSString *root,NSString *name,NSData *data) {
@@ -61,6 +64,8 @@ static id call(NSString *base,NSString *key,NSString *method,NSArray *args) {
 - (void)runProbe {
   checks=[NSMutableArray array];NSString *failure=nil;NSString *runtimeVersion=@"";
   @try {
+    for(NSDictionary *result in runQuickJsProbe(NSBundle.mainBundle.resourcePath))
+      check([result[@"passed"] boolValue],result[@"name"]);
     NSFileManager *fm=NSFileManager.defaultManager;
     NSString *root=[[NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory,NSUserDomainMask,YES) firstObject]
       stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
@@ -90,7 +95,15 @@ static id call(NSString *base,NSString *key,NSString *method,NSArray *args) {
     NSData *fetched=request([catBase stringByAppendingString:@"/api/fetch"],@"GET",nil,@{});
     const unsigned char expected[]={0,1,255,42};
     check([fetched isEqualToData:[NSData dataWithBytes:expected length:4]],@"jitless_fetch_binary");
-    NSString *rule=@"var rule={title:'iOS fixture',host:'https://fixture.invalid',class_name:'电影',class_url:'films',url:'/category/fyclass',searchUrl:'/search?wd=**',searchable:2,预处理:'js:require(\"./helpers/entry.js\");',一级:'js:VODS=[{vod_id:\"one\",vod_name:fixtureTitle}];',搜索:'js:VODS=[{vod_id:\"one\",vod_name:fixtureTitle}];',二级:'js:VOD={vod_name:fixtureTitle,vod_play_from:\"demo\",vod_play_url:\"第一集$one\"};',play_parse:true,lazy:'js:input={parse:0,url:getProxyUrl()+\"&kind=playlist\"};',proxy_rule:'js:input=input.kind===\"key\"?[200,\"application/octet-stream\",[0,1,255,42]]:[200,\"application/vnd.apple.mpegurl\",\"#EXTM3U\\n#EXT-X-VERSION:3\\n\"];'};";
+    NSDictionary *ruleData=@{@"title":@"iOS fixture",@"host":@"https://fixture.invalid",
+      @"class_name":@"电影",@"class_url":@"films",@"url":@"/category/fyclass",@"searchUrl":@"/search?wd=**",@"searchable":@2,
+      @"预处理":@"js:require(\"./helpers/entry.js\");",
+      @"一级":@"js:VODS=[{vod_id:\"one\",vod_name:fixtureTitle}];",
+      @"搜索":@"js:VODS=[{vod_id:\"one\",vod_name:fixtureTitle}];",
+      @"二级":@"js:VOD={vod_name:fixtureTitle,vod_play_from:\"demo\",vod_play_url:\"第一集$one\"};",
+      @"play_parse":@YES,@"lazy":@"js:input={parse:0,url:getProxyUrl()+\"&kind=playlist\"};",
+      @"proxy_rule":@"js:input=input.kind===\"key\"?[200,\"application/octet-stream\",[0,1,255,42]]:[200,\"application/vnd.apple.mpegurl\",\"#EXTM3U\\n#EXT-X-VERSION:3\\n\"];"};
+    NSString *rule=[NSString stringWithFormat:@"var rule=%@;",[[NSString alloc] initWithData:jsonData(ruleData) encoding:NSUTF8StringEncoding]];
     NSDictionary *manifest=@{@"kind":@"drpy",@"version":@1,@"runtime":@"drpy2-ca23ffdb-1",
       @"sourceId":[@"a" stringByPaddingToLength:64 withString:@"a" startingAtIndex:0],
       @"origin":@"pkg://archive/main.js",@"rule":rule,@"headers":@{},@"requestTimeoutMs":@1000,

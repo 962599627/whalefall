@@ -148,6 +148,42 @@ export default {
     },
   );
 
+  test(
+    'non-Error throws retain the source failure and allow a fresh runtime',
+    () async {
+      const entry = 'pkg://local/source.js';
+      for (final thrown in [
+        '"fixture_failure"',
+        '{reason:"fixture_failure"}',
+      ]) {
+        await expectLater(
+          JsSourceHost.invoke(
+            entry: entry,
+            modules: {entry: 'throw $thrown; export default {}'},
+            method: 'home',
+            arguments: [],
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message.toString(),
+              'script failure',
+              contains('fixture_failure'),
+            ),
+          ),
+        );
+      }
+      expect(
+        await JsSourceHost.invoke(
+          entry: entry,
+          modules: {entry: 'export default {home(){return {list:[]}}}'},
+          method: 'home',
+          arguments: [],
+        ),
+        '{"list":[]}',
+      );
+    },
+  );
+
   test('one source with an endless loop times out independently', () async {
     const entry = 'pkg://local/source.js';
     await expectLater(

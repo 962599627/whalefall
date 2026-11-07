@@ -963,13 +963,13 @@ class CmsClient {
     if (site.isCatPaw) {
       final raw = await _getText(_appendQuery(site.api, {'ac':'detail','ids':fallback.id}).toString());
       final listing = CmsParser.parseListing(_wrapJsEpisodeIds(raw,scheme:'mmpaw'));
-      return listing.videos.isEmpty ? fallback : listing.videos.first;
+      return listing.videos.isEmpty ? fallback : _mergeDetail(listing.videos.first, fallback);
     }
     if (site.isEmby) return (await EmbyLibrary.open(site)).detail(fallback.id);
     if (_usesJs(site)) {
       final raw = await _callJs(site, 'detail', [fallback.id]);
       final listing = CmsParser.parseListing(_wrapJsEpisodeIds(raw));
-      return listing.videos.isEmpty ? fallback : listing.videos.first;
+      return listing.videos.isEmpty ? fallback : _mergeDetail(listing.videos.first, fallback);
     }
     if (site.isM3uVodApi) {
       return fallback;
@@ -994,22 +994,7 @@ class CmsClient {
       if (listing.videos.isNotEmpty) {
         final detailed = listing.videos.first;
         if (detailed.lines.isNotEmpty) {
-          return CmsVideo(
-            id: detailed.id.isEmpty ? fallback.id : detailed.id,
-            title: detailed.title.isEmpty ? fallback.title : detailed.title,
-            poster: CmsParser.isBrokenPosterUrl(detailed.poster)
-                ? fallback.poster
-                : detailed.poster,
-            remarks: detailed.remarks.isEmpty ? fallback.remarks : detailed.remarks,
-            year: detailed.year.isEmpty ? fallback.year : detailed.year,
-            area: detailed.area.isEmpty ? fallback.area : detailed.area,
-            actor: detailed.actor.isEmpty ? fallback.actor : detailed.actor,
-            description: detailed.description.isEmpty
-                ? fallback.description
-                : detailed.description,
-            tag: detailed.tag,
-            lines: detailed.lines,
-          );
+          return _mergeDetail(detailed, fallback);
         }
       }
     } catch (_) {}
@@ -1022,6 +1007,18 @@ class CmsClient {
     }
     return fallback;
   }
+  CmsVideo _mergeDetail(CmsVideo detailed, CmsVideo fallback) => CmsVideo(
+    id: detailed.id.isEmpty ? fallback.id : detailed.id,
+    title: detailed.title.isEmpty ? fallback.title : detailed.title,
+    poster: CmsParser.isBrokenPosterUrl(detailed.poster) ? fallback.poster : detailed.poster,
+    remarks: detailed.remarks.isEmpty ? fallback.remarks : detailed.remarks,
+    year: detailed.year.isEmpty ? fallback.year : detailed.year,
+    area: detailed.area.isEmpty ? fallback.area : detailed.area,
+    actor: detailed.actor.isEmpty ? fallback.actor : detailed.actor,
+    description: detailed.description.isEmpty ? fallback.description : detailed.description,
+    tag: detailed.tag.isEmpty ? fallback.tag : detailed.tag,
+    lines: detailed.lines,
+  );
   Uri? _sourceCredentialOrigin(CmsSite site) {
     if (site.isHttpApi) return Uri.tryParse(site.api);
     Object? extension = site.ext;

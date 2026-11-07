@@ -8,6 +8,8 @@ on:
       - 'scripts/ios_runtime/**'
       - 'scripts/run_ios_runtime_probe.py'
       - 'flutter/packages/catpaw_runtime/ios/Classes/**'
+      - 'flutter/packages/quickjs_engine/**'
+      - 'android/src/main/assets/python-host/**'
       - 'shared/catpaw/**'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
