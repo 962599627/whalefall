@@ -74,6 +74,9 @@ jobs:
           profile: ${{ matrix.profile }}
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           disable-animations: true
+          # Use ordinary APK installation in the runner to isolate Node/JNI
+          # from incremental-filesystem mappings on the experimental image.
+          # Match ordinary APK installation; avoid incremental-filesystem ELF mapping artifacts.
           script: python scripts/run_native_source_probe.py --page-size ${{ matrix.page_size }}
       - uses: actions/upload-artifact@v4
         if: always()

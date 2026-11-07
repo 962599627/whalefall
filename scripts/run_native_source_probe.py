@@ -16,6 +16,22 @@ def adb(*args, check=True, timeout=300):
                           text=True, encoding='utf-8', errors='replace').stdout
 
 
+def emulator_page_size():
+    reported = adb('shell', 'getconf', 'PAGESIZE', check=False).strip()
+    if reported.isdigit():
+        return int(reported)
+    # Android 6 has no getconf binary. This fallback is only for the regular
+    # API 23 image; the instrumentation still checks Os.sysconf independently.
+    sdk = adb('shell', 'getprop', 'ro.build.version.sdk').strip()
+    if sdk != '23':
+        raise RuntimeError('getconf did not report the emulator page size')
+    smaps = adb('shell', 'cat', '/proc/self/smaps')
+    sizes = {int(value) * 1024 for value in re.findall(r'^KernelPageSize:\s+(\d+)\s+kB\s*$', smaps, re.MULTILINE)}
+    if sizes != {4096}:
+        raise RuntimeError('API 23 kernel page size is missing or unexpected')
+    return sizes.pop()
+
+
 def main(page_size):
     if adb('shell', 'getprop', 'ro.kernel.qemu').strip() != '1':
         raise RuntimeError('This destructive probe is restricted to a disposable emulator')
@@ -25,12 +41,14 @@ def main(page_size):
     import run_api23_probes as boot
     boot.OUT = OUT
     boot.wait_for_full_boot()
-    actual = adb('shell', 'getconf', 'PAGESIZE').strip()
-    if actual != str(page_size):
-        raise RuntimeError('Wrong emulator page size: expected ' + str(page_size) + ', got ' + actual)
-    (OUT / 'device.txt').write_text(adb('shell', 'getprop') + '\nPAGESIZE=' + actual + '\n', encoding='utf-8')
-    adb('install', '-r', str(OUT / 'fixture.apk'))
-    adb('install', '-r', str(OUT / 'probe.apk'))
+    actual = emulator_page_size()
+    if actual != page_size:
+        raise RuntimeError('Wrong emulator page size: expected ' + str(page_size) + ', got ' + str(actual))
+    (OUT / 'device.txt').write_text(adb('shell', 'getprop') + '\nPAGESIZE=' + str(actual) + '\n', encoding='utf-8')
+    # Keep native extraction on the ordinary filesystem. Incremental install
+    # adds a separate filesystem/mapping path to the experimental 16 KB image.
+    adb('install', '--no-incremental', '-r', str(OUT / 'fixture.apk'))
+    adb('install', '--no-incremental', '-r', str(OUT / 'probe.apk'))
     adb('shell', 'pm', 'clear', 'com.pilipala.marcomovie')
     adb('shell', 'svc', 'wifi', 'disable')
     adb('shell', 'svc', 'data', 'disable')
