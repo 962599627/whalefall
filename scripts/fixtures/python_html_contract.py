@@ -1,5 +1,6 @@
 """Self-authored HTML contract, also executable by CPython + BeautifulSoup."""
 import json
+import re
 from bs4 import BeautifulSoup
 
 
@@ -31,6 +32,22 @@ def contract():
         'root_not_selected': soup.select_one('section').select_one('section') is None,
         'special_document': special.get_text('|'),
         'special_tag_text': [special.select_one(name).get_text('|') for name in ['script', 'style', 'template', 'b', 'ruby', 'rt', 'rp']],
+        'regex': {
+            'actor': re.sub(r'演员：\s*', '', '演员： 甲 乙'),
+            'line': re.sub(r'[#\s]+', ' ', '## A\t 线').strip(),
+            'unicode_space': re.sub(r'\s+', '/', '\u0085\u001c\u2003a\ufeffb'),
+            'unicode_word': re.sub(r'\w+', 'X', '中文²_ a!'),
+            'unicode_decimal': re.sub(r'\d+', 'N', '１２ ² 123'),
+            'backrefs': re.sub(r'([{,]\s*)(\w+)\s*:', r'\1"\2":', '{name:1, 中文:2}'),
+            'group_zero': re.sub(r'(a)(b)?', r'\g<0>-\2-\1', 'a ab'),
+            'literal_dollar': re.sub('a', '$&', 'aa'),
+            'count': re.sub('a', 'x', 'aaa', count=2),
+            'negative_count': re.sub('a', 'x', 'aaa', count=-1),
+            'ignorecase': re.sub('a', 'x', 'Aa', flags=re.I),
+            'multiline': re.sub('^a', 'x', 'a\na', flags=re.M),
+            'subn': re.subn('a', 'x', 'aba'),
+            'escapes': re.sub('a', r'\n\t\\\101', 'a'),
+        },
     }
 
 

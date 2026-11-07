@@ -151,3 +151,20 @@ ZIP integrity, all 17 manifest assets, source-host bytes against that exact
 commit, 37 device ARM64 Mach-O images and the exported renewed-deadline function
 passed inspection. It includes the exit-listener cleanup but predates the HTML
 adapter. It remains unpublished and is not physical-iPhone acceptance.
+
+The HTML adapter at `0b78d7d` passed all 50 checks on Intel/iOS 18.5 in
+[runtime run 42387422689](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42387422689).
+Its production and fixture hashes match that commit. ARM64 timed out while
+launching the simulator app, before any check result; it is not counted as a
+pass. [Android 6 run 42387422660](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42387422660)
+found the packaged HTML library exceeded the Java host's one-MiB asset-read
+limit. The follow-up allows two MiB only for that exact bundled dependency;
+remote script/response limits remain unchanged.
+
+An exact-method FY regression then found an additional missing `re.sub` call
+that the original detail method swallowed, producing an empty list. The shared
+host now has bounded string substitution and 14 independent CPython oracle
+outputs. Six private fixture cases using four unchanged FY methods match the
+original parser's metadata and line/episode binding after this repair. They do
+not execute the original module's file imports, initialization, verification or
+live requests, and do not establish that FY is usable end to end.

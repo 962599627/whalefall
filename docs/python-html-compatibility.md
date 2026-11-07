@@ -39,6 +39,15 @@ self-authored `python_html_contract.py` with CPython and BeautifulSoup 4.15.0.
 Twenty outputs cover document order, missing nodes/attributes, entities,
 Unicode whitespace, nested text, unclosed markup and special text containers.
 The normal Python host regression compares those values and checks bounds.
+One additional oracle group covers 14 `re.sub`/`re.subn` results, including
+Unicode whitespace/word/digit classes, numeric backreferences, replacement
+escapes, count and case/multiline flags. These substitutions supplement the
+bundled interpreter's incomplete `re` module. They accept string patterns and
+string replacements; compiled patterns, callable replacements, zero-width
+matches, named groups, lookbehind, word-boundary escapes and additional flags
+remain explicitly unsupported. This is not a full CPython regular-expression
+implementation. Patterns are limited to 2,048 characters, replacements to
+65,536, input/output to two Mi UTF-16 code units and matches to 100,000.
 Flutter also exercises the actual imported Python path with a loopback HTTP
 catalogue, details, retained nodes and a playback address. Those are parser and
 protocol tests, not video-decoder or physical-iPhone acceptance.
@@ -51,3 +60,11 @@ FY remains incomplete. Its imported module still needs file/module adaptation,
 cookie persistence, verification/OCR behavior and an exact plugin dispatch
 path. Adding HTML operations does not enable `csp_FyGuard`, complete any of the
 33 outstanding plugin obligations, or satisfy the iPhone release gate.
+
+A private regression runs four unchanged original FY method bodies over six
+self-authored HTML cases and compares them with CPython/BeautifulSoup. Before
+the substitution addition, FY swallowed a missing `re.sub` exception and returned
+an empty detail list. The verified cases cover catalogue/search fallbacks,
+duplicates, metadata, line-to-episode binding and episode reversal. This is
+method-level evidence only: fixture markup replaces fetch, and the original
+module's initialization, remote service and verification paths are not tested.

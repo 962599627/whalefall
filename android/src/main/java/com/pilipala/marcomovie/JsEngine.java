@@ -241,8 +241,9 @@ public final class JsEngine implements SourceEngine {
                             + "\nglobalThis.__moviePythonHtmlParser=()=>DRPYDeps.cheerio;return DRPYDeps.cheerio;};",
                     "python-html-loader.js");
             for (String file :
-                    new String[] {"skulpt.min.js", "skulpt-stdlib.js", "html.js", "spider.js"})
-                context.evaluate(asset("python-host/" + file), file);
+                    new String[] {
+                        "skulpt.min.js", "skulpt-stdlib.js", "html.js", "regex.js", "spider.js"
+                    }) context.evaluate(asset("python-host/" + file), file);
             context.evaluate(
                     "globalThis.__movieSpider=createPythonSpider("
                             + JSONObject.quote(source)
@@ -347,7 +348,10 @@ public final class JsEngine implements SourceEngine {
 
     private String asset(String path) throws IOException {
         try (InputStream in = app.getAssets().open(path)) {
-            return new String(read(in, 1024 * 1024), "UTF-8");
+            // The reviewed HTML dependency bundle is larger than 1 MiB. This
+            // exception applies only to the packaged asset, never remote input.
+            int limit = "catpaw/drpy-dependencies.js".equals(path) ? 2 * 1024 * 1024 : 1024 * 1024;
+            return new String(read(in, limit), "UTF-8");
         }
     }
 

@@ -12,6 +12,49 @@ void main() {
   tearDown(() => CmsClient.closeScriptSessions());
 
   test(
+    'Python substitutions preserve backreferences and expose unsupported cases',
+    () async {
+      const entry = 'pkg://fixture/sub.py';
+      final actual = jsonDecode(
+        await JsSourceHost.invoke(
+          entry: entry,
+          pythonPrelude: await loadPythonSourcePrelude(),
+          method: 'home',
+          arguments: [true],
+          modules: {
+            entry: r'''
+import re
+class Spider:
+    def homeContent(self, filter):
+        result = {'line':re.sub(r'[#\s]+', ' ', '## A\t 线').strip(), 'object':re.sub(r'([{,]\s*)(\w+)\s*:', r'\1"\2":', '{name:1, 中文:2}'), 'count':re.subn('a', 'x', 'aba')}
+        errors = []
+        for item in range(8):
+            try:
+                if item == 0: re.sub('(', '', 'x')
+                if item == 1: re.sub('(a)', r'\2', 'a')
+                if item == 2: re.sub('^', 'x', 'a')
+                if item == 3: re.sub('a', lambda m: 'x', 'a')
+                if item == 4: re.sub('a', 'x' * 65536, 'a' * 33)
+                if item == 5: re.sub('a', 'x', 'a', flags=4294967298)
+                if item == 6: re.sub(r'(?P<name>a)', 'x', 'a')
+                if item == 7: re.sub('a', r'\q', 'a')
+            except (ValueError, TypeError, NotImplementedError): errors.append(item)
+        result['errors'] = errors
+        return result
+''',
+          },
+        ),
+      );
+      expect(actual, {
+        'line': 'A 线',
+        'object': '{"name":1, "中文":2}',
+        'count': ['xbx', 2],
+        'errors': [0, 1, 2, 3, 4, 5, 6, 7],
+      });
+    },
+  );
+
+  test(
     'Python HTML catalogue, detail and play use the production local parser',
     () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
