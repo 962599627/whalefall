@@ -5,10 +5,12 @@ package com.pilipala.marcomovie;
  * controls.
  */
 final class SeekGesture {
-    static final int TAP_MS = 15000, HOLD_DELAY_MS = 500, ACCELERATE_MS = 3000;
+    static final int TAP_MS = 15000, HOLD_DELAY_MS = 500;
+    static final int BASE_SPEED = 30, ACCELERATION = 30, MAX_SPEED = 240;
+    static final int RAMP_MS = (MAX_SPEED - BASE_SPEED) * 1000 / ACCELERATION;
     static final int MODE_NONE = 0, MODE_SEEK = 1, MODE_BRIGHTNESS = 2, MODE_VOLUME = 3;
     boolean active;
-    int direction, target, duration;
+    int direction, target, duration, initialTarget;
     long started, updated;
 
     static int classifyDrag(float dx, float dy, float startX, float width, float touchSlop) {
@@ -36,24 +38,34 @@ final class SeekGesture {
     void begin(int direction, int position, int duration, long now) {
         this.direction = direction < 0 ? -1 : 1;
         this.duration = Math.max(0, duration);
-        target = bound((long) position + this.direction * TAP_MS);
+        initialTarget = target = bound((long) position + this.direction * TAP_MS);
         started = updated = now;
         active = duration > 0;
     }
 
     void advance(long now) {
         if (!active || now <= updated) return;
-        long from = Math.max(updated, started + HOLD_DELAY_MS),
-                to = Math.max(from, now),
-                boundary = started + ACCELERATE_MS;
-        long normal = Math.max(0, Math.min(to, boundary) - Math.min(from, boundary));
-        long fast = Math.max(0, to - Math.max(from, boundary));
-        target = bound((long) target + direction * (normal * 30 + fast * 60));
+        long elapsed = Math.max(0, now - started - HOLD_DELAY_MS);
+        double ramp = Math.min(elapsed, RAMP_MS);
+        // Integrate a linear speed ramp from the initial preview position. Absolute
+        // elapsed time avoids dependence on remote repeat rate or callback jitter.
+        double distance =
+                BASE_SPEED * ramp
+                        + ACCELERATION * ramp * ramp / 2000.0
+                        + MAX_SPEED * (double) Math.max(0, elapsed - RAMP_MS);
+        long delta = Math.min(duration, Math.round(distance));
+        target = bound((long) initialTarget + direction * delta);
         updated = now;
     }
 
     boolean accelerated(long now) {
-        return active && now - started >= ACCELERATE_MS;
+        return active && now - started > HOLD_DELAY_MS;
+    }
+
+    int speed(long now) {
+        if (!active || now - started <= HOLD_DELAY_MS) return 0;
+        long ramp = Math.min(RAMP_MS, Math.max(0, now - started - HOLD_DELAY_MS));
+        return BASE_SPEED + (int) (ACCELERATION * ramp / 1000);
     }
 
     int bound(long value) {

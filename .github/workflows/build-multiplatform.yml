@@ -69,6 +69,7 @@ jobs:
           python android/tests/run_glasswork_checks.py
           python -m unittest discover -s flutter -p "test_*.py"
           python scripts/test_movie_mirror.py
+          python scripts/test_platform_packages.py
           python scripts/test_catpaw_host.py
       - name: Check CatPaw without JIT or WebAssembly
         env:

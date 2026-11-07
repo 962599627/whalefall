@@ -1270,9 +1270,10 @@ final class PlaybackController {
         a.playbackControls.timeline.setProgress(a.seekGesture.target);
         a.playClock.setText(
                 formatTime(a.seekGesture.target) + " / " + formatTime(a.seekGesture.duration));
+        int seekSpeed = a.seekGesture.speed(SystemClock.uptimeMillis());
         a.playStatus.setText(
-                (a.seekGesture.accelerated(SystemClock.uptimeMillis()) ? "加速" : "")
-                        + (a.seekGesture.direction > 0 ? "快进" : "快退")
+                (a.seekGesture.direction > 0 ? "快进" : "快退")
+                        + (seekSpeed > 0 ? " · " + seekSpeed + " 秒/秒" : " · 15 秒")
                         + " · 松开跳转");
     }
 

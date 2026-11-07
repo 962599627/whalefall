@@ -1,6 +1,6 @@
 # Mobile fixes under validation — 2026-11-07
 
-This branch is not a new release. The published 0.5.0 packages and mirror remain unchanged.
+These checks were first recorded on the repair branch before platform-specific releases. See each release's notes and build commit for its published scope.
 
 ## Changes
 
@@ -20,4 +20,4 @@ This branch is not a new release. The published 0.5.0 packages and mirror remain
 - [Android 16 emulator run 42353338253](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42353338253) passed on commit `5de7cb5`: the production player page retained a visible timeline after live browsing, rotated to landscape/reverse landscape/portrait, and accepted pointer seeking in all three orientations. Screenshots were inspected. This fixture uses local silent WAV media and the Android system player; ARM native libraries are omitted from its test-only x86 APK. It is not video decoder, CatPaw, or Redmi firmware acceptance.
 - A host Java request/parse check read five remote live catalogues from the user-supplied subscription. This does not establish Android TLS behavior or playable streams. The local plugin-proxy catalogue is a separate unverified path.
 - Reported devices: Xiaomi 14 Ultra / Android 16 (live source failure), Redmi K80 Pro / Android 16 (landscape timeline absent). No physical-device result is recorded for these fixes.
-- The remaining plugin ports and CatPaw 16 KB runtime/device validation are incomplete. These checks do not yet satisfy the user's release condition; those adaptations and testing remain required before publishing or updating the mirror.
+- The remaining plugin ports and CatPaw 16 KB runtime/device validation are incomplete. The owner subsequently authorized independent platform versions: verified fixes may release separately without claiming those outstanding adaptations are complete. iOS 14.5 physical-device testing remains deferred by the owner.

@@ -21,11 +21,13 @@ public final class SeekGestureChecks {
                 "single left tap subtracts exactly 15 seconds without early repeat");
         s.begin(1, 0, 3600000, 0);
         s.advance(1000);
-        check(s.target == 30000, "holding continuously advances after half-second threshold");
+        check(s.target == 33750, "holding starts a linear speed ramp after half-second threshold");
         s.advance(3000);
-        check(s.target == 90000, "normal held speed integrates through three seconds");
+        check(
+                s.target == 183750,
+                "held seek integrates the increasing speed through three seconds");
         s.advance(4000);
-        check(s.target == 150000, "three-second hold doubles subsequent speed");
+        check(s.target == 303750, "four-second hold previews five minutes into a long video");
         check(s.accelerated(4000), "accelerated state exposed for feedback");
         SeekGesture frequent = new SeekGesture();
         frequent.begin(1, 0, 3600000, 0);
@@ -33,9 +35,24 @@ public final class SeekGestureChecks {
         check(
                 frequent.target == s.target,
                 "speed independent of callback and remote repeat frequency");
-        s.begin(-1, 300000, 3600000, 0);
+        SeekGesture irregular = new SeekGesture();
+        irregular.begin(1, 0, 3600000, 0);
+        for (int t = 17; t < 4000; t += 17) irregular.advance(t);
+        irregular.advance(4000);
+        check(
+                irregular.target == s.target,
+                "irregular callback timing does not accumulate rounding drift");
+        check(
+                s.speed(1500) == 60 && s.speed(2500) == 90 && s.speed(3500) == 120,
+                "speed grows linearly by thirty playback seconds per second held");
+        check(
+                s.speed(7500) == 240 && s.speed(20000) == 240,
+                "maximum seek speed is capped to preserve control");
+        s.advance(10000);
+        check(s.target == 1560000, "capped ramp integrates correctly after reaching maximum speed");
+        s.begin(-1, 600000, 3600000, 0);
         s.advance(4000);
-        check(s.target == 150000, "rewind has symmetric acceleration");
+        check(s.target == 296250, "rewind has symmetric acceleration");
         s.begin(-1, 10000, 3600000, 0);
         s.advance(10000);
         check(s.target == 0, "rewind clamps at beginning");
