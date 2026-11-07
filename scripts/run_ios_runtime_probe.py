@@ -54,6 +54,9 @@ def main():
         ROOT/'shared/catpaw/drpy-fy-adapter.cjs', capture=True)
     (APP/'fy-rule.js').write_text(fy, encoding='utf-8')
     shutil.copytree(ROOT/'android/src/main/assets/python-host', APP/'python-host', dirs_exist_ok=True)
+    interop = ROOT/'android/src/main/assets/js-host/module-interop.js'
+    (APP/'js-host').mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(interop, APP/'js-host/module-interop.js')
     for name in ('python_html_contract.py', 'python_html_expected.json',
                  'python_json_contract.py', 'python_json_expected.json',
                  'python_io_contract.py', 'python_io_expected.json',
@@ -123,14 +126,14 @@ def main():
                      for p in [classes/'CatpawRuntimeEngine.mm', *sorted((ROOT/'shared/catpaw').glob('*.cjs')),
                                ROOT/'shared/catpaw/drpy-core.js', ROOT/'shared/catpaw/drpy-assets.json', ROOT/'shared/catpaw/drpy-dependencies.js',
                                quickjs/'libfastdev_quickjs_runtime.cpp', quickjs/'quickjs/quickjs.c',
-                               *sorted((ROOT/'android/src/main/assets/python-host').glob('*.js'))]},
+                               *sorted((ROOT/'android/src/main/assets/python-host').glob('*.js')), interop]},
                    'fixture_inputs': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in sorted((ROOT/'scripts/fixtures').glob('python_*'))}})
     (OUT/'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf8')
     print(json.dumps({'passed': report['passed'], 'checks': report['checks'],
                       'runtime': report['runtime'], 'failure': report['failure']}, ensure_ascii=False))
     package_cases = len(json.loads((ROOT/'scripts/fixtures/python_package_expected.json').read_text(encoding='utf-8')))
-    if not report['passed'] or len(report['checks']) < 123 + package_cases:
+    if not report['passed'] or len(report['checks']) < 127 + package_cases:
         raise RuntimeError('iOS runtime behavior verification failed')
 
 

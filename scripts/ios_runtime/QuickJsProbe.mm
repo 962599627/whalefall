@@ -42,6 +42,13 @@ static NSString *literal(id value) {
   NSData *data=[NSJSONSerialization dataWithJSONObject:value options:NSJSONWritingFragmentsAllowed error:nil];
   return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
 }
+static void spiderOperation(JSContext *ctx, JSRuntime *rt, NSString *expression, NSString *resultName) {
+  // Each production operation gets the same budget, including promise jobs.
+  jsSetOperationTimeout(rt,8000);
+  evaluate(ctx,[NSString stringWithFormat:@"__movieBeginCall(()=>%@);",expression],JS_EVAL_TYPE_GLOBAL,@"complete-spider-call.js");
+  while(jsExecutePendingJob(rt)>0){}
+  evaluate(ctx,[NSString stringWithFormat:@"globalThis.%@=__movieFinishCall();",resultName],JS_EVAL_TYPE_GLOBAL,@"complete-spider-result.js");
+}
 NSArray *runQuickJsProbe(NSString *assets) {
   NSMutableArray *checks=[NSMutableArray array];
   JSRuntime *rt=jsNewRuntime(channel,10000);JSContext *ctx=jsNewContext(rt);
@@ -134,6 +141,65 @@ NSArray *runQuickJsProbe(NSString *assets) {
     [checks addObject:@{@"name":@"python_native_proxy_url_abis",@"passed":@(boolean(ctx,@"proxyDone&&!proxyError&&proxyUrls[0]===__movieProxyBase+'&ticket=a+b'&&proxyUrls[1]===__movieProxyBase+'&ticket=new'"))}];
     [checks addObject:@{@"name":@"python_native_proxy_binary_wire",@"passed":@(boolean(ctx,@"proxyDone&&!proxyError&&proxyValue[2]==='AP+AQQ=='&&proxyValue[4]===1"))}];
     [checks addObject:@{@"name":@"python_native_proxy_state_and_headers",@"passed":@(boolean(ctx,@"proxyDone&&!proxyError&&proxyValue[0]===200&&proxyValue[1]==='application/octet-stream'&&proxyValue[3]['X-State']==='retained'"))}];
+    jsSetOperationTimeout(rt,8000);
+    NSString *interop=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:@"js-host/module-interop.js"] encoding:NSUTF8StringEncoding error:nil];
+    if(!interop) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"module_interop_asset_missing" userInfo:nil];
+    evaluate(ctx,interop,JS_EVAL_TYPE_GLOBAL,@"module-interop.js");
+    jsSetOperationTimeout(rt,8000);
+    evaluate(ctx,[NSString stringWithUTF8String:R"JS(
+globalThis.completeConstructed = 0;
+export default class CompleteSpider {
+  #calls = 0;
+  #raw;
+  constructor() { completeConstructed++; }
+  async init(ext) { await Promise.resolve(); this.#raw = ext; }
+  async homeContent(filter) { return {raw:this.#raw,filter,calls:++this.#calls}; }
+  homeVideoContent = () => ({raw:this.#raw,calls:++this.#calls});
+  categoryContent(tid,pg,filter,extend) { return {tid,pg,filter,extend,calls:++this.#calls}; }
+  searchContent(wd,quick,pg) { return {wd,quick,pg,calls:++this.#calls}; }
+  detailContent(ids) { return {ids,calls:++this.#calls}; }
+  playerContent(flag,id,vip) { return {flag,id,vip,raw:this.#raw,calls:++this.#calls}; }
+}
+globalThis.completeRaw = ' \n { "title" : "本机配置" } \t';
+globalThis.completeSpider = __movieSelectSpider({default:CompleteSpider},{rawExtension:completeRaw});
+)JS"],JS_EVAL_TYPE_MODULE,@"complete-spider-module.js");
+    while(jsExecutePendingJob(rt)>0){}
+    spiderOperation(ctx,rt,@"completeSpider.init({normalized:'must not replace raw ext'})",@"completeInit");
+    spiderOperation(ctx,rt,@"completeSpider.home(true)",@"completeHome");
+    spiderOperation(ctx,rt,@"completeSpider.homeVod()",@"completeHomeVod");
+    [checks addObject:@{@"name":@"quickjs_complete_spider_class_raw_ext_state",@"passed":@(boolean(ctx,@"completeConstructed===1&&JSON.parse(completeHome).raw===completeRaw&&JSON.parse(completeHome).filter===true&&JSON.parse(completeHome).calls===1&&JSON.parse(completeHomeVod).raw===completeRaw&&JSON.parse(completeHomeVod).calls===2"))}];
+    spiderOperation(ctx,rt,@"completeSpider.category('movie',2,true,{type:'dzp'})",@"completeCategory");
+    spiderOperation(ctx,rt,@"completeSpider.search('keyword',false,3)",@"completeSearch");
+    [checks addObject:@{@"name":@"quickjs_complete_spider_string_pages",@"passed":@(boolean(ctx,@"JSON.stringify(JSON.parse(completeCategory))===JSON.stringify({tid:'movie',pg:'2',filter:true,extend:{type:'dzp'},calls:3})&&JSON.stringify(JSON.parse(completeSearch))===JSON.stringify({wd:'keyword',quick:false,pg:'3',calls:4})"))}];
+    spiderOperation(ctx,rt,@"completeSpider.detail('42')",@"completeDetail");
+    spiderOperation(ctx,rt,@"completeSpider.detail(['43','44'])",@"completeDetailArray");
+    spiderOperation(ctx,rt,@"completeSpider.play('line','42',['vip'])",@"completePlayer");
+    [checks addObject:@{@"name":@"quickjs_complete_spider_detail_array_player_state",@"passed":@(boolean(ctx,@"JSON.stringify(JSON.parse(completeDetail))===JSON.stringify({ids:['42'],calls:5})&&JSON.stringify(JSON.parse(completeDetailArray))===JSON.stringify({ids:['43','44'],calls:6})&&JSON.stringify(JSON.parse(completePlayer))===JSON.stringify({flag:'line',id:'42',vip:['vip'],raw:completeRaw,calls:7})&&completeConstructed===1"))}];
+    jsSetOperationTimeout(rt,8000);
+    evaluate(ctx,[NSString stringWithUTF8String:R"JS(
+globalThis.shortSpider = __movieSelectSpider({
+  init(ext) { this.ext = ext; },
+  home(filter) { return {short:'home',ext:this.ext,filter}; },
+  homeContent() { throw Error('full home overrode short'); },
+  homeVideoContent() { return {ext:this.ext}; },
+  category(tid,pg) { return {short:'category',pg}; },
+  categoryContent() { throw Error('full category overrode short'); },
+  search(wd,quick,pg) { return {short:'search',pg}; },
+  searchContent() { throw Error('full search overrode short'); },
+  detail(id) { return {short:'detail',id}; },
+  detailContent() { throw Error('full detail overrode short'); },
+  play(flag,id,vip) { return {short:'play',flag,id,vip}; },
+  playerContent() { throw Error('full play overrode short'); }
+},{rawExtension:'must not replace legacy object'});
+)JS"],JS_EVAL_TYPE_GLOBAL,@"short-spider-fixture.js");
+    spiderOperation(ctx,rt,@"shortSpider.init({legacy:true})",@"shortInit");
+    spiderOperation(ctx,rt,@"shortSpider.home(true)",@"shortHome");
+    spiderOperation(ctx,rt,@"shortSpider.homeVod()",@"shortHomeVod");
+    spiderOperation(ctx,rt,@"shortSpider.category('movie',2,true,{})",@"shortCategory");
+    spiderOperation(ctx,rt,@"shortSpider.search('keyword',false,3)",@"shortSearch");
+    spiderOperation(ctx,rt,@"shortSpider.detail('42')",@"shortDetail");
+    spiderOperation(ctx,rt,@"shortSpider.play('line','42',[])",@"shortPlayer");
+    [checks addObject:@{@"name":@"quickjs_complete_spider_short_names_keep_legacy_contract",@"passed":@(boolean(ctx,@"JSON.stringify(JSON.parse(shortHome))===JSON.stringify({short:'home',ext:{legacy:true},filter:true})&&JSON.parse(shortHomeVod).ext.legacy===true&&JSON.stringify(JSON.parse(shortCategory))===JSON.stringify({short:'category',pg:2})&&JSON.stringify(JSON.parse(shortSearch))===JSON.stringify({short:'search',pg:3})&&JSON.stringify(JSON.parse(shortDetail))===JSON.stringify({short:'detail',id:'42'})&&JSON.stringify(JSON.parse(shortPlayer))===JSON.stringify({short:'play',flag:'line',id:'42',vip:[]})"))}];
   } @catch(NSException *error) {
     [checks addObject:@{@"name":error.reason?:@"quickjs_exception",@"passed":@NO}];
     return checks;
