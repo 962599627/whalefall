@@ -18,7 +18,7 @@ void main() {
         'browser_download_url': 'https://github.com/Pilipala9919/MarcoMovie/releases/download/v0.4.37-preview/MarcoMovie-0.4.37-windows-setup.exe',
       }]}), 200);
     });
-    final release = await AppUpdate.check(client: client);
+    final release = await AppUpdate.check(client: client, platform: 'windows');
     expect(calls, 2);
     expect(release.version, '0.4.37');
     expect(release.windowsUrl!.path, isNot(contains('preview-preview')));
@@ -47,5 +47,46 @@ void main() {
     await expectLater(release.verifyFile(file), throwsFormatException);
     await file.writeAsBytes([1]);
     await expectLater(release.verifyFile(file), throwsFormatException);
+  });
+
+  test('platform releases do not upgrade other devices or choose a prerelease', () async {
+    Map<String, dynamic> release(String platform, String version, String suffix,
+        {bool prerelease = false}) => {
+      'tag_name': '$platform-v$version', 'prerelease': prerelease,
+      'assets': [{
+        'name': 'MarcoMovie-$version-$suffix', 'size': 20,
+        'digest': 'sha256:${'a' * 64}',
+        'browser_download_url': 'https://github.com/Pilipala9919/MarcoMovie/releases/download/$platform-v$version/MarcoMovie-$version-$suffix',
+      }],
+    };
+    final client = MockClient((request) async {
+      if (request.url.host != 'api.github.com') return http.Response('', 404);
+      return http.Response(jsonEncode([
+        release('windows', '0.8.0', 'windows-setup.exe'),
+        release('ios', '0.5.2', 'ios-unsigned.ipa', prerelease: true),
+        release('ios', '0.5.1', 'ios-unsigned.ipa'),
+        release('ios', '0.4.99', 'ios-unsigned.ipa'),
+      ]), 200);
+    });
+    final ios = await AppUpdate.check(client: client, platform: 'ios');
+    expect(ios.version, '0.5.1');
+    expect(ios.windowsUrl, isNull);
+    final windows = await AppUpdate.check(client: client, platform: 'windows');
+    expect(windows.version, '0.8.0');
+    expect(windows.windowsUrl, isNotNull);
+  });
+
+  test('independent mirror feed wins without changing the legacy Android feed', () async {
+    final client = MockClient((request) async {
+      expect(request.url.path, '/movie/updates/ios.json');
+      return http.Response(jsonEncode({
+        'platform': 'ios', 'versionName': '0.5.1', 'notes': 'iPhone update',
+      }), 200);
+    });
+    final release = await AppUpdate.check(client: client, platform: 'ios');
+    expect(release.version, '0.5.1');
+    expect(release.windowsUrl, isNull);
+    expect(() => AppUpdate.parse({'platform': 'ios', 'versionName': '0.5.1'}),
+        throwsFormatException);
   });
 }
