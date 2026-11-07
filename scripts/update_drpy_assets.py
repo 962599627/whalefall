@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1] / 'shared/catpaw'
 NAMES = ['drpy-worker.cjs', 'drpy-http.cjs', 'drpy-schema.cjs', 'drpy-core.js',
          'drpy-dependencies.js', 'drpy-LICENSE.txt', 'drpy-dependencies-LICENSE.txt',
          'drpy-provenance.json', 'drpy-guard-extractor.cjs', 'drpy-dm84-adapter.cjs',
-         'drpy-bootstrap-worker.cjs']
+         'drpy-bootstrap-worker.cjs', 'drpy-auete-adapter.cjs']
 
 
 def update():

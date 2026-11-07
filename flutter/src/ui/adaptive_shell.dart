@@ -19,6 +19,7 @@ import '../core/download_service.dart';
 import '../core/models.dart';
 import '../core/netdisk_service.dart';
 import '../core/storage_service.dart';
+import '../core/search_source_notice.dart';
 import 'apple_theme.dart';
 import 'detail_screen.dart';
 import 'netdisk_sheet.dart';
@@ -69,6 +70,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   // Search state
   final TextEditingController _searchController = TextEditingController();
   final List<(CmsSite, CmsVideo)> _searchResults = [];
+  final Map<String, String> _searchNotices = {};
+  bool _searchPerformed = false;
   bool _searching = false;
   int _searchEpoch = 0;
   StreamSubscription<(CmsSite, List<CmsVideo>)>? _searchSubscription;
@@ -128,6 +131,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     _searchSubscription?.cancel();
     _searchSubscription = null;
     _searchResults.clear();
+    _searchNotices.clear();
+    _searchPerformed = false;
     _searching = false;
     final saved = widget.storage.loadSavedConfig();
     _config = saved;
@@ -399,10 +404,23 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     setState(() {
       _searching = true;
       _searchResults.clear();
+      _searchNotices.clear();
+      _searchPerformed = true;
     });
     _searchSheetListener?.call();
     _searchSubscription = widget.client
-        .searchAcrossSites(_visibleSupportedSites, trimmed)
+        .searchAcrossSites(
+          _visibleSupportedSites,
+          trimmed,
+          onSourceError: (site, error) {
+            if (!mounted || epoch != _searchEpoch) return;
+            setState(() {
+              _searchNotices['${site.subscriptionId}:${site.key}'] =
+                  '${site.name}：${searchSourceNotice(error)}';
+            });
+            _searchSheetListener?.call();
+          },
+        )
         .listen(
           (batch) {
             if (!mounted || epoch != _searchEpoch) return;
@@ -422,6 +440,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           },
           onDone: () {
             if (mounted && epoch == _searchEpoch) {
+              _searchSubscription = null;
               setState(() => _searching = false);
               _searchSheetListener?.call();
             }
@@ -2532,26 +2551,50 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           ],
                         ),
                       ),
+                    if (_searchNotices.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: (size.height * 0.12).clamp(36.0, 96.0),
+                        ),
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Text(
+                            _searchNotices.values.join('\n'),
+                            key: const ValueKey('search-source-notices'),
+                            style: const TextStyle(
+                              color: AppleColors.labelSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
                     Expanded(
                       child: _searchResults.isEmpty && !_searching
-                          ? const Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    CupertinoIcons.search,
-                                    color: AppleColors.labelTertiary,
-                                    size: 42,
-                                  ),
-                                  SizedBox(height: 10),
-                                  Text(
-                                    '输入关键词，并发检索全部已启用片源',
-                                    style: TextStyle(
-                                      color: AppleColors.labelSecondary,
-                                      fontSize: 14,
+                          ? Center(
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      CupertinoIcons.search,
+                                      color: AppleColors.labelTertiary,
+                                      size: 42,
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      !_searchPerformed
+                                          ? '输入关键词，并发检索全部已启用片源'
+                                          : _searchNotices.isEmpty
+                                          ? '没有找到匹配影片'
+                                          : '本次搜索未返回影片，请查看上方片源提示',
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: AppleColors.labelSecondary,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             )
                           : GridView.builder(

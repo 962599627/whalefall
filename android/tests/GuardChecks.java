@@ -9,7 +9,11 @@ import java.net.*;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.*;
 import org.json.*;
 
@@ -145,18 +149,45 @@ public final class GuardChecks {
             "{\"version\":1,\"rule\":\"var rule={title:'Fixture',host:'https://media.test'};\",\"origin\":\"https://media.test/\"}"
         };
         final int[] status = {200};
-        List<JSONObject> calls = new ArrayList<>();
+        final String[] drpyResponse = {"{\"error\":\"drpy_verification_required\"}"};
+        List<JSONObject> calls = Collections.synchronizedList(new ArrayList<>());
+        List<String> requestBodies = Collections.synchronizedList(new ArrayList<>());
+        AtomicInteger busyRemaining = new AtomicInteger();
+        AtomicBoolean holdNext = new AtomicBoolean();
+        CountDownLatch held = new CountDownLatch(1), releaseHeld = new CountDownLatch(1);
         server.createContext(
                 "/fixture/_port-bootstrap",
                 exchange -> {
                     try {
-                        calls.add(new JSONObject(Cms.read(exchange.getRequestBody(), 512)));
-                        byte[] response = result[0].getBytes("UTF-8");
-                        exchange.sendResponseHeaders(status[0], response.length);
+                        String body = Cms.read(exchange.getRequestBody(), 512);
+                        calls.add(new JSONObject(body));
+                        requestBodies.add(body);
+                        if (holdNext.getAndSet(false)) {
+                            held.countDown();
+                            try {
+                                releaseHeld.await(3, TimeUnit.SECONDS);
+                            } catch (InterruptedException interrupted) {
+                                Thread.currentThread().interrupt();
+                                throw new IOException(interrupted);
+                            }
+                        }
+                        boolean busy = busyRemaining.getAndDecrement() > 0;
+                        byte[] response =
+                                (busy ? "{\"error\":\"bootstrap_busy\"}" : result[0])
+                                        .getBytes("UTF-8");
+                        exchange.sendResponseHeaders(busy ? 429 : status[0], response.length);
                         exchange.getResponseBody().write(response);
                     } finally {
                         exchange.close();
                     }
+                });
+        server.createContext(
+                "/fixture/",
+                exchange -> {
+                    byte[] response = drpyResponse[0].getBytes("UTF-8");
+                    exchange.sendResponseHeaders(422, response.length);
+                    exchange.getResponseBody().write(response);
+                    exchange.close();
                 });
         server.start();
         other.start();
@@ -239,6 +270,113 @@ public final class GuardChecks {
                             && request.getString("artifactHash")
                                     .equals(digest(artifact, "SHA-256")),
                     "strict capability bootstrap contract");
+            for (String api :
+                    new String[] {"csp_Dm84", "csp_Dm84Guard", "csp_Auete", "csp_AueteGuard"}) {
+                Cms.Site alias = new Cms.Site();
+                alias.api = api;
+                alias.type = 3;
+                check(GuardEngine.eligible(alias), "exact Guard alias accepted");
+                check(
+                        GuardEngine.adapterFor(alias)
+                                .equals(api.startsWith("csp_Auete") ? "auete-v1" : "dm84-v1"),
+                        "alias selects its explicit adapter");
+            }
+            int beforeAdapters = calls.size();
+            Cms.Site unknown = new Cms.Site();
+            unknown.type = 3;
+            unknown.api = "csp_AueteUnknownGuard";
+            check(
+                    !GuardEngine.eligible(unknown),
+                    "other Guard plugins are not implicitly supported");
+            rejects(
+                    () -> GuardEngine.open(context, config, unknown, fallback),
+                    "unknown alias rejected");
+            rejects(
+                    () -> new CatPawHost(context).bootstrapGuard(artifact, "auete-v2", null),
+                    "unknown adapter rejected before staging or request");
+            check(
+                    calls.size() == beforeAdapters && fallbacks.get() == 0,
+                    "unknown adapters do not invoke host or fallback");
+            new CatPawHost(context).bootstrapGuard(artifact, null);
+            check(
+                    calls.get(calls.size() - 1).getString("adapter").equals("dm84-v1"),
+                    "legacy bootstrap overload retains DM84 default");
+            Cms.Site auete = new Cms.Site();
+            auete.key = site.key;
+            auete.api = "csp_AueteGuard";
+            auete.type = 3;
+            auete.headers.putAll(site.headers);
+            JSONObject dm84Result = new JSONObject(result[0]);
+            JSONObject aueteResult =
+                    new JSONObject(result[0])
+                            .put(
+                                    "rule",
+                                    "var rule={title:'Auete fixture',host:'https://media.test'};");
+            result[0] = aueteResult.toString();
+            check(
+                    GuardEngine.open(context, config, auete, fallback) instanceof DrpyEngine,
+                    "Auete uses the independent DRPY caller");
+            JSONObject aueteCall = calls.get(calls.size() - 1);
+            check(
+                    aueteCall.getString("adapter").equals("auete-v1")
+                            && aueteCall
+                                    .getString("artifactHash")
+                                    .equals(request.getString("artifactHash")),
+                    "same artifact selects distinct adapter without mixing results");
+            Cms.Site dm84Runtime = GuardEngine.portableSite(config, site, dm84Result);
+            Cms.Site aueteRuntime = GuardEngine.portableSite(config, auete, aueteResult);
+            JSONObject dm84Manifest =
+                    DrpyEngine.manifest(
+                            config,
+                            dm84Runtime,
+                            (url, headers) -> {
+                                throw new IOException("unexpected fetch");
+                            });
+            JSONObject aueteManifest =
+                    DrpyEngine.manifest(
+                            config,
+                            aueteRuntime,
+                            (url, headers) -> {
+                                throw new IOException("unexpected fetch");
+                            });
+            check(
+                    !dm84Manifest.getString("sourceId").equals(aueteManifest.getString("sourceId")),
+                    "same owner key origin and artifact have isolated adapter state");
+            check(
+                    dm84Runtime.key.equals(site.key) && !aueteRuntime.key.equals(site.key),
+                    "DM84 identity unchanged while Auete receives an internal namespace");
+            check(
+                    site.key.equals("guard_fixture")
+                            && auete.key.equals(site.key)
+                            && site.api.equals("csp_Dm84Guard")
+                            && auete.api.equals("csp_AueteGuard"),
+                    "original external source and history identities remain unchanged");
+            auete.api = "csp_Auete";
+            check(
+                    GuardEngine.portableSite(config, auete, aueteResult)
+                            .key
+                            .equals(aueteRuntime.key),
+                    "Auete aliases retain one stable internal state namespace");
+            int beforeOverrides = calls.size();
+            for (Object override :
+                    new Object[] {
+                        new JSONObject().put("siteUrl", "https://custom.test/"),
+                        "{\"siteUrl\":\"https://media.test/\"}"
+                    }) {
+                auete.ext = override;
+                check(
+                        !GuardEngine.eligible(auete) && CspEngine.eligible(auete),
+                        "Auete siteUrl override stays on existing Android plugin host");
+                rejects(
+                        () -> GuardEngine.open(context, config, auete, fallback),
+                        "override cannot silently run the portable default origin");
+            }
+            check(
+                    calls.size() == beforeOverrides,
+                    "siteUrl override never invokes portable bootstrap");
+            auete.ext = new JSONObject().put("siteUrl", "");
+            check(GuardEngine.eligible(auete), "empty siteUrl keeps the portable default adapter");
+            result[0] = dm84Result.toString();
             File staged = new File(files, "catpaw/imports/" + digest(artifact, "SHA-256") + ".jar");
             check(
                     Arrays.equals(Files.readAllBytes(staged.toPath()), artifact),
@@ -255,6 +393,144 @@ public final class GuardChecks {
                             .headers
                             .containsKey("Authorization"),
                     "same-origin explicit source credentials retained");
+            int beforeBusy = calls.size();
+            busyRemaining.set(2);
+            check(
+                    GuardEngine.open(context, config, site, fallback) instanceof DrpyEngine,
+                    "temporary bootstrap busy recovers without native fallback");
+            check(
+                    calls.size() == beforeBusy + 3 && fallbacks.get() == 0,
+                    "only two transient busy responses are retried");
+            check(
+                    requestBodies.get(beforeBusy).equals(requestBodies.get(beforeBusy + 1))
+                            && requestBodies
+                                    .get(beforeBusy)
+                                    .equals(requestBodies.get(beforeBusy + 2)),
+                    "busy retries preserve the exact request bytes and artifact hash");
+            status[0] = 429;
+            result[0] = "{\"error\":\"bootstrap_busy\"}";
+            int beforeTimeout = calls.size();
+            long busyStarted = System.nanoTime();
+            rejects(
+                    () -> GuardEngine.open(context, config, site, fallback),
+                    "persistent busy is bounded");
+            long elapsedBusy = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - busyStarted);
+            check(
+                    elapsedBusy >= 1900
+                            && elapsedBusy < 5000
+                            && calls.size() - beforeTimeout < 20
+                            && fallbacks.get() == 0,
+                    "busy retries stop within the two-second window without fallback");
+            RequestScope backoffScope = new RequestScope();
+            AtomicReference<Throwable> cancelled = new AtomicReference<>();
+            int beforeCancel = calls.size();
+            Thread backoff =
+                    new Thread(
+                            () -> {
+                                try {
+                                    backoffScope.call(
+                                            () ->
+                                                    GuardEngine.open(
+                                                            context, config, site, fallback));
+                                } catch (Throwable failure) {
+                                    cancelled.set(failure);
+                                }
+                            },
+                            "guard-busy-cancel-test");
+            backoff.setDaemon(true);
+            backoff.start();
+            long waitUntil = System.nanoTime() + 2000000000L;
+            while (calls.size() == beforeCancel && System.nanoTime() < waitUntil) Thread.sleep(5);
+            Thread.sleep(20);
+            backoffScope.cancel();
+            backoff.join(1000);
+            check(
+                    !backoff.isAlive() && cancelled.get() instanceof InterruptedIOException,
+                    "RequestScope cancellation interrupts busy backoff");
+            Thread.sleep(300);
+            check(
+                    calls.size() == beforeCancel + 1 && fallbacks.get() == 0,
+                    "cancelled busy request cannot issue a late retry or fallback");
+            status[0] = 200;
+            result[0] = dm84Result.toString();
+            holdNext.set(true);
+            RequestScope socketScope = new RequestScope();
+            cancelled.set(null);
+            Thread socket =
+                    new Thread(
+                            () -> {
+                                try {
+                                    socketScope.call(
+                                            () ->
+                                                    GuardEngine.open(
+                                                            context, config, site, fallback));
+                                } catch (Throwable failure) {
+                                    cancelled.set(failure);
+                                }
+                            },
+                            "guard-socket-cancel-test");
+            socket.setDaemon(true);
+            socket.start();
+            check(held.await(2, TimeUnit.SECONDS), "bootstrap socket reached the local server");
+            socketScope.cancel();
+            socket.join(1000);
+            boolean socketStopped = !socket.isAlive();
+            releaseHeld.countDown();
+            socket.join(1000);
+            check(
+                    socketStopped && cancelled.get() instanceof IOException && fallbacks.get() == 0,
+                    "RequestScope cancellation closes the active bootstrap socket");
+            check(
+                    GuardEngine.open(context, config, site, fallback) instanceof DrpyEngine,
+                    "host remains reusable after cancellation");
+            CatPawHost localHost = new CatPawHost(context);
+            String drpyAddress = localHost.installDrpy(dm84Manifest);
+            try {
+                localHost.post(drpyAddress, new JSONObject());
+                throw new AssertionError("captcha must be explicit");
+            } catch (CatPawHost.DrpySourceException expected) {
+                check(
+                        expected.code.equals("drpy_verification_required")
+                                && expected.getMessage().equals("此片源搜索需要完成网站验证码，暂时无法返回结果"),
+                        "real loopback 422 captcha has an allowlisted typed error");
+            }
+            drpyResponse[0] = "{\"error\":\"drpy_local_proxy_not_supported\"}";
+            try {
+                localHost.post(drpyAddress, new JSONObject());
+                throw new AssertionError("proxy error must be explicit");
+            } catch (CatPawHost.DrpySourceException expected) {
+                check(
+                        expected.code.equals("drpy_local_proxy_not_supported"),
+                        "local proxy error stays typed");
+            }
+            for (String errorBody :
+                    new String[] {"{\"error\":\"private-error-body\"}", "private-error-body"}) {
+                drpyResponse[0] = errorBody;
+                try {
+                    localHost.post(drpyAddress, new JSONObject());
+                    throw new AssertionError("unknown error must fail");
+                } catch (IOException expected) {
+                    check(
+                            !(expected instanceof CatPawHost.DrpySourceException)
+                                    && !expected.getMessage().contains("private-error-body"),
+                            "unknown DRPY error content is never exposed");
+                }
+            }
+            char[] tooLarge = new char[16385];
+            Arrays.fill(tooLarge, 'x');
+            drpyResponse[0] = new String(tooLarge);
+            rejects(
+                    () -> localHost.post(drpyAddress, new JSONObject()),
+                    "DRPY error body limited to16KB");
+            drpyResponse[0] = "{\"error\":\"drpy_verification_required\"}";
+            try {
+                localHost.release(drpyAddress);
+                throw new AssertionError("non-DRPY route must fail normally");
+            } catch (IOException expected) {
+                check(
+                        !(expected instanceof CatPawHost.DrpySourceException),
+                        "typed source error mapping is confined to DRPY route");
+            }
             status[0] = 422;
             result[0] = "{\"error\":\"guard_artifact_unsupported\"}";
             GuardEngine.open(context, config, site, fallback);

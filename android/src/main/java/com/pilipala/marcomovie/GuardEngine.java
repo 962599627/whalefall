@@ -14,12 +14,43 @@ final class GuardEngine {
     }
 
     static boolean eligible(Cms.Site site) {
-        return site.type == 3 && ("csp_Dm84Guard".equals(site.api) || "csp_Dm84".equals(site.api));
+        String adapter = adapterFor(site);
+        // The original Android plugin supports siteUrl overrides. Keep those on
+        // its existing native host until the portable adapter supports them too.
+        return adapter != null && !("auete-v1".equals(adapter) && hasSiteUrlOverride(site));
+    }
+
+    static boolean hasSiteUrlOverride(Cms.Site site) {
+        Object value = site.ext;
+        if (value instanceof String) {
+            try {
+                value = new JSONObject((String) value);
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
+        if (!(value instanceof JSONObject)) return false;
+        Object address = ((JSONObject) value).opt("siteUrl");
+        return address != null
+                && address != JSONObject.NULL
+                && !address.toString().trim().isEmpty();
+    }
+
+    static String adapterFor(Cms.Site site) {
+        if (site.type != 3) return null;
+        if ("csp_Dm84Guard".equalsIgnoreCase(site.api) || "csp_Dm84".equalsIgnoreCase(site.api))
+            return "dm84-v1";
+        if ("csp_AueteGuard".equalsIgnoreCase(site.api) || "csp_Auete".equalsIgnoreCase(site.api))
+            return "auete-v1";
+        return null;
     }
 
     static SourceEngine open(Context context, Cms.Config config, Cms.Site site, Fallback fallback)
             throws Exception {
-        if (!eligible(site)) throw new IOException("此插件没有已审阅的移植适配器");
+        String adapter = adapterFor(site);
+        if (adapter == null) throw new IOException("此插件没有已审阅的移植适配器");
+        if ("auete-v1".equals(adapter) && hasSiteUrlOverride(site))
+            throw new IOException("Auete 自定义 siteUrl 请使用原 Android 插件宿主");
         String declaration =
                 site.jar != null && !site.jar.trim().isEmpty() ? site.jar : config.spider;
         // All acquisition, declared digest and ZIP checks occur before any permissible fallback.
@@ -36,11 +67,15 @@ final class GuardEngine {
             data = output.toByteArray();
         }
         JSONObject result;
+        Thread caller = Thread.currentThread();
+        Runnable cancelBootstrap = caller::interrupt;
+        RequestScope.onCancel(cancelBootstrap);
         try {
             result =
                     new CatPawHost(context)
                             .bootstrapGuard(
                                     data,
+                                    adapter,
                                     new CatPawHost.ConnectionObserver() {
                                         public void opened(HttpURLConnection connection)
                                                 throws IOException {
@@ -53,7 +88,10 @@ final class GuardEngine {
                                     });
         } catch (CatPawHost.UnsupportedGuardArtifactException
                 | NodeRuntime.RuntimeUnavailableException unavailable) {
+            if (caller.isInterrupted()) throw new InterruptedIOException("插件解析已取消");
             return fallback.open();
+        } finally {
+            RequestScope.offCancel(cancelBootstrap);
         }
         return new DrpyEngine(context, config, portableSite(config, site, result));
     }
@@ -63,7 +101,20 @@ final class GuardEngine {
         String rule = result.getString("rule");
         if (!Cms.looksLikeDrpyRule(rule)) throw new IOException("插件移植服务未返回独立 DRPY 规则");
         Cms.Site site = new Cms.Site();
-        site.key = source.key;
+        String adapter = adapterFor(source);
+        if (adapter == null) throw new IOException("此插件没有已审阅的移植适配器");
+        if ("auete-v1".equals(adapter) && hasSiteUrlOverride(source))
+            throw new IOException("Auete 自定义 siteUrl 请使用原 Android 插件宿主");
+        // This key is consumed only by the internal DRPY state identity; the
+        // external source object and its playback/history ownership stay intact.
+        site.key =
+                "dm84-v1".equals(adapter)
+                        ? source.key
+                        : new org.json.JSONArray()
+                                .put("guard-adapter")
+                                .put(adapter)
+                                .put(source.key)
+                                .toString();
         site.name = source.name;
         site.api = "csp_Drpy";
         site.type = 3;

@@ -32,7 +32,14 @@ class CspBridge {
     return false;
   }
 
-  static bool hasAdapter(CmsSite site) => (site.type == 3 && site.pluginReference.isNotEmpty && const ['csp_dm84guard', 'csp_dm84'].contains(site.api.toLowerCase())) || site.isDrpySource || site.isJavaScriptSource || site.isPythonSource || TrailerSource.matches(site) || hasBuiltinAdapter(site);
+  static String? guardAdapterFor(CmsSite site) => site.type != 3 ? null : const {
+    'csp_dm84guard': 'dm84-v1',
+    'csp_dm84': 'dm84-v1',
+    'csp_aueteguard': 'auete-v1',
+    'csp_auete': 'auete-v1',
+  }[site.api.toLowerCase()];
+
+  static bool hasAdapter(CmsSite site) => (guardAdapterFor(site) != null && site.pluginReference.trim().isNotEmpty) || site.isDrpySource || site.isJavaScriptSource || site.isPythonSource || TrailerSource.matches(site) || hasBuiltinAdapter(site);
 
   static bool hasBuiltinAdapter(CmsSite site) =>
       !site.api.startsWith('csp_Local') && (isDoubanSite(site) || isMyDriveSite(site) || isBiliSite(site) ||

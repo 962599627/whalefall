@@ -793,7 +793,15 @@ public final class GlobalSearchScreen implements AutoCloseable {
                         !query.matches("[A-Za-z0-9' -]+")
                                 || a.phonetic == null
                                 || a.phonetic.matches(title, query),
-                term -> Cms.listing(a.engine(site).search(term, 1)).videos);
+                term -> {
+                    try {
+                        return Cms.listing(a.engine(site).search(term, 1)).videos;
+                    } catch (com.pilipala.catpaw.CatPawHost.DrpySourceException error) {
+                        if ("drpy_verification_required".equals(error.code))
+                            throw new SearchCoordinator.VerificationRequiredException();
+                        throw error;
+                    }
+                });
     }
 
     void retrySelected() {
@@ -857,6 +865,10 @@ public final class GlobalSearchScreen implements AutoCloseable {
         if (timedOut > 0) text += " · " + timedOut + " 个超时";
         if (failed > 0) text += " · " + failed + " 个暂不可用";
         if (busy > 0) text += " · " + busy + " 个未完成";
+        int verification = 0;
+        for (SourceResult result : results.values())
+            if (result.outcome == SearchCoordinator.Outcome.VERIFICATION_REQUIRED) verification++;
+        if (verification > 0) text += " · " + verification + " 个需网站验证码";
         status.setText(text);
     }
 
@@ -1044,13 +1056,17 @@ public final class GlobalSearchScreen implements AutoCloseable {
             emptyResult.setText(
                     selected == null
                             ? (finished == sourceCount ? "本次未获得可显示的结果。可选择上方来源查看具体状态。" : "正在等待其他来源…")
-                            : selected.outcome == SearchCoordinator.Outcome.FAILED
-                                    ? "此源请求失败或返回无效响应，并非确认没有内容。可重试或检查配置。"
-                                    : selected.outcome == SearchCoordinator.Outcome.TIMEOUT
-                                            ? "此源搜索超时，可单独重试。"
-                                            : selected.outcome == SearchCoordinator.Outcome.BUSY
-                                                    ? "此源尚未完成，可单独重试。"
-                                                    : "此源已响应，但没有匹配结果。可更换关键词再试。");
+                            : selected.outcome == SearchCoordinator.Outcome.VERIFICATION_REQUIRED
+                                    ? "此片源搜索需要完成网站验证码，暂时无法返回结果。可先选择其他片源。"
+                                    : selected.outcome == SearchCoordinator.Outcome.FAILED
+                                            ? "此源请求失败或返回无效响应，并非确认没有内容。可重试或检查配置。"
+                                            : selected.outcome == SearchCoordinator.Outcome.TIMEOUT
+                                                    ? "此源搜索超时，可单独重试。"
+                                                    : selected.outcome
+                                                                    == SearchCoordinator.Outcome
+                                                                            .BUSY
+                                                            ? "此源尚未完成，可单独重试。"
+                                                            : "此源已响应，但没有匹配结果。可更换关键词再试。");
         }
         retrySource.setVisibility(
                 !activeFilter.isEmpty() && displayed.isEmpty() ? View.VISIBLE : View.GONE);

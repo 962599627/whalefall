@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import 'catpaw_host.dart';
+import 'csp_bridge.dart';
 import 'drpy_source.dart';
 import 'models.dart';
 
@@ -20,8 +21,7 @@ class GuardSource {
   GuardSource({required this.host, required this.drpy, required this.read});
 
   static bool supports(CmsSite site) =>
-      site.type == 3 &&
-      const ['csp_dm84guard', 'csp_dm84'].contains(site.api.toLowerCase()) &&
+      CspBridge.guardAdapterFor(site) != null &&
       site.pluginReference.trim().isNotEmpty;
 
   Future<String> invoke(
@@ -36,10 +36,26 @@ class GuardSource {
     }
 
     checkCancelled();
+    final adapter = CspBridge.guardAdapterFor(site);
+    if (adapter == null) throw const FormatException('此插件没有已审阅的移植适配器');
+    if (adapter == 'auete-v1') {
+      Object? extension;
+      try {
+        extension = jsonDecode(site.ext);
+      } catch (_) {
+        /* Non-JSON ext has no mapped override. */
+      }
+      if (extension is Map &&
+          extension['siteUrl'] != null &&
+          extension['siteUrl'].toString().trim().isNotEmpty) {
+        throw const FormatException('Auete 自定义 siteUrl 变体暂未适配');
+      }
+    }
     final key = sha256
         .convert(
           utf8.encode(
             jsonEncode([
+              adapter,
               site.subscriptionId,
               site.sourceKey,
               site.isEffectivelyPrivate,
@@ -50,14 +66,14 @@ class GuardSource {
         )
         .toString();
     var item = _cache[key];
-    final declaration = site.pluginReference.trim();
+    final declaration = site.pluginReference;
     final marker = RegExp(
       ';md5;',
       caseSensitive: false,
     ).firstMatch(declaration);
-    final address = marker == null
-        ? declaration
-        : declaration.substring(0, marker.start);
+    final address =
+        (marker == null ? declaration : declaration.substring(0, marker.start))
+            .trim();
     final expected = marker == null ? null : declaration.substring(marker.end);
     if (expected != null && !RegExp(r'^[a-fA-F0-9]{32}$').hasMatch(expected)) {
       throw const FormatException('插件摘要格式无效，请检查订阅中的完整地址');
@@ -80,6 +96,7 @@ class GuardSource {
       }
       final generated = await host.bootstrapGuard(
         bytes,
+        adapter: adapter,
         cancellation: cancellation,
       );
       checkCancelled();
@@ -112,6 +129,19 @@ class GuardSource {
     // extracted from its content. Explicit rule playback headers remain intact.
     return drpy.invoke(
       site.copyWith(
+        // Namespace only the internal DRPY identity. Preserve the original
+        // subscription/history identity and the existing DM84 state location.
+        subscriptionId: adapter == 'dm84-v1'
+            ? site.subscriptionId
+            : jsonEncode([
+                'guard-adapter',
+                adapter,
+                site.subscriptionId,
+                if (site.subscriptionId.isEmpty) ...[
+                  site.pluginReference,
+                  item.origin,
+                ],
+              ]),
         headers: runtimeHeaders,
         ext: jsonEncode({
           'ruleHash': sha256.convert(utf8.encode(item.rule)).toString(),

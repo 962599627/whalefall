@@ -15,6 +15,35 @@ public final class CatPawHost {
         }
     }
 
+    public static final class DrpySourceException extends IOException {
+        public final String code;
+
+        public DrpySourceException(String code, String message) {
+            super(message);
+            this.code = code;
+        }
+    }
+
+    private static String drpyErrorMessage(String code) {
+        if ("drpy_verification_required".equals(code)) return "此片源搜索需要完成网站验证码，暂时无法返回结果";
+        if ("drpy_local_proxy_not_supported".equals(code)) return "此片源需要的本地代理暂不支持";
+        if ("drpy_media_protocol".equals(code)) return "此片源返回的播放地址协议暂不支持";
+        if ("drpy_media_unresolved".equals(code)) return "此片源暂未解析出可播放地址";
+        if ("drpy_source_origin".equals(code)) return "此片源返回了不支持的跨站目录";
+        if ("drpy_source_unavailable".equals(code)) return "此片源暂时无法访问";
+        return null;
+    }
+
+    private static final class BootstrapBusyException extends IOException {
+        BootstrapBusyException() {
+            super("插件解析繁忙（bootstrap_busy）");
+        }
+    }
+
+    private static void checkBootstrapInterrupted() throws InterruptedIOException {
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException("插件解析已取消");
+    }
+
     public interface ConnectionObserver {
         void opened(HttpURLConnection connection) throws IOException;
 
@@ -196,6 +225,14 @@ public final class CatPawHost {
     /** Decode only a reviewed imported artifact; never execute its Android bytecode. */
     public JSONObject bootstrapGuard(byte[] artifact, ConnectionObserver observer)
             throws Exception {
+        return bootstrapGuard(artifact, "dm84-v1", observer);
+    }
+
+    public JSONObject bootstrapGuard(byte[] artifact, String adapter, ConnectionObserver observer)
+            throws Exception {
+        checkBootstrapInterrupted();
+        if (!("dm84-v1".equals(adapter) || "auete-v1".equals(adapter)))
+            throw new IOException("未知插件移植适配器");
         if (artifact.length == 0 || artifact.length > 16 * 1024 * 1024)
             throw new IOException("移植插件包超过大小限制");
         String artifactHash = hash(artifact);
@@ -220,12 +257,36 @@ public final class CatPawHost {
         byte[] body =
                 new JSONObject()
                         .put("version", 1)
-                        .put("adapter", "dm84-v1")
+                        .put("adapter", adapter)
                         .put("artifactHash", artifactHash)
                         .toString()
                         .getBytes("UTF-8");
-        HttpURLConnection connection =
-                (HttpURLConnection) new URL(start() + "/_port-bootstrap").openConnection();
+        String target = start() + "/_port-bootstrap";
+        long deadline = System.nanoTime() + 2000000000L;
+        int backoffMs = 80;
+        while (true) {
+            checkBootstrapInterrupted();
+            try {
+                return requestBootstrap(target, body, observer);
+            } catch (BootstrapBusyException busy) {
+                checkBootstrapInterrupted();
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) throw busy;
+                try {
+                    Thread.sleep(Math.min(backoffMs, Math.max(1, remaining / 1000000L)));
+                } catch (InterruptedException cancelled) {
+                    Thread.currentThread().interrupt();
+                    throw new InterruptedIOException("插件解析已取消");
+                }
+                backoffMs = Math.min(250, backoffMs * 2);
+            }
+        }
+    }
+
+    private JSONObject requestBootstrap(String target, byte[] body, ConnectionObserver observer)
+            throws Exception {
+        checkBootstrapInterrupted();
+        HttpURLConnection connection = (HttpURLConnection) new URL(target).openConnection();
         try {
             if (observer != null) observer.opened(connection);
             connection.setRequestMethod("POST");
@@ -247,6 +308,7 @@ public final class CatPawHost {
                             : new String(
                                     bytes(response, status == 200 ? 8 * 1024 * 1024 : 65536),
                                     "UTF-8");
+            checkBootstrapInterrupted();
             JSONObject result;
             try {
                 result = new JSONObject(raw);
@@ -257,6 +319,10 @@ public final class CatPawHost {
                     && result.length() == 1
                     && "guard_artifact_unsupported".equals(result.optString("error")))
                 throw new UnsupportedGuardArtifactException();
+            if (status == 429
+                    && result.length() == 1
+                    && "bootstrap_busy".equals(result.optString("error")))
+                throw new BootstrapBusyException();
             if (status != 200) throw new IOException("插件移植服务拒绝处理（HTTP " + status + "）");
             if (result.length() != 3
                     || !(result.opt("version") instanceof Number)
@@ -309,6 +375,20 @@ public final class CatPawHost {
                 }
             }
             int status = connection.getResponseCode();
+            if ("/api/drpy".equals(logical.getPath()) && status == 422) {
+                InputStream input = connection.getErrorStream();
+                String rawError =
+                        input == null ? "{}" : new String(bytes(input, 16 * 1024), "UTF-8");
+                String code = null;
+                try {
+                    Object value = new JSONObject(rawError).opt("error");
+                    if (value instanceof String) code = (String) value;
+                } catch (JSONException ignored) {
+                    /* Do not expose untrusted response content. */
+                }
+                String message = drpyErrorMessage(code);
+                if (message != null) throw new DrpySourceException(code, message);
+            }
             if (status != 200) throw new IOException("CatPaw 线路请求失败（HTTP " + status + "）");
             String raw = new String(bytes(connection.getInputStream(), 16 * 1024 * 1024), "UTF-8");
             return raw.replace(endpoint + "/" + logical.getHost(), "catpaw://" + logical.getHost());

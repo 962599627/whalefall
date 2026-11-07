@@ -23,26 +23,33 @@ var rule={
       vod_pic:pd(item,'a.cover&&data-bg',cfg.origin),vod_remarks:pdfh(item,'span.desc&&Text')};
   }).filter(function(item){return item.vod_id&&item.vod_name;});},
   _init:function(){
-    var html=request(cfg.origin);this._homeHtml=html;
+    var html;
+    try{html=request(cfg.origin);}catch(e){unsupportedFeature('drpy_source_unavailable');}
+    this._homeHtml=html;
     var categories=pdfa(html,'ul.nav_row > li > a').map(function(item){
       var href=pdfh(item,'a&&href'),match=/\\/list-(\\d+)\\.html/.exec(href);
       return match?{id:match[1],name:pdfh(item,'a&&Text')}:null;
     }).filter(Boolean);
-    if(!categories.length)throw new Error('Dm84 homepage navigation is missing');
+    if(!categories.length)unsupportedFeature('drpy_source_unavailable');
     this.class_name=categories.map(function(c){return c.name;}).join('&');
     this.class_url=categories.map(function(c){return c.id;}).join('&');
     this.filter={};var self=this;
     categories.forEach(function(c){
-      var groups=pdfa(request(joinUrl(cfg.origin,'/list-'+c.id+'.html')),'ul.list_filter > li > div');
-      if(groups.length<3)throw new Error('Dm84 category filter groups are missing');
-      self.filter[c.id]=['type','year','by'].map(function(key,index){
-        return {key:key,name:['类型','时间','排序'][index],value:pdfa(groups[index],'a').map(function(a){
-          var text=pdfh(a,'a&&Text');var value=text;
-          if(key==='by')value=text.replace('按时间','time').replace('按人气','hits').replace('按评分','score');
-          if(text==='全部')value='';
-          return {n:text.replace('按',''),v:value};
-        }).filter(function(v){return v.n;})};
-      });
+      try{
+        var groups=pdfa(request(joinUrl(cfg.origin,'/list-'+c.id+'.html'),{timeout:2000}),'ul.list_filter > li > div');
+        if(groups.length<3)throw new Error('Dm84 category filter groups are missing');
+        self.filter[c.id]=['type','year','by'].map(function(key,index){
+          return {key:key,name:['类型','时间','排序'][index],value:pdfa(groups[index],'a').map(function(a){
+            var text=pdfh(a,'a&&Text');var value=text;
+            if(key==='by')value=text.replace('按时间','time').replace('按人气','hits').replace('按评分','score');
+            if(text==='全部')value='';
+            return {n:text.replace('按',''),v:value};
+          }).filter(function(v){return v.n;})};
+        });
+      }catch(e){
+        // A missing optional filter page must not discard working catalog data.
+        self.filter[c.id]=[];
+      }
     });
   },
   _detail:function(url){

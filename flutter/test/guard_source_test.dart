@@ -17,6 +17,9 @@ class PortHost extends CatPawHost {
   String? failure;
   Map<String, Object?>? playback;
   Map<String, dynamic>? manifest;
+  final adapters = <String>[];
+  final installed = <String, Map<String, dynamic>>{};
+  final invoked = <Map<String, dynamic>>[];
   @override
   Future<Map<String, dynamic>> bootstrapGuard(
     List<int> bytes, {
@@ -24,20 +27,24 @@ class PortHost extends CatPawHost {
     Completer<void>? cancellation,
   }) async {
     bootstraps++;
+    adapters.add(adapter);
     if (failure != null)
       throw GuardBootstrapException(failure!, 'Synthetic bootstrap failure');
     return {
       'version': 1,
       'origin': 'https://catalogue.invalid/',
       'rule':
-          'var rule={title:"Local port fixture",host:"https://catalogue.invalid"};',
+          'var rule={title:"$adapter fixture",host:"https://catalogue.invalid"};',
     };
   }
 
   @override
   Future<String> installDrpy(Object value) async {
     manifest = Map<String, dynamic>.from(value as Map);
-    return 'catpaw://${'a' * 64}/api/drpy';
+    final address =
+        'catpaw://${sha256.convert(utf8.encode(jsonEncode(manifest)))}/api/drpy';
+    installed[address] = manifest!;
+    return address;
   }
 
   @override
@@ -46,11 +53,14 @@ class PortHost extends CatPawHost {
     String method,
     List<Object?> args, {
     Completer<void>? cancellation,
-  }) async => jsonEncode(
-    method == 'play' && playback != null
-        ? playback
-        : {'method': method, 'list': []},
-  );
+  }) async {
+    invoked.add(installed[address]!);
+    return jsonEncode(
+      method == 'play' && playback != null
+          ? playback
+          : {'method': method, 'list': []},
+    );
+  }
 }
 
 void main() {
@@ -67,6 +77,174 @@ void main() {
       'Authorization': 'import credential',
       'Cookie': 'import=fixture',
       'User-Agent': 'Fixture',
+    },
+  );
+
+  test(
+    'exact aliases select adapters and unknown Guard names never download',
+    () async {
+      final host = PortHost();
+      var downloads = 0;
+      final guard = GuardSource(
+        host: host,
+        drpy: DrpySource(host: host, read: (_, __) async => ''),
+        read: (_, __) async {
+          downloads++;
+          return bytes;
+        },
+      );
+      for (final api in [
+        'csp_Dm84Guard',
+        'csp_Dm84',
+        'csp_AueteGuard',
+        'csp_Auete',
+      ]) {
+        final source = site(
+          'https://import.invalid/plugin.jar',
+        ).copyWith(api: api);
+        expect(GuardSource.supports(source), isTrue, reason: api);
+        expect(source.canBrowse, isTrue, reason: api);
+      }
+      for (final api in [
+        'csp_UnknownGuard',
+        'csp_AueteOtherGuard',
+        'csp_Dm84Guard/extra',
+      ]) {
+        final source = site(
+          'https://import.invalid/plugin.jar',
+        ).copyWith(api: api);
+        expect(GuardSource.supports(source), isFalse);
+        await expectLater(
+          guard.invoke(source, 'home', [false]),
+          throwsFormatException,
+        );
+      }
+      expect(
+        GuardSource.supports(
+          site('https://import.invalid/plugin.jar').copyWith(type: 1),
+        ),
+        isFalse,
+      );
+      expect(downloads, 0);
+      expect(host.bootstraps, 0);
+    },
+  );
+
+  test(
+    'one owner key and JAR keep adapter cache, manifest and state isolated',
+    () async {
+      final host = PortHost();
+      var downloads = 0;
+      final guard = GuardSource(
+        host: host,
+        drpy: DrpySource(host: host, read: (_, __) async => ''),
+        read: (_, __) async {
+          downloads++;
+          return bytes;
+        },
+      );
+      final dm84 = site('https://import.invalid/plugin.jar;md5;$digest');
+      final auete = dm84.copyWith(api: 'csp_AueteGuard');
+      await guard.invoke(dm84, 'home', [false]);
+      final dmManifest = host.invoked.last;
+      await guard.invoke(auete, 'home', [false]);
+      final aueteManifest = host.invoked.last;
+      expect(dmManifest['rule'], contains('dm84-v1'));
+      expect(aueteManifest['rule'], contains('auete-v1'));
+      expect(aueteManifest['sourceId'], isNot(dmManifest['sourceId']));
+      await guard.invoke(dm84, 'search', ['one', false, 1]);
+      expect(host.invoked.last, dmManifest);
+      await guard.invoke(auete.copyWith(api: 'csp_Auete'), 'search', [
+        'two',
+        false,
+        1,
+      ]);
+      expect(host.invoked.last['sourceId'], aueteManifest['sourceId']);
+      expect(host.adapters, ['dm84-v1', 'auete-v1']);
+      expect(downloads, 2);
+      expect(dm84.key, 'dm84');
+      expect(auete.key, 'dm84');
+      expect(dm84.subscriptionId, 'one');
+      expect(auete.subscriptionId, 'one');
+      expect(dm84.api, 'csp_Dm84Guard');
+      expect(auete.api, 'csp_AueteGuard');
+      expect(dm84.jar, auete.jar);
+    },
+  );
+
+  test(
+    'Auete siteUrl variants fail explicitly before download or cached execution',
+    () async {
+      final host = PortHost();
+      var downloads = 0;
+      final guard = GuardSource(
+        host: host,
+        drpy: DrpySource(host: host, read: (_, __) async => ''),
+        read: (_, __) async {
+          downloads++;
+          return bytes;
+        },
+      );
+      final source = site(
+        'https://import.invalid/plugin.jar',
+      ).copyWith(api: 'csp_AueteGuard');
+      for (final override in [
+        'https://custom.invalid/',
+        'https://catalogue.invalid/',
+      ]) {
+        final configured = source.copyWith(
+          ext: jsonEncode({'siteUrl': override}),
+        );
+        await expectLater(
+          guard.invoke(configured, 'home', [false]),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('siteUrl'),
+            ),
+          ),
+        );
+      }
+      expect(downloads, 0);
+      expect(host.bootstraps, 0);
+      await guard.invoke(source.copyWith(ext: '{"siteUrl":""}'), 'home', [
+        false,
+      ]);
+      expect(downloads, 1);
+      final calls = host.invoked.length;
+      await expectLater(
+        guard.invoke(
+          source.copyWith(ext: '{"siteUrl":"https://custom.invalid/"}'),
+          'home',
+          [false],
+        ),
+        throwsFormatException,
+      );
+      expect(downloads, 1);
+      expect(host.invoked.length, calls);
+    },
+  );
+
+  test(
+    'ownerless Auete imports retain their independent origin identity',
+    () async {
+      final host = PortHost();
+      final guard = GuardSource(
+        host: host,
+        drpy: DrpySource(host: host, read: (_, __) async => ''),
+        read: (_, __) async => bytes,
+      );
+      final first = site(
+        'https://first.invalid/plugin.jar',
+      ).copyWith(api: 'csp_AueteGuard', subscriptionId: '');
+      final second = first.copyWith(jar: 'https://second.invalid/plugin.jar');
+      await guard.invoke(first, 'home', [false]);
+      final firstId = host.invoked.last['sourceId'];
+      await guard.invoke(second, 'home', [false]);
+      expect(host.invoked.last['sourceId'], isNot(firstId));
+      expect(first.subscriptionId, isEmpty);
+      expect(second.subscriptionId, isEmpty);
     },
   );
 
@@ -127,6 +305,23 @@ void main() {
         ),
         throwsFormatException,
       );
+      expect(downloads, 0);
+      for (final suffix in [
+        '',
+        ' ',
+        '$digest ',
+        ' $digest',
+        '$digest;md5;$digest',
+      ]) {
+        await expectLater(
+          guard.invoke(
+            site('https://import.invalid/plugin.jar;MD5;$suffix'),
+            'home',
+            [false],
+          ),
+          throwsFormatException,
+        );
+      }
       expect(downloads, 0);
       await expectLater(
         guard.invoke(

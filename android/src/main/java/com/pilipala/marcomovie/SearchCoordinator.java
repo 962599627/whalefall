@@ -10,8 +10,15 @@ public final class SearchCoordinator implements AutoCloseable {
         RESULT,
         EMPTY,
         FAILED,
+        VERIFICATION_REQUIRED,
         TIMEOUT,
         BUSY
+    }
+
+    public static final class VerificationRequiredException extends java.io.IOException {
+        public VerificationRequiredException() {
+            super("此片源需要完成网站验证码");
+        }
     }
 
     public interface Runner {
@@ -220,7 +227,11 @@ public final class SearchCoordinator implements AutoCloseable {
             } catch (Exception error) {
                 finish(
                         Collections.emptyList(),
-                        Thread.currentThread().isInterrupted() ? Outcome.TIMEOUT : Outcome.FAILED);
+                        Thread.currentThread().isInterrupted()
+                                ? Outcome.TIMEOUT
+                                : error instanceof VerificationRequiredException
+                                        ? Outcome.VERIFICATION_REQUIRED
+                                        : Outcome.FAILED);
             } finally {
                 exited.set(true);
                 runningThread = null;

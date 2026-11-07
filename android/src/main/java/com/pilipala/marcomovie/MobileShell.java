@@ -1580,6 +1580,8 @@ final class MobileShell {
         page.addView(historyWrap, new LinearLayout.LayoutParams(-1, -2));
 
         final TextView searchStatus = a.text("输入关键词搜索全部已启用的片源", 12, MainActivity.MUTED);
+        searchStatus.setMaxLines(2);
+        searchStatus.setEllipsize(TextUtils.TruncateAt.END);
         searchStatus.setPadding(a.dp(4), a.dp(10), a.dp(4), a.dp(8));
         page.addView(searchStatus);
 
@@ -1599,14 +1601,36 @@ final class MobileShell {
         resultList.setPadding(0, 0, 0, a.dp(106));
         resultScroll.addView(resultList, new ScrollView.LayoutParams(-1, -2));
 
+        final int[] searchSerial = {0};
+        final TextView sourceNotices = a.text("", 12, MainActivity.MUTED);
+        sourceNotices.setPadding(a.dp(4), 0, a.dp(4), a.dp(10));
+        sourceNotices.setVisibility(View.GONE);
+        resultList.addView(sourceNotices);
+        final Runnable renderSearchStatus =
+                () -> {
+                    int separator = cachedSearchStatus.indexOf('\n');
+                    searchStatus.setText(
+                            separator < 0
+                                    ? cachedSearchStatus
+                                    : cachedSearchStatus.substring(0, separator));
+                    sourceNotices.setText(
+                            separator < 0 ? "" : cachedSearchStatus.substring(separator + 1));
+                    sourceNotices.setVisibility(separator < 0 ? View.GONE : View.VISIBLE);
+                };
+
         clearBtn.setOnClickListener(
                 v -> {
+                    searchSerial[0]++;
+                    a.cancelPageRequests();
                     input.setText("");
                     cachedSearchKeyword = "";
                     cachedSearchStatus = "";
                     cachedSearchHits.clear();
                     cachedSearchScrollY = 0;
                     resultList.removeAllViews();
+                    sourceNotices.setText("");
+                    sourceNotices.setVisibility(View.GONE);
+                    resultList.addView(sourceNotices);
                     searchStatus.setText("输入关键词搜索全部已启用的片源");
                 });
 
@@ -1707,8 +1731,12 @@ final class MobileShell {
                         }
                     renderHistoryChips.run();
 
+                    final int searchTicket = ++searchSerial[0];
                     a.cancelPageRequests();
                     resultList.removeAllViews();
+                    sourceNotices.setText("");
+                    sourceNotices.setVisibility(View.GONE);
+                    resultList.addView(sourceNotices);
                     cachedSearchKeyword = kw;
                     cachedSearchHits.clear();
                     cachedSearchScrollY = 0;
@@ -1727,6 +1755,7 @@ final class MobileShell {
                     final int ticket = a.generation;
                     final int[] completed = {0};
                     final int[] hitCount = {0};
+                    final List<String> searchNotices = new ArrayList<>();
 
                     for (final Cms.Site site : searchableSites) {
                         Future<?> f =
@@ -1734,6 +1763,7 @@ final class MobileShell {
                                         a.worker,
                                         () -> {
                                             List<Cms.Video> matches = new ArrayList<>();
+                                            String notice = "";
                                             try {
                                                 Cms.Listing l =
                                                         Cms.listing(a.engine(site).search(kw, 1));
@@ -1742,13 +1772,28 @@ final class MobileShell {
                                                         matches.add(v);
                                                     }
                                                 }
+                                            } catch (
+                                                    com.pilipala.catpaw.CatPawHost
+                                                                    .DrpySourceException
+                                                            error) {
+                                                notice =
+                                                        "drpy_verification_required"
+                                                                        .equals(error.code)
+                                                                ? "需要完成网站验证码，暂时无法搜索"
+                                                                : "暂时无法读取，请稍后重试";
                                             } catch (Exception ignored) {
+                                                notice = "暂时无法读取，请稍后重试";
                                             }
+                                            final String sourceNotice = notice;
                                             a.ui.post(
                                                     () -> {
                                                         if (ticket != a.generation
+                                                                || searchTicket != searchSerial[0]
                                                                 || a.isFinishing()) return;
                                                         completed[0]++;
+                                                        if (!sourceNotice.isEmpty())
+                                                            searchNotices.add(
+                                                                    site.name + "：" + sourceNotice);
                                                         for (final Cms.Video v : matches) {
                                                             hitCount[0]++;
                                                             if (kw.equals(cachedSearchKeyword)) {
@@ -1771,13 +1816,22 @@ final class MobileShell {
                                                         } else {
                                                             cachedSearchStatus =
                                                                     hitCount[0] == 0
-                                                                            ? "未找到与“" + kw
-                                                                                    + "”相关的影片"
+                                                                            ? (searchNotices
+                                                                                            .isEmpty()
+                                                                                    ? "未找到与“" + kw
+                                                                                            + "”相关的影片"
+                                                                                    : "本次搜索未返回影片，请查看片源提示")
                                                                             : "搜索完成，共找到 "
                                                                                     + hitCount[0]
                                                                                     + " 条结果（点击任意线路进入，返回可继续切换）";
                                                         }
-                                                        searchStatus.setText(cachedSearchStatus);
+                                                        if (!searchNotices.isEmpty())
+                                                            cachedSearchStatus +=
+                                                                    "\n"
+                                                                            + TextUtils.join(
+                                                                                    "\n",
+                                                                                    searchNotices);
+                                                        renderSearchStatus.run();
                                                     });
                                         });
                         a.pageRequests.add(f);
@@ -1807,10 +1861,9 @@ final class MobileShell {
                 for (CachedSearchHit hit : cachedSearchHits) {
                     resultList.addView(buildSearchResultRow(hit.site, hit.video));
                 }
-                searchStatus.setText(
-                        cachedSearchStatus.isEmpty()
-                                ? "已保留搜索结果，共 " + cachedSearchHits.size() + " 条"
-                                : cachedSearchStatus);
+                if (cachedSearchStatus.isEmpty())
+                    cachedSearchStatus = "已保留搜索结果，共 " + cachedSearchHits.size() + " 条";
+                renderSearchStatus.run();
                 final int savedScroll = cachedSearchScrollY;
                 if (savedScroll > 0) {
                     resultScroll.post(() -> resultScroll.scrollTo(0, savedScroll));
@@ -1824,10 +1877,9 @@ final class MobileShell {
             for (CachedSearchHit hit : cachedSearchHits) {
                 resultList.addView(buildSearchResultRow(hit.site, hit.video));
             }
-            searchStatus.setText(
-                    cachedSearchStatus.isEmpty()
-                            ? "已保留搜索结果，共 " + cachedSearchHits.size() + " 条"
-                            : cachedSearchStatus);
+            if (cachedSearchStatus.isEmpty())
+                cachedSearchStatus = "已保留搜索结果，共 " + cachedSearchHits.size() + " 条";
+            renderSearchStatus.run();
             final int savedScroll = cachedSearchScrollY;
             if (savedScroll > 0) {
                 resultScroll.post(() -> resultScroll.scrollTo(0, savedScroll));

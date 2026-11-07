@@ -26,7 +26,11 @@ class AdapterFixture(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.server.requests.append(self.path)
-        if self.path.startswith('/list-'):
+        if self.path == '/' and getattr(self.server,'home_failure',False):
+            body='<html>Unavailable</html>'
+        elif self.path.startswith('/list-13'):
+            body='<html>Filter service unavailable</html>'
+        elif self.path.startswith('/list-'):
             body = '<ul class="list_filter"><li><div><a>全部</a><a>动作</a></div></li><li><div><a>全部</a><a>2025</a></div></li><li><div><a>按时间</a><a>按评分</a></div></li></ul>'
         elif self.path.startswith('/v/'):
             body = '<h1 class="v_title">Fixture</h1><ul class="tab_control"><li>Line</li></ul><ul class="play_list"><li><a href="/p/42">One</a></li></ul>'
@@ -42,6 +46,8 @@ class AdapterFixture(BaseHTTPRequestHandler):
             body = '<script>window.__HHJX_BOOTSTRAP__={"url":"fixture-token","t":42,"key":"fixture-key"};</script>'
         else:
             body = '<ul class="nav_row"><li><a href="/list-12.html">Fixture</a></li></ul><div class="item"><a class="title" href="/v/42">Fixture</a><a class="cover" data-bg="/poster.png"></a><span class="desc">Test</span></div>'
+            if getattr(self.server,'partial_filter_failure',False):
+                body=body.replace('</ul>','<li><a href="/list-13.html">Unavailable filters</a></li></ul>',1)
         data = body.encode()
         self.send_response(200); self.send_header('Content-Length', str(len(data))); self.send_header('Content-Type', 'text/html; charset=utf-8'); self.end_headers(); self.wfile.write(data)
 
@@ -280,6 +286,36 @@ class HostChecks(unittest.TestCase):
                 self.assertEqual((status,value),(422,{'error':'drpy_media_protocol'}))
         finally:
             fixture.shutdown(); fixture.server_close()
+
+    def test_partial_filter_failure_preserves_catalog(self):
+        fixture=ThreadingHTTPServer(('127.0.0.1',0),AdapterFixture)
+        fixture.daemon_threads=True;fixture.origin='http://127.0.0.1:'+str(fixture.server_port)
+        fixture.requests=[];fixture.partial_filter_failure=True
+        threading.Thread(target=fixture.serve_forever,daemon=True).start()
+        try:
+            config={'origin':fixture.origin,'parser':fixture.origin+'/parse','parserOrigin':fixture.origin,'userAgent':'Fixture'}
+            js="console.log(JSON.stringify(require(process.argv[1])(JSON.parse(process.argv[2]))))"
+            rule=json.loads(subprocess.check_output([NODE,'--jitless','-e',js,str(ROOT/'shared/catpaw/drpy-dm84-adapter.cjs'),json.dumps(config)],stderr=subprocess.DEVNULL))
+            def install(source_id):
+                manifest={'kind':'drpy','version':1,'runtime':'drpy2-ca23ffdb-1','sourceId':source_id,
+                          'origin':fixture.origin+'/rule.js','rule':rule,'headers':{},'requestTimeoutMs':2000}
+                data=json.dumps(manifest).encode();digest=hashlib.sha256(data).hexdigest()
+                (self.root/digest).mkdir();(self.root/digest/'drpy.json').write_bytes(data)
+                return '/'+self.state['secret']+'/'+digest+'/api/drpy'
+            api=install('f'*64)
+            status,home=self.request({'version':1,'method':'home','args':[True]},path=api)
+            self.assertEqual(status,200);self.assertEqual(len(home['class']),2)
+            self.assertEqual(len(home['filters']['12']),3);self.assertEqual(home['filters']['13'],[])
+            status,recommendations=self.request({'version':1,'method':'homeVod','args':[]},path=api)
+            self.assertEqual(status,200);self.assertEqual(recommendations['list'][0]['vod_name'],'Fixture')
+            status,category=self.request({'version':1,'method':'category','args':['13',1,True,{}]},path=api)
+            self.assertEqual(status,200);self.assertTrue(category['list'])
+            fixture.home_failure=True
+            failed_api=install('0'*64)
+            self.assertEqual(self.request({'version':1,'method':'home','args':[True]},path=failed_api),
+                             (422,{'error':'drpy_source_unavailable'}))
+        finally:
+            fixture.shutdown();fixture.server_close()
 
 class WorkerBoundaryChecks(unittest.TestCase):
     """Fault injection changes only the worker, exercising the real host boundary."""

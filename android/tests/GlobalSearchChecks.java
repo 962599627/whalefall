@@ -119,13 +119,15 @@ public final class GlobalSearchChecks {
         model.set(new String(new char[80]).replace('\0', 'a'));
         model.input("b");
         check(model.query().length() == 80, "bounded query length");
-        CountDownLatch complete = new CountDownLatch(4);
+        CountDownLatch complete = new CountDownLatch(5);
         Map<String, SearchCoordinator.Outcome> outcomes = new ConcurrentHashMap<>();
         AtomicInteger validCount = new AtomicInteger();
         SearchCoordinator coordinator =
                 new SearchCoordinator(
                         (site, query) -> {
                             if (site.key.equals("broken")) throw new IOException("fixture");
+                            if (site.key.equals("verification"))
+                                throw new SearchCoordinator.VerificationRequiredException();
                             if (site.key.equals("slow")) {
                                 Thread.sleep(500);
                                 return Collections.emptyList();
@@ -142,7 +144,13 @@ public final class GlobalSearchChecks {
                         60,
                         500);
         coordinator.start(
-                Arrays.asList(site("good"), site("empty"), site("broken"), site("slow")), "三体");
+                Arrays.asList(
+                        site("good"),
+                        site("empty"),
+                        site("broken"),
+                        site("slow"),
+                        site("verification")),
+                "三体");
         check(
                 complete.await(2, TimeUnit.SECONDS),
                 "all source outcomes finish despite one slow source");
@@ -158,6 +166,9 @@ public final class GlobalSearchChecks {
         check(
                 outcomes.get("slow") == SearchCoordinator.Outcome.TIMEOUT,
                 "per-source deadline delivers one timeout");
+        check(
+                outcomes.get("verification") == SearchCoordinator.Outcome.VERIFICATION_REQUIRED,
+                "website verification is distinct from empty and generic failure");
         coordinator.close();
         CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
         AtomicInteger calls = new AtomicInteger();

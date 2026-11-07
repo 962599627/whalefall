@@ -193,6 +193,7 @@ def main():
         'selection': 'Exact reviewed artifact hash; unknown artifacts fail explicitly.',
         'execution': 'Bootstrap never executes imported bytecode or native code.',
     }]
+    provenance['appOwnedAdapters'].append({'adapter': 'auete-v1', 'license': 'GPL-3.0-only', 'implementation': 'Original endpoint-parameterized interoperability adapter; origin and media base read as data from exact reviewed DEX code positions. No page script, constructor or native code is executed.', 'reviewedImportedArtifactSha256': 'e7375830bcd065b264239e1f0e7da4c99d75abf71e1b6edf50e225ae8b0f4b7e', 'literalLocations': [{'method': 'Auete.<init>', 'codeItemSha256': '3841e63ceeae29689e3b5d5b7f92b4d8177278dad5084818c2476df489128c17', 'unit': 3, 'field': 'yq'}, {'method': 'Auete.playerContent', 'codeItemSha256': '80e9d52800eae7b12c2278b2dd00e1d4677252d677e9185b594ef23ecd53b6b8', 'unit': 299}], 'verification': 'Human verification challenges fail explicitly; no automatic bypass or OCR.'})
     (OUT / 'drpy-provenance.json').write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
     from update_drpy_assets import update
     update()

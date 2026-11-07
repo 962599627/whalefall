@@ -106,6 +106,21 @@ public final class SearchVariantsChecks {
             Thread.interrupted();
         }
         check(cancelled && calls[0] == 1);
+        calls[0] = 0;
+        boolean verification = false;
+        try {
+            SearchVariants.run(
+                    "x",
+                    Arrays.asList("a", "b"),
+                    t -> true,
+                    term -> {
+                        calls[0]++;
+                        throw new SearchCoordinator.VerificationRequiredException();
+                    });
+        } catch (SearchCoordinator.VerificationRequiredException expected) {
+            verification = true;
+        }
+        check(verification && calls[0] == 1);
         System.out.println("OK " + checks + " search fallback checks");
     }
 }

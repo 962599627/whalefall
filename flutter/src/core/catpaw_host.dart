@@ -11,6 +11,11 @@ class GuardBootstrapException extends FormatException {
   const GuardBootstrapException(this.code, String message) : super(message);
 }
 
+class DrpySourceException extends FormatException {
+  final String code;
+  const DrpySourceException(this.code, String message) : super(message);
+}
+
 /// Stable subscriptions reference verified local bytes, never an ephemeral port.
 class CatPawHost {
   static CatPawHost instance = CatPawHost();
@@ -319,7 +324,7 @@ class CatPawHost {
     Completer<void>? cancellation,
   }) async {
     _checkCancellation(cancellation);
-    if (adapter != 'dm84-v1' ||
+    if (!const ['dm84-v1', 'auete-v1'].contains(adapter) ||
         bytes.isEmpty ||
         bytes.length > _maxBundleBytes ||
         bytes.any((b) => b < 0 || b > 255)) {
@@ -602,6 +607,7 @@ class CatPawHost {
 
   Future<Uri> resolve(String address, {Completer<void>? cancellation}) async {
     _checkCancellation(cancellation);
+    final generation = _generation;
     final logical = Uri.parse(address);
     if (logical.scheme != 'catpaw' ||
         !RegExp(r'^[a-f0-9]{64}$').hasMatch(logical.host) ||
@@ -632,8 +638,10 @@ class CatPawHost {
       throw StateError('此设备没有对应的 CatPaw 服务包，请重新导入原订阅');
     }
     _checkCancellation(cancellation);
+    if (generation != _generation) throw StateError('CatPaw 本机服务已关闭');
     final base = await _withCancellation(_ensure(), cancellation);
     _checkCancellation(cancellation);
+    if (generation != _generation) throw StateError('CatPaw 本机服务已关闭');
     return base.replace(
       path: '${base.path}/${logical.host}${logical.path}',
       query: logical.hasQuery ? logical.query : null,
@@ -698,6 +706,33 @@ class CatPawHost {
       }
       final response = await request.close();
       _checkCancellation(cancellation);
+      if (logical.path == '/api/drpy' && response.statusCode == 422) {
+        final errorBytes = BytesBuilder(copy: false);
+        await for (final chunk in response) {
+          _checkCancellation(cancellation);
+          if (errorBytes.length + chunk.length > 16 * 1024) {
+            throw const FormatException('片源错误响应过大');
+          }
+          errorBytes.add(chunk);
+        }
+        _checkCancellation(cancellation);
+        Object? error;
+        try {
+          error = jsonDecode(utf8.decode(errorBytes.takeBytes()));
+        } catch (_) {}
+        const messages = {
+          'drpy_verification_required': '此片源搜索需要完成网站验证码，暂时无法返回结果',
+          'drpy_local_proxy_not_supported': '此片源需要的本地代理暂不支持',
+          'drpy_media_protocol': '此片源返回的播放地址协议暂不支持',
+          'drpy_media_unresolved': '此片源暂未解析出可播放地址',
+          'drpy_source_origin': '此片源返回了不支持的跨站目录',
+          'drpy_source_unavailable': '此片源暂时无法访问',
+        };
+        final code = error is Map ? error['error'] : null;
+        if (code is String && messages.containsKey(code)) {
+          throw DrpySourceException(code, messages[code]!);
+        }
+      }
       if (response.statusCode != 200)
         throw StateError('CatPaw 线路请求失败（HTTP ${response.statusCode}）');
       final bytes = BytesBuilder(copy: false);

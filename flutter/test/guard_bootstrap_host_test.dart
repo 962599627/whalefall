@@ -18,6 +18,20 @@ const root=process.argv[2],ready=process.argv[3],secret='b'.repeat(64);
 const busyCounts=new Map();
 const server=http.createServer(async(req,res)=>{
   let raw='';for await(const chunk of req)raw+=chunk;
+  if(req.url.endsWith('/api/drpy')) {
+    const mode=JSON.parse(raw).args[0];
+    res.writeHead(422,{'Content-Type':'application/json'});
+    if(mode==='errorhold'){
+      res.on('close',()=>{if(!res.writableEnded)fs.writeFileSync(path.join(root,'error-aborted.txt'),'1');});
+      res.write('{"error":');fs.writeFileSync(path.join(root,'error-started.txt'),'1');
+      await new Promise(resolve=>setTimeout(resolve,200));
+      if(!res.destroyed)res.end('"drpy_verification_required"}');return;
+    }
+    if(mode==='oversized'){res.end('x'.repeat(16385));return;}
+    if(mode==='malformed'){res.end('private-error-body');return;}
+    res.end(JSON.stringify({error:mode}));return;
+  }
+  if(req.url.endsWith('/_release')) {res.writeHead(422);res.end('{"error":"drpy_verification_required"}');return;}
   const value=JSON.parse(raw),data=fs.readFileSync(path.join(root,'imports',value.artifactHash+'.jar'));
   fs.appendFileSync(path.join(root,'requests.txt'),JSON.stringify({url:req.url,method:req.method,
     contentType:req.headers['content-type'],authorization:req.headers.authorization||'',body:value,
@@ -120,6 +134,19 @@ void main() {
     },
   );
 
+  test('the same staged artifact can request each explicit adapter', () async {
+    final bytes = [0, 1, 255];
+    await host.bootstrapGuard(bytes);
+    await host.bootstrapGuard(bytes, adapter: 'auete-v1');
+    final requests =
+        (await File('${directory.path}/state/requests.txt').readAsLines())
+            .map((line) => (jsonDecode(line) as Map)['body'] as Map)
+            .toList();
+    expect(requests.map((body) => body['adapter']), ['dm84-v1', 'auete-v1']);
+    expect(requests[0]['artifactHash'], requests[1]['artifactHash']);
+    expect(await Directory('${directory.path}/state/imports').list().length, 1);
+  });
+
   test(
     'invalid adapter and input are rejected before starting the host',
     () async {
@@ -133,6 +160,10 @@ void main() {
       }
       await expectLater(
         host.bootstrapGuard([1], adapter: '../other'),
+        throwsFormatException,
+      );
+      await expectLater(
+        host.bootstrapGuard([1], adapter: 'auete-v2'),
         throwsFormatException,
       );
       expect(await Directory('${directory.path}/state').exists(), isFalse);
@@ -271,6 +302,76 @@ void main() {
   );
 
   test(
+    'DRPY 422 errors are typed, bounded and hide unknown response content',
+    () async {
+      final address = await host.installDrpy(fixture.manifest());
+      await expectLater(
+        host.callDrpy(address, 'search', ['drpy_verification_required']),
+        throwsA(
+          isA<DrpySourceException>()
+              .having((e) => e.code, 'code', 'drpy_verification_required')
+              .having((e) => e.message, 'message', '此片源搜索需要完成网站验证码，暂时无法返回结果'),
+        ),
+      );
+      await expectLater(
+        host.callDrpy(address, 'play', ['drpy_local_proxy_not_supported']),
+        throwsA(
+          isA<DrpySourceException>().having(
+            (e) => e.code,
+            'code',
+            'drpy_local_proxy_not_supported',
+          ),
+        ),
+      );
+      for (final mode in ['private-error-body', 'malformed']) {
+        await expectLater(
+          host.callDrpy(address, 'search', [mode]),
+          throwsA(
+            allOf(
+              isNot(isA<DrpySourceException>()),
+              predicate(
+                (Object e) => !e.toString().contains('private-error-body'),
+              ),
+            ),
+          ),
+        );
+      }
+      await expectLater(
+        host.callDrpy(address, 'search', ['oversized']),
+        throwsFormatException,
+      );
+      await expectLater(
+        host.read(
+          address.replaceFirst('/api/drpy', '/_release'),
+          method: 'POST',
+        ),
+        throwsA(isNot(isA<DrpySourceException>())),
+      );
+    },
+  );
+
+  test(
+    'cancellation still closes a partially received DRPY error body',
+    () async {
+      final address = await host.installDrpy(fixture.manifest());
+      final cancellation = Completer<void>();
+      final call = host.callDrpy(address, 'search', [
+        'errorhold',
+      ], cancellation: cancellation);
+      final check = expectLater(
+        call,
+        throwsA(
+          isA<FormatException>().having((e) => e.message, 'message', '搜索已取消'),
+        ),
+      );
+      await _waitFor(File('${directory.path}/state/error-started.txt'));
+      cancellation.complete();
+      await check;
+      await _waitFor(File('${directory.path}/state/error-aborted.txt'));
+    },
+  );
+
+  test(
     'pinned real router rejects an unreviewed artifact with the typed code',
     () async {
       await host.close();
@@ -284,9 +385,9 @@ void main() {
         bootstrap: '${Directory.current.path}/assets/catpaw/host.cjs',
       );
       final bytes = utf8.encode('Synthetic unknown plugin, never executed.');
-      for (var attempt = 0; attempt < 2; attempt++) {
+      for (final adapter in ['dm84-v1', 'auete-v1']) {
         await expectLater(
-          host.bootstrapGuard(bytes),
+          host.bootstrapGuard(bytes, adapter: adapter),
           throwsA(
             isA<GuardBootstrapException>().having(
               (e) => e.code,

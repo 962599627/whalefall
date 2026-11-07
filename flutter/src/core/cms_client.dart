@@ -1079,6 +1079,7 @@ class CmsClient {
     List<CmsSite> sites,
     String keyword, {
     int maxConcurrency = defaultSearchConcurrency,
+    void Function(CmsSite site, Object error)? onSourceError,
   }) {
     late final StreamController<(CmsSite, List<CmsVideo>)> controller;
     bool cancelled = false;
@@ -1135,7 +1136,9 @@ class CmsClient {
           if (!cancelled && !controller.isClosed && listing.videos.isNotEmpty) {
             controller.add((site, listing.videos));
           }
-        }).catchError((_) {}).whenComplete(() {
+        }).catchError((Object error) {
+          if (!cancelled && !controller.isClosed) onSourceError?.call(site, error);
+        }).whenComplete(() {
           if (!abort.isCompleted) abort.complete();
           requests.remove(abort);
           inFlight--;

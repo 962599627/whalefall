@@ -73,3 +73,4 @@ jobs:
           python scripts/test_catpaw_host.py
           python scripts/test_drpy_host.py
           python scripts/test_guard_bootstrap.py
+          python scripts/test_auete_host.py

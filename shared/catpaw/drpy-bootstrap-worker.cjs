@@ -18,8 +18,10 @@ try {
     if (fs.readSync(descriptor, Buffer.alloc(1), 0, 1, offset)) throw Error('guard_artifact_integrity');
   } finally { fs.closeSync(descriptor); }
   if (crypto.createHash('sha256').update(data).digest('hex') !== workerData.hash) throw Error('guard_artifact_integrity');
-  const config = extractKnownPlugin(data);
-  const rule = require('./drpy-dm84-adapter.cjs')(config);
+  const adapter = workerData.adapter;
+  if (!['dm84-v1', 'auete-v1'].includes(adapter)) throw Error('invalid_artifact');
+  const config = extractKnownPlugin(data, adapter);
+  const rule = (adapter === 'auete-v1' ? require('./drpy-auete-adapter.cjs') : require('./drpy-dm84-adapter.cjs'))(config);
   parentPort.postMessage({ version: 1, rule, origin: config.origin });
 } catch (error) {
   parentPort.postMessage({ error: ['guard_artifact_unsupported', 'guard_artifact_integrity'].includes(error.message) ? error.message : 'guard_artifact_invalid' });

@@ -142,6 +142,38 @@ class Dex {
     for (let i = 0; i < chars.length; i += 4096) result += String.fromCharCode(...chars.slice(i, i + 4096));
     return result;
   }
+  reviewedLiteral(className, methodName, expectedHash, unit, fieldName) {
+    const classes = this.table(96, 32).filter(p => this.at(this.types, this.u32(p)) === className);
+    if (classes.length !== 1) fail();
+    let p = this.u32(classes[0] + 24), counts = [], selected = null;
+    if (!p) fail();
+    for (let i = 0; i < 4; i++) { let n; [n, p] = this.uleb(p); if (n > 65536) fail(); counts.push(n); }
+    for (let i = 0; i < counts[0] + counts[1]; i++) { [, p] = this.uleb(p); [, p] = this.uleb(p); }
+    for (const count of counts.slice(2)) {
+      let index = 0;
+      for (let i = 0; i < count; i++) {
+        let delta, code; [delta, p] = this.uleb(p); [, p] = this.uleb(p); [code, p] = this.uleb(p); index += delta;
+        const [owner, , name] = this.at(this.methods, index);
+        if (owner === className && name === methodName) { if (selected !== null || !code) fail(); selected = code; }
+      }
+    }
+    if (selected === null) fail();
+    const size = this.u32(selected + 12);
+    if (!size || size > 65536 || !Number.isInteger(unit) || unit < 0 || unit + 1 >= size) fail();
+    bounds(this.bytes, selected, 16 + size * 2);
+    if (sha(this.bytes.subarray(selected, selected + 16 + size * 2)) !== expectedHash) fail();
+    // Exact reviewed code position, not an interpreter or a search for URL-like strings.
+    const instruction = selected + 16 + unit * 2, word = this.u16(instruction);
+    if ((word & 255) !== 0x1a) fail();
+    if (fieldName) {
+      if (unit + 3 >= size) fail();
+      const write = this.u16(instruction + 4), field = this.at(this.fields, this.u16(instruction + 6));
+      if ((write & 255) !== 0x5b || ((write >>> 8) & 15) !== word >>> 8 ||
+          write >>> 12 !== this.u16(selected) - this.u16(selected + 2) ||
+          field[0] !== className || field[1] !== 'Ljava/lang/String;' || field[2] !== fieldName) fail();
+    }
+    return this.at(this.strings, this.u16(instruction + 2));
+  }
   literalFields(className) {
     const classes = this.table(96, 32).filter(p => this.at(this.types, this.u32(p)) === className);
     if (classes.length !== 1) fail();
@@ -185,20 +217,32 @@ class Dex {
     return fields;
   }
 }
-function extractKnownPlugin(bytes) {
+function extractKnownPlugin(bytes, adapter = 'dm84-v1') {
   if (!Buffer.isBuffer(bytes) || bytes.length > MAX) fail();
   if (sha(bytes) !== REVIEWED) throw Error('guard_artifact_unsupported');
   const budget = { bytes: 0, entries: 0 };
   const payload = zipMember(bytes, 'assets/ftyshinidie.guard', budget);
   const dex = zipMember(unwrapGuard(payload), 'classes.dex', budget);
-  const fields = new Dex(dex).literalFields('Lcom/github/catvod/spider/Dm84;');
-  if (Object.keys(fields).length !== 2) fail();
+  const reader = new Dex(dex);
   function endpoint(value) {
     if (typeof value !== 'string' || value.length > 2048) fail();
     let url; try { url = new URL(value); } catch (_) { fail(); }
     if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.hash) fail();
     return url;
   }
+  if (adapter === 'auete-v1') {
+    const className = 'Lcom/github/catvod/spider/Auete;';
+    const origin = endpoint(reader.reviewedLiteral(className, '<init>',
+      '3841e63ceeae29689e3b5d5b7f92b4d8177278dad5084818c2476df489128c17', 3, 'yq'));
+    const mediaBase = endpoint(reader.reviewedLiteral(className, 'playerContent',
+      '80e9d52800eae7b12c2278b2dd00e1d4677252d677e9185b594ef23ecd53b6b8', 299));
+    if (origin.pathname !== '/' || origin.search || mediaBase.search || !mediaBase.pathname.endsWith('/')) fail();
+    return { origin: origin.origin, mediaBase: mediaBase.href,
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36' };
+  }
+  if (adapter !== 'dm84-v1') fail();
+  const fields = reader.literalFields('Lcom/github/catvod/spider/Dm84;');
+  if (Object.keys(fields).length !== 2) fail();
   const origin = endpoint(fields.yq), parser = endpoint(fields.SN);
   if (origin.pathname !== '/' || origin.search) fail();
   return { origin: origin.origin, parser: parser.href, parserOrigin: parser.origin,

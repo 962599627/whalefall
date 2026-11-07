@@ -88,13 +88,13 @@ if (!isMainThread) {
         req.on('data', data); req.once('end', end); req.once('error', failed);
       });
       if (!body || Array.isArray(body) || Object.keys(body).sort().join(',') !== 'adapter,artifactHash,version' ||
-          body.version !== 1 || body.adapter !== 'dm84-v1' || typeof body.artifactHash !== 'string' || !HASH.test(body.artifactHash)) throw Error('bootstrap_request');
+          body.version !== 1 || !['dm84-v1', 'auete-v1'].includes(body.adapter) || typeof body.artifactHash !== 'string' || !HASH.test(body.artifactHash)) throw Error('bootstrap_request');
       if (res.destroyed || closing) throw Error('bootstrap_cancelled');
       const imports = path.join(root, 'imports');
       try { if (fs.lstatSync(imports).isSymbolicLink() || !fs.lstatSync(imports).isDirectory()) throw Error(); }
       catch (_) { throw Error('guard_artifact_invalid'); }
       const worker = task.worker = new Worker(path.join(__dirname, 'drpy-bootstrap-worker.cjs'), {
-        workerData: { file: path.join(imports, body.artifactHash + '.jar'), hash: body.artifactHash },
+        workerData: { file: path.join(imports, body.artifactHash + '.jar'), hash: body.artifactHash, adapter: body.adapter },
         resourceLimits: { maxOldGenerationSizeMb: 96, maxYoungGenerationSizeMb: 16, stackSizeMb: 2 },
         stdout: true, stderr: true,
       });

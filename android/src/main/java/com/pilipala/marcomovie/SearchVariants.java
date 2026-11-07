@@ -31,6 +31,8 @@ final class SearchVariants {
                                 && (term.equalsIgnoreCase(query) || matches.test(v.title))
                                 && ids.add(v.id)) result.add(v);
                 if (!result.isEmpty()) return result;
+            } catch (SearchCoordinator.VerificationRequiredException e) {
+                throw e;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw e;
