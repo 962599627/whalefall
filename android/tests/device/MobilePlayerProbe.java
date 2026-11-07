@@ -159,6 +159,9 @@ public final class MobilePlayerProbe extends Instrumentation {
                                         new LiveCatalog.Source(), new LiveCatalog.Catalog());
                         Cms.Site site = new Cms.Site();
                         site.key = "local-layout-fixture";
+                        site.name = "Local layout fixture";
+                        site.api = "";
+                        site.playUrl = "";
                         Cms.Video video = new Cms.Video();
                         video.title = "Local timeline fixture";
                         Cms.Episode episode = new Cms.Episode();
