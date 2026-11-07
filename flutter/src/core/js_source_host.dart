@@ -36,6 +36,13 @@ class JsSourceHost {
   static int _generation = 0;
   static int get generation => _generation;
   static const _maxSessions = 6;
+  static Completer<void> _capacityChanged = Completer<void>();
+
+  static void _notifyCapacity() {
+    final changed = _capacityChanged;
+    _capacityChanged = Completer<void>();
+    changed.complete();
+  }
 
   /// Removal is synchronous; teardown follows on each runtime's owning isolate.
   /// A loader started before this boundary cannot recreate a deleted session.
@@ -46,6 +53,7 @@ class JsSourceHost {
     for (final key in removed) {
       closing.add(_sessions.remove(key)!.close());
     }
+    _notifyCapacity();
     return Future.wait(closing);
   }
 
@@ -92,11 +100,21 @@ class JsSourceHost {
 
     check();
     if (sessionKey != null) {
+      final waiting = Stopwatch()..start();
       if (_sessions[sessionKey]?._closed == true) _sessions.remove(sessionKey);
       while (!_sessions.containsKey(sessionKey) &&
           _sessions.length >= _maxSessions) {
         final idle = _sessions.entries.where((item) => !item.value.busy);
-        if (idle.isEmpty) throw StateError('正在运行的脚本片源过多，请稍后重试');
+        if (idle.isEmpty) {
+          final remaining = budget - waiting.elapsed;
+          if (remaining <= Duration.zero) throw TimeoutException('等待脚本运行环境超时');
+          await Future.any([
+            _capacityChanged.future,
+            if (cancellation != null) cancellation.future,
+          ]).timeout(remaining);
+          check();
+          continue;
+        }
         await _sessions.remove(idle.first.key)!.close();
         check();
       }
@@ -167,6 +185,7 @@ class _SourceWorker {
     lifecycle.listen((_) {
       _closed = true;
       if (!_exited.isCompleted) _exited.complete();
+      JsSourceHost._notifyCapacity();
       lifecycle.close();
     });
     try {
@@ -233,9 +252,10 @@ class _SourceWorker {
         reply.close();
       }
     });
-    _tail = task
-        .then<void>((_) {}, onError: (Object _) {})
-        .whenComplete(() => _pending--);
+    _tail = task.then<void>((_) {}, onError: (Object _) {}).whenComplete(() {
+      _pending--;
+      if (!busy) JsSourceHost._notifyCapacity();
+    });
     return task;
   }
 

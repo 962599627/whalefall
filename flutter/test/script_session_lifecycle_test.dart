@@ -266,4 +266,54 @@ export default {
       '1',
     );
   });
+
+  test(
+    'a new source waits for a busy pool slot without evicting active requests',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final arrivals = <HttpRequest>[];
+      final full = Completer<void>();
+      server.listen((request) {
+        arrivals.add(request);
+        if (arrivals.length == 6) full.complete();
+      });
+      const entry = 'pkg://pool/source.js';
+      final script =
+          'export default {async home(){await req("http://127.0.0.1:${server.port}/wait");return 1;}}';
+      final active = List.generate(
+        6,
+        (i) => JsSourceHost.invoke(
+          entry: entry,
+          modules: {entry: script},
+          method: 'home',
+          arguments: [],
+          sessionKey: 'busy-$i',
+        ),
+      );
+      await full.future;
+      bool extraFinished = false;
+      final extra =
+          JsSourceHost.invoke(
+            entry: entry,
+            modules: {entry: 'export default {home(){return 7;}}'},
+            method: 'home',
+            arguments: [],
+            sessionKey: 'extra',
+          ).then((value) {
+            extraFinished = true;
+            return value;
+          });
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(extraFinished, isFalse);
+      arrivals.first.response.write('{}');
+      await arrivals.first.response.close();
+      expect(await extra.timeout(const Duration(seconds: 3)), '7');
+      for (final request in arrivals.skip(1)) {
+        request.response.write('{}');
+        await request.response.close();
+      }
+      expect(await Future.wait(active), List.filled(6, '1'));
+    },
+  );
 }
