@@ -17,8 +17,8 @@
       "reviewedSha256": "cf46ccf34d32ce873f021fc5e94c43a73afcb7a551004be8d6a02e94986d0696"
     },
     {
-      "path": "js/模板.js",
-      "url": "https://raw.githubusercontent.com/hjdhnx/dr_py/ca23ffdbf5e429c5893ac60158668fc5af7af192/js/模板.js",
+      "path": "js/妯℃澘.js",
+      "url": "https://raw.githubusercontent.com/hjdhnx/dr_py/ca23ffdbf5e429c5893ac60158668fc5af7af192/js/妯℃澘.js",
       "sha256": "1da00bdcb30ab1a7875a84ee6fc82256e705330b6cc9d84144f163df68b665cb",
       "reviewedSha256": "1da00bdcb30ab1a7875a84ee6fc82256e705330b6cc9d84144f163df68b665cb"
     },
@@ -292,6 +292,7 @@
   "transformations": [
     "Replace five module imports with pinned local dependencies",
     "Expose default Spider as context-local __drpy",
+    "Resolve nested helper imports against their importing module, preserving eval/request behavior",
     "Disable default OCR endpoint and reject OCR calls",
     "Propagate init errors instead of logging and swallowing them",
     "Wrap templates in their own module scope",
@@ -300,7 +301,7 @@
     "Split PEM serializer delimiter literals by equivalent string concatenation; no scanner exemption for private values"
   ],
   "generated": {
-    "drpy-core.js": "dab10808793047c6b15e78ccf809d7aa46580c2e128e87b08cb449bef4186a57",
+    "drpy-core.js": "e93f2deeb177ab43cc1c10e7cb505cbefd55da63da7d798f95c74a0da0b82629",
     "drpy-dependencies.js": "d72880e3506074dfce8b87804a3a15a3ef663a4e399bfb477ad51d1c1f238417"
   },
   "appOwnedAdapters": [

@@ -1,0 +1,26 @@
+name: iOS embedded source runtime regression
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  embedded:
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run production engine in an iPhone simulator
+        run: python3 scripts/run_ios_runtime_probe.py
+      - name: Retain runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS-embedded-runtime-evidence
+          retention-days: 7
+          path: |
+            verification/ios-runtime/result.json
+            ~/Library/Logs/DiagnosticReports/*RuntimeProbe*
+            ~/Library/Logs/DiagnosticReports/*Node*

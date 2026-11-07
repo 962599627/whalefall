@@ -1477,7 +1477,10 @@ function buildUrl(url,obj){
  * @param url 远程js地址
  */
 function require(url){
-    eval(request(url));
+    const previous = globalThis.__drpyModuleBase;
+    const resolved = joinUrl(previous || globalThis.__drpyOrigin, String(url));
+    try { globalThis.__drpyModuleBase = resolved; eval(request(resolved)); }
+    finally { globalThis.__drpyModuleBase = previous; }
 }
 /**
  * 海阔网页请求函数完整封装

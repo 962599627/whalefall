@@ -101,6 +101,7 @@ class DrpySource {
     _checkCancellation(cancellation);
     var origin = suppliedOrigin ?? '';
     var rule = body ?? '';
+    final modules = <String, String>{};
     if (body == null) {
       Object? extension = site.ext;
       try {
@@ -114,6 +115,9 @@ class DrpySource {
         }
         rule = extension['script'] as String;
         origin = (extension['origin'] ?? '').toString();
+        if (extension['modules'] is Map) {
+          modules.addAll(Map<String, String>.from(extension['modules'] as Map));
+        }
       } else if (extension is Map) {
         // Explicit csp_Drpy may contain a JSON rule, without executable functions.
         rule = 'var rule = ${jsonEncode(extension)};';
@@ -153,8 +157,11 @@ class DrpySource {
               site.sourceKey,
               site.isEffectivelyPrivate,
               if (site.subscriptionId.isEmpty) ...[
-                site.api, site.pluginReference, origin,
-                if (uri.scheme == 'pkg') sha256.convert(utf8.encode(rule)).toString(),
+                site.api,
+                site.pluginReference,
+                origin,
+                if (uri.scheme == 'pkg')
+                  sha256.convert(utf8.encode(rule)).toString(),
               ],
             ]),
           ),
@@ -169,6 +176,7 @@ class DrpySource {
       'origin': origin,
       'rule': rule,
       'headers': headers,
+      if (modules.isNotEmpty) 'modules': modules,
       'requestTimeoutMs': 12000,
     });
     _checkCancellation(cancellation);

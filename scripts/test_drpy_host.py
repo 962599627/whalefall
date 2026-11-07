@@ -289,12 +289,62 @@ class DrpyChecks(unittest.TestCase):
             for thread in threads:thread.join(3)
         self.assertTrue(all(not t.is_alive() for t in threads))
 
-    def test_12_unsupported_proxy_cannot_be_hidden_by_core_fallback(self):
-        rule={**self.rule,'lazy':'js:input={parse:0,url:getProxyUrl()};'}
-        key=self.install(rule,'proxy')
-        with self.assertRaises(urllib.error.HTTPError) as error:self.call(key,'play','fixture',self.origin+'/resolve',[])
-        self.assertEqual(error.exception.code,422)
-        self.assertIn(b'drpy_local_proxy_not_supported',error.exception.read())
+    def test_12_proxy_text_binary_ranges_and_release(self):
+        playlist='#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="?do=js&kind=key"\n?do=js&kind=key\n'
+        rule={**self.rule,'lazy':'js:input={parse:0,url:getProxyUrl()+"&kind=playlist"};',
+            'proxy_rule':'js:input=input.kind==="key"?[200,"application/octet-stream",[0,1,255,42]]:[200,"application/vnd.apple.mpegurl",'+json.dumps(playlist)+'];'}
+        key=self.install(rule,'local-proxy')
+        try:
+            play=self.call(key,'play','fixture','unused',[])
+            self.assertTrue(play['url'].startswith(self.base+'/'+key+'/proxy?'))
+            with urllib.request.urlopen(play['url'],timeout=8) as response:
+                text=response.read().decode()
+            self.assertIn(self.base+'/'+key+'/proxy?do=js&kind=key',text)
+            with urllib.request.urlopen(urllib.request.Request(play['url'],headers={'Range':'bytes=0-7'}),timeout=8) as response:
+                self.assertEqual(response.status,200)
+                self.assertEqual(response.read().decode(),text)
+            target=play['url'].replace('kind=playlist','kind=key')
+            with urllib.request.urlopen(urllib.request.Request(target,headers={'Range':'bytes=1-2'}),timeout=8) as response:
+                self.assertEqual(response.status,206)
+                self.assertEqual(response.headers['Content-Range'],'bytes 1-2/4')
+                self.assertEqual(response.read(),bytes([1,255]))
+            with urllib.request.urlopen(urllib.request.Request(target,method='HEAD'),timeout=8) as response:
+                self.assertEqual(response.headers['Content-Length'],'4')
+                self.assertEqual(response.read(),b'')
+            with self.assertRaises(urllib.error.HTTPError) as failure:
+                urllib.request.urlopen(urllib.request.Request(target,headers={'Range':'bytes=99-100'}),timeout=8)
+            self.assertEqual(failure.exception.code,416)
+            for number in range(4):
+                other=self.install(source='proxy-background-'+str(number))
+                self.call(other,'home',True);self.release(other)
+            with urllib.request.urlopen(target,timeout=8) as response:self.assertEqual(response.read(),bytes([0,1,255,42]))
+        finally:self.release(key)
+
+    def test_local_package_nested_helpers_and_json(self):
+        rule={**self.rule,'预处理':'js:require("./helpers/entry.js");',
+            '二级':'js:VOD={vod_name:fixtureHelper+JSON.parse(request("pkg://archive/data.json")).name,vod_play_from:"",vod_play_url:""};'}
+        modules={'pkg://archive/helpers/entry.js':'require("./nested/value.js");',
+            'pkg://archive/helpers/nested/value.js':'globalThis.fixtureHelper="local:";',
+            'pkg://archive/data.json':'{"name":"中文"}'}
+        key=self.install(rule,'local-modules',origin='pkg://archive/main.js',modules=modules)
+        try:self.assertEqual(self.call(key,'detail',self.origin+'/detail/42')['list'][0]['vod_name'],'local:中文')
+        finally:self.release(key)
+        key=self.install(rule,'missing-module',origin='pkg://archive/main.js',modules={})
+        with self.assertRaises(urllib.error.HTTPError) as error:self.call(key,'home',True)
+        self.assertIn(b'drpy_local_module_missing',error.exception.read())
+        self.release(key)
+        key=self.install(rule,'foreign-module',origin='pkg://archive/main.js',modules={'pkg://other/helper.js':'secret'})
+        with self.assertRaises(urllib.error.HTTPError) as error:self.call(key,'home',True)
+        self.assertEqual(error.exception.code,503)
+
+    def test_embedded_reset_releases_workers_and_preserves_router(self):
+        key=self.install({**self.rule,'预处理':'js:setItem("boots",String(Number(getItem("boots","0"))+1));',
+            '二级':'js:VOD={vod_name:getItem("boots"),vod_play_from:"",vod_play_url:""};'},'reset-state')
+        self.assertEqual(self.call(key,'detail',self.origin+'/detail/42')['list'][0]['vod_name'],'1')
+        req=urllib.request.Request(self.base+'/_reset',data=b'',method='POST')
+        with urllib.request.urlopen(req,timeout=8) as response:self.assertEqual(json.load(response),{'reset':True})
+        self.assertEqual(self.call(key,'detail',self.origin+'/detail/42')['list'][0]['vod_name'],'2')
+        self.release(key)
 
     def test_13_upstream_remote_helper_uses_same_bounded_transport(self):
         rule={**self.rule,'二级':'js:require(HOST+"/helper.js");VOD={vod_name:globalThis.fixtureHelper,vod_play_from:"",vod_play_url:""};'}

@@ -26,6 +26,8 @@ class CatPawHost {
   Process? _process;
   Future<Uri>? _starting;
   Uri? _base;
+  Future<void>? _closing;
+  bool _needsReset = false;
   Directory? _root;
   final _activeDrpy = <String, int>{};
   final _releasingDrpy = <String, Future<void>>{};
@@ -47,6 +49,14 @@ class CatPawHost {
   }
 
   Future<Uri> _ensure() async {
+    final closing = _closing;
+    if (closing != null) await closing;
+    if (_needsReset) {
+      final base =
+          _base ??
+          await (_starting ??= _start().whenComplete(() => _starting = null));
+      await _resetEmbedded(base);
+    }
     if (_base != null) return _base!;
     return _starting ??= _start().whenComplete(() => _starting = null);
   }
@@ -241,6 +251,7 @@ class CatPawHost {
       'rule',
       'headers',
       'requestTimeoutMs',
+      'modules',
     ];
     if (value is! Map<String, dynamic> ||
         value['version'] != 1 ||
@@ -269,6 +280,27 @@ class CatPawHost {
       throw const FormatException('DRPY 规则来源无效');
     }
     final headers = value['headers'] as Map;
+    final modules = value['modules'] ?? <String, String>{};
+    if (modules is! Map || modules.length > 32) {
+      throw const FormatException('DRPY 本地模块格式或数量无效');
+    }
+    var moduleBytes = 0;
+    for (final module in modules.entries) {
+      final uri = module.key is String ? Uri.tryParse(module.key) : null;
+      if (origin.scheme != 'pkg' ||
+          uri == null ||
+          uri.scheme != 'pkg' ||
+          uri.authority != origin.authority ||
+          uri.userInfo.isNotEmpty ||
+          uri.hasQuery ||
+          uri.hasFragment ||
+          uri.normalizePath().toString() != module.key ||
+          (module.key as String).length > 8192 ||
+          module.value is! String ||
+          (moduleBytes += utf8.encode(module.value).length) > 6 * 1024 * 1024) {
+        throw const FormatException('DRPY 本地模块路径或大小无效');
+      }
+    }
     if (headers.length > 64) throw const FormatException('DRPY 请求头数量过多');
     for (final header in headers.entries) {
       if (header.key is! String ||
@@ -511,7 +543,7 @@ class CatPawHost {
         address,
         method: 'POST',
         body: body,
-        rewriteUrls: false,
+        rewriteUrls: true,
         requestTimeout: const Duration(seconds: 45),
         cancellation: cancellation,
         onRequestOpened: () => opened = true,
@@ -622,8 +654,8 @@ class CatPawHost {
     _checkCancellation(cancellation);
     final drpy = File('${root.path}/${logical.host}/drpy.json');
     if (await drpy.exists()) {
-      if (!const ['/api/drpy', '/_release'].contains(logical.path) ||
-          logical.hasQuery ||
+      if (!const ['/api/drpy', '/_release', '/proxy'].contains(logical.path) ||
+          (logical.hasQuery && logical.path != '/proxy') ||
           logical.hasFragment ||
           await drpy.length() > _maxBundleBytes) {
         throw const FormatException('DRPY 本机地址无效');
@@ -728,6 +760,7 @@ class CatPawHost {
           'drpy_source_origin': '此片源返回了不支持的跨站目录',
           'drpy_source_unavailable': '此片源暂时无法访问',
           'drpy_filter_not_supported': '此片源不支持当前筛选条件',
+          'drpy_local_module_missing': '本地规则包缺少依赖文件，请导入完整的规则包',
         };
         final code = error is Map ? error['error'] : null;
         if (code is String && messages.containsKey(code)) {
@@ -762,9 +795,47 @@ class CatPawHost {
     }
   }
 
-  Future<void> close() async {
+  Future<void> _resetEmbedded(Uri base) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+    final timer = Timer(
+      const Duration(seconds: 5),
+      () => client.close(force: true),
+    );
+    try {
+      final request = await client.postUrl(
+        base.replace(path: '${base.path}/_reset'),
+      );
+      final response = await request.close();
+      await response.drain<void>();
+      if (response.statusCode != 200) throw StateError('本机线路正在清理，请稍后重试');
+      _needsReset = false;
+    } finally {
+      timer.cancel();
+      client.close(force: true);
+    }
+  }
+
+  Future<void> close() {
+    if (_closing != null) return _closing!;
+    late final Future<void> task;
+    task = _close().whenComplete(() {
+      if (identical(_closing, task)) _closing = null;
+    });
+    return _closing = task;
+  }
+
+  Future<void> _close() async {
     _generation++;
+    final base = _base;
     _base = null;
+    if (Platform.isIOS && base != null) {
+      _needsReset = true;
+      try {
+        await _resetEmbedded(base);
+      } catch (_) {
+        // The next request must finish cleanup before loading any new sources.
+      }
+    }
     final process = _process;
     _process = null;
     if (process != null) {

@@ -170,6 +170,14 @@ def main():
     init_failure = "console.log('init_test发生错误:'+e.message);"
     assert core.count(init_failure) == 1
     core = core.replace(init_failure, 'throw e; // Preserve initialization failure for the app.')
+    original_require = 'function require(url){\n    eval(request(url));\n}'
+    assert core.count(original_require) == 1
+    core = core.replace(original_require, '''function require(url){
+    const previous = globalThis.__drpyModuleBase;
+    const resolved = joinUrl(previous || globalThis.__drpyOrigin, String(url));
+    try { globalThis.__drpyModuleBase = resolved; eval(request(resolved)); }
+    finally { globalThis.__drpyModuleBase = previous; }
+}''')
     assert core.count('\nexport default {') == 1
     core = core.replace('\nexport default {', '\nglobalThis.__drpy = {')
     gbk = sources['libs/gbk.js'].replace('export function gbkTool()', 'function gbkTool()')
@@ -181,6 +189,7 @@ def main():
     shutil.copy2(source_dir / 'LICENSE', OUT / 'drpy-LICENSE.txt')
     provenance['transformations'] = ['Replace five module imports with pinned local dependencies',
         'Expose default Spider as context-local __drpy', 'Disable default OCR endpoint and reject OCR calls',
+        'Resolve nested helper imports against their importing module, preserving eval/request behavior',
         'Propagate init errors instead of logging and swallowing them', 'Wrap templates in their own module scope',
         'Remove only init_test demo comments and commented RFC1918 examples',
         'Remove the upstream remote placeholder image from empty category results',

@@ -11,7 +11,7 @@ This is an acceptance checklist, **not a declaration of compatibility**. The 0.5
 | JS | QuickJS Spider / ES module host; local CatPaw host for matching packages | Requested scripts, modules and synchronous DRPY APIs work end to end; script import alone is insufficient |
 | Python | Skulpt Spider, basic requests / JSON and sibling modules | Requested Python modules and parser dependencies work; lxml/native extensions/full CPython are not currently claimed supported |
 | PHP / extensionless endpoints | Fetch endpoint and parse its actual response content | The supplied endpoint is reachable and its actual configuration/API format works; `.php` does not identify a client-side executable format |
-| Local package | ZIP entry configuration, relative script/module paths and lists | Each requested package's entrypoint, dependencies, files and playback resolve on iPhone without an external device |
+| Local package | ZIP entry configuration, relative script/module paths and lists; Flutter DRPY packages retain nested local helpers and JSON data | Each requested package's entrypoint, dependencies, files and playback resolve on iPhone without an external device |
 | Multi-repository | Nested warehouse import and ownership | The supplied warehouse and selected child subscriptions pass the same playback checks, not just directory import |
 | Authenticated `.js.md5` / CatPaw | Authentication, digest, local service host and proxy integration | Actual supplied service package completes local startup, catalogue, search, detail, playback/proxy and restart on iPhone |
 | Emby | Login, libraries, episodes, playback negotiation and progress reporting | Real server/session playback on iPhone with the required direct/transcode and progress behavior |
@@ -20,3 +20,9 @@ This is an acceptance checklist, **not a declaration of compatibility**. The 0.5
 For each representative source, retain separate results for import, catalogue/search, detail/episodes, resolved media, actual playback and application restart. Record the tested iPhone/iOS and package version. Mark a source as incomplete if only its file type or catalogue is recognized. Do not hide incomplete sources or relabel an ordinary HTTP adapter as a plugin port.
 
 The user's supplied configuration/service URLs and authentication details remain private test data. Dead endpoints, unavailable content or authentication requirements must be recorded separately from parser/runtime failures, rather than silently reported as successful adaptation.
+
+## Embedded runtime follow-up
+
+The production iOS Node startup implementation is shared with a simulator-only native regression app. Its test scope is Node startup, real CatPaw workers, the jitless Fetch shim, DRPY catalogue/search/detail, nested local helpers, local proxy text/binary/range responses, and source reset/reopen. The workflow does not publish an IPA and must retain its actual result before being reported as passed. It does not exercise Flutter widgets, a physical iPhone, or video decoding.
+
+The local DRPY proxy implements the pinned engine's three-element status/type/body contract. Text and byte arrays are accepted; unsupported response shapes fail explicitly. Playback URLs stay tied to their source, and active proxy playback is protected from background-source eviction. Closing the iOS host clears source workers/settings sessions without terminating the process-wide Node runtime; failed cleanup must be retried before loading new sources.

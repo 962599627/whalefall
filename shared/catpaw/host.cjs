@@ -59,15 +59,17 @@ if (!isMainThread) {
   const releases = new Map();
   let loadQueue = Promise.resolve();
   let bootstrap = null;
-  let closing = false;
+  let closing = false, resetting = false;
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
   const respond = (res, status, body) => {
     res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(body));
   };
   async function portBootstrap(req, res) {
+    if (resetting || closing) { req.resume(); return respond(res, 409, { error: 'runtime_reset' }); }
     if (bootstrap) { req.resume(); return respond(res, 429, { error: 'bootstrap_busy' }); }
-    const task = { worker: null, cancel: null };
+    let finish;
+    const task = { worker: null, cancel: null, done: new Promise(resolve => { finish = resolve; }) };
     bootstrap = task;
     const cancelled = () => { task.cancel?.(); };
     res.once('close', cancelled);
@@ -89,7 +91,7 @@ if (!isMainThread) {
       });
       if (!body || Array.isArray(body) || Object.keys(body).sort().join(',') !== 'adapter,artifactHash,version' ||
           body.version !== 1 || !['dm84-v1', 'auete-v1', 'bttwoo-v1'].includes(body.adapter) || typeof body.artifactHash !== 'string' || !HASH.test(body.artifactHash)) throw Error('bootstrap_request');
-      if (res.destroyed || closing) throw Error('bootstrap_cancelled');
+      if (res.destroyed || closing || resetting) throw Error('bootstrap_cancelled');
       const imports = path.join(root, 'imports');
       try { if (fs.lstatSync(imports).isSymbolicLink() || !fs.lstatSync(imports).isDirectory()) throw Error(); }
       catch (_) { throw Error('guard_artifact_invalid'); }
@@ -122,6 +124,7 @@ if (!isMainThread) {
       res.off('close', cancelled);
       await task.worker?.terminate();
       if (bootstrap === task) bootstrap = null;
+      finish();
     }
   }
   async function stop(instance) {
@@ -129,6 +132,7 @@ if (!isMainThread) {
     await instance.worker.terminate();
   }
   function load(hash) {
+    if (resetting || closing) return Promise.reject(Error('runtime_reset'));
     if (runtimes.has(hash)) return runtimes.get(hash).ready;
     if (loading.has(hash)) return loading.get(hash);
     // Serialize only creation/eviction, not worker startup or source requests.
@@ -143,14 +147,14 @@ if (!isMainThread) {
   }
   async function createRuntime(hash,epoch,queuedUntil) {
     if (!HASH.test(hash)) throw Error('bundle_id');
-    if ((releases.get(hash)||0)!==epoch || closing) throw Error('bundle_released');
+    if ((releases.get(hash)||0)!==epoch || closing || resetting) throw Error('bundle_released');
     if (runtimes.has(hash)) return runtimes.get(hash);
     // Do not evict an active playback to make room for a background source search.
     while (runtimes.size >= 3) {
       const idle = [...runtimes.entries()].filter(([, r]) => r.port && !r.active && !r.manager &&
-        (r.kind === 'drpy' || Date.now() - r.played > 15 * 60 * 1000)).sort((a,b) => a[1].used - b[1].used)[0];
+        Date.now() - r.played > 15 * 60 * 1000).sort((a,b) => a[1].used - b[1].used)[0];
       if (!idle) {
-        if (closing || Date.now()>=queuedUntil || (releases.get(hash)||0)!==epoch) throw Error('runtime_limit');
+        if (closing || resetting || Date.now()>=queuedUntil || (releases.get(hash)||0)!==epoch) throw Error('runtime_limit');
         // Existing CatPaw playback remains protected. A running/starting DRPY
         // query can free a slot; wait asynchronously instead of dropping half
         // of the app's six-source concurrent search batch.
@@ -184,7 +188,7 @@ if (!isMainThread) {
         runtimes.delete(otherHash); await stop(other);
       }
     }
-    if ((releases.get(hash)||0)!==epoch || closing) throw Error('bundle_released');
+    if ((releases.get(hash)||0)!==epoch || closing || resetting) throw Error('bundle_released');
     fs.mkdirSync(state, { recursive: true, mode: 0o700 });
     const worker = new Worker(kind === 'drpy' ? path.join(__dirname,'drpy-worker.cjs') : __filename, {
       workerData: kind === 'drpy' ? {manifest,state} : { script, state }, stdout: true, stderr: true,
@@ -207,6 +211,7 @@ if (!isMainThread) {
         if(value.kind==='ready')ready(value);
         else if(value.kind==='fatal')ready({});
         else if(value.kind==='http'||value.kind==='cancel')instance.http.receive(value);
+        else if(value.kind==='playback')instance.played=Date.now();
         else if(value.kind==='call-start') {
           clearTimeout(instance.callTimer);
           instance.callTimer=setTimeout(()=>stop(instance),Math.max(1,Math.min(21000,value.deadline-Date.now()+500)));
@@ -289,7 +294,22 @@ if (!isMainThread) {
       return respond(res, 403, { error: 'forbidden' });
     }
     const route = req.url.slice(secret.length + 2);
-    if (route === 'health' && req.method === 'GET') return respond(res, 200, { version: 1 });
+    if (route === 'health' && req.method === 'GET') return respond(res, 200, { version: 1, runtime:process.versions.node });
+    if (route === '_reset' && req.method === 'POST') {
+      if (resetting) return respond(res,409,{error:'runtime_reset'});
+      resetting=true;
+      try {
+        const pendingBootstrap=bootstrap;
+        pendingBootstrap?.cancel?.();
+        for(const hash of new Set([...runtimes.keys(),...loading.keys()]))releases.set(hash,(releases.get(hash)||0)+1);
+        const instances=[...runtimes.values()];runtimes.clear();
+        await Promise.all(instances.map(stop));
+        await loadQueue;
+        await Promise.allSettled([...loading.values()]);
+        await pendingBootstrap?.done;
+        return respond(res,200,{reset:true});
+      }finally{resetting=false;}
+    }
     if (route === '_port-bootstrap' && req.method === 'POST') return portBootstrap(req, res);
     const match = /^([a-f0-9]{64})(\/.*)$/.exec(route);
     if (!match) return respond(res, 404, { error: 'route' });
@@ -319,10 +339,10 @@ if (!isMainThread) {
       return;
     }
     instance.active++; instance.used=Date.now();
-    if (/[?&]play=/.test(resource)) instance.played=Date.now();
+    if (/[?&]play=/.test(resource)||/^\/proxy(?:\?|$)/.test(resource)) instance.played=Date.now();
     res.once('close',()=>{
       instance.active--;
-      if(instance.kind==='drpy' && !res.writableFinished && !instance.active) {
+      if(instance.kind==='drpy' && resource==='/api/drpy' && !res.writableFinished && !instance.active) {
         if(runtimes.get(hash)===instance)runtimes.delete(hash);
         stop(instance);
       }

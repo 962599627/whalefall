@@ -4,8 +4,8 @@
   "files": [
     {
       "name": "drpy-worker.cjs",
-      "bytes": 9084,
-      "sha256": "665e2a968f0175ee6d4bc43ce5fe52bf665e8b9a3025e1a6bf75302165c6139d"
+      "bytes": 11895,
+      "sha256": "a5bff41776ea086d2814cd9c407ef759cdb8b2d90dd45b3bdceb020b06ba0e92"
     },
     {
       "name": "drpy-http.cjs",
@@ -14,13 +14,13 @@
     },
     {
       "name": "drpy-schema.cjs",
-      "bytes": 2765,
-      "sha256": "ee7a010ed91c36cf9999cf52f881bbae5c31442d4df92c6ef1b3616bd00990a5"
+      "bytes": 3414,
+      "sha256": "6268317eaa1c26e96bdaa8a7fefb6631882961b671fa38432964b871394ab13c"
     },
     {
       "name": "drpy-core.js",
-      "bytes": 166130,
-      "sha256": "dab10808793047c6b15e78ccf809d7aa46580c2e128e87b08cb449bef4186a57"
+      "bytes": 166370,
+      "sha256": "e93f2deeb177ab43cc1c10e7cb505cbefd55da63da7d798f95c74a0da0b82629"
     },
     {
       "name": "drpy-dependencies.js",
@@ -39,8 +39,8 @@
     },
     {
       "name": "drpy-provenance.json",
-      "bytes": 14833,
-      "sha256": "1e7ac18fcac3adf966ac4455295badaf7ebe2cbe9c7e8b63098e6b3a8fa4541b"
+      "bytes": 14941,
+      "sha256": "1cff241bf10d0a0fc339662bb43e8a59c12b59f8a5c44123b139d8a8f91aca03"
     },
     {
       "name": "drpy-guard-extractor.cjs",

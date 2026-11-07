@@ -6,7 +6,7 @@ const MAX_MANIFEST = 16 * 1024 * 1024;
 const MAX_RESULT = 6 * 1024 * 1024;
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
 function validateManifest(value) {
-  const allowed = new Set(['kind','version','runtime','sourceId','origin','rule','headers','requestTimeoutMs']);
+  const allowed = new Set(['kind','version','runtime','sourceId','origin','rule','headers','requestTimeoutMs','modules']);
   if (!plain(value) || Object.keys(value).some(key => !allowed.has(key)) ||
       value.kind !== 'drpy' || value.version !== 1 || value.runtime !== RUNTIME ||
       !HASH.test(value.sourceId) || typeof value.rule !== 'string' || !value.rule.trim() ||
@@ -15,6 +15,16 @@ function validateManifest(value) {
   try { origin = new URL(value.origin); } catch (_) { throw Error('drpy_origin'); }
   if (!['http:','https:','pkg:'].includes(origin.protocol) || !origin.hostname || origin.username ||
       origin.password || origin.hash) throw Error('drpy_origin');
+  const modules = value.modules ?? {};
+  if (!plain(modules) || Object.keys(modules).length > 32) throw Error('drpy_modules');
+  let moduleBytes = 0;
+  for (const [name,source] of Object.entries(modules)) {
+    let uri; try { uri = new URL(name); } catch (_) { throw Error('drpy_modules'); }
+    if (origin.protocol !== 'pkg:' || uri.protocol !== 'pkg:' || uri.host !== origin.host ||
+        uri.username || uri.password || uri.search || uri.hash || uri.href !== name ||
+        name.length > 8192 || typeof source !== 'string' ||
+        (moduleBytes += Buffer.byteLength(source)) > MAX_RESULT) throw Error('drpy_modules');
+  }
   if (!plain(value.headers) || Object.keys(value.headers).length > 64) throw Error('drpy_headers');
   for (const [key,item] of Object.entries(value.headers)) {
     if (!/^[!#$%&'*+.^_`|~0-9a-z-]+$/i.test(key) || typeof item !== 'string' ||
@@ -24,7 +34,7 @@ function validateManifest(value) {
   }
   const timeout = value.requestTimeoutMs ?? 10000;
   if (!Number.isInteger(timeout) || timeout < 100 || timeout > 15000) throw Error('drpy_timeout');
-  return {...value, requestTimeoutMs:timeout};
+  return {...value, modules, requestTimeoutMs:timeout};
 }
 function validateCall(value) {
   if (!plain(value) || Object.keys(value).some(key => !['version','method','args'].includes(key)) ||

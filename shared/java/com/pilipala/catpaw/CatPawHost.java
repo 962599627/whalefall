@@ -186,8 +186,10 @@ public final class CatPawHost {
         boolean drpy = new File(folder, "drpy.json").isFile();
         if (!new File(folder, "index.cjs").isFile() && !drpy)
             throw new IOException("此设备没有对应的 CatPaw 服务包，请重新导入原订阅");
-        if (drpy && !uri.getPath().equals("/api/drpy") && !uri.getPath().equals("/_release"))
-            throw new IOException("DRPY 本机请求路径无效");
+        if (drpy
+                && !uri.getPath().equals("/api/drpy")
+                && !uri.getPath().equals("/_release")
+                && !uri.getPath().equals("/proxy")) throw new IOException("DRPY 本机请求路径无效");
         return start()
                 + "/"
                 + hash
