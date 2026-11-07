@@ -128,6 +128,44 @@ public final class Cms {
         }
     }
 
+    static boolean sameOrigin(String first, String second) {
+        if (!isHttp(first) || !isHttp(second)) return false;
+        try {
+            URL a = new URL(first), b = new URL(second);
+            int ap = a.getPort() < 0 ? a.getDefaultPort() : a.getPort();
+            int bp = b.getPort() < 0 ? b.getDefaultPort() : b.getPort();
+            return a.getProtocol().equalsIgnoreCase(b.getProtocol())
+                    && a.getHost().equalsIgnoreCase(b.getHost())
+                    && ap == bp;
+        } catch (MalformedURLException invalid) {
+            return false;
+        }
+    }
+
+    /** Source credentials belong to that origin; a play result may explicitly supply its own. */
+    static Map<String, String> inheritedHeaders(
+            String origin, String target, Map<String, String> input) {
+        Map<String, String> out = new LinkedHashMap<>();
+        boolean same = sameOrigin(origin, target);
+        for (Map.Entry<String, String> entry : input.entrySet()) {
+            String key = entry.getKey();
+            if (same
+                    || !(key.equalsIgnoreCase("Authorization")
+                            || key.equalsIgnoreCase("Proxy-Authorization")
+                            || key.equalsIgnoreCase("Cookie")
+                            || key.equalsIgnoreCase("Cookie2"))) out.put(key, entry.getValue());
+        }
+        return out;
+    }
+
+    static void mergeHeaders(Map<String, String> target, Map<String, String> overrides) {
+        for (Map.Entry<String, String> entry : overrides.entrySet()) {
+            for (Iterator<String> keys = target.keySet().iterator(); keys.hasNext(); )
+                if (keys.next().equalsIgnoreCase(entry.getKey())) keys.remove();
+            target.put(entry.getKey(), entry.getValue());
+        }
+    }
+
     public static String normalizeHttp(String value) throws Exception {
         URL u = new URL(value);
         String host = u.getHost();
@@ -183,7 +221,89 @@ public final class Cms {
                         .matcher(t)
                         .find()
                 || java.util.regex.Pattern.compile("\\bexport\\s*(?:\\{|\\*)").matcher(t).find()
-                || (t.contains("var rule") && t.contains("host"));
+                || looksLikeDrpyRule(t);
+    }
+
+    static boolean looksLikeDrpyRule(String text) {
+        if (text == null) return false;
+        String content = scriptCode(text);
+        if (java.util.regex.Pattern.compile("\\b__jsEvalReturn\\b").matcher(content).find()
+                || java.util.regex.Pattern.compile(
+                                "\\b(?:module\\s*(?:\\.\\s*exports\\b|\\[)|exports\\s*(?:\\.|\\[))|(?:^|[;}\\n])\\s*export\\b")
+                        .matcher(content)
+                        .find()) return false;
+        return java.util.regex.Pattern.compile(
+                        "(?:^|[;\\n])\\s*(?:var|let|const)\\s+rule\\s*=",
+                        java.util.regex.Pattern.MULTILINE)
+                .matcher(content)
+                .find();
+    }
+
+    /** Classification only: omit comments and literals, never evaluate downloaded code. */
+    private static String scriptCode(String source) {
+        StringBuilder code = new StringBuilder(source.length());
+        boolean regexAllowed = true;
+        for (int i = 0; i < source.length(); ) {
+            char c = source.charAt(i);
+            char next = i + 1 < source.length() ? source.charAt(i + 1) : 0;
+            if (c == '/' && (next == '/' || next == '*')) {
+                boolean line = next == '/';
+                i += 2;
+                code.append(' ');
+                while (i < source.length()) {
+                    char current = source.charAt(i++);
+                    if (current == '\n') {
+                        code.append('\n');
+                        if (line) break;
+                    }
+                    if (!line && current == '*' && i < source.length() && source.charAt(i) == '/') {
+                        i++;
+                        break;
+                    }
+                }
+                continue;
+            }
+            if (c == '\'' || c == '"' || c == '`' || (c == '/' && regexAllowed)) {
+                char quote = c;
+                boolean escaped = false, characterClass = false;
+                code.append(' ');
+                i++;
+                while (i < source.length()) {
+                    char current = source.charAt(i++);
+                    if (escaped) {
+                        escaped = false;
+                        continue;
+                    }
+                    if (current == '\\') {
+                        escaped = true;
+                        continue;
+                    }
+                    if (quote == '/') {
+                        if (current == '[') characterClass = true;
+                        if (current == ']') characterClass = false;
+                    }
+                    if (current == quote && !characterClass) break;
+                }
+                regexAllowed = false;
+                continue;
+            }
+            if (Character.isJavaIdentifierStart(c)) {
+                int start = i++;
+                while (i < source.length() && Character.isJavaIdentifierPart(source.charAt(i))) i++;
+                String token = source.substring(start, i);
+                code.append(token);
+                regexAllowed =
+                        Arrays.asList(
+                                        "return", "throw", "case", "delete", "typeof", "void",
+                                        "new", "in", "of", "yield", "await")
+                                .contains(token);
+                continue;
+            }
+            code.append(c);
+            i++;
+            if (!Character.isWhitespace(c)) regexAllowed = "=(:,[!&|?;{}+*-~%<>".indexOf(c) >= 0;
+        }
+        return code.toString();
     }
 
     public static boolean looksLikePySpider(String text, String origin) {
@@ -222,6 +342,18 @@ public final class Cms {
         if (text == null || text.length() > MAX_JSON) throw new IOException("配置超过 4 MB 限制");
         String trimmed = text.trim().replaceFirst("^\\uFEFF", "");
         if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+            if (looksLikeDrpyRule(trimmed) && (origin == null || origin.isEmpty())) {
+                JSONObject rule =
+                        new JSONObject()
+                                .put("key", "drpy_" + Math.abs(trimmed.hashCode()))
+                                .put("name", extractScriptTitle(trimmed, "", "DRPY"))
+                                .put("type", 3)
+                                .put("api", "csp_LocalRule.js")
+                                .put("ext", new JSONObject().put("_mm_entrySource", trimmed));
+                return parseConfig(
+                        new JSONObject().put("sites", new JSONArray().put(rule)).toString(),
+                        origin);
+            }
             if (looksLikeJsSpider(trimmed, origin)
                     && origin != null
                     && (isHttp(origin) || origin.startsWith("file://"))) {
@@ -525,6 +657,18 @@ public final class Cms {
     public static String fetch(String address, Map<String, String> headers) throws Exception {
         if (!isHttp(address)) throw new IOException("只支持 HTTP(S) 地址");
         URL next = new URL(normalizeHttp(address));
+        Map<String, String> forwarded = new LinkedHashMap<>();
+        if (headers != null) mergeHeaders(forwarded, headers);
+        if (next.getUserInfo() != null) {
+            boolean explicit = false;
+            for (String key : forwarded.keySet()) explicit |= key.equalsIgnoreCase("Authorization");
+            if (!explicit) {
+                String credentials =
+                        URLDecoder.decode(next.getUserInfo().replace("+", "%2B"), "UTF-8");
+                forwarded.put("Authorization", basicAuthorization(credentials));
+            }
+            next = new URL(next.getProtocol(), next.getHost(), next.getPort(), next.getFile());
+        }
         for (int hop = 0; hop < 5; hop++) {
             if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException();
             HttpURLConnection c = (HttpURLConnection) next.openConnection();
@@ -532,9 +676,8 @@ public final class Cms {
             c.setReadTimeout(18000);
             c.setInstanceFollowRedirects(false);
             c.setRequestProperty("User-Agent", USER_AGENT);
-            if (headers != null)
-                for (Map.Entry<String, String> e : headers.entrySet())
-                    c.setRequestProperty(e.getKey(), e.getValue());
+            for (Map.Entry<String, String> e : forwarded.entrySet())
+                c.setRequestProperty(e.getKey(), e.getValue());
             try {
                 RequestScope.attach(c);
                 int status = c.getResponseCode();
@@ -545,8 +688,11 @@ public final class Cms {
                         || status == 308) {
                     String loc = c.getHeaderField("Location");
                     if (loc == null) throw new IOException("重定向缺少地址");
-                    next = new URL(next, loc);
-                    if (!isHttp(next.toString())) throw new IOException("不支持此重定向协议");
+                    URL target = new URL(next, loc);
+                    if (!isHttp(target.toString())) throw new IOException("不支持此重定向协议");
+                    if (target.getUserInfo() != null) throw new IOException("来源重定向不能注入登录凭据");
+                    forwarded = inheritedHeaders(next.toString(), target.toString(), forwarded);
+                    next = target;
                     continue;
                 }
                 if (status < 200 || status >= 300) throw new IOException("来源返回 HTTP " + status);
@@ -559,6 +705,26 @@ public final class Cms {
             }
         }
         throw new IOException("来源重定向次数过多");
+    }
+
+    // Keep this parser usable in the JVM checks and on Android 23 (java.util.Base64 is API 26).
+    static String basicAuthorization(String credentials) throws IOException {
+        byte[] input = credentials.getBytes("UTF-8");
+        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        StringBuilder result = new StringBuilder("Basic ");
+        for (int i = 0; i < input.length; i += 3) {
+            int a = input[i] & 255,
+                    b = i + 1 < input.length ? input[i + 1] & 255 : 0,
+                    c = i + 2 < input.length ? input[i + 2] & 255 : 0;
+            result.append(alphabet.charAt(a >> 2))
+                    .append(alphabet.charAt(((a & 3) << 4) | (b >> 4)))
+                    .append(
+                            i + 1 < input.length
+                                    ? alphabet.charAt(((b & 15) << 2) | (c >> 6))
+                                    : '=')
+                    .append(i + 2 < input.length ? alphabet.charAt(c & 63) : '=');
+        }
+        return result.toString();
     }
 
     public static String query(String address, String... pairs) throws Exception {

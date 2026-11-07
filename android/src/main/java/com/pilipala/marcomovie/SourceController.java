@@ -30,8 +30,7 @@ final class SourceController {
         com.pilipala.emby.CheckedScript script = com.pilipala.emby.CheckedScript.read(address);
         if (com.pilipala.catpaw.CatPawHost.isBundle(script.code))
             return new com.pilipala.catpaw.CatPawHost(context).install(script.code);
-        if (!script.code.contains("export default") && !script.code.contains("__jsEvalReturn"))
-            throw new IOException("已校验的文件没有兼容的来源入口");
+        if (!Cms.looksLikeJsSpider(script.code, "")) throw new IOException("已校验的文件没有兼容的来源入口");
         org.json.JSONObject site =
                 new org.json.JSONObject()
                         .put("key", "script_" + script.base.hashCode())
@@ -53,7 +52,8 @@ final class SourceController {
                                         && ((s.jar != null && !s.jar.isEmpty())
                                                 || (a.config != null
                                                         && !a.config.spider.isEmpty())))
-                                || (JsEngine.eligible(s) && a.config != null)));
+                                || ((JsEngine.eligible(s) || DrpyEngine.eligible(s))
+                                        && a.config != null)));
     }
 
     static SourceEngine engine(MainActivity a, Cms.Site s) throws Exception {
@@ -85,6 +85,9 @@ final class SourceController {
                     else if (s.api.startsWith("catpaw://")) raw = new CatPawEngine(a, s);
                     else if (s.supported()) raw = new JsonCmsEngine(s);
                     else if (a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true)
+                            && DrpyEngine.eligible(s)
+                            && snapshot != null) raw = new DrpyEngine(a, snapshot, s);
+                    else if (a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true)
                             && !JsEngine.eligible(s)
                             && CspEngine.eligible(s)
                             && snapshot != null) {
@@ -94,7 +97,11 @@ final class SourceController {
                             && JsEngine.eligible(s)
                             && snapshot != null) {
                         ensureProxy(a, snapshot);
-                        raw = new JsEngine(a.getApplication(), snapshot, s);
+                        try {
+                            raw = new JsEngine(a.getApplication(), snapshot, s);
+                        } catch (JsEngine.DrpyRuleDetected rule) {
+                            raw = new DrpyEngine(a, snapshot, s, rule.source);
+                        }
                     } else throw new IOException("来源需要尚未启用的扩展引擎");
                     SourceEngine created = new QueuedSourceEngine(raw);
                     synchronized (a) {

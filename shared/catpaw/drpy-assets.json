@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "runtime": "drpy2-ca23ffdb-1",
+  "files": [
+    {
+      "name": "drpy-worker.cjs",
+      "bytes": 8554,
+      "sha256": "70cb578e89d42ced58000371c2e7e800f9cff1e6f98b45899f942af9e36748b0"
+    },
+    {
+      "name": "drpy-http.cjs",
+      "bytes": 6506,
+      "sha256": "2bcee4fddbe7cd0b46c4d1b37dc10c33984b44277131fd8e9e57e428d8a4972d"
+    },
+    {
+      "name": "drpy-schema.cjs",
+      "bytes": 2765,
+      "sha256": "ee7a010ed91c36cf9999cf52f881bbae5c31442d4df92c6ef1b3616bd00990a5"
+    },
+    {
+      "name": "drpy-core.js",
+      "bytes": 166130,
+      "sha256": "dab10808793047c6b15e78ccf809d7aa46580c2e128e87b08cb449bef4186a57"
+    },
+    {
+      "name": "drpy-dependencies.js",
+      "bytes": 1269961,
+      "sha256": "d72880e3506074dfce8b87804a3a15a3ef663a4e399bfb477ad51d1c1f238417"
+    },
+    {
+      "name": "drpy-LICENSE.txt",
+      "bytes": 7651,
+      "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+    },
+    {
+      "name": "drpy-dependencies-LICENSE.txt",
+      "bytes": 33628,
+      "sha256": "b0387c2d584d7a4e0ac040b2f75d22c42971f632b24a9d83d714778e5142166e"
+    },
+    {
+      "name": "drpy-provenance.json",
+      "bytes": 11933,
+      "sha256": "2e036c8d806f8df581f204a49de3b9cf26ecefca19ea6c49dc54fd7b2b39e49b"
+    }
+  ]
+}

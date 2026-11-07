@@ -55,8 +55,9 @@ final class MediaOptions {
         if (qualities.length() > 0) {
             out.media.put("qualities", qualities);
         }
-        out.headers.putAll(site.headers);
-        out.headers.putAll(original.headers);
+        out.headers.putAll(Cms.inheritedHeaders(site.api, out.url, site.headers));
+        Cms.mergeHeaders(
+                out.headers, Cms.inheritedHeaders(original.url, out.url, original.headers));
         Object value = result.opt("header");
         if (value instanceof String)
             try {

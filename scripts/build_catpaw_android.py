@@ -1,5 +1,7 @@
 """Build the small app-owned JNI bridge and package pinned Node libraries."""
 from pathlib import Path
+import hashlib
+import json
 import os
 import platform
 import shutil
@@ -42,6 +44,16 @@ def build():
     assets.mkdir(parents=True,exist_ok=True)
     for name in ['host.cjs','fetch.cjs','fetch-LICENSE.txt','node-mobile-LICENSE.txt']:
         shutil.copy2(ROOT/'shared/catpaw'/name,assets/name)
+    listing = json.loads((ROOT/'shared/catpaw/drpy-assets.json').read_text(encoding='utf-8'))
+    for entry in listing['files']:
+        name = entry['name']
+        if '/' in name or '\\' in name or not name.startswith('drpy-'):
+            raise ValueError('Invalid DRPY asset path')
+        source = ROOT/'shared/catpaw'/name
+        if source.stat().st_size != entry['bytes'] or hashlib.sha256(source.read_bytes()).hexdigest() != entry['sha256']:
+            raise ValueError('DRPY asset manifest is stale: '+name)
+        shutil.copy2(source,assets/name)
+    shutil.copy2(ROOT/'shared/catpaw/drpy-assets.json',assets/'drpy-assets.json')
     return files,assets.parent
 
 

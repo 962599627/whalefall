@@ -12,6 +12,7 @@ import 'js_source_host.dart';
 import 'emby_library.dart';
 import 'checksum_source.dart';
 import 'catpaw_host.dart';
+import 'drpy_source.dart';
 import 'source_playback.dart';
 import 'models.dart';
 /// HTTP CMS client with TVBox `okhttp/3.15` User-Agent parity, system certificate validation for third-party
@@ -25,10 +26,14 @@ class CmsClient {
   static final Object _cancelKey = Object();
   final http.Client? _http;
   final Duration timeout;
+  final CatPawHost _scriptHost;
+  late final DrpySource _drpy = DrpySource(host: _scriptHost,
+      read: (url, headers) => _getText(url, headers: headers));
   CmsClient({
     http.Client? client,
+    CatPawHost? scriptHost,
     this.timeout = const Duration(seconds: 15),
-  }) : _http = client;
+  }) : _http = client, _scriptHost = scriptHost ?? CatPawHost.instance;
   static http.Client _createDefaultClient() {
     final ioHttp = HttpClient()
       ..connectionTimeout = const Duration(seconds: 12);
@@ -194,11 +199,11 @@ class CmsClient {
         final origin = Uri(scheme: 'pkg', host: 'archive', path: '/${entry.key}').toString();
         final source = modules.remove(origin)!;
         final python = entry.key.toLowerCase().endsWith('.py');
-        if (!python && !CmsParser.isExecutableJs(source)) {
+        if (!python && !CmsParser.isExecutableJs(source) && !CmsParser.looksLikeDrpyRule(source)) {
           throw const FormatException('ZIP 脚本需要兼容的 Spider 接口，当前不支持此规则宿主');
         }
         final result = jsonEncode({'sites': [{'key': 'local_script', 'name': '本地脚本', 'type': 3,
-          'api': python ? 'csp_LocalScript.py' : 'csp_LocalScript.js',
+          'api': python ? 'csp_LocalScript.py' : CmsParser.looksLikeDrpyRule(source) ? 'csp_LocalRule.js' : 'csp_LocalScript.js',
           'ext': {'script': source, 'origin': origin, 'modules': modules}}]});
         if (utf8.encode(result).length > maxResponseBytes) throw const FormatException('展开的订阅超过 6 MB');
         return result;
@@ -223,7 +228,9 @@ class CmsClient {
           final scriptFile = RegExp(r'\.(?:m?js|py)$', caseSensitive: false);
           var expanded = file.size;
           for (final site in sites.whereType<Map>()) {
-            final ref = Uri.tryParse((site['api'] ?? '').toString());
+            final explicitRule = (site['api'] ?? '').toString().toLowerCase() == 'csp_drpy';
+            final reference = explicitRule && site['ext'] is String ? site['ext'] : site['api'];
+            final ref = Uri.tryParse((reference ?? '').toString());
             if (ref == null || ref.hasScheme || !scriptFile.hasMatch(ref.path)) continue;
             if (ref.hasAuthority || ref.path.startsWith('/')) throw const FormatException('ZIP 脚本路径无效');
             if (scripts.isEmpty) {
@@ -241,9 +248,9 @@ class CmsClient {
             if (source == null) throw const FormatException('ZIP 中缺少入口脚本');
             expanded += total - file.size;
             if (expanded > maxResponseBytes) throw const FormatException('展开的订阅超过 6 MB');
-            site['api'] = ref.path.toLowerCase().endsWith('.py') ? 'csp_LocalScript.py' : 'csp_LocalScript.js';
+            site['api'] = ref.path.toLowerCase().endsWith('.py') ? 'csp_LocalScript.py' : CmsParser.looksLikeDrpyRule(source) ? 'csp_LocalRule.js' : 'csp_LocalScript.js';
             site['ext'] = {'script': source, 'origin': origin,
-              'modules': Map.of(scripts)..remove(origin), 'ext': site['ext'] ?? ''};
+              'modules': Map.of(scripts)..remove(origin), 'ext': explicitRule ? '' : site['ext'] ?? ''};
           }
         }
         final lives = doc['lives'];
@@ -572,11 +579,15 @@ class CmsClient {
     return '';
   }
 
-  bool _usesJs(CmsSite site) => site.isPythonSource || site.isJavaScriptSource &&
+  bool _usesJs(CmsSite site) => site.isDrpySource || site.isPythonSource || site.isJavaScriptSource &&
       !(CspBridge.isHuyaSite(site) || CspBridge.isDouyuSite(site) ||
         CspBridge.isTuxiaobeiSite(site));
 
   Future<String> _callJs(CmsSite site, String method, List<Object?> args) async {
+    final cancellation = Zone.current[_cancelKey] as Completer<void>?;
+    if (site.isDrpySource) return _drpy.invoke(site, method, args, cancellation: cancellation);
+    final cachedRule = await _drpy.callCached(site, method, args, cancellation: cancellation);
+    if (cachedRule != null) return cachedRule;
     var entry = site.api;
     Object? extension = site.ext;
     final modules = <String, String>{};
@@ -596,6 +607,9 @@ class CmsClient {
           .map((name) => rootBundle.loadString('assets/python-host/$name')));
       return JsSourceHost.invoke(entry: entry, modules: modules, method: method, arguments: args,
           extension: extension, headers: site.headers, pythonPrelude: prelude);
+    }
+    if (CmsParser.looksLikeDrpyRule(modules[entry]!)) {
+      return _drpy.invoke(site, method, args, rule: modules[entry], origin: entry, cancellation: cancellation);
     }
     // Preload static ES imports for the synchronous QuickJS module loader.
     var total = 0;
@@ -642,7 +656,7 @@ class CmsClient {
         queue.add(url.toString());
       }
     }
-    final cat = modules[entry]!.contains('__jsEvalReturn') && !JsSourceHost.isEsModule(modules[entry]!);
+    final cat = JsSourceHost.isCatSpider(modules[entry]!) && !JsSourceHost.isEsModule(modules[entry]!);
     return JsSourceHost.invoke(entry: entry, modules: modules, method: method,
       arguments: cat && method == 'detail' ? [args] : args,
       extension: cat ? {'stype': 3, 'skey': site.key, 'ext': extension} : extension,
@@ -748,7 +762,12 @@ class CmsClient {
   }) async {
     if (site.isEmby) return (await EmbyLibrary.open(site)).list(categoryId, '', page);
     if (_usesJs(site)) {
-      final listing = CmsParser.parseListing(await _callJs(site, 'category', [categoryId, page, false, {}]));
+      final extend = <String, String>{
+        if (filter != null && filter.genreLabel.isNotEmpty) 'class': filter.genreLabel,
+        if (filter != null && filter.area.isNotEmpty) 'area': filter.area,
+        if (filter != null && filter.year.isNotEmpty) 'year': filter.year,
+      };
+      final listing = CmsParser.parseListing(await _callJs(site, 'category', [categoryId, page, extend.isNotEmpty, extend]));
       return filter == null ? listing : CmsListing(page: listing.page, pageCount: listing.pageCount,
           videos: CmsParser.filterVideos(listing.videos, filter));
     }
@@ -972,6 +991,14 @@ class CmsClient {
     }
     return fallback;
   }
+  Uri? _sourceCredentialOrigin(CmsSite site) {
+    if (site.isHttpApi) return Uri.tryParse(site.api);
+    Object? extension = site.ext;
+    try { extension = jsonDecode(site.ext); } on FormatException { /* Text URL. */ }
+    final raw = extension is Map ? extension['origin'] : extension;
+    final origin = raw is String ? Uri.tryParse(raw) : null;
+    return origin != null && ['http', 'https'].contains(origin.scheme) ? origin : null;
+  }
   Future<CmsEpisode> resolveEpisodeForPlayback(
     CmsSite site,
     CmsEpisode episode,
@@ -981,7 +1008,7 @@ class CmsClient {
       final raw = jsonDecode(await _getText(_appendQuery(site.api,
         {'play':parameters['id'] ?? '', 'flag':parameters['flag'] ?? ''}).toString()));
       if (raw is! Map) throw const FormatException('CatPaw 没有返回播放结果');
-      return SourcePlayback.decode(raw,episode,localUrl:CatPawHost.instance.resolve,sourceHeaders:site.headers);
+      return SourcePlayback.decode(raw,episode,localUrl:CatPawHost.instance.resolve,sourceHeaders:site.headers,sourceOrigin:_sourceCredentialOrigin(site));
     }
     if (site.isEmby && episode.url.startsWith('mmemby://play?')) {
       return (await EmbyLibrary.open(site)).resolve(episode);
@@ -990,17 +1017,14 @@ class CmsClient {
       final params = Uri.parse(episode.url).queryParameters;
       final raw = jsonDecode(await _callJs(site, 'play', [params['flag'], params['id'], []]));
       if (raw is! Map) throw const FormatException('脚本没有返回播放地址');
+      final payload = Map.of(raw);
       final url = Uri.tryParse((raw['url'] ?? '').toString());
-      if (url == null || !['http','https','rtsp','rtmp'].contains(url.scheme) || url.host.isEmpty) {
-        throw const FormatException('脚本没有返回可播放的网络地址');
+      if (url != null && ['http', 'https', 'rtsp', 'rtmp'].contains(url.scheme) &&
+          RegExp(r'\.(mp4|m3u8|mpd|webm|flv)$', caseSensitive: false).hasMatch(url.path)) {
+        payload['parse'] = 0;
       }
-      if ((raw['parse'] ?? 0).toString() != '0' && !RegExp(r'\.(mp4|m3u8|mpd|webm|flv)$', caseSensitive: false).hasMatch(url.path)) {
-        throw const FormatException('此线路还需要网页播放解析');
-      }
-      var h = raw['header'] ?? raw['headers'];
-      if (h is String) h = jsonDecode(h);
-      return CmsEpisode(name: episode.name, url: url.toString(),
-        headers: { ...site.headers, if (h is Map) ...h.map((k,v) => MapEntry(k.toString(),v.toString())) });
+      return SourcePlayback.decode(payload, episode,
+          localUrl: _scriptHost.resolve, sourceHeaders: site.headers, sourceOrigin: _sourceCredentialOrigin(site));
     }
     return CspBridge.resolveEpisodeForPlayback(site, episode, _getText);
   }

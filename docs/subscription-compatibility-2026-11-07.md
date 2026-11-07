@@ -20,8 +20,20 @@ This records implementation and validation on the repair branch. It is not a rel
 
 ## Verification boundaries
 
-The checked-in tests use local/synthetic inputs and local HTTP services. The API 23 emulator workflow exercises production settings/player subtitle controls, history layout and QuickJS/Python JNI. Its application fixture has identical production bytecode but only the x86_64 QuickJS library; it does not validate ARM video decoding or CatPaw Node.
+The checked-in tests use local/synthetic inputs and local HTTP services. The API 23 emulator workflow exercises production settings/player subtitle controls, history layout and QuickJS/Python JNI. Its application fixture has identical production bytecode but only the x86 QuickJS library; it does not validate ARM video decoding or CatPaw Node.
 
 The CatPaw rebuild separately applies libuv's existing pre-Android-7 barrier fallback to fix the API 23 linker failure. A successful source build and ELF alignment check are prerequisites, not proof of playback on a 16 KB device.
 
-Still incomplete: the 33 proprietary plugin route ports, full DRPY rule-only compatibility, arbitrary CPython/native packages, and actual supplied-source playback on iPhone. Lite has standard CMS support but no general JS/Python/JAR runtime. The [iPhone publication gate](ios-source-acceptance.md) remains in force; do not publish the validation IPA as a completed compatibility release.
+Still incomplete: the 33 proprietary plugin route ports, custom DRPY forks/local helper packages/proxy routes, arbitrary CPython/native packages, and actual supplied-source playback on iPhone. Lite has standard CMS support but no general JS/Python/JAR runtime. The [iPhone publication gate](ios-source-acceptance.md) remains in force; do not publish the validation IPA as a completed compatibility release.
+
+## Local DRPY engine and device regression update
+
+A pinned local DRPY engine now handles standalone rule documents, explicit `csp_Drpy` entries, JSON rule objects, content-identified PHP rule responses and local ZIP rule entries. Remote files merely named `drpy2.js` retain their original runtime; arbitrary forks are not silently replaced. The Android dispatcher and shared Flutter dispatcher retain the original source descriptors, avoiding incorrect CatPaw settings links for rule sources.
+
+The engine uses a rebuilt, pinned dependency facade with recorded licenses. Three worker slots queue concurrent searches, preserve source-scoped storage, and enforce request/execution deadlines. HTTP helpers run inside the local host; default external OCR and fallback-image requests are disabled. Local package helpers and local proxy routes remain unsupported and report that limit explicitly. An imported rule is not counted as a proprietary plugin port.
+
+- [Android 6 regression at 3bffa67](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42363860911): all subtitle, home/history and source-host probes passed. The former callback fails with `NoClassDefFoundError` in the negative control; the fixed settings and player dialogs remain usable and retain their values. This is an API 23 x86 television emulator, not the user's Xiaomi firmware or an ARM decoder test.
+- [Android 16 player regression at afe5b62](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42362306403): timeline visibility and pointer seeking passed in portrait, landscape and reverse landscape. This synthetic fixture does not validate a particular Redmi firmware or third-party stream.
+- Shared router tests exercise the actual pinned DRPY core on Node 22 and Node 18 with JIT disabled. Flutter client tests cover import through catalogue/search/detail and multiple returned media qualities using local HTTP fixtures. They do not replace iPhone installation/playback acceptance.
+
+The 16 KB source build is a separate validation path. Large-page startup remains blocked unless an APK includes capability evidence matching the actual Node, bridge and C++ library hashes. ELF alignment alone does not establish runtime behavior on a 16 KB device.

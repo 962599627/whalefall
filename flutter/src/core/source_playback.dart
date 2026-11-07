@@ -5,7 +5,7 @@ import 'models.dart';
 class SourcePlayback {
   static Future<CmsEpisode> decode(Map raw, CmsEpisode episode,
       {required Future<Uri> Function(String) localUrl,
-      Map<String,String> sourceHeaders = const {}}) async {
+      Map<String,String> sourceHeaders = const {}, Uri? sourceOrigin}) async {
     if ('${raw['parse'] ?? 0}' != '0') {
       throw const FormatException('此线路还需要网页解析，请选择其他播放线路');
     }
@@ -13,7 +13,13 @@ class SourcePlayback {
       if (value is String) {try {value=jsonDecode(value);} catch (_) {value=null;}}
       return value is Map ? value.map((k,v)=>MapEntry(k.toString(),v.toString())) : {};
     }
-    final common = {...sourceHeaders,...headers(raw['header'] ?? raw['headers'])};
+    final explicit = headers(raw['header'] ?? raw['headers']);
+    Map<String, String> inherited(Uri target) {
+      final sameOrigin = sourceOrigin != null && sourceOrigin.scheme == target.scheme &&
+          sourceOrigin.host == target.host && sourceOrigin.port == target.port;
+      return Map.fromEntries(sourceHeaders.entries.where((entry) => sameOrigin ||
+          !const ['authorization', 'proxy-authorization', 'cookie', 'cookie2'].contains(entry.key.toLowerCase())));
+    }
     final choices = <CmsEpisode>[];
     final seen = <String>{};
     bool valid(dynamic value) {
@@ -28,7 +34,7 @@ class SourcePlayback {
     Future<void> add(dynamic value,String name,Map<String,String> extra) async {
       if (value is String && valid(value)) {
         final url=value.startsWith('catpaw://') ? await localUrl(value) : Uri.parse(value.trim());
-        if (seen.add(url.toString())) choices.add(CmsEpisode(name:name,url:url.toString(),headers:{...common,...extra},externalAudioUrl:audioUrl));
+        if (seen.add(url.toString())) choices.add(CmsEpisode(name:name,url:url.toString(),headers:{...inherited(url),...explicit,...extra},externalAudioUrl:audioUrl));
       } else if (value is Map) {
         await add(value['url'] ?? value['urls'] ?? value['values'] ?? value['playUrl'],
             '${value['name'] ?? value['label'] ?? name}',{...extra,...headers(value['header'] ?? value['headers'])});

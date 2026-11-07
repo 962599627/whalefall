@@ -90,12 +90,12 @@ void main() {
         '{"sites":[{"key":"x","name":"X","type":3,"api":"./main.js"}]}'), 'sources.zip'), throwsFormatException);
   });
 
-  test('standalone DRPY rule stays retained without advertising an unavailable rule runner', () async {
+  test('standalone DRPY rule retains its descriptor for the pinned local engine', () async {
     for (final script in ['var rule = { title: "Demo", host: "https://demo.example" };']) {
       final result = await CmsClient().resolveConfigInput(rawTextInput: script);
       expect(result.rawConfig, script);
-      expect(result.config.sites.single.canBrowse, isFalse);
-      expect(result.config.sites.single.unsupportedReason, contains('运行环境'));
+      expect(result.config.sites.single.canBrowse, isTrue);
+      expect(result.config.sites.single.isDrpySource, isTrue);
     }
   });
 

@@ -36,6 +36,21 @@ final class LocalSourcePackage {
             checkLocal(root, site.api);
             checkLocal(root, site.jar);
             if (site.ext instanceof String) checkLocal(root, (String) site.ext);
+            if (("csp_Drpy".equalsIgnoreCase(site.api)
+                            || "csp_LocalRule.js".equalsIgnoreCase(site.api))
+                    && site.ext instanceof String
+                    && !Cms.looksLikeDrpyRule((String) site.ext)
+                    && !((String) site.ext).trim().startsWith("{"))
+                checkLocal(root, Cms.resolve(origin, (String) site.ext));
+            if (("csp_Drpy".equalsIgnoreCase(site.api)
+                            || "csp_LocalRule.js".equalsIgnoreCase(site.api))
+                    && site.ext instanceof org.json.JSONObject) {
+                Object rule = ((org.json.JSONObject) site.ext).opt("rule");
+                if (rule instanceof String
+                        && !Cms.looksLikeDrpyRule((String) rule)
+                        && !((String) rule).trim().startsWith("{"))
+                    checkLocal(root, Cms.resolve(origin, (String) rule));
+            }
         }
     }
 

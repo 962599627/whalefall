@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'js_source_syntax.dart';
 import 'models.dart';
 /// Pure Dart parser for Marco Movie / TVBox JSON & XML CMS, multi-depot configs,
 /// obfuscated/encrypted config payloads (**Base64, Base64, $#...#$ AES-128-CBC),
@@ -839,16 +840,18 @@ class CmsParser {
   }
 
   /// Script documents may be retained as subscriptions without claiming a runtime.
-  static bool looksLikeScript(String raw) =>
-      !raw.trimLeft().startsWith('{') && !raw.trimLeft().startsWith('[') && (
-      RegExp(r'^\s*function\s+__jsEvalReturn\s*\(', multiLine: true).hasMatch(raw) ||
-      RegExp(r'^\s*(?:class\s+Spider\b|def\s+(?:homeContent|searchContent)\s*\()', multiLine: true).hasMatch(raw) ||
-      RegExp(r'^\s*(?:(?:var|let|const)\s+rule\s*=|export\s+(?:default\b|(?:async\s+)?function\b|(?:const|let|var)\b|\{))', multiLine: true).hasMatch(raw) ||
-      RegExp(r'\b(?:module\s*\.\s*exports\s*=|exports\s*\.\s*\w+\s*=)').hasMatch(raw));
+  static bool looksLikeScript(String raw) {
+    final trimmed = raw.trimLeft();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) return false;
+    if (RegExp(r'^\s*(?:class\s+Spider\b|def\s+(?:homeContent|searchContent)\s*\()',
+        multiLine: true).hasMatch(raw)) return true;
+    final syntax = JsSourceSyntax(raw);
+    return syntax.hasSpiderExports || syntax.hasDrpyRule;
+  }
 
-  static bool isExecutableJs(String raw) => raw.contains('__jsEvalReturn') ||
-      RegExp(r'\bexport\s+(?:default\b|(?:async\s+)?function\b|(?:const|let|var)\b|\{)').hasMatch(raw) ||
-      RegExp(r'\b(?:module\s*\.\s*exports\s*=|exports\s*\.\s*\w+\s*=)').hasMatch(raw);
+  static bool isExecutableJs(String raw) => JsSourceSyntax(raw).hasSpiderExports;
+
+  static bool looksLikeDrpyRule(String raw) => JsSourceSyntax(raw).hasDrpyRule;
 
   /// Parses TVBox JSON, Multi-Depot JSON, Direct MacCMS VOD JSON/XML, M3U/M3U8, or TXT subscriptions.
   static CmsConfig parseConfig(
@@ -1049,7 +1052,11 @@ class CmsParser {
           key = '$key-$i';
           seenKeys.add(key);
         }
-        final extStr = _stringifyExt(item['ext']);
+        var extStr = _stringifyExt(item['ext']);
+        if (api.toLowerCase() == 'csp_drpy' && item['ext'] is String &&
+            !looksLikeScript(extStr) && !extStr.trimLeft().startsWith('{')) {
+          extStr = resolveUrl(origin, extStr);
+        }
         final itemGroup = (item['group'] ?? '').toString().trim();
         final itemPrivate = _asBool(item['isPrivate'] ?? item['hidden'], isPrivate);
         sites.add(

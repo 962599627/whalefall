@@ -9,6 +9,13 @@ import org.json.*;
 
 /** On-device CatPaw transport. Persist logical URLs, never the local capability or port. */
 public final class CatPawHost {
+    public interface ConnectionObserver {
+        void opened(HttpURLConnection connection) throws IOException;
+
+        void closed(HttpURLConnection connection);
+    }
+
+    public static final String DRPY_RUNTIME = "drpy2-ca23ffdb-1";
     private static String endpoint;
     private final Context context;
     private final File root;
@@ -47,6 +54,53 @@ public final class CatPawHost {
         }
     }
 
+    private static String hash(byte[] content) throws Exception {
+        StringBuilder digest = new StringBuilder();
+        for (byte b : MessageDigest.getInstance("SHA-256").digest(content))
+            digest.append(String.format(Locale.US, "%02x", b & 255));
+        return digest.toString();
+    }
+
+    private void stageDrpyAssets() throws Exception {
+        JSONObject manifest =
+                new JSONObject(
+                        new String(
+                                bytes(context.getAssets().open("catpaw/drpy-assets.json"), 65536),
+                                "UTF-8"));
+        if (manifest.optInt("version") != 1 || !DRPY_RUNTIME.equals(manifest.optString("runtime")))
+            throw new IOException("DRPY 运行资源版本不匹配");
+        JSONArray files = manifest.getJSONArray("files");
+        if (files.length() < 5 || files.length() > 32) throw new IOException("DRPY 运行资源清单无效");
+        java.util.Map<String, byte[]> verified = new java.util.LinkedHashMap<>();
+        int total = 0;
+        for (int i = 0; i < files.length(); i++) {
+            JSONObject entry = files.getJSONObject(i);
+            String name = entry.getString("name");
+            long size = entry.optLong("bytes", -1);
+            if (!name.matches("drpy[-A-Za-z0-9._]+")
+                    || name.equals("drpy-assets.json")
+                    || verified.containsKey(name)
+                    || size <= 0
+                    || size > 4 * 1024 * 1024) throw new IOException("DRPY 运行资源路径或大小无效");
+            byte[] data = bytes(context.getAssets().open("catpaw/" + name), 4 * 1024 * 1024);
+            if (data.length != size || !hash(data).equals(entry.optString("sha256")))
+                throw new IOException("DRPY 运行资源校验失败");
+            total += data.length;
+            if (total > 16 * 1024 * 1024) throw new IOException("DRPY 运行资源超过大小限制");
+            verified.put(name, data);
+        }
+        for (String required :
+                new String[] {
+                    "drpy-worker.cjs",
+                    "drpy-http.cjs",
+                    "drpy-schema.cjs",
+                    "drpy-core.js",
+                    "drpy-dependencies.js"
+                }) if (!verified.containsKey(required)) throw new IOException("DRPY 运行资源不完整");
+        for (java.util.Map.Entry<String, byte[]> entry : verified.entrySet())
+            write(new File(root, entry.getKey()), entry.getValue());
+    }
+
     private String start() throws Exception {
         synchronized (CatPawHost.class) {
             if (endpoint != null) return endpoint;
@@ -56,8 +110,10 @@ public final class CatPawHost {
                         new File(root, name),
                         bytes(context.getAssets().open("catpaw/" + name), 1024 * 1024));
             }
+            stageDrpyAssets();
             File ready = new File(root, "ready.json");
             NodeRuntime.start(
+                    context,
                     new File(root, "host.cjs").getAbsolutePath(),
                     root.getAbsolutePath(),
                     ready.getAbsolutePath());
@@ -90,8 +146,12 @@ public final class CatPawHost {
                 || uri.getPort() != -1) throw new IOException("CatPaw 本机地址无效");
         for (String part : uri.getPath().split("/"))
             if (part.equals("..") || part.equals(".")) throw new IOException("CatPaw 路径无效");
-        if (!new File(new File(root, hash), "index.cjs").isFile())
+        File folder = new File(root, hash);
+        boolean drpy = new File(folder, "drpy.json").isFile();
+        if (!new File(folder, "index.cjs").isFile() && !drpy)
             throw new IOException("此设备没有对应的 CatPaw 服务包，请重新导入原订阅");
+        if (drpy && !uri.getPath().equals("/api/drpy") && !uri.getPath().equals("/_release"))
+            throw new IOException("DRPY 本机请求路径无效");
         return start()
                 + "/"
                 + hash
@@ -115,21 +175,112 @@ public final class CatPawHost {
     }
 
     private String read(String address, String method) throws Exception {
+        return read(address, method, null);
+    }
+
+    public String post(String address, JSONObject body) throws Exception {
+        return read(address, "POST", body.toString().getBytes("UTF-8"));
+    }
+
+    public String post(String address, JSONObject body, ConnectionObserver observer)
+            throws Exception {
+        return read(address, "POST", body.toString().getBytes("UTF-8"), observer);
+    }
+
+    public void release(String address) throws Exception {
+        URI logical = new URI(address);
+        read("catpaw://" + logical.getHost() + "/_release", "POST");
+    }
+
+    private String read(String address, String method, byte[] body) throws Exception {
+        return read(address, method, body, null);
+    }
+
+    private String read(String address, String method, byte[] body, ConnectionObserver observer)
+            throws Exception {
         URI logical = new URI(address);
         HttpURLConnection connection =
                 (HttpURLConnection) new URL(resolve(address)).openConnection();
         try {
+            if (observer != null) observer.opened(connection);
             connection.setRequestMethod(method);
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(8000);
-            connection.setReadTimeout(35000);
+            connection.setReadTimeout("/api/drpy".equals(logical.getPath()) ? 45000 : 35000);
+            if (body != null) {
+                if (body.length > 4 * 1024 * 1024) throw new IOException("DRPY 请求超过大小限制");
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                connection.setFixedLengthStreamingMode(body.length);
+                try (OutputStream output = connection.getOutputStream()) {
+                    output.write(body);
+                }
+            }
             int status = connection.getResponseCode();
             if (status != 200) throw new IOException("CatPaw 线路请求失败（HTTP " + status + "）");
             String raw = new String(bytes(connection.getInputStream(), 16 * 1024 * 1024), "UTF-8");
             return raw.replace(endpoint + "/" + logical.getHost(), "catpaw://" + logical.getHost());
         } finally {
+            if (observer != null) observer.closed(connection);
             connection.disconnect();
         }
+    }
+
+    public String installDrpy(JSONObject manifest) throws Exception {
+        String rule = manifest.optString("rule");
+        JSONObject headers = manifest.optJSONObject("headers");
+        String origin = manifest.optString("origin");
+        int timeout = manifest.optInt("requestTimeoutMs", 10000);
+        if (!"drpy".equals(manifest.optString("kind"))
+                || manifest.optInt("version") != 1
+                || !DRPY_RUNTIME.equals(manifest.optString("runtime"))
+                || !manifest.optString("sourceId").matches("[a-f0-9]{64}")
+                || !(manifest.opt("rule") instanceof String)
+                || rule.trim().isEmpty()
+                || rule.getBytes("UTF-8").length > 6 * 1024 * 1024
+                || !(manifest.opt("origin") instanceof String)
+                || origin.length() > 8192
+                || headers == null
+                || timeout < 100
+                || timeout > 15000) throw new IOException("DRPY 规则清单无效");
+        URI location = new URI(origin);
+        if (!("http".equals(location.getScheme())
+                        || "https".equals(location.getScheme())
+                        || "pkg".equals(location.getScheme()))
+                || location.getHost() == null
+                || location.getHost().isEmpty()
+                || location.getUserInfo() != null
+                || location.getFragment() != null) throw new IOException("DRPY 规则来源地址无效");
+        if (headers.length() > 64) throw new IOException("DRPY 请求头过多");
+        java.util.Iterator<String> keys = headers.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            Object value = headers.opt(key);
+            if (!(value instanceof String)
+                    || !key.matches("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+                    || key.matches("(?i:host|content-length|connection|transfer-encoding)")
+                    || ((String) value).length() > 8192
+                    || ((String) value).contains("\r")
+                    || ((String) value).contains("\n")
+                    || ((String) value).contains("\0")) throw new IOException("DRPY 请求头无效");
+        }
+        byte[] content = manifest.toString().getBytes("UTF-8");
+        if (content.length > 16 * 1024 * 1024) throw new IOException("DRPY 规则清单超过大小限制");
+        String id = hash(content);
+        File folder = new File(root, id);
+        if (!folder.isDirectory() && !folder.mkdirs()) throw new IOException("无法保存 DRPY 规则");
+        File target = new File(folder, "drpy.json");
+        synchronized (CatPawHost.class) {
+            if (target.isFile()) {
+                if (!hash(bytes(new FileInputStream(target), 16 * 1024 * 1024)).equals(id))
+                    throw new IOException("已保存的 DRPY 规则校验失败");
+            } else {
+                File staging = new File(folder, "drpy.tmp");
+                write(staging, content);
+                if (!staging.renameTo(target)) throw new IOException("DRPY 规则保存失败");
+            }
+        }
+        return "catpaw://" + id + "/api/drpy";
     }
 
     public String install(String source) throws Exception {

@@ -893,8 +893,8 @@ final class PlaybackController {
                                     MoviePlayer candidate = null;
                                     try {
                                         Map<String, String> mediaHeaders =
-                                                new LinkedHashMap<>(s.headers);
-                                        mediaHeaders.putAll(ep.headers);
+                                                Cms.inheritedHeaders(s.api, ep.url, s.headers);
+                                        Cms.mergeHeaders(mediaHeaders, ep.headers);
                                         candidate =
                                                 a.prefs.getInt(Prefs.PLAYER_ENGINE, 0) == 1
                                                         ? new SystemPlayer(a)

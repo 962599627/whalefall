@@ -18,6 +18,16 @@ import java.util.concurrent.*;
 
 /** Independent QuickJS host for user-provided ES-module spiders and DRPY rules. */
 public final class JsEngine implements SourceEngine {
+    /** Dispatch handoff after the normal cached download, before any rule execution. */
+    static final class DrpyRuleDetected extends IOException {
+        final String source;
+
+        DrpyRuleDetected(String value) {
+            super("独立 DRPY 规则需要本机规则宿主");
+            source = value;
+        }
+    }
+
     private static final ConcurrentHashMap<String, JsEngine> ACTIVE = new ConcurrentHashMap<>();
     private final Application app;
     private final Cms.Site site;
@@ -206,6 +216,7 @@ public final class JsEngine implements SourceEngine {
         if (checkedScript)
             modules.put(site.api, ((JSONObject) site.ext).getString("_mm_entrySource"));
         String source = inlinePython ? (String) site.ext : module(site.api);
+        if (!inlinePython && Cms.looksLikeDrpyRule(source)) throw new DrpyRuleDetected(source);
         catApi = source.contains("__jsEvalReturn") && !isEsModule(source);
         if (inlinePython || site.api.split("[?#]", 2)[0].toLowerCase(Locale.ROOT).endsWith(".py")) {
             catApi = false;

@@ -79,6 +79,31 @@ public final class LocalPackageChecks {
         if (!js.origin.endsWith("/bundle/index.js")
                 || !js.config.sites.get(0).api.equals(js.origin))
             throw new AssertionError("standalone CommonJS ZIP not loaded");
+        String drpyConfig =
+                "{\"sites\":[{\"key\":\"rule\",\"type\":3,\"api\":\"csp_Drpy\",\"ext\":{\"rule\":\"./rules/main.js\"}}]}";
+        LocalSourcePackage drpy =
+                LocalSourcePackage.open(
+                        root,
+                        zip(
+                                "config.json",
+                                drpyConfig,
+                                "rules/main.js",
+                                "let rule={host:'https://example.test'};"));
+        if (!drpy.origin.endsWith("/config.json")
+                || !drpy.config.sites.get(0).api.equals("csp_Drpy"))
+            throw new AssertionError("explicit DRPY package descriptor lost");
+        for (String missing :
+                new String[] {
+                    drpyConfig,
+                    drpyConfig.replace("./rules/main.js", "../outside.js"),
+                    drpyConfig.replace("{\"rule\":\"./rules/main.js\"}", "\"missing.js\"")
+                }) {
+            try {
+                LocalSourcePackage.open(root, zip("config.json", missing));
+                throw new AssertionError("DRPY package escaped or missing entry accepted");
+            } catch (IOException expected) {
+            }
+        }
         String arrayConfig =
                 "[{\"key\":\"configured\",\"name\":\"Configured JS\",\"type\":3,"
                         + "\"api\":\"./main.js\",\"ext\":{\"fixture\":true}}]";

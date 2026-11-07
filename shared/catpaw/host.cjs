@@ -55,47 +55,106 @@ if (!isMainThread) {
   const readyFile = path.resolve(process.argv[3]);
   const secret = crypto.randomBytes(32).toString('hex');
   const runtimes = new Map();
+  const loading = new Map();
+  const releases = new Map();
+  let loadQueue = Promise.resolve();
   let closing = false;
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
   const respond = (res, status, body) => {
     res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(body));
   };
-  async function load(hash) {
-    if (!HASH.test(hash)) throw Error('bundle_id');
+  async function stop(instance) {
+    instance.http?.close(); clearTimeout(instance.callTimer); instance.manager?.close();
+    await instance.worker.terminate();
+  }
+  function load(hash) {
     if (runtimes.has(hash)) return runtimes.get(hash).ready;
+    if (loading.has(hash)) return loading.get(hash);
+    // Serialize only creation/eviction, not worker startup or source requests.
+    // Otherwise simultaneous loads can each see a spare slot and exceed three.
+    const epoch = releases.get(hash) || 0;
+    const queuedUntil = Date.now()+20000;
+    const created = loadQueue.then(()=>createRuntime(hash,epoch,queuedUntil));
+    loadQueue = created.then(()=>{},()=>{});
+    const ready = created.then(instance=>instance.ready).finally(()=>loading.delete(hash));
+    loading.set(hash,ready);
+    return ready;
+  }
+  async function createRuntime(hash,epoch,queuedUntil) {
+    if (!HASH.test(hash)) throw Error('bundle_id');
+    if ((releases.get(hash)||0)!==epoch || closing) throw Error('bundle_released');
+    if (runtimes.has(hash)) return runtimes.get(hash);
     // Do not evict an active playback to make room for a background source search.
-    if (runtimes.size >= 3) {
+    while (runtimes.size >= 3) {
       const idle = [...runtimes.entries()].filter(([, r]) => r.port && !r.active && !r.manager &&
-        Date.now() - r.played > 15 * 60 * 1000).sort((a,b) => a[1].used - b[1].used)[0];
-      if (!idle) throw Error('runtime_limit');
-      runtimes.delete(idle[0]); await idle[1].worker.terminate();
+        (r.kind === 'drpy' || Date.now() - r.played > 15 * 60 * 1000)).sort((a,b) => a[1].used - b[1].used)[0];
+      if (!idle) {
+        if (closing || Date.now()>=queuedUntil || (releases.get(hash)||0)!==epoch) throw Error('runtime_limit');
+        // Existing CatPaw playback remains protected. A running/starting DRPY
+        // query can free a slot; wait asynchronously instead of dropping half
+        // of the app's six-source concurrent search batch.
+        if (![...runtimes.values()].some(r=>r.kind==='drpy'||!r.port)) throw Error('runtime_limit');
+        await new Promise(resolve=>setTimeout(resolve,20));
+        continue;
+      }
+      runtimes.delete(idle[0]); await stop(idle[1]);
     }
+    if (Date.now()>=queuedUntil) throw Error('runtime_queue_timeout');
     const folder = path.join(root, hash);
-    const script = path.join(folder, 'index.cjs');
-    const state = path.join(folder, 'state');
+    let script = path.join(folder, 'index.cjs');
+    const manifestFile = path.join(folder, 'drpy.json');
+    const kind = fs.existsSync(script) ? 'catpaw' : 'drpy';
+    if (kind === 'catpaw' && fs.existsSync(manifestFile)) throw Error('bundle_ambiguous');
+    if (kind === 'drpy') script = manifestFile;
+    let state = path.join(folder, 'state');
     const stat = fs.statSync(script);
     if (!stat.isFile() || stat.size > 16 * 1024 * 1024) throw Error('bundle_size');
     const bytes = fs.readFileSync(script);
     if (crypto.createHash('sha256').update(bytes).digest('hex') !== hash) throw Error('bundle_changed');
+    let manifest;
+    if (kind === 'drpy') {
+      manifest = require('./drpy-schema.cjs').validateManifest(JSON.parse(bytes.toString('utf8')));
+      state = path.join(root, 'drpy-state', manifest.sourceId);
+      // A rule refresh keeps its storage ID; never run two stale copies against
+      // the same persistent state file at once.
+      for (const [otherHash,other] of runtimes) {
+        if (other.kind !== 'drpy' || other.sourceId !== manifest.sourceId) continue;
+        if (other.active) throw Error('drpy_source_busy');
+        runtimes.delete(otherHash); await stop(other);
+      }
+    }
+    if ((releases.get(hash)||0)!==epoch || closing) throw Error('bundle_released');
     fs.mkdirSync(state, { recursive: true, mode: 0o700 });
-    const worker = new Worker(__filename, {
-      workerData: { script, state }, stdout: true, stderr: true,
+    const worker = new Worker(kind === 'drpy' ? path.join(__dirname,'drpy-worker.cjs') : __filename, {
+      workerData: kind === 'drpy' ? {manifest,state} : { script, state }, stdout: true, stderr: true,
       resourceLimits: { maxOldGenerationSizeMb: 256 },
     });
     // Source logs can contain cookies, query strings and media tokens.
     worker.stdout.resume(); worker.stderr.resume();
-    const instance = { worker, ready: null, port: 0, active: 0, used: Date.now(), played: 0, manager: null };
+    const instance = { worker, kind, sourceId:manifest?.sourceId, ready: null, port: 0, active: 0, used: Date.now(), played: 0, manager: null,
+      http: kind === 'drpy' ? new (require('./drpy-http.cjs').SourceHttp)(manifest) : null, callTimer:null };
     instance.ready = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { worker.terminate(); reject(Error('bundle_timeout')); }, 25000);
-      worker.once('message', value => {
+      const timer = setTimeout(() => { stop(instance); reject(Error('bundle_timeout')); }, 25000);
+      const ready = value => {
         clearTimeout(timer);
         if (Number.isInteger(value.port) && value.port > 0 && value.port < 65536) {
           instance.port = value.port; resolve(instance);
-        } else { worker.terminate(); reject(Error('bundle_start_failed')); }
+        } else { stop(instance); reject(Error('bundle_start_failed')); }
+      };
+      if (kind === 'catpaw') worker.once('message',ready);
+      else worker.on('message',value=>{
+        if(value.kind==='ready')ready(value);
+        else if(value.kind==='fatal')ready({});
+        else if(value.kind==='http'||value.kind==='cancel')instance.http.receive(value);
+        else if(value.kind==='call-start') {
+          clearTimeout(instance.callTimer);
+          instance.callTimer=setTimeout(()=>stop(instance),Math.max(1,Math.min(21000,value.deadline-Date.now()+500)));
+        } else if(value.kind==='call-end'){clearTimeout(instance.callTimer);instance.callTimer=null;}
       });
       worker.once('error', () => { clearTimeout(timer); reject(Error('bundle_start_failed')); });
       worker.once('exit', () => {
+        instance.http?.close(); clearTimeout(instance.callTimer);
         instance.manager?.close();
         clearTimeout(timer);
         if (runtimes.get(hash) === instance) runtimes.delete(hash);
@@ -103,13 +162,14 @@ if (!isMainThread) {
       });
     });
     runtimes.set(hash, instance);
-    return instance.ready;
+    return instance;
   }
 
   // A separate loopback origin preserves the source author's settings UI paths.
   // Only an explicit app request creates it; a one-time ticket establishes a
   // per-origin HttpOnly session. The playback endpoint never exposes admin paths.
   async function manage(instance) {
+    if (instance.kind === 'drpy') throw Error('settings_unavailable');
     if (instance.manager) return instance.manager.open();
     const cookie = 'marco_' + crypto.randomBytes(12).toString('hex');
     const value = crypto.randomBytes(32).toString('hex');
@@ -174,8 +234,9 @@ if (!isMainThread) {
     if (!match) return respond(res, 404, { error: 'route' });
     const hash = match[1], resource = match[2];
     if (resource === '/_release' && req.method === 'POST') {
+      releases.set(hash,(releases.get(hash)||0)+1);
       const instance = runtimes.get(hash);
-      if (instance) { runtimes.delete(hash); await instance.worker.terminate(); }
+      if (instance) { runtimes.delete(hash); await stop(instance); }
       return respond(res, 200, { released: true });
     }
     if (resource === '/_manage' && req.method === 'POST') {
@@ -189,10 +250,22 @@ if (!isMainThread) {
     let instance;
     try { instance = await load(hash); }
     catch (_) { return respond(res, 503, { error: 'source_runtime_unavailable' }); }
-    if (res.destroyed) return;
+    if (res.destroyed) {
+      if (instance.kind==='drpy' && !instance.active) {
+        if(runtimes.get(hash)===instance)runtimes.delete(hash);
+        await stop(instance);
+      }
+      return;
+    }
     instance.active++; instance.used=Date.now();
     if (/[?&]play=/.test(resource)) instance.played=Date.now();
-    res.once('close',()=>{instance.active--;});
+    res.once('close',()=>{
+      instance.active--;
+      if(instance.kind==='drpy' && !res.writableFinished && !instance.active) {
+        if(runtimes.get(hash)===instance)runtimes.delete(hash);
+        stop(instance);
+      }
+    });
     const backend = `http://127.0.0.1:${instance.port}`;
     const publicBase = `http://127.0.0.1:${server.address().port}/${secret}/${hash}`;
     const rewrite = text => text.split(backend).join(publicBase)
@@ -257,7 +330,7 @@ if (!isMainThread) {
     if (closing) return;
     closing = true;
     server.close(); server.closeAllConnections();
-    await Promise.all([...runtimes.values()].map(r => r.worker.terminate()));
+    await Promise.all([...runtimes.values()].map(stop));
     try { fs.unlinkSync(readyFile); } catch (_) { }
     process.exit(0);
   };

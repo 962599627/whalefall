@@ -260,6 +260,8 @@ class CmsSite {
             (path.endsWith('.js') || path.endsWith('.mjs')));
   }
 
+  bool get isDrpySource => api == 'csp_LocalRule.js' || api.toLowerCase() == 'csp_drpy';
+
   bool get isPythonSource =>
       api == 'csp_LocalScript.py' ||
       (type == 3 &&

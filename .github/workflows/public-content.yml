@@ -48,6 +48,8 @@ jobs:
           python android/tests/run_compat_checks.py
           python android/tests/run_global_search_checks.py
           python android/tests/run_js_player_checks.py
+          python android/tests/run_drpy_checks.py
+          python android/tests/run_node_capability_checks.py
           python android/tests/run_scheduling_checks.py
           python android/tests/run_review_fix_checks.py
           python android/tests/run_seek_checks.py
@@ -63,3 +65,9 @@ jobs:
           node scripts/test_js_module_interop.cjs
           node scripts/test_python_host.js
           python scripts/test_catpaw_node_patches.py
+      - name: Local CatPaw and DRPY router under jitless Node
+        env:
+          MARCOMOVIE_NODE_FLAGS: --jitless
+        run: |
+          python scripts/test_catpaw_host.py
+          python scripts/test_drpy_host.py

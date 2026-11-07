@@ -17,16 +17,21 @@ class CatPawHost {
   Future<Uri>? _starting;
   Uri? _base;
   Directory? _root;
+  final _activeDrpy = <String, int>{};
+  final _releasingDrpy = <String, Future<void>>{};
   int _generation = 0;
+  static const drpyRuntime = 'drpy2-ca23ffdb-1';
+  static const _maxBundleBytes = 16 * 1024 * 1024;
   static bool matches(String value) => value.startsWith('catpaw://');
-  static bool isBundle(String code) => code.contains('catServerFactory') && code.contains('catDartServerPort');
+  static bool isBundle(String code) =>
+      code.contains('catServerFactory') && code.contains('catDartServerPort');
 
   Future<Directory> _storage() async {
     if (_root != null) return _root!;
     final folder = directory == null
         ? Directory('${(await getApplicationSupportDirectory()).path}/catpaw')
         : await directory!();
-    await folder.create(recursive:true);
+    await folder.create(recursive: true);
     // Node's permission checks use real paths (macOS /var is a symlink).
     return _root = Directory(await folder.resolveSymbolicLinks());
   }
@@ -46,43 +51,79 @@ class CatPawHost {
       final fetch = File('${File(bootstrap!).parent.path}/fetch.cjs');
       if (await fetch.exists()) await fetch.copy('${root.path}/fetch.cjs');
     } else {
-      await script.writeAsString(await rootBundle.loadString('assets/catpaw/host.cjs'), flush: true);
-      await File('${root.path}/fetch.cjs').writeAsString(await rootBundle.loadString('assets/catpaw/fetch.cjs'),flush:true);
+      await script.writeAsString(
+        await rootBundle.loadString('assets/catpaw/host.cjs'),
+        flush: true,
+      );
+      await File('${root.path}/fetch.cjs').writeAsString(
+        await rootBundle.loadString('assets/catpaw/fetch.cjs'),
+        flush: true,
+      );
     }
+    await _stageDrpyAssets(root);
     final ready = File('${root.path}/ready.json');
     if (Platform.isIOS) {
       await const MethodChannel('marco_movie/catpaw').invokeMethod('start', {
-        'root': root.path, 'script': script.path, 'ready': ready.path,
+        'root': root.path,
+        'script': script.path,
+        'ready': ready.path,
       });
     } else {
       if (await ready.exists()) await ready.delete();
       final app = File(Platform.resolvedExecutable).parent;
-      final node = executable ?? (Platform.isWindows
-          ? '${app.path}/data/node/node.exe'
-          : '${app.parent.path}/Frameworks/node/bin/node');
-      if (!await File(node).exists()) throw StateError('安装包缺少 CatPaw 本机运行组件，请安装完整版本');
+      final node =
+          executable ??
+          (Platform.isWindows
+              ? '${app.path}/data/node/node.exe'
+              : '${app.parent.path}/Frameworks/node/bin/node');
+      if (!await File(node).exists())
+        throw StateError('安装包缺少 CatPaw 本机运行组件，请安装完整版本');
       // Do not inherit developer credentials or NODE_OPTIONS into imported user code.
-      final environment = <String,String>{
-        if (Platform.environment['SystemRoot'] case final String value) 'SystemRoot': value,
-        'HOME': root.path, 'USERPROFILE': root.path, 'TMPDIR': root.path,
-        'TEMP': root.path, 'TMP': root.path,
+      final environment = <String, String>{
+        if (Platform.environment['SystemRoot'] case final String value)
+          'SystemRoot': value,
+        'HOME': root.path,
+        'USERPROFILE': root.path,
+        'TMPDIR': root.path,
+        'TEMP': root.path,
+        'TMP': root.path,
       };
-      final process = await Process.start(node, [
-        if (Platform.isMacOS) '--jitless',
-        '--experimental-permission', '--allow-worker',
-        '--allow-fs-read=${root.path}', '--allow-fs-write=${root.path}',
-        script.path, root.path, ready.path,
-      ], workingDirectory: root.path, environment: environment, includeParentEnvironment: false);
+      final process = await Process.start(
+        node,
+        [
+          if (Platform.isMacOS) '--jitless',
+          '--experimental-permission',
+          '--allow-worker',
+          '--allow-fs-read=${root.path}',
+          '--allow-fs-write=${root.path}',
+          script.path,
+          root.path,
+          ready.path,
+        ],
+        workingDirectory: root.path,
+        environment: environment,
+        includeParentEnvironment: false,
+      );
       _process = process;
-      process.stdout.drain<void>(); process.stderr.drain<void>();
-      process.exitCode.then((_) { if (_process == process) { _process = null; _base = null; } });
+      process.stdout.drain<void>();
+      process.stderr.drain<void>();
+      process.exitCode.then((_) {
+        if (_process == process) {
+          _process = null;
+          _base = null;
+        }
+      });
     }
     final deadline = DateTime.now().add(const Duration(seconds: 12));
     while (DateTime.now().isBefore(deadline) && epoch == _generation) {
       if (await ready.exists()) {
         final state = jsonDecode(await ready.readAsString());
         final port = state['port'], secret = state['secret'];
-        if (port is int && port > 0 && port < 65536 && secret is String && RegExp(r'^[a-f0-9]{64}$').hasMatch(secret)) {
+        if (port is int &&
+            port > 0 &&
+            port < 65536 &&
+            secret is String &&
+            RegExp(r'^[a-f0-9]{64}$').hasMatch(secret)) {
           final base = Uri.parse('http://127.0.0.1:$port/$secret');
           if (epoch != _generation) break;
           _base = base;
@@ -95,78 +136,440 @@ class CatPawHost {
     throw StateError('CatPaw 本机服务启动失败');
   }
 
-  Future<String> install(String code) async {
-    if (!isBundle(code)) throw const FormatException('没有 CatPaw 服务入口');
-    final bytes = utf8.encode(code);
-    if (bytes.length > 16*1024*1024) throw const FormatException('CatPaw 服务包超过大小限制');
+  /// Stage only pinned flat runtime files, using the same path in packaged and
+  /// explicitly supplied bootstrap modes. Never accept source-provided assets.
+  Future<void> _stageDrpyAssets(Directory root) async {
+    Future<List<int>> asset(String name) async {
+      if (bootstrap != null) {
+        return File('${File(bootstrap!).parent.path}/$name').readAsBytes();
+      }
+      final data = await rootBundle.load('assets/catpaw/$name');
+      return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    }
+
+    final manifestBytes = await asset('drpy-assets.json');
+    final manifest = jsonDecode(utf8.decode(manifestBytes));
+    if (manifest is! Map ||
+        manifest['version'] != 1 ||
+        manifest['runtime'] != drpyRuntime ||
+        manifest['files'] is! List) {
+      throw const FormatException('DRPY 本机运行组件清单无效');
+    }
+    final entries = manifest['files'] as List;
+    if (entries.isEmpty || entries.length > 32) {
+      throw const FormatException('DRPY 本机运行组件数量无效');
+    }
+    final seen = <String>{};
+    final verified = <String, List<int>>{};
+    var total = 0;
+    for (final entry in entries) {
+      if (entry is! Map ||
+          entry['name'] is! String ||
+          entry['sha256'] is! String ||
+          entry['bytes'] is! int) {
+        throw const FormatException('DRPY 本机运行组件条目无效');
+      }
+      final name = entry['name'] as String;
+      final size = entry['bytes'] as int;
+      if (!RegExp(r'^[a-zA-Z0-9][a-zA-Z0-9_.-]*$').hasMatch(name) ||
+          name == 'host.cjs' ||
+          name == 'fetch.cjs' ||
+          name == 'ready.json' ||
+          name == 'drpy-assets.json' ||
+          !seen.add(name) ||
+          !RegExp(r'^[a-f0-9]{64}$').hasMatch(entry['sha256']) ||
+          size < 0 ||
+          size > _maxBundleBytes ||
+          (total += size) > _maxBundleBytes) {
+        throw const FormatException('DRPY 本机运行组件路径或大小无效');
+      }
+      final bytes = await asset(name);
+      if (bytes.length != size ||
+          sha256.convert(bytes).toString() != entry['sha256']) {
+        throw const FormatException('DRPY 本机运行组件校验失败');
+      }
+      verified[name] = bytes;
+    }
+    if (!seen.containsAll(const [
+      'drpy-worker.cjs',
+      'drpy-http.cjs',
+      'drpy-schema.cjs',
+      'drpy-core.js',
+      'drpy-dependencies.js',
+    ])) {
+      throw const FormatException('DRPY 本机运行组件不完整');
+    }
+    for (final entry in verified.entries) {
+      await _writeAtomic(File('${root.path}/${entry.key}'), entry.value);
+    }
+    await _writeAtomic(File('${root.path}/drpy-assets.json'), manifestBytes);
+  }
+
+  static Future<void> _writeAtomic(File file, List<int> bytes) async {
+    final staging = File(
+      '${file.path}.tmp-$pid-${DateTime.now().microsecondsSinceEpoch}',
+    );
+    try {
+      await staging.writeAsBytes(bytes, flush: true);
+      await staging.rename(file.path);
+    } finally {
+      if (await staging.exists()) await staging.delete();
+    }
+  }
+
+  static Map<String, dynamic> _drpyManifest(List<int> bytes) {
+    if (bytes.isEmpty || bytes.length > _maxBundleBytes) {
+      throw const FormatException('DRPY 规则包超过大小限制');
+    }
+    final value = jsonDecode(utf8.decode(bytes));
+    const fields = [
+      'version',
+      'kind',
+      'runtime',
+      'sourceId',
+      'origin',
+      'rule',
+      'headers',
+      'requestTimeoutMs',
+    ];
+    if (value is! Map<String, dynamic> ||
+        value['version'] != 1 ||
+        value.keys.any((key) => !fields.contains(key)) ||
+        value['kind'] != 'drpy' ||
+        value['runtime'] != drpyRuntime ||
+        value['sourceId'] is! String ||
+        !RegExp(r'^[a-f0-9]{64}$').hasMatch(value['sourceId']) ||
+        value['origin'] is! String ||
+        value['rule'] is! String ||
+        (value['rule'] as String).trim().isEmpty ||
+        value['headers'] is! Map ||
+        (value['requestTimeoutMs'] ?? 10000) is! int ||
+        (value['requestTimeoutMs'] ?? 10000) < 100 ||
+        (value['requestTimeoutMs'] ?? 10000) > 15000) {
+      throw const FormatException('DRPY 规则包格式无效');
+    }
+    final origin = Uri.tryParse(value['origin']);
+    if (origin == null ||
+        !const ['http', 'https', 'pkg'].contains(origin.scheme) ||
+        origin.host.isEmpty ||
+        origin.userInfo.isNotEmpty ||
+        origin.hasFragment ||
+        (value['origin'] as String).length > 8192 ||
+        utf8.encode(value['rule']).length > 6 * 1024 * 1024) {
+      throw const FormatException('DRPY 规则来源无效');
+    }
+    final headers = value['headers'] as Map;
+    if (headers.length > 64) throw const FormatException('DRPY 请求头数量过多');
+    for (final header in headers.entries) {
+      if (header.key is! String ||
+          header.value is! String ||
+          !RegExp(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$").hasMatch(header.key) ||
+          (header.value as String).length > 8192 ||
+          const [
+            'host',
+            'content-length',
+            'connection',
+            'transfer-encoding',
+          ].contains((header.key as String).toLowerCase()) ||
+          RegExp(r'[\r\n\x00]').hasMatch(header.value)) {
+        throw const FormatException('DRPY 请求头格式无效');
+      }
+    }
+    return value;
+  }
+
+  /// The address commits to the exact UTF-8 manifest bytes, including whitespace.
+  Future<String> installDrpy(Object manifest) async {
+    final List<int> bytes;
+    if (manifest is List<int>) {
+      bytes = List<int>.of(manifest);
+    } else if (manifest is Map<String, dynamic>) {
+      bytes = utf8.encode(jsonEncode(manifest));
+    } else {
+      throw const FormatException('DRPY 规则包需要 JSON 对象或 UTF-8 字节');
+    }
+    _drpyManifest(bytes);
     final hash = sha256.convert(bytes).toString();
     final root = await _storage();
     final folder = Directory('${root.path}/$hash');
-    await folder.create(recursive:true);
+    await folder.create(recursive: true);
+    final file = File('${folder.path}/drpy.json');
+    if (await file.exists()) {
+      if (await file.length() > _maxBundleBytes ||
+          sha256.convert(await file.readAsBytes()).toString() != hash) {
+        throw const FormatException('DRPY 本机规则包已改变，请重新导入');
+      }
+    } else {
+      await _writeAtomic(file, bytes);
+    }
+    return 'catpaw://$hash/api/drpy';
+  }
+
+  static Uri _drpyAddress(String address) {
+    final uri = Uri.parse(address);
+    if (uri.scheme != 'catpaw' ||
+        !RegExp(r'^[a-f0-9]{64}$').hasMatch(uri.host) ||
+        uri.path != '/api/drpy' ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasPort ||
+        uri.hasQuery ||
+        uri.hasFragment) {
+      throw const FormatException('DRPY 本机地址无效');
+    }
+    return uri;
+  }
+
+  Future<String> callDrpy(
+    String address,
+    String method,
+    List<Object?> args, {
+    Completer<void>? cancellation,
+  }) async {
+    _checkCancellation(cancellation);
+    _drpyAddress(address);
+    if (!const [
+      'home',
+      'homeVod',
+      'category',
+      'search',
+      'detail',
+      'play',
+    ].contains(method)) {
+      throw const FormatException('DRPY 调用方法无效');
+    }
+    final body = utf8.encode(
+      jsonEncode({'version': 1, 'method': method, 'args': args}),
+    );
+    if (body.length > 6 * 1024 * 1024)
+      throw const FormatException('DRPY 调用参数过大');
+    final releasing = _releasingDrpy[address];
+    if (releasing != null) await _withCancellation(releasing, cancellation);
+    _checkCancellation(cancellation);
+    _activeDrpy[address] = (_activeDrpy[address] ?? 0) + 1;
+    var opened = false;
+    try {
+      final raw = await _request(
+        address,
+        method: 'POST',
+        body: body,
+        rewriteUrls: false,
+        requestTimeout: const Duration(seconds: 45),
+        cancellation: cancellation,
+        onRequestOpened: () => opened = true,
+      );
+      if (jsonDecode(raw) is! Map)
+        throw const FormatException('DRPY 返回内容不是 JSON 对象');
+      return raw;
+    } finally {
+      final remaining = (_activeDrpy[address] ?? 1) - 1;
+      if (remaining > 0) {
+        _activeDrpy[address] = remaining;
+      } else {
+        _activeDrpy.remove(address);
+        if (opened && cancellation?.isCompleted == true) {
+          // A new call must wait until the older cancelled call's cleanup ends.
+          late final Future<void> release;
+          release = releaseDrpy(address).catchError((Object _) {}).whenComplete(
+            () {
+              if (identical(_releasingDrpy[address], release))
+                _releasingDrpy.remove(address);
+            },
+          );
+          _releasingDrpy[address] = release;
+        }
+      }
+    }
+  }
+
+  static void _checkCancellation(Completer<void>? cancellation) {
+    if (cancellation?.isCompleted == true) throw const FormatException('搜索已取消');
+  }
+
+  static Future<T> _withCancellation<T>(
+    Future<T> task,
+    Completer<void>? cancellation,
+  ) {
+    if (cancellation?.isCompleted == true) {
+      unawaited(task.then<void>((_) {}, onError: (Object _) {}));
+    }
+    _checkCancellation(cancellation);
+    if (cancellation == null) return task;
+    return Future.any([
+      task,
+      cancellation.future.then<T>((_) => throw const FormatException('搜索已取消')),
+    ]);
+  }
+
+  Future<void> releaseDrpy(String address) async {
+    final uri = _drpyAddress(address);
+    await _request(
+      uri.replace(path: '/_release').toString(),
+      method: 'POST',
+      rewriteUrls: false,
+    );
+  }
+
+  Future<String> install(String code) async {
+    if (!isBundle(code)) throw const FormatException('没有 CatPaw 服务入口');
+    final bytes = utf8.encode(code);
+    if (bytes.length > 16 * 1024 * 1024)
+      throw const FormatException('CatPaw 服务包超过大小限制');
+    final hash = sha256.convert(bytes).toString();
+    final root = await _storage();
+    final folder = Directory('${root.path}/$hash');
+    await folder.create(recursive: true);
     final file = File('${folder.path}/index.cjs');
     if (!await file.exists()) {
       final staging = File('${folder.path}/index.tmp');
-      await staging.writeAsBytes(bytes,flush:true);
+      await staging.writeAsBytes(bytes, flush: true);
       await staging.rename(file.path);
     }
     final raw = await read('catpaw://$hash/t4');
     final config = jsonDecode(raw);
-    if (config is! Map || config['sites'] is! List) throw const FormatException('CatPaw 没有返回线路列表');
-    final sites = <Map<String,dynamic>>[];
+    if (config is! Map || config['sites'] is! List)
+      throw const FormatException('CatPaw 没有返回线路列表');
+    final sites = <Map<String, dynamic>>[];
     for (final row in config['sites']) {
       if (row is! Map) continue;
       final api = Uri.tryParse('${row['api'] ?? ''}');
-      if (api?.scheme != 'catpaw' || api?.host != hash || !api!.path.startsWith('/api/')) continue;
-      sites.add({...row.map((k,v)=>MapEntry(k.toString(),v)),
-        'key':'paw_${row['key'] ?? api.path}', 'type':4});
+      if (api?.scheme != 'catpaw' ||
+          api?.host != hash ||
+          !api!.path.startsWith('/api/'))
+        continue;
+      sites.add({
+        ...row.map((k, v) => MapEntry(k.toString(), v)),
+        'key': 'paw_${row['key'] ?? api.path}',
+        'type': 4,
+      });
     }
     if (sites.isEmpty) throw const FormatException('CatPaw 没有可用的本机线路');
-    return jsonEncode({'sites':sites});
+    return jsonEncode({'sites': sites});
   }
 
-  Future<Uri> resolve(String address) async {
+  Future<Uri> resolve(String address, {Completer<void>? cancellation}) async {
+    _checkCancellation(cancellation);
     final logical = Uri.parse(address);
-    if (logical.scheme != 'catpaw' || !RegExp(r'^[a-f0-9]{64}$').hasMatch(logical.host) ||
-        logical.userInfo.isNotEmpty || logical.hasPort ||
-        logical.pathSegments.any((p)=>p == '..' || p == '.' || p.contains('/'))) {
+    if (logical.scheme != 'catpaw' ||
+        !RegExp(r'^[a-f0-9]{64}$').hasMatch(logical.host) ||
+        logical.userInfo.isNotEmpty ||
+        logical.hasPort ||
+        logical.pathSegments.any(
+          (p) => p == '..' || p == '.' || p.contains('/'),
+        )) {
       throw const FormatException('CatPaw 本机地址无效');
     }
     final root = await _storage();
-    if (!await File('${root.path}/${logical.host}/index.cjs').exists()) {
+    _checkCancellation(cancellation);
+    final drpy = File('${root.path}/${logical.host}/drpy.json');
+    if (await drpy.exists()) {
+      if (!const ['/api/drpy', '/_release'].contains(logical.path) ||
+          logical.hasQuery ||
+          logical.hasFragment ||
+          await drpy.length() > _maxBundleBytes) {
+        throw const FormatException('DRPY 本机地址无效');
+      }
+      final bytes = await drpy.readAsBytes();
+      _checkCancellation(cancellation);
+      if (sha256.convert(bytes).toString() != logical.host) {
+        throw const FormatException('DRPY 本机规则包校验失败');
+      }
+      _drpyManifest(bytes);
+    } else if (!await File('${root.path}/${logical.host}/index.cjs').exists()) {
       throw StateError('此设备没有对应的 CatPaw 服务包，请重新导入原订阅');
     }
-    final base = await _ensure();
-    return base.replace(path:'${base.path}/${logical.host}${logical.path}', query:logical.hasQuery ? logical.query : null);
+    _checkCancellation(cancellation);
+    final base = await _withCancellation(_ensure(), cancellation);
+    _checkCancellation(cancellation);
+    return base.replace(
+      path: '${base.path}/${logical.host}${logical.path}',
+      query: logical.hasQuery ? logical.query : null,
+    );
   }
 
   Future<Uri> settings(String address) async {
-    final logical = Uri(scheme:'catpaw',host:Uri.parse(address).host,path:'/_manage');
-    final result = jsonDecode(await read(logical.toString(),method:'POST'));
+    final logical = Uri(
+      scheme: 'catpaw',
+      host: Uri.parse(address).host,
+      path: '/_manage',
+    );
+    final result = jsonDecode(await read(logical.toString(), method: 'POST'));
     final url = Uri.tryParse('${result['url'] ?? ''}');
-    if (url == null || url.scheme != 'http' || url.host != '127.0.0.1' || !url.path.startsWith('/authorize/')) {
+    if (url == null ||
+        url.scheme != 'http' ||
+        url.host != '127.0.0.1' ||
+        !url.path.startsWith('/authorize/')) {
       throw StateError('CatPaw 配置页面启动失败');
     }
     return url;
   }
 
   Future<String> read(String address, {String method = 'GET'}) async {
+    return _request(address, method: method);
+  }
+
+  Future<String> _request(
+    String address, {
+    String method = 'GET',
+    List<int>? body,
+    bool rewriteUrls = true,
+    Duration requestTimeout = const Duration(seconds: 35),
+    Completer<void>? cancellation,
+    void Function()? onRequestOpened,
+  }) async {
+    _checkCancellation(cancellation);
     final logical = Uri.parse(address);
-    final url = await resolve(address);
+    final url = await _withCancellation(
+      resolve(address, cancellation: cancellation),
+      cancellation,
+    );
+    _checkCancellation(cancellation);
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
-    final timer = Timer(const Duration(seconds: 35),()=>client.close(force:true));
+    var finished = false;
+    cancellation?.future.then((_) {
+      if (!finished) client.close(force: true);
+    });
+    final timer = Timer(requestTimeout, () => client.close(force: true));
     try {
-      final request = await client.openUrl(method,url);
+      final request = await _withCancellation(
+        client.openUrl(method, url),
+        cancellation,
+      );
+      _checkCancellation(cancellation);
+      onRequestOpened?.call();
       request.followRedirects = false;
+      if (body != null) {
+        request.headers.contentType = ContentType.json;
+        request.contentLength = body.length;
+        request.add(body);
+      }
       final response = await request.close();
-      if (response.statusCode != 200) throw StateError('CatPaw 线路请求失败（HTTP ${response.statusCode}）');
-      final bytes = BytesBuilder(copy:false);
+      _checkCancellation(cancellation);
+      if (response.statusCode != 200)
+        throw StateError('CatPaw 线路请求失败（HTTP ${response.statusCode}）');
+      final bytes = BytesBuilder(copy: false);
       await for (final chunk in response) {
-        if (bytes.length+chunk.length>16*1024*1024) throw const FormatException('CatPaw 响应过大');
+        _checkCancellation(cancellation);
+        if (bytes.length + chunk.length > 16 * 1024 * 1024)
+          throw const FormatException('CatPaw 响应过大');
         bytes.add(chunk);
       }
       final base = _base!;
-      return utf8.decode(bytes.takeBytes()).replaceAll('${base.toString()}/${logical.host}', 'catpaw://${logical.host}');
-    } finally { timer.cancel(); client.close(force:true); }
+      final raw = utf8.decode(bytes.takeBytes());
+      _checkCancellation(cancellation);
+      return rewriteUrls
+          ? raw.replaceAll(
+              '${base.toString()}/${logical.host}',
+              'catpaw://${logical.host}',
+            )
+          : raw;
+    } catch (_) {
+      _checkCancellation(cancellation);
+      rethrow;
+    } finally {
+      finished = true;
+      timer.cancel();
+      client.close(force: true);
+    }
   }
 
   Future<void> close() async {
@@ -176,8 +579,11 @@ class CatPawHost {
     _process = null;
     if (process != null) {
       await process.stdin.close();
-      try { await process.exitCode.timeout(const Duration(seconds: 3)); }
-      catch (_) { process.kill(); }
+      try {
+        await process.exitCode.timeout(const Duration(seconds: 3));
+      } catch (_) {
+        process.kill();
+      }
     }
   }
 }

@@ -43,4 +43,18 @@ void main() {
     await expectLater(SourcePlayback.decode({'url':'file:///private/movie.mp4'},episode,localUrl:local),throwsFormatException);
     await expectLater(SourcePlayback.decode({'parse':1,'url':'https://media.test/page'},episode,localUrl:local),throwsFormatException);
   });
+  test('inherited source credentials follow only the same playback origin', () async {
+    final result = await SourcePlayback.decode({'url': [
+      'https://source.test/video.mp4', 'https://source.test:8443/video.mp4',
+      'http://source.test/video.mp4', 'https://cdn.test/video.mp4',
+      {'url': 'https://cdn.test/explicit.mp4', 'header': {'Authorization': 'CDN fixture'}},
+    ]}, episode, localUrl: local, sourceOrigin: Uri.parse('https://source.test/rule.js'),
+        sourceHeaders: {'Authorization': 'Source fixture', 'Cookie': 'session=fixture',
+          'Cookie2': 'legacy=fixture', 'Proxy-Authorization': 'Proxy fixture', 'User-Agent': 'Fixture'});
+    expect(result.variants.first.headers['Authorization'], 'Source fixture');
+    for (final choice in result.variants.skip(1).take(3)) {
+      expect(choice.headers, {'User-Agent': 'Fixture'});
+    }
+    expect(result.variants.last.headers, {'User-Agent': 'Fixture', 'Authorization': 'CDN fixture'});
+  });
 }
