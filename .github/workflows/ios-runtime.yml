@@ -1,6 +1,13 @@
 name: iOS embedded source runtime regression
 on:
   workflow_dispatch:
+    inputs:
+      experiment:
+        description: Runtime to validate independently
+        type: choice
+        required: true
+        default: native
+        options: [native, cpython]
   push:
     branches: ['main', 'fix/plugin-ports-16kb-*']
     paths:
@@ -13,12 +20,13 @@ on:
       - 'android/src/main/assets/python-host/**'
       - 'shared/catpaw/**'
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.experiment || 'native' }}
   cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   embedded:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.experiment != 'cpython' }}
     strategy:
       fail-fast: false
       matrix:
@@ -44,3 +52,44 @@ jobs:
             verification/ios-runtime/result.json
             ~/Library/Logs/DiagnosticReports/*RuntimeProbe*
             ~/Library/Logs/DiagnosticReports/*Node*
+  cpython-experiment:
+    name: Experimental CPython (${{ matrix.runner }})
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.experiment == 'cpython' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      CPYTHON_EXPERIMENT_OUTPUT: ${{ runner.temp }}/ios-cpython-results
+      CPYTHON_EXPERIMENT_CACHE: ${{ runner.temp }}/ios-cpython-downloads
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Record native toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+          uname -m
+      - name: Run independent native CPython app
+        run: >-
+          python scripts/ios_cpython/run_cpython_probe.py
+          --output-dir "$CPYTHON_EXPERIMENT_OUTPUT"
+          --cache-dir "$CPYTHON_EXPERIMENT_CACHE"
+      - name: Upload execution evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-cpython-evidence-${{ matrix.runner }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ env.CPYTHON_EXPERIMENT_OUTPUT }}/**/inputs.json
+            ${{ env.CPYTHON_EXPERIMENT_OUTPUT }}/**/app-result.json
+            ${{ env.CPYTHON_EXPERIMENT_OUTPUT }}/**/app-watchdog.json
+            ${{ env.CPYTHON_EXPERIMENT_OUTPUT }}/**/result.json
+            ${{ env.CPYTHON_EXPERIMENT_OUTPUT }}/**/diagnostics/*

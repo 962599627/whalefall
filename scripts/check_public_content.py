@@ -35,6 +35,14 @@ TEST_AUTHORITIES = {
     'scripts/test_t4_adapter.py': {'name:secret@example.invalid'},
 }
 
+# Pinned interpreter dependencies and their primary documentation are reviewed
+# only for the isolated native experiment, never for imported source defaults.
+EXPERIMENT_HOSTS = {
+    'scripts/ios_cpython/run_cpython_probe.py': {'files.pythonhosted.org'},
+    'scripts/ios_cpython/pure-dependencies.lock.json': {'files.pythonhosted.org', 'pypi.org'},
+    'scripts/ios_cpython/README.md': {'docs.python.org', 'briefcase.beeware.org'},
+}
+
 def paths():
     if (ROOT/'.git').exists():
         result=subprocess.run(['git','ls-files','-z'],cwd=ROOT,check=True,capture_output=True)
@@ -67,6 +75,7 @@ for p in files:
     for authority in re.findall(r'https?://([^/\s\"\'<>\\)]+)',text):
         if authority in TEST_AUTHORITIES.get(relative.as_posix(), set()):continue
         host=authority.split(':')[0].lower().rstrip('.,;')
+        if host in EXPERIMENT_HOSTS.get(relative.as_posix(), set()):continue
         if relative.as_posix() == 'flutter/pubspec.lock' and host in {'pub.dev','dart.dev'}:continue
         if relative.as_posix() == 'docs/python-json-compatibility.md' and host == 'docs.python.org':continue
         if host not in ALLOWED_HOSTS and not host.endswith(('.test','.example','.invalid')):
