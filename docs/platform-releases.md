@@ -10,6 +10,12 @@ Clients from 0.5.1 first read their own `movie/updates/{platform}.json` feed, th
 
 The mirror runs `scripts/sync_platform_packages.py`. It patches only existing download-card package URLs, byte sizes and hashes, and writes the relevant platform feed. It does not render a new HTML page or alter CSS, layout, images, prose, unrelated packages or legacy Android update channels. Large files retain the site's existing verified GitHub download behavior. Corresponding source remains attached to each platform's release.
 
+## Published Windows update
+
+[Windows 0.5.1](https://github.com/Pilipala9919/MarcoMovie/releases/tag/windows-v0.5.1) was published from `56b2eb80b93bae98b8754952d779bff1b7a9582a` after [build 42356451432](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42356451432) passed 83 Flutter tests and produced the installer/portable packages. Downloaded packages passed checksum/ZIP checks, the app and installer report 0.5.1, and all six uploaded package/source/checksum files match the local verified bytes. Native fullscreen UI evidence is recorded in `desktop-fullscreen-2026-11-07.md`.
+
+The mirror deployment at commit `fe533ad` passed Cloudflare Pages checks. Live checks confirmed the two Windows download URLs, SHA-256 files and platform update feed. Existing CSS, the iPhone 0.5.0 download and legacy Android update channel are unchanged. No iPhone 0.5.1 release was created; its workflow artifact remains validation-only under the gate above.
+
 ## TV seek follow-up
 
 Remote left/right taps remain 15 seconds. After a 500 ms hold delay, preview speed starts at 30 playback seconds per held second and increases linearly by 30 per second, capped at 240. The target uses elapsed time rather than key-repeat counts. Release commits the target once; cancel/back aborts, reversing direction resets acceleration, and targets clamp at the media boundaries. The status displays the current preview speed. Twenty-four seek checks cover the curve, cap, jitter, symmetry, cancellation and boundaries; this is not physical remote acceptance.
