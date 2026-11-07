@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:window_manager/window_manager.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
@@ -13,6 +12,7 @@ import '../core/csp_bridge.dart';
 import '../core/models.dart';
 import '../core/storage_service.dart';
 import 'apple_theme.dart';
+import 'desktop_player_window.dart';
 
 /// Apple AVPlayerViewController / Apple TV+ inspired video player with:
 /// - Large center transport controls (Rewind 15s, Play/Pause, Fast-Forward 15s)
@@ -63,7 +63,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   String _hudText = '';
   String _playbackError = '';
   bool _allowEvents = false;
-  bool _wasFullscreen = false;
+  DesktopPlayerWindow? _desktopWindow;
   Future<void> _mediaChanges = Future<void>.value();
   List<CmsEpisode> _qualityChoices = const [];
   bool get _desktop =>
@@ -138,8 +138,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       _ => BoxFit.contain,
     };
 
-    if (_desktop)
-      windowManager.isFullScreen().then((value) => _wasFullscreen = value);
+    if (_desktop) {
+      _desktopWindow = DesktopPlayerWindow()..addListener(_windowChanged);
+      _desktopWindow!.initialize().catchError(_windowError);
+    }
     _player = Player();
     _controller = VideoController(_player);
 
@@ -533,10 +535,36 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (_controlsVisible) _scheduleHide();
   }
 
+  void _windowChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _windowError(Object error) {
+    debugPrint('Player fullscreen failed: $error');
+    if (mounted) _showHud('窗口切换失败，请重试');
+  }
+
+  String _fullscreenLabel(bool isLandscape) => _desktop
+      ? (_desktopWindow?.fullscreen == true ? '退出全屏' : '全屏')
+      : (isLandscape ? '竖屏' : '全屏');
+
+  Future<void> _desktopEscape() async {
+    try {
+      final exited = await _desktopWindow!.exitFullscreen();
+      if (mounted && !exited) Navigator.of(context).maybePop();
+    } catch (error) {
+      _windowError(error);
+    }
+  }
+
   Future<void> _toggleOrientation() async {
     if (_desktop) {
-      await windowManager.setFullScreen(!await windowManager.isFullScreen());
-      _scheduleHide();
+      try {
+        await _desktopWindow!.toggle();
+        if (mounted) _scheduleHide();
+      } catch (error) {
+        _windowError(error);
+      }
       return;
     }
     final size = MediaQuery.sizeOf(context);
@@ -683,7 +711,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _allowEvents = false;
-    if (_desktop) windowManager.setFullScreen(_wasFullscreen);
+    _desktopWindow?.removeListener(_windowChanged);
+    _desktopWindow?.close().catchError((Object error) {
+      debugPrint('Player window restore failed: $error');
+    });
     _mediaChanges.whenComplete(() => _player.dispose());
     super.dispose();
   }
@@ -724,20 +755,14 @@ class _PlayerScreenState extends State<PlayerScreen>
             _showHud('音量 ${volume.round()}%');
             return KeyEventResult.handled;
           }
-          if (event.logicalKey == LogicalKeyboardKey.keyF) {
+          if (event.logicalKey == LogicalKeyboardKey.keyF ||
+              (_desktop && event.logicalKey == LogicalKeyboardKey.f11)) {
             _toggleOrientation();
             return KeyEventResult.handled;
           }
           if (event.logicalKey == LogicalKeyboardKey.escape) {
             if (_desktop) {
-              windowManager.isFullScreen().then((full) {
-                if (!mounted) return;
-                if (full) {
-                  windowManager.setFullScreen(false);
-                } else {
-                  Navigator.of(context).maybePop();
-                }
-              });
+              _desktopEscape();
             } else {
               Navigator.of(context).maybePop();
             }
@@ -1117,7 +1142,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    isLandscape
+                    (_desktop ? _desktopWindow?.fullscreen == true : isLandscape)
                         ? CupertinoIcons.fullscreen_exit
                         : CupertinoIcons.fullscreen,
                     color: AppleColors.labelPrimary,
@@ -1125,7 +1150,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    isLandscape ? '竖屏' : '全屏',
+                    _fullscreenLabel(isLandscape),
                     style: const TextStyle(
                       color: AppleColors.labelPrimary,
                       fontSize: 12,
@@ -1345,7 +1370,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      isLandscape
+                      (_desktop ? _desktopWindow?.fullscreen == true : isLandscape)
                           ? CupertinoIcons.fullscreen_exit
                           : CupertinoIcons.fullscreen,
                       color: AppleColors.labelPrimary,
@@ -1353,7 +1378,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      isLandscape ? '竖屏' : '全屏',
+                      _fullscreenLabel(isLandscape),
                       style: const TextStyle(
                         color: AppleColors.labelPrimary,
                         fontSize: 12,
