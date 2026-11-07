@@ -18,8 +18,14 @@ permissions:
   contents: read
 jobs:
   embedded:
-    runs-on: macos-15-intel
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
+    env:
+      PYTHONUNBUFFERED: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,7 +37,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: iOS-embedded-runtime-evidence
+          name: iOS-embedded-runtime-evidence-${{ matrix.runner }}
           retention-days: 7
           path: |
             verification/ios-runtime/result.json

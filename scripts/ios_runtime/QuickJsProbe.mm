@@ -49,12 +49,21 @@ NSArray *runQuickJsProbe(NSString *assets) {
       evaluate(ctx,source,JS_EVAL_TYPE_GLOBAL,name);
     }
     // HTTP response is synthetic here; the separate Node test uses a real socket.
-    evaluate(ctx,@"globalThis.req=async()=>({code:200,headers:{'Content-Type':'application/json'},content:'{\"list\":[{\"vod_id\":\"one\",\"vod_name\":\"Python HTTP\"}]}'});");
+    NSString *response=@"{\"list\":[{\"vod_id\":\"one\",\"vod_name\":\"Python HTTP\"}]}";
+    NSString *encoded=[[response dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
+    evaluate(ctx,[NSString stringWithFormat:@"globalThis.req=async(url,options={})=>({code:200,url,headers:{'Content-Type':'application/json'},content:options.buffer===2?%@:%@});",literal(encoded),literal(response)]);
     NSString *python=@"import base64\nfrom helper import title\nfrom base.spider import Spider as Base\nclass Spider(Base):\n    def homeContent(self, filter):\n        return {'list':[{'vod_id':'one','vod_name':title}]}\n    def searchContent(self, key, quick, pg='1'):\n        return self.fetch('https://fixture.invalid/data').json()\n    def playerContent(self, flag, id, vip):\n        if list(base64.urlsafe_b64decode('AP8q')) != [0,255,42]: raise ValueError('bytes')\n        return {'url':'https://fixture.invalid/video.mp4'}\n";
-    evaluate(ctx,[NSString stringWithFormat:@"globalThis.py=createPythonSpider(%@,%@);globalThis.pyDone=false;globalThis.pyFailed=false;Promise.resolve(py.init('')).then(async()=>{globalThis.pyHome=await py.home(true);globalThis.pySearch=await py.search('test',false,1);globalThis.pyPlay=await py.play('line','one',[]);pyDone=true;}).catch(()=>{pyFailed=true;pyDone=true;});",literal(python),literal(@{@"helper.py":@"title='Python 本机模块'\n"})]);
+    evaluate(ctx,[NSString stringWithFormat:@"globalThis.py=createPythonSpider(%@,%@);globalThis.pyDone=false;globalThis.pyFailed=false;Promise.resolve(py.init('')).then(async()=>{globalThis.pyHome=await py.home(true);globalThis.pySearch=await py.search('test',false,1);globalThis.pyPlay=await py.play('line','one',[]);pyDone=true;}).catch(error=>{globalThis.pyError=String(error);pyFailed=true;pyDone=true;});",literal(python),literal(@{@"helper.py":@"title='Python 本机模块'\n"})]);
     NSDate *until=[NSDate dateWithTimeIntervalSinceNow:8];
     while(!boolean(ctx,@"pyDone")&&until.timeIntervalSinceNow>0){
       while(jsExecutePendingJob(rt)>0){} [NSThread sleepForTimeInterval:.001];
+    }
+    if(boolean(ctx,@"pyFailed")){
+      JSValue global=JS_GetGlobalObject(ctx),error=JS_GetPropertyStr(ctx,global,"pyError");
+      const char *text=JS_ToCString(ctx,error);
+      NSString *message=text?[NSString stringWithUTF8String:text]:@"unknown";
+      if(text)JS_FreeCString(ctx,text);JS_FreeValue(ctx,error);JS_FreeValue(ctx,global);
+      @throw [NSException exceptionWithName:@"QuickJsProbe" reason:[@"python_execution: " stringByAppendingString:message] userInfo:nil];
     }
     [checks addObject:@{@"name":@"python_native_local_module",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pyHome.list[0].vod_name==='Python 本机模块'"))}];
     [checks addObject:@{@"name":@"python_native_async_response",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pySearch.list[0].vod_name==='Python HTTP'"))}];

@@ -19,8 +19,10 @@ APP = OUT / 'RuntimeProbe.app'
 IDENTIFIER = 'com.pilipala.marcomovie.runtimeprobe'
 
 
-def run(*args, capture=False):
+def run(*args, capture=False, timeout=180):
+    print('Running:', ' '.join(map(str,args)), flush=True)
     result = subprocess.run(list(map(str, args)), check=True, text=True,
+                            timeout=timeout,
                             stdout=subprocess.PIPE if capture else None)
     return result.stdout.strip() if capture else ''
 
@@ -76,12 +78,12 @@ def main():
     udid = device['udid']
     if device['state'] != 'Booted':
         run('xcrun', 'simctl', 'boot', udid)
-    run('xcrun', 'simctl', 'bootstatus', udid, '-b')
+    run('xcrun', 'simctl', 'bootstatus', udid, '-b', timeout=360)
     run('xcrun', 'simctl', 'install', udid, APP)
     container = Path(run('xcrun', 'simctl', 'get_app_container', udid, IDENTIFIER, 'data', capture=True))
     result_file = container/'Documents/result.json'
     result_file.unlink(missing_ok=True)
-    run('xcrun', 'simctl', 'launch', '--terminate-running-process', udid, IDENTIFIER)
+    run('xcrun', 'simctl', 'launch', '--terminate-running-process', udid, IDENTIFIER, timeout=180)
     deadline = time.monotonic()+180
     while not result_file.exists() and time.monotonic() < deadline:
         time.sleep(1)
