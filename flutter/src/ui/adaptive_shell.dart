@@ -202,7 +202,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       setState(() {
         _categories = cats;
         _rawCategoryVideos = listing.videos;
-        _homeVideos = CmsParser.filterVideos(listing.videos, _currentFilter);
+        _homeVideos = listing.sourceFiltered
+            ? listing.videos
+            : CmsParser.filterVideos(listing.videos, _currentFilter);
         _currentPage = listing.page;
         _pageCount = listing.pageCount;
         _homeLoading = false;
@@ -336,9 +338,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           }
         }
       }
-      var filteredVideos = CmsParser.filterVideos(combinedRaw, filter);
+      // Remote rules may filter by opaque values absent from their result cards.
+      // Keep the source's result instead of filtering those cards a second time.
+      var filteredVideos = listing.sourceFiltered
+          ? combinedRaw
+          : CmsParser.filterVideos(combinedRaw, filter);
       // If client-side filter on page 1 matched nothing and more pages exist, probe page 2 automatically
       if (filteredVideos.isEmpty &&
+          !listing.sourceFiltered &&
           filter.hasSubFilter &&
           page == 1 &&
           listing.pageCount > 1 &&
@@ -352,7 +359,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             filter: filter,
           );
           final merged2 = [...combinedRaw, ...page2.videos];
-          final filtered2 = CmsParser.filterVideos(merged2, filter);
+          final filtered2 = page2.sourceFiltered
+              ? merged2
+              : CmsParser.filterVideos(merged2, filter);
           if (filtered2.isNotEmpty) {
             filteredVideos = filtered2;
           }

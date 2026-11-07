@@ -15,7 +15,7 @@ This is an acceptance checklist, **not a declaration of compatibility**. The 0.5
 | Multi-repository | Nested warehouse import and ownership | The supplied warehouse and selected child subscriptions pass the same playback checks, not just directory import |
 | Authenticated `.js.md5` / CatPaw | Authentication, digest, local service host and proxy integration | Actual supplied service package completes local startup, catalogue, search, detail, playback/proxy and restart on iPhone |
 | Emby | Login, libraries, episodes, playback negotiation and progress reporting | Real server/session playback on iPhone with the required direct/transcode and progress behavior |
-| Android / Guard plugins | Selected explicit portable adapters; reviewed Dm84 and Auete paths are scoped to exact imported artifact versions | All 33 routes still require individual platform/playback acceptance. Auete search currently requires manual website verification; partial protocol/media-prefix checks do not complete this gate |
+| Android / Guard plugins | Selected explicit portable adapters; reviewed Dm84, Auete and Bttwoo paths are scoped to exact imported artifact versions | All 33 routes still require individual platform/playback acceptance. Auete search currently requires manual website verification; partial protocol/media-prefix checks do not complete this gate |
 
 For each representative source, retain separate results for import, catalogue/search, detail/episodes, resolved media, actual playback and application restart. Record the tested iPhone/iOS and package version. Mark a source as incomplete if only its file type or catalogue is recognized. Do not hide incomplete sources or relabel an ordinary HTTP adapter as a plugin port.
 

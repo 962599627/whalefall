@@ -88,7 +88,7 @@ if (!isMainThread) {
         req.on('data', data); req.once('end', end); req.once('error', failed);
       });
       if (!body || Array.isArray(body) || Object.keys(body).sort().join(',') !== 'adapter,artifactHash,version' ||
-          body.version !== 1 || !['dm84-v1', 'auete-v1'].includes(body.adapter) || typeof body.artifactHash !== 'string' || !HASH.test(body.artifactHash)) throw Error('bootstrap_request');
+          body.version !== 1 || !['dm84-v1', 'auete-v1', 'bttwoo-v1'].includes(body.adapter) || typeof body.artifactHash !== 'string' || !HASH.test(body.artifactHash)) throw Error('bootstrap_request');
       if (res.destroyed || closing) throw Error('bootstrap_cancelled');
       const imports = path.join(root, 'imports');
       try { if (fs.lstatSync(imports).isSymbolicLink() || !fs.lstatSync(imports).isDirectory()) throw Error(); }

@@ -27,7 +27,7 @@ module.exports = function aueteRule(config) {
       [{key:'type',name:'分类',value:[{n:'全部',v:''},...values.map(([n,v])=>({n,v}))]}]])),
     预处理:'js:rule._init();',
     推荐:'js:VODS=rule._list(pdfa(rule._homeHtml,"ul.threadlist")[0]||"");',
-    一级:'js:VODS=rule._list(request(rule._catalogUrl(input)));',
+    一级:'js:VODS=rule._list(request(rule._categoryUrl(input,MY_FL)));',
     搜索:'js:VODS=rule._list(request(rule._catalogUrl(input)));',
     二级:'js:VOD=rule._detail(input);',
     play_parse:true,lazy:'js:input=rule._play(input);',
@@ -43,6 +43,24 @@ module.exports = function aueteRule(config) {
       var address=this._address(value);
       if(address.origin!==this._address(cfg.origin).origin)unsupportedFeature('drpy_source_origin');
       return address.url;
+    },
+    _categoryUrl:function(value,extend){
+      var url=this._catalogUrl(value),address=this._address(url);
+      var parts=/^\/(Movie|Tv|Zy|Dm|qita)\/(?:([^/]+)\/)?(index(?:[1-9]\d*)?\.html)$/.exec(address.pathname);
+      if(!parts)unsupportedFeature('drpy_filter_not_supported');
+      extend=extend||{};
+      function active(value){return value!==undefined&&value!==null&&String(value).trim()!==''&&String(value).trim()!=='全部';}
+      Object.keys(extend).forEach(function(key){if(key!=='type'&&key!=='class'&&active(extend[key]))unsupportedFeature('drpy_filter_not_supported');});
+      var pathValue;try{pathValue=parts[2]?decodeURIComponent(parts[2]):'';}catch(e){unsupportedFeature('drpy_filter_not_supported');}
+      var choices=(this.filter[parts[1]]||[]).filter(function(item){return item.key==='type';});
+      var values=choices.length?choices[0].value:[],chosen='';
+      [pathValue,extend.type,extend['class']].filter(active).forEach(function(selected){
+        selected=String(selected).trim();
+        var matches=values.filter(function(item){return item.v&&(selected===item.v||selected===item.n||selected===item.n.replace(/片$/,''));});
+        if(matches.length!==1||chosen&&chosen!==matches[0].v)unsupportedFeature('drpy_filter_not_supported');
+        chosen=matches[0].v;
+      });
+      return this._catalogUrl('/'+parts[1]+'/'+(chosen?chosen+'/':'')+parts[3]);
     },
     _init:function(){
       var html,seen={};

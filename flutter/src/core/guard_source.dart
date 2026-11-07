@@ -38,7 +38,7 @@ class GuardSource {
     checkCancelled();
     final adapter = CspBridge.guardAdapterFor(site);
     if (adapter == null) throw const FormatException('此插件没有已审阅的移植适配器');
-    if (adapter == 'auete-v1') {
+    if (adapter == 'auete-v1' || adapter == 'bttwoo-v1') {
       Object? extension;
       try {
         extension = jsonDecode(site.ext);
@@ -48,7 +48,8 @@ class GuardSource {
       if (extension is Map &&
           extension['siteUrl'] != null &&
           extension['siteUrl'].toString().trim().isNotEmpty) {
-        throw const FormatException('Auete 自定义 siteUrl 变体暂未适配');
+        final name = adapter == 'auete-v1' ? 'Auete' : 'Bttwoo';
+        throw FormatException('$name 自定义 siteUrl 变体暂未适配');
       }
     }
     final key = sha256

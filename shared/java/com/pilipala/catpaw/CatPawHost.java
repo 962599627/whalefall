@@ -31,6 +31,7 @@ public final class CatPawHost {
         if ("drpy_media_unresolved".equals(code)) return "此片源暂未解析出可播放地址";
         if ("drpy_source_origin".equals(code)) return "此片源返回了不支持的跨站目录";
         if ("drpy_source_unavailable".equals(code)) return "此片源暂时无法访问";
+        if ("drpy_filter_not_supported".equals(code)) return "此片源不支持当前筛选条件";
         return null;
     }
 
@@ -231,8 +232,9 @@ public final class CatPawHost {
     public JSONObject bootstrapGuard(byte[] artifact, String adapter, ConnectionObserver observer)
             throws Exception {
         checkBootstrapInterrupted();
-        if (!("dm84-v1".equals(adapter) || "auete-v1".equals(adapter)))
-            throw new IOException("未知插件移植适配器");
+        if (!("dm84-v1".equals(adapter)
+                || "auete-v1".equals(adapter)
+                || "bttwoo-v1".equals(adapter))) throw new IOException("未知插件移植适配器");
         if (artifact.length == 0 || artifact.length > 16 * 1024 * 1024)
             throw new IOException("移植插件包超过大小限制");
         String artifactHash = hash(artifact);

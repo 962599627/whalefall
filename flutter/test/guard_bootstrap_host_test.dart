@@ -138,12 +138,18 @@ void main() {
     final bytes = [0, 1, 255];
     await host.bootstrapGuard(bytes);
     await host.bootstrapGuard(bytes, adapter: 'auete-v1');
+    await host.bootstrapGuard(bytes, adapter: 'bttwoo-v1');
     final requests =
         (await File('${directory.path}/state/requests.txt').readAsLines())
             .map((line) => (jsonDecode(line) as Map)['body'] as Map)
             .toList();
-    expect(requests.map((body) => body['adapter']), ['dm84-v1', 'auete-v1']);
+    expect(requests.map((body) => body['adapter']), [
+      'dm84-v1',
+      'auete-v1',
+      'bttwoo-v1',
+    ]);
     expect(requests[0]['artifactHash'], requests[1]['artifactHash']);
+    expect(requests[0]['artifactHash'], requests[2]['artifactHash']);
     expect(await Directory('${directory.path}/state/imports').list().length, 1);
   });
 
@@ -164,6 +170,10 @@ void main() {
       );
       await expectLater(
         host.bootstrapGuard([1], adapter: 'auete-v2'),
+        throwsFormatException,
+      );
+      await expectLater(
+        host.bootstrapGuard([1], adapter: 'bttwoo-v2'),
         throwsFormatException,
       );
       expect(await Directory('${directory.path}/state').exists(), isFalse);
@@ -323,6 +333,14 @@ void main() {
           ),
         ),
       );
+      await expectLater(
+        host.callDrpy(address, 'category', ['drpy_filter_not_supported']),
+        throwsA(
+          isA<DrpySourceException>()
+              .having((e) => e.code, 'code', 'drpy_filter_not_supported')
+              .having((e) => e.message, 'message', '此片源不支持当前筛选条件'),
+        ),
+      );
       for (final mode in ['private-error-body', 'malformed']) {
         await expectLater(
           host.callDrpy(address, 'search', [mode]),
@@ -385,7 +403,7 @@ void main() {
         bootstrap: '${Directory.current.path}/assets/catpaw/host.cjs',
       );
       final bytes = utf8.encode('Synthetic unknown plugin, never executed.');
-      for (final adapter in ['dm84-v1', 'auete-v1']) {
+      for (final adapter in ['dm84-v1', 'auete-v1', 'bttwoo-v1']) {
         await expectLater(
           host.bootstrapGuard(bytes, adapter: adapter),
           throwsA(

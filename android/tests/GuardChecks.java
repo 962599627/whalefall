@@ -270,15 +270,18 @@ public final class GuardChecks {
                             && request.getString("artifactHash")
                                     .equals(digest(artifact, "SHA-256")),
                     "strict capability bootstrap contract");
-            for (String api :
-                    new String[] {"csp_Dm84", "csp_Dm84Guard", "csp_Auete", "csp_AueteGuard"}) {
+            for (String[] selected :
+                    new String[][] {
+                        {"csp_Dm84", "dm84-v1"}, {"csp_Dm84Guard", "dm84-v1"},
+                        {"csp_Auete", "auete-v1"}, {"csp_AueteGuard", "auete-v1"},
+                        {"csp_Bttwoo", "bttwoo-v1"}, {"csp_BttwooGuard", "bttwoo-v1"}
+                    }) {
                 Cms.Site alias = new Cms.Site();
-                alias.api = api;
+                alias.api = selected[0];
                 alias.type = 3;
                 check(GuardEngine.eligible(alias), "exact Guard alias accepted");
                 check(
-                        GuardEngine.adapterFor(alias)
-                                .equals(api.startsWith("csp_Auete") ? "auete-v1" : "dm84-v1"),
+                        GuardEngine.adapterFor(alias).equals(selected[1]),
                         "alias selects its explicit adapter");
             }
             int beforeAdapters = calls.size();
@@ -294,6 +297,14 @@ public final class GuardChecks {
             rejects(
                     () -> new CatPawHost(context).bootstrapGuard(artifact, "auete-v2", null),
                     "unknown adapter rejected before staging or request");
+            unknown.api = "csp_BttwooUnknownGuard";
+            check(!GuardEngine.eligible(unknown), "Bttwoo prefix does not imply adapter support");
+            rejects(
+                    () -> GuardEngine.open(context, config, unknown, fallback),
+                    "unknown Bttwoo alias rejected");
+            rejects(
+                    () -> new CatPawHost(context).bootstrapGuard(artifact, "bttwoo-v2", null),
+                    "unknown Bttwoo version rejected");
             check(
                     calls.size() == beforeAdapters && fallbacks.get() == 0,
                     "unknown adapters do not invoke host or fallback");
@@ -357,25 +368,77 @@ public final class GuardChecks {
                             .key
                             .equals(aueteRuntime.key),
                     "Auete aliases retain one stable internal state namespace");
+            Cms.Site bttwoo = new Cms.Site();
+            bttwoo.key = site.key;
+            bttwoo.api = "csp_BttwooGuard";
+            bttwoo.type = 3;
+            bttwoo.headers.putAll(site.headers);
+            JSONObject bttwooResult = new JSONObject(dm84Result.toString());
+            result[0] = bttwooResult.toString();
+            check(
+                    GuardEngine.open(context, config, bttwoo, fallback) instanceof DrpyEngine,
+                    "Bttwoo exact adapter initializes the independent DRPY caller");
+            JSONObject bttwooCall = calls.get(calls.size() - 1);
+            check(
+                    bttwooCall.getString("adapter").equals("bttwoo-v1")
+                            && bttwooCall
+                                    .getString("artifactHash")
+                                    .equals(request.getString("artifactHash")),
+                    "same imported artifact selects the Bttwoo adapter explicitly");
+            Cms.Site bttwooRuntime = GuardEngine.portableSite(config, bttwoo, bttwooResult);
+            JSONObject bttwooManifest =
+                    DrpyEngine.manifest(
+                            config,
+                            bttwooRuntime,
+                            (url, headers) -> {
+                                throw new IOException("unexpected fetch");
+                            });
+            check(
+                    new HashSet<String>(
+                                            Arrays.asList(
+                                                    dm84Manifest.getString("sourceId"),
+                                                    aueteManifest.getString("sourceId"),
+                                                    bttwooManifest.getString("sourceId")))
+                                    .size()
+                            == 3,
+                    "all three adapters isolate state for the same key origin and artifact");
+            check(
+                    bttwoo.key.equals(site.key)
+                            && bttwoo.api.equals("csp_BttwooGuard")
+                            && !bttwooRuntime.key.equals(site.key),
+                    "Bttwoo internal namespace never mutates original source identity");
+            bttwoo.api = "csp_Bttwoo";
+            check(
+                    GuardEngine.portableSite(config, bttwoo, bttwooResult)
+                            .key
+                            .equals(bttwooRuntime.key),
+                    "Bttwoo aliases use one stable internal namespace");
             int beforeOverrides = calls.size();
             for (Object override :
                     new Object[] {
                         new JSONObject().put("siteUrl", "https://custom.test/"),
                         "{\"siteUrl\":\"https://media.test/\"}"
                     }) {
-                auete.ext = override;
-                check(
-                        !GuardEngine.eligible(auete) && CspEngine.eligible(auete),
-                        "Auete siteUrl override stays on existing Android plugin host");
-                rejects(
-                        () -> GuardEngine.open(context, config, auete, fallback),
-                        "override cannot silently run the portable default origin");
+                for (Cms.Site overridden : new Cms.Site[] {auete, bttwoo}) {
+                    overridden.ext = override;
+                    check(
+                            !GuardEngine.eligible(overridden) && CspEngine.eligible(overridden),
+                            "siteUrl override stays on existing Android plugin host");
+                    rejects(
+                            () -> GuardEngine.open(context, config, overridden, fallback),
+                            "override cannot silently run the portable default origin");
+                    rejects(
+                            () -> GuardEngine.portableSite(config, overridden, dm84Result),
+                            "portable conversion cannot discard siteUrl override");
+                }
             }
             check(
                     calls.size() == beforeOverrides,
                     "siteUrl override never invokes portable bootstrap");
             auete.ext = new JSONObject().put("siteUrl", "");
             check(GuardEngine.eligible(auete), "empty siteUrl keeps the portable default adapter");
+            bttwoo.ext = new JSONObject().put("siteUrl", "");
+            check(GuardEngine.eligible(bttwoo), "empty Bttwoo siteUrl keeps portable default");
             result[0] = dm84Result.toString();
             File staged = new File(files, "catpaw/imports/" + digest(artifact, "SHA-256") + ".jar");
             check(
@@ -502,6 +565,16 @@ public final class GuardChecks {
                 check(
                         expected.code.equals("drpy_local_proxy_not_supported"),
                         "local proxy error stays typed");
+            }
+            drpyResponse[0] = "{\"error\":\"drpy_filter_not_supported\"}";
+            try {
+                localHost.post(drpyAddress, new JSONObject());
+                throw new AssertionError("unsupported filter must be explicit");
+            } catch (CatPawHost.DrpySourceException expected) {
+                check(
+                        expected.code.equals("drpy_filter_not_supported")
+                                && expected.getMessage().equals("此片源不支持当前筛选条件"),
+                        "unsupported filter is a fixed typed error, not an empty result");
             }
             for (String errorBody :
                     new String[] {"{\"error\":\"private-error-body\"}", "private-error-body"}) {

@@ -194,9 +194,30 @@ def main():
         'execution': 'Bootstrap never executes imported bytecode or native code.',
     }]
     provenance['appOwnedAdapters'].append({'adapter': 'auete-v1', 'license': 'GPL-3.0-only', 'implementation': 'Original endpoint-parameterized interoperability adapter; origin and media base read as data from exact reviewed DEX code positions. No page script, constructor or native code is executed.', 'reviewedImportedArtifactSha256': 'e7375830bcd065b264239e1f0e7da4c99d75abf71e1b6edf50e225ae8b0f4b7e', 'literalLocations': [{'method': 'Auete.<init>', 'codeItemSha256': '3841e63ceeae29689e3b5d5b7f92b4d8177278dad5084818c2476df489128c17', 'unit': 3, 'field': 'yq'}, {'method': 'Auete.playerContent', 'codeItemSha256': '80e9d52800eae7b12c2278b2dd00e1d4677252d677e9185b594ef23ecd53b6b8', 'unit': 299}], 'verification': 'Human verification challenges fail explicitly; no automatic bypass or OCR.'})
+    provenance['appOwnedAdapters'].append(bttwoo_provenance())
     (OUT / 'drpy-provenance.json').write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
     from update_drpy_assets import update
     update()
+
+
+def bttwoo_provenance():
+    return {
+        'adapter': 'bttwoo-v1', 'license': 'GPL-3.0-only',
+        'implementation': 'Original parameterized HTTP/HTML interoperability adapter. Host, user agent and data-encoding key are read from exact reviewed static short-array payloads. No imported bytecode, initializer or page script is executed.',
+        'reviewedImportedArtifactSha256': 'e7375830bcd065b264239e1f0e7da4c99d75abf71e1b6edf50e225ae8b0f4b7e',
+        'literalLocations': [
+            {'method': 'Bttwoo.<clinit>', 'codeItemSha256': 'b4511e08ff36b2c803be31a2dd8021f2a049fbabc587e805919e15b45ca7c284',
+             'payloadUnit': 10, 'elementWidth': 2, 'count': 686, 'field': 'short'},
+            {'method': 'ME.<clinit>', 'codeItemSha256': '3dc0b269b870de31f4fdfa39e54778e8cc5d9cfb6d83c8903dd80e935ae1227e',
+             'payloadUnit': 316, 'elementWidth': 2, 'count': 1667, 'field': 'short'},
+        ],
+        'verifiedConsumers': {
+            'Bttwoo.<init>': 'c47d9c1c569855288c1bf15c852120bb3c99c9bee1ccba4d9c8d93088f61094b',
+            'Bttwoo.encodePlayKey': '5b7309680b6db8a307e62cb99b055d4130e71a278cbdf092c830542cad3cdb8e',
+        },
+        'selection': 'Exact reviewed artifact and code fingerprints; mismatch fails explicitly.',
+        'verification': 'Catalog retains original VIP exclusions; challenges fail explicitly. No device decoding claim.',
+    }
 
 
 if __name__ == '__main__':

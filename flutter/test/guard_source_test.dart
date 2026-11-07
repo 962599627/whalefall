@@ -98,6 +98,8 @@ void main() {
         'csp_Dm84',
         'csp_AueteGuard',
         'csp_Auete',
+        'csp_BttwooGuard',
+        'csp_Bttwoo',
       ]) {
         final source = site(
           'https://import.invalid/plugin.jar',
@@ -108,6 +110,7 @@ void main() {
       for (final api in [
         'csp_UnknownGuard',
         'csp_AueteOtherGuard',
+        'csp_BttwooOtherGuard',
         'csp_Dm84Guard/extra',
       ]) {
         final source = site(
@@ -145,13 +148,22 @@ void main() {
       );
       final dm84 = site('https://import.invalid/plugin.jar;md5;$digest');
       final auete = dm84.copyWith(api: 'csp_AueteGuard');
+      final bttwoo = dm84.copyWith(api: 'csp_BttwooGuard');
       await guard.invoke(dm84, 'home', [false]);
       final dmManifest = host.invoked.last;
       await guard.invoke(auete, 'home', [false]);
       final aueteManifest = host.invoked.last;
+      await guard.invoke(bttwoo, 'home', [false]);
+      final bttwooManifest = host.invoked.last;
       expect(dmManifest['rule'], contains('dm84-v1'));
       expect(aueteManifest['rule'], contains('auete-v1'));
       expect(aueteManifest['sourceId'], isNot(dmManifest['sourceId']));
+      expect(bttwooManifest['rule'], contains('bttwoo-v1'));
+      expect({
+        dmManifest['sourceId'],
+        aueteManifest['sourceId'],
+        bttwooManifest['sourceId'],
+      }, hasLength(3));
       await guard.invoke(dm84, 'search', ['one', false, 1]);
       expect(host.invoked.last, dmManifest);
       await guard.invoke(auete.copyWith(api: 'csp_Auete'), 'search', [
@@ -160,8 +172,14 @@ void main() {
         1,
       ]);
       expect(host.invoked.last['sourceId'], aueteManifest['sourceId']);
-      expect(host.adapters, ['dm84-v1', 'auete-v1']);
-      expect(downloads, 2);
+      await guard.invoke(bttwoo.copyWith(api: 'csp_Bttwoo'), 'search', [
+        'three',
+        false,
+        1,
+      ]);
+      expect(host.invoked.last['sourceId'], bttwooManifest['sourceId']);
+      expect(host.adapters, ['dm84-v1', 'auete-v1', 'bttwoo-v1']);
+      expect(downloads, 3);
       expect(dm84.key, 'dm84');
       expect(auete.key, 'dm84');
       expect(dm84.subscriptionId, 'one');
@@ -169,6 +187,10 @@ void main() {
       expect(dm84.api, 'csp_Dm84Guard');
       expect(auete.api, 'csp_AueteGuard');
       expect(dm84.jar, auete.jar);
+      expect(bttwoo.key, dm84.key);
+      expect(bttwoo.subscriptionId, dm84.subscriptionId);
+      expect(bttwoo.jar, dm84.jar);
+      expect(bttwoo.api, 'csp_BttwooGuard');
     },
   );
 
@@ -219,6 +241,50 @@ void main() {
           'home',
           [false],
         ),
+        throwsFormatException,
+      );
+      expect(downloads, 1);
+      expect(host.invoked.length, calls);
+    },
+  );
+
+  test(
+    'Bttwoo siteUrl variants fail before downloading or reusing cache',
+    () async {
+      final host = PortHost();
+      var downloads = 0;
+      final guard = GuardSource(
+        host: host,
+        drpy: DrpySource(host: host, read: (_, __) async => ''),
+        read: (_, __) async {
+          downloads++;
+          return bytes;
+        },
+      );
+      final source = site(
+        'https://import.invalid/plugin.jar',
+      ).copyWith(api: 'csp_BttwooGuard');
+      final override = source.copyWith(
+        ext: '{"siteUrl":"https://custom.invalid/"}',
+      );
+      await expectLater(
+        guard.invoke(override, 'home', [false]),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('Bttwoo 自定义 siteUrl'),
+          ),
+        ),
+      );
+      expect(downloads, 0);
+      expect(host.bootstraps, 0);
+      await guard.invoke(source.copyWith(ext: '{"siteUrl":""}'), 'home', [
+        false,
+      ]);
+      final calls = host.invoked.length;
+      await expectLater(
+        guard.invoke(override, 'home', [false]),
         throwsFormatException,
       );
       expect(downloads, 1);

@@ -98,10 +98,14 @@ jobs:
         with:
           distribution: "zulu"
           java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools ndk;28.2.13676358'
       - name: Locate Android SDK Build-Tools & build APK
         run: |
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           export MARCOMOVIE_BUILD_TOOLS="$BUILD_TOOLS"
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
           python scripts/build_android.py
           python android/tests/run_api23_callback_checks.py
           python android/tests/run_checks.py

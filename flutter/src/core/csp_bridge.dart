@@ -37,6 +37,8 @@ class CspBridge {
     'csp_dm84': 'dm84-v1',
     'csp_aueteguard': 'auete-v1',
     'csp_auete': 'auete-v1',
+    'csp_bttwooguard': 'bttwoo-v1',
+    'csp_bttwoo': 'bttwoo-v1',
   }[site.api.toLowerCase()];
 
   static bool hasAdapter(CmsSite site) => (guardAdapterFor(site) != null && site.pluginReference.trim().isNotEmpty) || site.isDrpySource || site.isJavaScriptSource || site.isPythonSource || TrailerSource.matches(site) || hasBuiltinAdapter(site);

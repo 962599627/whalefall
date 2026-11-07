@@ -469,7 +469,11 @@ class CmsListing {
   final int page;
   final int pageCount;
   final List<CmsVideo> videos;
-  const CmsListing({this.page = 1, this.pageCount = 1, this.videos = const []});
+  /// The requested subfilters were delegated to this source's category method.
+  /// Its opaque filter values need not appear in returned video metadata.
+  final bool sourceFiltered;
+  const CmsListing({this.page = 1, this.pageCount = 1, this.videos = const [],
+    this.sourceFiltered = false});
 }
 
 class LiveChannel {

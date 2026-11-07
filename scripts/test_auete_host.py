@@ -75,6 +75,17 @@ class AueteChecks(unittest.TestCase):
             self.assertEqual(home['filters']['Movie'][0]['value'][1],{'n':'喜剧片','v':'xjp'})
             recommended=call('homeVod',[]);self.assertEqual(recommended['list'][0]['vod_name'],'Fixture')
             category=call('category',['Movie',1,True,{'type':'xjp'}]);self.assertIn('/Movie/xjp/index.html',fixture.paths)
+            for selected in ['动作','动作片','dzp']:
+                call('category',['Movie',2,True,{'type':selected}]);self.assertEqual(fixture.paths[-1],'/Movie/dzp/index2.html')
+                call('category',['Movie',1,True,{'class':selected}]);self.assertEqual(fixture.paths[-1],'/Movie/dzp/index.html')
+            call('category',['Movie',1,True,{'type':'动作','class':'dzp','area':'全部','year':''}])
+            self.assertEqual(fixture.paths[-1],'/Movie/dzp/index.html')
+            for selected in [{'type':'动作','class':'喜剧'}, {'area':'中国大陆'}, {'year':'2025'}]:
+                status,error=self.request({'version':1,'method':'category','args':['Movie',1,True,selected]},path=api)
+                self.assertEqual((status,error),(422,{'error':'drpy_filter_not_supported'}))
+            for category_id,selected in [('Movie','未知'),('Tv','动作')]:
+                status,error=self.request({'version':1,'method':'category','args':[category_id,1,True,{'type':selected}]},path=api)
+                self.assertEqual((status,error),(422,{'error':'drpy_filter_not_supported'}))
             page2=call('category',['Movie',2,True,{}]);self.assertIn('/Movie/index2.html',fixture.paths)
             self.assertNotEqual(category['list'][0]['vod_id'],page2['list'][0]['vod_id'])
             self.assertEqual(call('search',['Fixture search',False,2])['list'][0]['vod_name'],'Fixture search')

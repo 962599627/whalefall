@@ -324,7 +324,7 @@ class CatPawHost {
     Completer<void>? cancellation,
   }) async {
     _checkCancellation(cancellation);
-    if (!const ['dm84-v1', 'auete-v1'].contains(adapter) ||
+    if (!const ['dm84-v1', 'auete-v1', 'bttwoo-v1'].contains(adapter) ||
         bytes.isEmpty ||
         bytes.length > _maxBundleBytes ||
         bytes.any((b) => b < 0 || b > 255)) {
@@ -727,6 +727,7 @@ class CatPawHost {
           'drpy_media_unresolved': '此片源暂未解析出可播放地址',
           'drpy_source_origin': '此片源返回了不支持的跨站目录',
           'drpy_source_unavailable': '此片源暂时无法访问',
+          'drpy_filter_not_supported': '此片源不支持当前筛选条件',
         };
         final code = error is Map ? error['error'] : null;
         if (code is String && messages.containsKey(code)) {

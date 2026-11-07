@@ -158,6 +158,16 @@ class DrpyChecks(unittest.TestCase):
         self.assertEqual(self.call(key,'category','films',1,False,{})['list'][0]['vod_name'],'JSON fixture')
         self.assertEqual(self.call(key,'detail',self.origin+'/detail/42')['list'][0]['vod_name'],hashlib.md5(b'fixture').hexdigest())
 
+    def test_empty_category_sentinel_and_real_no_data_id(self):
+        rule={**self.rule,'一级':'js:VODS=[];','搜索':'js:VODS=[];'}
+        key=self.install(rule,'empty-category')
+        self.assertEqual(self.call(key,'category','films',1,False,{})['list'],[])
+        self.release(key)
+        rule={**self.rule,'一级':'js:VODS=[{vod_id:"no_data",vod_name:"Real film",vod_pic:"",vod_remarks:""}];'}
+        key=self.install(rule,'real-no-data-id')
+        self.assertEqual(self.call(key,'category','films',1,False,{})['list'][0]['vod_name'],'Real film')
+        self.release(key)
+
     def test_03_storage_survives_release_and_isolated_by_source(self):
         rule={**self.rule,'二级':'js:let n=Number(getItem("count","0"))+1;setItem("count",String(n));VOD={vod_name:String(n),vod_play_from:"",vod_play_url:""};'}
         one=self.install(rule,'state-one')

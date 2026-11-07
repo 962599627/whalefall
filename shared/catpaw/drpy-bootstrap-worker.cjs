@@ -19,9 +19,10 @@ try {
   } finally { fs.closeSync(descriptor); }
   if (crypto.createHash('sha256').update(data).digest('hex') !== workerData.hash) throw Error('guard_artifact_integrity');
   const adapter = workerData.adapter;
-  if (!['dm84-v1', 'auete-v1'].includes(adapter)) throw Error('invalid_artifact');
+  if (!['dm84-v1', 'auete-v1', 'bttwoo-v1'].includes(adapter)) throw Error('invalid_artifact');
   const config = extractKnownPlugin(data, adapter);
-  const rule = (adapter === 'auete-v1' ? require('./drpy-auete-adapter.cjs') : require('./drpy-dm84-adapter.cjs'))(config);
+  const factory = { 'dm84-v1': './drpy-dm84-adapter.cjs', 'auete-v1': './drpy-auete-adapter.cjs', 'bttwoo-v1': './drpy-bttwoo-adapter.cjs' }[adapter];
+  const rule = require(factory)(config);
   parentPort.postMessage({ version: 1, rule, origin: config.origin });
 } catch (error) {
   parentPort.postMessage({ error: ['guard_artifact_unsupported', 'guard_artifact_integrity'].includes(error.message) ? error.message : 'guard_artifact_invalid' });

@@ -142,7 +142,7 @@ class Dex {
     for (let i = 0; i < chars.length; i += 4096) result += String.fromCharCode(...chars.slice(i, i + 4096));
     return result;
   }
-  reviewedLiteral(className, methodName, expectedHash, unit, fieldName) {
+  reviewedCode(className, methodName, expectedHash) {
     const classes = this.table(96, 32).filter(p => this.at(this.types, this.u32(p)) === className);
     if (classes.length !== 1) fail();
     let p = this.u32(classes[0] + 24), counts = [], selected = null;
@@ -159,9 +159,30 @@ class Dex {
     }
     if (selected === null) fail();
     const size = this.u32(selected + 12);
-    if (!size || size > 65536 || !Number.isInteger(unit) || unit < 0 || unit + 1 >= size) fail();
+    if (!size || size > 65536) fail();
     bounds(this.bytes, selected, 16 + size * 2);
     if (sha(this.bytes.subarray(selected, selected + 16 + size * 2)) !== expectedHash) fail();
+    return { offset: selected, size };
+  }
+  reviewedShortArray(className, expectedHash, fieldName, payloadUnit, count) {
+    const { offset, size } = this.reviewedCode(className, '<clinit>', expectedHash);
+    if (!Number.isInteger(payloadUnit) || payloadUnit < 10 || !Number.isInteger(count) || count < 1 || count > 4096 || payloadUnit + 4 + count > size || this.u16(offset + 2) !== 0) fail();
+    const start = offset + 16;
+    // The reviewed initializer starts by constructing v0:[S, filling it from a
+    // literal payload, then storing v0 in this class's exact static short field.
+    // Read those data bytes only; never evaluate any other initializer code.
+    if (this.u16(start) !== 0x0013 || this.u16(start + 2) !== count || this.u16(start + 4) !== 0x0023 ||
+        this.at(this.types, this.u16(start + 6)) !== '[S' || this.u16(start + 8) !== 0x0026 ||
+        4 + this.u32(start + 10) !== payloadUnit || this.u16(start + 14) !== 0x0069) fail();
+    const field = this.at(this.fields, this.u16(start + 16));
+    if (field[0] !== className || field[1] !== '[S' || field[2] !== fieldName) fail();
+    const payload = start + payloadUnit * 2;
+    if (this.u16(payload) !== 0x0300 || this.u16(payload + 2) !== 2 || this.u32(payload + 4) !== count) fail();
+    return Array.from({ length: count }, (_, i) => this.u16(payload + 8 + i * 2));
+  }
+  reviewedLiteral(className, methodName, expectedHash, unit, fieldName) {
+    const { offset: selected, size } = this.reviewedCode(className, methodName, expectedHash);
+    if (!Number.isInteger(unit) || unit < 0 || unit + 1 >= size) fail();
     // Exact reviewed code position, not an interpreter or a search for URL-like strings.
     const instruction = selected + 16 + unit * 2, word = this.u16(instruction);
     if ((word & 255) !== 0x1a) fail();
@@ -239,6 +260,17 @@ function extractKnownPlugin(bytes, adapter = 'dm84-v1') {
     if (origin.pathname !== '/' || origin.search || mediaBase.search || !mediaBase.pathname.endsWith('/')) fail();
     return { origin: origin.origin, mediaBase: mediaBase.href,
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36' };
+  }
+  if (adapter === 'bttwoo-v1') {
+    const className = 'Lcom/github/catvod/spider/Bttwoo;';
+    reader.reviewedCode(className, '<init>', 'c47d9c1c569855288c1bf15c852120bb3c99c9bee1ccba4d9c8d93088f61094b');
+    reader.reviewedCode(className, 'encodePlayKey', '5b7309680b6db8a307e62cb99b055d4130e71a278cbdf092c830542cad3cdb8e');
+    const values = reader.reviewedShortArray(className, 'b4511e08ff36b2c803be31a2dd8021f2a049fbabc587e805919e15b45ca7c284', 'short', 10, 686);
+    const headerValues = reader.reviewedShortArray('Lcom/github/catvod/spider/merge/ME;', '3dc0b269b870de31f4fdfa39e54778e8cc5d9cfb6d83c8903dd80e935ae1227e', 'short', 316, 1667);
+    const decode = (array, start, length, mask) => String.fromCharCode(...array.slice(start, start + length).map(value => value ^ mask));
+    const origin = endpoint(decode(values, 0, 23, 2303)), playKey = decode(values, 24, 20, 3066), userAgent = decode(headerValues, 1048, 117, 1121);
+    if (origin.pathname !== '/' || origin.search || !/^[\x21-\x7e]{20}$/.test(playKey) || /[\r\n]/.test(userAgent)) fail();
+    return { origin: origin.href, playKey, userAgent };
   }
   if (adapter !== 'dm84-v1') fail();
   const fields = reader.literalFields('Lcom/github/catvod/spider/Dm84;');

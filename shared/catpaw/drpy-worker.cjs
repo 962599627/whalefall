@@ -108,6 +108,12 @@ function respond(res,status,value){res.writeHead(status,{'Content-Type':'applica
         if(typeof raw!=='string'||Buffer.byteLength(raw)>MAX_RESULT)throw Error('drpy_result');
         const result=JSON.parse(raw);
         if(!result||typeof result!=='object'||Array.isArray(result))throw Error('drpy_result');
+        // The pinned core substitutes this exact synthetic row for an empty
+        // category. Keep an empty listing empty instead of offering a fake film.
+        if(call.method==='category'&&Array.isArray(result.list)&&result.list.length===1){
+          const row=result.list[0];
+          if(row&&row.vod_id==='no_data'&&row.vod_name==='无数据,防无限请求'&&row.vod_remarks==='不要点,会崩的'&&row.vod_pic===''&&result.total===1&&result.pagecount===1&&result.limit===1){result.list=[];result.total=0;}
+        }
         respond(res,200,result);
       }catch(error){
         const failure=context.__drpyUnsupported||error.message;

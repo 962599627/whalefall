@@ -798,8 +798,9 @@ class CmsClient {
         if (filter != null && filter.year.isNotEmpty) 'year': filter.year,
       };
       final listing = CmsParser.parseListing(await _callJs(site, 'category', [categoryId, page, extend.isNotEmpty, extend]));
-      return filter == null ? listing : CmsListing(page: listing.page, pageCount: listing.pageCount,
-          videos: CmsParser.filterVideos(listing.videos, filter));
+      if (filter == null || !filter.hasSubFilter || extend.isEmpty) return listing;
+      return CmsListing(page: listing.page, pageCount: listing.pageCount,
+          videos: listing.videos, sourceFiltered: true);
     }
     if (site.isM3uVodApi) {
       final content = await _resolveM3uVodPayload(site);
