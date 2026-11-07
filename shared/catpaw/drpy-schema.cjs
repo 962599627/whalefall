@@ -50,6 +50,7 @@ function validateCall(value) {
     case 'search': ok = a.length === 3 && text(a[0]) && typeof a[1] === 'boolean' && page(a[2]); break;
     case 'detail': ok = a.length === 1 && text(a[0]); break;
     case 'play': ok = a.length === 3 && text(a[0]) && text(a[1]) && Array.isArray(a[2]) && a[2].every(text); break;
+    case 'action': ok = a.length === 1 && text(a[0]); break;
   }
   if (!ok) throw Error('drpy_method_arguments');
   return value;

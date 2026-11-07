@@ -149,6 +149,32 @@ static id call(NSString *base,NSString *key,NSString *method,NSArray *args) {
     NSDictionary *t4Play=call(base,t4,@"play",@[@"one",t4Media,@[]]);
     NSString *t4Playlist=[[NSString alloc] initWithData:request(t4Play[@"url"],@"GET",nil,@{}) encoding:NSUTF8StringEncoding];
     check([t4Playlist hasPrefix:@"#EXTM3U"],@"t4_native_play_manifest");
+    NSString *fyOrigin=[[NSString alloc] initWithData:[[NSData alloc] initWithBase64EncodedString:catalog[@"fyOrigin"] options:0] encoding:NSUTF8StringEncoding];
+    NSString *fyRule=[NSString stringWithContentsOfFile:[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"fy-rule.js"] encoding:NSUTF8StringEncoding error:nil];
+    fyRule=[fyRule stringByReplacingOccurrencesOfString:@"http://fixture.invalid" withString:fyOrigin];
+    NSString *fy=install(root,@"drpy.json",jsonData(@{@"kind":@"drpy",@"version":@1,@"runtime":@"drpy2-ca23ffdb-1",
+      @"sourceId":[@"c" stringByPaddingToLength:64 withString:@"c" startingAtIndex:0],@"origin":fyOrigin,
+      @"rule":fyRule,@"headers":@{},@"requestTimeoutMs":@2000}));
+    NSDictionary *fyHome=call(base,fy,@"home",@[@YES]);
+    check([fyHome[@"class"] count]==8&&[fyHome[@"filters"][@"1"] count]==7,@"fy_native_categories_filters");
+    NSDictionary *image=call(base,fy,@"action",@[@"{\"type\":\"verification\",\"operation\":\"challenge\"}"]);
+    NSData *imageBytes=[[NSData alloc] initWithBase64EncodedString:image[@"imageBase64"] options:0];
+    check([image[@"mime"] isEqual:@"image/png"]&&imageBytes.length>8,@"fy_native_image_challenge");
+    NSMutableDictionary *submission=[@{@"type":@"verification",@"operation":@"submit",@"id":image[@"id"],@"code":@"NOPE"} mutableCopy];
+    NSString *action=[[NSString alloc] initWithData:jsonData(submission) encoding:NSUTF8StringEncoding];
+    check(![call(base,fy,@"action",@[action])[@"verified"] boolValue],@"fy_native_verification_rejected");
+    submission[@"code"]=@"AB12";action=[[NSString alloc] initWithData:jsonData(submission) encoding:NSUTF8StringEncoding];
+    check([call(base,fy,@"action",@[action])[@"verified"] boolValue],@"fy_native_verification_session");
+    check([call(base,fy,@"homeVod",@[])[@"list"][0][@"vod_name"] isEqual:@"FY 本机影片"],@"fy_native_catalog");
+    NSDictionary *fyCategory=call(base,fy,@"category",@[@"1",@2,@YES,@{@"area":@"美国",@"year":@"2026"}]);
+    check([fyCategory[@"page"] intValue]==2&&[fyCategory[@"pagecount"] intValue]==4,@"fy_native_pagination");
+    NSDictionary *fyDetail=call(base,fy,@"detail",@[@"123"]);
+    check([fyDetail[@"list"][0][@"vod_play_url"] isEqual:@"第一集$123-1-1#第二集$123-1-2"],@"fy_native_episode_order");
+    NSDictionary *fyPlay=call(base,fy,@"play",@[@"线路 A",@"123-1-1",@[]]);
+    NSString *fyPlaylist=[[NSString alloc] initWithData:request(fyPlay[@"url"],@"GET",nil,@{}) encoding:NSUTF8StringEncoding];
+    check([fyPlaylist hasPrefix:@"#EXTM3U"],@"fy_native_parser_session_manifest");
+    request([NSString stringWithFormat:@"%@/%@/_release",base,fy],@"POST",nil,@{});
+    check([call(base,fy,@"homeVod",@[])[@"list"] count]==1,@"fy_native_verified_session_reopen");
     NSDictionary *reset=json(request([base stringByAppendingString:@"/_reset"],@"POST",@{},@{}));
     check([reset[@"reset"] boolValue],@"embedded_reset_without_process_exit");
     check([CatpawRuntimeEngine startWithRoot:root script:script ready:ready error:&error],@"native_reopen_same_root");

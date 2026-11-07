@@ -226,6 +226,13 @@ class HostChecks(unittest.TestCase):
         self.assertEqual(self.request(body | {'extension':'YQ=='}), (422, {'error':'guard_artifact_unsupported'}))
         self.assertEqual(self.request(self.payload(digest) | {'extension':'YQ=='}), (400, {'error':'bootstrap_request'}))
 
+    def test_fy_exact_artifact_contract(self):
+        value = b'synthetic unknown FY artifact'; digest = hashlib.sha256(value).hexdigest()
+        (self.root/'imports'/(digest+'.jar')).write_bytes(value)
+        body = self.payload(digest) | {'adapter':'fy-v1'}
+        self.assertEqual(self.request(body), (422, {'error':'guard_artifact_unsupported'}))
+        self.assertEqual(self.request(body | {'extension':'unexpected'}), (400, {'error':'bootstrap_request'}))
+
     def test_capability_origin_and_body_limit(self):
         self.assertEqual(self.request({}, path='/wrong/_port-bootstrap')[0], 403)
         self.assertEqual(self.request({}, headers={'Origin':'http://127.0.0.1:9'})[0], 403)

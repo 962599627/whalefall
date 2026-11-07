@@ -4,8 +4,8 @@
   "files": [
     {
       "name": "drpy-worker.cjs",
-      "bytes": 12130,
-      "sha256": "04761e313d229db7e80ed1d6ac2f57e1f8538570ca514119221245b7a1f69222"
+      "bytes": 12327,
+      "sha256": "48465d4aa02bb7ed60a4136448156ab9c53ac485145cb037d7d168f6fcd1bddf"
     },
     {
       "name": "drpy-http.cjs",
@@ -14,8 +14,8 @@
     },
     {
       "name": "drpy-schema.cjs",
-      "bytes": 3414,
-      "sha256": "6268317eaa1c26e96bdaa8a7fefb6631882961b671fa38432964b871394ab13c"
+      "bytes": 3475,
+      "sha256": "6c79fa9c55d22f1f0296e24da71194707991e1d93e025ae62002cda3cbbae973"
     },
     {
       "name": "drpy-core.js",
@@ -54,8 +54,8 @@
     },
     {
       "name": "drpy-bootstrap-worker.cjs",
-      "bytes": 2069,
-      "sha256": "f850fef628721bacb65288640951ce3ff00aa9cd221c5724a7da76eaebdbbf0c"
+      "bytes": 2190,
+      "sha256": "d796449fdb01009c6a7f793cd8042a3bd2c77fcf9d75bd3eff59a41493b76764"
     },
     {
       "name": "drpy-auete-adapter.cjs",
@@ -86,6 +86,16 @@
       "name": "drpy-t4-adapter.cjs",
       "bytes": 10010,
       "sha256": "c3a08f04bb52d0fb950dcec3141ffbc77d9c95ad446cfd86a45cc373cfef63a8"
+    },
+    {
+      "name": "drpy-fy-extractor.cjs",
+      "bytes": 3800,
+      "sha256": "2feda82623298801c371da9b79893d4ff6b2fe267b34f92f6915aec4956d2684"
+    },
+    {
+      "name": "drpy-fy-adapter.cjs",
+      "bytes": 20815,
+      "sha256": "a1a89614e67de3b0539b29c8517d11b0b422d0145ef746a3361fd70170a78de1"
     }
   ]
 }

@@ -49,6 +49,10 @@ def main():
         "const n=require(process.argv[1]).normalizeConfig({siteUrl:'http://fixture.invalid/api/cms',type:1});process.stdout.write(require(process.argv[2])(n));",
         ROOT/'shared/catpaw/drpy-t4-extractor.cjs', ROOT/'shared/catpaw/drpy-t4-adapter.cjs', capture=True)
     (APP/'t4-rule.js').write_text(t4, encoding='utf-8')
+    fy = run('node', '-e',
+        "const api='http://fixture.invalid/player/mplayer.php';const c={origin:'http://fixture.invalid',userAgent:'Fixture-UA',parsers:[api,api],parserMap:Object.fromEntries(['co','BBA','vwnet','YYNB','JD4K','JD2K','qiyi','bilibili','qq','youku'].map(k=>[k,api]))};process.stdout.write(require(process.argv[1])(c));",
+        ROOT/'shared/catpaw/drpy-fy-adapter.cjs', capture=True)
+    (APP/'fy-rule.js').write_text(fy, encoding='utf-8')
     shutil.copytree(ROOT/'android/src/main/assets/python-host', APP/'python-host', dirs_exist_ok=True)
     for name in ('python_html_contract.py', 'python_html_expected.json'):
         shutil.copyfile(ROOT/'scripts/fixtures'/name, APP/name)
@@ -121,7 +125,7 @@ def main():
     (OUT/'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf8')
     print(json.dumps({'passed': report['passed'], 'checks': report['checks'],
                       'runtime': report['runtime'], 'failure': report['failure']}, ensure_ascii=False))
-    if not report['passed'] or len(report['checks']) < 51:
+    if not report['passed'] or len(report['checks']) < 60:
         raise RuntimeError('iOS runtime behavior verification failed')
 
 

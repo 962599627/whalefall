@@ -110,7 +110,9 @@ function respond(res,status,value){res.writeHead(status,{'Content-Type':'applica
         if(context.__drpyUnsupported)throw Error(context.__drpyUnsupported);
         initialized=true;
       }
-      const expression='(()=>{const result=__drpy['+JSON.stringify(call.method)+'](...'+JSON.stringify(call.args)+');if(result&&typeof result.then==="function")throw new Error("drpy_async_result");return typeof result==="string"?result:JSON.stringify(result);})()';
+      // Parse data inside the VM. Embedding JSON as a JavaScript object literal
+      // changes an own __proto__ property into a prototype assignment.
+      const expression='(()=>{const args=JSON.parse('+JSON.stringify(JSON.stringify(call.args))+');const result=__drpy['+JSON.stringify(call.method)+'](...args);if(result&&typeof result.then==="function")throw new Error("drpy_async_result");return typeof result==="string"?result:JSON.stringify(result);})()';
       const raw=run(expression,'drpy-source-'+call.method,Math.max(1,deadline-Date.now()));
       if(context.__drpyUnsupported)throw Error(context.__drpyUnsupported);
       if(typeof raw!=='string'||Buffer.byteLength(raw)>MAX_RESULT)throw Error('drpy_result');

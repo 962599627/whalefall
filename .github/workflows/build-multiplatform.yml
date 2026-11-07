@@ -81,6 +81,8 @@ jobs:
           python scripts/test_appgz_host.py
           node --jitless scripts/test_t4_adapter.cjs
           python scripts/test_t4_adapter.py
+          node --jitless scripts/test_fy_adapter.cjs
+          python scripts/test_fy_adapter.py
       - name: Shared script runtime and native patch checks
         run: |
           node scripts/test_js_module_interop.cjs

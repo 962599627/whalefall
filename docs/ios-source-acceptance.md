@@ -168,3 +168,34 @@ outputs. Six private fixture cases using four unchanged FY methods match the
 original parser's metadata and line/episode binding after this repair. They do
 not execute the original module's file imports, initialization, verification or
 live requests, and do not establish that FY is usable end to end.
+
+The follow-up at `3589662` passed all 51 native checks on both ARM64/iOS 26.2
+and Intel/iOS 18.5 in [runtime run 42388317399](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42388317399).
+All production and fixture hashes were verified against that exact commit.
+[Android 6 run 42388317453](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42388317453)
+passed the subtitle/home probes and all 23 source-host checks. This confirms the
+bundled dependency read-limit repair on API 23, not ARM media decoding.
+
+[iOS build 42388319104](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42388319104)
+also succeeded at `3589662`. Its unpublished validation IPA is 35,176,777 bytes,
+SHA-256 `a6b90a47f0d228a37976a172d7c0cd10267c01554a304b1c44c260f979f85545`.
+ZIP integrity, all 17 pinned assets, exact host/Python bytes, 37 device ARM64
+images and the exported renewed-deadline symbol passed inspection. It predates
+the experimental FY protocol below and is not an official iPhone release.
+
+## Experimental FY protocol
+
+FY now has a separate [local protocol implementation](fy-port-status.md).
+The reviewed imported artifact is read only as data to extract its origin and
+parser configuration. No Android DEX, native library or original Python module
+is executed. Seven data-contract tests and nine production-host tests pass
+under Node 18 without JIT, including catalogue/detail/play, persistent scoped
+cookies, parser fallback, manual image-verification actions and redirect limits.
+The same synthetic protocol fixture is included in the iOS native probe; its
+new native result is pending and must not be inferred from `3589662`.
+
+FY remains disabled in the application's portable-adapter dispatcher: the
+verification interface and live-source/device acceptance are still outstanding.
+Current anonymous upstream attempts fail during connection establishment.
+These implementation and fixture results do not increase the accepted count
+of the original 33 playable plugin-route obligations.
