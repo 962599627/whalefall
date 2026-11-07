@@ -12,6 +12,11 @@ if (!isMainThread) {
   // Node 18's built-in fetch initializes a WASM HTTP parser even under --jitless.
   // Use a pinned, pure-JS Fetch implementation on iOS; preserve the standard API.
   if (typeof WebAssembly === 'undefined') {
+    // Node 22 lazily initializes Undici even when its global accessor is
+    // redefined. Delete those accessors before installing the no-WASM shim.
+    for (const name of ['Headers', 'Request', 'Response', 'FormData', 'Blob', 'File', 'fetch']) {
+      delete globalThis[name];
+    }
     const fetch = require('./fetch.cjs');
     for (const name of ['Headers', 'Request', 'Response', 'FormData', 'Blob', 'File']) {
       Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: fetch[name] });

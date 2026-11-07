@@ -35,7 +35,7 @@ final class CatPawSettings {
                 .show();
     }
 
-    private static void open(MainActivity a, Cms.Site site) {
+    static void open(MainActivity a, Cms.Site site) {
         a.notice("正在打开 CatPaw 本机配置");
         a.worker.execute(
                 () -> {

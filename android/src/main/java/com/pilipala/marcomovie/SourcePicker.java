@@ -227,6 +227,14 @@ final class SourcePicker {
                                     + site.name,
                             "source-choice:" + site.key,
                             () -> {
+                                if (site.api.startsWith("catpaw://")
+                                        && android.net.Uri.parse(site.api)
+                                                .getPath()
+                                                .equals("/api/baseset")) {
+                                    dialog.dismiss();
+                                    CatPawSettings.open(a, site);
+                                    return;
+                                }
                                 if (!a.available(site)) {
                                     a.notice("这个片源需要启用来源扩展，或仍有接口待适配。可以在设置中查看。");
                                     return;

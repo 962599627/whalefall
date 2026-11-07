@@ -12,6 +12,8 @@ public final class NodeRuntime {
         if (exited || (started && !root.equals(rootPath)))
             throw new java.io.IOException("请重新打开应用以启动 CatPaw");
         if (started) return;
+        if (android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE) > 4096)
+            throw new java.io.IOException("当前 CatPaw 运行组件尚不支持此设备的 16 KB 内存页，请使用其他片源");
         try {
             System.loadLibrary("node");
             System.loadLibrary("marco_node");

@@ -5248,14 +5248,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
 
-  Future<void> _showCatPawSettings() async {
+  Future<void> _showCatPawSettings([CmsSite? requested]) async {
     final bundles = <String,CmsSite>{};
     for (final site in _config?.publicSupportedSites ?? <CmsSite>[]) {
       if (site.isCatPaw) bundles.putIfAbsent(Uri.parse(site.api).host, () => site);
     }
-    if (bundles.isEmpty) return;
-    CmsSite? selected = bundles.values.first;
-    if (bundles.length > 1) {
+    if (bundles.isEmpty && requested == null) return;
+    CmsSite? selected = requested ?? bundles.values.first;
+    if (requested == null && bundles.length > 1) {
       selected = await showCupertinoModalPopup<CmsSite>(context:context,builder:(sheet) => CupertinoActionSheet(
         title: const Text('选择 CatPaw 订阅'),
         actions: [for (final site in bundles.values) CupertinoActionSheetAction(
@@ -7108,6 +7108,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                 badgeColor: siteBadgeColor,
                                 onSelected: (s) {
                                   Navigator.of(ctx).pop();
+                                  if (s.isCatPaw && Uri.parse(s.api).path == '/api/baseset') {
+                                    _showCatPawSettings(s);
+                                    return;
+                                  }
                                   if (inPrivacyMode) {
                                     setState(() {
                                       _privateSessionUnlocked = true;
