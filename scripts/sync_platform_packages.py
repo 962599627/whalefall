@@ -1,7 +1,8 @@
 """Update independently released desktop/Apple packages without rendering the site.
 
-The existing page is the template: only package URLs, sizes and checksums inside
-matching download cards change. Android's existing update channels stay intact.
+The existing page is the template: package URLs, sizes and checksums inside
+matching download cards change, and the existing changelog section receives
+version-specific release notes. CSS and Android's update channels stay intact.
 """
 import argparse
 import html
@@ -16,6 +17,91 @@ SUFFIXES = {
     'windows': ('windows-setup.exe', 'windows-x64.zip'),
     'macos': ('macos.zip',),
 }
+PLATFORM_LABELS = {
+    'ios': 'iPhone / iPad', 'windows': 'Windows', 'macos': 'macOS',
+    'android-tv': 'Android 电视', 'android-mobile': 'Android 手机 / 平板',
+    'android-lite': 'Android Lite',
+}
+NOTE_SUFFIXES = {
+    'preview.apk': 'android-tv', 'mobile.apk': 'android-mobile',
+    'lite.apk': 'android-lite', 'ios-unsigned.ipa': 'ios',
+    'windows-setup.exe': 'windows', 'windows-x64.zip': 'windows',
+    'macos.zip': 'macos',
+}
+
+
+def note_record(release):
+    """Keep the published text verbatim; filenames/tags establish platform scope."""
+    tag = release.get('tag_name', '')
+    match = re.fullmatch(r'(?:(ios|windows|macos|android-tv|android-mobile|android-lite)-)?v(\d+\.\d+\.\d+)(-preview)?', tag)
+    if not match or release.get('draft') or not release.get('published_at'):
+        return None
+    platform, version, _ = match.groups()
+    names = {asset.get('name') for asset in release.get('assets', [])}
+    platforms = [platform] if platform else list(dict.fromkeys(
+        p for suffix, p in NOTE_SUFFIXES.items()
+        if f'MarcoMovie-{version}-{suffix}' in names))
+    if not platforms:
+        return None
+    notes = release.get('body') or ''
+    if not isinstance(notes, str) or len(notes.encode('utf-8')) > 128 * 1024:
+        raise ValueError('Invalid release notes: ' + tag)
+    return dict(tag=tag, version=version, platforms=platforms,
+                published_at=release['published_at'], prerelease=bool(release.get('prerelease')),
+                target_commitish=release.get('target_commitish', ''), notes=notes,
+                release_url=f'https://github.com/{REPO}/releases/tag/{tag}')
+
+
+def release_history(output, releases):
+    """Retain older entries even when they fall outside GitHub's newest page."""
+    path = output / 'updates/history.json'
+    records = json.loads(path.read_text(encoding='utf-8'))['releases'] if path.exists() else []
+    by_tag = {item['tag']: item for item in records}
+    for release in releases:
+        item = note_record(release)
+        if item is not None:
+            by_tag[item['tag']] = item
+    records = sorted(by_tag.values(), key=lambda item: (item['published_at'], item['tag']), reverse=True)
+    files = {}
+    for item in records:
+        # Validate saved names too: an on-disk index never supplies output paths.
+        if not re.fullmatch(r'(?:(?:ios|windows|macos|android-tv|android-mobile|android-lite)-)?v\d+\.\d+\.\d+(?:-preview)?', item['tag']):
+            raise ValueError('Invalid archived release tag')
+        text = item['notes'] if item['notes'].strip() else '该历史版本未提供更新说明。'
+        files[f'updates/history/{item["tag"]}.md'] = (text + '\n').encode('utf-8')
+    if records:
+        files['updates/history.json'] = (json.dumps(dict(schema=1, releases=records), ensure_ascii=False, indent=2) + '\n').encode('utf-8')
+    return records, files
+
+
+def patch_notes(page, records):
+    if not records:
+        return page
+    sections = list(re.finditer(r'(<section\b[^>]*\bid="changelog"[^>]*>).*?</section>', page, re.S))
+    if len(sections) != 1:
+        raise ValueError('Expected exactly one existing changelog section')
+    seen, entries = set(), []
+    for item in records:
+        platforms = item['platforms']
+        latest = not item['prerelease'] and any(p not in seen for p in platforms)
+        if not item['prerelease']:
+            seen.update(platforms)
+        label = '、'.join(PLATFORM_LABELS[p] for p in platforms) + ' · ' + item['version']
+        if item['prerelease']:
+            label += ' · 预览版'
+        escaped = html.escape
+        note = item['notes'] if item['notes'].strip() else '该历史版本未提供更新说明。'
+        entries.append(
+            '<details' + (' open' if latest else '') + '><summary>' + escaped(label) + '</summary>'
+            '<p class="sub">' + escaped(item['published_at'][:10]) + ' · '
+            '<a href="' + escaped(item['release_url'], quote=True) + '">GitHub 发布记录</a> · '
+            '<a href="updates/history/' + escaped(item['tag']) + '.md">完整更新说明</a></p>'
+            '<pre>' + escaped(note) + '</pre></details>')
+    section = sections[0]
+    content = (section[1] + '<h2>各平台版本更新记录</h2>'
+               '<p class="sub">按实际发布的平台和版本分别记录新增、修复、验证范围与已知限制。</p>'
+               + '\n'.join(entries) + '</section>')
+    return page[:section.start()] + content + page[section.end():]
 
 
 def version_key(version):
@@ -65,6 +151,8 @@ def sync(output, releases=None):
         release = choose_platform(releases, platform)
         if release is None:
             continue
+        if not isinstance(release.get('body'), str) or not release['body'].strip():
+            raise ValueError('Published platform release is missing update notes: ' + platform)
         version = release['tag_name'].split('-v', 1)[1]
         packages = {}
         for suffix in suffixes:
@@ -91,6 +179,9 @@ def sync(output, releases=None):
                 raise ValueError('Refusing to replace a published package: ' + platform)
         files[path] = (json.dumps(feed, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
         versions[platform] = version
+    history, note_files = release_history(output, releases)
+    files.update(note_files)
+    page = patch_notes(page, history)
     files['index.html'] = page.encode('utf-8')
     # Nothing is written until every release/card has validated. Git publishes
     # the complete snapshot; never rewrite a previously published binary.

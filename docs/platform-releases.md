@@ -8,7 +8,13 @@ Desktop/Apple tags use `windows-vX.Y.Z`, `ios-vX.Y.Z` and `macos-vX.Y.Z`. They d
 
 Clients from 0.5.1 first read their own `movie/updates/{platform}.json` feed, then select the newest matching official GitHub release containing that platform's package. Other platform versions, drafts and prereleases are ignored. Clients at 0.5.0 still use the legacy shared feed; install the first independent platform update from the download page, then subsequent updates use the new platform feed.
 
-The mirror runs `scripts/sync_platform_packages.py`. It patches only existing download-card package URLs, byte sizes and hashes, and writes the relevant platform feed. It does not render a new HTML page or alter CSS, layout, images, prose, unrelated packages or legacy Android update channels. Large files retain the site's existing verified GitHub download behavior. Corresponding source remains attached to each platform's release.
+The mirror runs `scripts/sync_platform_packages.py`. It patches existing download-card package URLs, byte sizes and hashes, writes the relevant platform feed, and updates only the existing changelog section with version-specific notes. It does not render a new HTML page or alter CSS, layout, images, unrelated prose/packages or legacy Android update channels. Large files retain the site's existing verified GitHub download behavior. Corresponding source remains attached to each platform's release.
+
+## Required notes for every update
+
+For each actual platform release, add a `docs/releases/{tag}.md` record and a platform/version entry in `CHANGELOG.md`. Use that reviewed record as the GitHub Release body. Name the platform, version, release date, additions, fixes, test scope, remaining limitations, and exact build commit. Describe only changes included in that package: an iOS build must not claim a later Android fix or unfinished plugin port. Unreleased work stays explicitly unreleased.
+
+The mirror keeps the same complete Release body in the platform feed and `movie/updates/history/{tag}.md`, indexes versions in `movie/updates/history.json`, and shows them inside the existing changelog section. It retains older records across updates and labels preview releases separately. A new independent official release with an empty body is rejected before any mirror file is written. Updating notes does not replace package bytes, hashes, styling or other platforms' downloads. Verify the published text and platform/version mapping on GitHub and the live mirror after each release.
 
 ## Published Windows update
 

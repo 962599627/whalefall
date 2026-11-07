@@ -18,7 +18,9 @@ class PackageTests(unittest.TestCase):
             cards.append(f'<div class="dl"><h3>{suffix}</h3><p>Existing copy · 12.0 MB</p>'
                          f'<a href="{name}">下载</a><a href="{name}.sha256">校验文件</a>'
                          f'<code>SHA-256：{"a" * 64}</code></div>')
-        self.page = '<style>existing CSS</style><header>Existing layout</header>' + ''.join(cards) + '<footer>Existing footer</footer>'
+        self.page = ('<style>existing CSS</style><header>Existing layout</header>' + ''.join(cards)
+                     + '<section class="block" id="changelog"><h2>Previous notes</h2></section>'
+                     + '<footer>Existing footer</footer>')
         (self.out / 'index.html').write_text(self.page, encoding='utf-8')
         (self.out / 'updates').mkdir()
         (self.out / 'updates/stable.json').write_text('{"versionName":"0.5.0"}', encoding='utf-8')
@@ -32,16 +34,25 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(self.sync(), {'ios': '0.5.1'})
         result = (self.out / 'index.html').read_text(encoding='utf-8')
         package = dict(url='https://github.com/Pilipala9919/MarcoMovie/releases/download/ios-v0.5.1/MarcoMovie-0.5.1-ios-unsigned.ipa', size=123456, sha256='b' * 64)
-        self.assertEqual(result, m.patch_card(self.page, 'ios-unsigned.ipa', package))
+        expected = m.patch_notes(m.patch_card(self.page, 'ios-unsigned.ipa', package), [m.note_record(self.release)])
+        self.assertEqual(result, expected)
         self.assertEqual((self.out / 'updates/stable.json').read_text(), '{"versionName":"0.5.0"}')
         self.assertFalse((self.out / 'updates/windows.json').exists())
         self.sync()
         self.assertEqual(result, (self.out / 'index.html').read_text(encoding='utf-8'))
 
-    def test_drafts_prereleases_other_platform_and_no_release_leave_page_unchanged(self):
-        self.sync([dict(self.release, draft=True), dict(self.release, prerelease=True), dict(self.release, tag_name='v0.5.0-preview')])
+    def test_drafts_unrecognized_and_no_release_leave_page_unchanged(self):
+        self.sync([dict(self.release, draft=True), dict(self.release, tag_name='unrelated'), dict(self.release, tag_name='v0.5.0-preview')])
         self.assertEqual((self.out / 'index.html').read_text(encoding='utf-8'), self.page)
         self.assertFalse((self.out / 'updates/ios.json').exists())
+
+    def test_preview_notes_are_labelled_without_publishing_preview_packages(self):
+        self.sync([dict(self.release, prerelease=True)])
+        self.assertFalse((self.out / 'updates/ios.json').exists())
+        page = (self.out / 'index.html').read_text(encoding='utf-8')
+        self.assertIn('0.5.1 · 预览版', page)
+        self.assertNotIn('<details open>', page)
+        self.assertIn('MarcoMovie-0.5.0-ios-unsigned.ipa', page)
 
     def test_missing_card_fails_without_writes(self):
         (self.out / 'index.html').write_text('<style>unchanged</style>')
@@ -66,6 +77,49 @@ class PackageTests(unittest.TestCase):
         self.assertFalse((self.out / 'updates/windows.json').exists())
         self.assertFalse((self.out / 'MarcoMovie-0.5.1-windows-setup.exe').exists())
         self.assertEqual((self.out / 'index.html').read_text(encoding='utf-8'), self.page)
+
+    def test_notes_are_complete_escaped_and_archived_for_each_version(self):
+        self.release['body'] = '新增本地包\n修复返回\n<script>not executable</script>\n已知限制：待实机测试'
+        self.sync()
+        notes = self.out / 'updates/history/ios-v0.5.1.md'
+        self.assertEqual(notes.read_text(encoding='utf-8'), self.release['body'] + '\n')
+        page = (self.out / 'index.html').read_text(encoding='utf-8')
+        self.assertIn('&lt;script&gt;not executable&lt;/script&gt;', page)
+        self.assertNotIn('<script>', page)
+        newer = dict(self.release, tag_name='ios-v0.5.2', published_at='later', body='第二版修复')
+        self.sync([newer])
+        records = json.loads((self.out / 'updates/history.json').read_text(encoding='utf-8'))['releases']
+        self.assertEqual({r['tag'] for r in records}, {'ios-v0.5.1', 'ios-v0.5.2'})
+        self.assertEqual(notes.read_text(encoding='utf-8'), self.release['body'] + '\n')
+        page = (self.out / 'index.html').read_text(encoding='utf-8')
+        self.assertEqual(page.count('<details open>'), 1)
+        self.assertIn('iPhone / iPad · 0.5.2', page)
+        self.assertIn('iPhone / iPad · 0.5.1', page)
+
+    def test_missing_new_release_notes_fails_before_any_write(self):
+        for body in ('', '  ', None):
+            with self.assertRaisesRegex(ValueError, 'missing update notes'):
+                self.sync([dict(self.release, body=body)])
+        self.assertEqual((self.out / 'index.html').read_text(encoding='utf-8'), self.page)
+        self.assertFalse((self.out / 'updates/ios.json').exists())
+        self.assertFalse((self.out / 'updates/history.json').exists())
+
+    def test_shared_release_notes_use_actual_package_platforms(self):
+        shared = dict(self.release, tag_name='v0.5.0-preview', body='共用版本的变更', assets=[
+            {'name': 'MarcoMovie-0.5.0-preview.apk'}, {'name': 'MarcoMovie-0.5.0-mobile.apk'},
+            {'name': 'MarcoMovie-0.5.0-ios-unsigned.ipa'}, {'name': 'MarcoMovie-0.5.0-source.zip'}])
+        self.sync([self.release, shared])
+        record = m.note_record(shared)
+        self.assertEqual(record['platforms'], ['android-tv', 'android-mobile', 'ios'])
+        self.assertEqual((self.out / 'updates/history/v0.5.0-preview.md').read_text(encoding='utf-8'), shared['body'] + '\n')
+        self.assertEqual((self.out / 'updates/stable.json').read_text(), '{"versionName":"0.5.0"}')
+
+    def test_missing_notes_section_fails_without_partial_feed(self):
+        (self.out / 'index.html').write_text(self.page.replace('id="changelog"', 'id="other"'), encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'changelog section'):
+            self.sync()
+        self.assertFalse((self.out / 'updates/ios.json').exists())
+        self.assertFalse((self.out / 'updates/history.json').exists())
 
 
 if __name__ == '__main__':
