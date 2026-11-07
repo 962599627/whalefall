@@ -7,7 +7,7 @@ on:
         type: choice
         required: true
         default: native
-        options: [native, cpython]
+        options: [native, cpython, cpython_flutter]
       probe_arch:
         description: CPython experiment architecture (ignored for native)
         type: choice
@@ -32,7 +32,7 @@ permissions:
   contents: read
 jobs:
   embedded:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.experiment != 'cpython' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.experiment == 'native' }}
     strategy:
       fail-fast: false
       matrix:
@@ -101,3 +101,53 @@ jobs:
             ${{ runner.temp }}/ios-cpython-results/**/app-watchdog.json
             ${{ runner.temp }}/ios-cpython-results/**/result.json
             ${{ runner.temp }}/ios-cpython-results/**/diagnostics/*
+
+  cpython-flutter-experiment:
+    name: Experimental Flutter CPython (${{ matrix.runner }})
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.experiment == 'cpython_flutter' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: >-
+          ${{ fromJSON(inputs.probe_arch == 'arm64' && '[{"runner":"macos-15","arch":"arm64"}]' ||
+          inputs.probe_arch == 'x86_64' && '[{"runner":"macos-15-intel","arch":"x86_64"}]' ||
+          '[{"runner":"macos-15","arch":"arm64"},{"runner":"macos-15-intel","arch":"x86_64"}]') }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Check simulator availability before building
+        run: |
+          xcodebuild -version
+          uname -m
+          python -c 'import subprocess; subprocess.run(["xcrun", "simctl", "list", "devices", "available", "--json"], check=True, timeout=90)'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.9'
+          channel: stable
+          cache: true
+      - name: Run isolated Flutter engine coexistence experiment
+        run: >-
+          python scripts/ios_cpython_flutter/run_flutter_probe.py
+          --arch '${{ matrix.arch }}'
+          --output-dir "$RUNNER_TEMP/ios-cpython-flutter-results"
+          --cache-dir "$RUNNER_TEMP/ios-cpython-downloads"
+      - name: Upload experimental evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-cpython-flutter-evidence-${{ matrix.runner }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/ios-cpython-flutter-results/**/inputs.json
+            ${{ runner.temp }}/ios-cpython-flutter-results/**/app-result.json
+            ${{ runner.temp }}/ios-cpython-flutter-results/**/result.json
+            ${{ runner.temp }}/ios-cpython-flutter-results/**/diagnostics/*
+            ${{ runner.temp }}/ios-cpython-flutter-results/**/build.log

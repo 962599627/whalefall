@@ -72,8 +72,17 @@ def validate_app_report(report, arch):
         raise ValueError("Executed dependency versions differ from locked wheels")
 
 
-def collect_diagnostics(out, progress, start_time):
+def diagnostic_identity(identifier, app_name):
+    if (identifier, app_name) not in (
+        (IDENTIFIER, "CPythonProbe"),
+        ("com.pilipala.experimental.cpythonflutter", "CPythonFlutterProbe"),
+    ):
+        raise ValueError("Diagnostics are restricted to the two owned experiment apps")
+
+
+def collect_diagnostics(out, progress, start_time, identifier=IDENTIFIER, app_name="CPythonProbe"):
     """Collect only this disposable app's diagnostics, never other app logs."""
+    diagnostic_identity(identifier, app_name)
     if sys.platform != "darwin":
         return
     folder = out / "diagnostics"
@@ -84,18 +93,18 @@ def collect_diagnostics(out, progress, start_time):
                             / progress["simulator_udid"] / "data/Library/Logs/CrashReporter"))
     copied = 0
     for origin, crash_root in crash_roots:
-        for source in sorted(crash_root.glob("CPythonProbe*")):
+        for source in sorted(crash_root.glob(app_name + "*")):
             if (source.is_file() and not source.is_symlink() and source.stat().st_mtime >= start_time - 5
                     and source.stat().st_size <= 5 * 1024 * 1024 and copied < 10):
                 shutil.copyfile(source, folder / (origin + "-" + source.name))
                 copied += 1
     if progress.get("simulator_udid"):
-        log = folder / "CPythonProbe-unified.log"
+        log = folder / (app_name + "-unified.log")
         try:
             with log.open("w", encoding="utf-8") as output:
                 subprocess.run(["xcrun", "simctl", "spawn", progress["simulator_udid"], "log", "show",
                                 "--last", "5m", "--style", "compact", "--info", "--debug",
-                                "--predicate", 'process == "CPythonProbe" OR eventMessage CONTAINS "com.pilipala.experimental.cpythonprobe"'],
+                                "--predicate", 'process == "' + app_name + '" OR eventMessage CONTAINS "' + identifier + '"'],
                                check=False, stdout=output, stderr=subprocess.STDOUT, text=True, timeout=25)
             if log.stat().st_size > 5 * 1024 * 1024:
                 with log.open("rb") as source:
@@ -275,6 +284,11 @@ def compile_and_sign(app, out, target, arch, identity, progress):
         "-F" + str(app / "Frameworks"), "-framework", "Python", "-framework", "Foundation",
         "-framework", "UIKit", "-Wl,-rpath,@executable_path/Frameworks",
         HERE / "CPythonProbe.mm", "-o", app / "CPythonProbe", progress=progress)
+    return sign_app(app, out, arch, identity, progress)
+
+
+def sign_app(app, out, arch, identity, progress):
+    """Sign a prepared owned app; shared by native and Flutter experiments."""
     # Keep headers until the native executable has been compiled. Only remove
     # checked paths inside this newly-created disposable app, never user content.
     for name in ("Headers", "Modules"):
@@ -302,7 +316,8 @@ def compile_and_sign(app, out, target, arch, identity, progress):
     return signed
 
 
-def simulator_run(app, udid, progress):
+def simulator_run(app, udid, progress, identifier=IDENTIFIER, app_name="CPythonProbe"):
+    diagnostic_identity(identifier, app_name)
     inventory = json.loads(run("xcrun", "simctl", "list", "devices", "available", "--json", capture=True, progress=progress))
     candidates = [(runtime, device) for runtime, devices in inventory["devices"].items()
                   if ".iOS-" in runtime for device in devices if device.get("isAvailable")
@@ -322,7 +337,7 @@ def simulator_run(app, udid, progress):
         run("xcrun", "simctl", "boot", udid, progress=progress)
     run("xcrun", "simctl", "bootstatus", udid, "-b", timeout=360, progress=progress)
     run("xcrun", "simctl", "install", udid, app, progress=progress)
-    container = Path(run("xcrun", "simctl", "get_app_container", udid, IDENTIFIER, "data", capture=True, progress=progress))
+    container = Path(run("xcrun", "simctl", "get_app_container", udid, identifier, "data", capture=True, progress=progress))
     result_file = container / "Documents/result.json"
     watchdog_file = container / "Documents/watchdog.json"
     result_file.unlink(missing_ok=True)
@@ -331,7 +346,7 @@ def simulator_run(app, udid, progress):
         (container / "Documents" / name).unlink(missing_ok=True)
     launched = False
     try:
-        run("xcrun", "simctl", "launch", "--terminate-running-process", udid, IDENTIFIER, timeout=90, progress=progress)
+        run("xcrun", "simctl", "launch", "--terminate-running-process", udid, identifier, timeout=90, progress=progress)
         launched = True
         deadline = time.monotonic() + 70
         while time.monotonic() < deadline:
@@ -354,7 +369,7 @@ def simulator_run(app, udid, progress):
         if launched:
             # This is an external CI runner ending its own disposable app, not a
             # capability available to the production app to kill one source.
-            subprocess.run(["xcrun", "simctl", "terminate", udid, IDENTIFIER], check=False, timeout=30)
+            subprocess.run(["xcrun", "simctl", "terminate", udid, identifier], check=False, timeout=30)
 
 
 def main():

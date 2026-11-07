@@ -26,6 +26,17 @@ def main():
         if not result:
             raise AssertionError(name)
 
+    probe.diagnostic_identity(probe.IDENTIFIER, "CPythonProbe")
+    probe.diagnostic_identity("com.pilipala.experimental.cpythonflutter", "CPythonFlutterProbe")
+    for identifier, app_name in (("com.other.app", "OtherApp"), (probe.IDENTIFIER, "*"),
+                                 (probe.IDENTIFIER, "Runner"), (probe.IDENTIFIER, "CPythonFlutterProbe")):
+        try:
+            probe.diagnostic_identity(identifier, app_name)
+        except ValueError:
+            check("reject_unowned_diagnostic_identity_" + app_name, True)
+        else:
+            check("reject_unowned_diagnostic_identity_" + app_name, False)
+
     for path in ("../escape", "/absolute", "C:/absolute", "a/../escape", "a\\b", "", "dir/name:stream"):
         try:
             probe.checked_relative(path)
