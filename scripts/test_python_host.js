@@ -236,6 +236,28 @@ async function exerciseSession(req, origin, mode) {
 }
 
 async function main() {
+  for (const asynchronous of [false, true]) {
+    let requests = 0;
+    const construct = context(() => {
+      requests++;
+      const response = {code:200, url:'https://fixture.invalid/bootstrap', headers:{},
+        content:Buffer.from('{"title":"constructor ready"}').toString('base64')};
+      return asynchronous ? Promise.resolve(response) : response;
+    }, `
+import requests
+class Spider:
+ def __init__(self): self.title = requests.get('https://fixture.invalid/bootstrap').json()['title']
+ def init(self, ext): self.title += ext
+ def homeContent(self, filter): return self.title
+`);
+    const initialized = construct.init(' / initialized');
+    assert.equal(Boolean(initialized && initialized.then), asynchronous);
+    await initialized;
+    assert.equal(await construct.home(true), 'constructor ready / initialized');
+    assert.equal(await construct.home(true), 'constructor ready / initialized');
+    assert.equal(requests, 1);
+  }
+  console.log('PASS Python synchronous and asynchronous constructor completes before init and retains state');
   const reads = [];
   const asynchronous = context(() => { throw Error('unexpected HTTP'); }, `
 from remotehelper import title

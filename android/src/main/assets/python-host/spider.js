@@ -585,8 +585,13 @@ function createPythonSpider(source, files = {}, readSibling) {
       const boot = Sk.importMainWithBody("<source>", false, source, true);
       function initialize(mod) {
         if (!mod.$d.Spider) throw new Error("Python 来源缺少 Spider 类");
-        instance = Sk.misceval.callsimArray(mod.$d.Spider, []);
-        return invoke("init", [ext], true);
+        const created = Sk.misceval.callsimOrSuspendArray(mod.$d.Spider, []);
+        function ready(value) {
+          instance = value;
+          return invoke("init", [ext], true);
+        }
+        return created && created.$isSuspension
+          ? Sk.misceval.asyncToPromise(() => created).then(ready) : ready(created);
       }
       return boot && boot.$isSuspension
         ? Sk.misceval.asyncToPromise(() => boot).then(initialize) : initialize(boot);
