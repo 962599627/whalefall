@@ -123,6 +123,8 @@ NSArray *runQuickJsProbe(NSString *assets) {
       [checks addObject:check];
     }
     }
+    // Start this separate operation with its own budget, as the production host does.
+    jsSetOperationTimeout(rt,8000);
     NSString *proxySource=@"from base.spider import Spider as Base\nclass Spider(Base):\n def init(self, ext): self.ticket='retained'\n def homeContent(self, filter): return [self.getProxyUrl({'ticket':'a b'}), self.proxyUrl({'ticket':'new'})]\n def localProxy(self, params):\n  assert self.ticket == 'retained' and params['range'] == 'bytes=1-2'\n  return [200,'application/octet-stream',bytes([0,255,128,65]),{'X-State':self.ticket}]\n";
     evaluate(ctx,[NSString stringWithFormat:@"globalThis.__movieProxyBase='http://127.0.0.1:8191/_spider/fixture/proxy?do=py&siteKey=native';globalThis.proxyDone=false;globalThis.proxyError='';globalThis.proxySpider=createPythonSpider(%@);Promise.resolve(proxySpider.init('')).then(()=>proxySpider.home(true)).then(value=>{globalThis.proxyUrls=value;return proxySpider.proxy({range:'bytes=1-2'});}).then(value=>{globalThis.proxyValue=value;proxyDone=true;}).catch(error=>{proxyError=String(error);proxyDone=true;});",literal(proxySource)],JS_EVAL_TYPE_GLOBAL,@"python-proxy.js");
     until=[NSDate dateWithTimeIntervalSinceNow:8];
