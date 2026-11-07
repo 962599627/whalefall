@@ -15,8 +15,9 @@
   "flutter/packages/quickjs_engine/native/cxx/quickjs/cutils.h": "b93331edd1bf86e1c0b516657d0b16b95bba5f24d799d9824df16f903173b5c2",
   "flutter/packages/quickjs_engine/native/cxx/quickjs/quickjs.c": "5ba0522ebfa81b6e5c94008e801399c9395eeaaa1829fb49db71228d3b538173",
   "flutter/packages/quickjs_engine/pubspec.yaml": "fb1eed5571c397a1d0749cdbddbee45b0c8d268ba4d212088c9fbb69ef617096",
-  "shared/catpaw/fetch.cjs": "2ddf437c2ee71cde3e53981b6edb406f8ee64021ee02317d5cae48e3cf39e9be",
+  "scripts/native/v8-char16-libcxx19.patch": "e2b3e182bcade38f99e26ebb2bd9c3086d48dcd0b1fbec3fb59ea8f08ffca40c",
   "shared/catpaw/fetch-LICENSE.txt": "d4f4b9ddd077206b7ef5a3831995b37773afdd95fb8005e1d4beb703856d9d44",
   "shared/catpaw/fetch-provenance.json": "bc8673ff9621fa82e9a780fccbeea6cddc351fd3d0fb1c09e4458ede6a1549d6",
+  "shared/catpaw/fetch.cjs": "2ddf437c2ee71cde3e53981b6edb406f8ee64021ee02317d5cae48e3cf39e9be",
   "shared/catpaw/node-mobile-LICENSE.txt": "66233b87054d6bca9b0c2f23b027bb2caf1ebd961a6f981616d098dade33af34"
 }
