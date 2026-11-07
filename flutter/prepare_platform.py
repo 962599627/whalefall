@@ -206,9 +206,17 @@ def main() -> None:
                 "flutter_additional_ios_build_settings(target)\n"
                 "    target.build_configurations.each do |config|\n"
                 "      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0' if Gem::Version.new(config.build_settings.fetch('IPHONEOS_DEPLOYMENT_TARGET', '0')) < Gem::Version.new('14.0')\n"
-                "      config.build_settings['OTHER_LDFLAGS'] = '$(inherited) -Wl,-no_fixup_chains'\n"
-                "      config.build_settings['OTHER_CFLAGS'] = '$(inherited) -fno-objc-msgsend-selector-stubs'\n"
+                "      config.build_settings['OTHER_LDFLAGS'] = (['$(inherited)'] + Array(config.build_settings['OTHER_LDFLAGS']) + ['-Wl,-no_fixup_chains']).uniq\n"
+                "      config.build_settings['OTHER_CFLAGS'] = (['$(inherited)'] + Array(config.build_settings['OTHER_CFLAGS']) + ['-fno-objc-msgsend-selector-stubs']).uniq\n"
                 "    end",
+            )
+        # Upgrade an already generated Podfile as well as a fresh runner. Keep
+        # CocoaPods' explicit Flutter/NodeMobile framework link arguments.
+        for key, flag in (("OTHER_LDFLAGS", "-Wl,-no_fixup_chains"),
+                          ("OTHER_CFLAGS", "-fno-objc-msgsend-selector-stubs")):
+            text = text.replace(
+                f"config.build_settings['{key}'] = '$(inherited) {flag}'",
+                f"config.build_settings['{key}'] = (['$(inherited)'] + Array(config.build_settings['{key}']) + ['{flag}']).uniq",
             )
         ios_podfile.write_text(text, encoding="utf-8")
     # Windows icon, working directory, immediate window show, and title

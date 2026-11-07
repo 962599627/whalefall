@@ -51,7 +51,9 @@ def build():
      if n.startswith('jni/armeabi-v7a/') and n.endswith('.so'):native['lib/'+n[4:]]=z.read(n)
  run(exe(SDK,'aapt2'),'compile','--dir',SRC/'res','-o',BUILD/'res.zip')
  run(exe(SDK,'aapt2'),'link','-o',BUILD/'res.apk','--manifest',SRC/'AndroidManifest.xml','-I',API14,'--java',BUILD/'generated',BUILD/'res.zip')
- sources=list((SRC/'java').rglob('*.java'))+list((ROOT/'shared/java').rglob('*.java'))+list((BUILD/'generated').rglob('*.java'))
+ # Lite has no embedded CatPaw runtime; its API 14 build must not link API 21+ hosts.
+ shared=[p for package in ('emby','source','glass') for p in (ROOT/'shared/java/com/pilipala'/package).rglob('*.java')]
+ sources=list((SRC/'java').rglob('*.java'))+shared+list((BUILD/'generated').rglob('*.java'))
  if candidate:sources+=list((ROOT/'lite/experimental').glob('*.java'))
  run(exe(JDK/'bin','javac'),'-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-bootclasspath',API14,'-classpath',os.pathsep.join(map(str,dependencies)),'-d',BUILD/'classes',*sources)
  with zipfile.ZipFile(BUILD/'classes.jar','w',zipfile.ZIP_DEFLATED) as z:

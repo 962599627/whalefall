@@ -3196,6 +3196,10 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                             ),
                       onTap: () {
                         Navigator.of(ctx).pop();
+                        if (s.isCatPaw && Uri.parse(s.api).path == '/api/baseset') {
+                          _showCatPawSettings(s);
+                          return;
+                        }
                         setState(() {
                           _privateSessionUnlocked = true;
                           _activeSite = s;
