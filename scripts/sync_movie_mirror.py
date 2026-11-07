@@ -172,6 +172,11 @@ def sync(output):
         notice = archive.read(f'MarcoMovie-{version}/NOTICE')
     feed = dict(schema=1, versionCode=identity['versionCode'], versionName=version, minSdk=identity['minSdk'],
                 size=len(apk), sha256=sha, url=BASE + apk_name, prerelease=True, notes=(release.get('body') or '')[:8000])
+    for name, _, _, href, size, digest, _ in platforms:
+        if name == f'MarcoMovie-{version}-mobile.apk':
+            feed['mobile'] = dict(size=size, sha256=digest, url=href if href.startswith('https://') else BASE + name)
+        if name == f'MarcoMovie-{version}-windows-setup.exe':
+            feed['windows'] = dict(size=size, sha256=digest, url=href if href.startswith('https://') else BASE + name)
     feed_path = output / 'updates/preview.json'
     if feed_path.exists():
         previous = json.loads(feed_path.read_text(encoding='utf-8'))

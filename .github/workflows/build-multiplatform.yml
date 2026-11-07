@@ -9,6 +9,7 @@ on:
       - "android/**"
       - "lite/**"
       - "flutter/**"
+      - "shared/**"
       - "scripts/**"
       - ".github/workflows/build-multiplatform.yml"
     tags:
@@ -27,6 +28,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
       - uses: actions/setup-java@v4
         with:
           distribution: "zulu"
@@ -45,7 +49,14 @@ jobs:
           python android/tests/run_review_fix_checks.py
           python android/tests/run_update_checks.py
           python android/tests/run_tv_input_checks.py
+          python android/tests/run_local_package_checks.py
+          python android/tests/run_emby_checks.py
+          python android/tests/run_warehouse_checks.py
+          python android/tests/run_video_filter_checks.py
+          python android/tests/run_glasswork_checks.py
+          python -m unittest discover -s flutter -p "test_*.py"
           python scripts/test_movie_mirror.py
+          python scripts/test_catpaw_host.py
 
   build-android:
     name: Build & Verify Android TV/Phone/Tablet APK
@@ -80,9 +91,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
+          flutter-version: "3.38.9"
       - name: Generate platform runner & build Windows release
         working-directory: flutter
         run: |
@@ -92,12 +107,18 @@ jobs:
           python prepare_platform.py
           flutter pub get
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake -S packages/quickjs_engine/native -B packages/quickjs_engine/native/build -A x64
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake --build packages/quickjs_engine/native/build --config Release --parallel 4
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           flutter test
           if ($LASTEXITCODE -ne 0) { exit 1 }
           flutter build windows --release
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $version = ((Select-String pubspec.yaml -Pattern '^version:').Line -replace '^version:\s*','' -replace '\+.*','').Trim()
           $releaseDir = "build/windows/x64/runner/Release"
+          python ../scripts/prepare_catpaw_runtime.py --platform windows --destination "$releaseDir/data/node"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           foreach ($dll in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "concrt140.dll")) {
             $sysDll = Join-Path $env:SystemRoot "System32\$dll"
             if (Test-Path $sysDll) {
@@ -169,9 +190,13 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
+          flutter-version: "3.38.9"
       - name: Generate platform runner & build macOS release
         working-directory: flutter
         run: |
@@ -180,8 +205,13 @@ jobs:
           flutter create --platforms=macos --project-name=marco_movie .
           python3 prepare_platform.py
           flutter pub get
+          cmake -S packages/quickjs_engine/native -B packages/quickjs_engine/native/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build packages/quickjs_engine/native/build --parallel 4
           flutter test
           flutter build macos --release
+          APP=$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)
+          python3 ../scripts/prepare_catpaw_runtime.py --platform macos --destination "$APP/Contents/Frameworks/node"
+          codesign --force --deep --sign - --preserve-metadata=entitlements "$APP"
           VERSION=$(sed -n 's/^version:[[:space:]]*\([^+]*\).*/\1/p' pubspec.yaml)
           mkdir -p dist
           ZIP_NAME="MarcoMovie-$VERSION-macos.zip"
@@ -201,16 +231,23 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
+          flutter-version: "3.38.9"
       - name: Generate platform runner & build iOS/iPadOS IPA
         working-directory: flutter
         run: |
           python3 prepare_platform.py
           flutter create --platforms=ios --org com.pilipala --project-name=marco_movie .
           python3 prepare_platform.py
+          python3 ../scripts/prepare_catpaw_runtime.py --platform ios --destination packages/catpaw_runtime/ios/Frameworks
           flutter pub get
+          cmake -S packages/quickjs_engine/native -B packages/quickjs_engine/native/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build packages/quickjs_engine/native/build --parallel 4
           flutter test
           flutter build ios --release --no-codesign
           python3 patch_ios_ipa.py build/ios/iphoneos/Runner.app
@@ -230,7 +267,7 @@ jobs:
   publish-release:
     name: Attach Multiplatform Assets & Promote Official Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-windows, build-macos, build-ios]
+    needs: [build-android, build-windows, build-macos, build-ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write
