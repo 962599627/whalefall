@@ -66,7 +66,7 @@ class Spider(Base):
         return errors
 `;
 
-function context(req, script = source, inspect = () => {}) {
+function context(req, script = source, inspect = () => {}, readSibling) {
   const context = vm.createContext({req, console, setTimeout, clearTimeout});
   const dependencies = fs.readFileSync(path.join(__dirname, '../shared/catpaw/drpy-dependencies.js'), 'utf8');
   vm.runInContext("globalThis.__moviePythonHtmlParser=function(){const navigator={appName:'Netscape'};\n" + dependencies +
@@ -75,7 +75,7 @@ function context(req, script = source, inspect = () => {}) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../android/src/main/assets/python-host', name), 'utf8'), context, {filename:name});
   }
   inspect(context);
-  return context.createPythonSpider(script);
+  return context.createPythonSpider(script, {}, readSibling);
 }
 
 function response(url, options, body) {
@@ -236,6 +236,22 @@ async function exerciseSession(req, origin, mode) {
 }
 
 async function main() {
+  const reads = [];
+  const asynchronous = context(() => { throw Error('unexpected HTTP'); }, `
+from remotehelper import title
+class Spider:
+ def homeContent(self, filter):
+  from later import value
+  return [title, value]
+`, () => {}, async name => {
+    reads.push(name);
+    return {'remotehelper.py':"title = 'remote module'", 'later.py':'value = 42'}[name] ?? null;
+  });
+  await asynchronous.init('');
+  assert.deepEqual(Array.from(await asynchronous.home(true)), ['remote module', 42]);
+  assert.deepEqual(Array.from(await asynchronous.home(true)), ['remote module', 42]);
+  assert.equal(reads.filter(v => v === 'later.py').length, 1);
+  console.log('PASS Python asynchronous sibling imports, late imports and module reuse');
   const htmlSource = fs.readFileSync(path.join(__dirname, 'fixtures/python_html_contract.py'), 'utf8');
   const htmlExpected = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/python_html_expected.json'), 'utf8'));
   const htmlSpider = context(() => { throw Error('HTML parser must not make network requests'); }, htmlSource);

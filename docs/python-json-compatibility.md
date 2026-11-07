@@ -14,7 +14,7 @@ subclass of `ValueError`. `load` and `dump` call the supplied stream's actual
 system filesystem or pretend to persist cookies. Python HTTP JSON request bodies
 use this same encoder, preserving large IDs through the transport.
 
-The scope is bounded to 2 MiB of input/output text, 80 nested containers and
+The scope is bounded to 2,097,152 input/output characters (or input bytes), 80 nested containers and
 100,000 values. UTF-8 bytes, including a byte-order mark, are accepted. UTF-16/32
 byte inputs and custom encoder/decoder classes currently fail explicitly.
 Unknown options are rejected rather than silently ignored. This is not a claim

@@ -9,7 +9,7 @@ This is an acceptance checklist, **not a declaration of compatibility**. The 0.5
 | TXT / M3U | Content-based playlist parsing | Actual supplied playlists load their groups/channels and play on iPhone, including relative URLs and required request headers |
 | JSON / XML | CMS interfaces and subscription configuration parsing | Supplied subscriptions complete catalogue, search, detail, episode selection and playback; failures of individual sites stay distinguishable |
 | JS | QuickJS Spider / ES module host; local CatPaw host for matching packages | Requested scripts, modules and synchronous DRPY APIs work end to end; script import alone is insufficient |
-| Python | Skulpt Spider, basic requests / JSON and sibling modules | Requested Python modules and parser dependencies work; lxml/native extensions/full CPython are not currently claimed supported |
+| Python | Skulpt Spider, requests / bounded JSON, local and asynchronous remote sibling modules | Requested Python modules and parser dependencies work; lxml/native extensions/full CPython are not currently claimed supported |
 | PHP / extensionless endpoints | Fetch endpoint and parse its actual response content | The supplied endpoint is reachable and its actual configuration/API format works; `.php` does not identify a client-side executable format |
 | Local package | ZIP entry configuration, relative script/module paths and lists; Flutter DRPY packages retain nested local helpers and JSON data | Each requested package's entrypoint, dependencies, files and playback resolve on iPhone without an external device |
 | Multi-repository | Nested warehouse import and ownership | The supplied warehouse and selected child subscriptions pass the same playback checks, not just directory import |
@@ -20,6 +20,15 @@ This is an acceptance checklist, **not a declaration of compatibility**. The 0.5
 For each representative source, retain separate results for import, catalogue/search, detail/episodes, resolved media, actual playback and application restart. Record the tested iPhone/iOS and package version. Mark a source as incomplete if only its file type or catalogue is recognized. Do not hide incomplete sources or relabel an ordinary HTTP adapter as a plugin port.
 
 The user's supplied configuration/service URLs and authentication details remain private test data. Dead endpoints, unavailable content or authentication requirements must be recorded separately from parser/runtime failures, rather than silently reported as successful adaptation.
+
+Remote Python dependencies now load on demand from the entry script's directory,
+including package `__init__.py`, nested modules and imports first reached during
+detail/playback. They use the source's existing bounded HTTP transport, preserve
+same-origin request headers and strip credentials on cross-origin redirects.
+Local packages never fall back to remote module lookup. Modules are retained only
+inside their source session; cancelled loads cannot populate a replacement
+session. Local HTTP/QuickJS fixtures cover these behaviors. Real supplied sources
+and physical playback remain separate acceptance requirements.
 
 ## Embedded runtime follow-up
 

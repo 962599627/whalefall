@@ -45,7 +45,7 @@ NSArray *runQuickJsProbe(NSString *assets) {
     [checks addObject:@{@"name":@"quickjs_native_es_module",@"passed":@(boolean(ctx,@"moduleTitle==='iOS 模块'"))}];
     NSString *dependencies=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:@"runtime/drpy-dependencies.js"] encoding:NSUTF8StringEncoding error:nil];
     if(!dependencies) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"html_dependency_missing" userInfo:nil];
-    evaluate(ctx,[@"globalThis.__moviePythonHtmlParser=function(){const navigator={appName:'Netscape'};\n" stringByAppendingFormat:@"%@\nglobalThis.__moviePythonHtmlParser=()=>DRPYDeps.cheerio;return DRPYDeps.cheerio;};", dependencies]);
+    evaluate(ctx,[@"globalThis.__moviePythonHtmlParser=function(){const navigator={appName:'Netscape'};\n" stringByAppendingFormat:@"%@\nglobalThis.__moviePythonHtmlParser=()=>DRPYDeps.cheerio;return DRPYDeps.cheerio;};", dependencies],JS_EVAL_TYPE_GLOBAL,@"python-parser-loader.js");
     for(NSString *name in @[@"skulpt.min.js",@"skulpt-stdlib.js",@"html.js",@"regex.js",@"json.js",@"spider.js"]){
       NSString *file=[[assets stringByAppendingPathComponent:@"python-host"] stringByAppendingPathComponent:name];
       NSString *source=[NSString stringWithContentsOfFile:file encoding:NSUTF8StringEncoding error:nil];
@@ -53,11 +53,16 @@ NSArray *runQuickJsProbe(NSString *assets) {
       evaluate(ctx,source,JS_EVAL_TYPE_GLOBAL,name);
     }
     // HTTP response is synthetic here; the separate Node test uses a real socket.
+    // Asset setup is not a Python operation. Start the same bounded operation
+    // clock immediately before invoking it, as subsequent probes already do.
+    jsSetOperationTimeout(rt,8000);
+    NSDate *pythonCallStarted=[NSDate date];
     NSString *response=@"{\"list\":[{\"vod_id\":\"one\",\"vod_name\":\"Python HTTP\"}]}";
     NSString *encoded=[[response dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
-    evaluate(ctx,[NSString stringWithFormat:@"globalThis.binaryBodySeen=false;globalThis.req=async(url,options={})=>{if(url.endsWith('/upload')){if(options.bodyBase64!=='AP+AQQ=='||'data' in options||'body' in options)throw Error('binary request bridge');binaryBodySeen=true;}return {code:200,url,headers:{'Content-Type':'application/json'},content:options.buffer===2?%@:%@};};",literal(encoded),literal(response)]);
+    evaluate(ctx,[NSString stringWithFormat:@"globalThis.binaryBodySeen=false;globalThis.req=async(url,options={})=>{if(url.endsWith('/upload')){if(options.bodyBase64!=='AP+AQQ=='||'data' in options||'body' in options)throw Error('binary request bridge');binaryBodySeen=true;}return {code:200,url,headers:{'Content-Type':'application/json'},content:options.buffer===2?%@:%@};};",literal(encoded),literal(response)],JS_EVAL_TYPE_GLOBAL,@"python-request-fixture.js");
     NSString *python=@"import base64\nimport requests\nfrom helper import title\nfrom base.spider import Spider as Base\nclass Spider(Base):\n    def homeContent(self, filter):\n        jar=requests.Session().cookies\n        jar.set('sid','fixture',domain='fixture.invalid',path='/auth',secure=True)\n        cookie=list(jar)[0]\n        return {'list':[{'vod_id':'one','vod_name':title}], 'cookie_ok':cookie.name=='sid' and cookie.value=='fixture' and cookie.domain=='fixture.invalid' and cookie.path=='/auth' and cookie.secure and dict(jar)=={'sid':'fixture'}}\n    def searchContent(self, key, quick, pg='1'):\n        return self.fetch('https://fixture.invalid/data').json()\n    def playerContent(self, flag, id, vip):\n        if list(base64.urlsafe_b64decode('AP8q')) != [0,255,42]: raise ValueError('bytes')\n        requests.post('https://fixture.invalid/upload',data=bytes([0,255,128,65]))\n        return {'url':'https://fixture.invalid/video.mp4'}\n";
-    evaluate(ctx,[NSString stringWithFormat:@"globalThis.py=createPythonSpider(%@,%@);globalThis.pyDone=false;globalThis.pyFailed=false;Promise.resolve(py.init('')).then(async()=>{globalThis.pyHome=await py.home(true);Sk.execStart-=9000;Sk.lastYield-=9000;globalThis.pySearch=await py.search('test',false,1);globalThis.pyPlay=await py.play('line','one',[]);pyDone=true;}).catch(error=>{globalThis.pyError=String(error);pyFailed=true;pyDone=true;});",literal(python),literal(@{@"helper.py":@"title='Python 本机模块'\n"})]);
+    python=[python stringByAppendingString:@"\nfrom remotehelper import remote_title\nassert remote_title == 'native async helper'\n"];
+    evaluate(ctx,[NSString stringWithFormat:@"globalThis.pythonRemoteReads=0;globalThis.py=createPythonSpider(%@,%@,async name=>{pythonRemoteReads++;return name==='remotehelper.py'?\"remote_title = 'native async helper'\":null;});globalThis.pyDone=false;globalThis.pyFailed=false;Promise.resolve(py.init('')).then(async()=>{globalThis.pyHome=await py.home(true);Sk.execStart-=9000;Sk.lastYield-=9000;globalThis.pySearch=await py.search('test',false,1);globalThis.pyPlay=await py.play('line','one',[]);pyDone=true;}).catch(error=>{globalThis.pyError=String(error);pyFailed=true;pyDone=true;});",literal(python),literal(@{@"helper.py":@"title='Python 本机模块'\n"})],JS_EVAL_TYPE_GLOBAL,@"python-bootstrap.js");
     NSDate *until=[NSDate dateWithTimeIntervalSinceNow:8];
     while(!boolean(ctx,@"pyDone")&&until.timeIntervalSinceNow>0){
       while(jsExecutePendingJob(rt)>0){} [NSThread sleepForTimeInterval:.001];
@@ -69,7 +74,8 @@ NSArray *runQuickJsProbe(NSString *assets) {
       if(text)JS_FreeCString(ctx,text);JS_FreeValue(ctx,error);JS_FreeValue(ctx,global);
       @throw [NSException exceptionWithName:@"QuickJsProbe" reason:[@"python_execution: " stringByAppendingString:message] userInfo:nil];
     }
-    [checks addObject:@{@"name":@"python_native_local_module",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pyHome.list[0].vod_name==='Python 本机模块'"))}];
+    [checks addObject:@{@"name":@"python_native_local_module",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pyHome.list[0].vod_name==='Python 本机模块'")),@"elapsed_ms":@(-pythonCallStarted.timeIntervalSinceNow*1000)}];
+    [checks addObject:@{@"name":@"python_native_async_module",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pythonRemoteReads>0"))}];
     [checks addObject:@{@"name":@"python_native_async_response",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pySearch.list[0].vod_name==='Python HTTP'"))}];
     [checks addObject:@{@"name":@"python_native_binary_play_result",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pyPlay.url==='https://fixture.invalid/video.mp4'"))}];
     [checks addObject:@{@"name":@"python_native_cookie_objects",@"passed":@(boolean(ctx,@"pyDone&&!pyFailed&&pyHome.cookie_ok===true"))}];
@@ -81,7 +87,7 @@ NSArray *runQuickJsProbe(NSString *assets) {
     NSDictionary *htmlExpected=htmlExpectedData?[NSJSONSerialization JSONObjectWithData:htmlExpectedData options:0 error:nil]:nil;
     if(!htmlSource||htmlExpected.count!=([contract isEqualToString:@"html"]?21:28)) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:[contract stringByAppendingString:@"_contract_fixture_missing"] userInfo:nil];
     jsSetOperationTimeout(rt,8000);
-    evaluate(ctx,[NSString stringWithFormat:@"globalThis.htmlDone=false;globalThis.htmlError='';globalThis.htmlSpider=createPythonSpider(%@);Promise.resolve(htmlSpider.init('')).then(()=>htmlSpider.home(true)).then(value=>{globalThis.htmlResult=value;htmlDone=true;}).catch(error=>{htmlError=String(error);htmlDone=true;});globalThis.htmlExpected=%@;",literal(htmlSource),literal(htmlExpected)]);
+    evaluate(ctx,[NSString stringWithFormat:@"globalThis.htmlDone=false;globalThis.htmlError='';globalThis.htmlSpider=createPythonSpider(%@);Promise.resolve(htmlSpider.init('')).then(()=>htmlSpider.home(true)).then(value=>{globalThis.htmlResult=value;htmlDone=true;}).catch(error=>{htmlError=String(error);htmlDone=true;});globalThis.htmlExpected=%@;",literal(htmlSource),literal(htmlExpected)],JS_EVAL_TYPE_GLOBAL,@"python-oracle.js");
     until=[NSDate dateWithTimeIntervalSinceNow:8];
     while(!boolean(ctx,@"htmlDone")&&until.timeIntervalSinceNow>0){
       while(jsExecutePendingJob(rt)>0){} [NSThread sleepForTimeInterval:.001];

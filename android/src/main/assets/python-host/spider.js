@@ -532,6 +532,8 @@ function createPythonSpider(source, files = {}, readSibling) {
     "class TooManyRedirects(RequestException): pass",
   ].join("\n");
   library["src/lib/_movie_http.js"] = httpBridge;
+  const standardRoots = new Set(Object.keys(library).map(path =>
+    /^src\/lib\/([^/.]+)(?:\.|\/)/.exec(path)?.[1]).filter(Boolean));
   for (const path of Object.keys(files)) {
     if (/^(?:[A-Za-z_]\w*\/)*[A-Za-z_]\w*\.py$/.test(path)) {
       library["src/lib/" + path] = files[path];
@@ -543,9 +545,17 @@ function createPythonSpider(source, files = {}, readSibling) {
     output() {},
     read(path) {
       if (Object.prototype.hasOwnProperty.call(library, path)) return library[path];
-      if (readSibling && /^src\/lib\/(?:[A-Za-z_]\w*\/)*[A-Za-z_]\w*\.py$/.test(path)) {
+      if (readSibling && !standardRoots.has(path.substring('src/lib/'.length).split(/[/.]/)[0]) &&
+          /^src\/lib\/(?:[A-Za-z_]\w*\/)*[A-Za-z_]\w*\.py$/.test(path)) {
         const text = readSibling(path.substring("src/lib/".length));
         if (typeof text === "string") return text;
+        if (text && typeof text.then === 'function') {
+          return Sk.misceval.promiseToSuspension(text.then(value => {
+            if (typeof value !== 'string') throw new Error('Python 模块不可用：' + path);
+            library[path] = value;
+            return value;
+          }));
+        }
       }
       throw new Error("Python 模块不可用：" + path);
     }

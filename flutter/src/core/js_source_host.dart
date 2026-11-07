@@ -372,6 +372,9 @@ class _JsRuntimeSession {
   late Duration budget;
   final requests = <Future<dynamic>>[];
   final _timers = <String, Timer>{};
+  final _pythonMissingModules = <String>{};
+  int _pythonModuleBytes = 0;
+  int _networkRequestCount = 0;
   bool _initialized = false;
   bool _cancelled = false;
   bool _active = false;
@@ -395,8 +398,16 @@ class _JsRuntimeSession {
     );
     runtime.onMessage('request', (args) {
       if (!_active || _cancelled) throw StateError('脚本操作已取消');
-      if (requests.length >= 32) throw StateError('单次脚本操作的网络请求过多');
+      if (++_networkRequestCount > 32) throw StateError('单次脚本操作的网络请求过多');
       final pending = request(args);
+      requests.add(pending.then<void>((_) {}, onError: (Object _) {}));
+      return pending;
+    });
+    runtime.onMessage('pythonModule', (args) {
+      // A cancelled import may probe its alternative filename while draining.
+      // Complete that probe without starting transport or retaining any source.
+      if (!_active || _cancelled) return 'null';
+      final pending = pythonModule(args.toString());
       requests.add(pending.then<void>((_) {}, onError: (Object _) {}));
       return pending;
     });
@@ -447,6 +458,7 @@ class _JsRuntimeSession {
     _cancelled = false;
     _active = true;
     requests.clear();
+    _networkRequestCount = 0;
     client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
     runtime.setOperationTimeout(budget);
     try {
@@ -494,6 +506,13 @@ class _JsRuntimeSession {
     final source = modules[entry]!;
     await checked(interop);
     if (pythonPrelude.isNotEmpty) {
+      _pythonModuleBytes = modules.values.fold(
+        0,
+        (total, text) => total + utf8.encode(text).length,
+      );
+      if (modules.length > 32 || _pythonModuleBytes > maxBytes) {
+        throw const FormatException('Python 模块数量或总大小超过限制');
+      }
       for (final text in pythonPrelude) {
         await checked('$text\n;void 0;');
       }
@@ -506,7 +525,8 @@ class _JsRuntimeSession {
             item.key.substring(directory.length): item.value,
       };
       await checked(
-        'globalThis.__movieSpider = createPythonSpider(${jsonEncode(source)},${jsonEncode(siblings)}); void 0;',
+        'globalThis.__movieSpider = createPythonSpider(${jsonEncode(source)},${jsonEncode(siblings)}, '
+        'async path => JSON.parse(await sendMessage("pythonModule", JSON.stringify(path)))); void 0;',
       );
     } else if (JsSourceHost.isCatSpider(source) &&
         !JsSourceHost.isEsModule(source)) {
@@ -548,6 +568,44 @@ class _JsRuntimeSession {
     await checked(
       'Promise.resolve(__movieSpider.init?.(${jsonEncode(extension)}))',
     );
+  }
+
+  Future<String> pythonModule(String path) async {
+    if (!RegExp(r'^(?:[A-Za-z_]\w*/)*[A-Za-z_]\w*\.py$').hasMatch(path)) {
+      throw const FormatException('Python 模块路径无效');
+    }
+    final uri = Uri.parse(entry).resolve(path);
+    final name = uri.toString();
+    if (name == entry) return 'null';
+    if (modules.containsKey(name)) return jsonEncode(modules[name]);
+    if (_pythonMissingModules.contains(name)) return 'null';
+    if (uri.scheme != 'http' && uri.scheme != 'https') return 'null';
+    if (modules.length >= 32 || _pythonMissingModules.length >= 64) {
+      throw const FormatException('Python 模块数量超过限制');
+    }
+    if (++_networkRequestCount > 32) throw StateError('单次脚本操作的网络请求过多');
+    final response =
+        jsonDecode(
+              await request([
+                name,
+                {'buffer': 2},
+              ]),
+            )
+            as Map;
+    if (response['code'] == 404 || response['code'] == 410) {
+      _pythonMissingModules.add(name);
+      return 'null';
+    }
+    if (response['code'] != 200) throw const HttpException('Python 模块无法读取');
+    final bytes = base64Decode(response['content'] as String);
+    if (_pythonModuleBytes + bytes.length > maxBytes) {
+      throw const FormatException('Python 模块总大小超过 6 MB');
+    }
+    final source = utf8.decode(bytes);
+    if (!_active || _cancelled) throw StateError('脚本操作已取消');
+    _pythonModuleBytes += bytes.length;
+    modules[name] = source;
+    return jsonEncode(source);
   }
 
   Future<String> request(dynamic raw) async {

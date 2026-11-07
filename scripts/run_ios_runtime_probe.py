@@ -126,7 +126,7 @@ def main():
     (OUT/'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf8')
     print(json.dumps({'passed': report['passed'], 'checks': report['checks'],
                       'runtime': report['runtime'], 'failure': report['failure']}, ensure_ascii=False))
-    if not report['passed'] or len(report['checks']) < 88:
+    if not report['passed'] or len(report['checks']) < 89:
         raise RuntimeError('iOS runtime behavior verification failed')
 
 

@@ -342,8 +342,14 @@ public final class SourceHostProbe extends Instrumentation {
             check("python_regex_substitution", html.getString("regex").equals("A 线"));
             check("python_search", first(py.search("中文", 2)).getString("vod_name").equals("中文"));
             JSONObject jsonResult = new JSONObject(py.search("中文", 2));
-            check("python_json_signed_payload", jsonResult.getString("signed").equals("{\"a\":9007199254740993123456789,\"z\":\"中文\"}"));
-            check("python_json_big_integer", jsonResult.getString("big").equals("9007199254740993123456789"));
+            check(
+                    "python_json_signed_payload",
+                    jsonResult
+                            .getString("signed")
+                            .equals("{\"a\":9007199254740993123456789,\"z\":\"中文\"}"));
+            check(
+                    "python_json_big_integer",
+                    jsonResult.getString("big").equals("9007199254740993123456789"));
             check("python_detail", first(py.detail("42")).getString("vod_id").equals("42"));
             check(
                     "python_play",

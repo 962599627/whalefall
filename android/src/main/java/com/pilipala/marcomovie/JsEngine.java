@@ -242,7 +242,12 @@ public final class JsEngine implements SourceEngine {
                     "python-html-loader.js");
             for (String file :
                     new String[] {
-                        "skulpt.min.js", "skulpt-stdlib.js", "html.js", "regex.js", "json.js", "spider.js"
+                        "skulpt.min.js",
+                        "skulpt-stdlib.js",
+                        "html.js",
+                        "regex.js",
+                        "json.js",
+                        "spider.js"
                     }) context.evaluate(asset("python-host/" + file), file);
             context.evaluate(
                     "globalThis.__movieSpider=createPythonSpider("
