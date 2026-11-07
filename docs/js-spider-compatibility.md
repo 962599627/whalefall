@@ -45,3 +45,13 @@ loader in Node; `flutter/test/js_full_spider_test.dart` executes the same asset 
 the production QuickJS bridge, including imported JSON, local ZIPs, class state,
 full-name playback through the local proxy, raw extensions and backup restoration.
 These tests are not physical-device or media-decoder acceptance.
+
+At `698e165`, [iOS native run 42406788685](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42406788685)
+passed 192 unique checks on each of ARM64/iOS 26.2 and x86_64/iOS 18.5.
+Four new checks exercise the complete entrypoints in production QuickJS. All
+30 recorded production inputs and 11 fixture inputs match that exact commit.
+[Android 6 run 42406788581](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42406788581)
+passed 67 source-host checks, including nine new complete-entrypoint checks,
+along with the home and subtitle probes. This is an API 23 x86 emulator;
+the reported APK hashes originate from its build, not a separately downloaded
+APK inspection. These results predate the separate CatVod host-module work.
