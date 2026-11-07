@@ -68,6 +68,7 @@ for p in files:
         if authority in TEST_AUTHORITIES.get(relative.as_posix(), set()):continue
         host=authority.split(':')[0].lower().rstrip('.,;')
         if relative.as_posix() == 'flutter/pubspec.lock' and host in {'pub.dev','dart.dev'}:continue
+        if relative.as_posix() == 'docs/python-json-compatibility.md' and host == 'docs.python.org':continue
         if host not in ALLOWED_HOSTS and not host.endswith(('.test','.example','.invalid')):
             issues.append(f'{relative}: review network domain {host}')
 

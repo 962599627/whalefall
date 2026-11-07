@@ -10,6 +10,7 @@ function createPythonSpider(source, files = {}, readSibling) {
   ].join("\n");
   const requestsModule = [
     "import _movie_http, base64, json",
+    "import json as _request_json",
     "from requests.exceptions import RequestException, HTTPError, ConnectionError, Timeout",
     "from requests import exceptions",
     "class CaseInsensitiveDict(dict):",
@@ -111,7 +112,7 @@ function createPythonSpider(source, files = {}, readSibling) {
     "        headers['Authorization'] = 'Basic ' + base64.b64encode((str(auth[0]) + ':' + str(auth[1])).encode('utf-8')).decode('ascii')",
     "    if json is not None:",
     "        if not any(k.lower() == 'content-type' for k in headers): headers['Content-Type'] = 'application/json'",
-    "        data = _movie_http.json_data(json)",
+    "        data = _request_json.dumps(json, allow_nan=False)",
     "    elif isinstance(data, (dict, list, tuple)):",
     "        if not any(k.lower() == 'content-type' for k in headers): headers['Content-Type'] = 'application/x-www-form-urlencoded'",
     "        data = _movie_http.form_data(data)",
@@ -312,9 +313,6 @@ function createPythonSpider(source, files = {}, readSibling) {
       }),
       form_data: new Sk.builtin.func(function(data) {
         return new Sk.builtin.str(query(Sk.ffi.remapToJs(data)));
-      }),
-      json_data: new Sk.builtin.func(function(data) {
-        return new Sk.builtin.str(JSON.stringify(Sk.ffi.remapToJs(data)));
       }),
       request: new Sk.builtin.func(function(url, opts) {
       const r = req(Sk.ffi.remapToJs(url), Sk.ffi.remapToJs(opts));
@@ -521,22 +519,7 @@ function createPythonSpider(source, files = {}, readSibling) {
     "    path = '/'.join(segments) or ('/' if b.netloc else '')",
     "    return urlunsplit((b.scheme, b.netloc, path, u.query, u.fragment))",
   ].join("\n");
-  library["src/lib/json/__init__.py"] = [
-    "import _movie_json",
-    "def loads(s, **kwargs): return _movie_json.loads(s)",
-    "def dumps(obj, ensure_ascii=True, **kwargs): return _movie_json.dumps(obj)",
-  ].join("\n");
-  library["src/lib/_movie_json.js"] = `var $builtinmodule = function() {
-    return {
-      loads: new Sk.builtin.func(function(s) {
-        try { return Sk.ffi.remapToPy(JSON.parse(Sk.ffi.remapToJs(s))); }
-        catch (_) { throw new Sk.builtin.ValueError('Invalid JSON'); }
-      }),
-      dumps: new Sk.builtin.func(function(obj) {
-        return new Sk.builtin.str(JSON.stringify(Sk.ffi.remapToJs(obj)));
-      })
-    };
-  };`;
+  installPythonJson(library);
   library["src/lib/base/__init__.py"] = "";
   library["src/lib/base/spider.py"] = baseSpider;
   library["src/lib/requests/__init__.py"] = requestsModule;

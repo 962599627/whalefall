@@ -325,14 +325,14 @@ public final class SourceHostProbe extends Instrumentation {
                             "fixture.py",
                             "from base.spider import Spider as Base\n"
                                     + "from bs4 import BeautifulSoup\n"
-                                    + "import re\n"
+                                    + "import re, json\n"
                                     + "class Spider(Base):\n"
                                     + "    def init(self, ext): self.ready = ext\n"
                                     + "    def homeContent(self, filter):\n"
                                     + "        self.soup = BeautifulSoup('<div class=slide><a href=\"/a?x=1&amp;y=2\"> One &amp; <em>二</em> </a></div><div class=duplicate>bad</div>', 'html.parser')\n"
                                     + "        link = self.soup.select_one('.slide:not(.duplicate) a')\n"
                                     + "        return {'list':[{'vod_id':self.ready,'vod_name':'Python'}], 'html':link.get_text(' ', strip=True), 'href':link.get('href'), 'regex':re.sub(r'[#\\s]+', ' ', '## A 线').strip()}\n"
-                                    + "    def searchContent(self, key, quick, pg='1'): return {'list':[{'vod_id':pg,'vod_name':key}]}\n"
+                                    + "    def searchContent(self, key, quick, pg='1'): return {'list':[{'vod_id':pg,'vod_name':key}], 'signed':json.dumps({'z':'中文','a':9007199254740993123456789},sort_keys=True,ensure_ascii=False,separators=(',',':')), 'big':str(json.loads('9007199254740993123456789'))}\n"
                                     + "    def detailContent(self, ids): return {'list':[{'vod_id':ids[0],'vod_play_from':'Main','vod_play_url':'Film$fixture'}]}\n"
                                     + "    def playerContent(self, flag, id, vip): return {'url':'https://fixture.invalid/'+id+'.mp4'}\n");
             check("python_init_home", first(py.home()).getString("vod_id").equals("ready"));
@@ -341,6 +341,9 @@ public final class SourceHostProbe extends Instrumentation {
             check("python_html_entity_attribute", html.getString("href").equals("/a?x=1&y=2"));
             check("python_regex_substitution", html.getString("regex").equals("A 线"));
             check("python_search", first(py.search("中文", 2)).getString("vod_name").equals("中文"));
+            JSONObject jsonResult = new JSONObject(py.search("中文", 2));
+            check("python_json_signed_payload", jsonResult.getString("signed").equals("{\"a\":9007199254740993123456789,\"z\":\"中文\"}"));
+            check("python_json_big_integer", jsonResult.getString("big").equals("9007199254740993123456789"));
             check("python_detail", first(py.detail("42")).getString("vod_id").equals("42"));
             check(
                     "python_play",

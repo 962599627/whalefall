@@ -54,7 +54,8 @@ def main():
         ROOT/'shared/catpaw/drpy-fy-adapter.cjs', capture=True)
     (APP/'fy-rule.js').write_text(fy, encoding='utf-8')
     shutil.copytree(ROOT/'android/src/main/assets/python-host', APP/'python-host', dirs_exist_ok=True)
-    for name in ('python_html_contract.py', 'python_html_expected.json'):
+    for name in ('python_html_contract.py', 'python_html_expected.json',
+                 'python_json_contract.py', 'python_json_expected.json'):
         shutil.copyfile(ROOT/'scripts/fixtures'/name, APP/name)
     info = {'CFBundleIdentifier': IDENTIFIER, 'CFBundleExecutable': 'RuntimeProbe',
             'CFBundleName': 'RuntimeProbe', 'CFBundlePackageType': 'APPL',
@@ -121,11 +122,11 @@ def main():
                                quickjs/'libfastdev_quickjs_runtime.cpp', quickjs/'quickjs/quickjs.c',
                                *sorted((ROOT/'android/src/main/assets/python-host').glob('*.js'))]},
                    'fixture_inputs': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-                     for p in sorted((ROOT/'scripts/fixtures').glob('python_html_*'))}})
+                     for p in sorted((ROOT/'scripts/fixtures').glob('python_*'))}})
     (OUT/'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf8')
     print(json.dumps({'passed': report['passed'], 'checks': report['checks'],
                       'runtime': report['runtime'], 'failure': report['failure']}, ensure_ascii=False))
-    if not report['passed'] or len(report['checks']) < 60:
+    if not report['passed'] or len(report['checks']) < 88:
         raise RuntimeError('iOS runtime behavior verification failed')
 
 

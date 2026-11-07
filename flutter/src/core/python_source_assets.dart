@@ -15,6 +15,7 @@ Future<List<String>> _loadPrelude() async {
         'skulpt-stdlib.js',
         'html.js',
         'regex.js',
+        'json.js',
         'spider.js',
       ])
         rootBundle.loadString('assets/python-host/$name'),
