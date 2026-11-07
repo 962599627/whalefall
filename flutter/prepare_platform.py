@@ -78,6 +78,11 @@ def main() -> None:
         )
         for ent in macos_runner.glob("*.entitlements"):
             text = ent.read_text(encoding="utf-8")
+            if "com.apple.security.network.server" not in text:
+                text = text.replace(
+                    "</dict>",
+                    "  <key>com.apple.security.network.server</key>\n  <true/>\n</dict>",
+                )
             if "com.apple.security.network.client" not in text:
                 text = text.replace(
                     "</dict>",

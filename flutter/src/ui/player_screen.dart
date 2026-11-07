@@ -65,6 +65,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _allowEvents = false;
   bool _wasFullscreen = false;
   Future<void> _mediaChanges = Future<void>.value();
+  List<CmsEpisode> _qualityChoices = const [];
   bool get _desktop =>
       Platform.isWindows || Platform.isMacOS || Platform.isLinux;
   BoxFit _fit = BoxFit.contain;
@@ -379,8 +380,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     return next;
   }
 
-  Future<void> _openCurrentEpisode({int? resumeMs}) async {
+  Future<void> _openCurrentEpisode({int? resumeMs, CmsEpisode? quality}) async {
     final session = ++_playSession;
+    if (quality == null) _qualityChoices = const [];
     _embySession?.stop(_position.inMilliseconds);
     _embySession = null;
     _allowHistory = false;
@@ -435,12 +437,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     try {
-      final resolvedEpisode = _currentEpisode.isLocalFile
+      final resolvedEpisode = quality ?? (_currentEpisode.isLocalFile
           ? _currentEpisode
           : await _client.resolveEpisodeForPlayback(
               widget.site,
               _currentEpisode,
-            );
+            ));
       EmbyPlaybackSession? report;
       if (widget.site.isEmby && resolvedEpisode.playbackSession.isNotEmpty) {
         report = (await EmbyLibrary.open(widget.site)).track(resolvedEpisode);
@@ -450,6 +452,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         return;
       }
       _embySession = report;
+      if (quality == null) _qualityChoices = resolvedEpisode.variants;
       _activeStreamUrl = resolvedEpisode.url;
       _activeMediaUri = Media(resolvedEpisode.url).uri;
 
@@ -469,6 +472,9 @@ class _PlayerScreenState extends State<PlayerScreen>
           ),
           play: true,
         );
+        if (resolvedEpisode.externalAudioUrl.isNotEmpty) {
+          await _player.setAudioTrack(AudioTrack.uri(resolvedEpisode.externalAudioUrl));
+        }
       });
       if (!mounted || session != _playSession || !_allowEvents) return;
       _allowHistory = true;
@@ -1436,6 +1442,8 @@ class _PlayerScreenState extends State<PlayerScreen>
           active: _repeatMode == 'one' || _repeatMode == 'all',
         ),
       ],
+      if (_qualityChoices.length > 1)
+        _PlayerAction(CupertinoIcons.slider_horizontal_3, '画质', _showQualityChoices),
       _PlayerAction(CupertinoIcons.speaker_2_fill, '音轨', _showAudioTracksSheet),
       if (!live)
         _PlayerAction(
@@ -1831,6 +1839,22 @@ class _PlayerScreenState extends State<PlayerScreen>
         },
       ),
     );
+  }
+
+  Future<void> _showQualityChoices() async {
+    final session = _playSession;
+    final selected = await showCupertinoModalPopup<CmsEpisode>(
+      context:context,
+      builder:(sheet)=>CupertinoActionSheet(
+        title:const Text('切换画质'),
+        actions:[for(final choice in _qualityChoices) CupertinoActionSheetAction(
+          isDefaultAction:choice.url == _activeStreamUrl,
+          onPressed:()=>Navigator.pop(sheet,choice),child:Text(choice.name))],
+        cancelButton:CupertinoActionSheetAction(onPressed:()=>Navigator.pop(sheet),child:const Text('取消')),
+      ),
+    );
+    if(!mounted || session != _playSession || selected == null || selected.url == _activeStreamUrl) return;
+    await _openCurrentEpisode(resumeMs:_position.inMilliseconds,quality:selected);
   }
 
   void _showAudioTracksSheet() {

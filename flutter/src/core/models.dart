@@ -374,11 +374,16 @@ class CmsEpisode {
 
   /// Ephemeral server playback metadata; never part of subscription/history backups.
   final Map<String, dynamic> playbackSession;
+  /// Short-lived quality choices returned for one episode; not saved in history.
+  final List<CmsEpisode> variants;
+  final String externalAudioUrl;
   const CmsEpisode({
     required this.name,
     required this.url,
     this.headers = const {},
     this.playbackSession = const {},
+    this.variants = const [],
+    this.externalAudioUrl = '',
   });
   bool get isScriptEpisode => url.startsWith('mmjs://play?');
   bool get needsSourceResolution =>

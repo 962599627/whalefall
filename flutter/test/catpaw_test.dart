@@ -15,6 +15,7 @@ exports.start = async () => {
     res.setHeader('Content-Type','application/json');
     const card={vod_id:'movie',vod_name:'Synthetic movie',vod_year:'2026'};
     if(url.pathname==='/t4') res.end(JSON.stringify({sites:[{key:'demo',name:'Demo',type:4,api:base+'/api/demo'}]}));
+    else if(url.pathname==='/website') {res.setHeader('Content-Type','text/html');res.end('<title>Source settings</title>');}
     else if(q.has('play')) res.end(JSON.stringify({parse:0,url:base+'/api/stream.mp4',header:{'X-Fixture':'one'}}));
     else if(q.has('ids')) res.end(JSON.stringify({list:[{...card,vod_play_from:'Line',vod_play_url:'Episode$opaque-id'}]}));
     else if(q.has('t') || q.has('wd')) res.end(JSON.stringify({list:[card],page:1,pagecount:1}));
@@ -61,6 +62,16 @@ void main() {
     addTearDown(()=>http.close(force:true));
     final response = await (await http.getUrl(Uri.parse(play.url))).close();
     expect(await response.fold<List<int>>([], (a,b)=>a..addAll(b)),[0,1,255,42]);
+    final settings = await host.settings(site.api);
+    final entryRequest = await http.getUrl(settings)..followRedirects=false;
+    final entryResponse = await entryRequest.close();
+    expect(entryResponse.statusCode,303);
+    final cookie = entryResponse.cookies.single;
+    await entryResponse.drain<void>();
+    final settingsRequest = await http.getUrl(settings.replace(path:'/website'));
+    settingsRequest.cookies.add(cookie);
+    final settingsResponse = await settingsRequest.close();
+    expect(await settingsResponse.transform(utf8.decoder).join(),contains('Source settings'));
     await host.close();
     expect((await client.fetchHome(site)).$2.videos.single.title,'Synthetic movie');
     await expectLater(host.resolve('catpaw://bad/api/demo'),throwsFormatException);

@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse
 import hashlib
 import os
+import plistlib
 import shutil
 import subprocess
 import tarfile
@@ -58,7 +59,9 @@ def prepare(kind, destination):
         subprocess.run(['lipo','-create',*map(str,inputs),'-output',str(destination/'bin/node')],check=True)
         (destination/'bin/node').chmod(0o755)
         for binary in inputs:binary.unlink()
-        subprocess.run(['codesign','--force','--sign','-',str(destination/'bin/node')],check=True)
+        entitlements=destination/'node.entitlements'
+        entitlements.write_bytes(plistlib.dumps({'com.apple.security.app-sandbox':True,'com.apple.security.inherit':True}))
+        subprocess.run(['codesign','--force','--sign','-','--entitlements',str(entitlements),str(destination/'bin/node')],check=True)
     else:
         with zipfile.ZipFile(archive(kind)) as source:
             for member in source.infolist():

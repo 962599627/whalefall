@@ -61,9 +61,25 @@ final class CatPawEngine implements SourceEngine {
 
     public String player(String flag, String id) throws Exception {
         JSONObject result = new JSONObject(query("play", id, "flag", flag));
-        String url = result.optString("url");
-        if (url.startsWith("catpaw://")) result.put("url", host.resolve(url));
+        resolveLocal(result);
         return result.toString();
+    }
+
+    private Object resolveLocal(Object value) throws Exception {
+        if (value instanceof String && ((String) value).startsWith("catpaw://"))
+            return host.resolve((String) value);
+        if (value instanceof JSONObject) {
+            JSONObject object = (JSONObject) value;
+            java.util.Iterator<String> keys = object.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                object.put(key, resolveLocal(object.opt(key)));
+            }
+        } else if (value instanceof org.json.JSONArray) {
+            org.json.JSONArray array = (org.json.JSONArray) value;
+            for (int i = 0; i < array.length(); i++) array.put(i, resolveLocal(array.opt(i)));
+        }
+        return value;
     }
 
     public boolean requiresExternalRuntime() {

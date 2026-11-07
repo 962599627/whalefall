@@ -12,6 +12,7 @@ import 'js_source_host.dart';
 import 'emby_library.dart';
 import 'checksum_source.dart';
 import 'catpaw_host.dart';
+import 'source_playback.dart';
 import 'models.dart';
 /// HTTP CMS client with TVBox `okhttp/3.15` User-Agent parity, system certificate validation for third-party
 /// CMS hosts, multi-depot (`urls`/`storeHouse`) resolution, and bounded concurrent search.
@@ -907,17 +908,7 @@ class CmsClient {
       final raw = jsonDecode(await _getText(_appendQuery(site.api,
         {'play':parameters['id'] ?? '', 'flag':parameters['flag'] ?? ''}).toString()));
       if (raw is! Map) throw const FormatException('CatPaw 没有返回播放结果');
-      final url = '${raw['url'] ?? ''}';
-      final uri = CatPawHost.matches(url) ? await CatPawHost.instance.resolve(url) : Uri.tryParse(url);
-      if (uri == null || !['http','https','rtsp','rtmp'].contains(uri.scheme) || uri.host.isEmpty) {
-        throw const FormatException('CatPaw 没有返回可播放的媒体地址');
-      }
-      if ('${raw['parse'] ?? 0}' != '0') throw const FormatException('此 CatPaw 线路还需要网页解析，请选择其他播放线路');
-      var headers = raw['header'] ?? raw['headers'];
-      if (headers is String) headers = jsonDecode(headers);
-      return CmsEpisode(name:episode.name,url:uri.toString(),headers:{
-        if (headers is Map) ...headers.map((k,v)=>MapEntry(k.toString(),v.toString())),
-      });
+      return SourcePlayback.decode(raw,episode,localUrl:CatPawHost.instance.resolve,sourceHeaders:site.headers);
     }
     if (site.isEmby && episode.url.startsWith('mmemby://play?')) {
       return (await EmbyLibrary.open(site)).resolve(episode);

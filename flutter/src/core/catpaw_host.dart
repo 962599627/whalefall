@@ -21,9 +21,15 @@ class CatPawHost {
   static bool matches(String value) => value.startsWith('catpaw://');
   static bool isBundle(String code) => code.contains('catServerFactory') && code.contains('catDartServerPort');
 
-  Future<Directory> _storage() async => _root ??= directory == null
-      ? Directory('${(await getApplicationSupportDirectory()).path}/catpaw')
-      : await directory!();
+  Future<Directory> _storage() async {
+    if (_root != null) return _root!;
+    final folder = directory == null
+        ? Directory('${(await getApplicationSupportDirectory()).path}/catpaw')
+        : await directory!();
+    await folder.create(recursive:true);
+    // Node's permission checks use real paths (macOS /var is a symlink).
+    return _root = Directory(await folder.resolveSymbolicLinks());
+  }
 
   Future<Uri> _ensure() async {
     if (_base != null) return _base!;
@@ -62,6 +68,7 @@ class CatPawHost {
         'TEMP': root.path, 'TMP': root.path,
       };
       final process = await Process.start(node, [
+        if (Platform.isMacOS) '--jitless',
         '--experimental-permission', '--allow-worker',
         '--allow-fs-read=${root.path}', '--allow-fs-write=${root.path}',
         script.path, root.path, ready.path,
@@ -133,7 +140,7 @@ class CatPawHost {
   }
 
   Future<Uri> settings(String address) async {
-    final logical = Uri.parse(address).replace(path:'/_manage',query:'');
+    final logical = Uri(scheme:'catpaw',host:Uri.parse(address).host,path:'/_manage');
     final result = jsonDecode(await read(logical.toString(),method:'POST'));
     final url = Uri.tryParse('${result['url'] ?? ''}');
     if (url == null || url.scheme != 'http' || url.host != '127.0.0.1' || !url.path.startsWith('/authorize/')) {
