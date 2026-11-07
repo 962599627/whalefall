@@ -89,7 +89,11 @@ def main(args):
         expected_apk = outputs['sha256' if field == 'apk' else 'mobile_sha256']
         if digest(path.read_bytes()) != expected_apk:
             raise ValueError('APK changed after the Android build: ' + name)
-        reports.append(verify_apk(path, runtime, build))
+        report = verify_apk(path, runtime, build)
+        expected_abis = {'armeabi-v7a'} if field == 'apk' else {'armeabi-v7a', 'arm64-v8a'}
+        if set(report['node_abis']) != expected_abis:
+            raise ValueError('Candidate lost a required Android ABI: ' + name)
+        reports.append(report)
     result = {'runtime_archive': args.runtime_archive.name, 'runtime_sha256': expected,
               'source_commit': runtime['commit'], 'build_runs': runtime['buildRuns'],
               'node_packaging_verified': True, 'apks': reports,

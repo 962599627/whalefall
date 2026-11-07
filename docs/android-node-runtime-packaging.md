@@ -91,4 +91,5 @@ runtime ZIP/SHA sidecar, full candidate APKs, build evidence and an independent
 verification report. It neither changes download pins nor publishes an app
 release. A report with `node_packaging_verified: true` and
 `whole_apk_16kb: false` explicitly lists the other libraries still needing work.
-Use the verifier's `--require-whole-apk` option when gating final 16 KB acceptance.
+The candidate workflow sets `--require-whole-apk`: any other 64-bit library that
+loses ELF or ZIP alignment fails the candidate after writing the detailed report.
