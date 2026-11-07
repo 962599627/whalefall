@@ -145,9 +145,29 @@ class JsSourceHost {
           );
         }
         final body = options['data'] ?? options['body'];
-        var payload = body == null
-            ? null
-            : utf8.encode(body is String ? body : jsonEncode(body));
+        List<int>? payload;
+        if (options.containsKey('bodyBase64')) {
+          final encoded = options['bodyBase64'];
+          if (options.containsKey('data') || options.containsKey('body') ||
+              encoded is! String) {
+            throw const FormatException('脚本二进制请求体参数无效');
+          }
+          if (encoded.length > ((maxBytes + 2) ~/ 3) * 4) {
+            throw const FormatException('脚本请求体过大');
+          }
+          if (encoded.length % 4 != 0 ||
+              RegExp(r'[^A-Za-z0-9+/=]').hasMatch(encoded)) {
+            throw const FormatException('脚本二进制请求体 Base64 无效');
+          }
+          payload = base64Decode(encoded);
+          if (base64Encode(payload) != encoded) {
+            throw const FormatException('脚本二进制请求体 Base64 无效');
+          }
+        } else {
+          payload = body == null
+              ? null
+              : utf8.encode(body is String ? body : jsonEncode(body));
+        }
         if (payload != null && payload.length > maxBytes) {
           throw const FormatException('脚本请求体过大');
         }

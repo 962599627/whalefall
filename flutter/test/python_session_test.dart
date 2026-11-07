@@ -70,6 +70,20 @@ class Spider:
             s.headers.update({'X-Session':'active'})
             r = s.get('$base/login')
             assert r.cookies.get('sid') == 'fixture'
+            cookie = [c for c in s.cookies if c.name == 'sid'][0]
+            assert cookie.value == 'fixture' and cookie.domain == '127.0.0.1'
+            assert cookie.path == '/auth' and not cookie.secure and cookie.expires is None
+            assert not cookie.domain_specified
+            assert dict(r.cookies)['sid'] == 'fixture'
+            assert {c.name:c.value for c in s.cookies}['root'] == 'all'
+            duplicate = RequestsCookieJar()
+            duplicate.set('sid','one',domain='one.example.test',path='/auth',secure=True,expires=1924992000)
+            duplicate.set('sid','two',domain='two.example.test',path='/')
+            assert [(c.domain,c.path,c.value) for c in duplicate] == [('one.example.test','/auth','one'),('two.example.test','/','two')]
+            assert list(duplicate)[0].expires == 1924992000
+            copy = duplicate.copy()
+            list(copy)[0].value = 'copy-only'
+            assert duplicate.get('sid',domain='one.example.test') == 'one'
             s.get('$base/auth/resource', params={'label':'authenticated'})
             s.get('$base/authentic', params={'label':'boundary'})
             requests.Session().get('$base/auth/resource', params={'label':'isolated'})

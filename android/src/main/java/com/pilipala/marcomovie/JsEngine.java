@@ -417,7 +417,25 @@ public final class JsEngine implements SourceEngine {
         byte[] body = null;
         Object payload = opts.opt("body");
         if (payload == null) payload = opts.opt("data");
-        if (payload instanceof JSONObject) {
+        final int maxRequestBytes = 6 * 1024 * 1024;
+        if (opts.has("bodyBase64")) {
+            Object encodedValue = opts.opt("bodyBase64");
+            if (opts.has("data") || opts.has("body") || !(encodedValue instanceof String))
+                throw new IOException("脚本二进制请求体参数无效");
+            String encoded = (String) encodedValue;
+            if (encoded.length() > ((maxRequestBytes + 2) / 3) * 4)
+                throw new IOException("脚本请求体过大");
+            if (encoded.length() % 4 != 0
+                    || java.util.regex.Pattern.compile("[^A-Za-z0-9+/=]").matcher(encoded).find())
+                throw new IOException("脚本二进制请求体 Base64 无效");
+            try {
+                body = Base64.decode(encoded, Base64.DEFAULT);
+            } catch (IllegalArgumentException invalid) {
+                throw new IOException("脚本二进制请求体 Base64 无效", invalid);
+            }
+            if (!Base64.encodeToString(body, Base64.NO_WRAP).equals(encoded))
+                throw new IOException("脚本二进制请求体 Base64 无效");
+        } else if (payload instanceof JSONObject) {
             StringBuilder form = new StringBuilder();
             Iterator<String> keys = ((JSONObject) payload).keys();
             while (keys.hasNext()) {
@@ -430,6 +448,7 @@ public final class JsEngine implements SourceEngine {
             body = form.toString().getBytes("UTF-8");
         } else if (payload != null && payload != JSONObject.NULL)
             body = String.valueOf(payload).getBytes("UTF-8");
+        if (body != null && body.length > maxRequestBytes) throw new IOException("脚本请求体过大");
         for (int redirect = 0; redirect < 6; redirect++) {
             checkBudget();
             HttpURLConnection connection = (HttpURLConnection) next.openConnection();

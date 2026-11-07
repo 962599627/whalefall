@@ -5,6 +5,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const http = require('node:http');
+// The embedded iOS Node runs without WebAssembly; its HTTP test transport must
+// use the same socket-backed fetch instead of Node's WASM-dependent global fetch.
+const fetch = require('../shared/catpaw/fetch.cjs').default;
 
 const source = `
 import base64, requests
@@ -43,7 +46,9 @@ class Spider(Base):
         return requests.post(self.origin + '/json', json={'id':ids[0],'title':'中文'}, cookies={'session':'fixture'}, auth=('fixture','secret')).json()
     def playerContent(self, flag, id, vip):
         r = requests.get(self.origin + '/binary')
-        return {'bytes':list(r.content), 'head':requests.head(self.origin + '/head').status_code}
+        uploaded = requests.post(self.origin + '/binary-upload', data=bytes([0,255,128,65]), headers={'Content-Type':'application/octet-stream'}).json()
+        empty = requests.post(self.origin + '/empty-upload', data=b'').json()
+        return {'bytes':list(r.content), 'head':requests.head(self.origin + '/head').status_code, 'uploaded':uploaded, 'empty':empty}
     def homeVideoContent(self):
         errors = []
         try: requests.get(self.origin + '/missing').raise_for_status()
@@ -56,6 +61,8 @@ class Spider(Base):
         except ValueError: errors.append('timeout')
         try: requests.get(self.origin + '/unused', files={})
         except NotImplementedError: errors.append('unsupported')
+        try: requests.post(self.origin + '/unused', data=b'x' * (6 * 1024 * 1024 + 1))
+        except ValueError: errors.append('body-limit')
         return errors
 `;
 
@@ -92,6 +99,14 @@ function response(url, options, body) {
       assert.deepEqual(JSON.parse(body), {id:'42',title:'中文'});
       return {code:200, content:Buffer.from(body), headers:{'content-type':'application/json'}};
     case '/binary': return {code:200, content:Buffer.from([0,255,128,1]), headers:{'content-type':'application/octet-stream'}};
+    case '/binary-upload':
+      assert.equal(options.method, 'POST');
+      assert.deepEqual(Array.from(body), [0,255,128,65]);
+      return {code:200, content:Buffer.from(JSON.stringify(Array.from(body))), headers:{'content-type':'application/json'}};
+    case '/empty-upload':
+      assert.equal(options.method, 'POST');
+      assert.equal(body.length, 0);
+      return {code:200, content:Buffer.from('[]'), headers:{'content-type':'application/json'}};
     case '/head':
       assert.equal(options.method, 'HEAD');
       assert.equal(options.redirect, 0);
@@ -122,8 +137,8 @@ async function exercise(req, origin, mode) {
   assert.equal(category.status, 200);
   assert.equal(await spider.search('keyword with space', false, 3), 'wd=keyword+with+space&pg=3&format=mp4&format=mkv');
   assert.deepEqual(JSON.parse(JSON.stringify(await spider.detail('42'))), {id:'42',title:'中文'});
-  assert.deepEqual(JSON.parse(JSON.stringify(await spider.play('line','episode',[]))), {bytes:[0,255,128,1],head:204});
-  assert.deepEqual(Array.from(await spider.homeVod()), ['http','base64','padding','timeout','unsupported']);
+  assert.deepEqual(JSON.parse(JSON.stringify(await spider.play('line','episode',[]))), {bytes:[0,255,128,1],head:204,uploaded:[0,255,128,65],empty:[]});
+  assert.deepEqual(Array.from(await spider.homeVod()), ['http','base64','padding','timeout','unsupported','body-limit']);
   console.log('PASS Python import, URL/byte codecs, catalogue/search/detail/play HTTP contracts and errors (' + mode + ')');
 }
 
@@ -217,6 +232,39 @@ async function exerciseSession(req, origin, mode) {
 }
 
 async function main() {
+  const cookieObjects = context(() => { throw new Error('Cookie object fixture must stay offline'); }, `import requests
+from requests.cookies import CookieConflictError
+class Spider:
+ def homeContent(self, filter):
+  s = requests.Session()
+  s.cookies.set('sid','one',domain='one.example.test',path='/auth',secure=True,expires=1924992000)
+  s.cookies.set('sid','two',domain='two.example.test',path='/',secure=False)
+  cookies = list(s.cookies)
+  assert len(cookies) == 2
+  assert cookies[0].name == 'sid' and cookies[0].value == 'one'
+  assert cookies[0].domain == 'one.example.test' and cookies[0].path == '/auth'
+  assert cookies[0].secure and cookies[0].expires == 1924992000 and cookies[0].domain_specified
+  assert cookies[1].expires is None and not cookies[1].secure
+  assert {(c.domain,c.path):c.value for c in s.cookies} == {('one.example.test','/auth'):'one',('two.example.test','/'):'two'}
+  collision = False
+  try: s.cookies['sid']
+  except CookieConflictError: collision = True
+  assert collision
+  assert s.cookies.get('sid',domain='two.example.test',path='/') == 'two'
+  cookies[0].value = 'updated'
+  assert s.cookies.get('sid',domain='one.example.test') == 'updated'
+  copy = s.cookies.copy()
+  list(copy)[0].value = 'copy-only'
+  assert s.cookies.get('sid',domain='one.example.test') == 'updated'
+  isolated = requests.Session()
+  assert not list(isolated.cookies)
+  s.cookies.clear(domain='two.example.test',path='/',name='sid')
+  assert dict(s.cookies) == {'sid':'updated'}
+  return True
+`);
+  await cookieObjects.init('');
+  assert.equal(await cookieObjects.home(true), true);
+  console.log('PASS Python Cookie objects, mapping compatibility, duplicate domains, mutation and copy/session isolation');
   const scoped = context((url, options) => {
     const headers = url.endsWith('/a/login') ? {'set-cookie':[
       'host=local; Path=/', 'domain=shared; Domain=.example.test; Path=/',
@@ -258,7 +306,8 @@ class Spider:
   }
   await exercise((url, options) => {
     assert.equal(options.buffer, 2);
-    const r = response(url, options, options.data);
+    if (options.bodyBase64 !== undefined) assert.equal('data' in options, false);
+    const r = response(url, options, options.bodyBase64 === undefined ? options.data : Buffer.from(options.bodyBase64, 'base64'));
     // The form echo is a JSON string, to exercise Response.json as well.
     if (new URL(url).pathname === '/form') r.content = Buffer.from(JSON.stringify(r.content.toString()));
     return {...r, content:r.content.toString('base64')};
@@ -273,7 +322,8 @@ class Spider:
       // Transport-only assertions were made before calling fetch; recover the
       // same documented options for server-side content assertions.
       const headers = {...request.headers, Authorization:request.headers.authorization, Cookie:request.headers.cookie};
-      const r = response(parsed.toString(), {method:request.method, timeout:2500, redirect:0, headers}, Buffer.concat(chunks).toString());
+      const raw = Buffer.concat(chunks);
+      const r = response(parsed.toString(), {method:request.method, timeout:2500, redirect:0, headers}, parsed.pathname.endsWith('-upload') ? raw : raw.toString());
       reply.writeHead(r.code, r.headers);
       reply.end(parsed.pathname === '/form' ? JSON.stringify(r.content.toString()) : r.content);
     } catch (error) {
@@ -286,7 +336,7 @@ class Spider:
       assert.equal(options.buffer, 2);
       if (new URL(url).pathname === '/query') { assert.equal(options.timeout, 2500); assert.equal(options.redirect, 0); }
       const result = await fetch(url, {method:options.method, headers:options.headers,
-        body:options.data ?? undefined, redirect:options.redirect === 0 ? 'manual' : 'follow'});
+        body:options.bodyBase64 === undefined ? options.data ?? undefined : Buffer.from(options.bodyBase64, 'base64'), redirect:options.redirect === 0 ? 'manual' : 'follow'});
       return {code:result.status, headers:Object.fromEntries(result.headers), content:Buffer.from(await result.arrayBuffer()).toString('base64')};
     }, 'http://127.0.0.1:' + server.address().port, 'Promise req over local HTTP');
     assert.deepEqual(serverErrors, []);
@@ -307,7 +357,8 @@ class Spider:
       const r = await fetch(url, {method:options.method, headers:options.headers, body:options.data ?? undefined, redirect:'manual'});
       const headers = Object.fromEntries(r.headers);
       // Android and Dart flatten repeated response headers; retain every cookie.
-      if (r.headers.getSetCookie().length) headers['set-cookie'] = r.headers.getSetCookie().join(', ');
+      const cookies = r.headers.raw()['set-cookie'] || [];
+      if (cookies.length) headers['set-cookie'] = cookies.join(', ');
       return {code:r.status, url:r.url, headers, content:Buffer.from(await r.arrayBuffer()).toString('base64')};
     }, 'http://127.0.0.1:' + cookieServer.address().port, 'Promise req over local HTTP');
   } finally {

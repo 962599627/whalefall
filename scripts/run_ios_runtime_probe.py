@@ -8,6 +8,7 @@ import hashlib
 import json
 import platform
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -17,9 +18,11 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'verification/ios-runtime'
 APP = OUT / 'RuntimeProbe.app'
 IDENTIFIER = 'com.pilipala.marcomovie.runtimeprobe'
+PROGRESS = {}
 
 
 def run(*args, capture=False, timeout=180):
+    PROGRESS['host_command'] = list(map(str, args))
     print('Running:', ' '.join(map(str,args)), flush=True)
     result = subprocess.run(list(map(str, args)), check=True, text=True,
                             timeout=timeout,
@@ -31,6 +34,7 @@ def main():
     if sys.platform != 'darwin':
         raise SystemExit('This validation requires a macOS host and iOS simulator.')
     OUT.mkdir(parents=True, exist_ok=True)
+    (OUT/'result.json').unlink(missing_ok=True)
     from prepare_catpaw_runtime import prepare
     runtime = OUT / 'node'
     prepare('ios', runtime)
@@ -74,7 +78,14 @@ def main():
                   if device.get('isAvailable') and device['name'].startswith('iPhone')]
     if not candidates:
         raise RuntimeError('No available iPhone simulator')
-    runtime_name, device = sorted(candidates, key=lambda item: item[0], reverse=True)[0]
+    # Intel hosted runners can stall before application installation on the
+    # newest simulator. Exercise their oldest installed iOS runtime instead;
+    # the ARM64 job continues to cover the newest runtime. Record the choice.
+    def runtime_version(item):
+        return tuple(map(int, re.findall(r'\d+', item[0].split('.iOS-', 1)[1])))
+    runtime_name, device = sorted(candidates, key=runtime_version, reverse=arch == 'arm64')[0]
+    PROGRESS.update(cpu=arch, simulator=device['name'], os_runtime=runtime_name)
+    print('Simulator selection:', json.dumps(PROGRESS), flush=True)
     udid = device['udid']
     if device['state'] != 'Booted':
         run('xcrun', 'simctl', 'boot', udid)
@@ -100,9 +111,18 @@ def main():
     (OUT/'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf8')
     print(json.dumps({'passed': report['passed'], 'checks': report['checks'],
                       'runtime': report['runtime'], 'failure': report['failure']}, ensure_ascii=False))
-    if not report['passed'] or len(report['checks']) < 22:
+    if not report['passed'] or len(report['checks']) < 24:
         raise RuntimeError('iOS runtime behavior verification failed')
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as failure:
+        OUT.mkdir(parents=True, exist_ok=True)
+        if not (OUT/'result.json').exists():
+            (OUT/'result.json').write_text(json.dumps(dict(
+                passed=False, checks=[], failure=type(failure).__name__ + ': ' + str(failure),
+                scope='Host setup or simulator launch failed; application runtime was not accepted',
+                **PROGRESS), indent=2) + '\n', encoding='utf-8')
+        raise

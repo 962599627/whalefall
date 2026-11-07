@@ -4,14 +4,17 @@ import android.app.Application;
 import android.app.Instrumentation;
 import android.os.Bundle;
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import org.json.JSONObject;
@@ -159,6 +162,98 @@ public final class SourceHostProbe extends Instrumentation {
         }
     }
 
+    /** Reads raw request bytes, without a character reader consuming the binary body. */
+    static final class PythonBinaryServer implements AutoCloseable {
+        final ServerSocket listener = new ServerSocket(0, 2, InetAddress.getByName("127.0.0.1"));
+        final Thread thread;
+        volatile Throwable error;
+        volatile byte[] uploaded;
+        volatile byte[] empty;
+        volatile int requests;
+
+        PythonBinaryServer() throws Exception {
+            listener.setSoTimeout(10000);
+            thread =
+                    new Thread(
+                            () -> {
+                                try {
+                                    for (int index = 0; index < 2; index++) {
+                                        try (Socket socket = listener.accept()) {
+                                            socket.setSoTimeout(3000);
+                                            InputStream input = socket.getInputStream();
+                                            ByteArrayOutputStream header =
+                                                    new ByteArrayOutputStream();
+                                            int end = 0;
+                                            while (end != 0x0d0a0d0a) {
+                                                int value = input.read();
+                                                if (value < 0 || header.size() >= 8192)
+                                                    throw new IllegalStateException(
+                                                            "incomplete binary request headers");
+                                                header.write(value);
+                                                end = (end << 8) | value;
+                                            }
+                                            String[] lines =
+                                                    new String(header.toByteArray(), "US-ASCII")
+                                                            .split("\r\n");
+                                            String expected =
+                                                    index == 0 ? "POST /upload " : "POST /empty ";
+                                            if (!lines[0].startsWith(expected))
+                                                throw new IllegalStateException(
+                                                        "unexpected binary request path");
+                                            int length = -1;
+                                            for (String line : lines)
+                                                if (line.toLowerCase(Locale.ROOT)
+                                                        .startsWith("content-length:"))
+                                                    length =
+                                                            Integer.parseInt(
+                                                                    line.substring(15).trim());
+                                            if (length != (index == 0 ? 4 : 0))
+                                                throw new IllegalStateException(
+                                                        "unexpected binary content length "
+                                                                + length);
+                                            byte[] body = new byte[length];
+                                            for (int offset = 0; offset < length; ) {
+                                                int read =
+                                                        input.read(body, offset, length - offset);
+                                                if (read < 0)
+                                                    throw new IllegalStateException(
+                                                            "incomplete binary request body");
+                                                offset += read;
+                                            }
+                                            if (index == 0) uploaded = body;
+                                            else empty = body;
+                                            String reply =
+                                                    index == 0
+                                                            ? "{\"bytes\":[0,255,128,65]}"
+                                                            : "{\"bytes\":[]}";
+                                            byte[] bytes = reply.getBytes("UTF-8");
+                                            OutputStream output = socket.getOutputStream();
+                                            output.write(
+                                                    ("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                                                                    + bytes.length
+                                                                    + "\r\nConnection: close\r\n\r\n")
+                                                            .getBytes("US-ASCII"));
+                                            output.write(bytes);
+                                            output.flush();
+                                            requests++;
+                                        }
+                                    }
+                                } catch (Throwable failure) {
+                                    error = failure;
+                                }
+                            },
+                            "python-binary-loopback");
+            thread.setDaemon(true);
+            thread.start();
+        }
+
+        @Override
+        public void close() throws Exception {
+            listener.close();
+            thread.join(1000);
+        }
+    }
+
     @Override
     public void onStart() {
         try {
@@ -257,6 +352,11 @@ public final class SourceHostProbe extends Instrumentation {
                                         + base
                                         + "/login', timeout=3)\n"
                                         + "            assert r.cookies.get('sid') == 'fixture'\n"
+                                        + "            cookie = list(s.cookies)[0]\n"
+                                        + "            assert cookie.name == 'sid' and cookie.value == 'fixture'\n"
+                                        + "            assert cookie.domain == '127.0.0.1' and cookie.path == '/auth'\n"
+                                        + "            assert not cookie.secure and cookie.expires is None and not cookie.domain_specified\n"
+                                        + "            assert dict(s.cookies) == {'sid':'fixture'}\n"
                                         + "            return s.get('"
                                         + base
                                         + "/auth/resource', timeout=3).json()\n");
@@ -272,6 +372,36 @@ public final class SourceHostProbe extends Instrumentation {
                 check(
                         "python_session_headers_persist",
                         server.sessionHeader.equals("local-fixture"));
+            }
+            try (PythonBinaryServer server = new PythonBinaryServer()) {
+                String base = "http://127.0.0.1:" + server.listener.getLocalPort();
+                JsEngine binary =
+                        engine(
+                                "binary.py",
+                                "import requests\n"
+                                        + "class Spider:\n"
+                                        + "    def homeContent(self, filter):\n"
+                                        + "        data = bytes([0,255,128,65])\n"
+                                        + "        r = requests.post('"
+                                        + base
+                                        + "/upload',data=data,timeout=3,headers={'Content-Type':'application/octet-stream'})\n"
+                                        + "        assert r.json()['bytes'] == list(data)\n"
+                                        + "        assert requests.post('"
+                                        + base
+                                        + "/empty',data=b'',timeout=3).json()['bytes'] == []\n"
+                                        + "        return {'list':[{'vod_id':'binary','vod_name':'Binary upload verified'}]}\n");
+                check(
+                        "python_binary_real_http",
+                        first(binary.home()).getString("vod_id").equals("binary"));
+                server.thread.join(1000);
+                check(
+                        "python_binary_exact_bytes",
+                        server.requests == 2
+                                && server.error == null
+                                && Arrays.equals(
+                                        server.uploaded,
+                                        new byte[] {0, (byte) 255, (byte) 128, 65}));
+                check("python_empty_binary_body", server.empty != null && server.empty.length == 0);
             }
             report.put("passed", true);
         } catch (Throwable failure) {

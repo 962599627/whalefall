@@ -23,8 +23,29 @@ function createPythonSpider(source, files = {}, readSibling) {
     "        for key, value in dict(values or {}, **kwargs).items(): self[key] = value",
     "    def __delitem__(self, key): dict.__delitem__(self, key.lower())",
     "class CookieConflictError(RuntimeError): pass",
+    "class Cookie:",
+    "    def __init__(self, entry): self._entry = entry",
+    "    @property",
+    "    def name(self): return self._entry['name']",
+    "    @property",
+    "    def value(self): return self._entry['value']",
+    "    @value.setter",
+    "    def value(self, value): self._entry['value'] = value",
+    "    @property",
+    "    def domain(self): return self._entry['domain']",
+    "    @property",
+    "    def path(self): return self._entry['path']",
+    "    @property",
+    "    def secure(self): return self._entry['secure']",
+    "    @property",
+    "    def expires(self):",
+    "        value = self._entry.get('expires')",
+    "        return None if value is None else int(value / 1000)",
+    "    @property",
+    "    def domain_specified(self): return bool(self.domain) and not self._entry.get('hostOnly', False)",
     "class RequestsCookieJar:",
     "    def __init__(self): self._entries = []",
+    "    def __iter__(self): return iter([Cookie(entry) for entry in self._entries])",
     "    def set(self, name, value, domain='', path='/', secure=False, expires=None):",
     "        self._entries = _movie_http.cookie_set(self._entries, name, value, domain, path, secure, expires)",
     "        return value",
@@ -94,8 +115,11 @@ function createPythonSpider(source, files = {}, readSibling) {
     "    elif isinstance(data, (dict, list, tuple)):",
     "        if not any(k.lower() == 'content-type' for k in headers): headers['Content-Type'] = 'application/x-www-form-urlencoded'",
     "        data = _movie_http.form_data(data)",
-    "    elif isinstance(data, bytes): data = data.decode('utf-8')",
     "    options = {'method':method.upper(), 'headers':headers, 'data':data, 'redirect':1 if allow_redirects else 0, 'buffer':2}",
+    "    if isinstance(data, bytes):",
+    "        if len(data) > 6 * 1024 * 1024: raise ValueError('binary request body exceeds 6 MB')",
+    "        options['bodyBase64'] = base64.b64encode(data).decode('ascii')",
+    "        del options['data']",
     "    if timeout is not None:",
     "        if isinstance(timeout, (list, tuple)): timeout = max(timeout)",
     "        if timeout <= 0: raise ValueError('timeout must be positive')",
@@ -273,7 +297,9 @@ function createPythonSpider(source, files = {}, readSibling) {
       }),
       cookie_header: new Sk.builtin.func(function(entries, url) {
         const origin = cookieUrl(Sk.ffi.remapToJs(url)), now = Date.now();
-        const allowed = Sk.ffi.remapToJs(entries).filter(c => (c.expires == null || c.expires > now) &&
+        const source = Sk.ffi.remapToJs(entries);
+        if (source.some(c => !validCookie(c.name, c.value))) throw new Sk.builtin.ValueError('invalid cookie');
+        const allowed = source.filter(c => (c.expires == null || c.expires > now) &&
           (!c.domain || matchesDomain(origin.host, c.domain, c.hostOnly)) && (!c.secure || origin.secure) &&
           (origin.path === c.path || origin.path.startsWith(c.path) && (c.path.endsWith('/') || origin.path[c.path.length] === '/')));
         allowed.sort((a, b) => b.path.length - a.path.length);
