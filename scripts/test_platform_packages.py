@@ -51,7 +51,7 @@ class PackageTests(unittest.TestCase):
         self.assertFalse((self.out / 'updates/ios.json').exists())
         page = (self.out / 'index.html').read_text(encoding='utf-8')
         self.assertIn('0.5.1 · 预览版', page)
-        self.assertNotIn('<details open>', page)
+        self.assertNotIn(' open>', page)
         self.assertIn('MarcoMovie-0.5.0-ios-unsigned.ipa', page)
 
     def test_missing_card_fails_without_writes(self):
@@ -92,7 +92,7 @@ class PackageTests(unittest.TestCase):
         self.assertEqual({r['tag'] for r in records}, {'ios-v0.5.1', 'ios-v0.5.2'})
         self.assertEqual(notes.read_text(encoding='utf-8'), self.release['body'] + '\n')
         page = (self.out / 'index.html').read_text(encoding='utf-8')
-        self.assertEqual(page.count('<details open>'), 1)
+        self.assertEqual(page.count(' open>'), 1)
         self.assertIn('iPhone / iPad · 0.5.2', page)
         self.assertIn('iPhone / iPad · 0.5.1', page)
 
@@ -120,6 +120,30 @@ class PackageTests(unittest.TestCase):
             self.sync()
         self.assertFalse((self.out / 'updates/ios.json').exists())
         self.assertFalse((self.out / 'updates/history.json').exists())
+
+    def test_notes_render_readably_without_html_or_unsafe_links(self):
+        result = m.render_notes('## 修复\n\n1. **窗口** 与 `Esc`\n2. [说明](https://example.invalid/release)\n\n<script>alert(1)</script>\n[坏地址](javascript:alert)')
+        self.assertIn('<h4>修复</h4>', result)
+        self.assertIn('<ol><li><strong>窗口</strong> 与 <code>Esc</code>', result)
+        self.assertIn('href="https://example.invalid/release"', result)
+        self.assertNotIn('href="javascript:', result)
+        self.assertIn('&lt;script&gt;', result)
+
+    def test_visible_package_version_changes_with_download(self):
+        page = self.page.replace('<h3>ios-unsigned.ipa</h3>', '<h3>iPhone</h3><span class="package-version">0.5.0</span>')
+        package = dict(url='https://example.invalid/MarcoMovie-0.5.2-ios-unsigned.ipa', size=123, sha256='b'*64)
+        result = m.patch_card(page, 'ios-unsigned.ipa', package)
+        self.assertIn('<span class="package-version">0.5.2</span>', result)
+
+    def test_responsive_card_metadata_survives_future_sync(self):
+        page = self.page.replace('<div class="dl"><h3>ios-unsigned.ipa</h3>', '<div class="dl" data-platform="ios"><span class="package-version">0.5.0</span><h3>iPhone</h3>')
+        page = page.replace('<code>SHA-256：', '<details class="package-check"><summary>校验</summary><code>SHA-256：').replace('</code>', '</code></details>')
+        (self.out / 'index.html').write_text(page, encoding='utf8')
+        self.sync()
+        result = (self.out / 'index.html').read_text(encoding='utf8')
+        self.assertIn('data-platform="ios"><span class="package-version">0.5.1</span>', result)
+        self.assertIn('<details class="package-check"><summary>校验</summary><code>SHA-256：'+'b'*64, result)
+        self.assertIn('<style>existing CSS</style>', result)
 
 
 if __name__ == '__main__':

@@ -16,6 +16,13 @@ For each actual platform release, add a `docs/releases/{tag}.md` record and a pl
 
 The mirror keeps the same complete Release body in the platform feed and `movie/updates/history/{tag}.md`, indexes versions in `movie/updates/history.json`, and shows them inside the existing changelog section. It retains older records across updates and labels preview releases separately. A new independent official release with an empty body is rejected before any mirror file is written. Updating notes does not replace package bytes, hashes, styling or other platforms' downloads. Verify the published text and platform/version mapping on GitHub and the live mirror after each release.
 
+On November 7 the owner separately authorized a mirror layout revision. The
+Movie page now puts downloads before the changelog, shows each package's own
+version, supports platform filters and collapses historical entries. Release
+Markdown is rendered as escaped headings, lists and paragraphs while the full
+original text stays archived. Future automatic package updates preserve this
+layout and update the visible version together with the package URL and hash.
+
 ## Published Windows update
 
 [Windows 0.5.1](https://github.com/Pilipala9919/MarcoMovie/releases/tag/windows-v0.5.1) was published from `56b2eb80b93bae98b8754952d779bff1b7a9582a` after [build 42356451432](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42356451432) passed 83 Flutter tests and produced the installer/portable packages. Downloaded packages passed checksum/ZIP checks, the app and installer report 0.5.1, and all six uploaded package/source/checksum files match the local verified bytes. Native fullscreen UI evidence is recorded in `desktop-fullscreen-2026-11-07.md`.

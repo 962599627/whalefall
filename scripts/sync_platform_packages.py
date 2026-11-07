@@ -9,6 +9,7 @@ import html
 import json
 from pathlib import Path
 import re
+from urllib.parse import urlsplit
 
 from sync_movie_mirror import BASE, REPO, fetch, platform_asset
 
@@ -74,33 +75,99 @@ def release_history(output, releases):
     return records, files
 
 
+def render_notes(notes):
+    """A small escaped Markdown subset, with no raw HTML or executable URLs."""
+    def inline(text):
+        result, start = [], 0
+        for token in re.finditer(r'`([^`\n]+)`|\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\(([^\s)]+)\)', text):
+            result.append(html.escape(text[start:token.start()]))
+            if token[1] is not None:
+                result.append('<code>' + html.escape(token[1]) + '</code>')
+            elif token[2] is not None:
+                result.append('<strong>' + html.escape(token[2]) + '</strong>')
+            else:
+                try:
+                    url = urlsplit(token[4])
+                    safe = url.scheme == 'https' and url.hostname and not url.username and not url.password
+                except ValueError:
+                    safe = False
+                if safe:
+                    result.append('<a href="' + html.escape(token[4], quote=True) + '">' + html.escape(token[3]) + '</a>')
+                else:
+                    result.append(html.escape(token[0]))
+            start = token.end()
+        result.append(html.escape(text[start:]))
+        return ''.join(result)
+
+    blocks, paragraph, listing = [], [], None
+    def flush():
+        if paragraph:
+            blocks.append('<p>' + '<br>'.join(map(inline, paragraph)) + '</p>')
+            paragraph.clear()
+    for raw in notes.splitlines() + ['']:
+        line = raw.strip()
+        heading = re.match(r'^#{1,6}\s+(.+)$', line)
+        bullet = re.match(r'^(?:([-*])|\d+[.)])\s+(.+)$', line)
+        if listing and not bullet:
+            blocks.append('</' + listing + '>')
+            listing = None
+        if heading:
+            flush()
+            blocks.append('<h4>' + inline(heading[1]) + '</h4>')
+        elif bullet:
+            flush()
+            kind = 'ul' if bullet[1] else 'ol'
+            if listing != kind:
+                if listing:
+                    blocks.append('</' + listing + '>')
+                start = re.match(r'^(\d+)', line) if kind == 'ol' else None
+                blocks.append('<' + kind + (' start="' + start[1] + '"' if start and start[1] != '1' else '') + '>')
+                listing = kind
+            blocks.append('<li>' + inline(bullet[2]) + '</li>')
+        elif line:
+            paragraph.append(line)
+        else:
+            flush()
+    return ''.join(blocks)
+
+
 def patch_notes(page, records):
     if not records:
         return page
     sections = list(re.finditer(r'(<section\b[^>]*\bid="changelog"[^>]*>).*?</section>', page, re.S))
     if len(sections) != 1:
         raise ValueError('Expected exactly one existing changelog section')
-    seen, entries = set(), []
+    seen, current, archive = set(), [], []
     for item in records:
         platforms = item['platforms']
         latest = not item['prerelease'] and any(p not in seen for p in platforms)
         if not item['prerelease']:
             seen.update(platforms)
-        label = '、'.join(PLATFORM_LABELS[p] for p in platforms) + ' · ' + item['version']
+        platform_names = '、'.join(PLATFORM_LABELS[p] for p in platforms)
+        label = (platform_names if len(platforms) < 3 else '多平台') + ' · ' + item['version']
         if item['prerelease']:
             label += ' · 预览版'
         escaped = html.escape
         note = item['notes'] if item['notes'].strip() else '该历史版本未提供更新说明。'
-        entries.append(
-            '<details' + (' open' if latest else '') + '><summary>' + escaped(label) + '</summary>'
-            '<p class="sub">' + escaped(item['published_at'][:10]) + ' · '
+        entry = (
+            '<details class="release-entry" data-platforms="' + ' '.join(platforms) + '"'
+            + (' open' if latest and not current else '') + '><summary><span>' + escaped(label) + '</span>'
+            '<span class="release-date">' + escaped(item['published_at'][:10]) + '</span></summary>'
+            '<div class="release-content"><p class="release-platforms">适用：' + escaped(platform_names) + '</p><p class="release-links">'
             '<a href="' + escaped(item['release_url'], quote=True) + '">GitHub 发布记录</a> · '
             '<a href="updates/history/' + escaped(item['tag']) + '.md">完整更新说明</a></p>'
-            '<pre>' + escaped(note) + '</pre></details>')
+            + render_notes(note) + '</div></details>')
+        (current if latest else archive).append(entry)
     section = sections[0]
-    content = (section[1] + '<h2>各平台版本更新记录</h2>'
-               '<p class="sub">按实际发布的平台和版本分别记录新增、修复、验证范围与已知限制。</p>'
-               + '\n'.join(entries) + '</section>')
+    options = '<option value="all">全部平台</option>' + ''.join(
+        '<option value="' + key + '">' + value + '</option>' for key, value in PLATFORM_LABELS.items())
+    content = (section[1] + '<div class="section-heading"><div><p class="eyebrow">RELEASE NOTES</p><h2>版本更新</h2></div>'
+               '<label class="filter-control" hidden>查看平台<select id="release-platform" aria-label="查看平台">' + options + '</select></label></div>'
+               '<p class="sub">各端独立更新。展开对应版本，查看新增、修复和已知限制。</p>'
+               + '<div class="current-releases">' + '\n'.join(current) + '</div>'
+               + ('<details class="release-archive"><summary>历史版本 <span>' + str(len(archive)) + ' 个版本</span></summary>'
+                  + '\n'.join(archive) + '</details>' if archive else '')
+               + '<p id="release-empty" class="sub" hidden>该平台暂无发布记录。</p></section>')
     return page[:section.start()] + content + page[section.end():]
 
 
@@ -121,7 +188,7 @@ def choose_platform(releases, platform):
 
 def patch_card(page, suffix, package):
     name_pattern = r'MarcoMovie-\d+\.\d+\.\d+-' + re.escape(suffix)
-    cards = list(re.finditer(r'<div class="dl">.*?</div>', page, re.S))
+    cards = list(re.finditer(r'<div class="dl"(?:\s+[^>]*)?>.*?</div>', page, re.S))
     matches = [card for card in cards if re.search(name_pattern, card[0])]
     if len(matches) != 1:
         raise ValueError('Expected exactly one existing download card: ' + suffix)
@@ -137,6 +204,11 @@ def patch_card(page, suffix, package):
     replacement, sizes = re.subn(r'\d+(?:\.\d+)? MB', f'{package["size"] / 1024 / 1024:.1f} MB', replacement)
     if hashes != 1 or sizes != 1:
         raise ValueError('Missing existing checksum or size: ' + suffix)
+    # New layout exposes the package version; older templates remain supported.
+    version = re.search(r'MarcoMovie-(\d+\.\d+\.\d+)-', package['url'])
+    if version:
+        replacement = re.sub(r'(<span class="package-version">)[^<]*(</span>)',
+                             lambda m: m[1] + version[1] + m[2], replacement)
     return page[:card.start()] + replacement + page[card.end():]
 
 
