@@ -482,7 +482,7 @@ final class MobileDetailScreen {
         // 平板横向：左右两栏（52% 预览 + 48% 资料）；手机/竖屏：上下堆叠单列
         final boolean wide = widthDp >= 600;
         final int topPad = getStatusBarHeight(a);
-        final int sidePad = a.dp(wide ? 24 : 18);
+        final int sidePad = a.dp(wide ? UiTokens.SP_24 : UiTokens.SP_16);
         final int contentTop = topPad + a.dp(wide ? 60 : 56);
 
         a.root = new FrameLayout(a);
@@ -556,7 +556,11 @@ final class MobileDetailScreen {
         // ---------------- 右侧/下方资料列（两种布局共用） ----------------
         final LinearLayout lowerBody = a.vertical();
 
-        final TextView titleView = a.text(listing.title, wide ? 28 : 24, MainActivity.WHITE);
+        final TextView titleView =
+                a.text(
+                        listing.title,
+                        wide ? UiTokens.TYPE_DISPLAY : UiTokens.TYPE_HEADING,
+                        MainActivity.WHITE);
         titleView.setTag("detail-title");
         titleView.setTypeface(null, Typeface.BOLD);
         titleView.setMaxLines(2);
@@ -568,7 +572,7 @@ final class MobileDetailScreen {
         final LinearLayout pillsRow = a.row();
         pillsRow.setGravity(Gravity.START);
         LinearLayout.LayoutParams pillsRowLp = new LinearLayout.LayoutParams(-1, -2);
-        pillsRowLp.topMargin = a.dp(12);
+        pillsRowLp.topMargin = a.dp(UiTokens.SP_12);
         lowerBody.addView(pillsRow, pillsRowLp);
 
         final TextView actorTv = a.text(actorLine(listing.actor), 12.5f, 0xffb9c7dd);
@@ -578,7 +582,7 @@ final class MobileDetailScreen {
         actorTv.setLineSpacing(a.dp(6), 1f);
         actorTv.setVisibility(actorTv.getText().length() == 0 ? View.GONE : View.VISIBLE);
         LinearLayout.LayoutParams actorLp = new LinearLayout.LayoutParams(-1, -2);
-        actorLp.topMargin = a.dp(12);
+        actorLp.topMargin = a.dp(UiTokens.SP_12);
         lowerBody.addView(actorTv, actorLp);
 
         final TextView directorTv = a.text(directorLine(listing.director), 12.5f, 0xffb9c7dd);
@@ -595,7 +599,7 @@ final class MobileDetailScreen {
 
         final LinearLayout synopsisWrap = a.vertical();
         LinearLayout.LayoutParams synopsisLp = new LinearLayout.LayoutParams(-1, -2);
-        synopsisLp.topMargin = a.dp(10);
+        synopsisLp.topMargin = a.dp(UiTokens.SP_10);
         lowerBody.addView(synopsisWrap, synopsisLp);
 
         // ---------------- 操作胶囊行（横向滚动） ----------------
@@ -605,7 +609,7 @@ final class MobileDetailScreen {
         LinearLayout actionRow = a.row();
         actionScroll.addView(actionRow);
         LinearLayout.LayoutParams actionScrollLp = new LinearLayout.LayoutParams(-1, -2);
-        actionScrollLp.topMargin = a.dp(16);
+        actionScrollLp.topMargin = a.dp(UiTokens.SP_16);
         lowerBody.addView(actionScroll, actionScrollLp);
 
         LinearLayout.LayoutParams actLp = new LinearLayout.LayoutParams(-2, a.dp(34));
@@ -653,7 +657,7 @@ final class MobileDetailScreen {
         // ---------------- 主播放按钮（粉色胶囊，B 段填充内容） ----------------
         final LinearLayout playBtnWrap = a.vertical();
         LinearLayout.LayoutParams playWrapLp = new LinearLayout.LayoutParams(-1, -2);
-        playWrapLp.topMargin = a.dp(14);
+        playWrapLp.topMargin = a.dp(UiTokens.SP_16);
         lowerBody.addView(playBtnWrap, playWrapLp);
 
         final TextView loadingState = a.text("正在加载剧集资源…", 13, 0xff8d9cb6);
@@ -668,7 +672,7 @@ final class MobileDetailScreen {
         LinearLayout lineHeader = a.row();
         lineHeader.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams lineHeaderLp = new LinearLayout.LayoutParams(-1, -2);
-        lineHeaderLp.topMargin = a.dp(14);
+        lineHeaderLp.topMargin = a.dp(UiTokens.SP_16);
         lineHeaderLp.bottomMargin = a.dp(6);
         TextView lineTitle = a.text("片源 · 线路", 13, MainActivity.WHITE);
         lineTitle.setTypeface(null, Typeface.BOLD);
@@ -685,7 +689,7 @@ final class MobileDetailScreen {
 
         final LinearLayout detailsBody = a.vertical();
         LinearLayout.LayoutParams detailsLp = new LinearLayout.LayoutParams(-1, -2);
-        detailsLp.topMargin = a.dp(16);
+        detailsLp.topMargin = a.dp(UiTokens.SP_16);
 
         // ---------------- 预览卡：封面 + 中央播放钮 + 底部渐变 ----------------
         int contentW = a.windowWidth() - sidePad * 2 - a.dp(wide ? 20 : 0);
@@ -748,7 +752,7 @@ final class MobileDetailScreen {
             LinearLayout bodyRow = a.row();
             bodyRow.setGravity(Gravity.TOP);
             FrameLayout.LayoutParams bodyLp = new FrameLayout.LayoutParams(-1, -1);
-            bodyLp.setMargins(sidePad, contentTop, sidePad, a.dp(20));
+            bodyLp.setMargins(sidePad, contentTop, sidePad, a.dp(UiTokens.SP_24));
             a.root.addView(bodyRow, bodyLp);
 
             LinearLayout leftCol = a.vertical();

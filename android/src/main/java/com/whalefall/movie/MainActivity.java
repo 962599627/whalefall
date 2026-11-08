@@ -22,6 +22,9 @@ public final class MainActivity extends Activity {
     static final int PINK = Skin.PINK;
     VideoWallpaper videoWallpaper;
     AdminConsole adminConsole;
+    View screensaverOverlay;
+    final Runnable screensaverTask = this::showScreensaver;
+    static final long SCREENSAVER_DELAY_MS = 5 * 60 * 1000L;
     final Handler ui = new Handler(Looper.getMainLooper());
     final ExecutorService worker = Executors.newFixedThreadPool(4);
     final ExecutorService details = Executors.newFixedThreadPool(4);
@@ -1639,6 +1642,94 @@ public final class MainActivity extends Activity {
         images.evictAll();
     }
 
+    /** 5 分钟无操作后进入动态壁纸屏保；触摸任意位置退出。 */
+    void scheduleScreensaver() {
+        ui.removeCallbacks(screensaverTask);
+        if (!prefs.getBoolean(Prefs.SCREENSAVER_ENABLED, false)) return;
+        if (current != null && current.player) return;
+        ui.postDelayed(screensaverTask, SCREENSAVER_DELAY_MS);
+    }
+
+    void showScreensaver() {
+        if (screensaverOverlay != null
+                || isFinishing()
+                || !foreground
+                || current == null
+                || current.player
+                || appDialog != null) return;
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0xff000000);
+        if (videoWallpaperEnabled() && VideoWallpaper.file(this).isFile()) {
+            VideoWallpaper wallpaper = new VideoWallpaper(this);
+            overlay.addView(wallpaper, new FrameLayout.LayoutParams(-1, -1));
+        } else if (prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) {
+            overlay.addView(
+                    ImageLoader.createAtmosphere(this), new FrameLayout.LayoutParams(-1, -1));
+        }
+        View dim = new View(this);
+        dim.setBackgroundColor(0x66000000);
+        overlay.addView(dim, new FrameLayout.LayoutParams(-1, -1));
+
+        LinearLayout column = vertical();
+        column.setGravity(android.view.Gravity.CENTER);
+        TextView clock = text(new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(new java.util.Date()), 64, 0xfff5f7fc);
+        clock.setTypeface(android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL));
+        clock.setShadowLayer(dp(18), 0, dp(4), 0xcc000000);
+        column.addView(clock);
+        String dateText =
+                new java.text.SimpleDateFormat("M 月 d 日 EEEE", java.util.Locale.CHINA)
+                        .format(new java.util.Date());
+        TextView date = text(dateText, 15, 0xccf5f7fc);
+        date.setShadowLayer(dp(8), 0, dp(2), 0xcc000000);
+        column.addView(date);
+        TextView brand = text("鲸落 · 沉入故事深处", 12, 0x99ffc7d6);
+        LinearLayout.LayoutParams brandLp = new LinearLayout.LayoutParams(-2, -2);
+        brandLp.topMargin = dp(18);
+        column.addView(brand, brandLp);
+        overlay.addView(column, new FrameLayout.LayoutParams(-1, -2, android.view.Gravity.CENTER));
+
+        TextView hint = text("轻触屏幕继续", 12, 0x88f5f7fc);
+        hint.setGravity(android.view.Gravity.CENTER);
+        FrameLayout.LayoutParams hintLp =
+                new FrameLayout.LayoutParams(-1, -2, android.view.Gravity.BOTTOM);
+        hintLp.bottomMargin = dp(48);
+        overlay.addView(hint, hintLp);
+
+        overlay.setClickable(true);
+        overlay.setOnClickListener(v -> dismissScreensaver());
+        overlay.setOnTouchListener(
+                (v, event) -> {
+                    if (event.getActionMasked() == android.view.MotionEvent.ACTION_UP) {
+                        dismissScreensaver();
+                        return true;
+                    }
+                    return true;
+                });
+        screensaverOverlay = overlay;
+        root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    void dismissScreensaver() {
+        if (screensaverOverlay != null && root != null) {
+            root.removeView(screensaverOverlay);
+        }
+        if (screensaverOverlay instanceof FrameLayout) {
+            FrameLayout overlay = (FrameLayout) screensaverOverlay;
+            for (int i = 0; i < overlay.getChildCount(); i++)
+                if (overlay.getChildAt(i) instanceof VideoWallpaper)
+                    ((VideoWallpaper) overlay.getChildAt(i)).release();
+        }
+        screensaverOverlay = null;
+        scheduleScreensaver();
+    }
+
+    @Override
+    public void onUserInteraction() {
+        super.onUserInteraction();
+        if (screensaverOverlay != null) return;
+        scheduleScreensaver();
+    }
+
     @Override
     protected void onStart() {
         super.onStart();
@@ -1657,10 +1748,12 @@ public final class MainActivity extends Activity {
                         });
         ui.removeCallbacks(automaticUpdate);
         ui.postDelayed(automaticUpdate, 4000);
+        scheduleScreensaver();
     }
 
     @Override
     protected void onPause() {
+        ui.removeCallbacks(screensaverTask);
         savePlaybackHistory(true);
         super.onPause();
     }

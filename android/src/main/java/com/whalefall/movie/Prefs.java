@@ -31,6 +31,7 @@ final class Prefs {
     static final String HOME_SHOW_HISTORY = "home_show_history";
     static final String HOME_SHOW_HERO = "home_show_hero";
     static final String HOME_SHOW_TONIGHT = "home_show_tonight";
+    static final String SCREENSAVER_ENABLED = "screensaver_enabled";
     static final String REDUCED = "reduced";
     static final String REDUCED_TRANSPARENCY = "reduced_transparency";
     static final String PLAYER_ENGINE = "player_engine";
@@ -91,6 +92,7 @@ final class Prefs {
         HOME_SHOW_HISTORY,
         HOME_SHOW_HERO,
         HOME_SHOW_TONIGHT,
+        SCREENSAVER_ENABLED,
         REDUCED,
         REDUCED_TRANSPARENCY,
         PLAYER_ENGINE,
@@ -129,6 +131,7 @@ final class Prefs {
         HOME_SHOW_HISTORY,
         HOME_SHOW_HERO,
         HOME_SHOW_TONIGHT,
+        SCREENSAVER_ENABLED,
                                     REDUCED,
                                     REDUCED_TRANSPARENCY,
                                     AUTO_NEXT,

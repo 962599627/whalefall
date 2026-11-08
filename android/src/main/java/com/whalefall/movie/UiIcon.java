@@ -348,14 +348,14 @@ final class UiIcon {
         return b;
     }
 
-    /** 工具面板单元格：可点整格 + 涟漪，内部 24dp 图标 + 11.5sp 标签（MD3 网格样式）。 */
+    /** 工具面板单元格：可点整格 + 涟漪，内部 22dp 图标 + 10.5sp 标签（MD3 网格样式）。 */
     static FrameLayout toolCell(
             MainActivity a, int kind, String label, boolean active, Runnable click) {
         FrameLayout cell = new FrameLayout(a);
         cell.setClickable(true);
         cell.setFocusable(a.isTvDevice());
         cell.setContentDescription(label);
-        cell.setBackground(UiTokens.roundedRipple(a, UiTokens.RADIUS_16, 0x26ffffff));
+        cell.setBackground(UiTokens.roundedRipple(a, UiTokens.RADIUS_14, 0x26ffffff));
         if (a.isTvDevice()) {
             cell.setOnFocusChangeListener(
                     (v, focused) -> {
@@ -369,16 +369,16 @@ final class UiIcon {
         LinearLayout inner = new LinearLayout(a);
         inner.setOrientation(LinearLayout.VERTICAL);
         inner.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
-        inner.setPadding(0, a.dp(10), 0, a.dp(8));
+        inner.setPadding(0, a.dp(6), 0, a.dp(4));
         ImageView icon = new ImageView(a);
         icon.setImageResource(res(kind));
         icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
         icon.setColorFilter(
                 active ? UiTokens.ACCENT : UiTokens.PLAYER_ICON, PorterDuff.Mode.SRC_IN);
-        inner.addView(icon, new LinearLayout.LayoutParams(a.dp(24), a.dp(24)));
+        inner.addView(icon, new LinearLayout.LayoutParams(a.dp(22), a.dp(22)));
         TextView text = new TextView(a);
         text.setText(label);
-        text.setTextSize(UiTokens.TYPE_CAPTION);
+        text.setTextSize(UiTokens.TYPE_MICRO);
         text.setTextColor(active ? UiTokens.ACCENT_SOFT : UiTokens.TEXT_SECONDARY);
         text.setGravity(android.view.Gravity.CENTER);
         text.setSingleLine(true);
@@ -386,13 +386,13 @@ final class UiIcon {
         text.setIncludeFontPadding(false);
         LinearLayout.LayoutParams textLp =
                 new LinearLayout.LayoutParams(-2, -2);
-        textLp.topMargin = a.dp(6);
+        textLp.topMargin = a.dp(4);
         inner.addView(text, textLp);
         cell.addView(
                 inner,
                 new FrameLayout.LayoutParams(-1, -1, android.view.Gravity.CENTER));
         cell.setOnClickListener(click == null ? null : v -> click.run());
-        cell.setMinimumHeight(a.dp(72));
+        cell.setMinimumHeight(a.dp(60));
         return cell;
     }
 

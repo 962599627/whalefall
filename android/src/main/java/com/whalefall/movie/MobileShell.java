@@ -674,9 +674,10 @@ final class MobileShell {
             tab.addView(
                     glyph, new LinearLayout.LayoutParams(a.dp(22 * navScale), a.dp(22 * navScale)));
 
-            TextView label = a.text(TAB_NAMES[tabIdx], 10.5f * navScale, 0xffe6edf9);
+            TextView label = a.text(TAB_NAMES[tabIdx], 10.5f * navScale, UiTokens.TEXT_PRIMARY);
             label.setGravity(Gravity.CENTER);
-            label.setPadding(0, a.dp(2), 0, 0);
+            // 图标与文字之间 +2dp，避免 Dock 里文字贴着图标底部
+            label.setPadding(0, a.dp(4), 0, 0);
             navLabels[tabIdx] = label;
             tab.addView(label, new LinearLayout.LayoutParams(-2, -2));
 
@@ -717,7 +718,8 @@ final class MobileShell {
                 }
             }
             if (navLabels[i] != null) {
-                navLabels[i].setTextColor(selected ? 0xffff8fb1 : 0xffe6edf9);
+                navLabels[i].setTextColor(
+                        selected ? UiTokens.ACCENT : UiTokens.TEXT_PRIMARY);
                 navLabels[i].setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
             }
             if (navIcons[i] != null) {
@@ -794,8 +796,8 @@ final class MobileShell {
         FrameLayout.LayoutParams filterBarLp =
                 new FrameLayout.LayoutParams(
                         -1, a.dp(FilterSummaryBar.HEIGHT_DP), Gravity.BOTTOM);
-        filterBarLp.leftMargin = a.dp(16);
-        filterBarLp.rightMargin = a.dp(16);
+        filterBarLp.leftMargin = a.dp(UiTokens.SP_16);
+        filterBarLp.rightMargin = a.dp(UiTokens.SP_16);
         filterBarLp.bottomMargin = a.dp(filterBarBottomDp);
         contentContainer.addView(filterSummaryBar.view(), filterBarLp);
 
@@ -817,7 +819,11 @@ final class MobileShell {
         if (a.prefs.getBoolean(Prefs.HOME_SHOW_HISTORY, true) && !history.isEmpty()) {
             LinearLayout histHeader = a.row();
             histHeader.setGravity(Gravity.CENTER_VERTICAL);
-            histHeader.setPadding(a.dp(16), a.dp(14), a.dp(16), a.dp(8));
+            histHeader.setPadding(
+                    a.dp(UiTokens.SP_16),
+                    a.dp(UiTokens.SP_12),
+                    a.dp(UiTokens.SP_16),
+                    a.dp(UiTokens.SP_8));
             TextView hTitle = a.text("历史记录", 18, MainActivity.WHITE);
             hTitle.setTypeface(null, Typeface.BOLD);
             histHeader.addView(hTitle, new LinearLayout.LayoutParams(0, -2, 1));
@@ -843,9 +849,18 @@ final class MobileShell {
                 LinearLayout card = a.row();
                 card.setTag("home-history:" + i);
                 card.setGravity(Gravity.CENTER_VERTICAL);
-                card.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
+                card.setPadding(
+                        a.dp(UiTokens.SP_10),
+                        a.dp(UiTokens.SP_10),
+                        a.dp(UiTokens.SP_12),
+                        a.dp(UiTokens.SP_10));
                 card.setBackground(
-                        glassBg(0xcc1e3557, 0xb8151b19, a.dp(18), a.dp(0.8f), 0x38ffffff));
+                        glassBg(
+                                0xcc1e3557,
+                                0xb8151b19,
+                                a.dp(UiTokens.RADIUS_20),
+                                a.dp(0.8f),
+                                0x38ffffff));
                 MobileDetailScreen.bindTouchFeedback(card);
                 card.setOnClickListener(v -> a.resumeHistory(e));
 
@@ -899,7 +914,8 @@ final class MobileShell {
 
         // 3. Featured Hero Showcase Card Container ("今日首推")
         final FrameLayout heroContainer = new FrameLayout(a);
-        heroContainer.setPadding(a.dp(16), a.dp(14), a.dp(16), 0);
+        heroContainer.setPadding(
+                a.dp(UiTokens.SP_16), a.dp(UiTokens.SP_12), a.dp(UiTokens.SP_16), 0);
         heroContainer.setVisibility(View.GONE);
         if (a.prefs.getBoolean(Prefs.HOME_SHOW_HERO, true)) {
             body.addView(heroContainer, new LinearLayout.LayoutParams(-1, -2));
@@ -1004,7 +1020,11 @@ final class MobileShell {
         catScroll.setHorizontalScrollBarEnabled(false);
         catScroll.setClipChildren(true);
         catScroll.setClipToPadding(false);
-        catScroll.setPadding(a.dp(16), a.dp(14), a.dp(8), a.dp(10));
+        catScroll.setPadding(
+                a.dp(UiTokens.SP_16),
+                a.dp(UiTokens.SP_12),
+                a.dp(UiTokens.SP_8),
+                a.dp(UiTokens.SP_8));
         final LinearLayout catRow = a.row();
         catRow.setGravity(Gravity.CENTER_VERTICAL);
         catScroll.addView(catRow);
@@ -1034,7 +1054,8 @@ final class MobileShell {
         body.addView(statusText, new LinearLayout.LayoutParams(-1, -2));
 
         final LinearLayout gridContainer = a.vertical();
-        gridContainer.setPadding(a.dp(16), a.dp(2), a.dp(16), 0);
+        gridContainer.setPadding(
+                a.dp(UiTokens.SP_16), a.dp(UiTokens.SP_2), a.dp(UiTokens.SP_16), 0);
         body.addView(gridContainer, new LinearLayout.LayoutParams(-1, -2));
 
         final TextView loadMoreBtn = a.text("加载更多影片", 13.5f, MainActivity.WHITE);
@@ -1047,7 +1068,11 @@ final class MobileShell {
         loadMoreBtn.setVisibility(View.GONE);
         MobileDetailScreen.bindTouchFeedback(loadMoreBtn);
         LinearLayout.LayoutParams moreLp = new LinearLayout.LayoutParams(-1, -2);
-        moreLp.setMargins(a.dp(16), a.dp(14), a.dp(16), a.dp(8));
+        moreLp.setMargins(
+                a.dp(UiTokens.SP_16),
+                a.dp(UiTokens.SP_12),
+                a.dp(UiTokens.SP_16),
+                a.dp(UiTokens.SP_8));
         body.addView(loadMoreBtn, moreLp);
 
         final boolean[] loadingPage = {false};
@@ -1418,7 +1443,13 @@ final class MobileShell {
     private View buildHeroShowcaseCard(final Cms.Site site, final Cms.Video featured) {
         FrameLayout card = new FrameLayout(a);
         card.setTag("hero-watch-now-button");
-        card.setBackground(glassBg(0x6616283f, 0x55101e33, a.dp(18), a.dp(0.7f), 0x44ffffff));
+        card.setBackground(
+                glassBg(
+                        0x6616283f,
+                        0x55101e33,
+                        a.dp(UiTokens.RADIUS_20),
+                        a.dp(0.7f),
+                        0x44ffffff));
         card.setClipToOutline(true);
         MobileDetailScreen.bindTouchFeedback(card);
         card.setOnClickListener(v -> a.openListing(site, featured));
@@ -3066,7 +3097,9 @@ final class MobileShell {
                                             ? "界面外观与偏好"
                                             : settingsSubPage == 5
                                                     ? "首页设置"
-                                                    : "备份、更新与诊断";
+                                                    : settingsSubPage == 6
+                                                            ? "关于鲸落"
+                                                            : "备份、更新与诊断";
             TextView subTitle = a.text(subTitleText, 20, Color.WHITE);
             subTitle.setTypeface(null, Typeface.BOLD);
             topNav.addView(subTitle, new LinearLayout.LayoutParams(0, -2, 1));
@@ -3231,6 +3264,18 @@ final class MobileShell {
                         () -> PlaybackControls.showSubtitleAdjuster(a, null, refreshInPlace));
             } else if (settingsSubPage == 3) {
                 addSectionHeader(body, "界面显示与交互");
+                addSettingCard(
+                        body,
+                        4,
+                        "屏幕保护（5 分钟）",
+                        a.prefs.getBoolean(Prefs.SCREENSAVER_ENABLED, false)
+                                ? "已开启 · 空闲时用动态壁纸做屏保，触摸退出"
+                                : "已关闭 · 开启后空闲 5 分钟进入屏保",
+                        () -> {
+                            boolean on = !a.prefs.getBoolean(Prefs.SCREENSAVER_ENABLED, false);
+                            a.prefs.edit().putBoolean(Prefs.SCREENSAVER_ENABLED, on).apply();
+                            refreshInPlace.run();
+                        });
                 final int scale = a.prefs.getInt(Prefs.UI_SCALE_PERCENT, 100);
                 addSettingCard(
                         body,
@@ -3350,6 +3395,8 @@ final class MobileShell {
                 a.gap(body, 10);
                 body.addView(
                         a.text("关闭的板块只在首页隐藏，数据不会删除；随时可以再打开。", 12, 0xff8d9cb6));
+            } else if (settingsSubPage == 6) {
+                addAboutPage(body);
             } else {
                 addSectionHeader(body, "更新、备份与诊断");
                 addSettingCard(
@@ -3392,9 +3439,10 @@ final class MobileShell {
 
         a.gap(body, 14);
         final String[] categories = {
-            "片源与直播配置", "播放、解码与字幕", "界面外观与偏好", "备份、更新与诊断", "首页设置"
+            "片源与直播配置", "播放、解码与字幕", "界面外观与偏好", "备份、更新与诊断", "首页设置",
+            "关于鲸落"
         };
-        final int[] icons = {1, 3, 4, 5, 2};
+        final int[] icons = {1, 3, 4, 5, 2, 6};
         for (int i = 0; i < categories.length; i++) {
             final int page = i + 1;
             addSettingCard(
@@ -3411,6 +3459,90 @@ final class MobileShell {
         addSettingCard(body, 2, "网盘与账号授权", "", () -> AccountPanel.show(a, null));
     }
 
+    /** 设置 → 关于鲸落：版本、开源信息、上游归属与相关操作。 */
+    private void addAboutPage(LinearLayout body) {
+        LinearLayout brand = a.vertical();
+        brand.setGravity(Gravity.CENTER_HORIZONTAL);
+        android.widget.ImageView logo = new android.widget.ImageView(a);
+        logo.setImageResource(R.drawable.logo_mark);
+        brand.addView(logo, new LinearLayout.LayoutParams(a.dp(76), a.dp(76)));
+        TextView name = a.text("鲸落", 26, MainActivity.WHITE);
+        name.setTypeface(null, Typeface.BOLD);
+        name.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(-1, -2);
+        nameLp.topMargin = a.dp(12);
+        brand.addView(name, nameLp);
+        TextView sub = a.text("WHALEFALL · 沉入故事深处", 11.5f, 0xffffb3c8);
+        sub.setGravity(Gravity.CENTER);
+        brand.addView(sub);
+        TextView version = a.text("版本 " + UpdateManager.installedVersion(a), 12.5f, 0xff8d9cb6);
+        version.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams verLp = new LinearLayout.LayoutParams(-1, -2);
+        verLp.topMargin = a.dp(6);
+        brand.addView(version, verLp);
+        a.gap(body, 14);
+        body.addView(brand, new LinearLayout.LayoutParams(-1, -2));
+
+        addSectionHeader(body, "关于软件");
+        addSettingCard(
+                body,
+                6,
+                "检查更新",
+                "当前版本：" + UpdateManager.installedVersion(a),
+                () -> a.open(new MainActivity.Screen(() -> new UpdateScreen(a).show()), true));
+        addSettingCard(
+                body,
+                6,
+                "开源许可",
+                "GPL-3.0-only · 衍生自 MarcoMovie（Pilipala9919）",
+                () -> {
+                    String text =
+                            "鲸落基于 MarcoMovie 二次开发，遵循 GNU General Public License v3.0（GPL-3.0-only）发布。\n\n"
+                                    + "上游项目：MarcoMovie（作者 Pilipala）\n"
+                                    + "本衍生版本保留原版权与许可声明，衍生代码同样以 GPL-3.0 开源。\n\n"
+                                    + "本应用不提供任何影视内容，所有内容均来自用户自行配置的第三方片源。";
+                    new AppDialog.Builder(a)
+                            .setTitle("开源许可")
+                            .setMessage(text)
+                            .setNegativeButton("知道了", null)
+                            .show();
+                });
+        addSettingCard(
+                body,
+                6,
+                "复制项目源码地址",
+                "GitHub · 962599627/whalefall",
+                () -> {
+                    android.content.ClipboardManager cm =
+                            (android.content.ClipboardManager)
+                                    a.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                    cm.setPrimaryClip(
+                            android.content.ClipData.newPlainText(
+                                    "whalefall", "https://github.com/962599627/whalefall"));
+                    a.toast("源码地址已复制");
+                });
+        addSettingCard(
+                body,
+                6,
+                "设备与包名",
+                android.os.Build.MANUFACTURER
+                        + " "
+                        + android.os.Build.MODEL
+                        + " · Android "
+                        + android.os.Build.VERSION.RELEASE
+                        + " · "
+                        + a.getPackageName(),
+                () -> a.toast("应用包名：" + a.getPackageName()));
+        a.gap(body, 12);
+        TextView footer =
+                a.text(
+                        "本应用为开源软件，不提供任何影视资源；\n内容均来自用户自行配置的第三方接口。",
+                        11.5f,
+                        0xff8d9cb6);
+        footer.setGravity(Gravity.CENTER);
+        body.addView(footer);
+    }
+
     private void addSectionHeader(LinearLayout parent, String title) {
         TextView h = a.text(title, 12.5f, 0xff5ac8fa);
         h.setTypeface(null, Typeface.BOLD);
@@ -3422,8 +3554,13 @@ final class MobileShell {
             LinearLayout parent, int iconKind, String title, String subtitle, Runnable action) {
         LinearLayout row = a.row();
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(a.dp(14), a.dp(13), a.dp(14), a.dp(13));
-        row.setBackground(glassBg(0xcc1e3557, 0xcc17294a, a.dp(18), a.dp(0.7f), 0x33ffffff));
+        row.setPadding(
+                a.dp(UiTokens.SP_14),
+                a.dp(UiTokens.SP_12),
+                a.dp(UiTokens.SP_14),
+                a.dp(UiTokens.SP_12));
+        row.setBackground(
+                glassBg(0xcc1e3557, 0xcc17294a, a.dp(UiTokens.RADIUS_20), a.dp(0.7f), 0x33ffffff));
         MobileDetailScreen.bindTouchFeedback(row);
         row.setOnClickListener(v -> action.run());
 
@@ -3489,31 +3626,32 @@ final class MobileShell {
             int strokeColor;
             switch (kind) {
                 case 1:
-                    badgeBg = 0x260a84ff;
-                    strokeColor = 0xff5ac8fa;
+                    // 降低徽标底饱和度（深蓝灰），图标用更亮的蓝，保证图标 vs 徽标 ≥ 4.5:1
+                    badgeBg = 0x2E123A5C;
+                    strokeColor = 0xFF7CC4FF;
                     break;
                 case 2:
-                    badgeBg = 0x2630d158;
-                    strokeColor = 0xff34d399;
+                    badgeBg = 0x2E123F32;
+                    strokeColor = 0xFF5EE0A0;
                     break;
                 case 3:
-                    badgeBg = 0x26ff9f0a;
-                    strokeColor = 0xfffbbf24;
+                    badgeBg = 0x2E4A3A12;
+                    strokeColor = 0xFFFFC94D;
                     break;
                 case 4:
-                    badgeBg = 0x26bf5af2;
-                    strokeColor = 0xffc084fc;
+                    badgeBg = 0x2E3A2252;
+                    strokeColor = 0xFFC99BFF;
                     break;
                 default:
-                    badgeBg = 0x265ac8fa;
-                    strokeColor = 0xff60a5fa;
+                    badgeBg = 0x2E123A5C;
+                    strokeColor = 0xFF8CC6FF;
                     break;
             }
             paint.setStyle(Paint.Style.FILL);
             paint.setColor(badgeBg);
             c.drawRoundRect(new RectF(0, 0, w, h), a.dp(10), a.dp(10), paint);
             UiIcon.tintDrawable(glyph, strokeColor);
-            UiIcon.drawCentered(c, glyph, (int) w, (int) h, Math.min(w, h) * 0.62f);
+            UiIcon.drawCentered(c, glyph, (int) w, (int) h, Math.min(w, h) * 0.64f);
         }
     }
 

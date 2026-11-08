@@ -50,7 +50,7 @@ final class FilterSummaryBar {
         label.setTypeface(null, android.graphics.Typeface.BOLD);
         label.setIncludeFontPadding(false);
         LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(-2, -2);
-        labelLp.leftMargin = a.dp(9);
+        labelLp.leftMargin = a.dp(11);
         root.addView(label, labelLp);
 
         chips = a.row();

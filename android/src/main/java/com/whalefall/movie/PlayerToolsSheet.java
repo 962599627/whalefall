@@ -90,14 +90,23 @@ final class PlayerToolsSheet {
         titleRow.addView(close, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
         card.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
 
-        // 3 列网格（每格 76dp，可滚动）
+        // 自适应列数：宽面板 4 列（20 项正好 5 行全展示），窄屏 3 列（内部滚动）
+        int width =
+                Math.min(
+                        a.dp(620),
+                        (a.root == null ? a.windowWidth() : a.root.getWidth())
+                                - a.dp(UiTokens.SP_16));
+        width = Math.max(a.dp(240), width);
+        final int columns = width >= a.dp(460) ? 4 : 3;
+        final int cellHeightDp = 68;
+        final int rowHeightDp = 72;
         LinearLayout grid = a.vertical();
-        grid.setPadding(a.dp(UiTokens.SP_12), a.dp(UiTokens.SP_10), a.dp(UiTokens.SP_12), 0);
-        int rows = (tools.size() + 2) / 3;
-        for (int i = 0; i < tools.size(); i += 3) {
+        grid.setPadding(a.dp(UiTokens.SP_12), a.dp(UiTokens.SP_8), a.dp(UiTokens.SP_12), 0);
+        int rows = (tools.size() + columns - 1) / columns;
+        for (int i = 0; i < tools.size(); i += columns) {
             LinearLayout row = a.row();
             row.setGravity(Gravity.CENTER_VERTICAL);
-            for (int column = 0; column < 3; column++) {
+            for (int column = 0; column < columns; column++) {
                 int index = i + column;
                 if (index < tools.size()) {
                     final Tool tool = tools.get(index);
@@ -117,17 +126,17 @@ final class PlayerToolsSheet {
                                                 90);
                                     });
                     LinearLayout.LayoutParams cellLp =
-                            new LinearLayout.LayoutParams(0, a.dp(76), 1f);
-                    cellLp.setMargins(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
+                            new LinearLayout.LayoutParams(0, a.dp(cellHeightDp), 1f);
+                    cellLp.setMargins(a.dp(3), a.dp(2), a.dp(3), a.dp(2));
                     row.addView(cell, cellLp);
                 } else {
                     LinearLayout.LayoutParams emptyLp =
-                            new LinearLayout.LayoutParams(0, a.dp(76), 1f);
-                    emptyLp.setMargins(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
+                            new LinearLayout.LayoutParams(0, a.dp(cellHeightDp), 1f);
+                    emptyLp.setMargins(a.dp(3), a.dp(2), a.dp(3), a.dp(2));
                     row.addView(new View(a), emptyLp);
                 }
             }
-            grid.addView(row, new LinearLayout.LayoutParams(-1, a.dp(84)));
+            grid.addView(row, new LinearLayout.LayoutParams(-1, a.dp(rowHeightDp)));
         }
         ScrollView scroll = new ScrollView(a);
         scroll.setVerticalScrollBarEnabled(false);
@@ -137,21 +146,16 @@ final class PlayerToolsSheet {
         // 面板最大高度 = 屏幕 76%，超出时网格区域内部滚动
         int screenHeight = a.root == null ? a.windowHeight() : a.root.getHeight();
         int maxSheet = Math.min(a.dp(640), Math.round(screenHeight * 0.76f));
-        int headerEstimate = a.dp(108);
-        int gridPx = rows * a.dp(84) + a.dp(10);
+        int headerEstimate = a.dp(96);
+        int gridPx = rows * a.dp(rowHeightDp) + a.dp(8);
         int available = Math.max(a.dp(150), maxSheet - headerEstimate);
         int scrollHeight = gridPx > available ? available : -2;
         card.addView(scroll, new LinearLayout.LayoutParams(-1, scrollHeight));
-        card.setPadding(0, 0, 0, a.dp(UiTokens.SP_20));
+        card.setPadding(0, 0, 0, a.dp(UiTokens.SP_16));
 
-        int width =
-                Math.min(
-                        a.dp(620),
-                        (a.root == null ? a.windowWidth() : a.root.getWidth())
-                                - a.dp(UiTokens.SP_16));
         FrameLayout.LayoutParams cardFrameLp =
                 new FrameLayout.LayoutParams(
-                        Math.max(a.dp(240), width), -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+                        width, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         root.addView(card, cardFrameLp);
 
         dialog.setContentView(root);

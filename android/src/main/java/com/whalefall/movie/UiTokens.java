@@ -47,6 +47,9 @@ final class UiTokens {
     static final int PLAYER_SHEET = 0xf20b1220;
 
     // ---------------- 字号 scale (sp) ----------------
+    static final float TYPE_DISPLAY = 28f;
+    static final float TYPE_HEADING = 24f;
+    static final float TYPE_TITLE_LG = 18f;
     static final float TYPE_CLOCK = 24f;
     static final float TYPE_TITLE = 17f;
     static final float TYPE_TITLE_COMPACT = 16f;
@@ -62,6 +65,7 @@ final class UiTokens {
     static final int SP_8 = 8;
     static final int SP_10 = 10;
     static final int SP_12 = 12;
+    static final int SP_14 = 14;
     static final int SP_16 = 16;
     static final int SP_20 = 20;
     static final int SP_24 = 24;
@@ -71,6 +75,7 @@ final class UiTokens {
     static final int RADIUS_6 = 6;
     static final int RADIUS_10 = 10;
     static final int RADIUS_12 = 12;
+    static final int RADIUS_14 = 14;
     static final int RADIUS_16 = 16;
     static final int RADIUS_20 = 20;
     static final int RADIUS_24 = 24;
