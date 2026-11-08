@@ -548,10 +548,12 @@ final class MobileDetailScreen {
                 new LinearLayout.LayoutParams(-1, wide ? -2 : foregroundHeroH));
 
         final LinearLayout heroCenterCol = a.vertical();
+        final LinearLayout wideLeftCol = wide ? a.vertical() : null;
+        final ImageView[] widePoster = new ImageView[1];
         final LinearLayout wideInfoCol = wide ? heroCenterCol : null;
         if (wide) {
             heroCenterCol.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-            heroCenterCol.setPadding(a.dp(24), 0, a.dp(8), 0);
+            heroCenterCol.setPadding(a.dp(24), a.dp(6), a.dp(8), 0);
             LinearLayout heroRow = a.row();
             heroRow.setGravity(Gravity.CENTER_VERTICAL);
             FrameLayout.LayoutParams heroRowLp =
@@ -565,11 +567,10 @@ final class MobileDetailScreen {
             tabletPoster.setScaleType(ImageView.ScaleType.CENTER_CROP);
             tabletPoster.setBackground(a.bg(0xff122434, 16));
             tabletPoster.setClipToOutline(true);
-            LinearLayout.LayoutParams tabletPosterLp =
-                    new LinearLayout.LayoutParams(a.dp(290), a.dp(435));
-            heroRow.addView(tabletPoster, tabletPosterLp);
+            widePoster[0] = tabletPoster;
             if (listing.poster != null && !listing.poster.isEmpty())
                 a.poster(listing.poster, tabletPoster);
+            heroRow.addView(wideLeftCol, new LinearLayout.LayoutParams(a.dp(290), -2));
             heroRow.addView(heroCenterCol, new LinearLayout.LayoutParams(0, -2, 1f));
         } else {
             heroCenterCol.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -593,7 +594,18 @@ final class MobileDetailScreen {
         titleView.setMaxLines(2);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
         titleView.setShadowLayer(a.dp(18), 0, a.dp(5), 0xf0000000);
-        heroCenterCol.addView(titleView, new LinearLayout.LayoutParams(-1, -2));
+        if (wide && wideLeftCol != null) {
+            titleView.setTextSize(22);
+            titleView.setGravity(Gravity.START);
+            LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-1, -2);
+            titleLp.bottomMargin = a.dp(10);
+            wideLeftCol.addView(titleView, titleLp);
+            if (widePoster[0] != null)
+                wideLeftCol.addView(
+                        widePoster[0], new LinearLayout.LayoutParams(a.dp(290), a.dp(435)));
+        } else {
+            heroCenterCol.addView(titleView, new LinearLayout.LayoutParams(-1, -2));
+        }
 
         final LinearLayout pillsRow = a.row();
         pillsRow.setGravity(wide ? Gravity.START : Gravity.CENTER);

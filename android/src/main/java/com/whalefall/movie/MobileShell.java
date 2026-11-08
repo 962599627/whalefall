@@ -1206,7 +1206,15 @@ final class MobileShell {
         LinearLayout contentRow = a.row();
         contentRow.setGravity(Gravity.CENTER_VERTICAL);
         contentRow.setPadding(a.dp(10), a.dp(10), a.dp(10), a.dp(10));
-        card.addView(contentRow, new FrameLayout.LayoutParams(-1, a.dp(104)));
+        float heroDensity = a.getResources().getDisplayMetrics().density;
+        int heroHDp =
+                Math.max(
+                        88,
+                        Math.min(
+                                150,
+                                Math.round(
+                                        (a.windowHeight() / heroDensity) * 0.25f)));
+        card.addView(contentRow, new FrameLayout.LayoutParams(-1, a.dp(heroHDp)));
 
         // Left 2:3 Poster
         ImageView poster = new ImageView(a);
