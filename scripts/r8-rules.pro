@@ -1,0 +1,12 @@
+# 鲸落 R8 保守规则：先只做 shrink、不混淆，保留反射/JNI/第三方运行时相关类
+-dontobfuscate
+-dontwarn **
+-keepclasseswithmembernames class * { native <methods>; }
+-keep class com.pilipala.** { *; }
+-keep class com.whalefall.movie.** { *; }
+-keep class androidx.media3.** { *; }
+-keep class org.json.** { *; }
+-keep class kotlin.** { *; }
+-keep class kotlinx.** { *; }
+-keep class androidx.core.** { *; }
+-keepclassmembers class **.R$* { public static <fields>; }

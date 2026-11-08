@@ -142,9 +142,43 @@ final class PushFiles {
         }
     }
 
+    static final String[] ALLOWED_EXT = {
+        ".md", ".markdown", ".txt", ".log", ".json",
+        ".mp4", ".mkv", ".webm", ".mov", ".m4v", ".avi", ".flv",
+        ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp",
+        ".apk"
+    };
+
+    static boolean isImage(String name) {
+        String n = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        for (String ext : new String[] {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"})
+            if (n.endsWith(ext)) return true;
+        return false;
+    }
+
+    static boolean isApk(String name) {
+        String n = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        return n.endsWith(".apk");
+    }
+
+    static boolean isText(String name) {
+        return isMarkdown(name);
+    }
+
+    /** 上传类型校验：视频 / 文本 / 图片 / APK。 */
+    static boolean allowedUpload(String name) {
+        String n = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        for (String ext : ALLOWED_EXT) if (n.endsWith(ext)) return true;
+        return false;
+    }
+
     static boolean isMarkdown(String name) {
         String n = name == null ? "" : name.toLowerCase(Locale.ROOT);
-        return n.endsWith(".md") || n.endsWith(".markdown") || n.endsWith(".txt");
+        return n.endsWith(".md")
+                || n.endsWith(".markdown")
+                || n.endsWith(".txt")
+                || n.endsWith(".log")
+                || n.endsWith(".json");
     }
 
     static boolean isVideo(String name) {

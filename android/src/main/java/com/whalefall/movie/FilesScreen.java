@@ -183,6 +183,10 @@ final class FilesScreen {
                             show(a, target);
                         } else if (PushFiles.isMarkdown(target)) {
                             MarkdownScreen.show(a, target);
+                        } else if (PushFiles.isImage(target)) {
+                            showImage(a, targetFile, target);
+                        } else if (PushFiles.isApk(target)) {
+                            installApk(a, targetFile);
                         } else if (PushFiles.isVideo(target)) {
                             PushFiles.playUrl(a, "file://" + targetFile.getAbsolutePath(), target);
                         } else {
@@ -270,6 +274,49 @@ final class FilesScreen {
                             }
                         })
                 .show();
+    }
+
+    /** 图片预览：全屏暗底 + 自适应图片，点任意处返回。 */
+    private static void showImage(MainActivity a, File file, String rel) {
+        FrameLayout overlay = new FrameLayout(a);
+        overlay.setBackgroundColor(0xee000000);
+        overlay.setClickable(true);
+        android.widget.ImageView image = new android.widget.ImageView(a);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        a.poster("file://" + file.getAbsolutePath(), image);
+        overlay.addView(image, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+        TextView hint = a.text(PushFiles.baseName(rel) + " · 点任意处返回", 12, 0xccffffff);
+        hint.setGravity(Gravity.CENTER);
+        FrameLayout.LayoutParams hintLp =
+                new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        hintLp.bottomMargin = a.dp(32);
+        overlay.addView(hint, hintLp);
+        overlay.setOnClickListener(v -> a.root.removeView(overlay));
+        a.root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    /** 安装上传的 APK：复制到更新缓存目录，用现有 provider 交给系统安装器。 */
+    private static void installApk(MainActivity a, File file) {
+        try {
+            File cacheDir = new File(a.getCacheDir(), "updates");
+            if (!cacheDir.isDirectory() && !cacheDir.mkdirs()) throw new java.io.IOException("cache");
+            File target = new File(cacheDir, "release.apk");
+            try (java.io.InputStream in = new java.io.FileInputStream(file);
+                    java.io.OutputStream out = new java.io.FileOutputStream(target)) {
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            }
+            android.content.Intent intent =
+                    new android.content.Intent(android.content.Intent.ACTION_VIEW);
+            intent.setDataAndType(UpdateApkProvider.URI, "application/vnd.android.package-archive");
+            intent.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            a.startActivity(intent);
+        } catch (Exception e) {
+            a.toast("安装失败：" + e.getMessage());
+        }
     }
 
     private static String fileBadge(String name) {

@@ -147,6 +147,10 @@ final class AdminConsole implements Closeable {
                     send(response, 403, "text/plain; charset=utf-8", "403 only LAN allowed");
                     return;
                 }
+                if (!PushFiles.allowedUpload(name)) {
+                    send(response, 400, "text/plain; charset=utf-8", "400 unsupported type");
+                    return;
+                }
                 if (length <= 0 || length > PushFiles.MAX_BYTES) {
                     send(response, 400, "text/plain; charset=utf-8", "400 bad size");
                     return;
@@ -531,6 +535,8 @@ final class AdminConsole implements Closeable {
     }
 
     private void uploadFile(String name, String base64) throws Exception {
+        if (!PushFiles.allowedUpload(name))
+            throw new IllegalArgumentException("仅支持视频 / 文本 / 图片 / APK");
         if (base64 == null || base64.isEmpty())
             throw new IllegalArgumentException("文件内容为空");
         int comma = base64.indexOf(',');

@@ -515,6 +515,19 @@ final class MobileShell {
                 });
         bar.addView(brandRow, new LinearLayout.LayoutParams(-2, -2));
 
+        // 品牌右侧：文件管理入口（管理后台上传的文件在这里管理 / 安装 / 预览）
+        android.widget.ImageView fileBtn = new android.widget.ImageView(a);
+        fileBtn.setImageDrawable(UiIcon.drawable(a, UiIcon.EPISODES));
+        fileBtn.setColorFilter(0xffe6edf9);
+        fileBtn.setContentDescription("文件管理");
+        fileBtn.setPadding(a.dp(8), a.dp(8), a.dp(8), a.dp(8));
+        fileBtn.setBackground(glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.8f), 0x38ffffff));
+        MobileDetailScreen.bindTouchFeedback(fileBtn);
+        fileBtn.setOnClickListener(v -> FilesScreen.show(a));
+        LinearLayout.LayoutParams fileLp = new LinearLayout.LayoutParams(a.dp(38), a.dp(38));
+        fileLp.leftMargin = a.dp(8);
+        bar.addView(fileBtn, fileLp);
+
         // Flexible middle slot: keeps `sitePill` right-aligned and guarantees it shrinks/truncates
         // before ever pushing `netdiskPill` or `searchCircle` off the right edge of the screen.
         FrameLayout siteSlot = new FrameLayout(a);

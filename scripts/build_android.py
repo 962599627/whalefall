@@ -112,7 +112,13 @@ def main():
     run(exe(JDK/'bin','javac'),'-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-classpath',os.pathsep.join(str(p) for p in [ANDROID,*dependencies]),'-d',BUILD/'classes',*sources)
     with zipfile.ZipFile(BUILD/'classes.jar','w',zipfile.ZIP_DEFLATED) as z:
         for p in (BUILD/'classes').rglob('*.class'): z.write(p,p.relative_to(BUILD/'classes').as_posix())
-    run(exe(JDK/'bin','java'),'-cp',SDK/'lib/d8.jar','com.android.tools.r8.D8','--min-api','23','--lib',ANDROID,'--output',BUILD/'dex',BUILD/'classes.jar',*dependencies)
+    if os.environ.get('MARCOMOVIE_R8','').strip() in ('1','true','yes'):
+        run(exe(JDK/'bin','java'),'-cp',SDK/'lib/d8.jar','com.android.tools.r8.R8',
+            '--release','--min-api','23','--lib',ANDROID,
+            '--pg-conf',ROOT/'scripts/r8-rules.pro',
+            '--output',BUILD/'dex',BUILD/'classes.jar',*dependencies)
+    else:
+        run(exe(JDK/'bin','java'),'-cp',SDK/'lib/d8.jar','com.android.tools.r8.D8','--min-api','23','--lib',ANDROID,'--output',BUILD/'dex',BUILD/'classes.jar',*dependencies)
     with zipfile.ZipFile(BUILD/'resources.apk') as source, zipfile.ZipFile(BUILD/'unsigned.apk','w',zipfile.ZIP_DEFLATED) as dest:
         for entry in source.infolist():dest.writestr(entry,source.read(entry.filename))
         for dex in (BUILD/'dex').glob('*.dex'):dest.write(dex,dex.name)
