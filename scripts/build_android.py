@@ -82,6 +82,14 @@ def main():
     catpaw_files, catpaw_assets = build_catpaw()
     native_files.update({k:v for k,v in catpaw_files.items() if k.startswith('lib/armeabi-v7a/')})
     native_files_mobile.update(catpaw_files)
+    abi_filter = os.environ.get('MARCOMOVIE_MOBILE_ABIS', '').strip()
+    if abi_filter:
+        allowed = [('lib/' + a.strip() + '/') for a in abi_filter.split(',') if a.strip()]
+        if allowed:
+            native_files_mobile = {
+                k: v for k, v in native_files_mobile.items() if any(k.startswith(a) for a in allowed)
+            }
+            print('mobile ABI filter:', abi_filter, 'libs:', len(native_files_mobile))
     catpaw_tv_assets = assets_for_package(catpaw_assets, native_files, BUILD/'catpaw/assets-tv')
     catpaw_mobile_assets = assets_for_package(catpaw_assets, native_files_mobile, BUILD/'catpaw/assets-mobile')
     for p in (exe(JDK/'bin','java'), exe(SDK,'aapt2'), ANDROID):
