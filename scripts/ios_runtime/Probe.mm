@@ -3,6 +3,7 @@
 #import <UIKit/UIKit.h>
 #import <CommonCrypto/CommonDigest.h>
 #import "CatpawRuntimeEngine.h"
+#import "LoopbackDiagnostics.h"
 extern NSArray *runQuickJsProbe(NSString *assets);
 
 static NSMutableArray *checks;
@@ -64,6 +65,7 @@ static id call(NSString *base,NSString *key,NSString *method,NSArray *args) {
 }
 - (void)runProbe {
   checks=[NSMutableArray array];NSString *failure=nil;NSString *runtimeVersion=@"";
+  NSMutableDictionary *transportDiagnostics=[NSMutableDictionary dictionary];
   @try {
     NSArray *quickChecks=runQuickJsProbe(NSBundle.mainBundle.resourcePath);
     [checks addObjectsFromArray:quickChecks];
@@ -87,6 +89,7 @@ static id call(NSString *base,NSString *key,NSString *method,NSArray *args) {
     }
     check(state[@"port"]!=nil,@"embedded_node_ready");
     NSString *base=[NSString stringWithFormat:@"http://127.0.0.1:%@/%@",state[@"port"],state[@"secret"]];
+    transportDiagnostics[@"raw_socket_health"]=loopbackHealthDiagnostic([base stringByAppendingString:@"/health"]);
     NSDictionary *health=json(request([base stringByAppendingString:@"/health"],@"GET",nil,@{}));
     runtimeVersion=health[@"runtime"]?:@"";
     check([runtimeVersion hasPrefix:@"18.20.4"],@"actual_node_18_runtime");
@@ -186,6 +189,7 @@ static id call(NSString *base,NSString *key,NSString *method,NSArray *args) {
     check([home[@"class"] count]==1,@"drpy_reopen");
   } @catch(NSException *error) { failure=error.reason?:@"probe_exception"; }
   NSDictionary *report=@{@"passed":@(failure==nil),@"checks":checks,@"failure":failure?:@"",
+    @"transport_diagnostics":transportDiagnostics,
     @"runtime":runtimeVersion,@"scope":@"iOS simulator, production Node engine and scripts; no Flutter UI or media decoder acceptance"};
   NSString *folder=[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES) firstObject];
   [NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];

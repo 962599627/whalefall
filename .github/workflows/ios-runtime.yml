@@ -22,6 +22,7 @@ on:
       - 'scripts/fixtures/python_*'
       - 'scripts/fixtures/catvod_native_*'
       - 'scripts/run_ios_runtime_probe.py'
+      - 'scripts/test_ios_runtime_selection.py'
       - 'flutter/packages/catpaw_runtime/ios/Classes/**'
       - 'flutter/packages/quickjs_engine/**'
       - 'android/src/main/assets/python-host/**'
@@ -49,7 +50,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Run production engine in an iPhone simulator
-        run: python3 scripts/run_ios_runtime_probe.py
+        run: |
+          python3 scripts/test_ios_runtime_selection.py
+          python3 scripts/run_ios_runtime_probe.py
       - name: Retain runtime evidence
         if: always()
         uses: actions/upload-artifact@v4

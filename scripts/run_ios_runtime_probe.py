@@ -21,6 +21,27 @@ IDENTIFIER = 'com.pilipala.marcomovie.runtimeprobe'
 PROGRESS = {}
 
 
+def select_iphone(inventory, sdk_version, arch):
+    """Use an installed runtime within the selected SDK's version family."""
+    sdk = tuple(map(int, sdk_version.split('.')[:2]))
+    candidates = []
+    for runtime, devices in inventory.get('devices', {}).items():
+        if '.iOS-' not in runtime:
+            continue
+        version = tuple(map(int, re.findall(r'\d+', runtime.split('.iOS-', 1)[1])))
+        if version[:2] > sdk:
+            continue
+        for device in devices:
+            if device.get('isAvailable') and device.get('name', '').startswith('iPhone'):
+                candidates.append((version, runtime, device))
+    if not candidates:
+        raise RuntimeError('No available iPhone runtime for the selected simulator SDK ' + sdk_version)
+    # Keep the established oldest-runtime Intel coverage; ARM exercises the newest
+    # runtime supported by this toolchain instead of an unrelated installed Xcode.
+    _, runtime, device = sorted(candidates, key=lambda item: item[0], reverse=arch == 'arm64')[0]
+    return runtime, device
+
+
 def run(*args, capture=False, timeout=180):
     PROGRESS['host_command'] = list(map(str, args))
     print('Running:', ' '.join(map(str,args)), flush=True)
@@ -77,6 +98,8 @@ def main():
             'NSLocalNetworkUsageDescription': 'Local runtime regression fixture.'}
     (APP/'Info.plist').write_bytes(plistlib.dumps(info))
     sdk = run('xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path', capture=True)
+    sdk_version = run('xcrun', '--sdk', 'iphonesimulator', '--show-sdk-version', capture=True)
+    PROGRESS['sdk_version'] = sdk_version
     arch = 'arm64' if platform.machine() == 'arm64' else 'x86_64'
     classes = ROOT/'flutter/packages/catpaw_runtime/ios/Classes'
     quickjs = ROOT/'flutter/packages/quickjs_engine/native/cxx'
@@ -98,17 +121,7 @@ def main():
     run('codesign', '--force', '--sign', '-', APP/'Frameworks/NodeMobile.framework')
     run('codesign', '--force', '--sign', '-', APP)
     inventory = json.loads(run('xcrun', 'simctl', 'list', 'devices', 'available', '--json', capture=True))
-    candidates = [(runtime, device) for runtime, devices in inventory['devices'].items()
-                  if '.iOS-' in runtime for device in devices
-                  if device.get('isAvailable') and device['name'].startswith('iPhone')]
-    if not candidates:
-        raise RuntimeError('No available iPhone simulator')
-    # Intel hosted runners can stall before application installation on the
-    # newest simulator. Exercise their oldest installed iOS runtime instead;
-    # the ARM64 job continues to cover the newest runtime. Record the choice.
-    def runtime_version(item):
-        return tuple(map(int, re.findall(r'\d+', item[0].split('.iOS-', 1)[1])))
-    runtime_name, device = sorted(candidates, key=runtime_version, reverse=arch == 'arm64')[0]
+    runtime_name, device = select_iphone(inventory, sdk_version, arch)
     PROGRESS.update(cpu=arch, simulator=device['name'], os_runtime=runtime_name)
     print('Simulator selection:', json.dumps(PROGRESS), flush=True)
     udid = device['udid']
@@ -127,6 +140,7 @@ def main():
         raise RuntimeError('iOS runtime fixture produced no result; inspect simulator crash diagnostics')
     report = json.loads(result_file.read_text())
     report.update({'simulator': device['name'], 'os_runtime': runtime_name, 'cpu': arch,
+                   'sdk_version': sdk_version,
                    'commit': run('git', '-C', ROOT, 'rev-parse', 'HEAD', capture=True),
                    'production_inputs': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in [classes/'CatpawRuntimeEngine.mm', *sorted((ROOT/'shared/catpaw').glob('*.cjs')),
@@ -135,7 +149,8 @@ def main():
                                *sorted((ROOT/'android/src/main/assets/python-host').glob('*.js')), interop, *catvod_assets]},
                    'fixture_inputs': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in [*sorted((ROOT/'scripts/fixtures').glob('python_*')), *catvod_fixtures,
-                               ROOT/'scripts/ios_runtime/QuickJsProbe.mm', ROOT/'scripts/run_ios_runtime_probe.py']}})
+                               ROOT/'scripts/ios_runtime/QuickJsProbe.mm', ROOT/'scripts/ios_runtime/Probe.mm',
+                               ROOT/'scripts/ios_runtime/LoopbackDiagnostics.h', ROOT/'scripts/run_ios_runtime_probe.py']}})
     (OUT/'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf8')
     print(json.dumps({'passed': report['passed'], 'checks': report['checks'],
                       'runtime': report['runtime'], 'failure': report['failure']}, ensure_ascii=False))
