@@ -32,6 +32,10 @@ jobs:
             target: google_apis_ps16k
             profile: pixel_7_pro
             page_size: 16384
+          - api: 36
+            target: google_apis
+            profile: pixel_7_pro
+            page_size: 4096
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
