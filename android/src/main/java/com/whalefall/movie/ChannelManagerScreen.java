@@ -79,18 +79,91 @@ final class ChannelManagerScreen {
         a.gap(page, 10);
 
         final Set<String> selected = new HashSet<>();
+        final String[] filter = {"all"};
+        final String[] query = {""};
+        final Adapter[] adapterRef = {null};
+        final RecyclerView[] listRef = {null};
+        final Runnable[] refresh = new Runnable[1];
+
+        // 搜索框
+        EditText search = new EditText(a);
+        search.setHint("搜索频道名称或地址…");
+        search.setSingleLine(true);
+        search.setTextSize(13);
+        search.setTextColor(Color.WHITE);
+        search.setHintTextColor(0xff8d9cb6);
+        search.setBackground(MobileDetailScreen.glassBg(a, 0x33ffffff, 0x33ffffff, 999));
+        search.setPadding(a.dp(14), a.dp(8), a.dp(14), a.dp(8));
+        page.addView(search, new LinearLayout.LayoutParams(-1, a.dp(42)));
+        a.gap(page, 8);
+
+        // 分类筛选胶囊
+        android.widget.HorizontalScrollView chipsScroll = new android.widget.HorizontalScrollView(a);
+        chipsScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout chips = a.row();
+        chipsScroll.addView(chips);
+        final java.util.LinkedHashMap<String, String> filters = new java.util.LinkedHashMap<>();
+        filters.put("all", "全部");
+        filters.put("cctv", "央视频道");
+        filters.put("sat", "卫视频道");
+        filters.put("custom", "自定义");
+        filters.put("hidden", "已隐藏");
+        final java.util.Map<String, TextView> chipViews = new java.util.HashMap<>();
+        for (java.util.Map.Entry<String, String> e : filters.entrySet()) {
+            TextView chip = a.text(e.getValue(), 12, Color.WHITE);
+            chip.setPadding(a.dp(13), a.dp(6), a.dp(13), a.dp(6));
+            MobileDetailScreen.bindTouchFeedback(chip);
+            chipViews.put(e.getKey(), chip);
+            chips.addView(chip, new LinearLayout.LayoutParams(-2, -2));
+            LinearLayout.LayoutParams gapLp = new LinearLayout.LayoutParams(a.dp(8), 1);
+            chips.addView(new View(a), gapLp);
+            chip.setOnClickListener(
+                    v -> {
+                        filter[0] = e.getKey();
+                        refresh[0].run();
+                    });
+        }
+        page.addView(chipsScroll, new LinearLayout.LayoutParams(-1, a.dp(34)));
+        a.gap(page, 6);
+
         final RecyclerView list = new RecyclerView(a);
         list.setLayoutManager(new LinearLayoutManager(a));
         list.setClipToPadding(false);
         list.setPadding(0, 0, 0, a.dp(8));
         page.addView(list, new LinearLayout.LayoutParams(-1, 0, 1f));
+        listRef[0] = list;
 
-        final Runnable[] refresh = new Runnable[1];
         refresh[0] =
                 () -> {
-                    List<Row> current = collect(a);
-                    list.setAdapter(new Adapter(a, current, selected, refresh[0]));
+                    for (java.util.Map.Entry<String, TextView> e : chipViews.entrySet()) {
+                        boolean active = e.getKey().equals(filter[0]);
+                        e.getValue().setTextColor(active ? 0xff31141f : Color.WHITE);
+                        e.getValue()
+                                .setBackground(
+                                        MobileDetailScreen.glassBg(
+                                                a,
+                                                active ? 0xffffb3c8 : 0x1affffff,
+                                                0x33ffffff,
+                                                999));
+                    }
+                    List<Row> data = filtered(a, filter[0], query[0]);
+                    adapterRef[0] = new Adapter(a, data, selected, () -> refresh[0].run());
+                    listRef[0].setAdapter(adapterRef[0]);
                 };
+        search.addTextChangedListener(
+                new android.text.TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(CharSequence c, int s2, int e2, int n2) {}
+
+                    @Override
+                    public void onTextChanged(CharSequence c, int s2, int b2, int n2) {
+                        query[0] = c == null ? "" : c.toString().trim().toLowerCase(java.util.Locale.ROOT);
+                        refresh[0].run();
+                    }
+
+                    @Override
+                    public void afterTextChanged(android.text.Editable e2) {}
+                });
         refresh[0].run();
 
         // 底部操作栏
@@ -113,7 +186,8 @@ final class ChannelManagerScreen {
         all.setOnClickListener(
                 v -> {
                     selected.clear();
-                    for (Row r : collect(a)) selected.add(r.name);
+                    if (adapterRef[0] != null)
+                        for (Row r : adapterRef[0].rows) selected.add(r.name);
                     refresh[0].run();
                 });
         none.setOnClickListener(
@@ -184,6 +258,28 @@ final class ChannelManagerScreen {
                     refresh[0].run();
                 });
         add.setOnClickListener(v -> editChannel(a, null, refresh[0]));
+    }
+
+    /** 按分组 / 自定义 / 已隐藏 / 搜索词筛选。 */
+    private static List<Row> filtered(MainActivity a, String filter, String query) {
+        List<Row> all = collect(a);
+        List<Row> out = new ArrayList<>();
+        for (Row row : all) {
+            boolean hidden = row.hidden;
+            boolean custom = !row.builtin;
+            boolean cctv = TvLive.GROUP_CCTV.equals(row.group);
+            boolean sat = TvLive.GROUP_SAT.equals(row.group);
+            if ("cctv".equals(filter) && !cctv) continue;
+            if ("sat".equals(filter) && !sat) continue;
+            if ("custom".equals(filter) && !custom) continue;
+            if ("hidden".equals(filter) && !hidden) continue;
+            if (!query.isEmpty()) {
+                String hay = (row.name + " " + row.url + " " + row.group).toLowerCase(java.util.Locale.ROOT);
+                if (!hay.contains(query)) continue;
+            }
+            out.add(row);
+        }
+        return out;
     }
 
     private static List<Row> collect(MainActivity a) {
