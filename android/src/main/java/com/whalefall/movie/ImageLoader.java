@@ -410,6 +410,10 @@ final class ImageLoader {
         @Override
         protected void onDraw(Canvas canvas) {
             canvas.drawColor(MainActivity.DARK);
+            if (wallpaper == null && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false))
+                wallpaper =
+                        BitmapFactory.decodeFile(
+                                new File(a.getFilesDir(), "wallpaper.jpg").getAbsolutePath());
             if (wallpaper != null) {
                 float scale =
                         Math.max(
@@ -431,12 +435,13 @@ final class ImageLoader {
         }
 
         @Override
-        protected void onDetachedFromWindow() {
-            super.onDetachedFromWindow();
-            if (wallpaper != null) {
-                wallpaper.recycle();
-                wallpaper = null;
-            }
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (wallpaper == null
+                    && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false))
+                wallpaper =
+                        BitmapFactory.decodeFile(
+                                new File(a.getFilesDir(), "wallpaper.jpg").getAbsolutePath());
         }
     }
 }

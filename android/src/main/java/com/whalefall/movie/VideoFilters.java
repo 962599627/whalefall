@@ -144,6 +144,41 @@ final class VideoFilters {
         return values;
     }
 
+    /** 不区分远程/本地，全部按已加载影片资料匹配（给不支持筛选的片源兜底）。 */
+    static List<Cms.Video> applyAll(
+            List<Cms.Video> videos, List<Definition> definitions, Map<String, String> selected) {
+        List<Cms.Video> result = new ArrayList<>();
+        for (Cms.Video video : videos) {
+            boolean match = true;
+            for (Definition def : definitions) {
+                String value = selected.get(def.dimension);
+                if (value == null || value.isEmpty()) continue;
+                String raw =
+                        def.dimension.equals("class")
+                                ? video.genre
+                                : def.dimension.equals("area") ? video.area : video.year;
+                if (raw == null || raw.trim().isEmpty()) {
+                    match = false;
+                    break;
+                }
+                boolean any = false;
+                for (String one : value.split(",")) {
+                    if (one.isEmpty()) continue;
+                    if (matches(raw, def.labelFor(one), def.dimension)) {
+                        any = true;
+                        break;
+                    }
+                }
+                if (!any) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) result.add(video);
+        }
+        return result;
+    }
+
     static boolean hasLocal(List<Definition> definitions, Map<String, String> selected) {
         for (Definition def : definitions)
             if (!def.remote && selected.containsKey(def.dimension)) return true;

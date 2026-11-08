@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Media3 DefaultTimeBar：成熟组件，自带缓冲/拖拽/可访问性，6dp 高对比轨道 -->
+<!-- Media3 DefaultTimeBar：成熟组件，自带缓冲段 / 拖拽 / 键盘与无障碍支持。
+     轨道 6dp、触控高度 48dp、已播樱花粉、缓冲白、未播 50% 白。 -->
 <androidx.media3.ui.DefaultTimeBar
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="40dp"
+    android:layout_height="48dp"
     app:bar_height="6dp"
-    app:touch_target_height="40dp"
+    app:touch_target_height="48dp"
     app:scrubber_enabled_size="16dp"
     app:scrubber_dragged_size="22dp"
     app:scrubber_disabled_size="16dp"
     app:played_color="#FFB3C8"
-    app:buffered_color="#CCFFFFFF"
+    app:buffered_color="#B3FFFFFF"
     app:unplayed_color="#80FFFFFF"
     app:scrubber_color="#FFFFFF"
     app:ad_marker_color="#00FFFFFF"

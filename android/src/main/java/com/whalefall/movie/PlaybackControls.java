@@ -25,7 +25,7 @@ final class PlaybackControls {
     boolean currentMobileLandscape;
     /** 当前是否是直播会话（决定图标行文案：下台/频道/线路）。 */
     private boolean liveSession;
-    final Map<String, Button> buttons = new LinkedHashMap<>();
+    final Map<String, View> buttons = new LinkedHashMap<>();
     Dialog activeDialog;
     View menuAnchor;
     String lastSubtitle = "";
@@ -111,14 +111,14 @@ final class PlaybackControls {
                                 MainActivity.WHITE,
                                 false,
                                 1));
-        // 6dp 胶囊进度条：底轨/缓冲/已播三段，左右留 68dp 给时间文本
-        timeline.setPadding(a.dp(68), 0, a.dp(68), 0);
+        // 三段式进度：时间在轨道左右，轨道不再用 68dp 内边距避让文本
+        timeline.setPadding(0, 0, 0, 0);
         timeline.setKeyTimeIncrement(15000);
-        // 进度条放在时间行上方（PlayerChrome 已先放了时间行）
+        // 进度条放进 PlayerChrome 的中段时间槽
         progress.addView(
                 timeline,
                 0,
-                new android.view.ViewGroup.LayoutParams(-1, a.dp(40)));
+                new FrameLayout.LayoutParams(-1, a.dp(48), Gravity.CENTER_VERTICAL));
         timeline.addListener(
                 new androidx.media3.ui.TimeBar.OnScrubListener() {
                     public void onScrubStart(androidx.media3.ui.TimeBar bar, long position) {
@@ -254,32 +254,34 @@ final class PlaybackControls {
             add(row, "更多", "more", this::more);
         }
         timeline.setId(UiCompat.generateViewId());
-        List<Button> all = new ArrayList<>();
+        List<View> all = new ArrayList<>();
         for (int i = 0; i < row.getChildCount(); i++) {
             View child = row.getChildAt(i);
-            if (child instanceof Button) all.add((Button) child);
+            if (child instanceof Button) all.add(child);
         }
-        for (Button b : all) b.setId(UiCompat.generateViewId());
-        for (Button b : all) b.setNextFocusUpId(timeline.getId());
-        timeline.setNextFocusDownId(all.get(0).getId());
-        all.get(0).setNextFocusLeftId(all.get(all.size() - 1).getId());
-        all.get(all.size() - 1).setNextFocusRightId(all.get(0).getId());
-        all.get(0)
-                .setOnKeyListener(
-                        (view, key, event) -> {
-                            if (key != KeyEvent.KEYCODE_DPAD_LEFT) return false;
-                            if (event.getAction() == KeyEvent.ACTION_DOWN)
-                                all.get(all.size() - 1).requestFocus();
-                            return true;
-                        });
-        all.get(all.size() - 1)
-                .setOnKeyListener(
-                        (view, key, event) -> {
-                            if (key != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
-                            if (event.getAction() == KeyEvent.ACTION_DOWN)
-                                all.get(0).requestFocus();
-                            return true;
-                        });
+        for (View b : all) b.setId(UiCompat.generateViewId());
+        if (!all.isEmpty()) {
+            for (View b : all) b.setNextFocusUpId(timeline.getId());
+            timeline.setNextFocusDownId(all.get(0).getId());
+            all.get(0).setNextFocusLeftId(all.get(all.size() - 1).getId());
+            all.get(all.size() - 1).setNextFocusRightId(all.get(0).getId());
+            all.get(0)
+                    .setOnKeyListener(
+                            (view, key, event) -> {
+                                if (key != KeyEvent.KEYCODE_DPAD_LEFT) return false;
+                                if (event.getAction() == KeyEvent.ACTION_DOWN)
+                                    all.get(all.size() - 1).requestFocus();
+                                return true;
+                            });
+            all.get(all.size() - 1)
+                    .setOnKeyListener(
+                            (view, key, event) -> {
+                                if (key != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+                                if (event.getAction() == KeyEvent.ACTION_DOWN)
+                                    all.get(0).requestFocus();
+                                return true;
+                            });
+        }
         rebuildToolDock(mobileLandscape);
         updateLabels();
     }
@@ -292,14 +294,26 @@ final class PlaybackControls {
         updateLabels();
     }
 
-    /** 底部纯图标行（右侧到左的顺序按参考图）：上集/下集/选集/倍速/循环/换源/画面/字幕/弹幕/音轨/重播/竖屏。 */
+    /** 底部图标行：宽屏均分铺满（10 格），窄屏横向滚动；中央播放簇由 PlayerChrome 负责。 */
     private static final String[] BAR_KEYS = {
-        "prev-episode", "next-episode", "episodes", "speed", "repeat-tool", "lines",
-        "aspect", "subtitles", "danmaku-tool", "audio-tracks", "restart-tool",
-        "fullscreen-tool"
+        "prev-episode",
+        "next-episode",
+        "episodes",
+        "speed",
+        "lines",
+        "subtitles",
+        "aspect",
+        "danmaku-tool",
+        "audio-tracks",
+        "more"
     };
 
-    /** 底部图标行：宽屏均分铺满，窄屏横向滚动；中间是 64dp 播放/暂停圆钮。 */
+    /** 直播会话：下台 / 频道 / 线路 / 倍速 / 更多。 */
+    private static final String[] LIVE_KEYS = {
+        "next-episode", "episodes", "lines", "speed", "more"
+    };
+
+    /** 底部图标行：宽屏均分铺满，窄屏横向滚动；控件是 vector 图标的 48dp ImageButton。 */
     private void rebuildToolDock(boolean wide) {
         dockOverlay.removeAllViews();
         dockOverlay.setPadding(0, 0, 0, 0);
@@ -307,23 +321,19 @@ final class PlaybackControls {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setClipChildren(false);
         row.setClipToPadding(false);
-
-        row.addView(createTransport(-10000, false), cellLp(wide, false));
-        row.addView(createTransport(10000, true), cellLp(wide, false));
-
-        for (String key : BAR_KEYS) {
-            Button b = buttons.get(key);
+        String[] keys = liveSession ? LIVE_KEYS : BAR_KEYS;
+        for (String key : keys) {
+            View b = buttons.get(key);
             if (b == null) continue;
-            b.setVisibility(View.VISIBLE);
             if (b.getParent() instanceof ViewGroup) {
                 ((ViewGroup) b.getParent()).removeView(b);
             }
-            styleIconButton(b, key);
-            row.addView(b, cellLp(wide, false));
+            if (a.isTvDevice()) styleTextButton(b, key);
+            b.setVisibility(View.VISIBLE);
+            row.addView(b, cellLp(wide));
         }
-
         if (wide) {
-            dockOverlay.addView(row, new LinearLayout.LayoutParams(-1, a.dp(64)));
+            dockOverlay.addView(row, new LinearLayout.LayoutParams(-1, a.dp(56)));
         } else {
             HorizontalScrollView scroller = new HorizontalScrollView(a);
             scroller.setHorizontalScrollBarEnabled(false);
@@ -334,19 +344,19 @@ final class PlaybackControls {
         }
     }
 
-    private LinearLayout.LayoutParams cellLp(boolean wide, boolean play) {
-        if (wide) {
-            return new LinearLayout.LayoutParams(0, a.dp(64), play ? 1.25f : 1f);
-        }
-        return new LinearLayout.LayoutParams(a.dp(play ? 56 : 44), a.dp(56));
+    private LinearLayout.LayoutParams cellLp(boolean wide) {
+        if (wide) return new LinearLayout.LayoutParams(0, a.dp(56), 1f);
+        return new LinearLayout.LayoutParams(a.dp(48), a.dp(56));
     }
 
-    /** 纯图标按钮：无文字、无底、白色 24dp Canvas 图标。 */
-    private void styleIconButton(Button b, String key) {
+    /** TV 遥控器场景保留「图标 + 文字」，比纯图标更容易辨认。 */
+    private void styleTextButton(View raw, String key) {
+        if (!(raw instanceof Button)) return;
+        Button b = (Button) raw;
         b.setAllCaps(false);
         b.setText(toolLabel(key));
         b.setTextSize(11);
-        b.setTextColor(0xffffffff);
+        b.setTextColor(UiTokens.PLAYER_ICON);
         b.setMinWidth(0);
         b.setMinimumWidth(0);
         b.setMinHeight(0);
@@ -357,28 +367,8 @@ final class PlaybackControls {
         b.setCompoundDrawables(null, null, null, null);
     }
 
-    /** 快退/快进 10 秒圆钮（Canvas 环形箭头 + 10）。 */
-    private View createTransport(int deltaMs, boolean forward) {
-        Button b =
-                a.button(
-                        "",
-                        forward ? "seek-forward" : "seek-back",
-                        () -> nudge(deltaMs));
-        b.setText(forward ? "10s »" : "« 10s");
-        b.setTextSize(12);
-        b.setTextColor(0xffffffff);
-        b.setContentDescription(forward ? "快进 10 秒" : "快退 10 秒");
-        b.setMinWidth(0);
-        b.setMinimumWidth(0);
-        b.setMinHeight(0);
-        b.setMinimumHeight(0);
-        b.setPadding(0, 0, 0, 0);
-        b.setBackground(null);
-        b.setCompoundDrawables(null, null, null, null);
-        return b;
-    }
-
-    private void nudge(int deltaMs) {
+    /** 快退 / 快进 10 秒（中央播放簇左右按钮的回调）。 */
+    void nudge(int deltaMs) {
         if (a.player == null || !a.prepared) return;
         int duration = Math.max(1, a.player.getDuration());
         int current = a.player.getCurrentPosition();
@@ -409,56 +399,52 @@ final class PlaybackControls {
         if ("audio-tracks".equals(key)) return "音轨";
         if ("restart-tool".equals(key)) return "重播";
         if ("repeat-tool".equals(key)) return "循环";
+        if ("decoder".equals(key)) return "解码与播放器";
+        if ("skip-intro-tool".equals(key)) return "跳片头";
+        if ("skip-outro-tool".equals(key)) return "跳片尾";
+        if ("more".equals(key)) return "更多";
         return key;
     }
 
+    /** 创建动作控件：手机是 48dp vector 图标按钮，TV 是带文字标签的 Button。 */
+    private View createAction(String title, String key, Runnable action) {
+        final Runnable click =
+                () -> {
+                    menuAnchor =
+                            a.playerChrome == null ? buttons.get(key) : a.playerChrome.menuAnchor;
+                    action.run();
+                };
+        if (a.isTvDevice()) {
+            Button b = a.button("", key, click);
+            b.setContentDescription(title);
+            b.setText(title);
+            b.setSingleLine(true);
+            b.setMinWidth(0);
+            b.setMinimumWidth(0);
+            b.setMinHeight(0);
+            b.setMinimumHeight(0);
+            b.setPadding(0, 0, 0, 0);
+            b.setBackground(null);
+            b.setTextColor(UiTokens.PLAYER_ICON);
+            b.setTextSize(11);
+            return b;
+        }
+        return UiIcon.button(
+                a, UiIcon.kindForKey(key), title, UiTokens.TOUCH_MIN, 24, click);
+    }
+
     void registerHiddenAction(String key, Runnable action) {
-        Button b =
-                a.button(
-                        key,
-                        key,
-                        () -> {
-                            menuAnchor =
-                                    a.playerChrome == null
-                                            ? buttons.get("more")
-                                            : a.playerChrome.menuAnchor;
-                            action.run();
-                        });
+        if (buttons.containsKey(key)) return;
+        View b = createAction(toolLabel(key), key, action);
         b.setVisibility(View.GONE);
         buttons.put(key, b);
     }
 
-    Button add(LinearLayout row, String title, String key, Runnable action) {
-        Button b =
-                a.button(
-                        "",
-                        key,
-                        () -> {
-                            menuAnchor =
-                                    a.playerChrome == null
-                                            ? buttons.get(key)
-                                            : a.playerChrome.menuAnchor;
-                            action.run();
-                        });
-        b.setContentDescription(title);
-        b.setText("");
-        b.setSingleLine(true);
-        b.setMinWidth(0);
-        b.setMinimumWidth(0);
-        b.setMinHeight(0);
-        b.setMinimumHeight(0);
-        b.setPadding(0, 0, 0, 0);
-        b.setBackground(null);
-        b.setCompoundDrawablePadding(0);
-        b.setCompoundDrawables(
-                null,
-                new PlayerUiKit.IconDrawable(
-                        PlayerUiKit.iconFor(key), 0xffffffff, a.dp(20)),
-                null,
-                null);
-        LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(a.dp(44), a.dp(56));
-        size.setMargins(0, 0, 0, 0);
-        row.addView(b, size);
+    View add(LinearLayout row, String title, String key, Runnable action) {
+        View b = createAction(title, key, action);
+        if (b instanceof Button) {
+            row.addView(b, new LinearLayout.LayoutParams(a.dp(44), a.dp(56)));
+        }
         buttons.put(key, b);
         return b;
     }
@@ -1330,150 +1316,118 @@ final class PlaybackControls {
                 });
     }
 
+    /** 「更多」：底部 3 列工具面板，低频功能全部收纳，回调与原列表逐项对应。 */
     void more() {
-        if ("live".equals(site.key)) {
-            String[] live = {"上一频道", "选择频道", "播放线路", "播放器与解码", "画面色彩", "播放信息", "返回频道列表"};
-            choose(
-                    "直播设置",
-                    live,
-                    -1,
-                    i -> {
-                        switch (i) {
-                            case 0:
-                                a.liveStep(-1);
-                                break;
-                            case 1:
-                                a.chooseLiveChannel();
-                                break;
-                            case 2:
-                                a.chooseLiveStream();
-                                break;
-                            case 3:
-                                choose(
-                                        "播放器与解码",
-                                        new String[] {"切换播放器", "切换解码方式", "画面输出"},
-                                        -1,
-                                        n -> {
-                                            if (n == 0) engine();
-                                            else if (n == 1) decoder();
-                                            else output();
-                                        });
-                                break;
-                            case 4:
-                                pictureEffect();
-                                break;
-                            case 5:
-                                message(
-                                        a.player == null
-                                                ? "播放器尚未准备好。"
-                                                : a.player.playbackInfo()
-                                                        + "\n"
-                                                        + surface.outputName());
-                                break;
-                            case 6:
-                                a.leavePlayback();
-                                break;
-                        }
-                    });
-            return;
+        if (dialogOpen) return;
+        final List<PlayerToolsSheet.Tool> items = new ArrayList<>();
+        if (liveSession) {
+            items.add(new PlayerToolsSheet.Tool(UiIcon.PREV, "上一频道", () -> a.liveStep(-1)));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.NEXT, "下一频道", () -> a.liveStep(1)));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.EPISODES, "选择频道", a::chooseLiveChannel));
+            items.add(
+                    new PlayerToolsSheet.Tool(UiIcon.SWAP, "播放线路", a::chooseLiveStream));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.TUNE, "播放器与解码", this::decoderMenu));
+            items.add(
+                    new PlayerToolsSheet.Tool(UiIcon.ASPECT, "画面色彩", this::pictureEffect));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.INFO, "播放信息", this::playbackInfo));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.BACK, "返回频道列表", a::leavePlayback));
+        } else {
+            items.add(new PlayerToolsSheet.Tool(UiIcon.PREV, "上一集", tap("prev-episode")));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.NEXT, "下一集", tap("next-episode")));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.EPISODES, "选集", this::chooseEpisodes));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.SWAP, "换源", this::chooseLine));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.SPEED, "倍速", this::speed));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.ASPECT, "画面比例", this::aspect));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.SUBTITLE, "字幕", () -> tracks(3)));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.DANMAKU, "弹幕", this::danmaku));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.AUDIO, "音轨", () -> tracks(1)));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.AUDIO, "音效", this::soundEffect));
+            items.add(
+                    new PlayerToolsSheet.Tool(UiIcon.TUNE, "解码与播放器", this::decoderMenu));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.REPEAT,
+                            "循环",
+                            a.prefs.getInt(Prefs.REPEAT_MODE, 0) != 0,
+                            this::repeat));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.SKIP_INTRO, "跳片头", () -> skip(true)));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.SKIP_OUTRO, "跳片尾", () -> skip(false)));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.REPLAY, "重播", this::restartPlayback));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.REFRESH, "刷新播放", () -> reload(true)));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.FULLSCREEN, "竖屏 / 全屏", a::togglePlayerOrientation));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.NEXT,
+                            "自动下集",
+                            a.prefs.getBoolean(Prefs.AUTO_NEXT, true),
+                            () ->
+                                    a.prefs
+                                            .edit()
+                                            .putBoolean(
+                                                    Prefs.AUTO_NEXT,
+                                                    !a.prefs.getBoolean(Prefs.AUTO_NEXT, true))
+                                            .apply()));
+            items.add(new PlayerToolsSheet.Tool(UiIcon.INFO, "播放信息", this::playbackInfo));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.BACK, "返回详情", a::leavePlayback));
         }
-        String[] labels = {
-            "画面比例",
-            "字幕与显示",
-            "刷新播放",
-            "从头重播",
-            "上一集",
-            "跳过片头 / 片尾",
-            "弹幕",
-            "音效",
-            "画面色彩",
-            "循环播放",
-            "自动播放下集：" + (a.prefs.getBoolean(Prefs.AUTO_NEXT, true) ? "开启" : "关闭"),
-            "音轨与音频",
-            "解码与播放器",
-            "播放信息",
-            "返回详情"
+        dialogOpen = true;
+        if (a.hideControls != null) a.ui.removeCallbacks(a.hideControls);
+        activeDialog =
+                PlayerToolsSheet.show(
+                        a,
+                        liveSession ? "直播设置" : "更多工具",
+                        items,
+                        () -> {
+                            activeDialog = null;
+                            dialogOpen = false;
+                            a.scheduleHide();
+                        });
+    }
+
+    /** 按 key 触发已有按钮的回调（保持既有逻辑与回调不变）。 */
+    private Runnable tap(String key) {
+        return () -> {
+            View v = buttons.get(key);
+            if (v != null) v.performClick();
         };
-        choose(
-                "更多",
-                labels,
-                -1,
-                i -> {
-                    switch (i) {
-                        case 0:
-                            aspect();
-                            break;
-                        case 1:
-                            tracks(3);
-                            break;
-                        case 2:
-                            reload(true);
-                            break;
-                        case 3:
-                            pendingResumeMs = 0;
-                            if (a.playingBookmark != null) a.playingBookmark.position = 0;
-                            if (a.player != null && a.prepared) {
-                                recordUserSeek(0);
-                                a.player.seekTo(0);
-                                a.player.start();
-                                a.playing = true;
-                            } else {
-                                a.resumeAt = -1;
-                                reload(false);
-                            }
-                            break;
-                        case 4:
-                            if (!step(-1)) message("已经是第一集。");
-                            break;
-                        case 5:
-                            choose(
-                                    "自动跳过",
-                                    new String[] {
-                                        "片头 · " + skipLabel(a.prefs.getInt(Prefs.SKIP_INTRO, 0)),
-                                        "片尾 · " + skipLabel(a.prefs.getInt(Prefs.SKIP_OUTRO, 0))
-                                    },
-                                    -1,
-                                    n -> skip(n == 0));
-                            break;
-                        case 6:
-                            danmaku();
-                            break;
-                        case 7:
-                            soundEffect();
-                            break;
-                        case 8:
-                            pictureEffect();
-                            break;
-                        case 9:
-                            repeat();
-                            break;
-                        case 10:
-                            a.prefs
-                                    .edit()
-                                    .putBoolean(
-                                            Prefs.AUTO_NEXT,
-                                            !a.prefs.getBoolean(Prefs.AUTO_NEXT, true))
-                                    .apply();
-                            break;
-                        case 11:
-                            tracks(1);
-                            break;
-                        case 12:
-                            decoderMenu();
-                            break;
-                        case 13:
-                            message(
-                                    a.player == null
-                                            ? "播放器尚未准备好。"
-                                            : a.player.playbackInfo()
-                                                    + "\n"
-                                                    + surface.outputName());
-                            break;
-                        case 14:
-                            a.leavePlayback();
-                            break;
-                    }
-                });
+    }
+
+    void playbackInfo() {
+        message(
+                a.player == null
+                        ? "播放器尚未准备好。"
+                        : a.player.playbackInfo() + "\n" + surface.outputName());
+    }
+
+    /** 从头重播（沿用原「更多」里的逻辑）。 */
+    private void restartPlayback() {
+        pendingResumeMs = 0;
+        if (a.playingBookmark != null) a.playingBookmark.position = 0;
+        if (a.player != null && a.prepared) {
+            recordUserSeek(0);
+            a.player.seekTo(0);
+            a.player.start();
+            a.playing = true;
+        } else {
+            a.resumeAt = -1;
+            reload(false);
+        }
     }
 
     /** 纯图标行没有文字；只给「激活态」图标上樱花粉（倍速 ≠ 1、画面 ≠ 默认、循环开启）。 */
@@ -1485,13 +1439,13 @@ final class PlaybackControls {
     }
 
     private void tintIcon(String key, boolean active) {
-        Button b = buttons.get(key);
-        if (b == null) return;
-        android.graphics.drawable.Drawable[] parts = b.getCompoundDrawables();
-        for (android.graphics.drawable.Drawable d : parts) {
-            if (d instanceof PlayerUiKit.IconDrawable) {
-                ((PlayerUiKit.IconDrawable) d).setColor(active ? 0xffff8fb1 : 0xffffffff);
-            }
+        View b = buttons.get(key);
+        if (b instanceof android.widget.ImageView) {
+            UiIcon.tint(
+                    (android.widget.ImageView) b,
+                    active ? UiTokens.PLAYER_ACTIVE : UiTokens.PLAYER_ICON);
+        } else if (b instanceof TextView) {
+            ((TextView) b).setTextColor(active ? UiTokens.PLAYER_ACTIVE : UiTokens.PLAYER_ICON);
         }
     }
 
@@ -1527,6 +1481,7 @@ final class PlaybackControls {
         timeline.setEnabled(duration > 0);
         setTimelineMax(duration > 0 ? duration : 100);
         if (duration <= 0) setTimelineProgress(0);
+        timeline.setBufferedPosition(0);
         timeline.setKeyTimeIncrement(15000);
         boolean explicitRestart = a.resumeAt < 0;
         boolean historyResume = a.resumeAt > 0;
@@ -1579,10 +1534,14 @@ final class PlaybackControls {
             timeline.setEnabled(true);
             setTimelineMax(Math.max(duration, position));
             setTimelineProgress(Math.max(0, Math.min(position, timelineMax())));
+            // 缓冲段：DefaultTimeBar 自带的 secondary 轨道，播放器补 getBufferedPosition() 后点亮
+            timeline.setBufferedPosition(
+                    Math.max(0, Math.min(duration, a.player.getBufferedPosition())));
         } else {
             timeline.setEnabled(false);
             setTimelineMax(100);
             setTimelineProgress(0);
+            timeline.setBufferedPosition(0);
         }
         int tail = a.prefs.getInt(Prefs.SKIP_OUTRO, 0) * 1000;
         if (!transitioning

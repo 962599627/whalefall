@@ -1172,6 +1172,28 @@ final class MobileShell {
                                     List<Cms.Video> filtered =
                                             VideoFilters.apply(
                                                     list.videos, definitions, filterSnapshot);
+                                    java.util.Map<String, String> remoteSent =
+                                            VideoFilters.remoteValues(
+                                                    definitions, filterSnapshot);
+                                    boolean remoteIgnored =
+                                            !remoteSent.isEmpty()
+                                                    && !list.videos.isEmpty()
+                                                    && filtered.size() == list.videos.size();
+                                    if (remoteIgnored) {
+                                        // 该片源忽略筛选参数：退回本地资料筛选
+                                        filtered =
+                                                VideoFilters.applyAll(
+                                                        list.videos,
+                                                        definitions,
+                                                        filterSnapshot);
+                                        if (a.prefs.getBoolean("filter_unsupported_toast", true)) {
+                                            a.prefs.edit()
+                                                    .putBoolean(
+                                                            "filter_unsupported_toast", false)
+                                                    .apply();
+                                            a.toast("该片源不返回筛选结果，已按本地影片资料筛选");
+                                        }
+                                    }
                                     final boolean filterEmpty =
                                             filtered.isEmpty() && !filterSnapshot.isEmpty();
                                     if (filterEmpty) filtered = list.videos;

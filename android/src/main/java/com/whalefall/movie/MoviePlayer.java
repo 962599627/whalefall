@@ -705,6 +705,15 @@ public class MoviePlayer {
         return onMain(() -> released ? 0 : milliseconds(exo.getCurrentPosition()));
     }
 
+    /** 已缓冲位置：给 DefaultTimeBar 的缓冲段（secondaryProgress）供电。 */
+    public int getBufferedPosition() {
+        return onMain(
+                () ->
+                        released || exo == null
+                                ? 0
+                                : milliseconds(exo.getBufferedPosition()));
+    }
+
     private int maxKnownDurationMs = 0;
 
     public int getDuration() {
