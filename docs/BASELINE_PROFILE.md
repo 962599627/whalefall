@@ -17,4 +17,4 @@
 
 ## 后续
 - 接入 macrobenchmark 后重新生成并对比冷启动时间
-- 把 `baseline.prof` 同步进 `scripts/build_android.py` 的自定义构建（当前仅 Gradle 构建包含）
+- 已把 AGP 生成的 `baseline.prof` 放进 `android/src/main/assets/dexopt/`，自定义脚本构建出的 APK 也包含 `assets/dexopt/baseline.prof`（已验证）
