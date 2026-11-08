@@ -808,7 +808,6 @@ public final class MainActivity extends Activity {
         stopWeb();
         stopMagnet();
         releasePlayer();
-        releaseWallpaper();
         if (!isTvDevice()) {
             applyMobileSystemBars(false);
         }
@@ -821,8 +820,8 @@ public final class MainActivity extends Activity {
         root.setClipChildren(false);
         root.setClipToPadding(false);
         root.setBackground(Skin.backdrop(this));
-        releaseWallpaper();
         if (videoWallpaperEnabled()) {
+            releaseWallpaper();
             videoWallpaper = new VideoWallpaper(this);
             root.addView(videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
         } else {

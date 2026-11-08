@@ -384,8 +384,8 @@ final class MobileShell {
         a.setContentView(a.root);
 
         // Layer 0: 视频动态壁纸优先，否则用海报环境背景
-        a.releaseWallpaper();
         if (a.videoWallpaperEnabled()) {
+            a.releaseWallpaper();
             a.videoWallpaper = new VideoWallpaper(a);
             a.root.addView(a.videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
         } else {
@@ -1183,7 +1183,7 @@ final class MobileShell {
     private View buildHeroShowcaseCard(final Cms.Site site, final Cms.Video featured) {
         FrameLayout card = new FrameLayout(a);
         card.setTag("hero-watch-now-button");
-        card.setBackground(glassBg(0x6616283f, 0x55101e33, a.dp(24), a.dp(0.8f), 0x44ffffff));
+        card.setBackground(glassBg(0x6616283f, 0x55101e33, a.dp(18), a.dp(0.7f), 0x44ffffff));
         card.setClipToOutline(true);
         MobileDetailScreen.bindTouchFeedback(card);
         card.setOnClickListener(v -> a.openListing(site, featured));
@@ -1205,16 +1205,16 @@ final class MobileShell {
 
         LinearLayout contentRow = a.row();
         contentRow.setGravity(Gravity.CENTER_VERTICAL);
-        contentRow.setPadding(a.dp(16), a.dp(16), a.dp(16), a.dp(16));
-        card.addView(contentRow, new FrameLayout.LayoutParams(-1, a.dp(198)));
+        contentRow.setPadding(a.dp(10), a.dp(10), a.dp(10), a.dp(10));
+        card.addView(contentRow, new FrameLayout.LayoutParams(-1, a.dp(104)));
 
         // Left 2:3 Poster
         ImageView poster = new ImageView(a);
         poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        poster.setBackground(a.bg(0xff122434, 14));
+        poster.setBackground(a.bg(0xff122434, 10));
         poster.setClipToOutline(true);
-        LinearLayout.LayoutParams posterLp = new LinearLayout.LayoutParams(a.dp(110), a.dp(166));
-        posterLp.rightMargin = a.dp(14);
+        LinearLayout.LayoutParams posterLp = new LinearLayout.LayoutParams(a.dp(58), a.dp(88));
+        posterLp.rightMargin = a.dp(10);
         contentRow.addView(poster, posterLp);
         if (featured.poster != null && !featured.poster.isEmpty())
             a.poster(featured.poster, poster);
@@ -1223,19 +1223,19 @@ final class MobileShell {
         LinearLayout rightCol = a.vertical();
         contentRow.addView(rightCol, new LinearLayout.LayoutParams(0, -1, 1f));
 
-        TextView topBadge = a.text("✦ 今日首推 · " + site.name, 11, Color.WHITE);
+        TextView topBadge = a.text("✦ 今日首推 · " + site.name, 9, Color.WHITE);
         topBadge.setTypeface(null, Typeface.BOLD);
         topBadge.setSingleLine(true);
         topBadge.setEllipsize(TextUtils.TruncateAt.END);
-        topBadge.setPadding(a.dp(9), a.dp(3), a.dp(9), a.dp(3));
+        topBadge.setPadding(a.dp(6), a.dp(2), a.dp(6), a.dp(2));
         topBadge.setBackground(glassBg(0x38ffffff, 0x30ffffff, a.dp(999), a.dp(0.6f), 0x33ffffff));
         rightCol.addView(topBadge, new LinearLayout.LayoutParams(-2, -2));
 
-        TextView title = a.text(featured.title, 18, Color.WHITE);
+        TextView title = a.text(featured.title, 13, Color.WHITE);
         title.setTypeface(null, Typeface.BOLD);
         title.setMaxLines(2);
         title.setEllipsize(TextUtils.TruncateAt.END);
-        title.setPadding(0, a.dp(7), 0, a.dp(5));
+        title.setPadding(0, a.dp(3), 0, a.dp(2));
         rightCol.addView(title);
 
         LinearLayout chipsRow = a.row();
@@ -1243,12 +1243,12 @@ final class MobileShell {
         boolean hasChip = false;
         for (String rawTag : tags) {
             if (rawTag == null || rawTag.trim().isEmpty()) continue;
-            TextView chip = a.text(rawTag.trim(), 10.5f, 0xffd2dced);
+            TextView chip = a.text(rawTag.trim(), 9f, 0xffd2dced);
             chip.setTypeface(null, Typeface.BOLD);
             chip.setSingleLine(true);
             chip.setEllipsize(TextUtils.TruncateAt.END);
             chip.setMaxWidth(a.dp(110));
-            chip.setPadding(a.dp(7), a.dp(2), a.dp(7), a.dp(2));
+            chip.setPadding(a.dp(5), a.dp(1), a.dp(5), a.dp(1));
             chip.setBackground(a.bg(0x29ffffff, 6));
             LinearLayout.LayoutParams chipLp = new LinearLayout.LayoutParams(-2, -2);
             chipLp.rightMargin = a.dp(6);
@@ -1265,10 +1265,10 @@ final class MobileShell {
         // Bottom-right Watch Now white capsule button
         LinearLayout bottomRow = a.row();
         bottomRow.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        TextView watchBtn = a.text("▶ 立即观看", 12.5f, 0xff0b0f0d);
+        TextView watchBtn = a.text("▶ 立即观看", 10.5f, 0xff0b0f0d);
         watchBtn.setTypeface(null, Typeface.BOLD);
         watchBtn.setGravity(Gravity.CENTER);
-        watchBtn.setPadding(a.dp(14), a.dp(7), a.dp(14), a.dp(7));
+        watchBtn.setPadding(a.dp(10), a.dp(4), a.dp(10), a.dp(4));
         watchBtn.setBackground(glassBg(0xffffffff, 0xffe9eef9, a.dp(999), 0, 0));
         bottomRow.addView(watchBtn, new LinearLayout.LayoutParams(-2, -2));
         rightCol.addView(bottomRow, new LinearLayout.LayoutParams(-1, -2));

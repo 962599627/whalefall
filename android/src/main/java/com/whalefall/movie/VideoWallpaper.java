@@ -81,7 +81,7 @@ final class VideoWallpaper extends FrameLayout {
 
     @Override
     protected void onDetachedFromWindow() {
-        release();
+        if (!released) player.setPlayWhenReady(false);
         super.onDetachedFromWindow();
     }
 }
