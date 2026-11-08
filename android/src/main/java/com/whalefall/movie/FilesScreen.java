@@ -299,10 +299,18 @@ final class FilesScreen {
         FrameLayout overlay = new FrameLayout(a);
         overlay.setBackgroundColor(0xee000000);
         overlay.setClickable(true);
-        android.widget.ImageView image = new android.widget.ImageView(a);
+        final android.widget.ImageView image = new android.widget.ImageView(a);
         image.setAdjustViewBounds(true);
         image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-        a.poster("file://" + file.getAbsolutePath(), image);
+        final String path = file.getAbsolutePath();
+        new Thread(
+                        () -> {
+                            android.graphics.Bitmap bitmap =
+                                    android.graphics.BitmapFactory.decodeFile(path);
+                            if (bitmap != null)
+                                a.ui.post(() -> image.setImageBitmap(bitmap));
+                        })
+                .start();
         overlay.addView(image, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
         TextView hint = a.text(PushFiles.baseName(rel) + " · 点任意处返回", 12, 0xccffffff);
         hint.setGravity(Gravity.CENTER);
