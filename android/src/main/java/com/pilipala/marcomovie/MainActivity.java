@@ -419,18 +419,8 @@ public final class MainActivity extends Activity {
         if (isPortrait()) {
             setRequestedOrientation(
                     android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-            if (usableWidth > 0 && usableHeight > 0 && usableWidth < usableHeight) {
-                int tmp = usableWidth;
-                usableWidth = usableHeight;
-                usableHeight = tmp;
-            }
         } else {
             setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
-            if (usableWidth > 0 && usableHeight > 0 && usableWidth > usableHeight) {
-                int tmp = usableWidth;
-                usableWidth = usableHeight;
-                usableHeight = tmp;
-            }
         }
         if (playerChrome != null) playerChrome.relayout();
     }

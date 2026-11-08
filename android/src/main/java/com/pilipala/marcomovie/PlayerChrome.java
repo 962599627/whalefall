@@ -17,12 +17,19 @@ final class PlayerChrome {
     final StateGlyph state;
     final TextView resolution;
     boolean loading = true;
+    final Rect windowInsets = new Rect();
+    boolean layoutPending;
 
     PlayerChrome(MainActivity host, Cms.Video video, Cms.Episode episode, boolean live) {
         a = host;
         overlay = new FrameLayout(a);
         overlay.setTag("player-chrome");
-        overlay.setClipChildren(false);
+        overlay.setClipChildren(true);
+        overlay.setClipToPadding(true);
+        overlay.addOnLayoutChangeListener(
+                (view, l, t, r, b, ol, ot, or, ob) -> {
+                    if (l != ol || t != ot || r != or || b != ob) scheduleLayout();
+                });
         View topShade = new View(a);
         topShade.setBackground(
                 new GradientDrawable(
@@ -195,6 +202,11 @@ final class PlayerChrome {
 
         a.playerOverlay = overlay;
         a.controlsVisible = true;
+        dock.addOnLayoutChangeListener(
+                (view, l, t, r, b, ol, ot, or, ob) -> {
+                    if (b - t != ob - ot) scheduleLayout();
+                });
+        scheduleLayout();
     }
 
     TextView buildSeekCircle(String label, int deltaMs) {
@@ -228,64 +240,129 @@ final class PlayerChrome {
         return btn;
     }
 
+    void scheduleLayout() {
+        if (layoutPending) return;
+        layoutPending = true;
+        overlay.post(
+                () -> {
+                    layoutPending = false;
+                    if (a.playerChrome == this) relayout();
+                });
+    }
+
+    void safeInsets(int left, int top, int right, int bottom) {
+        windowInsets.set(left, top, right, bottom);
+        relayout();
+    }
+
     void relayout() {
-        int width = a.windowWidth() - overlay.getPaddingLeft() - overlay.getPaddingRight();
-        boolean mobileLandscape = !a.isTvDevice() && !a.isPortrait();
+        // A rotation request is not a measurement. OEM bars, multi-window and
+        // embedded playback can all leave this layer smaller than the display.
+        int measuredWidth = overlay.getWidth(), measuredHeight = overlay.getHeight();
+        if (measuredWidth <= 0 || measuredHeight <= 0) return;
+        Rect safe = new Rect(0, 0, measuredWidth, measuredHeight);
+        Rect visible = new Rect();
+        if (overlay.getLocalVisibleRect(visible)) safe.intersect(visible);
+        if (!a.isTvDevice()) {
+            int[] location = new int[2];
+            overlay.getLocationInWindow(location);
+            View decor = a.getWindow().getDecorView();
+            safe.left = Math.max(safe.left, windowInsets.left - location[0]);
+            safe.top = Math.max(safe.top, windowInsets.top - location[1]);
+            safe.right = Math.min(safe.right, decor.getWidth() - windowInsets.right - location[0]);
+            safe.bottom =
+                    Math.min(safe.bottom, decor.getHeight() - windowInsets.bottom - location[1]);
+        }
+        safe.left = Math.max(0, Math.min(measuredWidth, safe.left));
+        safe.top = Math.max(0, Math.min(measuredHeight, safe.top));
+        safe.right = Math.max(safe.left, Math.min(measuredWidth, safe.right));
+        safe.bottom = Math.max(safe.top, Math.min(measuredHeight, safe.bottom));
+        overlay.setPadding(
+                safe.left, safe.top, measuredWidth - safe.right, measuredHeight - safe.bottom);
+        int width = safe.width(), height = safe.height();
+        boolean portrait = measuredWidth < measuredHeight;
+        boolean mobileLandscape = !a.isTvDevice() && !portrait;
         if (titleView != null) {
-            titleView.setTextSize(a.isPortrait() ? 20 : 26);
+            titleView.setTextSize(portrait ? 20 : 26);
         }
         if (fsBtn != null) {
-            fsBtn.setText(a.isPortrait() ? "⛶ 全屏横屏" : "⛶ 退出全屏");
-        }
-        ViewGroup.LayoutParams hlp = heading.getLayoutParams();
-        if (hlp instanceof FrameLayout.LayoutParams) {
-            FrameLayout.LayoutParams fhlp = (FrameLayout.LayoutParams) hlp;
-            int sideMargin = a.isPortrait() ? a.dp(20) : a.dp(44);
-            fhlp.setMargins(sideMargin, a.dp(24), sideMargin, 0);
-            heading.setLayoutParams(fhlp);
-        }
-        ViewGroup.LayoutParams p = progress.getLayoutParams();
-        if (p instanceof FrameLayout.LayoutParams) {
-            FrameLayout.LayoutParams fp = (FrameLayout.LayoutParams) p;
-            fp.width =
-                    Math.min(
-                            a.dp(760),
-                            Math.max(a.dp(220), width - a.dp(mobileLandscape ? 120 : 48)));
-            fp.bottomMargin = a.dp(mobileLandscape ? 20 : 94);
-            fp.rightMargin = mobileLandscape ? a.dp(36) : 0;
-            progress.setLayoutParams(fp);
+            fsBtn.setText(portrait ? "⛶ 全屏横屏" : "⛶ 退出全屏");
         }
         dock.setPadding(
                 a.dp(mobileLandscape ? 4 : 6), a.dp(5), a.dp(mobileLandscape ? 4 : 6), a.dp(5));
-        ViewGroup.LayoutParams d = dock.getLayoutParams();
-        if (d instanceof FrameLayout.LayoutParams) {
-            FrameLayout.LayoutParams fd = (FrameLayout.LayoutParams) d;
-            if (mobileLandscape) {
-                fd.width = a.dp(76);
-                fd.height =
-                        Math.min(
-                                a.dp(360),
-                                Math.max(
-                                        a.dp(80),
-                                        a.windowHeight()
-                                                - overlay.getPaddingTop()
-                                                - overlay.getPaddingBottom()
-                                                - a.dp(40)));
-                fd.gravity = Gravity.RIGHT | Gravity.CENTER_VERTICAL;
-                fd.rightMargin = a.dp(8);
-                fd.bottomMargin = 0;
-            } else {
-                fd.width = Math.min(a.dp(552), Math.max(a.dp(240), width - a.dp(32)));
-                fd.height = -2;
-                fd.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-                fd.rightMargin = 0;
-                fd.bottomMargin = a.dp(16);
-            }
-            dock.setLayoutParams(fd);
+        int edge = Math.min(a.dp(16), width / 8);
+        int dockWidth;
+        if (mobileLandscape) {
+            dockWidth = Math.min(a.dp(76), Math.max(0, width - edge * 2));
+            place(
+                    dock,
+                    dockWidth,
+                    Math.max(0, Math.min(a.dp(360), height - a.dp(16))),
+                    Gravity.RIGHT | Gravity.CENTER_VERTICAL,
+                    0,
+                    0,
+                    Math.min(a.dp(8), edge),
+                    0);
+        } else {
+            dockWidth = Math.max(0, Math.min(a.dp(552), width - edge * 2));
+            place(
+                    dock,
+                    dockWidth,
+                    -2,
+                    Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL,
+                    0,
+                    0,
+                    0,
+                    a.dp(16));
         }
+        int left = Math.min(a.dp(mobileLandscape ? 20 : 24), width / 8);
+        int right = mobileLandscape ? dockWidth + Math.min(a.dp(8), edge) + a.dp(12) : left;
+        int trackWidth = Math.max(0, Math.min(a.dp(760), width - left - right));
+        left += Math.max(0, (width - left - right - trackWidth) / 2);
+        int progressHeight = Math.max(progress.getMeasuredHeight(), a.dp(62));
+        int bottom =
+                mobileLandscape
+                        ? a.dp(20)
+                        : Math.max(a.dp(94), dock.getMeasuredHeight() + a.dp(28));
+        bottom = Math.max(0, Math.min(bottom, height - progressHeight));
+        place(progress, trackWidth, -2, Gravity.BOTTOM | Gravity.LEFT, left, 0, right, bottom);
+        int side = Math.min(a.dp(portrait ? 20 : 44), width / 8);
+        place(
+                heading,
+                -1,
+                -2,
+                Gravity.TOP,
+                side,
+                Math.min(a.dp(24), height / 8),
+                mobileLandscape ? Math.max(side, right) : side,
+                0);
         if (a.playbackControls != null) {
             a.playbackControls.relayout(mobileLandscape);
         }
+    }
+
+    private void place(
+            View view,
+            int width,
+            int height,
+            int gravity,
+            int left,
+            int top,
+            int right,
+            int bottom) {
+        FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) view.getLayoutParams();
+        if (p.width == width
+                && p.height == height
+                && p.gravity == gravity
+                && p.leftMargin == left
+                && p.topMargin == top
+                && p.rightMargin == right
+                && p.bottomMargin == bottom) return;
+        p.width = width;
+        p.height = height;
+        p.gravity = gravity;
+        p.setMargins(left, top, right, bottom);
+        view.setLayoutParams(p);
     }
 
     void resolution(int width, int height) {

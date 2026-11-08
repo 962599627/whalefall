@@ -82,6 +82,10 @@ public final class MobilePlayerProbe extends Instrumentation {
                                                         ? Surface.ROTATION_90
                                                         : Surface.ROTATION_0));
         SystemClock.sleep(600);
+        verifyBoundsAndSeek(name);
+    }
+
+    void verifyBoundsAndSeek(String name) throws Exception {
         runOnMainSync(() -> a.showControls(true));
         waitForIdleSync();
         SystemClock.sleep(250);
@@ -100,6 +104,29 @@ public final class MobilePlayerProbe extends Instrumentation {
                             && bounds.height() >= timeline.getHeight() - 1
                             && root.contains(bounds)
                             && !a.isLive();
+                });
+        await(
+                name + "_inside_safe_area",
+                () -> {
+                    View overlay = a.playerChrome.overlay;
+                    int[] location = new int[2];
+                    overlay.getLocationOnScreen(location);
+                    Rect safe =
+                            new Rect(
+                                    location[0] + overlay.getPaddingLeft(),
+                                    location[1] + overlay.getPaddingTop(),
+                                    location[0] + overlay.getWidth() - overlay.getPaddingRight(),
+                                    location[1] + overlay.getHeight() - overlay.getPaddingBottom());
+                    Rect timeline = new Rect(), dock = new Rect(), progress = new Rect();
+                    a.playbackControls.timeline.getGlobalVisibleRect(timeline);
+                    a.playerChrome.dock.getGlobalVisibleRect(dock);
+                    a.playerChrome.progress.getGlobalVisibleRect(progress);
+                    return safe.contains(timeline)
+                            && safe.contains(dock)
+                            && safe.contains(progress)
+                            && dock.width() == a.playerChrome.dock.getWidth()
+                            && dock.height() == a.playerChrome.dock.getHeight()
+                            && !Rect.intersects(timeline, dock);
                 });
         float[] point = new float[2];
         runOnMainSync(
@@ -128,6 +155,33 @@ public final class MobilePlayerProbe extends Instrumentation {
                         a.player.getCurrentPosition() > 25000
                                 && a.player.getCurrentPosition() < 45000);
         runOnMainSync(() -> a.player.seekTo(0));
+    }
+
+    void verifySmallerViewport() throws Exception {
+        runOnMainSync(
+                () -> {
+                    // Reproduce a parent viewport smaller than cached activity/display metrics.
+                    // This is controlled layout coverage, not a claim about any OEM firmware.
+                    a.playbackLayer.setLayoutParams(
+                            new android.widget.FrameLayout.LayoutParams(
+                                    Math.round(a.root.getWidth() * .70f),
+                                    Math.round(a.root.getHeight() * .75f),
+                                    Gravity.CENTER));
+                });
+        await(
+                "smaller_viewport_measured",
+                () -> a.playerChrome.overlay.getWidth() < a.root.getWidth() * .75f);
+        SystemClock.sleep(500);
+        verifyBoundsAndSeek("smaller_viewport");
+        runOnMainSync(
+                () ->
+                        a.playbackLayer.setLayoutParams(
+                                new android.widget.FrameLayout.LayoutParams(-1, -1)));
+        await(
+                "full_viewport_restored",
+                () -> a.playerChrome.overlay.getWidth() == a.root.getWidth());
+        SystemClock.sleep(500);
+        verifyBoundsAndSeek("restored_viewport");
     }
 
     @Override
@@ -176,6 +230,7 @@ public final class MobilePlayerProbe extends Instrumentation {
                     "media_prepared",
                     () -> a.prepared && a.player != null && a.player.getDuration() >= 59000);
             verifyOrientation("landscape", ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, true);
+            verifySmallerViewport();
             verifyOrientation(
                     "reverse_landscape", ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE, true);
             verifyOrientation("portrait", ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, false);

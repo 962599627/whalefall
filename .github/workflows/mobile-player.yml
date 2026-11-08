@@ -8,12 +8,18 @@ on:
       - 'android/tests/device/MobilePlayerProbe.java'
       - 'scripts/run_mobile_player_probe.py'
       - 'scripts/build_device_probe.py'
+      - 'android/src/main/java/com/pilipala/marcomovie/PlayerChrome.java'
+      - 'android/src/main/java/com/pilipala/marcomovie/PlaybackController.java'
 permissions:
   contents: read
 jobs:
   player:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        navigation: [gestural, threebutton]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -45,14 +51,16 @@ jobs:
           arch: x86_64
           profile: pixel_7_pro
           disable-animations: true
-          script: python scripts/run_mobile_player_probe.py
+          script: python scripts/run_mobile_player_probe.py --navigation ${{ matrix.navigation }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: android-16-player-evidence
+          name: android-16-player-evidence-${{ matrix.navigation }}
           path: |
             android/build/mobile-player-probe/scope.json
             android/build/mobile-player-probe/device.txt
+            android/build/mobile-player-probe/navigation.txt
+            android/build/mobile-player-probe/results.json
             android/build/mobile-player-probe/instrumentation.log
             android/build/mobile-player-probe/logcat.txt
             android/build/mobile-player-probe/screenshots/

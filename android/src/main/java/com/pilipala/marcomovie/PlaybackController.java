@@ -780,11 +780,6 @@ final class PlaybackController {
             a.applyMobileSystemBars(true);
             a.setRequestedOrientation(
                     android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-            if (a.usableWidth > 0 && a.usableHeight > 0 && a.usableWidth < a.usableHeight) {
-                int tmp = a.usableWidth;
-                a.usableWidth = a.usableHeight;
-                a.usableHeight = tmp;
-            }
         }
         a.root = new FrameLayout(a);
         a.root.setBackgroundColor(Color.BLACK);
@@ -816,7 +811,12 @@ final class PlaybackController {
                             left = safe.left;
                             top = safe.top;
                             right = safe.right;
-                            bottom = safe.bottom;
+                            android.graphics.Insets navigation =
+                                    insets.getInsetsIgnoringVisibility(
+                                            android.view.WindowInsets.Type.navigationBars());
+                            left = Math.max(left, navigation.left);
+                            right = Math.max(right, navigation.right);
+                            bottom = Math.max(safe.bottom, navigation.bottom);
                         } else if (android.os.Build.VERSION.SDK_INT >= 28
                                 && insets.getDisplayCutout() != null) {
                             android.view.DisplayCutout cutout = insets.getDisplayCutout();
@@ -825,8 +825,7 @@ final class PlaybackController {
                             right = Math.max(right, cutout.getSafeInsetRight());
                             bottom = Math.max(bottom, cutout.getSafeInsetBottom());
                         }
-                        chrome.overlay.setPadding(left, top, right, bottom);
-                        chrome.relayout();
+                        chrome.safeInsets(left, top, right, bottom);
                         return insets;
                     });
             a.root.requestApplyInsets();
@@ -840,24 +839,6 @@ final class PlaybackController {
                 (view, l, t, r, b, ol, ot, or, ob) -> {
                     int w = r - l, h = b - t;
                     if (w > 0 && h > 0) {
-                        if (!a.isTvDevice()) {
-                            int req = a.getRequestedOrientation();
-                            if (req
-                                            == android.content.pm.ActivityInfo
-                                                    .SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                    && w < h) {
-                                int tmp = w;
-                                w = h;
-                                h = tmp;
-                            } else if (req
-                                            == android.content.pm.ActivityInfo
-                                                    .SCREEN_ORIENTATION_PORTRAIT
-                                    && w > h) {
-                                int tmp = w;
-                                w = h;
-                                h = tmp;
-                            }
-                        }
                         if (w != a.usableWidth || h != a.usableHeight) {
                             a.usableWidth = w;
                             a.usableHeight = h;
@@ -875,6 +856,7 @@ final class PlaybackController {
                     }
                 });
         a.setContentView(a.root);
+        if (!a.isTvDevice()) a.root.requestApplyInsets();
         surface.listen(
                 new VideoOutput.Listener() {
                     Surface renderSurface;
