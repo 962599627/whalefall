@@ -18,6 +18,7 @@ public final class LiveCatalog {
         public String name = "直播", url = "", origin = "";
         public int timeoutMs = 15000;
         public Object inline;
+        public Cms.Site plugin;
         public final Map<String, String> headers = new LinkedHashMap<>(),
                 options = new LinkedHashMap<>();
 
@@ -25,6 +26,10 @@ public final class LiveCatalog {
             if (liveDirectoryQuery(url) != null) return false;
             return ProxyAddress.isSourceProxy(url);
         }
+    }
+
+    public interface PluginLoader {
+        String load(Cms.Site site, String url) throws Exception;
     }
 
     public static final class Catalog {
@@ -119,19 +124,64 @@ public final class LiveCatalog {
                 int seconds = j.optInt("timeout", 15);
                 s.timeoutMs = Math.max(1000, Math.min(30000, seconds * 1000));
                 s.url = resolve(origin, j.optString("url", ""));
-                if (j.has("groups") || j.has("channels")) s.inline = j;
+                if (!j.optString("api", "").trim().isEmpty()) {
+                    // liveContent owns this argument; it may be an opaque ID, not a URL.
+                    s.url = j.optString("url", "");
+                    JSONObject definition = new JSONObject(j.toString());
+                    String identity = s.origin + "\n" + i + "\n" + j.toString();
+                    definition.put(
+                            "key",
+                            "live-plugin:" + UUID.nameUUIDFromBytes(identity.getBytes("UTF-8")));
+                    definition.put("type", 3);
+                    definition.put("header", new JSONObject(s.headers));
+                    if (!definition.has("jar") || definition.optString("jar").isEmpty())
+                        definition.put(
+                                "jar",
+                                root instanceof JSONObject
+                                        ? ((JSONObject) root).optString("spider", "")
+                                        : "");
+                    s.plugin =
+                            Cms.parseConfig(
+                                            new JSONObject()
+                                                    .put("sites", new JSONArray().put(definition))
+                                                    .toString(),
+                                            s.origin)
+                                    .sites
+                                    .get(0);
+                    if (s.plugin.ext instanceof String) {
+                        String ext = (String) s.plugin.ext;
+                        if (ext.startsWith("./") || ext.startsWith("../"))
+                            s.plugin.ext = Cms.resolve(s.origin, ext);
+                    }
+                }
+                if (j.has("groups") || j.has("channels")) {
+                    JSONArray groups = j.optJSONArray("groups"),
+                            channels = j.optJSONArray("channels");
+                    if (s.plugin == null
+                            || (groups != null && groups.length() > 0)
+                            || (channels != null && channels.length() > 0)) s.inline = j;
+                }
             } else continue;
             if (!s.headers.containsKey("User-Agent")) s.headers.put("User-Agent", Cms.USER_AGENT);
-            if (s.inline != null) s.inline = separateDirectories(s.inline, s, out, 0);
-            if (s.inline != null || !s.url.isEmpty()) out.add(s);
+            if (s.inline != null && s.plugin == null)
+                s.inline = separateDirectories(s.inline, s, out, 0);
+            if (s.inline != null || !s.url.isEmpty() || s.plugin != null) out.add(s);
             if (out.size() > MAX_CHANNELS) throw new IOException("直播目录数量过多");
         }
         return out;
     }
 
     public static Catalog load(Source source) throws Exception {
+        return load(source, null);
+    }
+
+    public static Catalog load(Source source, PluginLoader loader) throws Exception {
         if (source.inline != null)
             return parse(source.inline.toString(), source.origin, source.headers);
+        if (source.plugin != null) {
+            if (loader == null) throw new IOException("此直播目录需要来源扩展引擎");
+            return parse(loader.load(source.plugin, source.url), source.origin, source.headers);
+        }
         String sourceUrl = liveDirectoryUrl(source.url, source.origin);
         if (sourceUrl != null && sourceUrl.startsWith("file://")) {
             File localFile = new File(URI.create(sourceUrl));

@@ -74,15 +74,7 @@ final class LiveController {
         a.renderPage(source.name, "LIVE CHANNELS");
         a.load(
                 "读取频道分组…",
-                () -> {
-                    if (source.isLocalProxy()) {
-                        if (!a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true))
-                            throw new IOException("请先启用来源扩展");
-                        a.ensureProxy(a.config);
-                        source.url = LocalProxy.rewrite(source.url);
-                    }
-                    return LiveCatalog.load(source);
-                },
+                () -> loadCatalog(a, source),
                 catalog -> {
                     a.liveSession = new LiveSession(source, catalog);
                     a.paragraph(catalog.channelCount() + " 个频道 · 选择分组");
@@ -113,6 +105,17 @@ final class LiveController {
                         row.addView(btn, blp);
                     }
                 });
+    }
+
+    static LiveCatalog.Catalog loadCatalog(MainActivity a, LiveCatalog.Source source)
+            throws Exception {
+        if (source.plugin != null || source.isLocalProxy()) {
+            if (!a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true))
+                throw new IOException("请先启用来源扩展");
+            a.ensureProxy(a.config);
+            if (source.plugin == null) source.url = LocalProxy.rewrite(source.url);
+        }
+        return LiveCatalog.load(source, (site, url) -> a.engine(site).liveContent(url));
     }
 
     static void liveChannels(

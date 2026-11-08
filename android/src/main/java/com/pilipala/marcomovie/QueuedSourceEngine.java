@@ -21,6 +21,10 @@ final class QueuedSourceEngine implements SourceEngine {
         return gate.call(false, delegate::homeVideos);
     }
 
+    public String liveContent(String url) throws Exception {
+        return gate.call(true, () -> delegate.liveContent(url));
+    }
+
     public String category(String id, int page) throws Exception {
         return gate.call(false, () -> delegate.category(id, page));
     }

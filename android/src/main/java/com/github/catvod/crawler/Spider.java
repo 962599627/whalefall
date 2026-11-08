@@ -71,7 +71,7 @@ public class Spider {
 
     public void cancelByTag() {}
 
-    public String liveContent(String url) {
+    public String liveContent(String url) throws Exception {
         return "";
     }
 

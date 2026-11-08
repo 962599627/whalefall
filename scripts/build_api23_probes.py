@@ -32,6 +32,28 @@ def sign(source, name):
     return output
 
 
+def build_live_plugin(app_classes):
+    # Deliberately separate DEX: exercise DexClassLoader, not a class on the app path.
+    fixture = OUT / 'live-plugin'
+    for name in ('classes', 'dex'):
+        (fixture/name).mkdir(parents=True, exist_ok=True)
+        for old in (fixture/name).rglob('*.class' if name == 'classes' else '*.dex'):
+            if not old.resolve().is_relative_to(fixture.resolve()):
+                raise RuntimeError('Plugin fixture output leaves its build directory')
+            old.unlink()
+    run(exe(JDK/'bin', 'javac'), '-encoding', 'UTF-8', '-source', '8', '-target', '8', '-Xlint:-options',
+        '-classpath', str(ANDROID)+os.pathsep+str(app_classes), '-d', fixture/'classes',
+        *sorted((ROOT/'android/tests/device/plugin').glob('*.java')))
+    with zipfile.ZipFile(fixture/'classes.jar', 'w') as jar:
+        for compiled in (fixture/'classes').rglob('*.class'):
+            jar.write(compiled, compiled.relative_to(fixture/'classes').as_posix())
+    run(exe(JDK/'bin', 'java'), '-cp', SDK/'lib/d8.jar', 'com.android.tools.r8.D8', '--min-api', '23',
+        '--lib', ANDROID, '--classpath', app_classes, '--output', fixture/'dex', fixture/'classes.jar')
+    with zipfile.ZipFile(OUT/'assets/live-fixture.jar', 'w') as jar:
+        for dex in (fixture/'dex').glob('*.dex'):
+            jar.write(dex, dex.name)
+
+
 def main(phone=False):
     global OUT, PROBES
     OUT = BUILD / ('phone-source-probe' if phone else 'api23-probes')
@@ -61,6 +83,7 @@ def main(phone=False):
     with wave.open(str(OUT / "assets/timeline.wav"), "wb") as audio:
         audio.setparams((1, 2, 8000, 0, "NONE", "not compressed"))
         audio.writeframes(b"\x00\x00" * 8000 * 60)
+    build_live_plugin(app_classes)
     run(exe(SDK, "aapt2"), "link", "-o", OUT / "resources.apk", "--manifest", manifest,
         "-I", ANDROID, "-A", OUT / "assets")
     run(exe(JDK / "bin", "javac"), "-encoding", "UTF-8", "-source", "8", "-target", "8", "-Xlint:-options",
@@ -99,6 +122,7 @@ def main(phone=False):
         "production_unsigned_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "production_classes_sha256": hashlib.sha256(app_classes.read_bytes()).hexdigest(),
         "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
+        "live_plugin_sha256": hashlib.sha256((OUT/'assets/live-fixture.jar').read_bytes()).hexdigest(),
         "probes": list(PROBES),
         "fixture_abi": abi,
         "fixture_edition": 'mobile' if phone else 'tv',

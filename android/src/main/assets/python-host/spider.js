@@ -672,6 +672,7 @@ function createPythonSpider(source, files = {}, readSibling, packageData) {
       return invoke("searchContent", argc >= 4 ? [word, quick, String(page)] : [word, quick]);
     },
     play(flag, id, vip) { return invoke("playerContent", [flag, id, vip]); },
+    liveContent(url) { return invoke("liveContent", [url]); },
     proxy(params) {
       const legacy = instance.tp$getattr(new Sk.builtin.str('localProxy'));
       const name = legacy !== undefined && legacy !== Sk.builtin.none.none$ ? 'localProxy' : 'proxy';

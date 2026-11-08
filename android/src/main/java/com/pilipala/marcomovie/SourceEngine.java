@@ -21,6 +21,10 @@ public interface SourceEngine {
         return "{\"list\":[]}";
     }
 
+    default String liveContent(String url) throws Exception {
+        throw new java.io.IOException("此来源没有提供直播目录接口");
+    }
+
     default String player(String flag, String id) throws Exception {
         return new org.json.JSONObject().put("parse", 0).put("url", id).toString();
     }

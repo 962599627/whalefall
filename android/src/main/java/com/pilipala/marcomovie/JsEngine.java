@@ -941,6 +941,10 @@ public final class JsEngine implements SourceEngine {
         return call("homeVod");
     }
 
+    public String liveContent(String url) throws Exception {
+        return call("liveContent", url);
+    }
+
     public String category(String id, int page) throws Exception {
         return category(id, page, java.util.Collections.emptyMap());
     }

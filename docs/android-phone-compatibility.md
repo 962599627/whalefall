@@ -62,10 +62,21 @@ catalogue headers and source state across reload, separately from the existing
 Android 6 TV probe. Neither isolated fixture contains ARM decoders or proves
 third-party stream playback.
 
-The newer `api`/`ext` live configuration is a separate remaining task: upstream
+The newer `api`/`ext` live configuration now uses a separate source-engine call:
+upstream
 [LiveParser](https://github.com/FongMi/TV/blob/fongmi/app/src/main/java/com/fongmi/android/tv/api/parser/LiveParser.java)
-dispatches it to `liveContent(url)`. It is not implemented merely by fixing the
-legacy proxy reader, and is not counted as supported by these checks.
+dispatches it to `liveContent(url)`. Phone and TV now share that dispatch for JS,
+Python Spider and Android CSP. It preserves opaque arguments, structured ext,
+explicit/inherited JARs, and separate instances for same-name definitions. Text
+and JSON-array results pass through the bounded catalogue reader; missing methods
+and runtime failures remain errors. Plain lists still use the ordinary reader.
+
+The native probe additionally loads an independently authored, separate DEX/JAR
+fixture and executes `liveContent` through the shipped CSP host. Its TXT/JSON,
+state and initialization checks run alongside actual QuickJS/Python calls. These
+are fixture compatibility checks, not a claim that proprietary plugins or remote
+channels all work. The first phone run at `5e8d4d1` passed the new proxy-reader
+checks but failed later in a Python HTTP fixture; it is not an overall pass.
 
 ## Separate update editions
 

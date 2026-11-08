@@ -40,8 +40,12 @@ def main():
         result = json.loads(match[1]) if match else {'passed': False}
         (OUT/'results.json').write_text(json.dumps(result, indent=2)+'\n', encoding='utf-8')
         required = ('live_plugin_scheme_starts_host', 'live_plugin_native_catalogue_headers',
-                    'live_plugin_remote_channel_headers', 'live_plugin_reload_preserves_instance')
-        if (result.get('passed') is not True or result.get('checks', 0) < 90
+                    'live_plugin_remote_channel_headers', 'live_plugin_reload_preserves_instance',
+                    'live_api_config_selects_isolated_engines', 'live_api_js_text', 'live_api_js_json',
+                    'live_api_python_text', 'live_api_python_json', 'live_api_js_state_retained',
+                    'live_api_jar_text', 'live_api_jar_json', 'live_api_jar_state_retained',
+                    'live_api_missing_method_explicit')
+        if (result.get('passed') is not True or result.get('checks', 0) < 100
                 or any(result.get(key) is not True for key in required)
                 or any(value is False for value in result.values())):
             raise RuntimeError('Phone source regression failed; see results and native logs')

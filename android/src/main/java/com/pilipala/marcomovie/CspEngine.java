@@ -300,11 +300,15 @@ public final class CspEngine implements SourceEngine {
     }
 
     private String call(String operation, Call c) throws Exception {
+        return call(operation, c, true);
+    }
+
+    private String call(String operation, Call c, boolean cmsObject) throws Exception {
         synchronized (pluginLock) {
             try {
                 String result = c.run();
                 if (result == null || result.trim().isEmpty()) throw new IOException("插件返回空结果");
-                new JSONObject(result);
+                if (cmsObject) new JSONObject(result);
                 diagnostic(operation + "_ok", site.api, null);
                 return result;
             } catch (Throwable t) {
@@ -322,6 +326,10 @@ public final class CspEngine implements SourceEngine {
 
     public String homeVideos() throws Exception {
         return call("recommendations", () -> spider.homeVideoContent());
+    }
+
+    public String liveContent(String url) throws Exception {
+        return call("live", () -> spider.liveContent(url), false);
     }
 
     public String category(String id, int page) throws Exception {

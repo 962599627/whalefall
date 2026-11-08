@@ -17,6 +17,7 @@ public final class LiveCatalogChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        pluginCatalogues();
         Map<String, String> inherited = new LinkedHashMap<>();
         String wrapper = "proxy://do=live&type=txt&ext=aHR0cHM6Ly9saXN0LnRlc3QvbGl2ZS50eHQ=";
         List<LiveCatalog.Source> wrapped =
@@ -232,5 +233,74 @@ public final class LiveCatalogChecks {
             check(failed, "redirect loop bounded");
         }
         System.out.println("OK " + count + " live checks");
+    }
+
+    static void pluginCatalogues() throws Exception {
+        String raw =
+                "{\"spider\":\"./global.jar;md5;abc\",\"lives\":["
+                        + "{\"name\":\"Same\",\"api\":\"./source.js\",\"ext\":\"../data.json\",\"ua\":\"Live-UA\",\"groups\":[]},"
+                        + "{\"name\":\"Same\",\"api\":\"csp_Live\",\"jar\":\"./own.jar\",\"url\":\"opaque-input\",\"ext\":{\"mode\":1}}]}";
+        List<LiveCatalog.Source> sources =
+                LiveCatalog.sources(raw, "https://list.test/folder/config.json");
+        check(
+                sources.size() == 2 && sources.get(0).url.isEmpty(),
+                "api-only live source retained without a catalogue URL");
+        LiveCatalog.Source js = sources.get(0), jar = sources.get(1);
+        check(
+                js.plugin.api.equals("https://list.test/folder/source.js")
+                        && js.plugin.ext.equals("https://list.test/data.json")
+                        && js.plugin.jar.equals("https://list.test/folder/global.jar;md5;abc"),
+                "live plugin resolves API ext and inherited JAR against subscription");
+        check(
+                jar.plugin.api.equals("csp_Live")
+                        && jar.plugin.jar.equals("https://list.test/folder/own.jar")
+                        && jar.plugin.ext instanceof org.json.JSONObject,
+                "live plugin keeps explicit JAR and structured extension");
+        check(
+                !js.plugin.key.equals(jar.plugin.key)
+                        && js.plugin.key.startsWith("live-plugin:")
+                        && js.plugin.key.equals(
+                                LiveCatalog.sources(raw, "https://list.test/folder/config.json")
+                                        .get(0)
+                                        .plugin
+                                        .key),
+                "same-name live plugins have stable isolated engine identities");
+        LiveCatalog.Catalog catalogue =
+                LiveCatalog.load(
+                        jar,
+                        (site, url) -> {
+                            if (site != jar.plugin || !url.equals("opaque-input"))
+                                throw new AssertionError("dispatch changed");
+                            return "Plugin,#genre#\nLocal,https://media.test/a.m3u8";
+                        });
+        check(
+                catalogue.channelCount() == 1 && catalogue.groups.get(0).name.equals("Plugin"),
+                "liveContent text reaches ordinary catalogue reader");
+        catalogue =
+                LiveCatalog.load(
+                        js,
+                        (site, url) ->
+                                "[{\"name\":\"JSON\",\"channels\":[{\"name\":\"Local\",\"url\":\"https://media.test/a.m3u8\"}]}]");
+        check(
+                first(catalogue).streams.get(0).headers.get("User-Agent").equals("Live-UA"),
+                "liveContent JSON inherits source headers");
+        boolean missing = false;
+        try {
+            LiveCatalog.load(js);
+        } catch (IOException error) {
+            missing = error.getMessage().contains("引擎");
+        }
+        check(missing, "plugin catalogue never falls back to downloading its input URL");
+        boolean failed = false;
+        try {
+            LiveCatalog.load(
+                    js,
+                    (site, url) -> {
+                        throw new IOException("fixture-failure");
+                    });
+        } catch (IOException error) {
+            failed = error.getMessage().equals("fixture-failure");
+        }
+        check(failed, "plugin failure remains visible instead of a blank list");
     }
 }

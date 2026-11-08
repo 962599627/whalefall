@@ -741,7 +741,6 @@ public final class SourceHostProbe extends Instrumentation {
                             },
                             "python-session-loopback");
             thread.setDaemon(true);
-            thread.start();
         }
 
         @Override
@@ -833,7 +832,6 @@ public final class SourceHostProbe extends Instrumentation {
                             },
                             "python-binary-loopback");
             thread.setDaemon(true);
-            thread.start();
         }
 
         @Override
@@ -930,6 +928,154 @@ public final class SourceHostProbe extends Instrumentation {
         }
     }
 
+    void exerciseLiveContent() throws Exception {
+        Application app = (Application) getTargetContext().getApplicationContext();
+        File jsFile =
+                write(
+                        "live-content.js",
+                        "module.exports=class {init(ext){this.ext=ext;this.n=0;}"
+                                + "async liveContent(url){if(this.ext!=='local-extension')throw Error('ext lost');"
+                                + "if(url==='live:json')return [{name:'JS',channels:[{name:'JSON',url:'https://fixture.invalid/live.m3u8'}]}];"
+                                + "if(url!=='live:txt')throw Error('input changed');"
+                                + "return 'JS,#genre#\\nChannel'+(++this.n)+',https://fixture.invalid/live.m3u8';}};");
+        File pyFile =
+                write(
+                        "live-content.py",
+                        "class Spider:\n"
+                                + "    def init(self, ext):\n        self.ext = ext\n"
+                                + "    def liveContent(self, url):\n"
+                                + "        assert self.ext == 'local-extension'\n"
+                                + "        if url == 'live:json':\n"
+                                + "            return [{'name':'PY','channels':[{'name':'JSON','url':'https://fixture.invalid/live.m3u8'}]}]\n"
+                                + "        assert url == 'live:txt'\n"
+                                + "        return 'PY,#genre#\\nPython,https://fixture.invalid/live.m3u8'\n");
+        String config =
+                new JSONObject()
+                        .put(
+                                "lives",
+                                new org.json.JSONArray()
+                                        .put(
+                                                new JSONObject()
+                                                        .put("name", "Same")
+                                                        .put("api", Cms.fileUri(jsFile))
+                                                        .put("ext", "local-extension")
+                                                        .put("url", "live:txt"))
+                                        .put(
+                                                new JSONObject()
+                                                        .put("name", "Same")
+                                                        .put("api", Cms.fileUri(pyFile))
+                                                        .put("ext", "local-extension")
+                                                        .put("url", "live:txt")))
+                        .toString();
+        List<LiveCatalog.Source> sources =
+                LiveCatalog.sources(config, Cms.fileUri(new File(folder, "config.json")));
+        check(
+                "live_api_config_selects_isolated_engines",
+                sources.size() == 2
+                        && !sources.get(0).plugin.key.equals(sources.get(1).plugin.key));
+        for (int i = 0; i < sources.size(); i++) {
+            LiveCatalog.Source source = sources.get(i);
+            JsEngine raw = new JsEngine(app, new Cms.Config(), source.plugin);
+            engines.add(raw);
+            raw.activate();
+            QueuedSourceEngine queued = new QueuedSourceEngine(raw);
+            LiveCatalog.PluginLoader loader = (site, url) -> queued.liveContent(url);
+            LiveCatalog.Catalog text = LiveCatalog.load(source, loader);
+            check(
+                    i == 0 ? "live_api_js_text" : "live_api_python_text",
+                    text.channelCount() == 1
+                            && text.groups.get(0).name.equals(i == 0 ? "JS" : "PY"));
+            if (i == 0)
+                check(
+                        "live_api_js_state_retained",
+                        LiveCatalog.load(source, loader)
+                                .groups
+                                .get(0)
+                                .channels
+                                .get(0)
+                                .name
+                                .equals("Channel2"));
+            source.url = "live:json";
+            check(
+                    i == 0 ? "live_api_js_json" : "live_api_python_json",
+                    LiveCatalog.load(source, loader)
+                            .groups
+                            .get(0)
+                            .channels
+                            .get(0)
+                            .name
+                            .equals("JSON"));
+        }
+        File jar = new File(folder, "live-fixture.jar");
+        files.add(jar);
+        try (InputStream in = getContext().getAssets().open("live-fixture.jar");
+                FileOutputStream out = new FileOutputStream(jar)) {
+            byte[] bytes = new byte[4096];
+            int n;
+            while ((n = in.read(bytes)) != -1) out.write(bytes, 0, n);
+        }
+        String jarConfig =
+                new JSONObject()
+                        .put("spider", Cms.fileUri(jar))
+                        .put(
+                                "lives",
+                                new org.json.JSONArray()
+                                        .put(
+                                                new JSONObject()
+                                                        .put("name", "JAR")
+                                                        .put("api", "csp_LiveFixture")
+                                                        .put("ext", "local-extension")
+                                                        .put("url", "live:txt")))
+                        .toString();
+        LiveCatalog.Source source =
+                LiveCatalog.sources(jarConfig, Cms.fileUri(new File(folder, "config.json"))).get(0);
+        CspEngine nativeEngine = new CspEngine(app, new Cms.Config(), source.plugin);
+        QueuedSourceEngine queued = new QueuedSourceEngine(nativeEngine);
+        try {
+            LiveCatalog.PluginLoader loader = (site, url) -> queued.liveContent(url);
+            check(
+                    "live_api_jar_text",
+                    LiveCatalog.load(source, loader)
+                            .groups
+                            .get(0)
+                            .channels
+                            .get(0)
+                            .name
+                            .equals("Channel1"));
+            check(
+                    "live_api_jar_state_retained",
+                    LiveCatalog.load(source, loader)
+                            .groups
+                            .get(0)
+                            .channels
+                            .get(0)
+                            .name
+                            .equals("Channel2"));
+            source.url = "live:json";
+            check(
+                    "live_api_jar_json",
+                    LiveCatalog.load(source, loader)
+                            .groups
+                            .get(0)
+                            .channels
+                            .get(0)
+                            .name
+                            .equals("JSON"));
+        } finally {
+            queued.close();
+        }
+        boolean rejected = false;
+        Cms.Site plain = new Cms.Site();
+        plain.type = 1;
+        plain.api = "https://fixture.invalid/api";
+        try {
+            new JsonCmsEngine(plain).liveContent("live:txt");
+        } catch (IOException expected) {
+            rejected = true;
+        }
+        check("live_api_missing_method_explicit", rejected);
+    }
+
     @Override
     public void onStart() {
         try {
@@ -939,6 +1085,7 @@ public final class SourceHostProbe extends Instrumentation {
                             "source-host-probe-" + System.nanoTime());
             if (!folder.mkdir()) throw new IllegalStateException("fixture directory unavailable");
             exerciseLiveDirectories();
+            exerciseLiveContent();
             write("data.json", "{\"title\":\"Local fixture\"}");
             write("helper.js", "exports.echo = value => Promise.resolve(value);");
             JsEngine js =
@@ -1071,9 +1218,17 @@ public final class SourceHostProbe extends Instrumentation {
                                         + "            return s.get('"
                                         + base
                                         + "/auth/resource', timeout=3).json()\n");
-                check(
-                        "python_session_real_http",
-                        first(session.home()).getString("vod_id").equals("session"));
+                // Do not spend the listener's accept deadline initializing the Python VM.
+                server.thread.start();
+                try {
+                    check(
+                            "python_session_real_http",
+                            first(session.home()).getString("vod_id").equals("session"));
+                } catch (Throwable failure) {
+                    report.put("python_session_fixture_requests", server.requests);
+                    report.put("python_session_fixture_error", String.valueOf(server.error));
+                    throw failure;
+                }
                 server.thread.join(1000);
                 check(
                         "python_session_cookie_scope",
@@ -1101,9 +1256,16 @@ public final class SourceHostProbe extends Instrumentation {
                                         + base
                                         + "/empty',data=b'',timeout=3).json()['bytes'] == []\n"
                                         + "        return {'list':[{'vod_id':'binary','vod_name':'Binary upload verified'}]}\n");
-                check(
-                        "python_binary_real_http",
-                        first(binary.home()).getString("vod_id").equals("binary"));
+                server.thread.start();
+                try {
+                    check(
+                            "python_binary_real_http",
+                            first(binary.home()).getString("vod_id").equals("binary"));
+                } catch (Throwable failure) {
+                    report.put("python_binary_fixture_requests", server.requests);
+                    report.put("python_binary_fixture_error", String.valueOf(server.error));
+                    throw failure;
+                }
                 server.thread.join(1000);
                 check(
                         "python_binary_exact_bytes",
@@ -1120,6 +1282,7 @@ public final class SourceHostProbe extends Instrumentation {
             exerciseCatvodContract();
             report.put("passed", true);
         } catch (Throwable failure) {
+            android.util.Log.e("SourceHostProbe", "source fixture failed", failure);
             try {
                 report.put("passed", false).put("error", failure.toString());
             } catch (Exception ignored) {

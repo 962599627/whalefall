@@ -2095,14 +2095,8 @@ final class MobileShell {
                     a.submitPage(
                             () -> {
                                 try {
-                                    if (selectedSource.isLocalProxy()) {
-                                        if (!a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true))
-                                            throw new IOException("请先在设置中开启实验性扩展支持");
-                                        if (a.config != null) a.ensureProxy(a.config);
-                                        selectedSource.url = LocalProxy.rewrite(selectedSource.url);
-                                    }
                                     final LiveCatalog.Catalog catalog =
-                                            LiveCatalog.load(selectedSource);
+                                            LiveController.loadCatalog(a, selectedSource);
                                     a.ui.post(
                                             () -> {
                                                 if (ticket != a.generation
