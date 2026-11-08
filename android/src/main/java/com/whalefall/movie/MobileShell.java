@@ -1096,10 +1096,28 @@ final class MobileShell {
                                                 if (catSnapshot.isEmpty()
                                                         && !currentVideos.isEmpty()) {
                                                     heroContainer.removeAllViews();
+                                                    int heroCardW =
+                                                            Math.max(
+                                                                    a.dp(170),
+                                                                    Math.min(
+                                                                            a.dp(340),
+                                                                            Math.round(
+                                                                                    a.windowWidth()
+                                                                                            * 0.25f)));
+                                                    int heroCardH =
+                                                            Math.max(
+                                                                    a.dp(104),
+                                                                    Math.round(
+                                                                            a.windowHeight()
+                                                                                    * 0.25f));
                                                     heroContainer.addView(
                                                             buildHeroShowcaseCard(
                                                                     siteSnapshot,
-                                                                    currentVideos.get(0)));
+                                                                    currentVideos.get(0)),
+                                                            new FrameLayout.LayoutParams(
+                                                                    heroCardW,
+                                                                    heroCardH,
+                                                                    Gravity.START));
                                                     heroContainer.setVisibility(View.VISIBLE);
                                                 } else {
                                                     heroContainer.removeAllViews();
@@ -1199,9 +1217,40 @@ final class MobileShell {
         View scrim = new View(a);
         scrim.setBackground(
                 new GradientDrawable(
-                        GradientDrawable.Orientation.TL_BR,
-                        new int[] {0x22000000, 0x6606101f, 0x99060c18}));
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[] {0x22000000, 0x9906101f, 0xee060c18}));
         card.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
+
+        // 25% 宽度的小卡：海报铺底 + 标题叠加，点击即进入
+        if (a.windowWidth() > 0 && Math.round(a.windowWidth() * 0.25f) < a.dp(330)) {
+            bgImg.setAlpha(a.videoWallpaperEnabled() ? 0.35f : 0.75f);
+            TextView miniTag = a.text("✦ 今日首推", 9, 0xfff2f5ff);
+            miniTag.setTypeface(null, Typeface.BOLD);
+            miniTag.setPadding(a.dp(6), a.dp(2), a.dp(6), a.dp(2));
+            miniTag.setBackground(glassBg(0x38ffffff, 0x30ffffff, a.dp(999), a.dp(0.6f), 0x33ffffff));
+            FrameLayout.LayoutParams tagLp =
+                    new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
+            tagLp.setMargins(a.dp(10), a.dp(10), 0, 0);
+            card.addView(miniTag, tagLp);
+            TextView miniTitle = a.text(featured.title, 12.5f, Color.WHITE);
+            miniTitle.setTypeface(null, Typeface.BOLD);
+            miniTitle.setMaxLines(2);
+            miniTitle.setEllipsize(TextUtils.TruncateAt.END);
+            miniTitle.setShadowLayer(a.dp(8), 0, a.dp(2), 0xe6000000);
+            FrameLayout.LayoutParams titleLp2 =
+                    new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.START);
+            titleLp2.setMargins(a.dp(10), 0, a.dp(10), a.dp(10));
+            card.addView(miniTitle, titleLp2);
+            TextView miniPlay = a.text("▶", 10, 0xff31141f);
+            miniPlay.setTypeface(null, Typeface.BOLD);
+            miniPlay.setGravity(Gravity.CENTER);
+            miniPlay.setBackground(glassBg(0xffffc7d6, 0xfff59ab5, a.dp(999), 0, 0));
+            FrameLayout.LayoutParams playLp =
+                    new FrameLayout.LayoutParams(a.dp(26), a.dp(26), Gravity.BOTTOM | Gravity.END);
+            playLp.setMargins(0, 0, a.dp(10), a.dp(10));
+            card.addView(miniPlay, playLp);
+            return card;
+        }
 
         LinearLayout contentRow = a.row();
         contentRow.setGravity(Gravity.CENTER_VERTICAL);

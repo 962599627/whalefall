@@ -595,11 +595,11 @@ final class MobileDetailScreen {
         titleView.setEllipsize(TextUtils.TruncateAt.END);
         titleView.setShadowLayer(a.dp(18), 0, a.dp(5), 0xf0000000);
         if (wide && wideLeftCol != null) {
+            // 片名放在顶部返回键右侧（在 topNavRow 里挂载），左栏只放海报
             titleView.setTextSize(22);
             titleView.setGravity(Gravity.START);
-            LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-1, -2);
-            titleLp.bottomMargin = a.dp(10);
-            wideLeftCol.addView(titleView, titleLp);
+            titleView.setMaxLines(1);
+            titleView.setEllipsize(TextUtils.TruncateAt.END);
             if (widePoster[0] != null)
                 wideLeftCol.addView(
                         widePoster[0], new LinearLayout.LayoutParams(a.dp(290), a.dp(435)));
@@ -672,8 +672,15 @@ final class MobileDetailScreen {
         backBtn.setOnClickListener(v -> a.onBackPressed());
         topNavRow.addView(backBtn, new LinearLayout.LayoutParams(a.dp(40), a.dp(40)));
 
-        View topSpacer = new View(a);
-        topNavRow.addView(topSpacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        if (wide) {
+            LinearLayout.LayoutParams titleNavLp = new LinearLayout.LayoutParams(0, -2, 1f);
+            titleNavLp.leftMargin = a.dp(12);
+            titleNavLp.rightMargin = a.dp(12);
+            topNavRow.addView(titleView, titleNavLp);
+        } else {
+            View topSpacer = new View(a);
+            topNavRow.addView(topSpacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        }
 
         // Top-right Independent Source Selector Button (`选源`)
         final TextView sourceTopBtn = a.text("⇄ 加载片源…", 13, Color.WHITE);
