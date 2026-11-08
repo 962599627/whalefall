@@ -1,9 +1,10 @@
 # Android Node runtime packaging
 
-The default Android download remains the pinned upstream runtime until a reviewed
-runtime archive is published and its URL and SHA-256 are updated in
-`scripts/prepare_catpaw_runtime.py`. Merely building aligned libraries does not
-change the default download or enable the application on 16 KB devices.
+The default Android download in `scripts/prepare_catpaw_runtime.py` is the
+[reviewed API 23 / 16 KB runtime r1](https://github.com/Pilipala9919/MarcoMovie/releases/tag/android-node-v18.20.4-api23-16kb-r1).
+Its SHA-256 is `e259f5ad4f31291ee5207bd7f90f9cb7e7519e4b31fac34ea6c31d55dabf69cc`.
+The release contains the immutable runtime, build recipe, provenance and license
+notices. It is a developer dependency, not an app installer or app version update.
 
 ## Build and preserve the original artifacts
 
@@ -40,7 +41,7 @@ Set `MARCOMOVIE_ANDROID_RUNTIME_ARCHIVE` to that local ZIP and
 `MARCOMOVIE_ANDROID_RUNTIME_SHA256` to its independently recorded SHA-256.
 Both variables are required. Then run the ordinary Android build with the same
 pinned NDK recorded in the artifacts. This is an explicit verification entry point,
-not a fallback download location. The existing default runtime remains selected
+not a fallback download location. The fixed published default remains selected
 when neither variable is set.
 
 The build packages `libnode.so` and `libc++_shared.so` from the verified archive,
@@ -64,10 +65,11 @@ contents, ELF architectures and ZIP/LOAD alignment.
 
 ## Acceptance and publication boundaries
 
-Run `python scripts/test_catpaw_runtime_bundle.py` for packaging failure cases.
+Run `python scripts/test_catpaw_runtime_bundle.py` for packaging failure cases,
+the default download path, exact library pins and included notices.
 These synthetic fixtures do not execute native code. The separate embedded Node
 instrumentation exercises real CatPaw and DRPY calls on API 23/4 KB, API 35/4 KB
-and API 35/16 KB emulators. It uses ordinary, non-incremental APK installation;
+and API 35/16 KB and API 36/4 KB emulators. It uses ordinary, non-incremental APK installation;
 the experimental x86_64 16 KB image's incremental filesystem can fail while
 mapping a tiny JNI library even when the exact same library runs after an
 ordinary installation.
@@ -82,6 +84,15 @@ After candidate verification, publish the immutable runtime ZIP and SHA sidecar
 as a runtime asset and set the fixed Android URL and digest in the existing
 `ASSETS` table. This is separate from application versioning and app publication.
 
+At commit `800383c`, [candidate run 42438558410](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42438558410)
+passed independent verification of the runtime ZIP, both full APKs and their
+legacy-name aliases. Every 64-bit library in the phone APK passed ELF and ZIP
+alignment. The TV APK is ARMv7-only and makes no 64-bit capability claim.
+[Source execution run 42438585956](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42438585956),
+at `ffbbfaf`, passed 48 checked assertions across the four emulator configurations
+above. It exercised real Node/JNI, DRPY and CatPaw import/worker/reopen behavior;
+it did not download media or establish physical-device playback.
+
 `.github/workflows/native-runtime-package.yml` performs the complete candidate
 flow on the pinned NDK. It accepts the three completed runtime build run IDs,
 validates them as decimal values, downloads the artifacts, creates the archive,
@@ -93,3 +104,9 @@ release. A report with `node_packaging_verified: true` and
 `whole_apk_16kb: false` explicitly lists the other libraries still needing work.
 The candidate workflow sets `--require-whole-apk`: any other 64-bit library that
 loses ELF or ZIP alignment fails the candidate after writing the detailed report.
+
+The manual `runtime_source=pinned` mode rebuilds the same reference archive but
+does not set either local-override variable. The production build must therefore
+download and verify its actual published default, after which the same independent
+APK checks compare the result with the original reviewed libraries. Keep that run
+separate from candidate-mode evidence when recording a default-pin promotion.

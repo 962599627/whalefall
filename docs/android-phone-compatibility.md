@@ -37,6 +37,10 @@ The protocol behavior was checked against the upstream
 Local regression now covers 31 catalogue assertions and 12 real-loopback HTTP
 checks. Device execution of the six new local-package assertions is tracked
 separately in the Android 6 source-host workflow; parser success is not playback.
+At `4424cbe`, [run 42439415853](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42439415853)
+passed all six new assertions on the actual API 23 runtime (86 total source-host
+checks), including local-package lookup, inherited headers and preserving inline
+channels. This still does not verify third-party media playback.
 
 ## Separate update editions
 
@@ -49,10 +53,10 @@ does not publish a new installer or change the live mirror.
 - Exercise imported user subscriptions on the Android phone runtime, including
   HTTP(S) JSON/PHP endpoints, text lists, JS/Python scripts, local packages,
   multi-repository configurations and live channels.
-- Promote the reviewed 16 KB Node runtime only after verifying its exact archive,
-  final packaged libraries and actual runtime behavior. The old default pin is
-  still present until explicitly updated; an aligned candidate is not an enabled
-  production runtime.
+- Verify the [published-default Node packaging path](android-node-runtime-packaging.md)
+  separately from the completed candidate and source-runtime checks. Continue
+  physical phone decoder, source and playback validation; aligned libraries alone
+  do not complete this stage.
 - Keep JAR/runtime limitations, remote service failures and successful playback
   distinct. The original cross-platform plugin obligations and iPhone publication
   gate remain open.

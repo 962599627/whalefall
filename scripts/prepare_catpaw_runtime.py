@@ -20,8 +20,8 @@ ASSETS = {
                   '45830ba752fa0d892c6dcd640946669801293cac820a33591ded40ac075198ec'),
     'ios': ('https://github.com/nodejs-mobile/nodejs-mobile/releases/download/v18.20.4/nodejs-mobile-v18.20.4-ios.zip',
             '8c5ca3a0d1e38de7f182a5642593e82593b820efd375a14b3ecafc4bcfee620e'),
-    'android': ('https://github.com/nodejs-mobile/nodejs-mobile/releases/download/v18.20.4/nodejs-mobile-v18.20.4-android.zip',
-                'bd7321eaa1a7602fbe0bb87302df2d79d87835cf4363fbdd17c350dbb485c2af'),
+    'android': ('https://github.com/Pilipala9919/MarcoMovie/releases/download/android-node-v18.20.4-api23-16kb-r1/marco-node-android.zip',
+                'e259f5ad4f31291ee5207bd7f90f9cb7e7519e4b31fac34ea6c31d55dabf69cc'),
 }
 
 

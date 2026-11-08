@@ -130,6 +130,19 @@ class BundleChecks(unittest.TestCase):
             self.assertIsNone(prepare.prepare('android', destination))
         self.assertFalse((destination / runtime.MANIFEST).exists())
 
+    def test_default_download_uses_pin_and_validates_manifest(self):
+        output, digest, _ = self.make()
+        with patch.dict(os.environ, {'MARCOMOVIE_RUNTIME_CACHE': str(self.root/'download')}, clear=True), \
+                patch.dict(prepare.ASSETS, {'android': ('https://fixture.invalid/runtime.zip', digest)}), \
+                patch.object(prepare.urllib.request, 'urlopen', return_value=io.BytesIO(output.read_bytes())) as download, \
+                contextlib.redirect_stdout(io.StringIO()):
+            manifest = prepare.prepare('android', self.root/'default')
+            self.assertEqual(manifest['commit'], runtime.SOURCE_COMMIT)
+            download.assert_called_once_with('https://fixture.invalid/runtime.zip', timeout=60)
+            cached = self.root/'download/runtime.zip'
+            cached.write_bytes(cached.read_bytes() + b'changed')
+            with self.assertRaises(ValueError): prepare.archive('android')
+
     def test_capability_only_exact_three_64bit_libraries(self):
         _, _, manifest = self.make()
         files = {'lib/arm64-v8a/' + name: elf(64, 183) for name in ('libnode.so', 'libmarco_node.so', 'libc++_shared.so')}
@@ -160,6 +173,7 @@ class BundleChecks(unittest.TestCase):
         ndk.mkdir(parents=True)
         properties = ndk_root / 'source.properties'
         properties.write_text('Pkg.Revision = ' + runtime.NDK_VERSION + '\n')
+        (properties.parent/'NOTICE.toolchain').write_text('matching NDK runtime notices')
         for triple, bits, machine in [('arm-linux-androideabi', 32, 40), ('aarch64-linux-android', 64, 183)]:
             local = ndk / 'sysroot/usr/lib' / triple
             local.mkdir(parents=True)
@@ -180,6 +194,7 @@ class BundleChecks(unittest.TestCase):
             files, assets = android.build()
             self.assertEqual(files['lib/arm64-v8a/libc++_shared.so'], elf(64, 183))
             self.assertEqual((assets / 'catpaw/node-mobile-LICENSE.txt').read_text(), 'verified artifact license')
+            self.assertEqual((assets / 'catpaw/android-ndk-NOTICE.txt').read_text(), 'matching NDK runtime notices')
             capability = assets / 'catpaw/runtime-capabilities.json'
             evidence = project / 'android/build/catpaw/runtime-build-evidence.json'
             self.assertTrue(capability.is_file() and evidence.is_file())

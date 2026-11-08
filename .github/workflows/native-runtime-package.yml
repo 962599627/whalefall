@@ -5,6 +5,11 @@ on:
     paths: ['.github/workflows/native-runtime-package.yml']
   workflow_dispatch:
     inputs:
+      runtime_source:
+        description: 'Validate local candidate override or actual published default download'
+        type: choice
+        options: [candidate, pinned]
+        default: candidate
       arm_run_id:
         description: 'Completed API23 ARMv7 runtime build run ID'
         type: string
@@ -31,6 +36,7 @@ jobs:
       ARM_RUN_ID: ${{ inputs.arm_run_id || '42367030545' }}
       ARM64_RUN_ID: ${{ inputs.arm64_run_id || '42361059731' }}
       X86_64_RUN_ID: ${{ inputs.x86_64_run_id || '42361059731' }}
+      RUNTIME_SOURCE: ${{ inputs.runtime_source || 'candidate' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -79,8 +85,11 @@ jobs:
           bundle({'armeabi-v7a': Path('node-artifacts/arm'), 'arm64-v8a': Path('node-artifacts/arm64'), 'x86_64': Path('node-artifacts/x86_64')},
                  {'armeabi-v7a': os.environ['ARM_RUN_ID'], 'arm64-v8a': os.environ['ARM64_RUN_ID'], 'x86_64': os.environ['X86_64_RUN_ID']}, output)
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
-              env.write('MARCOMOVIE_ANDROID_RUNTIME_ARCHIVE=' + str(output) + '\n')
-              env.write('MARCOMOVIE_ANDROID_RUNTIME_SHA256=' + sha256(output.read_bytes()) + '\n')
+              if os.environ['RUNTIME_SOURCE'] == 'candidate':
+                  env.write('MARCOMOVIE_ANDROID_RUNTIME_ARCHIVE=' + str(output) + '\n')
+                  env.write('MARCOMOVIE_ANDROID_RUNTIME_SHA256=' + sha256(output.read_bytes()) + '\n')
+              elif os.environ['RUNTIME_SOURCE'] != 'pinned':
+                  raise SystemExit('Unknown runtime source')
           PY
       - uses: actions/setup-java@v4
         with:
@@ -89,7 +98,7 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools ndk;28.2.13676358'
-      - name: Build full candidate APKs using only the verified runtime and pinned NDK
+      - name: Build full APKs using the selected runtime path and pinned NDK
         run: |
           export MARCOMOVIE_BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"

@@ -143,6 +143,8 @@ def build():
         shutil.copy2(ROOT/'shared/catpaw'/name,assets/name)
     if verified is not None:
         shutil.copy2(unpack/'LICENSE', assets/'node-mobile-LICENSE.txt')
+        # Ship the matching NDK runtime notices with the C++ binary as well.
+        shutil.copy2(ndk.parents[3]/'NOTICE.toolchain', assets/'android-ndk-NOTICE.txt')
     listing = json.loads((ROOT/'shared/catpaw/drpy-assets.json').read_text(encoding='utf-8'))
     for entry in listing['files']:
         name = entry['name']
