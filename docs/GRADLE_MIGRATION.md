@@ -52,3 +52,11 @@
 ## 结论
 Gradle 化路径已经跑通「源码 + 资源 + 运行时 assets + jniLibs + 签名配置」的完整打包链路；
 剩余工作是把 `scripts/build_android.py` 中的资产生成/ABI 过滤/版本注入抽成 Gradle task，并补 R8/Baseline Profile 与 mobile/tv flavor。
+
+## 第三轮：R8 release 与手机 manifest
+- 从 `android/build/AndroidManifest.mobile.xml` 取手机版 manifest（base manifest 是 TV 版，直接打包会进 TV 界面），去掉 package 属性后固定给 Gradle 用
+- `MARCOMOVIE_KEY_PASSWORD` 已确认可用值（见构建环境），Gradle release 签名与现有 dev 证书一致，可直接覆盖安装
+- R8 规则见 `gradle/app/proguard-rules.pro`（-dontobfuscate，keep com.pilipala/com.whalefall/org.json/kotlin/androidx.media3/原生方法）
+- 产物：`app-release.apk` arm64 + useLegacyPackaging → **32.6MB**（-47%），可正常启动、手机 UI 正常
+- **问题**：该包能运行但片源扩展引擎初始化失败（`扩展引擎初始化失败：IOException`），首页内容加载不了；判定为 R8 对 CSP/CatPaw 运行时反射加载路径的裁剪或 native 资源定位差异，暂不发布
+- 已回退安装稳定自定义构建（61.8MB）。后续需：给 CatPaw/CSP 引擎补 keep（含 assets 读取相关类）、对比 native 库加载路径，再验证

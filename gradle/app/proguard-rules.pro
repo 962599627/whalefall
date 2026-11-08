@@ -1,0 +1,13 @@
+# 鲸落 R8 规则（第一版：保守 keep，先验证稳定性）
+-dontobfuscate
+-dontwarn **
+-keepclasseswithmembernames class * { native <methods>; }
+-keep class com.pilipala.** { *; }
+-keep class com.whalefall.movie.** { *; }
+-keep class org.json.** { *; }
+-keep class kotlin.** { *; }
+-keep class kotlinx.** { *; }
+-keep class com.frostwire.** { *; }
+-keep class org.gudy.** { *; }
+-keep class androidx.media3.** { *; }
+-keepclassmembers class **.R$* { public static <fields>; }
