@@ -221,10 +221,10 @@ footer{margin-top:26px;text-align:center;font-size:11px;color:#5f6f88;line-heigh
   <section v-if="tab==='files'" class="grid">
     <div class="card">
       <h2>上传文件到 App <span class="tag">{{files.length}}</span></h2>
-      <div class="sub">仅支持：视频（mp4/mkv/webm/mov/flv）、文本（md/txt/json/log）、图片（jpg/png/webp/gif）、APK；单文件 ≤200MB。
+      <div class="sub">支持视频 / 文本 / 图片 / APK（系统文件选择器里选，最多 200MB）。
         也可以用 FTP：<b>{{ftp}}</b>（用户 wf / 密码见 App 面板）</div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <input type="file" ref="picker" accept=".mp4,.mkv,.webm,.mov,.m4v,.avi,.flv,.md,.markdown,.txt,.log,.json,.jpg,.jpeg,.png,.webp,.gif,.bmp,.apk" style="display:none" @change="pickFile">
+        <input type="file" ref="picker" accept="*/*" style="display:none" @change="pickFile">
         <button class="btn" @click="$refs.picker.click()">{{uploadBusy?'上传中…':'选择文件上传'}}</button>
         <span style="font-size:11.5px;color:var(--dim)" v-if="uploadName">{{uploadName}}</span>
       </div>

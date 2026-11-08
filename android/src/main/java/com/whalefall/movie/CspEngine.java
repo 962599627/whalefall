@@ -69,8 +69,13 @@ public final class CspEngine implements SourceEngine {
         } catch (Throwable error) {
             Throwable cause = unwrap(error);
             diagnostic("load_failed", site.api, cause);
+            String detail = cause.getMessage();
             throw new EngineException(
-                    "扩展引擎初始化失败：" + cause.getClass().getSimpleName() + "。此来源尚未验证兼容。", cause);
+                    "扩展引擎初始化失败："
+                            + cause.getClass().getSimpleName()
+                            + (detail == null || detail.trim().isEmpty() ? "" : "：" + detail)
+                            + "。此来源尚未验证兼容。",
+                    cause);
         }
     }
 
