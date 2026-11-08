@@ -78,6 +78,16 @@ are fixture compatibility checks, not a claim that proprietary plugins or remote
 channels all work. The first phone run at `5e8d4d1` passed the new proxy-reader
 checks but failed later in a Python HTTP fixture; it is not an overall pass.
 
+At commit `1d4871a`, the completed
+[Android 16 phone run](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42443360552)
+passed all 100 source assertions, including all 20 live-related cases. The
+[Android 6 TV run](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42443360580)
+passed the same 100 source assertions plus 25 subtitle and 96 home/history
+assertions. The retained JSON results were checked against their counts and
+fixture editions independently of the workflow status. This validates the local
+source engines and catalogue path on those emulator runtimes; physical devices,
+ARM media decoding and third-party stream availability remain separate gates.
+
 ## Separate update editions
 
 [Update isolation](android-update-isolation.md) records the phone/TV feeds,
