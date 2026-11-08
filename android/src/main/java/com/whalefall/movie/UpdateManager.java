@@ -246,7 +246,14 @@ final class UpdateManager {
                     } catch (InterruptedIOException e) {
                         message = cancel ? "已取消，当前版本不受影响" : "网络连接超时；若已有下载进度，再次下载可继续";
                     } catch (Exception e) {
-                        message = "检查或下载失败，请检查网络后重试；现有版本仍可使用";
+                        String detail = e.getMessage();
+                        message =
+                                "检查或下载失败："
+                                        + e.getClass().getSimpleName()
+                                        + (detail == null || detail.trim().isEmpty()
+                                                ? ""
+                                                : "（" + detail + "）")
+                                        + "。请检查网络后重试；现有版本仍可使用";
                         AppLog.w("UpdateManager", "Check failed", e);
                     } finally {
                         busy = false;
