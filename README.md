@@ -2,7 +2,7 @@
   <img src="docs/images/tv-banner-960x540.png" width="480" alt="Marco Movie — 银色场记板与播放标志" />
   <h1>Marco Movie</h1>
   <p>支持 Android 电视、手机、平板及 Windows / macOS / iOS 多端自适应的播放器。</p>
-  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.5.0 · Android 电视版 / Android 64 位手机版 / Android 4.0+ 轻量版 · 桌面与移动端跨平台</p>
+  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · Android 手机/电视、Windows：0.5.1 · iOS、macOS、Lite：0.5.0 · 各端独立更新</p>
   <p><a href="https://marcotv.wlj9919.top/movie/">镜像下载与产品展示</a> · <a href="https://github.com/Pilipala9919/MarcoMovie/releases">GitHub 下载</a> · <a href="docs/USER_GUIDE.md">使用指南</a> · <a href="docs/BUILD.md">构建说明</a> · <a href="docs/PRIVACY.md">隐私说明</a></p>
 </div>
 
@@ -38,7 +38,7 @@ Marco Movie 希望让大屏电视、随身手机、平板电脑与桌面端上�
 ## 安装与开始使用
 
 1. 在 [镜像下载页](https://marcotv.wlj9919.top/movie/) 或 [Releases](https://github.com/Pilipala9919/MarcoMovie/releases) 下载 APK 安装包，并核对随附的 SHA-256 文件。
-2. 根据设备选择独立安装包：电视/盒子用 `-preview.apk`（ARM 32 位），手机/平板用 `-mobile.apk`（包含 ARM 32/64 位）；旧 Android 4.0+ 设备选择独立 Lite 包。Windows / macOS / iOS 构建产物见对应发布附件；最低系统声明不代表已通过该设备的实测。
+2. 根据设备选择独立安装包：电视/盒子用 `-android-tv.apk`（ARM 32 位），手机/平板用 `-android-mobile.apk`（包含 ARM 32/64 位）；旧 Android 4.0+ 设备选择独立 Lite 包。从 0.5.0 首次升级请手动安装对应设备包，此后进入独立更新通道。Windows / macOS / iOS 见各自发布附件；最低系统声明不代表已通过该设备的实测。每次修复与验证范围见[版本记录](CHANGELOG.md)。
 3. 打开应用导入配置：
    - **手机 / 平板端**：直接在首页欢迎卡片输入网址，或复制配置链接/JSON 后点击「📋 一键读取手机剪贴板并导入」，也可选择手机本地 JSON 文件，无需扫码。
    - **电视端**：选择“导入我的配置”，用同一局域网的手机扫码粘贴自行合法获取的配置地址；也可选择遥控输入或本地文件。本项目不提供获取影视资源的方法或地址。

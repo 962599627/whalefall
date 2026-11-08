@@ -9,7 +9,8 @@ Desktop/Apple tags use `windows-vX.Y.Z`, `ios-vX.Y.Z` and `macos-vX.Y.Z`. They d
 Android phone/tablet and TV editions now have separate update feeds and explicit
 `android-mobile` / `android-tv` package names. See [Android update isolation](android-update-isolation.md)
 for the release tags, old-client migration aliases and runtime verification scope.
-This is implementation work, not an announcement of a new Android release.
+Android phone/tablet and TV 0.5.1 were independently published on November 8;
+see the platform-specific records below.
 
 See [installation package names](installation-package-names.md) for explicit
 system/device and installer/portable labels across all platforms. Old-name assets
@@ -39,6 +40,28 @@ package/checksum URLs and hashes plus 47 historical release records. The live
 13 sync/rendering tests passed. [The subsequent automatic-sync
 run](https://github.com/Pilipala9919/mtv/actions/runs/42381304827) also passed.
 This website deployment did not replace any application installer.
+
+## Published Android maintenance update
+
+[Android phone/tablet 0.5.1](releases/android-mobile-v0.5.1.md) and
+[Android TV/box 0.5.1](releases/android-tv-v0.5.1.md) use build commit
+`c10becae6aea8506858a8076b7938a196d6300b8` (version code 51).
+The scoped release ships adaptive phone landscape controls, Android 6 subtitle
+compatibility, history/search fixes, source-host improvements and isolated edition
+updates. Complete build 42449618961 and runtime packaging run 42449705860 passed.
+The downloaded CI packages were signed with the existing official key; every
+non-signature ZIP entry was retained, production host assets were checked against
+the exact build commit, and native runtime provenance and alignment were verified.
+The phone APK passes whole-package 16KB checks; the TV APK remains ARM 32-bit.
+
+Both releases include matching source archives, SHA-256 files and byte-identical
+legacy aliases. They do not replace the legacy global latest release. Users on
+0.5.0 must manually select the correct device package once; thereafter each
+edition follows its own update feed. The mirror receives the same version notes
+and package links without changing its styles or other platforms' installers.
+Automated/emulator/package checks are not universal physical-device playback
+acceptance. The 33 outstanding plugin-route acceptances, full native Python
+support and the iPhone publication gate remain open.
 
 ## Published Windows update
 
