@@ -731,7 +731,8 @@ final class MobileShell {
         ++homeRequest;
         homeReady = false;
         ++a.generation;
-        if (activeTab == 0 && homeScroll != null) homeScrollY = homeScroll.getScrollY();
+        if (activeTab == 0 && homeScroll != null && homeScroll.getScrollY() > 0)
+            homeScrollY = homeScroll.getScrollY();
         activeTab = Math.max(0, Math.min(5, index));
         a.cancelPageRequests();
         // When on Search tab (1), highlight Home (0) in the 4-tab dock
