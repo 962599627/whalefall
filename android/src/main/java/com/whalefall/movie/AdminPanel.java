@@ -64,6 +64,14 @@ final class AdminPanel {
             panel.addView(a.text("二维码生成失败：" + e.getMessage(), 12, MainActivity.MUTED));
         }
 
+        TextView tokenLine =
+                a.text("访问令牌：" + console.token, 12, 0xffffb3c8);
+        tokenLine.setGravity(Gravity.CENTER);
+        tokenLine.setTextIsSelectable(true);
+        LinearLayout.LayoutParams tokenLp = new LinearLayout.LayoutParams(-1, -2);
+        tokenLp.topMargin = a.dp(6);
+        panel.addView(tokenLine, tokenLp);
+
         TextView address = a.text(url, 13, MainActivity.WHITE);
         address.setTag("admin-url");
         address.setGravity(Gravity.CENTER);

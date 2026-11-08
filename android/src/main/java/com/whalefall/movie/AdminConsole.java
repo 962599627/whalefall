@@ -36,7 +36,7 @@ final class AdminConsole implements Closeable {
 
     AdminConsole(MainActivity host) throws IOException {
         a = host;
-        byte[] seed = new byte[24];
+        byte[] seed = new byte[6];
         new java.security.SecureRandom().nextBytes(seed);
         StringBuilder sb = new StringBuilder();
         for (byte b : seed) sb.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
@@ -154,18 +154,18 @@ final class AdminConsole implements Closeable {
     private void route(
             OutputStream out, String method, String path, String query, String origin, String body)
             throws IOException {
+        if (path.equals("/vue.global.prod.js") || path.equals("/assets/vue.global.prod.js")) {
+            send(out, "application/javascript; charset=utf-8", asset("admin/vue.global.prod.js"));
+            return;
+        }
         if (!tokenMatches(query, origin)) {
-            send(out, "text/plain; charset=utf-8", "403 invalid token");
+            send(out, 403, "text/plain; charset=utf-8", "403 invalid token");
             return;
         }
         if (path.equals("/") || path.equals("/index.html")) {
             String html = new String(asset("admin/index.html"), StandardCharsets.UTF_8);
             html = html.replace("__ADMIN_TOKEN__", token);
             send(out, "text/html; charset=utf-8", html);
-            return;
-        }
-        if (path.equals("/vue.global.prod.js") || path.equals("/assets/vue.global.prod.js")) {
-            send(out, "application/javascript; charset=utf-8", asset("admin/vue.global.prod.js"));
             return;
         }
         if (path.startsWith("/api/files/text")) {
@@ -534,8 +534,21 @@ final class AdminConsole implements Closeable {
     }
 
     private static void send(OutputStream out, String type, byte[] body) throws IOException {
+        send(out, 200, type, body);
+    }
+
+    private static void send(OutputStream out, int status, String type, String body)
+            throws IOException {
+        send(out, status, type, body.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static void send(OutputStream out, int status, String type, byte[] body)
+            throws IOException {
         String head =
-                "HTTP/1.1 200 OK\r\n"
+                "HTTP/1.1 "
+                        + status
+                        + (status == 200 ? " OK" : status == 403 ? " Forbidden" : " Error")
+                        + "\r\n"
                         + "Content-Type: "
                         + type
                         + "\r\n"
