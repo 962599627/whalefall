@@ -56,6 +56,7 @@ def _write_windows_ico(ico_path: Path, source_png: Path) -> None:
 
 def main() -> None:
     subprocess.run([sys.executable, str(REPO_ROOT / 'scripts/prepare_python_html.py'), '--check'], check=True)
+    subprocess.run([sys.executable, str(REPO_ROOT / 'scripts/prepare_python_modules.py'), '--check'], check=True)
     src = ROOT / "src"
     lib = ROOT / "lib"
     if src.exists():

@@ -15,7 +15,7 @@ function context() {
   let requests = 0, siblings = 0;
   const runtime = vm.createContext({console, setTimeout, clearTimeout,
     req() { requests++; throw Error('test forbids network requests'); }});
-  for (const file of ['skulpt.min.js', 'skulpt-stdlib.js', 'json.js', 'io.js', 'spider.js']) {
+  for (const file of ['skulpt.min.js', 'skulpt-stdlib.js', 'compiled-modules.js', 'json.js', 'io.js', 'spider.js']) {
     vm.runInContext(fs.readFileSync(path.join(root, 'android/src/main/assets/python-host', file), 'utf8'), runtime, {filename:file});
   }
   return {runtime, counts:() => [requests, siblings], sibling() { siblings++; throw Error('test forbids remote imports'); }};

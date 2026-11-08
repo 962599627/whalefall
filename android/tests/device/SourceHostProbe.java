@@ -79,6 +79,14 @@ public final class SourceHostProbe extends Instrumentation {
             engines.add(engine);
             return engine;
         } finally {
+            if (name.endsWith(".py")) {
+                JSONObject times = report.optJSONObject("python_initialization_ms");
+                if (times == null) {
+                    times = new JSONObject();
+                    report.put("python_initialization_ms", times);
+                }
+                times.put(name, android.os.SystemClock.elapsedRealtime() - started);
+            }
             if (name.equals("fixture.py"))
                 report.put(
                         "python_html_init_ms", android.os.SystemClock.elapsedRealtime() - started);

@@ -565,6 +565,9 @@ function createPythonSpider(source, files = {}, readSibling, packageData) {
       library["src/lib/" + path] = files[path];
     }
   }
+  // Only byte-identical app libraries use generated code. Imported overrides
+  // keep their Python implementation, and every runtime creates fresh modules.
+  installPythonPrecompiled(library);
   Sk.configure({
     __future__: Sk.python3,
     execLimit: 8000,

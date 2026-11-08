@@ -14,6 +14,8 @@ jobs:
       - run: python scripts/test_drpy_assets.py
       - run: python scripts/prepare_python_html.py --check
       - run: python scripts/test_python_html_assets.py
+      - run: python scripts/prepare_python_modules.py --check
+      - run: node scripts/test_python_compiled_modules.js
       - run: python scripts/update_drpy_assets.py --check
 
   format:

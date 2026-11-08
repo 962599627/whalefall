@@ -71,7 +71,7 @@ function context(req, script = source, inspect = () => {}, readSibling) {
   const dependencies = fs.readFileSync(path.join(__dirname, '../android/src/main/assets/python-host/parser.js'), 'utf8');
   vm.runInContext("globalThis.__moviePythonHtmlParser=function(){const navigator={appName:'Netscape'};\n" + dependencies +
     "\nglobalThis.__moviePythonHtmlParser=()=>MoviePythonHtml;return MoviePythonHtml;};", context);
-  for (const name of ['skulpt.min.js', 'skulpt-stdlib.js', 'html.js', 'regex.js', 'json.js', 'io.js', 'spider.js']) {
+  for (const name of ['skulpt.min.js', 'skulpt-stdlib.js', 'compiled-modules.js', 'html.js', 'regex.js', 'json.js', 'io.js', 'spider.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../android/src/main/assets/python-host', name), 'utf8'), context, {filename:name});
   }
   inspect(context);

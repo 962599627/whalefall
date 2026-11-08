@@ -61,7 +61,7 @@ NSArray *runQuickJsProbe(NSString *assets) {
     NSString *dependencies=[NSString stringWithContentsOfFile:[assets stringByAppendingPathComponent:@"python-host/parser.js"] encoding:NSUTF8StringEncoding error:nil];
     if(!dependencies) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"html_dependency_missing" userInfo:nil];
     evaluate(ctx,[@"globalThis.__moviePythonHtmlParser=function(){\n" stringByAppendingFormat:@"%@\nglobalThis.__moviePythonHtmlParser=()=>MoviePythonHtml;return MoviePythonHtml;};", dependencies],JS_EVAL_TYPE_GLOBAL,@"python-parser-loader.js");
-    for(NSString *name in @[@"skulpt.min.js",@"skulpt-stdlib.js",@"html.js",@"regex.js",@"json.js",@"io.js",@"spider.js"]){
+    for(NSString *name in @[@"skulpt.min.js",@"skulpt-stdlib.js",@"compiled-modules.js",@"html.js",@"regex.js",@"json.js",@"io.js",@"spider.js"]){
       NSString *file=[[assets stringByAppendingPathComponent:@"python-host"] stringByAppendingPathComponent:name];
       NSString *source=[NSString stringWithContentsOfFile:file encoding:NSUTF8StringEncoding error:nil];
       if(!source) @throw [NSException exceptionWithName:@"QuickJsProbe" reason:@"python_asset_missing" userInfo:nil];

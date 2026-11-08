@@ -13,6 +13,7 @@ Future<List<String>> _loadPrelude() async {
       for (final name in [
         'skulpt.min.js',
         'skulpt-stdlib.js',
+        'compiled-modules.js',
         'html.js',
         'regex.js',
         'json.js',

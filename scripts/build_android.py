@@ -30,6 +30,8 @@ def run(*args, capture=False):
 def main():
     from prepare_python_html import verify as verify_python_html
     verify_python_html()
+    from prepare_python_modules import verify as verify_python_modules
+    verify_python_modules()
     if 'MARCOMOVIE_ANDROID_JAR' not in os.environ:
         from prepare_android_platform import prepare
         prepare()

@@ -370,6 +370,7 @@ public final class JsEngine implements SourceEngine {
                     new String[] {
                         "skulpt.min.js",
                         "skulpt-stdlib.js",
+                        "compiled-modules.js",
                         "html.js",
                         "regex.js",
                         "json.js",

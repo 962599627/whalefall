@@ -8,7 +8,7 @@ const vm = require('node:vm');
 
 const base = 'http://127.0.0.1:18345/_spider/' + 'a'.repeat(43) + '/proxy?do=py&siteKey=fixture-source';
 const directory = path.join(__dirname, '../android/src/main/assets/python-host');
-const files = ['skulpt.min.js', 'skulpt-stdlib.js', 'html.js', 'regex.js', 'json.js', 'io.js', 'spider.js']
+const files = ['skulpt.min.js', 'skulpt-stdlib.js', 'compiled-modules.js', 'html.js', 'regex.js', 'json.js', 'io.js', 'spider.js']
   .map(name => [name, fs.readFileSync(path.join(directory, name), 'utf8')]);
 let checks = 0;
 
