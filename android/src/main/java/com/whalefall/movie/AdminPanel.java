@@ -47,7 +47,7 @@ final class AdminPanel {
         panel.addView(note);
         a.gap(panel, 12);
 
-        int qrSize = a.dp(200);
+        int qrSize = a.dp(168);
         try {
             BitMatrix matrix = new QRCodeWriter().encode(url, BarcodeFormat.QR_CODE, qrSize, qrSize);
             int[] pixels = new int[qrSize * qrSize];
@@ -59,7 +59,7 @@ final class AdminPanel {
             qr.setContentDescription("管理后台二维码");
             qr.setImageBitmap(
                     Bitmap.createBitmap(pixels, qrSize, qrSize, Bitmap.Config.ARGB_8888));
-            panel.addView(qr, new LinearLayout.LayoutParams(a.dp(200), a.dp(200)));
+            panel.addView(qr, new LinearLayout.LayoutParams(a.dp(168), a.dp(168)));
         } catch (Exception e) {
             panel.addView(a.text("二维码生成失败：" + e.getMessage(), 12, MainActivity.MUTED));
         }
@@ -133,7 +133,7 @@ final class AdminPanel {
         AppDialog dialog =
                 new AppDialog.Builder(a)
                         .setTitle("管理员后台")
-                        .setView(panel)
+                        .setView(panelScroll(panel))
                         .setNegativeButton("完成", null)
                         .create();
         dialog.setOnDismissListener(
