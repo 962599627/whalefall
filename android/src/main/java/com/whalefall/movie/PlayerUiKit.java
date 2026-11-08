@@ -144,18 +144,18 @@ final class PlayerUiKit {
 
     // ===================== 进度条 =====================
 
-    /** 4dp 三段式进度轨道：底轨 30% 白、缓冲 50% 白、已播樱花粉（纯黑遮罩上清晰）。 */
+    /** 6dp 三段式进度轨道：底轨 50% 白、缓冲 80% 白、已播浅樱粉（亮画面上也清晰）。 */
     static Drawable seekProgress(MainActivity a) {
-        int radius = Math.max(1, a.dp(2));
-        GradientDrawable bg = capsuleBg(0x4dffffff, 0, 0, radius);
-        GradientDrawable secondary = capsuleBg(0x80ffffff, 0, 0, radius);
-        GradientDrawable played = capsuleBg(0xffff8fb1, 0, 0, radius);
+        int radius = Math.max(1, a.dp(3));
+        GradientDrawable bg = capsuleBg(0x80ffffff, 0, 0, radius);
+        GradientDrawable secondary = capsuleBg(0xccffffff, 0, 0, radius);
+        GradientDrawable played = capsuleBg(0xffffb3c8, 0, 0, radius);
         ClipDrawable secondaryClip =
                 new ClipDrawable(secondary, Gravity.LEFT, ClipDrawable.HORIZONTAL);
         ClipDrawable playedClip = new ClipDrawable(played, Gravity.LEFT, ClipDrawable.HORIZONTAL);
         LayerDrawable layers =
                 new LayerDrawable(new Drawable[] {bg, secondaryClip, playedClip});
-        int inset = Math.max(0, a.dp(14)); // SeekBar 高 32dp → 轨道居中 4dp
+        int inset = Math.max(0, a.dp(17)); // SeekBar 高 40dp → 轨道居中 6dp
         layers.setLayerInset(0, 0, inset, 0, inset);
         layers.setLayerInset(1, 0, inset, 0, inset);
         layers.setLayerInset(2, 0, inset, 0, inset);
@@ -165,9 +165,9 @@ final class PlayerUiKit {
         return layers;
     }
 
-    /** 进度拖拽圆点：白色圆 + 深色描边；拖拽时放大。 */
+    /** 进度拖拽圆点：白色圆 + 深色描边；默认 16dp、拖拽 22dp。 */
     static Drawable seekThumb(MainActivity a, boolean dragging) {
-        int size = a.dp(dragging ? 18 : 12);
+        int size = a.dp(dragging ? 22 : 16);
         GradientDrawable d = new GradientDrawable();
         d.setShape(GradientDrawable.OVAL);
         d.setColor(0xffffffff);
@@ -377,7 +377,7 @@ final class PlayerUiKit {
             canvas.translate(b.left + (w - 24 * scale) / 2f, b.top + (h - 24 * scale) / 2f);
             canvas.scale(scale, scale);
             paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(1.9f);
+            paint.setStrokeWidth(2.2f);
             drawIcon(canvas);
             canvas.restore();
         }

@@ -746,11 +746,6 @@ final class PlaybackController {
         if (!a.isTvDevice()) {
             a.applyMobileSystemBars(false);
             a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
-            if (a.usableWidth > a.usableHeight && a.usableHeight > 0) {
-                int tmp = a.usableWidth;
-                a.usableWidth = a.usableHeight;
-                a.usableHeight = tmp;
-            }
         }
         if (a.current != null && a.current.player)
             a.current =
@@ -767,11 +762,6 @@ final class PlaybackController {
         if (!a.isTvDevice()) {
             a.applyMobileSystemBars(false);
             a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
-            if (a.usableWidth > a.usableHeight && a.usableHeight > 0) {
-                int tmp = a.usableWidth;
-                a.usableWidth = a.usableHeight;
-                a.usableHeight = tmp;
-            }
         }
         if (!a.back.isEmpty()) {
             releasePlayer(a);
@@ -1360,7 +1350,7 @@ final class PlaybackController {
 
     static void previewSeek(MainActivity a) {
         if (!a.seekGesture.active || a.playbackControls == null) return;
-        a.playbackControls.timeline.setProgress(a.seekGesture.target);
+        a.playbackControls.setTimelineProgress(a.seekGesture.target);
         a.playClock.setText(
                 formatTime(a.seekGesture.target) + " / " + formatTime(a.seekGesture.duration));
         long now = SystemClock.uptimeMillis();
@@ -1397,7 +1387,7 @@ final class PlaybackController {
         }
         if (a.player != null && a.prepared && a.playbackControls != null) {
             int position = commit ? target : a.player.getCurrentPosition();
-            a.playbackControls.timeline.setProgress(position);
+            a.playbackControls.setTimelineProgress(position);
             a.playClock.setText(formatTime(position) + " / " + formatTime(a.player.getDuration()));
         }
         if (commit) scheduleHide(a);

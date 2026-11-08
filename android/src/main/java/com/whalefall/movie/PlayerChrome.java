@@ -26,7 +26,7 @@ final class PlayerChrome {
     final LinearLayout loadingPill;
     final LinearLayout topActions;
     TextView loadingText, episodeLabel, titleView, seekHint, resolution;
-    final TextView timeCurrent, timeTotal, clockBig, clockEnd, bitrate;
+    final TextView timeCurrent, timeTotal, clockBig, clockEnd, bitrate, gesturePill;
     final PlayerUiKit.IconView moreBtn, foldBtn;
     final PlayerUiKit.PlayPauseButton state;
     final TextView seekBubble;
@@ -61,7 +61,7 @@ final class PlayerChrome {
         bottomShade.setBackground(
                 new GradientDrawable(
                         GradientDrawable.Orientation.TOP_BOTTOM,
-                        new int[] {0x00000000, 0x99000000}));
+                        new int[] {0x00000000, 0xe6000000}));
         overlay.addView(bottomShade, new FrameLayout.LayoutParams(-1, a.dp(200), Gravity.BOTTOM));
 
         // 外部逻辑（PlaybackController.clock）每秒写 a.playClock，这里保留一个隐藏占位避免 NPE
@@ -107,7 +107,7 @@ final class PlayerChrome {
         episodeLabel.setShadowLayer(a.dp(4), 0, a.dp(1), 0xcc000000);
         subRow.addView(episodeLabel, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        resolution = a.text("--", 11, 0xffc7d2e3);
+        resolution = a.text("", 11, 0xffc7d2e3);
         resolution.setTag("player-resolution");
         resolution.setSingleLine(true);
         resolution.setShadowLayer(a.dp(4), 0, a.dp(1), 0xcc000000);
@@ -117,17 +117,35 @@ final class PlayerChrome {
         titleCol.addView(subRow, new LinearLayout.LayoutParams(-1, -2));
 
         a.playStatus = a.text("", 10.5f, 0xff8d9cb6);
-        a.playStatus.setSingleLine(true);
-        a.playStatus.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        a.playStatus.setPadding(0, a.dp(2), 0, 0);
-        a.playStatus.setShadowLayer(a.dp(4), 0, a.dp(1), 0xcc000000);
-        titleCol.addView(a.playStatus, new LinearLayout.LayoutParams(-1, -2));
+        a.playStatus.setVisibility(View.GONE);
         titleRow.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1f));
         heading.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
         overlay.addView(heading, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
 
+        // 手势 / 状态提示：屏幕中下方小胶囊，随控制条出现与淡出
+        gesturePill = a.text("", 11, Color.WHITE);
+        gesturePill.setSingleLine(true);
+        gesturePill.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        gesturePill.setGravity(Gravity.CENTER);
+        gesturePill.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+        gesturePill.setBackground(
+                PlayerUiKit.capsuleBg(0xb3000000, 0x26ffffff, Math.max(1, a.dp(0.8f)), a.dp(14)));
+        gesturePill.setShadowLayer(a.dp(6), 0, a.dp(2), 0xcc000000);
+        gesturePill.setVisibility(View.GONE);
+        overlay.addView(
+                gesturePill,
+                new FrameLayout.LayoutParams(
+                        -2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+
         topRight = a.row();
         topRight.setGravity(Gravity.CENTER_VERTICAL);
+        bitrate = a.text("— Mbps", 10.5f, 0xff8d9cb6);
+        bitrate.setSingleLine(true);
+        bitrate.setShadowLayer(a.dp(4), 0, a.dp(1), 0xcc000000);
+        LinearLayout.LayoutParams bitrateLp = new LinearLayout.LayoutParams(-2, -2);
+        bitrateLp.rightMargin = a.dp(8);
+        topRight.addView(bitrate, bitrateLp);
+
         moreBtn = new PlayerUiKit.IconView(a, PlayerUiKit.ICON_MORE, 0xfff2f6ff, a.dp(17));
         moreBtn.setBackground(
                 PlayerUiKit.circleBg(0x66000000, 0x40ffffff, Math.max(1, a.dp(1))));
@@ -140,13 +158,6 @@ final class PlayerChrome {
                 });
         MobileDetailScreen.bindTouchFeedback(moreBtn);
         topRight.addView(moreBtn, new LinearLayout.LayoutParams(a.dp(36), a.dp(36)));
-
-        bitrate = a.text("— Mbps", 11, 0xff8d9cb6);
-        bitrate.setSingleLine(true);
-        bitrate.setShadowLayer(a.dp(4), 0, a.dp(1), 0xcc000000);
-        LinearLayout.LayoutParams bitrateLp = new LinearLayout.LayoutParams(-2, -2);
-        bitrateLp.leftMargin = a.dp(10);
-        topRight.addView(bitrate, bitrateLp);
         overlay.addView(
                 topRight, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT));
 
@@ -159,20 +170,25 @@ final class PlayerChrome {
 
         clockBlock = a.vertical();
         clockBlock.setGravity(Gravity.END);
+        clockBlock.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(5));
+        clockBlock.setBackground(
+                PlayerUiKit.capsuleBg(0x99000000, 0x1fffffff, Math.max(1, a.dp(1f)), a.dp(14)));
+        UiCompat.setElevation(clockBlock, a.dp(3));
         clockBig = a.text("00:00:00", 22, MainActivity.WHITE);
         clockBig.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         clockBig.setIncludeFontPadding(false);
         clockBig.setShadowLayer(a.dp(6), 0, a.dp(2), 0xcc000000);
         clockBig.setGravity(Gravity.END);
         clockBlock.addView(clockBig, new LinearLayout.LayoutParams(-1, -2));
-        clockEnd = a.text("影片结束 --:--:--", 11, 0xffa9b7d0);
+        clockEnd = a.text("影片结束 --:--:--", 11.5f, 0xffc7d2e3);
         clockEnd.setSingleLine(true);
         clockEnd.setGravity(Gravity.END);
         clockEnd.setShadowLayer(a.dp(4), 0, a.dp(1), 0xcc000000);
         LinearLayout.LayoutParams clockEndLp = new LinearLayout.LayoutParams(-1, -2);
         clockEndLp.topMargin = a.dp(2);
         clockBlock.addView(clockEnd, clockEndLp);
-        LinearLayout.LayoutParams clockBlockLp = new LinearLayout.LayoutParams(-1, -2);
+        LinearLayout.LayoutParams clockBlockLp = new LinearLayout.LayoutParams(-2, -2);
+        clockBlockLp.gravity = Gravity.END;
         clockBlockLp.bottomMargin = a.dp(8);
         bottomPanel.addView(clockBlock, clockBlockLp);
 
@@ -186,24 +202,26 @@ final class PlayerChrome {
         progress.addView(
                 timeTotal,
                 new FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL));
-        bottomPanel.addView(progress, new LinearLayout.LayoutParams(-1, a.dp(32)));
+        bottomPanel.addView(progress, new LinearLayout.LayoutParams(-1, a.dp(40)));
 
         dock = a.row();
         dock.setTag("player-dock");
         dock.setGravity(Gravity.CENTER);
+        // 图标行防亮画面：56dp 高的 #B3000000 深色条垫在渐变之上
+        FrameLayout dockFrame = new FrameLayout(a);
+        dockFrame.addView(dock, new FrameLayout.LayoutParams(-1, a.dp(64), Gravity.BOTTOM));
         LinearLayout.LayoutParams dockLp = new LinearLayout.LayoutParams(-1, a.dp(64));
         dockLp.topMargin = a.dp(6);
-        bottomPanel.addView(dock, dockLp);
+        bottomPanel.addView(dockFrame, dockLp);
 
         overlay.addView(bottomPanel, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
 
-        // 右缘折叠箭头（垂直居中）
-        foldBtn = new PlayerUiKit.IconView(a, PlayerUiKit.ICON_CHEVRON_DOWN, 0xfff2f6ff, a.dp(16));
-        foldBtn.setBackground(
-                PlayerUiKit.circleBg(0x99000000, 0x33ffffff, Math.max(1, a.dp(1))));
+        // 右缘折叠：30dp 圆角胶囊 + 半个箭头，垂直居中
+        foldBtn = new PlayerUiKit.IconView(a, PlayerUiKit.ICON_CHEVRON_RIGHT, 0xfff2f6ff, a.dp(14));
+        foldBtn.setBackground(PlayerUiKit.capsuleBg(0xb3000000, 0, 0, a.dp(14)));
         foldBtn.setOnClickListener(v -> toggleBottomPanel());
         MobileDetailScreen.bindTouchFeedback(foldBtn);
-        overlay.addView(foldBtn, new FrameLayout.LayoutParams(a.dp(30), a.dp(30)));
+        overlay.addView(foldBtn, new FrameLayout.LayoutParams(a.dp(28), a.dp(40)));
 
         // 拖拽时间气泡：白底黑字
         seekBubble = a.text("", 12, 0xff1a1a1a);
@@ -239,6 +257,8 @@ final class PlayerChrome {
                 menuAnchor, new FrameLayout.LayoutParams(1, 1, Gravity.TOP | Gravity.LEFT));
 
         a.playbackLayer.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+        overlay.addView(
+                state, new FrameLayout.LayoutParams(a.dp(72), a.dp(72), Gravity.CENTER));
 
         // ---------------- 加载胶囊 ----------------
         loadingPill = a.row();
@@ -271,10 +291,12 @@ final class PlayerChrome {
     }
 
     private TextView timeLabel(String text, int gravity) {
-        TextView tv = a.text(text, 13, MainActivity.WHITE);
-        tv.setTypeface(Typeface.MONOSPACE);
+        TextView tv = a.text(text, 14, MainActivity.WHITE);
+        tv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         tv.setIncludeFontPadding(false);
         tv.setGravity(gravity);
+        tv.setPadding(a.dp(6), a.dp(3), a.dp(6), a.dp(3));
+        tv.setBackground(PlayerUiKit.capsuleBg(0xb3000000, 0, 0, a.dp(8)));
         tv.setShadowLayer(a.dp(4), 0, a.dp(1), 0xcc000000);
         return tv;
     }
@@ -292,8 +314,8 @@ final class PlayerChrome {
         if (foldBtn != null) {
             foldBtn.setIcon(
                     bottomCollapsed
-                            ? PlayerUiKit.ICON_CHEVRON_UP
-                            : PlayerUiKit.ICON_CHEVRON_DOWN);
+                            ? PlayerUiKit.ICON_CHEVRON_LEFT
+                            : PlayerUiKit.ICON_CHEVRON_RIGHT);
         }
         a.controlsVisible = true;
         hideSeekBubble();
@@ -303,7 +325,7 @@ final class PlayerChrome {
 
     void showSeekBubble(int positionMs, int durationMs) {
         if (seekBubble == null || a.playbackControls == null) return;
-        final SeekBar timeline = a.playbackControls.timeline;
+        final View timeline = a.playbackControls.timeline;
         if (timeline == null || timeline.getWidth() <= 0) return;
         seekBubble.setText(
                 PlaybackController.formatTime(Math.max(0, positionMs))
@@ -326,7 +348,10 @@ final class PlayerChrome {
                     timeline.getLocationInWindow(t);
                     int[] o = new int[2];
                     overlay.getLocationInWindow(o);
-                    int x = t[0] - o[0] + Math.round(fraction * timeline.getWidth());
+                    int padL = timeline.getPaddingLeft();
+                    int padR = timeline.getPaddingRight();
+                    int trackW = Math.max(1, timeline.getWidth() - padL - padR);
+                    int x = t[0] - o[0] + padL + Math.round(fraction * trackW);
                     int left =
                             Math.max(
                                     a.dp(8),
@@ -414,38 +439,48 @@ final class PlayerChrome {
             clockBlock.setVisibility(wideLayout ? View.VISIBLE : View.GONE);
         }
         foldBtn.setVisibility(progressOnlyMode ? View.GONE : View.VISIBLE);
-        int foldSize = a.dp(30);
+        int foldW = a.dp(28), foldH = a.dp(40);
         place(
                 foldBtn,
-                foldSize,
-                foldSize,
+                foldW,
+                foldH,
                 Gravity.TOP | Gravity.LEFT,
-                Math.max(0, width - foldSize - Math.min(a.dp(10), side)),
-                Math.max(0, (height - foldSize) / 2),
+                Math.max(0, width - foldW - a.dp(10)),
+                Math.max(0, (height - foldH) / 2),
                 0,
                 0);
+        // 手势提示：屏幕中下方，在底部控制区上方
+        place(
+                gesturePill,
+                -2,
+                -2,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL,
+                0,
+                0,
+                0,
+                a.dp(wideLayout ? 196 : 132));
 
-        // 进度条左右留出时间文本位置
+        // 进度条左右留出时间文本位置（SeekBar 内边距 68dp，轨道不压时间）
         if (a.playbackControls != null && a.playbackControls.timeline != null) {
             View timeline = a.playbackControls.timeline;
             FrameLayout.LayoutParams lp;
             if (timeline.getLayoutParams() instanceof FrameLayout.LayoutParams) {
                 lp = (FrameLayout.LayoutParams) timeline.getLayoutParams();
             } else {
-                lp = new FrameLayout.LayoutParams(-1, a.dp(32), Gravity.CENTER_VERTICAL);
+                lp = new FrameLayout.LayoutParams(-1, a.dp(40), Gravity.CENTER_VERTICAL);
                 timeline.setLayoutParams(lp);
             }
-            int timeW = a.dp(wideLayout ? 64 : 56);
+            int trackH = a.dp(40);
             if (lp.width != -1
-                    || lp.height != a.dp(32)
-                    || lp.leftMargin != timeW
-                    || lp.rightMargin != timeW
+                    || lp.height != trackH
+                    || lp.leftMargin != 0
+                    || lp.rightMargin != 0
                     || lp.gravity != Gravity.CENTER_VERTICAL) {
                 lp.width = -1;
-                lp.height = a.dp(32);
+                lp.height = trackH;
                 lp.gravity = Gravity.CENTER_VERTICAL;
-                lp.leftMargin = timeW;
-                lp.rightMargin = timeW;
+                lp.leftMargin = 0;
+                lp.rightMargin = 0;
                 timeline.setLayoutParams(lp);
             }
         }
@@ -496,10 +531,30 @@ final class PlayerChrome {
 
     void resolution(int width, int height) {
         if (a.player != null && a.prepared) {
-            resolution.setText(a.player.videoResolution());
+            applyResolutionShort();
         } else {
-            resolution.setText(width > 0 && height > 0 ? width + " × " + height : "--");
+            resolution.setText(width > 0 && height > 0 ? "· " + width + " × " + height : "");
         }
+    }
+
+    /** 第二行只保留清晰度档位（如「1080P」），完整编码信息留给「更多 → 播放信息」。 */
+    private void applyResolutionShort() {
+        String shortRes = shortResolution();
+        resolution.setText(shortRes.isEmpty() ? "" : "· " + shortRes);
+    }
+
+    private String shortResolution() {
+        if (a.player == null || !a.prepared) return "";
+        String full = a.player.videoResolution();
+        if (full == null || full.isEmpty() || full.startsWith("分辨率未知")) return "";
+        if (full.startsWith("4K")
+                || full.startsWith("2K")
+                || full.startsWith("1080P")
+                || full.startsWith("720P")) {
+            int space = full.indexOf(' ');
+            return space > 0 ? full.substring(0, space) : full;
+        }
+        return "";
     }
 
     void setLoading(boolean value) {
@@ -511,7 +566,7 @@ final class PlayerChrome {
         String lineName = line == null || line.name == null ? "" : line.name;
         String epName = episode == null || episode.name == null ? "" : episode.name;
         episodeLabel.setText(epName + (lineName.isEmpty() ? "" : "  ·  " + lineName));
-        resolution.setText("--");
+        resolution.setText("");
         String statusMsg = "正在加载" + (epName.isEmpty() ? "" : " " + epName) + "…";
         if (a.playStatus != null) a.playStatus.setText(statusMsg);
         loadingText.setText(statusMsg);
@@ -537,7 +592,7 @@ final class PlayerChrome {
 
     void update() {
         if (a.prepared) loading = false;
-        if (a.player != null && a.prepared) resolution.setText(a.player.videoResolution());
+        if (a.player != null && a.prepared) applyResolutionShort();
         boolean showSpinner = loading && !a.prepared && a.playbackLoading == null && !a.miniMode;
         loadingPill.setVisibility(showSpinner ? View.VISIBLE : View.GONE);
         int stateVis = progressOnlyMode ? View.INVISIBLE : View.VISIBLE;
@@ -545,6 +600,16 @@ final class PlayerChrome {
         state.setContentDescription(
                 !a.prepared ? "正在准备" : a.playing ? "正在播放，确认暂停" : "已暂停，确认继续");
         state.invalidate();
+
+        // 手势 / 状态提示（控制条出现时显示，随整体淡出一起消失）
+        String hint =
+                a.playStatus == null ? "" : a.playStatus.getText().toString().trim();
+        if (hint.isEmpty() && a.playing && a.prepared) {
+            hint = "双击暂停 · 左右滑快进 · 上下滑调亮度音量";
+        }
+        if (progressOnlyMode) hint = "";
+        gesturePill.setText(hint);
+        gesturePill.setVisibility(hint.isEmpty() ? View.GONE : View.VISIBLE);
 
         int duration = 0;
         int position = 0;
@@ -556,7 +621,7 @@ final class PlayerChrome {
             position = a.player.getCurrentPosition();
             if (a.playbackControls != null) {
                 if (a.playbackControls.isUserSeeking()) {
-                    position = a.playbackControls.timeline.getProgress();
+                    position = a.playbackControls.timelineProgress();
                 } else {
                     position = a.playbackControls.displayPosition(position);
                 }

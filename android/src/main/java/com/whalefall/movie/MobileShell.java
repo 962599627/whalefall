@@ -388,28 +388,9 @@ final class MobileShell {
         resolveActiveSite();
 
         a.root = new FrameLayout(a);
-        a.root.setBackground(Skin.backdrop(a));
+        a.installBackdrop(a.root);
         a.setContentView(a.root);
 
-        // Layer 0: 视频动态壁纸优先，否则用海报环境背景
-        if (a.videoWallpaperEnabled()) {
-            if (a.videoWallpaper == null || a.videoWallpaper.isReleased()) {
-                a.releaseWallpaper();
-                a.videoWallpaper = new VideoWallpaper(a);
-                a.root.addView(a.videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
-            } else {
-                a.videoWallpaper.attachTo(a.root);
-            }
-        } else {
-            a.releaseWallpaper();
-            if (a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) {
-                a.root.addView(
-                        ImageLoader.createAtmosphere(a),
-                        new FrameLayout.LayoutParams(-1, -1));
-            } else {
-                a.root.addView(new AmbientCanvasView(a), new FrameLayout.LayoutParams(-1, -1));
-            }
-        }
 
         float widthDp = a.windowWidth() / a.getResources().getDisplayMetrics().density;
         boolean tabletSideRail = widthDp >= 640;

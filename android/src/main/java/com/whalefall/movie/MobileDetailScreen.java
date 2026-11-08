@@ -480,13 +480,13 @@ final class MobileDetailScreen {
         final float density = a.getResources().getDisplayMetrics().density;
         final int widthDp = Math.round(a.windowWidth() / density);
         // 平板横向：左右两栏（52% 预览 + 48% 资料）；手机/竖屏：上下堆叠单列
-        final boolean wide = widthDp >= 600 && !a.isPortrait();
+        final boolean wide = widthDp >= 600;
         final int topPad = getStatusBarHeight(a);
         final int sidePad = a.dp(wide ? 24 : 18);
         final int contentTop = topPad + a.dp(wide ? 60 : 56);
 
         a.root = new FrameLayout(a);
-        a.root.setBackground(Skin.backdrop(a));
+        a.installBackdrop(a.root);
         a.setContentView(a.root);
 
         // ---------------- 顶部：返回 / 片源 / 下载 / 收藏 ----------------

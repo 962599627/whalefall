@@ -152,7 +152,7 @@ final class TouchPlayerGesture implements View.OnTouchListener {
                 targetSeekMs = SeekGesture.dragSeekTarget(startPositionMs, durationMs, dx, width);
                 if (a.playbackControls != null) {
                     a.playbackControls.touchSeeking = true;
-                    a.playbackControls.timeline.setProgress(targetSeekMs);
+                    a.playbackControls.setTimelineProgress(targetSeekMs);
                 }
                 if (a.playClock != null) {
                     a.playClock.setText(

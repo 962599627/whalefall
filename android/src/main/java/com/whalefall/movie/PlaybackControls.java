@@ -15,7 +15,8 @@ final class PlaybackControls {
     final Cms.Video video;
     final Cms.Episode resolved;
     final LinearLayout dockOverlay;
-    final SeekBar timeline;
+    final androidx.media3.ui.DefaultTimeBar timeline;
+    long timelinePosMs, timelineDurMs;
     final SubtitleOverlayView subtitle;
     final VideoOutput surface;
     final PlaybackEffects effects = new PlaybackEffects();
@@ -42,7 +43,7 @@ final class PlaybackControls {
     void recordUserSeek(int targetMs) {
         lastSeekTimeMs = android.os.SystemClock.uptimeMillis();
         lastSeekTargetMs = Math.max(0, targetMs);
-        timeline.setProgress(lastSeekTargetMs);
+        setTimelineProgress(lastSeekTargetMs);
     }
 
     int displayPosition(int actualPositionMs) {
@@ -91,9 +92,11 @@ final class PlaybackControls {
         caption.bottomMargin = a.dp(168);
         a.playbackLayer.addView(subtitle, 1, caption);
         applySubtitleStyle();
-        timeline = new SeekBar(a);
+        timeline =
+                (androidx.media3.ui.DefaultTimeBar)
+                        android.view.LayoutInflater.from(a)
+                                .inflate(R.layout.whale_time_bar, null);
         timeline.setTag("timeline");
-        timeline.setBackgroundColor(Color.TRANSPARENT);
         timeline.setFocusable(true);
         timeline.setOnFocusChangeListener(
                 (focusedView, f) ->
@@ -108,35 +111,34 @@ final class PlaybackControls {
                                 MainActivity.WHITE,
                                 false,
                                 1));
-        // 4dp 胶囊进度条：底轨/缓冲/已播三段，纯黑遮罩上清晰
-        timeline.setProgressDrawable(PlayerUiKit.seekProgress(a));
-        timeline.setThumb(PlayerUiKit.seekThumb(a, false));
-        timeline.setSplitTrack(false);
-        timeline.setPadding(0, 0, 0, 0);
-        timeline.setKeyProgressIncrement(15000);
+        // 6dp 胶囊进度条：底轨/缓冲/已播三段，左右留 68dp 给时间文本
+        timeline.setPadding(a.dp(68), 0, a.dp(68), 0);
+        timeline.setKeyTimeIncrement(15000);
         // 进度条放在时间行上方（PlayerChrome 已先放了时间行）
         progress.addView(
                 timeline,
                 0,
-                new android.view.ViewGroup.LayoutParams(-1, a.dp(32)));
-        timeline.setOnSeekBarChangeListener(
-                new SeekBar.OnSeekBarChangeListener() {
-                    public void onStartTrackingTouch(SeekBar b) {
+                new android.view.ViewGroup.LayoutParams(-1, a.dp(40)));
+        timeline.addListener(
+                new androidx.media3.ui.TimeBar.OnScrubListener() {
+                    public void onScrubStart(androidx.media3.ui.TimeBar bar, long position) {
                         sliderSeeking = true;
                         a.finishSeek(false);
                         a.scheduleHide();
-                        timeline.setThumb(PlayerUiKit.seekThumb(a, true));
-                        if (a.playerChrome != null) {
-                            a.playerChrome.showSeekBubble(
-                                    b.getProgress(), Math.max(1, b.getMax()));
-                        }
+                        if (a.playerChrome != null)
+                            a.playerChrome.showSeekBubble((int) position, (int) Math.max(1, timelineDurMs));
                     }
 
-                    public void onStopTrackingTouch(SeekBar b) {
-                        boolean wasDragging = sliderSeeking;
+                    public void onScrubMove(androidx.media3.ui.TimeBar bar, long position) {
+                        if (a.playerChrome != null)
+                            a.playerChrome.showSeekBubble((int) position, (int) Math.max(1, timelineDurMs));
+                    }
+
+                    public void onScrubStop(
+                            androidx.media3.ui.TimeBar bar, long position, boolean canceled) {
                         sliderSeeking = false;
-                        if (wasDragging && a.prepared && a.player != null) {
-                            int target = b.getProgress();
+                        if (!canceled && a.prepared && a.player != null) {
+                            int target = (int) position;
                             recordUserSeek(target);
                             a.player.seekTo(target);
                             if (a.playClock != null && a.player.getDuration() > 0) {
@@ -147,31 +149,8 @@ final class PlaybackControls {
                                                         a.player.getDuration()));
                             }
                         }
-                        timeline.setThumb(PlayerUiKit.seekThumb(a, false));
                         if (a.playerChrome != null) a.playerChrome.hideSeekBubble();
                         a.scheduleHide();
-                    }
-
-                    public void onProgressChanged(SeekBar b, int position, boolean user) {
-                        if (user && a.prepared && a.player != null) {
-                            if (sliderSeeking) {
-                                if (a.playClock != null && a.player.getDuration() > 0) {
-                                    a.playClock.setText(
-                                            PlaybackController.formatTime(position)
-                                                    + " / "
-                                                    + PlaybackController.formatTime(
-                                                            a.player.getDuration()));
-                                }
-                                if (a.playerChrome != null) {
-                                    a.playerChrome.showSeekBubble(
-                                            position, Math.max(1, b.getMax()));
-                                }
-                            } else {
-                                recordUserSeek(position);
-                                a.player.seekTo(position);
-                            }
-                            a.scheduleHide();
-                        }
                     }
                 });
         boolean wideLayout =
@@ -330,13 +309,6 @@ final class PlaybackControls {
         row.setClipToPadding(false);
 
         row.addView(createTransport(-10000, false), cellLp(wide, false));
-        if (a.playerChrome != null && a.playerChrome.state != null) {
-            View playState = a.playerChrome.state;
-            if (playState.getParent() instanceof ViewGroup) {
-                ((ViewGroup) playState.getParent()).removeView(playState);
-            }
-            row.addView(playState, cellLp(wide, true));
-        }
         row.addView(createTransport(10000, true), cellLp(wide, false));
 
         for (String key : BAR_KEYS) {
@@ -372,7 +344,9 @@ final class PlaybackControls {
     /** 纯图标按钮：无文字、无底、白色 24dp Canvas 图标。 */
     private void styleIconButton(Button b, String key) {
         b.setAllCaps(false);
-        b.setText("");
+        b.setText(toolLabel(key));
+        b.setTextSize(11);
+        b.setTextColor(0xffffffff);
         b.setMinWidth(0);
         b.setMinimumWidth(0);
         b.setMinHeight(0);
@@ -380,13 +354,7 @@ final class PlaybackControls {
         b.setPadding(0, 0, 0, 0);
         b.setBackground(null);
         b.setContentDescription(toolLabel(key));
-        b.setCompoundDrawables(
-                null,
-                new PlayerUiKit.IconDrawable(
-                        PlayerUiKit.iconFor(key), 0xffffffff, a.dp(24)),
-                null,
-                null);
-        b.setCompoundDrawablePadding(0);
+        b.setCompoundDrawables(null, null, null, null);
     }
 
     /** 快退/快进 10 秒圆钮（Canvas 环形箭头 + 10）。 */
@@ -396,7 +364,9 @@ final class PlaybackControls {
                         "",
                         forward ? "seek-forward" : "seek-back",
                         () -> nudge(deltaMs));
-        b.setText("");
+        b.setText(forward ? "10s »" : "« 10s");
+        b.setTextSize(12);
+        b.setTextColor(0xffffffff);
         b.setContentDescription(forward ? "快进 10 秒" : "快退 10 秒");
         b.setMinWidth(0);
         b.setMinimumWidth(0);
@@ -404,15 +374,7 @@ final class PlaybackControls {
         b.setMinimumHeight(0);
         b.setPadding(0, 0, 0, 0);
         b.setBackground(null);
-        b.setCompoundDrawables(
-                null,
-                new PlayerUiKit.IconDrawable(
-                        forward ? PlayerUiKit.ICON_SEEK_FWD : PlayerUiKit.ICON_SEEK_BACK,
-                        0xffffffff,
-                        a.dp(26)),
-                null,
-                null);
-        b.setCompoundDrawablePadding(0);
+        b.setCompoundDrawables(null, null, null, null);
         return b;
     }
 
@@ -491,7 +453,7 @@ final class PlaybackControls {
         b.setCompoundDrawables(
                 null,
                 new PlayerUiKit.IconDrawable(
-                        PlayerUiKit.iconFor(key), 0xffffffff, a.dp(24)),
+                        PlayerUiKit.iconFor(key), 0xffffffff, a.dp(20)),
                 null,
                 null);
         LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(a.dp(44), a.dp(56));
@@ -891,6 +853,24 @@ final class PlaybackControls {
     static final String[] SUBTITLE_SIZE_LABELS = {"极小", "小", "标准", "大", "超大"};
     static final int[] SUBTITLE_BOTTOMS = {8, 24, 48, 76, 110, 148};
     static final String[] SUBTITLE_BOTTOM_LABELS = {"贴底", "标准", "略高", "中下", "偏高", "较高"};
+
+    int timelineProgress() {
+        return (int) timelinePosMs;
+    }
+
+    int timelineMax() {
+        return (int) Math.max(1, timelineDurMs);
+    }
+
+    void setTimelineProgress(int ms) {
+        timelinePosMs = Math.max(0, ms);
+        timeline.setPosition(timelinePosMs);
+    }
+
+    void setTimelineMax(int ms) {
+        timelineDurMs = Math.max(1, ms);
+        timeline.setDuration(timelineDurMs);
+    }
 
     void applySubtitleStyle() {
         int size = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
@@ -1545,9 +1525,9 @@ final class PlaybackControls {
             duration = a.playingBookmark.duration;
         }
         timeline.setEnabled(duration > 0);
-        timeline.setMax(duration > 0 ? duration : 100);
-        if (duration <= 0) timeline.setProgress(0);
-        timeline.setKeyProgressIncrement(15000);
+        setTimelineMax(duration > 0 ? duration : 100);
+        if (duration <= 0) setTimelineProgress(0);
+        timeline.setKeyTimeIncrement(15000);
         boolean explicitRestart = a.resumeAt < 0;
         boolean historyResume = a.resumeAt > 0;
         int seek =
@@ -1597,12 +1577,12 @@ final class PlaybackControls {
         int position = displayPosition(a.player.getCurrentPosition());
         if (duration > 0) {
             timeline.setEnabled(true);
-            timeline.setMax(Math.max(duration, position));
-            timeline.setProgress(Math.max(0, Math.min(position, timeline.getMax())));
+            setTimelineMax(Math.max(duration, position));
+            setTimelineProgress(Math.max(0, Math.min(position, timelineMax())));
         } else {
             timeline.setEnabled(false);
-            timeline.setMax(100);
-            timeline.setProgress(0);
+            setTimelineMax(100);
+            setTimelineProgress(0);
         }
         int tail = a.prefs.getInt(Prefs.SKIP_OUTRO, 0) * 1000;
         if (!transitioning

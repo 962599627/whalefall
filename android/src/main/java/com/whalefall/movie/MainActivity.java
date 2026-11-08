@@ -816,25 +816,34 @@ public final class MainActivity extends Activity {
         generation++;
     }
 
+    /** 统一给页面根容器铺背景：主题渐变 + 静态/视频壁纸（详情页等也复用）。 */
+    void installBackdrop(android.widget.FrameLayout target) {
+        target.setBackground(Skin.backdrop(this));
+        if (videoWallpaperEnabled()) {
+            if (videoWallpaper == null || videoWallpaper.isReleased()) {
+                releaseWallpaper();
+                videoWallpaper = new VideoWallpaper(this);
+                target.addView(videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
+            } else {
+                videoWallpaper.attachTo(target);
+            }
+        } else {
+            releaseWallpaper();
+            if (prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) {
+                target.addView(
+                        ImageLoader.createAtmosphere(this),
+                        new FrameLayout.LayoutParams(-1, -1));
+            }
+        }
+    }
+
     void renderPage(String title, String eyebrow, boolean navigation) {
         VideoFilterDialog.dismiss(this);
         preparePage(navigation);
         root = new FrameLayout(this);
         root.setClipChildren(false);
         root.setClipToPadding(false);
-        root.setBackground(Skin.backdrop(this));
-        if (videoWallpaperEnabled()) {
-            if (videoWallpaper == null || videoWallpaper.isReleased()) {
-                releaseWallpaper();
-                videoWallpaper = new VideoWallpaper(this);
-                root.addView(videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
-            } else {
-                videoWallpaper.attachTo(root);
-            }
-        } else {
-            releaseWallpaper();
-            root.addView(ImageLoader.createAtmosphere(this), new FrameLayout.LayoutParams(-1, -1));
-        }
+        installBackdrop(root);
         homeAmbient = null;
         if (navigation
                 && prefs.getBoolean(Prefs.HOME_AMBIENT, true)
