@@ -217,6 +217,53 @@ footer{margin-top:26px;text-align:center;font-size:11px;color:#5f6f88;line-heigh
     </div>
   </section>
 
+  <!-- 文件管理 -->
+  <section v-if="tab==='files'" class="grid">
+    <div class="card">
+      <h2>上传文件到 App <span class="tag">{{files.length}}</span></h2>
+      <div class="sub">支持 .md / .txt（内置阅读器）、视频（内置播放器）、其它任意文件；单文件 ≤60MB。
+        也可以用 FTP：<b>{{ftp}}</b>（用户名/密码任意）</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="file" ref="picker" style="display:none" @change="pickFile">
+        <button class="btn" @click="$refs.picker.click()">{{uploadBusy?'上传中…':'选择文件上传'}}</button>
+        <span style="font-size:11.5px;color:var(--dim)" v-if="uploadName">{{uploadName}}</span>
+      </div>
+      <div class="row" v-for="f in files" :key="f.name">
+        <div class="grow">
+          <div class="name">{{f.name}}</div>
+          <div class="meta">{{f.sizeLabel}} · {{fmtTime(Math.round(f.time/1000))}}</div>
+        </div>
+        <button class="btn ghost" v-if="f.markdown" @click="previewMd(f)">预览</button>
+        <button class="btn ghost" @click="deleteFile(f)">删除</button>
+      </div>
+      <div class="empty" v-if="!files.length">还没有文件，点上面按钮上传</div>
+    </div>
+    <div class="card" v-if="mdText">
+      <h2>Markdown 预览 · {{mdName}}</h2>
+      <div class="sub">App 内「文件管理」打开同一个文件，会用完整排版阅读</div>
+      <pre style="white-space:pre-wrap;font-size:12px;line-height:1.6;color:#dbe4f3;max-height:420px;overflow:auto;margin:0">{{mdText}}</pre>
+    </div>
+  </section>
+
+  <!-- 推送播放 -->
+  <section v-if="tab==='push'" class="grid">
+    <div class="card">
+      <h2>推送视频链接到 App 播放</h2>
+      <div class="sub">粘贴 http/https 视频地址（mp4 / m3u8 等），手机上的鲸落会立即开始播放</div>
+      <div style="display:grid;gap:10px">
+        <input v-model="pushUrl" placeholder="https://example.com/video.m3u8">
+        <input v-model="pushTitle" placeholder="标题（可选）">
+        <button class="btn" style="justify-self:start" @click="pushPlay">推送到手机播放</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>说明</h2>
+      <div class="sub">推送使用 App 内的播放器（Media3），支持 HLS / 直链；直播流同样适用。</div>
+      <div class="row"><div class="grow"><div class="name">本机地址</div><div class="meta">{{state.ip}}:{{state.port}}</div></div></div>
+      <div class="row"><div class="grow"><div class="name">FTP 上传</div><div class="meta">{{ftp}}</div></div></div>
+    </div>
+  </section>
+
   <!-- 设置 -->
   <section v-if="tab==='settings'" class="grid">
     <div class="card">
@@ -271,8 +318,10 @@ createApp({
   data(){
     return {
       tab:'home',
-      tabs:[{k:'home',n:'概览'},{k:'sites',n:'片源'},{k:'fav',n:'收藏'},{k:'tv',n:'电视台'},{k:'settings',n:'设置'},{k:'about',n:'关于'}],
+      tabs:[{k:'home',n:'概览'},{k:'sites',n:'片源'},{k:'fav',n:'收藏'},{k:'tv',n:'电视台'},{k:'files',n:'文件'},{k:'push',n:'推送'},{k:'settings',n:'设置'},{k:'about',n:'关于'}],
+      uploadName:'', uploadBusy:false, pushUrl:'', pushTitle:'', mdText:'', mdName:'',
       state:{version:'',package:'',device:'',ip:'',port:'',sites:[],selectedSite:'',favorites:[],history:[],tv:{total:0,builtinSat:0,custom:[]},prefs:{}},
+      files:[], ftp:'',
       configText:'', newChannel:{name:'',url:''}, toastText:'', toastTimer:null
     };
   },
@@ -280,13 +329,55 @@ createApp({
     aspectLabel(){const v=this.state.prefs.tv_aspect|0;return ['自适应','16:9','4:3'][v]||'自适应';},
     fillLabel(){const v=this.state.prefs.tv_fill|0;return ['适应','裁剪','拉伸'][v]||'适应';}
   },
-  mounted(){this.load();},
+  mounted(){this.load();this.loadFiles();},
   methods:{
     async load(){
       try{
         const r=await fetch('/api/state',{cache:'no-store'});
         this.state=await r.json();
       }catch(e){this.say('连接失败：'+e);}
+    },
+    get ftpAddress(){
+      return this.state.ip? 'ftp://'+this.state.ip+':2121/' : 'ftp://…:2121/';
+    },
+    async loadFiles(){
+      try{
+        const r=await fetch('/api/files',{cache:'no-store'});
+        const j=await r.json();
+        this.files=j.files||[];
+        this.ftp=this.ftpAddress;
+      }catch(e){}
+    },
+    pickFile(ev){
+      const file=ev.target.files[0];
+      if(!file) return;
+      this.uploadName=file.name;
+      const reader=new FileReader();
+      reader.onload=async ()=>{
+        this.uploadBusy=true;
+        const ok=await this.post('/api/files/upload',{name:file.name,base64:String(reader.result).split(',')[1]});
+        this.uploadBusy=false;
+        if(ok){this.say('已上传 '+file.name);this.loadFiles();}
+        ev.target.value='';
+      };
+      reader.readAsDataURL(file);
+    },
+    async deleteFile(f){
+      if(!confirm('删除 '+f.name+' ？')) return;
+      await this.post('/api/files/delete',{name:f.name});
+      this.loadFiles();
+    },
+    async previewMd(f){
+      try{
+        const r=await fetch('/api/files/text?name='+encodeURIComponent(f.name));
+        this.mdText=await r.text();
+        this.mdName=f.name;
+      }catch(e){this.say('预览失败');}
+    },
+    async pushPlay(){
+      if(!this.pushUrl.trim()) return this.say('先粘贴视频链接');
+      const ok=await this.post('/api/play',{url:this.pushUrl.trim(),title:this.pushTitle.trim()});
+      if(ok) this.say('已推送到手机播放');
     },
     async post(path,body){
       try{

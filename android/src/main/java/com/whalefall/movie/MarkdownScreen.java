@@ -1,0 +1,236 @@
+package com.whalefall.movie;
+
+import android.graphics.Typeface;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.StyleSpan;
+import android.text.style.TypefaceSpan;
+import android.view.Gravity;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Markdown / 文本阅读器：管理后台上传的 .md / .txt 在 App 内阅读。
+ *
+ * <p>轻量渲染：标题、粗体、行内代码、代码块、列表、引用、分隔线；不引入第三方解析库。
+ */
+final class MarkdownScreen {
+    private MarkdownScreen() {}
+
+    static void show(MainActivity a, String fileName) {
+        String text;
+        try {
+            text = PushFiles.readText(a, fileName);
+        } catch (Exception e) {
+            a.toast("读取失败：" + e.getMessage());
+            return;
+        }
+        a.clearPlaybackLoading();
+        a.cancelPageRequests();
+        a.generation++;
+        a.applyMobileSystemBars(false);
+
+        a.root = new android.widget.FrameLayout(a);
+        a.installBackdrop(a.root);
+        a.setContentView(a.root);
+
+        LinearLayout column = a.vertical();
+        column.setPadding(a.dp(20), getStatusBar(a) + a.dp(12), a.dp(20), a.dp(32));
+        ScrollView scroll = new ScrollView(a);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setFillViewport(true);
+        scroll.addView(column, new ScrollView.LayoutParams(-1, -2));
+        a.root.addView(scroll, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        a.scroll = scroll;
+        a.body = column;
+
+        // 顶部返回 + 标题
+        LinearLayout nav = a.row();
+        nav.setGravity(Gravity.CENTER_VERTICAL);
+        TextView back = a.text("‹", 24, MainActivity.WHITE);
+        back.setGravity(Gravity.CENTER);
+        back.setPadding(0, 0, 0, a.dp(2));
+        back.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+        MobileDetailScreen.bindTouchFeedback(back);
+        back.setOnClickListener(v -> a.onBackPressed());
+        nav.addView(back, new LinearLayout.LayoutParams(a.dp(42), a.dp(42)));
+        TextView title = a.text(baseName(fileName), 19, MainActivity.WHITE);
+        title.setTypeface(null, Typeface.BOLD);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        titleLp.leftMargin = a.dp(12);
+        nav.addView(title, titleLp);
+        TextView time = a.text(PushFiles.sizeLabel(text.length()), 11.5f, 0xff8d9cb6);
+        nav.addView(time);
+        column.addView(nav, new LinearLayout.LayoutParams(-1, -2));
+        a.gap(column, 14);
+
+        render(a, column, text);
+    }
+
+    private static int getStatusBar(MainActivity a) {
+        return MobileDetailScreen.getStatusBarHeight(a);
+    }
+
+    private static String baseName(String name) {
+        int slash = name.lastIndexOf('/');
+        return slash >= 0 ? name.substring(slash + 1) : name;
+    }
+
+    static void render(MainActivity a, LinearLayout column, String markdown) {
+        String[] lines = markdown.replace("\r\n", "\n").split("\n", -1);
+        boolean inCode = false;
+        StringBuilder code = new StringBuilder();
+        List<String> listBuffer = new ArrayList<>();
+        for (String raw : lines) {
+            String line = raw;
+            if (line.trim().startsWith("```")) {
+                if (inCode) {
+                    addCodeBlock(a, column, code.toString());
+                    code.setLength(0);
+                    inCode = false;
+                } else {
+                    flushList(a, column, listBuffer);
+                    inCode = true;
+                }
+                continue;
+            }
+            if (inCode) {
+                code.append(line).append('\n');
+                continue;
+            }
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                flushList(a, column, listBuffer);
+                a.gap(column, 8);
+                continue;
+            }
+            if (trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.startsWith("+ ")) {
+                listBuffer.add("• " + trimmed.substring(2));
+                continue;
+            }
+            if (trimmed.matches("^\\d+[.)]\\s+.*")) {
+                listBuffer.add(trimmed);
+                continue;
+            }
+            flushList(a, column, listBuffer);
+            if (trimmed.startsWith(">")) {
+                addQuote(a, column, trimmed.substring(1).trim());
+                continue;
+            }
+            if (trimmed.matches("^(-{3,}|\\*{3,}|_{3,})$")) {
+                android.view.View divider = new android.view.View(a);
+                divider.setBackgroundColor(0x33ffffff);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.max(1, a.dp(1)));
+                lp.topMargin = a.dp(8);
+                lp.bottomMargin = a.dp(8);
+                column.addView(divider, lp);
+                continue;
+            }
+            int heading = 0;
+            while (heading < trimmed.length() && trimmed.charAt(heading) == '#') heading++;
+            if (heading > 0 && heading <= 6 && trimmed.length() > heading && trimmed.charAt(heading) == ' ') {
+                TextView h = a.text(trimmed.substring(heading + 1), headingSizes[heading - 1], MainActivity.WHITE);
+                h.setTypeface(null, Typeface.BOLD);
+                h.setPadding(0, a.dp(heading <= 2 ? 10 : 6), 0, a.dp(4));
+                column.addView(h);
+                continue;
+            }
+            TextView p = a.text("", 14.5f, 0xffe6edf9);
+            p.setLineSpacing(a.dp(5), 1.1f);
+            inline(p, trimmed);
+            column.addView(p, new LinearLayout.LayoutParams(-1, -2));
+        }
+        if (inCode && code.length() > 0) addCodeBlock(a, column, code.toString());
+        flushList(a, column, listBuffer);
+    }
+
+    private static final float[] headingSizes = {26, 22, 19, 17, 15.5f, 14.5f};
+
+    private static void flushList(MainActivity a, LinearLayout column, List<String> list) {
+        if (list.isEmpty()) return;
+        for (String item : list) {
+            TextView row = a.text("", 14.5f, 0xffe6edf9);
+            row.setLineSpacing(a.dp(4), 1.1f);
+            inline(row, item);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.leftMargin = a.dp(6);
+            column.addView(row, lp);
+        }
+        list.clear();
+        a.gap(column, 6);
+    }
+
+    private static void addQuote(MainActivity a, LinearLayout column, String text) {
+        LinearLayout box = a.row();
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        android.view.View bar = new android.view.View(a);
+        bar.setBackgroundColor(0xffff8fb1);
+        box.addView(bar, new LinearLayout.LayoutParams(a.dp(3), -1));
+        TextView t = a.text("", 14, 0xffb9c7dd);
+        t.setLineSpacing(a.dp(4), 1.1f);
+        t.setPadding(a.dp(12), a.dp(6), 0, a.dp(6));
+        inline(t, text);
+        box.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = a.dp(4);
+        lp.bottomMargin = a.dp(4);
+        column.addView(box, lp);
+    }
+
+    private static void addCodeBlock(MainActivity a, LinearLayout column, String code) {
+        TextView block = a.text(code.trim(), 12.5f, 0xffd7e3f5);
+        block.setTypeface(Typeface.MONOSPACE);
+        block.setLineSpacing(a.dp(3), 1f);
+        block.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
+        block.setBackground(MobileDetailScreen.glassBg(a, 0xcc0d1626, 0x26ffffff, 12));
+        block.setTextIsSelectable(true);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = a.dp(6);
+        lp.bottomMargin = a.dp(6);
+        column.addView(block, lp);
+    }
+
+    /** 行内样式：**粗体**、`代码`。 */
+    private static void inline(TextView target, String text) {
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        int i = 0;
+        while (i < text.length()) {
+            if (text.startsWith("**", i)) {
+                int end = text.indexOf("**", i + 2);
+                if (end > 0) {
+                    int start = sb.length();
+                    sb.append(text, i + 2, end);
+                    sb.setSpan(
+                            new StyleSpan(Typeface.BOLD),
+                            start,
+                            sb.length(),
+                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    i = end + 2;
+                    continue;
+                }
+            }
+            if (text.charAt(i) == '`') {
+                int end = text.indexOf('`', i + 1);
+                if (end > 0) {
+                    int start = sb.length();
+                    sb.append(text, i + 1, end);
+                    sb.setSpan(
+                            new TypefaceSpan("monospace"),
+                            start,
+                            sb.length(),
+                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    i = end + 1;
+                    continue;
+                }
+            }
+            sb.append(text.charAt(i));
+            i++;
+        }
+        target.setText(sb);
+    }
+}

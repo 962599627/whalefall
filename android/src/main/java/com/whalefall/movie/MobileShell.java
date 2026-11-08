@@ -3402,6 +3402,12 @@ final class MobileShell {
                 addSettingCard(
                         body,
                         5,
+                        "文件管理（上传 / Markdown 阅读）",
+                        "管理后台上传文件；内置 Markdown 阅读器可直接打开 .md/.txt",
+                        () -> FilesScreen.show(a));
+                addSettingCard(
+                        body,
+                        5,
                         "检查软件更新",
                         "当前版本：" + UpdateManager.installedVersion(a) + " · 正式版",
                         () ->

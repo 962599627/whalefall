@@ -141,6 +141,17 @@ final class AdminConsole implements Closeable {
             send(out, "application/javascript; charset=utf-8", asset("admin/vue.global.prod.js"));
             return;
         }
+        if (path.startsWith("/api/files/text")) {
+            String name = "";
+            int q = path.indexOf("name=");
+            if (q >= 0) name = URLDecoder.decode(path.substring(q + 5), "UTF-8");
+            try {
+                send(out, "text/plain; charset=utf-8", PushFiles.readText(a, name));
+            } catch (Exception e) {
+                send(out, "text/plain; charset=utf-8", "读取失败：" + e.getMessage());
+            }
+            return;
+        }
         if (path.startsWith("/api/")) {
             try {
                 JSONObject payload = body.trim().isEmpty() ? new JSONObject() : new JSONObject(body);
@@ -194,6 +205,17 @@ final class AdminConsole implements Closeable {
                 break;
             case "/api/tv/remove":
                 removeChannel(body.getString("name"), body.getString("url"));
+                break;
+            case "/api/files":
+                return filesState();
+            case "/api/files/upload":
+                uploadFile(body.getString("name"), body.getString("base64"));
+                break;
+            case "/api/files/delete":
+                PushFiles.delete(a, body.getString("name"));
+                break;
+            case "/api/play":
+                PushFiles.playUrl(a, body.getString("url"), body.optString("title", ""));
                 break;
             default:
                 throw new IllegalArgumentException("未知接口");
@@ -364,6 +386,35 @@ final class AdminConsole implements Closeable {
                     } catch (Throwable ignored) {
                     }
                 });
+    }
+
+    /** 文件列表（管理后台上传区）。 */
+    private JSONObject filesState() throws Exception {
+        JSONObject out = new JSONObject();
+        out.put("ok", true);
+        JSONArray files = new JSONArray();
+        for (File f : PushFiles.list(a)) {
+            JSONObject o = new JSONObject();
+            o.put("name", f.getName());
+            o.put("size", f.length());
+            o.put("sizeLabel", PushFiles.sizeLabel(f.length()));
+            o.put("time", f.lastModified());
+            o.put("markdown", PushFiles.isMarkdown(f.getName()));
+            o.put("video", PushFiles.isVideo(f.getName()));
+            files.put(o);
+        }
+        out.put("files", files);
+        return out;
+    }
+
+    private void uploadFile(String name, String base64) throws Exception {
+        if (base64 == null || base64.isEmpty())
+            throw new IllegalArgumentException("文件内容为空");
+        int comma = base64.indexOf(',');
+        if (base64.startsWith("data:") && comma > 0) base64 = base64.substring(comma + 1);
+        byte[] bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
+        PushFiles.save(a, name, bytes);
+        refreshUi();
     }
 
     private String versionName() {

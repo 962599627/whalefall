@@ -77,6 +77,7 @@ final class UiTokens {
     static final int RADIUS_12 = 12;
     static final int RADIUS_14 = 14;
     static final int RADIUS_16 = 16;
+    static final int RADIUS_18 = 18;
     static final int RADIUS_20 = 20;
     static final int RADIUS_24 = 24;
     static final int TOUCH_MIN = 48;

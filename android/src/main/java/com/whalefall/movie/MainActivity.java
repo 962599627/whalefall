@@ -1272,6 +1272,10 @@ public final class MainActivity extends Activity {
         SourceController.sourceAction(this, site, action);
     }
 
+    void sourceAction(Cms.Site site, String action, Runnable finished) {
+        SourceController.sourceAction(this, site, action, finished);
+    }
+
     void pickDanmaku() {
         SourceController.pickDocument(this, 43, "这台电视没有文件选择器。");
     }

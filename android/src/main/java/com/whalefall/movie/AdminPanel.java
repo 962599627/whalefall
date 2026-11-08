@@ -32,6 +32,9 @@ final class AdminPanel {
         }
         final AdminConsole console = holder[0];
         final String url = console.url();
+        MiniFtpServer.start(a);
+        final String ftpUrl =
+                MiniFtpServer.RUNNING == null ? "" : "ftp://" + AdminConsole.lanIp() + ":2121/";
 
         LinearLayout panel = a.vertical();
         panel.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -98,6 +101,14 @@ final class AdminPanel {
         copyLp.topMargin = a.dp(8);
         panel.addView(copy, copyLp);
 
+        if (!ftpUrl.isEmpty()) {
+            TextView ftp = a.text("FTP 上传：" + ftpUrl + "（用户名/密码任意）", 12, 0xffffb3c8);
+            ftp.setGravity(Gravity.CENTER);
+            ftp.setPadding(0, a.dp(10), 0, 0);
+            ftp.setTextIsSelectable(true);
+            panel.addView(ftp);
+        }
+
         TextView hint =
                 a.text(
                         "网页支持：片源导入与切换 · 收藏/历史管理 · 电视频道增删 · 壁纸与播放设置\n"
@@ -120,6 +131,7 @@ final class AdminPanel {
                         console.close();
                     } catch (Throwable ignored) {
                     }
+                    MiniFtpServer.stop();
                     if (a.adminConsole == console) a.adminConsole = null;
                 });
         a.adminConsole = console;

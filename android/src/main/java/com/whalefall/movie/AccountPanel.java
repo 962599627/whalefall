@@ -1,128 +1,930 @@
 package com.whalefall.movie;
 
 import android.app.Dialog;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Color;
-import android.view.*;
-import android.widget.*;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.text.TextUtils;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
+import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import java.io.File;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
-/** One account entry, anchored to the navigation button. No account status is guessed. */
+/**
+ * 「网盘与账号」面板：账号状态卡 + 源提供的功能列表 + 危险区（清除凭据）。
+ *
+ * <p>状态检测原则：<b>不伪造登录态</b>。App 只能读取本机保存的凭据，读不到 spider 内部会话，
+ * 因此状态分为：
+ * <ul>
+ *   <li>已配置凭据（本地检测到 Cookie/Token 等，绿点，账号名仍由源返回）
+ *   <li>未登录（本地无凭据且来源是 App 自己管理的引擎，灰点）
+ *   <li>状态由源提供（CSP/插件型来源，无法读取内部状态，橙点）
+ * </ul>
+ * 登录/管理统一调用源提供的 LoginShow，接口返回后刷新本面板。
+ */
 final class AccountPanel {
+    private AccountPanel() {}
+
+    private static final int STATE_EMPTY = 0;
+    private static final int STATE_DISABLED = 1;
+    private static final int STATE_UNKNOWN = 2;
+    private static final int STATE_GUEST = 3;
+    private static final int STATE_LOCAL = 4;
+
+    private static final int DOT_GREEN = 0xff2ad47a;
+    private static final int DOT_GRAY = 0xff8d9cb6;
+    private static final int DOT_ORANGE = 0xffffb454;
+    private static final int DANGER = 0xffff6b81;
+
     static void show(MainActivity a, View anchor) {
-        Dialog dialog = new Dialog(a);
-        a.accountDialog = dialog;
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        LinearLayout panel = a.vertical();
-        panel.setTag("account-panel");
-        panel.setPadding(a.dp(24), a.dp(22), a.dp(24), a.dp(18));
-        panel.setBackground(a.bg(0xf516243c, 28));
-        panel.addView(a.text("网盘与账号", 24, MainActivity.WHITE));
-        a.gap(panel, 8);
-        TextView note = a.text("登录与账号状态由你导入的配置提供。", 13, MainActivity.MUTED);
-        panel.addView(note);
-        a.gap(panel, 16);
-        String[] labels = {"网盘登录与启用", "登录凭据配置", "网盘优先顺序", "网盘搜索顺序"};
-        String[] actions = {"LoginShow", "pushCkShow", "panSortShow", "panSourceSortShow"};
-        for (int i = 0; i < labels.length; i++) {
-            String action = actions[i];
-            Button item =
-                    a.button(
-                            labels[i],
-                            "account-action:" + action,
-                            () -> {
-                                dialog.dismiss();
-                                new SettingsScreen(a).accountAction(action);
-                            });
-            item.setOnFocusChangeListener(
-                    (v, f) -> {
-                        FocusMotion.style(
-                                a,
-                                item,
-                                f,
-                                0x18ffffff,
-                                MainActivity.WHITE,
-                                20,
-                                MainActivity.WHITE,
-                                MainActivity.DARK,
-                                false,
-                                1.015f);
-                    });
-            item.setBackground(a.bg(0x18ffffff, 20));
-            item.setMinHeight(a.dp(46));
-            item.setTextSize(15);
-            LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(-1, a.dp(48));
-            size.bottomMargin = a.dp(6);
-            panel.addView(item, size);
+        if (a == null) return;
+        new Panel(a, anchor).show();
+    }
+
+    // ====================== 主面板 ======================
+
+    private static final class Panel {
+        final MainActivity a;
+        final View anchor;
+        final Cms.Site site;
+        final boolean wide;
+        Dialog dialog;
+        TextView statusLabel;
+        View statusDot;
+        TextView detailLabel;
+        TextView sourceLabel;
+        FrameLayout actionSlot;
+        int state = STATE_GUEST;
+        List<Credential> credentials = new ArrayList<>();
+        String accountName = "";
+
+        Panel(MainActivity a, View anchor) {
+            this.a = a;
+            this.anchor = anchor;
+            this.site = findSite(a);
+            float density = a.getResources().getDisplayMetrics().density;
+            this.wide = a.windowWidth() / density >= 600f;
         }
-        a.gap(panel, 6);
-        Button close = a.navButton("完成", "account-close", dialog::dismiss);
-        panel.addView(close, new LinearLayout.LayoutParams(-1, a.dp(42)));
-        dialog.setContentView(panel);
-        dialog.setOnDismissListener(
-                d -> {
-                    a.accountDialog = null;
-                    if (anchor != null && anchor.isAttachedToWindow()) anchor.requestFocus();
-                });
-        dialog.show();
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawableResource(android.R.color.transparent);
-            int panelW = Math.min(a.dp(410), a.windowWidth() - a.dp(a.isTvDevice() ? 48 : 32));
-            window.setLayout(panelW, -2);
-            WindowManager.LayoutParams lp = window.getAttributes();
-            if (a.isTvDevice()) {
-                window.setGravity(Gravity.TOP | Gravity.RIGHT);
-                int[] point = {0, 0};
-                if (anchor != null) anchor.getLocationInWindow(point);
-                lp.x = a.dp(38);
-                lp.y = anchor == null ? a.dp(80) : point[1] + anchor.getHeight() + a.dp(8);
+
+        void show() {
+            dialog = new Dialog(a);
+            a.accountDialog = dialog;
+            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+            FrameLayout root = new FrameLayout(a);
+            root.setTag("account-panel-root");
+
+            LinearLayout card = a.vertical();
+            card.setTag("account-panel");
+            card.setBackground(
+                    UiTokens.round(
+                            a, UiTokens.RADIUS_24, 0xf2141c2a, UiTokens.STROKE));
+            UiCompat.setElevation(card, a.dp(18));
+            card.setClipChildren(false);
+            card.setClipToPadding(false);
+
+            // ---- 头部 ----
+            LinearLayout header = a.row();
+            header.setGravity(Gravity.CENTER_VERTICAL);
+            header.setPadding(a.dp(24), a.dp(20), a.dp(16), a.dp(4));
+            LinearLayout titleCol = a.vertical();
+            TextView title = a.text("网盘与账号", UiTokens.TYPE_TITLE_LG, UiTokens.TEXT_PRIMARY);
+            title.setTypeface(null, Typeface.BOLD);
+            title.setIncludeFontPadding(false);
+            titleCol.addView(title);
+            TextView subtitle =
+                    a.text(
+                            "账号由当前配置源提供 · 登录状态以源返回为准",
+                            UiTokens.TYPE_MICRO,
+                            UiTokens.TEXT_TERTIARY);
+            subtitle.setIncludeFontPadding(false);
+            LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-2, -2);
+            subLp.topMargin = a.dp(4);
+            titleCol.addView(subtitle, subLp);
+            header.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1f));
+            View close =
+                    UiIcon.button(a, UiIcon.CLOSE, "关闭账号面板", 48, 22, () -> dialog.dismiss());
+            header.addView(close, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
+            card.addView(header, new LinearLayout.LayoutParams(-1, -2));
+
+            // ---- 内容（可滚动） ----
+            ScrollView scroll = new ScrollView(a);
+            scroll.setVerticalScrollBarEnabled(false);
+            scroll.setClipChildren(false);
+            scroll.setClipToPadding(false);
+            LinearLayout body = a.vertical();
+            body.setPadding(a.dp(24), a.dp(12), a.dp(24), a.dp(24));
+            body.setClipChildren(false);
+            body.setClipToPadding(false);
+            scroll.addView(body);
+            card.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+
+            if (site == null) {
+                buildEmpty(body);
             } else {
-                window.setGravity(Gravity.CENTER);
-                lp.x = 0;
-                lp.y = 0;
+                buildStatusCard(body);
+                buildFunctions(body);
+                buildDanger(body);
+                refresh();
             }
-            lp.dimAmount = .5f;
-            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            window.setAttributes(lp);
+
+            int width =
+                    Math.min(
+                            a.dp(wide ? 560 : 520),
+                            a.windowWidth() - a.dp(wide ? 48 : 28));
+            width = Math.max(a.dp(280), width);
+            root.addView(card, new FrameLayout.LayoutParams(-1, -2));
+            dialog.setContentView(root);
+
+            // 内容超高时限制滚动区高度，保证关闭按钮始终可见
+            final ScrollView contentScroll = scroll;
+            card.post(
+                    () -> {
+                        int maxHeight = a.windowHeight() - a.dp(32);
+                        if (card.getHeight() <= maxHeight) return;
+                        int headerHeight = card.getHeight() - contentScroll.getHeight();
+                        contentScroll.setLayoutParams(
+                                new LinearLayout.LayoutParams(
+                                        -1, Math.max(a.dp(160), maxHeight - headerHeight)));
+                    });
+
+            dialog.setOnDismissListener(
+                    d -> {
+                        a.accountDialog = null;
+                        if (anchor != null && anchor.isAttachedToWindow()) anchor.requestFocus();
+                    });
+            dialog.show();
+            Window window = dialog.getWindow();
+            if (window != null) {
+                window.setBackgroundDrawableResource(android.R.color.transparent);
+                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+                WindowManager.LayoutParams attrs = window.getAttributes();
+                attrs.dimAmount = 0.55f;
+                window.setAttributes(attrs);
+                window.setLayout(width, -2);
+                window.setGravity(Gravity.CENTER);
+                window.getDecorView().setSystemUiVisibility(5894);
+            }
+            if (!a.reduced) {
+                card.setAlpha(0f);
+                card.setScaleX(0.96f);
+                card.setScaleY(0.96f);
+                card.animate()
+                        .alpha(1f)
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(UiTokens.MOTION_BASE)
+                        .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                        .start();
+            }
+            // TV 焦点：优先落在状态卡右侧按钮，其次功能行 / 空状态导入按钮
+            card.post(
+                    () -> {
+                        View first =
+                                actionSlot != null && actionSlot.getChildCount() > 0
+                                        ? actionSlot.getChildAt(0)
+                                        : card.findViewWithTag("account-function");
+                        if (first == null) first = card.findViewWithTag("account-import");
+                        if (first != null) first.requestFocus();
+                    });
         }
-        panel.post(
-                () -> {
-                    boolean side =
-                            a.homeDock != null && anchor != null && a.homeDock.contains(anchor);
-                    int pivotY = 0;
-                    if (side && window != null) {
-                        int[] point = {0, 0};
-                        anchor.getLocationInWindow(point);
-                        int height = a.windowHeight();
-                        WindowManager.LayoutParams position = window.getAttributes();
-                        position.x = a.windowWidth() - point[0] + a.dp(12);
-                        position.y =
-                                Math.max(
-                                        a.dp(24),
-                                        Math.min(
-                                                height - panel.getHeight() - a.dp(24),
-                                                point[1]
-                                                        + anchor.getHeight() / 2
-                                                        - panel.getHeight() / 2));
-                        window.setAttributes(position);
-                        pivotY = point[1] + anchor.getHeight() / 2 - position.y;
-                    }
-                    panel.setPivotX(side ? panel.getWidth() : panel.getWidth() - a.dp(70));
-                    panel.setPivotY(pivotY);
-                    if (!a.reduced) {
-                        panel.setScaleX(.88f);
-                        panel.setScaleY(.7f);
-                        panel.setAlpha(0);
-                        panel.animate()
-                                .scaleX(1)
-                                .scaleY(1)
-                                .alpha(1)
-                                .setDuration(200)
-                                .setInterpolator(
-                                        new android.view.animation.DecelerateInterpolator())
-                                .start();
-                    }
-                    View first = panel.findViewWithTag("account-action:LoginShow");
-                    if (first != null) first.requestFocus();
+
+        // ---------------- 状态卡 ----------------
+
+        void buildStatusCard(LinearLayout body) {
+            LinearLayout card = a.row();
+            card.setGravity(Gravity.CENTER_VERTICAL);
+            card.setTag("account-status-card");
+            card.setPadding(a.dp(16), a.dp(14), a.dp(14), a.dp(14));
+            card.setBackground(
+                    UiTokens.round(a, UiTokens.RADIUS_18, 0x1affffff, 0x26ffffff));
+
+            FrameLayout badge = new FrameLayout(a);
+            int brand = panBrand(site);
+            badge.setBackground(UiTokens.round(a, UiTokens.RADIUS_14, alpha(brand, 0x2e)));
+            ImageView icon = new ImageView(a);
+            icon.setImageResource(UiIcon.res(UiIcon.CLOUD));
+            icon.setColorFilter(brand, android.graphics.PorterDuff.Mode.SRC_IN);
+            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            badge.addView(
+                    icon,
+                    new FrameLayout.LayoutParams(a.dp(24), a.dp(24), Gravity.CENTER));
+            card.addView(badge, new LinearLayout.LayoutParams(a.dp(44), a.dp(44)));
+
+            LinearLayout col = a.vertical();
+            col.setPadding(a.dp(12), 0, a.dp(8), 0);
+            LinearLayout statusRow = a.row();
+            statusRow.setGravity(Gravity.CENTER_VERTICAL);
+            statusDot = new View(a);
+            statusRow.addView(statusDot, new LinearLayout.LayoutParams(a.dp(8), a.dp(8)));
+            statusLabel = a.text("", 13.5f, UiTokens.TEXT_PRIMARY);
+            statusLabel.setTypeface(null, Typeface.BOLD);
+            statusLabel.setIncludeFontPadding(false);
+            LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(-2, -2);
+            statusLp.leftMargin = a.dp(7);
+            statusRow.addView(statusLabel, statusLp);
+            col.addView(statusRow);
+            detailLabel = a.text("", UiTokens.TYPE_CAPTION, UiTokens.TEXT_SECONDARY);
+            detailLabel.setMaxLines(2);
+            detailLabel.setEllipsize(TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams detailLp = new LinearLayout.LayoutParams(-1, -2);
+            detailLp.topMargin = a.dp(4);
+            col.addView(detailLabel, detailLp);
+            sourceLabel = a.text("", UiTokens.TYPE_MICRO, UiTokens.TEXT_TERTIARY);
+            sourceLabel.setSingleLine(true);
+            sourceLabel.setEllipsize(TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams sourceLp = new LinearLayout.LayoutParams(-1, -2);
+            sourceLp.topMargin = a.dp(3);
+            col.addView(sourceLabel, sourceLp);
+            card.addView(col, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            actionSlot = new FrameLayout(a);
+            card.addView(actionSlot, new LinearLayout.LayoutParams(-2, -2));
+            body.addView(card, new LinearLayout.LayoutParams(-1, -2));
+
+            TextView hint =
+                    a.text(
+                            "本机只能读取本地凭据；登录界面与账号名由配置源提供。",
+                            UiTokens.TYPE_MICRO,
+                            UiTokens.TEXT_TERTIARY);
+            hint.setPadding(a.dp(2), a.dp(8), a.dp(2), 0);
+            body.addView(hint, new LinearLayout.LayoutParams(-1, -2));
+        }
+
+        // ---------------- 功能列表 ----------------
+
+        void buildFunctions(LinearLayout body) {
+            TextView label =
+                    a.text("账号与网盘设置", UiTokens.TYPE_MICRO, UiTokens.TEXT_TERTIARY);
+            label.setPadding(a.dp(2), a.dp(20), a.dp(2), a.dp(8));
+            body.addView(label, new LinearLayout.LayoutParams(-1, -2));
+            addFunction(body, UiIcon.LAYERS, "登录凭据配置", "Cookie / Token 等登录凭据（由源提供）", "pushCkShow");
+            addFunction(body, UiIcon.TUNE, "网盘优先顺序", "调整网盘在播放线路中的优先级", "panSortShow");
+            addFunction(body, UiIcon.FILTER, "网盘搜索顺序", "调整网盘在搜索结果中的顺序", "panSourceSortShow");
+        }
+
+        void addFunction(
+                LinearLayout body, int iconKind, String title, String desc, String action) {
+            LinearLayout row = a.row();
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setTag("account-function");
+            row.setPadding(a.dp(14), a.dp(10), a.dp(12), a.dp(10));
+            row.setMinimumHeight(a.dp(56));
+            row.setBackground(UiTokens.round(a, UiTokens.RADIUS_14, 0x14ffffff));
+            row.setFocusable(true);
+            row.setFocusableInTouchMode(a.isTvDevice());
+            row.setClickable(true);
+            ImageView icon = new ImageView(a);
+            icon.setImageResource(UiIcon.res(iconKind));
+            icon.setColorFilter(UiTokens.ACCENT_SOFT, android.graphics.PorterDuff.Mode.SRC_IN);
+            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            row.addView(icon, new LinearLayout.LayoutParams(a.dp(24), a.dp(24)));
+            LinearLayout col = a.vertical();
+            col.setPadding(a.dp(12), 0, a.dp(8), 0);
+            TextView titleView = a.text(title, UiTokens.TYPE_BODY_SM + 1, UiTokens.TEXT_PRIMARY);
+            titleView.setIncludeFontPadding(false);
+            col.addView(titleView);
+            TextView descView = a.text(desc, UiTokens.TYPE_MICRO, UiTokens.TEXT_TERTIARY);
+            descView.setIncludeFontPadding(false);
+            descView.setSingleLine(true);
+            descView.setEllipsize(TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(-1, -2);
+            descLp.topMargin = a.dp(2);
+            col.addView(descView, descLp);
+            row.addView(col, new LinearLayout.LayoutParams(0, -2, 1f));
+            ImageView chevron =
+                    UiIcon.view(a, UiIcon.CHEVRON_RIGHT, UiTokens.TEXT_TERTIARY, 18);
+            row.addView(chevron, new LinearLayout.LayoutParams(a.dp(18), a.dp(18)));
+            MobileDetailScreen.bindTouchFeedback(row);
+            row.setOnClickListener(
+                    v -> runAction(action));
+            row.setOnFocusChangeListener(
+                    (v, focused) ->
+                            FocusMotion.style(
+                                    a,
+                                    row,
+                                    focused,
+                                    0x14ffffff,
+                                    0x33ffb3c8,
+                                    UiTokens.RADIUS_14,
+                                    UiTokens.TEXT_PRIMARY,
+                                    UiTokens.TEXT_PRIMARY,
+                                    true,
+                                    1.02f));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = a.dp(8);
+            body.addView(row, lp);
+        }
+
+        // ---------------- 危险区 ----------------
+
+        void buildDanger(LinearLayout body) {
+            TextView label = a.text("危险操作", UiTokens.TYPE_MICRO, UiTokens.TEXT_TERTIARY);
+            label.setPadding(a.dp(2), a.dp(20), a.dp(2), a.dp(8));
+            body.addView(label, new LinearLayout.LayoutParams(-1, -2));
+            Button clear =
+                    a.button(
+                            "清除账号与凭据",
+                            "account-clear",
+                            this::confirmClear);
+            clear.setTextSize(UiTokens.TYPE_BODY_SM);
+            clear.setTypeface(null, Typeface.BOLD);
+            clear.setTextColor(DANGER);
+            clear.setBackground(
+                    UiTokens.round(a, UiTokens.RADIUS_14, 0x14ff6b81, 0x66ff6b81));
+            clear.setMinHeight(a.dp(48));
+            clear.setMinimumHeight(a.dp(48));
+            clear.setPadding(a.dp(16), 0, a.dp(16), 0);
+            clear.setOnFocusChangeListener(
+                    (v, focused) ->
+                            FocusMotion.style(
+                                    a,
+                                    clear,
+                                    focused,
+                                    0x14ff6b81,
+                                    0x33ff6b81,
+                                    UiTokens.RADIUS_14,
+                                    DANGER,
+                                    0xff31141f,
+                                    true,
+                                    1.02f));
+            body.addView(clear, new LinearLayout.LayoutParams(-1, a.dp(48)));
+            TextView note =
+                    a.text(
+                            "仅清除本机保存的网盘登录数据，不影响其它设置。",
+                            UiTokens.TYPE_MICRO,
+                            UiTokens.TEXT_TERTIARY);
+            note.setPadding(a.dp(2), a.dp(6), a.dp(2), 0);
+            body.addView(note, new LinearLayout.LayoutParams(-1, -2));
+        }
+
+        void buildEmpty(LinearLayout body) {
+            FrameLayout iconWrap = new FrameLayout(a);
+            iconWrap.setBackground(UiTokens.circle(0x26ff8fb1));
+            ImageView icon = new ImageView(a);
+            icon.setImageResource(UiIcon.res(UiIcon.CLOUD));
+            icon.setColorFilter(UiTokens.ACCENT, android.graphics.PorterDuff.Mode.SRC_IN);
+            iconWrap.addView(
+                    icon,
+                    new FrameLayout.LayoutParams(a.dp(28), a.dp(28), Gravity.CENTER));
+            LinearLayout wrap = a.vertical();
+            wrap.setGravity(Gravity.CENTER_HORIZONTAL);
+            wrap.addView(iconWrap, new LinearLayout.LayoutParams(a.dp(64), a.dp(64)));
+            TextView title = a.text("当前配置不支持网盘账号", UiTokens.TYPE_TITLE, UiTokens.TEXT_PRIMARY);
+            title.setTypeface(null, Typeface.BOLD);
+            title.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-1, -2);
+            titleLp.topMargin = a.dp(16);
+            wrap.addView(title, titleLp);
+            TextView desc =
+                    a.text(
+                            "导入包含 MyDrive 网盘源的配置后，可在此查看登录状态、配置凭据与清除账号。",
+                            UiTokens.TYPE_BODY_SM,
+                            UiTokens.TEXT_SECONDARY);
+            desc.setGravity(Gravity.CENTER);
+            desc.setLineSpacing(a.dp(4), 1.35f);
+            LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(-1, -2);
+            descLp.topMargin = a.dp(8);
+            wrap.addView(desc, descLp);
+            Button importBtn = accentButton("去导入配置", "account-import", () -> {
+                dialog.dismiss();
+                a.pickConfig();
+            });
+            importBtn.setTag("account-import");
+            LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(-1, a.dp(46));
+            btnLp.topMargin = a.dp(20);
+            wrap.addView(importBtn, btnLp);
+            body.addView(wrap, new LinearLayout.LayoutParams(-1, -2));
+        }
+
+        // ---------------- 状态刷新 ----------------
+
+        void refresh() {
+            if (site == null || statusLabel == null) return;
+            credentials = scanCredentials(a, site);
+            accountName = findAccountName(credentials);
+            boolean available = a.available(site);
+            if (!available) {
+                state = STATE_DISABLED;
+            } else if (!credentials.isEmpty()) {
+                state = STATE_LOCAL;
+            } else if (engineStateUnreadable(site)) {
+                state = STATE_UNKNOWN;
+            } else {
+                state = STATE_GUEST;
+            }
+
+            int dotColor;
+            String label;
+            String detail;
+            switch (state) {
+                case STATE_DISABLED:
+                    dotColor = DOT_ORANGE;
+                    label = "来源未启用";
+                    detail = "请先在“设置 → 搜索与数据”启用来源扩展后再登录。";
+                    break;
+                case STATE_LOCAL:
+                    dotColor = DOT_GREEN;
+                    label = "已登录（本地凭据）";
+                    detail =
+                            accountName.isEmpty()
+                                    ? "本地检测到 "
+                                            + credentials.size()
+                                            + " 项登录数据 · 凭据是否仍有效以源返回为准"
+                                    : "账号：" + accountName + " · 凭据是否仍有效以源返回为准";
+                    break;
+                case STATE_UNKNOWN:
+                    dotColor = DOT_ORANGE;
+                    label = "未登录 · 状态由源提供";
+                    detail = "本机未检测到凭据；此来源的登录态由扩展内部管理，点击登录后在源面板查看。";
+                    break;
+                default:
+                    dotColor = DOT_GRAY;
+                    label = "未登录";
+                    detail = "点击登录，账号名与状态由网盘源返回。";
+                    break;
+            }
+            statusDot.setBackground(UiTokens.circle(dotColor));
+            statusLabel.setText(label);
+            detailLabel.setText(detail);
+            String sourceName = site.name == null || site.name.trim().isEmpty() ? site.key : site.name;
+            sourceLabel.setText(
+                    "配置源 · " + (sourceName == null ? "未知" : sourceName)
+                            + (credentials.isEmpty() ? "" : " · 本地凭据 " + credentials.size() + " 项"));
+
+            actionSlot.removeAllViews();
+            if (state == STATE_DISABLED) {
+                Button enable = glassButton("去启用", "account-enable", () -> {
+                    dialog.dismiss();
+                    a.settings();
                 });
+                actionSlot.addView(enable, new FrameLayout.LayoutParams(-2, a.dp(44)));
+            } else {
+                String actionLabel = state == STATE_LOCAL ? "管理" : "登录";
+                Button login = accentButton(actionLabel, "account-login", () -> runAction("LoginShow"));
+                actionSlot.addView(login, new FrameLayout.LayoutParams(-2, a.dp(44)));
+            }
+            // 刷新后把 TV 焦点放回状态卡按钮，避免 dpad 失焦
+            if (a.isTvDevice() && dialog != null && dialog.isShowing() && actionSlot.getChildCount() > 0) {
+                View focused =
+                        dialog.getWindow() == null
+                                ? null
+                                : dialog.getWindow().getDecorView().findFocus();
+                if (focused == null || !focused.isAttachedToWindow())
+                    actionSlot.getChildAt(0).requestFocus();
+            }
+        }
+
+        // ---------------- 交互 ----------------
+
+        void runAction(String action) {
+            if (site == null) return;
+            new SettingsScreen(a).accountAction(action, this::refresh);
+        }
+
+        void confirmClear() {
+            if (credentials.isEmpty()) {
+                showNoticeDialog(
+                        "没有可清除的凭据",
+                        "本机没有检测到网盘登录凭据。若源内仍显示已登录，请在“登录”面板内退出。",
+                        null);
+                return;
+            }
+            StringBuilder message = new StringBuilder();
+            message.append("将清除本机保存的 ")
+                    .append(credentials.size())
+                    .append(" 项网盘登录数据（Cookie / Token / 账号缓存）。\n\n")
+                    .append("此操作不可恢复；其它设置不受影响。\n")
+                    .append("若来源扩展没有提供退出登录接口，源端可能仍保留登录态。\n\n本机待清除项：");
+            int shown = 0;
+            for (Credential credential : credentials) {
+                if (shown >= 3) {
+                    message.append("\n… 另有 ").append(credentials.size() - shown).append(" 项");
+                    break;
+                }
+                message.append("\n· ").append(credential.display());
+                shown++;
+            }
+            showClearConfirm(message.toString());
+        }
+
+        void showClearConfirm(String message) {
+            final Dialog confirm = new Dialog(a);
+            confirm.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            FrameLayout root = new FrameLayout(a);
+            LinearLayout card = a.vertical();
+            card.setPadding(a.dp(22), a.dp(20), a.dp(22), a.dp(18));
+            card.setBackground(
+                    UiTokens.round(a, UiTokens.RADIUS_20, 0xf2141c2a, UiTokens.STROKE));
+            UiCompat.setElevation(card, a.dp(18));
+            TextView title = a.text("清除账号与凭据？", UiTokens.TYPE_TITLE, UiTokens.TEXT_PRIMARY);
+            title.setTypeface(null, Typeface.BOLD);
+            card.addView(title);
+            TextView body = a.text(message, UiTokens.TYPE_BODY_SM, UiTokens.TEXT_SECONDARY);
+            body.setLineSpacing(a.dp(4), 1.35f);
+            LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(-1, -2);
+            bodyLp.topMargin = a.dp(10);
+            card.addView(body, bodyLp);
+            LinearLayout buttons = a.row();
+            buttons.setGravity(Gravity.END);
+            LinearLayout.LayoutParams buttonsLp = new LinearLayout.LayoutParams(-1, -2);
+            buttonsLp.topMargin = a.dp(18);
+            card.addView(buttons, buttonsLp);
+            Button cancel = glassButton("取消", "account-clear-cancel", confirm::dismiss);
+            LinearLayout.LayoutParams cancelLp = new LinearLayout.LayoutParams(a.dp(96), a.dp(46));
+            cancelLp.rightMargin = a.dp(10);
+            buttons.addView(cancel, cancelLp);
+            Button clear = dangerButton("清除", "account-clear-confirm", () -> {
+                confirm.dismiss();
+                performClear();
+            });
+            buttons.addView(clear, new LinearLayout.LayoutParams(a.dp(110), a.dp(46)));
+            int width =
+                    Math.min(
+                            a.dp(wide ? 460 : 440),
+                            a.windowWidth() - a.dp(wide ? 48 : 40));
+            root.addView(
+                    card,
+                    new FrameLayout.LayoutParams(
+                            Math.max(a.dp(260), width), -2, Gravity.CENTER));
+            confirm.setContentView(root);
+            confirm.show();
+            Window window = confirm.getWindow();
+            if (window != null) {
+                window.setBackgroundDrawableResource(android.R.color.transparent);
+                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+                WindowManager.LayoutParams attrs = window.getAttributes();
+                attrs.dimAmount = 0.62f;
+                window.setAttributes(attrs);
+                window.setLayout(
+                        Math.max(a.dp(260), width), -2);
+                window.setGravity(Gravity.CENTER);
+                window.getDecorView().setSystemUiVisibility(5894);
+            }
+            cancel.requestFocus();
+        }
+
+        void showNoticeDialog(String titleText, String message, Runnable onOk) {
+            final Dialog notice = new Dialog(a);
+            notice.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            FrameLayout root = new FrameLayout(a);
+            LinearLayout card = a.vertical();
+            card.setPadding(a.dp(22), a.dp(20), a.dp(22), a.dp(18));
+            card.setBackground(
+                    UiTokens.round(a, UiTokens.RADIUS_20, 0xf2141c2a, UiTokens.STROKE));
+            TextView title = a.text(titleText, UiTokens.TYPE_TITLE, UiTokens.TEXT_PRIMARY);
+            title.setTypeface(null, Typeface.BOLD);
+            card.addView(title);
+            TextView body = a.text(message, UiTokens.TYPE_BODY_SM, UiTokens.TEXT_SECONDARY);
+            body.setLineSpacing(a.dp(4), 1.35f);
+            LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(-1, -2);
+            bodyLp.topMargin = a.dp(10);
+            card.addView(body, bodyLp);
+            Button ok =
+                    accentButton(
+                            "知道了",
+                            "account-notice-ok",
+                            () -> {
+                                notice.dismiss();
+                                if (onOk != null) onOk.run();
+                            });
+            LinearLayout.LayoutParams okLp = new LinearLayout.LayoutParams(-1, a.dp(46));
+            okLp.topMargin = a.dp(18);
+            card.addView(ok, okLp);
+            int width = Math.min(a.dp(440), a.windowWidth() - a.dp(40));
+            root.addView(
+                    card,
+                    new FrameLayout.LayoutParams(
+                            Math.max(a.dp(260), width), -2, Gravity.CENTER));
+            notice.setContentView(root);
+            notice.show();
+            Window window = notice.getWindow();
+            if (window != null) {
+                window.setBackgroundDrawableResource(android.R.color.transparent);
+                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+                WindowManager.LayoutParams attrs = window.getAttributes();
+                attrs.dimAmount = 0.58f;
+                window.setAttributes(attrs);
+                window.setLayout(Math.max(a.dp(260), width), -2);
+                window.setGravity(Gravity.CENTER);
+                window.getDecorView().setSystemUiVisibility(5894);
+            }
+            ok.requestFocus();
+        }
+
+        void performClear() {
+            List<Credential> targets = credentials;
+            Map<String, SharedPreferences> cache = new LinkedHashMap<>();
+            int removed = 0;
+            for (Credential credential : targets) {
+                try {
+                    SharedPreferences sp = cache.get(credential.file);
+                    if (sp == null) {
+                        sp = a.getSharedPreferences(credential.file, Context.MODE_PRIVATE);
+                        cache.put(credential.file, sp);
+                    }
+                    if (sp.edit().remove(credential.key).commit()) removed++;
+                } catch (Throwable error) {
+                    AppLog.w("AccountPanel", "clear credential failed: " + credential.display(), error);
+                }
+            }
+            AppLog.i(
+                    "AccountPanel",
+                    "cleared " + removed + "/" + targets.size() + " pan credential entries");
+            // 丢弃缓存引擎，确保下一次访问重新读取（源端无删除接口时只能做到这一步）
+            try {
+                a.closeEngines();
+            } catch (Throwable error) {
+                AppLog.w("AccountPanel", "close engines after clear failed", error);
+            }
+            credentials = new ArrayList<>();
+            accountName = "";
+            if (dialog != null && dialog.isShowing()) refresh();
+            a.toast(removed > 0 ? "已清除账号与凭据" : "未找到可清除的本机凭据");
+        }
+
+        // ---------------- 小部件 ----------------
+
+        Button accentButton(String label, String tag, Runnable action) {
+            Button b = a.button(label, tag, action);
+            b.setTextSize(UiTokens.TYPE_BODY_SM);
+            b.setTypeface(null, Typeface.BOLD);
+            b.setTextColor(0xff0b1220);
+            b.setBackground(UiTokens.round(a, 20, UiTokens.ACCENT));
+            b.setMinHeight(a.dp(44));
+            b.setMinimumHeight(a.dp(44));
+            b.setMinWidth(0);
+            b.setMinimumWidth(0);
+            b.setPadding(a.dp(18), 0, a.dp(18), 0);
+            b.setElevation(a.dp(2));
+            b.setOnFocusChangeListener(
+                    (v, focused) ->
+                            FocusMotion.style(
+                                    a,
+                                    b,
+                                    focused,
+                                    UiTokens.ACCENT,
+                                    0xffffd0de,
+                                    20,
+                                    0xff0b1220,
+                                    0xff31141f,
+                                    true,
+                                    1.04f));
+            return b;
+        }
+
+        Button glassButton(String label, String tag, Runnable action) {
+            Button b = a.button(label, tag, action);
+            b.setTextSize(UiTokens.TYPE_BODY_SM);
+            b.setTextColor(UiTokens.TEXT_PRIMARY);
+            b.setBackground(UiTokens.round(a, 20, 0x1affffff, 0x33ffffff));
+            b.setMinHeight(a.dp(44));
+            b.setMinimumHeight(a.dp(44));
+            b.setPadding(a.dp(18), 0, a.dp(18), 0);
+            b.setOnFocusChangeListener(
+                    (v, focused) ->
+                            FocusMotion.style(
+                                    a,
+                                    b,
+                                    focused,
+                                    0x1affffff,
+                                    0x40ffb3c8,
+                                    20,
+                                    UiTokens.TEXT_PRIMARY,
+                                    UiTokens.TEXT_PRIMARY,
+                                    true,
+                                    1.03f));
+            return b;
+        }
+
+        Button dangerButton(String label, String tag, Runnable action) {
+            Button b = a.button(label, tag, action);
+            b.setTextSize(UiTokens.TYPE_BODY_SM);
+            b.setTypeface(null, Typeface.BOLD);
+            b.setTextColor(0xff0b1220);
+            b.setBackground(UiTokens.round(a, 20, DANGER));
+            b.setMinHeight(a.dp(46));
+            b.setMinimumHeight(a.dp(46));
+            b.setPadding(a.dp(18), 0, a.dp(18), 0);
+            b.setOnFocusChangeListener(
+                    (v, focused) ->
+                            FocusMotion.style(
+                                    a,
+                                    b,
+                                    focused,
+                                    DANGER,
+                                    0xffffb3bf,
+                                    20,
+                                    0xff0b1220,
+                                    0xff31141f,
+                                    true,
+                                    1.03f));
+            return b;
+        }
+    }
+
+    // ====================== 状态检测 ======================
+
+    static Cms.Site findSite(MainActivity a) {
+        if (a == null || a.config == null || a.config.sites == null) return null;
+        for (Cms.Site site : a.config.sites)
+            if (site.api != null && site.api.contains("MyDrive")) return site;
+        return null;
+    }
+
+    /** 引擎内部状态是否不可读（CSP 插件 / 第三方运行时）：此时不猜测登录态。 */
+    static boolean engineStateUnreadable(Cms.Site site) {
+        if (site == null || site.api == null) return true;
+        String api = site.api;
+        return api.startsWith("csp_")
+                || api.startsWith("catpaw://")
+                || api.startsWith(com.pilipala.emby.EmbyLibrary.PREFIX)
+                || !(JsEngine.eligible(site) || DrpyEngine.eligible(site) || site.supported());
+    }
+
+    static int panBrand(Cms.Site site) {
+        String text =
+                ((site.name == null ? "" : site.name)
+                                + " "
+                                + (site.api == null ? "" : site.api)
+                                + " "
+                                + (site.ext == null ? "" : site.ext.toString()))
+                        .toLowerCase(Locale.ROOT);
+        if (text.contains("阿里") || text.contains("aliyun") || text.contains("ali")) return 0xffff8a3d;
+        if (text.contains("夸克") || text.contains("quark")) return 0xff8a7bff;
+        if (text.contains("百度") || text.contains("baidu")) return 0xff4d7cff;
+        if (text.contains("115")) return 0xff3fa9f5;
+        if (text.contains("天翼") || text.contains("189") || text.contains("cloud.189")) return 0xff3fc1f5;
+        if (text.contains("迅雷") || text.contains("xunlei")) return 0xff42a5f5;
+        return 0xffff8fb1;
+    }
+
+    static int alpha(int color, int alpha) {
+        return (color & 0x00ffffff) | ((alpha & 0xff) << 24);
+    }
+
+    // ====================== 凭据扫描 ======================
+
+    static final class Credential {
+        final String file;
+        final String key;
+        final String value;
+
+        Credential(String file, String key, String value) {
+            this.file = file;
+            this.key = key;
+            this.value = value;
+        }
+
+        String display() {
+            String shortFile = file.startsWith("js-source-") ? "来源本地存储" : file;
+            return shortFile + " · " + key;
+        }
+    }
+
+    static List<Credential> scanCredentials(MainActivity a, Cms.Site site) {
+        List<Credential> out = new ArrayList<>();
+        try {
+            File dir = null;
+            if (a.getApplicationInfo() != null && a.getApplicationInfo().dataDir != null)
+                dir = new File(a.getApplicationInfo().dataDir, "shared_prefs");
+            if (dir == null || !dir.isDirectory()) {
+                scanPrefs(a.prefs, prefsFileName(a), out);
+                return out;
+            }
+            File[] files = dir.listFiles();
+            if (files == null) {
+                scanPrefs(a.prefs, prefsFileName(a), out);
+                return out;
+            }
+            for (File file : files) {
+                String name = file.getName();
+                if (!name.endsWith(".xml")) continue;
+                name = name.substring(0, name.length() - 4);
+                if (!includePrefsFile(name, site)) continue;
+                try {
+                    SharedPreferences sp = a.getSharedPreferences(name, Context.MODE_PRIVATE);
+                    scanPrefs(sp, name, out);
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable error) {
+            AppLog.w("AccountPanel", "scan credentials failed", error);
+        }
+        return out;
+    }
+
+    static String prefsFileName(MainActivity a) {
+        return a.privateMode ? "movie-private" : Prefs.FILE;
+    }
+
+    static void scanPrefs(SharedPreferences prefs, String fileName, List<Credential> out) {
+        if (prefs == null) return;
+        try {
+            for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+                String key = entry.getKey();
+                if (!credentialKey(key)) continue;
+                Object value = entry.getValue();
+                out.add(
+                        new Credential(
+                                fileName,
+                                key,
+                                value instanceof String ? (String) value : ""));
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 只认 key 含 pan / drive / cookie / token / credential 的项，避免误删其它设置。 */
+    static boolean credentialKey(String key) {
+        if (key == null) return false;
+        String k = key.toLowerCase(Locale.ROOT);
+        return k.contains("pan")
+                || k.contains("drive")
+                || k.contains("cookie")
+                || k.contains("token")
+                || k.contains("credential")
+                || k.contains("cred");
+    }
+
+    static boolean includePrefsFile(String name, Cms.Site site) {
+        String n = name.toLowerCase(Locale.ROOT);
+        if (n.equals("movie") || n.equals("movie-private")) return true;
+        String siteKey = site == null || site.key == null ? "" : site.key.toLowerCase(Locale.ROOT);
+        String apiSuffix = "";
+        if (site != null && site.api != null) {
+            String api = site.api;
+            if (api.startsWith("csp_")) apiSuffix = api.substring(4).toLowerCase(Locale.ROOT);
+            else if (api.startsWith("catpaw://"))
+                apiSuffix = api.substring(9).toLowerCase(Locale.ROOT);
+        }
+        // JS 来源只在它自己的存储文件里清理，避免误删其它来源的 token
+        String jsStorage = jsStorageName(site);
+        if (!jsStorage.isEmpty() && n.equals(jsStorage)) return true;
+        if (!siteKey.isEmpty() && n.contains(siteKey)) return true;
+        if (!apiSuffix.isEmpty() && n.contains(apiSuffix)) return true;
+        // 插件宿主 / 网盘相关命名的 prefs 文件
+        if (n.contains("pan")
+                || n.contains("drive")
+                || n.contains("cookie")
+                || n.contains("credential")
+                || n.contains("cred")) return true;
+        if (n.startsWith("csp") || n.contains("guard")) return true;
+        return false;
+    }
+
+    /** 与 JsEngine 的本地存储命名保持一致：js-source-<sha256(site.key)>。 */
+    static String jsStorageName(Cms.Site site) {
+        if (site == null || site.key == null || site.key.isEmpty()) return "";
+        try {
+            byte[] digest =
+                    MessageDigest.getInstance("SHA-256").digest(site.key.getBytes("UTF-8"));
+            StringBuilder out = new StringBuilder(11 + digest.length * 2);
+            out.append("js-source-");
+            for (byte value : digest)
+                out.append(String.format(Locale.ROOT, "%02x", value & 255));
+            return out.toString();
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
+    /** 从凭据里找可展示的账号名（只接受 user/name/account 之类短值，不展示 token）。 */
+    static String findAccountName(List<Credential> credentials) {
+        for (Credential credential : credentials) {
+            String key = credential.key.toLowerCase(Locale.ROOT);
+            if (!(key.contains("user")
+                    || key.contains("name")
+                    || key.contains("account")
+                    || key.contains("nick")
+                    || key.contains("mobile")
+                    || key.contains("uid"))) continue;
+            String value = credential.value == null ? "" : credential.value.trim();
+            if (value.isEmpty() || value.length() > 40) continue;
+            if (value.startsWith("{") || value.startsWith("[")) continue;
+            if (value.length() >= 20
+                    && (value.matches("[0-9a-fA-F]+") || value.matches("[A-Za-z0-9+/=_-]+"))) {
+                // 长随机串更可能是 token，不当账号名展示
+                continue;
+            }
+            return value;
+        }
+        return "";
     }
 }

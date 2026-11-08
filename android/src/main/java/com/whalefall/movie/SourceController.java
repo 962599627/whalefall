@@ -382,6 +382,14 @@ final class SourceController {
     }
 
     static void sourceAction(MainActivity a, Cms.Site site, String action) {
+        sourceAction(a, site, action, null);
+    }
+
+    /**
+     * 执行来源扩展提供的 action；{@code finished} 在 UI 线程、拿到结果（或失败/空结果）之后调用，
+     * 供账号面板「登录/管理/顺序」操作完成后刷新状态。
+     */
+    static void sourceAction(MainActivity a, Cms.Site site, String action, Runnable finished) {
         a.detailCache.clear();
         final int ticket = a.generation;
         a.worker.execute(
@@ -390,41 +398,51 @@ final class SourceController {
                         String response = a.engine(site).action(action);
                         a.ui.post(
                                 () -> {
-                                    if (ticket != a.generation
-                                            || a.isFinishing()
-                                            || response == null
-                                            || response.trim().isEmpty()) return;
                                     try {
-                                        org.json.JSONObject result =
-                                                new org.json.JSONObject(response);
-                                        if (result.has("list")) {
-                                            Cms.Listing list = Cms.listing(response);
-                                            String[] titles = new String[list.videos.size()];
-                                            for (int i = 0; i < list.videos.size(); i++)
-                                                titles[i] = list.videos.get(i).title;
-                                            new AppDialog.Builder(a)
-                                                    .setTitle(site.name)
-                                                    .setItems(
-                                                            titles,
-                                                            (dialog, index) ->
-                                                                    a.openListing(
-                                                                            site,
-                                                                            list.videos.get(index)))
-                                                    .setNegativeButton("关闭", null)
-                                                    .show();
-                                        } else
-                                            a.notice(
-                                                    result.optString(
-                                                            "msg",
-                                                            result.optString("message", response)));
-                                    } catch (Throwable ignored) {
-                                        a.notice(response);
+                                        if (ticket != a.generation
+                                                || a.isFinishing()
+                                                || response == null
+                                                || response.trim().isEmpty()) return;
+                                        try {
+                                            org.json.JSONObject result =
+                                                    new org.json.JSONObject(response);
+                                            if (result.has("list")) {
+                                                Cms.Listing list = Cms.listing(response);
+                                                String[] titles = new String[list.videos.size()];
+                                                for (int i = 0; i < list.videos.size(); i++)
+                                                    titles[i] = list.videos.get(i).title;
+                                                new AppDialog.Builder(a)
+                                                        .setTitle(site.name)
+                                                        .setItems(
+                                                                titles,
+                                                                (dialog, index) ->
+                                                                        a.openListing(
+                                                                                site,
+                                                                                list.videos.get(
+                                                                                        index)))
+                                                        .setNegativeButton("关闭", null)
+                                                        .show();
+                                            } else
+                                                a.notice(
+                                                        result.optString(
+                                                                "msg",
+                                                                result.optString(
+                                                                        "message", response)));
+                                        } catch (Throwable ignored) {
+                                            a.notice(response);
+                                        }
+                                    } finally {
+                                        if (finished != null) finished.run();
                                     }
                                 });
                     } catch (Throwable error) {
                         a.ui.post(
                                 () -> {
-                                    if (ticket == a.generation) a.notice(a.message(error));
+                                    try {
+                                        if (ticket == a.generation) a.notice(a.message(error));
+                                    } finally {
+                                        if (finished != null) finished.run();
+                                    }
                                 });
                     }
                 });
