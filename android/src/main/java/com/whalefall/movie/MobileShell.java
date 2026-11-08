@@ -1505,6 +1505,21 @@ final class MobileShell {
             art.setBackground(glassBg(0xff1a2c45, 0xff13233a, a.dp(12), a.dp(0.6f), 0x33ffffff));
             art.setClipToOutline(true);
 
+            // 无海报/加载失败时的占位：深海蓝渐变 + 片名首字
+            TextView placeholder =
+                    a.text(
+                            v.title == null || v.title.isEmpty()
+                                    ? "鲸"
+                                    : v.title.substring(0, 1),
+                            34,
+                            0x40ffffff);
+            placeholder.setTypeface(null, Typeface.BOLD);
+            placeholder.setGravity(Gravity.CENTER);
+            placeholder.setBackground(
+                    new GradientDrawable(
+                            GradientDrawable.Orientation.TL_BR,
+                            new int[] {0xff1b3352, 0xff2a1b33}));
+            art.addView(placeholder, new FrameLayout.LayoutParams(-1, -1));
             ImageView img = new ImageView(a);
             img.setScaleType(ImageView.ScaleType.CENTER_CROP);
             art.addView(img, new FrameLayout.LayoutParams(-1, -1));
@@ -2975,6 +2990,12 @@ final class MobileShell {
 
                 int subSize = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE_SP, 40));
                 int subBg = Prefs.clampSubtitleBgStyle(a.prefs.getInt(Prefs.SUBTITLE_BG_STYLE, 0));
+                addSettingCard(
+                        body,
+                        0,
+                        "管理员后台（网页）",
+                        "扫码或浏览器访问，管理片源 / 收藏 / 电视频道 / 设置",
+                        () -> AdminPanel.show(a));
                 addSettingCard(
                         body,
                         2,

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>鲸落 · 管理后台</title>
+<script src="vue.global.prod.js"></script>
+<style>
+:root{
+  --pink:#ff8fb1; --pink-soft:#ffc7d6; --ink:#f3f6ff; --dim:#93a3bd;
+  --glass:rgba(255,255,255,.06); --line:rgba(255,255,255,.14);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%}
+body{
+  font-family:-apple-system,"SF Pro SC","PingFang SC","Noto Sans SC",system-ui,sans-serif;
+  color:var(--ink);background:#070b14;overflow-x:hidden;
+}
+body::before{
+  content:"";position:fixed;inset:-20%;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(42% 38% at 18% 8%,rgba(255,143,177,.30),transparent 62%),
+    radial-gradient(46% 42% at 86% 14%,rgba(96,150,255,.26),transparent 64%),
+    radial-gradient(60% 50% at 50% 108%,rgba(255,143,177,.16),transparent 60%),
+    linear-gradient(160deg,#0a1020 0%,#0b1220 46%,#120e1c 100%);
+  filter:blur(2px);
+}
+.wrap{position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:26px 20px 56px}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand h1{font-size:24px;margin:0;letter-spacing:.5px}
+.brand span{font-size:11px;color:var(--dim);letter-spacing:2.4px}
+.online{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);
+  padding:7px 12px;border-radius:999px;background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(14px)}
+.dot{width:7px;height:7px;border-radius:50%;background:#5fe0a8;box-shadow:0 0 10px #5fe0a8}
+nav{display:flex;gap:8px;margin:20px 0;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{
+  flex:0 0 auto;border:1px solid var(--line);background:var(--glass);color:var(--dim);
+  padding:9px 16px;border-radius:999px;font-size:13px;cursor:pointer;backdrop-filter:blur(14px);
+  transition:.22s;
+}
+nav button.on{background:linear-gradient(135deg,var(--pink-soft),var(--pink));color:#31141f;
+  border-color:transparent;font-weight:700;box-shadow:0 8px 26px rgba(255,143,177,.32)}
+.card{background:var(--glass);border:1px solid var(--line);border-radius:22px;
+  backdrop-filter:blur(22px) saturate(1.35);box-shadow:0 22px 60px rgba(0,0,0,.35);padding:20px}
+.card h2{font-size:15px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+.card .sub{font-size:11.5px;color:var(--dim);margin-bottom:14px}
+.grid{display:grid;gap:14px}
+.metrics{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.metric{padding:16px;border-radius:18px;background:rgba(255,255,255,.045);border:1px solid var(--line)}
+.metric b{display:block;font-size:26px;letter-spacing:.3px}
+.metric small{color:var(--dim);font-size:11.5px}
+.pink{color:var(--pink)}
+.btn{border:0;border-radius:999px;padding:10px 18px;font-size:13px;cursor:pointer;
+  background:linear-gradient(135deg,var(--pink-soft),var(--pink));color:#31141f;font-weight:700;
+  box-shadow:0 10px 26px rgba(255,143,177,.28);transition:.2s}
+.btn:active{transform:scale(.97)}
+.btn.ghost{background:rgba(255,255,255,.07);color:var(--ink);border:1px solid var(--line);
+  font-weight:500;box-shadow:none}
+.row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.row:last-child{border-bottom:0}
+.row .grow{flex:1;min-width:0}
+.row .name{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .meta{font-size:11px;color:var(--dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag{font-size:10.5px;padding:3px 9px;border-radius:999px;background:rgba(255,143,177,.16);
+  color:var(--pink-soft);border:1px solid rgba(255,143,177,.28);white-space:nowrap}
+.tag.blue{background:rgba(120,165,255,.14);color:#bcd3ff;border-color:rgba(120,165,255,.28)}
+.fav-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:12px}
+.fav{position:relative;border-radius:14px;overflow:hidden;aspect-ratio:2/3;background:#141c2c;cursor:pointer}
+.fav img{width:100%;height:100%;object-fit:cover;display:block}
+.fav .t{position:absolute;left:0;right:0;bottom:0;padding:20px 8px 8px;font-size:11px;line-height:1.35;
+  background:linear-gradient(transparent,rgba(4,7,14,.92))}
+.fav .del{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;
+  border:0;background:rgba(0,0,0,.55);color:#ffb3c8;font-size:13px;line-height:22px;cursor:pointer}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;font-size:12.5px;
+  background:rgba(255,255,255,.055);border:1px solid var(--line)}
+.chip button{border:0;background:transparent;color:#ff9ab5;font-size:11px;cursor:pointer;padding:0}
+input,textarea{width:100%;padding:11px 14px;border-radius:14px;background:rgba(8,13,24,.7);
+  border:1px solid var(--line);color:var(--ink);font-size:13px;outline:none;font-family:inherit}
+input:focus,textarea:focus{border-color:rgba(255,143,177,.55)}
+textarea{min-height:110px;resize:vertical;line-height:1.5}
+label.sw{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.07);cursor:pointer}
+label.sw:last-child{border-bottom:0}
+.sw i{width:44px;height:26px;border-radius:999px;background:rgba(255,255,255,.12);position:relative;transition:.22s;flex:0 0 auto}
+.sw i::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
+  background:#fff;transition:.22s}
+.sw.on i{background:linear-gradient(135deg,var(--pink-soft),var(--pink))}
+.sw.on i::after{left:21px}
+.sw span{font-size:13px}
+.sw small{display:block;font-size:11px;color:var(--dim);margin-top:2px}
+.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);z-index:9;
+  background:rgba(12,18,31,.92);border:1px solid var(--line);border-radius:999px;padding:11px 20px;
+  font-size:13px;opacity:0;transition:.25s;backdrop-filter:blur(16px);pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.empty{font-size:12.5px;color:var(--dim);padding:16px 0;text-align:center}
+footer{margin-top:26px;text-align:center;font-size:11px;color:#5f6f88;line-height:1.8}
+@media (max-width:560px){
+  .wrap{padding:18px 14px 40px}.brand h1{font-size:20px}.card{padding:16px;border-radius:18px}
+  .metrics{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="app" v-cloak>
+  <header>
+    <div class="brand"><h1>鲸落 · 管理后台</h1><span>WHALEFALL ADMIN</span></div>
+    <div class="online"><i class="dot"></i>本机在线 · {{state.ip}} : {{state.port}}</div>
+  </header>
+
+  <nav>
+    <button v-for="t in tabs" :key="t.k" :class="{on:tab===t.k}" @click="tab=t.k">{{t.n}}</button>
+  </nav>
+
+  <!-- 概览 -->
+  <section v-if="tab==='home'" class="grid">
+    <div class="card">
+      <h2>运行概览</h2>
+      <div class="sub">数据来自手机本机，修改即时生效</div>
+      <div class="grid metrics">
+        <div class="metric"><b class="pink">{{state.version||'—'}}</b><small>应用版本</small></div>
+        <div class="metric"><b>{{state.sites.length}}</b><small>片源站点</small></div>
+        <div class="metric"><b>{{state.favorites.length}}</b><small>收藏</small></div>
+        <div class="metric"><b>{{state.history.length}}</b><small>观看历史</small></div>
+        <div class="metric"><b>{{state.tv.total}}</b><small>电视频道</small></div>
+        <div class="metric"><b>{{state.device||'—'}}</b><small>设备</small></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>当前片源</h2>
+      <div class="sub">来自 App 内的配置，可在「片源」页导入新的配置地址或 JSON</div>
+      <div class="row" v-for="s in state.sites" :key="s.key">
+        <div class="grow">
+          <div class="name">{{s.name}}</div>
+          <div class="meta">{{s.api}}</div>
+        </div>
+        <span class="tag" :class="{blue:s.key!==state.selectedSite}">{{s.key===state.selectedSite?'使用中':'可用'}}</span>
+      </div>
+      <div class="empty" v-if="!state.sites.length">还没有片源，去「片源」页导入</div>
+    </div>
+  </section>
+
+  <!-- 片源 -->
+  <section v-if="tab==='sites'" class="grid">
+    <div class="card">
+      <h2>片源列表</h2>
+      <div class="sub">点「使用」切换当前片源；切换后手机上的首页会立即刷新</div>
+      <div class="row" v-for="s in state.sites" :key="s.key">
+        <div class="grow">
+          <div class="name">{{s.name}}</div>
+          <div class="meta">{{s.api}}</div>
+        </div>
+        <button class="btn ghost" v-if="s.key!==state.selectedSite" @click="post('/api/site/select',{key:s.key})">使用</button>
+        <span class="tag" v-else>使用中</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>导入配置</h2>
+      <div class="sub">粘贴「配置地址」（http/https 链接）或整段 JSON 配置</div>
+      <textarea v-model="configText" placeholder="https://example.com/config.json  或  {...}"></textarea>
+      <div style="display:flex;gap:10px;margin-top:12px">
+        <button class="btn" @click="importConfig">导入并应用</button>
+        <span style="align-self:center;font-size:11.5px;color:var(--dim)">导入会替换当前配置</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 收藏 -->
+  <section v-if="tab==='fav'" class="grid">
+    <div class="card">
+      <h2>收藏 <span class="tag">{{state.favorites.length}}</span></h2>
+      <div class="sub">点右上角 ✕ 删除；在 App 内收藏后这里会同步</div>
+      <div class="fav-grid" v-if="state.favorites.length">
+        <div class="fav" v-for="f in state.favorites" :key="f.site+f.id">
+          <img :src="f.poster" referrerpolicy="no-referrer" @error="e=>e.target.style.opacity=.15">
+          <button class="del" @click.stop="removeFav(f)">✕</button>
+          <div class="t">{{f.title}}</div>
+        </div>
+      </div>
+      <div class="empty" v-else>还没有收藏</div>
+    </div>
+    <div class="card">
+      <h2>观看历史</h2>
+      <div class="sub">只存标题与进度，不保存播放地址</div>
+      <div class="row" v-for="h in state.history" :key="h.site+h.id">
+        <div class="grow">
+          <div class="name">{{h.title}}</div>
+          <div class="meta">{{h.episode||'—'}} · {{progress(h)}} · {{fmtTime(h.updated)}}</div>
+        </div>
+        <button class="btn ghost" @click="removeHistory(h)">删除</button>
+      </div>
+      <div class="empty" v-if="!state.history.length">还没有观看记录</div>
+    </div>
+  </section>
+
+  <!-- 电视台 -->
+  <section v-if="tab==='tv'" class="grid">
+    <div class="card">
+      <h2>电视频道 <span class="tag">{{state.tv.total}}</span></h2>
+      <div class="sub">内置 CCTV 18 个 + 卫视 {{state.tv.builtinSat}} 个；下面是自定义频道</div>
+      <div class="chips" v-if="state.tv.custom.length">
+        <span class="chip" v-for="c in state.tv.custom" :key="c.url">
+          {{c.name}}<button @click="removeChannel(c)">✕</button>
+        </span>
+      </div>
+      <div class="empty" v-else>还没有自定义频道</div>
+    </div>
+    <div class="card">
+      <h2>添加频道</h2>
+      <div class="sub">填频道名和直播页地址（官方网页地址即可）</div>
+      <div style="display:grid;gap:10px">
+        <input v-model="newChannel.name" placeholder="频道名，如 湖南卫视">
+        <input v-model="newChannel.url" placeholder="https://live.mgtv.com/">
+        <button class="btn" style="justify-self:start" @click="addChannel">添加到手机</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 设置 -->
+  <section v-if="tab==='settings'" class="grid">
+    <div class="card">
+      <h2>外观与播放</h2>
+      <div class="sub">改动会立即写回手机设置</div>
+      <label class="sw" :class="{on:state.prefs.wallpaper_sound}" @click="toggle('wallpaper_sound')">
+        <i></i><span>动态壁纸声音<small>开启后壁纸视频自带声音</small></span>
+      </label>
+      <label class="sw" :class="{on:state.prefs.reduced}" @click="toggle('reduced')">
+        <i></i><span>减少动效<small>关闭部分转场与动画</small></span>
+      </label>
+      <label class="sw" :class="{on:state.prefs.wallpaper_enabled}" @click="toggle('wallpaper_enabled')">
+        <i></i><span>首页动态壁纸<small>视频壁纸作为首页背景</small></span>
+      </label>
+      <label class="sw" :class="{on:state.prefs.autoplay}" @click="toggle('autoplay')">
+        <i></i><span>自动连播<small>一集结束自动下一集</small></span>
+      </label>
+    </div>
+    <div class="card">
+      <h2>电视台画面</h2>
+      <div class="sub">与 App 内设置同步</div>
+      <div class="row"><div class="grow"><div class="name">画面比例</div><div class="meta">电视直播的显示比例</div></div>
+        <button class="btn ghost" @click="cycleAspect">{{aspectLabel}}</button></div>
+      <div class="row"><div class="grow"><div class="name">填充模式</div><div class="meta">适应 / 裁剪 / 拉伸</div></div>
+        <button class="btn ghost" @click="cycleFill">{{fillLabel}}</button></div>
+    </div>
+  </section>
+
+  <!-- 关于 -->
+  <section v-if="tab==='about'" class="grid">
+    <div class="card">
+      <h2>关于鲸落</h2>
+      <div class="sub">基于 MarcoMovie 的二次开发（GPL-3.0-only）</div>
+      <p style="font-size:13px;line-height:1.9;color:#c8d3e6;margin:0">
+        鲸落（WhaleFall）是开源影视客户端 MarcoMovie 的衍生版本，保留上游版权与许可证声明，衍生代码同样以 GPL-3.0 开源。
+        本后台通过局域网直连手机，不经过任何服务器，改完立即生效。
+      </p>
+      <div style="margin-top:14px" class="row"><div class="grow"><div class="name">本机地址</div>
+        <div class="meta">http://{{state.ip}}:{{state.port}}/</div></div></div>
+      <div class="row"><div class="grow"><div class="name">应用版本</div>
+        <div class="meta">{{state.version}} · {{state.package}}</div></div></div>
+    </div>
+  </section>
+
+  <footer>鲸落 · 沉入故事深处 · 本页由手机本机提供，关闭「管理员后台」后停止访问</footer>
+  <div class="toast" :class="{show:toastText}">{{toastText}}</div>
+</div>
+
+<script>
+const {createApp} = Vue;
+createApp({
+  data(){
+    return {
+      tab:'home',
+      tabs:[{k:'home',n:'概览'},{k:'sites',n:'片源'},{k:'fav',n:'收藏'},{k:'tv',n:'电视台'},{k:'settings',n:'设置'},{k:'about',n:'关于'}],
+      state:{version:'',package:'',device:'',ip:'',port:'',sites:[],selectedSite:'',favorites:[],history:[],tv:{total:0,builtinSat:0,custom:[]},prefs:{}},
+      configText:'', newChannel:{name:'',url:''}, toastText:'', toastTimer:null
+    };
+  },
+  computed:{
+    aspectLabel(){const v=this.state.prefs.tv_aspect|0;return ['自适应','16:9','4:3'][v]||'自适应';},
+    fillLabel(){const v=this.state.prefs.tv_fill|0;return ['适应','裁剪','拉伸'][v]||'适应';}
+  },
+  mounted(){this.load();},
+  methods:{
+    async load(){
+      try{
+        const r=await fetch('/api/state',{cache:'no-store'});
+        this.state=await r.json();
+      }catch(e){this.say('连接失败：'+e);}
+    },
+    async post(path,body){
+      try{
+        const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+        const j=await r.json();
+        if(!j.ok) throw new Error(j.error||'操作失败');
+        if(j.state) this.state=j.state; else await this.load();
+        this.say('已同步到手机');
+        return j;
+      }catch(e){this.say('失败：'+e.message);}
+    },
+    say(t){this.toastText=t;clearTimeout(this.toastTimer);this.toastTimer=setTimeout(()=>this.toastText='',2200);},
+    toggle(k){
+      const v=!this.state.prefs[k];
+      this.post('/api/settings',{key:k,value:v});
+    },
+    cycleAspect(){
+      const v=((this.state.prefs.tv_aspect|0)+1)%3;
+      this.post('/api/settings',{key:'tv_aspect',value:v});
+    },
+    cycleFill(){
+      const v=((this.state.prefs.tv_fill|0)+1)%3;
+      this.post('/api/settings',{key:'tv_fill',value:v});
+    },
+    importConfig(){
+      if(!this.configText.trim()) return this.say('先粘贴配置地址或 JSON');
+      this.post('/api/config',{text:this.configText.trim()});
+    },
+    removeFav(f){this.post('/api/favorites/remove',{site:f.site,id:f.id});},
+    removeHistory(h){this.post('/api/history/remove',{site:h.site,id:h.id});},
+    addChannel(){
+      if(!this.newChannel.name||!this.newChannel.url) return this.say('频道名和地址都要填');
+      this.post('/api/tv/add',{name:this.newChannel.name,url:this.newChannel.url}).then(j=>{
+        if(j){this.newChannel={name:'',url:''};}
+      });
+    },
+    removeChannel(c){this.post('/api/tv/remove',{name:c.name,url:c.url});},
+    progress(h){
+      if(!h.duration) return '未播放';
+      const p=Math.min(100,Math.round(h.position*100/h.duration));
+      return p+'%';
+    },
+    fmtTime(ts){
+      if(!ts) return '';
+      const d=new Date(ts*1000), n=Date.now()/1000;
+      const diff=Math.max(0,n-ts);
+      if(diff<3600) return Math.max(1,Math.round(diff/60))+' 分钟前';
+      if(diff<86400) return Math.round(diff/3600)+' 小时前';
+      return (d.getMonth()+1)+'月'+d.getDate()+'日';
+    }
+  }
+}).mount('#app');
+</script>
+<style>[v-cloak]{display:none}</style>
+</body>
+</html>

@@ -5,7 +5,13 @@ import android.graphics.drawable.GradientDrawable;
 import android.view.*;
 import android.widget.*;
 
-/** Three independent floating regions with one visibility/focus owner. */
+/**
+ * 播放器悬浮 UI：顶部标题/返回、右上角图标组、右侧工具 Dock 外层、中央播放区、底部进度与时间。
+ *
+ * <p>视觉延续鲸落主题：深海蓝渐变遮罩 + 蓝白玻璃胶囊 + 樱花粉强调；所有图标由
+ * {@link PlayerUiKit} 纯 Canvas 绘制。本类只负责「长什么样、摆在哪」，播放逻辑仍由
+ * {@link PlaybackControls} 与 {@link PlaybackController} 驱动。
+ */
 final class PlayerChrome {
     final MainActivity a;
     final FrameLayout overlay;
@@ -13,22 +19,16 @@ final class PlayerChrome {
     final LinearLayout dock, progress, heading;
     final LinearLayout loadingPill;
     final LinearLayout centerRow;
+    final LinearLayout topActions;
     final TextView loadingText, episodeLabel, titleView, seekHint;
     final Button fsBtn;
-    final StateGlyph state;
+    final PlayerUiKit.PlayPauseButton state;
     final TextView resolution;
+    final TextView seekBubble;
     boolean loading = true;
     boolean progressOnlyMode = false;
     final Rect windowInsets = new Rect();
     boolean layoutPending;
-
-    private GradientDrawable chromeSurface(int color, float radiusDp, int strokeColor) {
-        GradientDrawable d = a.bg(color, radiusDp);
-        if (strokeColor != 0) {
-            d.setStroke(Math.max(1, a.dp(1)), strokeColor);
-        }
-        return d;
-    }
 
     PlayerChrome(MainActivity host, Cms.Video video, Cms.Episode episode, boolean live) {
         a = host;
@@ -40,142 +40,189 @@ final class PlayerChrome {
                 (view, l, t, r, b, ol, ot, or, ob) -> {
                     if (l != ol || t != ot || r != or || b != ob) scheduleLayout();
                 });
+
+        // ---------------- 深海蓝渐变遮罩（不再用纯黑） ----------------
         topShade = new View(a);
         topShade.setBackground(
                 new GradientDrawable(
                         GradientDrawable.Orientation.TOP_BOTTOM,
-                        new int[] {0xc4000000, 0x00000000}));
-        overlay.addView(topShade, new FrameLayout.LayoutParams(-1, a.dp(160), Gravity.TOP));
+                        new int[] {0xd90b1220, 0x000b1220}));
+        overlay.addView(topShade, new FrameLayout.LayoutParams(-1, a.dp(210), Gravity.TOP));
         bottomShade = new View(a);
         bottomShade.setBackground(
                 new GradientDrawable(
                         GradientDrawable.Orientation.BOTTOM_TOP,
-                        new int[] {0xb8000000, 0x00000000}));
-        overlay.addView(bottomShade, new FrameLayout.LayoutParams(-1, a.dp(210), Gravity.BOTTOM));
+                        new int[] {0xe00b1220, 0x000b1220}));
+        overlay.addView(bottomShade, new FrameLayout.LayoutParams(-1, a.dp(270), Gravity.BOTTOM));
+
+        // ---------------- 顶部：返回圆钮 + 两行标题 + 编码胶囊 ----------------
         heading = a.vertical();
         heading.setTag("player-heading");
-        if (!a.isTvDevice()) {
-            LinearLayout topActions = a.row();
-            topActions.setPadding(0, 0, 0, a.dp(8));
-            Button backBtn = a.navButton("‹ 返回", "player-back", a::leavePlayback);
-            backBtn.setTextColor(MainActivity.WHITE);
-            backBtn.setBackground(chromeSurface(0xcc15233a, 17, 0x33ffffff));
-            topActions.addView(backBtn, new LinearLayout.LayoutParams(-2, a.dp(34)));
-            View spacer = new View(a);
-            topActions.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
-            // Orientation toggle lives only on the progress row ("全屏横屏 / 退出全屏").
-            heading.addView(topActions, new LinearLayout.LayoutParams(-1, -2));
-        }
         LinearLayout titleRow = a.row();
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        titleView = a.text(video.title, a.windowWidth() < a.dp(600) ? 20 : 26, MainActivity.WHITE);
+
+        PlayerUiKit.IconView back =
+                new PlayerUiKit.IconView(a, PlayerUiKit.ICON_BACK, 0xfff2f6ff, a.dp(20));
+        back.setTag("player-back");
+        back.setBackground(
+                PlayerUiKit.circleBg(0x33ffffff, 0x4dffffff, Math.max(1, a.dp(1))));
+        back.setOnClickListener(v -> a.leavePlayback());
+        MobileDetailScreen.bindTouchFeedback(back);
+        titleRow.addView(back, new LinearLayout.LayoutParams(a.dp(42), a.dp(42)));
+
+        LinearLayout titleCol = a.vertical();
+        titleCol.setPadding(a.dp(12), 0, a.dp(10), 0);
+        titleView = a.text(video.title, 18, MainActivity.WHITE);
         titleView.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         titleView.getPaint().setFakeBoldText(true);
-        titleView.setSingleLine();
+        titleView.setSingleLine(true);
         titleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        titleView.setShadowLayer(a.dp(4), 0, a.dp(2), 0xdd000000);
-        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-2, -2);
-        titleLp.rightMargin = a.dp(10);
-        titleRow.addView(titleView, titleLp);
-        resolution = a.text("分辨率读取中", 11, 0xffeeeef2);
-        resolution.setTag("player-resolution");
-        resolution.setSingleLine();
-        resolution.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        resolution.setPadding(a.dp(9), a.dp(3), a.dp(9), a.dp(3));
-        resolution.setBackground(chromeSurface(0xb8172742, 10, 0x33ffffff));
-        titleRow.addView(resolution, new LinearLayout.LayoutParams(-2, -2));
-        heading.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
-        String line = a.activeLine == null ? "" : a.activeLine.name;
-        episodeLabel =
-                a.text(episode.name + (line.isEmpty() ? "" : "  ·  " + line), 14, 0xffdde6f5);
-        episodeLabel.setTag("player-episode");
-        episodeLabel.setSingleLine();
-        episodeLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        episodeLabel.setPadding(0, a.dp(6), 0, 0);
-        heading.addView(episodeLabel);
-        a.playStatus = a.text("正在加载所选剧集…", 12, MainActivity.MUTED);
-        a.playStatus.setPadding(0, a.dp(6), 0, 0);
-        heading.addView(a.playStatus);
-        FrameLayout.LayoutParams top = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
-        int sideMargin = a.windowWidth() < a.dp(600) ? a.dp(20) : a.dp(44);
-        top.setMargins(sideMargin, a.dp(24), sideMargin, 0);
-        overlay.addView(heading, top);
+        titleView.setShadowLayer(a.dp(8), 0, a.dp(2), 0xcc000000);
+        titleView.setIncludeFontPadding(false);
+        titleCol.addView(titleView, new LinearLayout.LayoutParams(-1, -2));
 
+        LinearLayout subRow = a.row();
+        subRow.setGravity(Gravity.CENTER_VERTICAL);
+        subRow.setPadding(0, a.dp(4), 0, 0);
+        String line = a.activeLine == null ? "" : a.activeLine.name;
+        String epName = episode == null || episode.name == null ? "" : episode.name;
+        episodeLabel = a.text(epName + (line.isEmpty() ? "" : "  ·  " + line), 11, 0xffb9c7dd);
+        episodeLabel.setTag("player-episode");
+        episodeLabel.setSingleLine(true);
+        episodeLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        subRow.addView(episodeLabel, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        resolution = a.text("分辨率读取中", 10, 0xffdbe6f6);
+        resolution.setTag("player-resolution");
+        resolution.setSingleLine(true);
+        resolution.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        resolution.setPadding(a.dp(8), a.dp(3), a.dp(8), a.dp(3));
+        resolution.setBackground(
+                PlayerUiKit.capsuleBg(
+                        0x330b1220,
+                        0x33ffffff,
+                        Math.max(1, a.dp(0.7f)),
+                        a.dp(999)));
+        LinearLayout.LayoutParams resLp = new LinearLayout.LayoutParams(-2, -2);
+        resLp.leftMargin = a.dp(8);
+        subRow.addView(resolution, resLp);
+        titleCol.addView(subRow, new LinearLayout.LayoutParams(-1, -2));
+
+        a.playStatus = a.text("正在加载所选剧集…", 11, 0xff8fa2bd);
+        a.playStatus.setSingleLine(true);
+        a.playStatus.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        a.playStatus.setPadding(0, a.dp(4), 0, 0);
+        titleCol.addView(a.playStatus, new LinearLayout.LayoutParams(-1, -2));
+        titleRow.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1f));
+        heading.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
+        overlay.addView(heading, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+
+        // ---------------- 右上角悬浮图标组（全屏 / 更多） ----------------
+        topActions = a.row();
+        topActions.setGravity(Gravity.CENTER_VERTICAL);
+        PlayerUiKit.IconView fsIcon =
+                new PlayerUiKit.IconView(a, PlayerUiKit.ICON_FULLSCREEN, 0xfff2f6ff, a.dp(19));
+        fsIcon.setBackground(
+                PlayerUiKit.circleBg(0x330b1220, 0x40ffffff, Math.max(1, a.dp(1))));
+        fsIcon.setOnClickListener(v -> a.togglePlayerOrientation());
+        MobileDetailScreen.bindTouchFeedback(fsIcon);
+        topActions.addView(fsIcon, new LinearLayout.LayoutParams(a.dp(38), a.dp(38)));
+        PlayerUiKit.IconView moreIcon =
+                new PlayerUiKit.IconView(a, PlayerUiKit.ICON_MORE, 0xfff2f6ff, a.dp(19));
+        moreIcon.setBackground(
+                PlayerUiKit.circleBg(0x330b1220, 0x40ffffff, Math.max(1, a.dp(1))));
+        moreIcon.setOnClickListener(
+                v -> {
+                    if (a.playbackControls != null) {
+                        // 锚到进度条，弹层才有足够高度展示完整「更多」菜单
+                        a.playbackControls.menuAnchor = progress;
+                        a.playbackControls.more();
+                    }
+                });
+        MobileDetailScreen.bindTouchFeedback(moreIcon);
+        LinearLayout.LayoutParams moreLp = new LinearLayout.LayoutParams(a.dp(38), a.dp(38));
+        moreLp.leftMargin = a.dp(8);
+        topActions.addView(moreIcon, moreLp);
+        overlay.addView(
+                topActions, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT));
+
+        // ---------------- 底部：进度 + 时间 + 退出全屏 ----------------
         progress = a.vertical();
         progress.setTag("player-progress");
         LinearLayout clockRow = a.row();
-        a.playClock = a.text("--:-- / --:--", 12, MainActivity.WHITE);
+        clockRow.setGravity(Gravity.CENTER_VERTICAL);
+        a.playClock = a.text("--:-- / --:--", 13, MainActivity.WHITE);
+        a.playClock.setTypeface(null, Typeface.BOLD);
+        a.playClock.setIncludeFontPadding(false);
         a.playClock.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
-        a.playClock.setPadding(a.dp(8), 0, a.dp(12), 0);
-        clockRow.addView(a.playClock, new LinearLayout.LayoutParams(0, -2, 1));
-        seekHint = a.text("", 12, 0xffe6edf9);
+        clockRow.addView(a.playClock, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        seekHint = a.text("", 11.5f, 0xffffb3c8);
         seekHint.setTag("player-seek-hint");
-        seekHint.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        seekHint.setPadding(a.dp(8), 0, a.dp(8), 0);
+        seekHint.setSingleLine(true);
+        seekHint.setGravity(Gravity.CENTER);
+        seekHint.setPadding(a.dp(10), a.dp(4), a.dp(10), a.dp(4));
+        seekHint.setBackground(
+                PlayerUiKit.capsuleBg(
+                        0x33ff8fb1, 0x4dffb3c8, Math.max(1, a.dp(0.7f)), a.dp(999)));
         seekHint.setVisibility(View.GONE);
         clockRow.addView(seekHint, new LinearLayout.LayoutParams(-2, -2));
+
         if (!a.isTvDevice()) {
-            fsBtn =
-                    a.navButton(
-                            a.windowWidth() < a.dp(600) ? "⛶ 全屏横屏" : "⛶ 退出全屏",
-                            "player-fullscreen",
-                            a::togglePlayerOrientation);
-            fsBtn.setTextColor(MainActivity.WHITE);
-            fsBtn.setTextSize(12);
-            fsBtn.setMinHeight(a.dp(30));
-            fsBtn.setMinimumHeight(a.dp(30));
-            fsBtn.setPadding(a.dp(12), a.dp(4), a.dp(12), a.dp(4));
-            fsBtn.setBackground(chromeSurface(0xcc15233a, 15, 0x33ffffff));
-            clockRow.addView(fsBtn, new LinearLayout.LayoutParams(-2, a.dp(30)));
+            fsBtn = a.button("退出全屏", "player-fullscreen", a::togglePlayerOrientation);
+            fsBtn.setTextSize(11.5f);
+            fsBtn.setTextColor(0xffe8eff9);
+            fsBtn.setAllCaps(false);
+            fsBtn.setSingleLine(true);
+            fsBtn.setMinWidth(0);
+            fsBtn.setMinimumWidth(0);
+            fsBtn.setMinHeight(0);
+            fsBtn.setMinimumHeight(0);
+            fsBtn.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+            fsBtn.setBackground(
+                    PlayerUiKit.capsuleBg(
+                            0x730b1220, 0x40ffffff, Math.max(1, a.dp(0.8f)), a.dp(999)));
+            PlayerUiKit.setLeftIcon(fsBtn, PlayerUiKit.ICON_ORIENTATION, 0xffe8eff9, a.dp(15));
+            fsBtn.setCompoundDrawablePadding(a.dp(5));
+            LinearLayout.LayoutParams fsLp = new LinearLayout.LayoutParams(-2, a.dp(32));
+            fsLp.leftMargin = a.dp(10);
+            clockRow.addView(fsBtn, fsLp);
         } else {
             fsBtn = null;
         }
         progress.addView(clockRow, new LinearLayout.LayoutParams(-1, -2));
-        int width = a.windowWidth();
-        boolean mobileLandscape = !a.isTvDevice() && a.windowWidth() >= a.dp(600);
-        FrameLayout.LayoutParams track =
-                new FrameLayout.LayoutParams(
-                        Math.min(
-                                a.dp(760),
-                                Math.max(a.dp(220), width - a.dp(mobileLandscape ? 120 : 48))),
-                        -2,
-                        Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        track.bottomMargin = a.dp(mobileLandscape ? 20 : 94);
-        if (mobileLandscape) track.rightMargin = a.dp(36);
-        // Browsing live channels leaves a live session available for returning.
-        // Only the currently playing source decides whether seeking is hidden.
         progress.setVisibility(live ? View.GONE : View.VISIBLE);
-        overlay.addView(progress, track);
+        overlay.addView(progress, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
 
+        // 拖拽时间气泡
+        seekBubble = a.text("", 12, MainActivity.WHITE);
+        seekBubble.setTypeface(null, Typeface.BOLD);
+        seekBubble.setSingleLine(true);
+        seekBubble.setIncludeFontPadding(false);
+        seekBubble.setGravity(Gravity.CENTER);
+        seekBubble.setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5));
+        seekBubble.setBackground(
+                PlayerUiKit.capsuleBg(
+                        0xe60b1220, 0x66ffb3c8, Math.max(1, a.dp(0.8f)), a.dp(12)));
+        seekBubble.setVisibility(View.GONE);
+        overlay.addView(
+                seekBubble,
+                new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.LEFT));
+
+        // ---------------- 右侧工具 Dock（内容由 PlaybackControls 填充） ----------------
         dock = a.vertical();
         dock.setTag("player-dock");
-        dock.setPadding(
-                a.dp(mobileLandscape ? 4 : 6), a.dp(5), a.dp(mobileLandscape ? 4 : 6), a.dp(5));
         dock.setClipChildren(true);
         dock.setClipToPadding(true);
-        dock.setClipToOutline(true);
-        dock.setBackground(chromeSurface(0xd81c1c22, 26, 0x2affffff));
+        dock.setBackground(
+                PlayerUiKit.capsuleBg(
+                        0x8c0b1220, 0x33ffffff, Math.max(1, a.dp(0.8f)), a.dp(22)));
         UiCompat.setElevation(dock, a.dp(10));
-        FrameLayout.LayoutParams bottom =
-                mobileLandscape
-                        ? new FrameLayout.LayoutParams(
-                                a.dp(76),
-                                Math.min(
-                                        a.dp(360),
-                                        Math.max(a.dp(180), a.windowHeight() - a.dp(40))),
-                                Gravity.RIGHT | Gravity.CENTER_VERTICAL)
-                        : new FrameLayout.LayoutParams(
-                                a.isTvDevice()
-                                        ? Math.min(a.dp(612), Math.max(a.dp(240), width - a.dp(32)))
-                                        : Math.min(
-                                                a.dp(552), Math.max(a.dp(240), width - a.dp(32))),
-                                -2,
-                                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        if (mobileLandscape) bottom.rightMargin = a.dp(8);
-        else bottom.bottomMargin = a.dp(16);
-        overlay.addView(dock, bottom);
+        overlay.addView(
+                dock, new FrameLayout.LayoutParams(-2, -2, Gravity.RIGHT | Gravity.CENTER_VERTICAL));
 
-        state = new StateGlyph();
+        // ---------------- 中央播放区：64dp 粉圆 + 15s 玻璃圆钮 ----------------
+        state = new PlayerUiKit.PlayPauseButton(a);
         state.setTag("player-state");
         state.setFocusable(false);
         state.setVisibility(View.GONE);
@@ -187,39 +234,43 @@ final class PlayerChrome {
         if (!a.isTvDevice()) {
             centerRow = a.row();
             centerRow.setGravity(Gravity.CENTER);
-            TextView rewindBtn = buildSeekCircle("↺ 15s", -15000);
-            TextView forwardBtn = buildSeekCircle("15s ↻", 15000);
-            LinearLayout.LayoutParams sideLp = new LinearLayout.LayoutParams(a.dp(58), a.dp(58));
-            LinearLayout.LayoutParams centerLp = new LinearLayout.LayoutParams(a.dp(76), a.dp(76));
-            centerLp.leftMargin = a.dp(28);
-            centerLp.rightMargin = a.dp(28);
-            centerRow.addView(rewindBtn, sideLp);
+            View rewind = buildSkipCircle(-15000, false);
+            View forward = buildSkipCircle(15000, true);
+            LinearLayout.LayoutParams sideLp = new LinearLayout.LayoutParams(a.dp(56), a.dp(56));
+            LinearLayout.LayoutParams centerLp = new LinearLayout.LayoutParams(a.dp(64), a.dp(64));
+            centerLp.leftMargin = a.dp(26);
+            centerLp.rightMargin = a.dp(26);
+            centerRow.addView(rewind, sideLp);
             centerRow.addView(state, centerLp);
-            centerRow.addView(forwardBtn, sideLp);
+            centerRow.addView(forward, sideLp);
             overlay.addView(centerRow, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         } else {
             centerRow = null;
-            overlay.addView(
-                    state, new FrameLayout.LayoutParams(a.dp(72), a.dp(72), Gravity.CENTER));
+            overlay.addView(state, new FrameLayout.LayoutParams(a.dp(72), a.dp(72), Gravity.CENTER));
         }
+
         a.playbackLayer.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
 
+        // ---------------- 加载胶囊 ----------------
         loadingPill = a.row();
         loadingPill.setTag("player-loading");
         loadingPill.setGravity(Gravity.CENTER_VERTICAL);
-        loadingPill.setPadding(a.dp(24), a.dp(16), a.dp(24), a.dp(16));
-        loadingPill.setBackground(chromeSurface(0xe01c1c22, 24, 0x2affffff));
+        loadingPill.setPadding(a.dp(20), a.dp(13), a.dp(20), a.dp(13));
+        loadingPill.setBackground(
+                PlayerUiKit.capsuleBg(
+                        0xe60b1220, 0x33ffffff, Math.max(1, a.dp(0.8f)), a.dp(22)));
         UiCompat.setElevation(loadingPill, a.dp(10));
         loadingPill.addView(
-                new PlaybackLoading.Ring(a), new LinearLayout.LayoutParams(a.dp(26), a.dp(26)));
+                new PlaybackLoading.Ring(a), new LinearLayout.LayoutParams(a.dp(24), a.dp(24)));
         String epTitle =
                 episode != null && episode.name != null && !episode.name.isEmpty()
                         ? " " + episode.name
                         : "";
-        loadingText = a.text("正在加载" + epTitle + "…", 14, MainActivity.WHITE);
-        loadingText.setPadding(a.dp(14), 0, 0, 0);
+        loadingText = a.text("正在加载" + epTitle + "…", 13, MainActivity.WHITE);
+        loadingText.setPadding(a.dp(12), 0, 0, 0);
         loadingPill.addView(loadingText);
-        a.playbackLayer.addView(loadingPill, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        a.playbackLayer.addView(
+                loadingPill, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
 
         a.playerOverlay = overlay;
         a.controlsVisible = true;
@@ -230,13 +281,9 @@ final class PlayerChrome {
         scheduleLayout();
     }
 
-    TextView buildSeekCircle(String label, int deltaMs) {
-        TextView btn = a.text(label, 12, MainActivity.WHITE);
-        btn.setGravity(Gravity.CENTER);
-        btn.setTypeface(null, Typeface.BOLD);
-        GradientDrawable bg = a.bg(0x9924395c, 29);
-        bg.setStroke(a.dp(1), 0x33ffffff);
-        btn.setBackground(bg);
+    /** 左右 15 秒圆钮：点击回跳/前跳并给一点按压反馈。 */
+    View buildSkipCircle(int deltaMs, boolean forward) {
+        final PlayerUiKit.SkipCircle btn = new PlayerUiKit.SkipCircle(a, forward);
         btn.setOnClickListener(
                 v -> {
                     if (a.player != null && a.prepared) {
@@ -258,8 +305,59 @@ final class PlayerChrome {
                     }
                     a.showControls(true);
                 });
+        MobileDetailScreen.bindTouchFeedback(btn);
         return btn;
     }
+
+    // ---------------- 时间气泡 ----------------
+
+    void showSeekBubble(int positionMs, int durationMs) {
+        if (seekBubble == null || a.playbackControls == null) return;
+        final SeekBar timeline = a.playbackControls.timeline;
+        if (timeline == null || timeline.getWidth() <= 0) return;
+        seekBubble.setText(
+                PlaybackController.formatTime(Math.max(0, positionMs))
+                        + " / "
+                        + PlaybackController.formatTime(Math.max(1, durationMs)));
+        seekBubble.setVisibility(View.VISIBLE);
+        seekBubble.measure(
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        final int bubbleW = seekBubble.getMeasuredWidth();
+        final int bubbleH = seekBubble.getMeasuredHeight();
+        final float fraction =
+                durationMs <= 0
+                        ? 0f
+                        : Math.max(0f, Math.min(1f, (float) positionMs / durationMs));
+        seekBubble.post(
+                () -> {
+                    if (overlay == null || seekBubble.getVisibility() != View.VISIBLE) return;
+                    int[] t = new int[2];
+                    timeline.getLocationInWindow(t);
+                    int[] o = new int[2];
+                    overlay.getLocationInWindow(o);
+                    int x = t[0] - o[0] + Math.round(fraction * timeline.getWidth());
+                    int left =
+                            Math.max(
+                                    a.dp(8),
+                                    Math.min(
+                                            overlay.getWidth() - bubbleW - a.dp(8),
+                                            x - bubbleW / 2));
+                    int top = Math.max(a.dp(8), t[1] - o[1] - bubbleH - a.dp(10));
+                    FrameLayout.LayoutParams lp =
+                            (FrameLayout.LayoutParams) seekBubble.getLayoutParams();
+                    lp.gravity = Gravity.TOP | Gravity.LEFT;
+                    lp.leftMargin = left;
+                    lp.topMargin = top;
+                    seekBubble.setLayoutParams(lp);
+                });
+    }
+
+    void hideSeekBubble() {
+        if (seekBubble != null) seekBubble.setVisibility(View.GONE);
+    }
+
+    // ---------------- 布局 ----------------
 
     void scheduleLayout() {
         if (layoutPending) return;
@@ -304,32 +402,53 @@ final class PlayerChrome {
         boolean portrait = measuredWidth < measuredHeight;
         boolean mobileLandscape = !a.isTvDevice() && !portrait;
         boolean compact = mobileLandscape && height < a.dp(420);
+
         if (titleView != null) {
-            titleView.setTextSize(portrait || compact ? 20 : 26);
+            titleView.setTextSize(portrait || compact ? 17 : 18);
         }
-        episodeLabel.setVisibility(compact && height < a.dp(320) ? View.GONE : View.VISIBLE);
+        if (episodeLabel != null) {
+            episodeLabel.setVisibility(compact && height < a.dp(320) ? View.GONE : View.VISIBLE);
+        }
         if (a.playStatus != null) a.playStatus.setVisibility(compact ? View.GONE : View.VISIBLE);
         if (fsBtn != null) {
-            fsBtn.setText(portrait ? "⛶ 全屏横屏" : "⛶ 退出全屏");
+            fsBtn.setText(portrait ? "全屏横屏" : "退出全屏");
         }
-        dock.setPadding(
-                a.dp(mobileLandscape ? 4 : 6), a.dp(5), a.dp(mobileLandscape ? 4 : 6), a.dp(5));
-        int edge = Math.min(a.dp(16), width / 8);
-        int dockWidth;
-        if (mobileLandscape) {
-            dockWidth = Math.min(a.dp(76), Math.max(0, width - edge * 2));
-            place(
-                    dock,
-                    dockWidth,
-                    Math.max(0, Math.min(a.dp(360), height - a.dp(16))),
-                    Gravity.RIGHT | Gravity.CENTER_VERTICAL,
-                    0,
-                    0,
-                    Math.min(a.dp(8), edge),
-                    0);
+
+        int side = Math.max(0, Math.min(a.dp(portrait ? 18 : 24), width / 8));
+        int topMargin = Math.max(0, Math.min(a.dp(compact ? 12 : 20), height / 8));
+
+        int dockWidth = 0;
+        if (!a.isTvDevice()) {
+            if (mobileLandscape) {
+                int wanted = a.playbackControls == null ? a.dp(152) : a.playbackControls.dockWidth();
+                dockWidth = Math.max(0, Math.min(wanted, width - side * 2));
+                dock.setPadding(a.dp(6), a.dp(6), a.dp(6), a.dp(6));
+                place(
+                        dock,
+                        dockWidth,
+                        Math.max(0, Math.min(a.dp(370), height - a.dp(12))),
+                        Gravity.RIGHT | Gravity.CENTER_VERTICAL,
+                        0,
+                        0,
+                        Math.min(a.dp(10), side),
+                        0);
+            } else {
+                int maxDock = a.isTvDevice() ? a.dp(612) : a.dp(560);
+                dockWidth = Math.max(0, Math.min(maxDock, width - side * 2));
+                dock.setPadding(a.dp(6), a.dp(5), a.dp(6), a.dp(5));
+                place(
+                        dock,
+                        dockWidth,
+                        -2,
+                        Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL,
+                        0,
+                        0,
+                        0,
+                        a.dp(14));
+            }
         } else {
-            int maxDock = a.isTvDevice() ? a.dp(612) : a.dp(552);
-            dockWidth = Math.max(0, Math.min(maxDock, width - edge * 2));
+            int maxDock = a.dp(612);
+            dockWidth = Math.max(0, Math.min(maxDock, width - side * 2));
             place(
                     dock,
                     dockWidth,
@@ -338,32 +457,58 @@ final class PlayerChrome {
                     0,
                     0,
                     0,
-                    a.dp(16));
+                    a.dp(14));
         }
-        int left = Math.min(a.dp(mobileLandscape ? 20 : 24), width / 8);
-        int right = mobileLandscape ? dockWidth + Math.min(a.dp(8), edge) + a.dp(12) : left;
-        int trackWidth = Math.max(0, Math.min(a.dp(760), width - left - right));
-        left += Math.max(0, (width - left - right - trackWidth) / 2);
-        int progressHeight = Math.max(progress.getMeasuredHeight(), a.dp(62));
-        int bottom =
+
+        int progressLeft = Math.max(0, Math.min(a.dp(portrait ? 18 : 24), width / 8));
+        int progressRight =
+                mobileLandscape ? dockWidth + Math.min(a.dp(10), side) + a.dp(16) : progressLeft;
+        int trackWidth = Math.max(0, Math.min(a.dp(760), width - progressLeft - progressRight));
+        progressLeft += Math.max(0, (width - progressLeft - progressRight - trackWidth) / 2);
+        int progressHeight = Math.max(progress.getMeasuredHeight(), a.dp(74));
+        int progressBottom =
                 mobileLandscape
-                        ? a.dp(20)
-                        : Math.max(a.dp(94), dock.getMeasuredHeight() + a.dp(28));
-        bottom = Math.max(0, Math.min(bottom, height - progressHeight));
-        place(progress, trackWidth, -2, Gravity.BOTTOM | Gravity.LEFT, left, 0, right, bottom);
-        int side = Math.min(a.dp(portrait ? 20 : 44), width / 8);
+                        ? a.dp(16)
+                        : Math.max(a.dp(88), dock.getMeasuredHeight() + a.dp(26));
+        progressBottom = Math.max(0, Math.min(progressBottom, height - progressHeight));
+        place(
+                progress,
+                trackWidth,
+                -2,
+                Gravity.BOTTOM | Gravity.LEFT,
+                progressLeft,
+                0,
+                progressRight,
+                progressBottom);
+
+        int headingRight = mobileLandscape || !a.isTvDevice() ? side + a.dp(96) : side;
         place(
                 heading,
                 -1,
                 -2,
                 Gravity.TOP,
                 side,
-                Math.min(a.dp(compact ? 12 : 24), height / 8),
-                mobileLandscape ? Math.max(side, right) : side,
+                topMargin,
+                Math.min(headingRight, width / 3),
                 0);
+        place(
+                topActions,
+                -2,
+                -2,
+                Gravity.TOP | Gravity.RIGHT,
+                0,
+                Math.max(a.dp(6), topMargin - a.dp(4)),
+                side,
+                0);
+        if (seekBubbleVisible()) hideSeekBubble();
+
         if (a.playbackControls != null) {
             a.playbackControls.relayout(mobileLandscape);
         }
+    }
+
+    private boolean seekBubbleVisible() {
+        return seekBubble != null && seekBubble.getVisibility() == View.VISIBLE;
     }
 
     private void place(
@@ -421,8 +566,10 @@ final class PlayerChrome {
         int otherVis = progressOnly ? View.INVISIBLE : View.VISIBLE;
         topShade.setVisibility(otherVis);
         heading.setVisibility(otherVis);
+        topActions.setVisibility(otherVis);
         dock.setVisibility(otherVis);
         seekHint.setVisibility(progressOnly ? View.VISIBLE : View.GONE);
+        hideSeekBubble();
         update();
         if (a.playbackControls != null) {
             a.playbackControls.visible(a.controlsVisible);
@@ -437,53 +584,8 @@ final class PlayerChrome {
         int stateVis = showSpinner ? View.GONE : (progressOnlyMode ? View.INVISIBLE : View.VISIBLE);
         state.setVisibility(stateVis);
         if (centerRow != null) centerRow.setVisibility(stateVis);
-        state.setContentDescription(!a.prepared ? "正在准备" : a.playing ? "正在播放，确认暂停" : "已暂停，确认继续");
+        state.setContentDescription(
+                !a.prepared ? "正在准备" : a.playing ? "正在播放，确认暂停" : "已暂停，确认继续");
         state.invalidate();
-    }
-
-    final class StateGlyph extends View {
-        final Paint paint = new Paint(3);
-
-        StateGlyph() {
-            super(a);
-        }
-
-        @Override
-        protected void onDraw(Canvas canvas) {
-            float cx = getWidth() / 2f, cy = getHeight() / 2f;
-            paint.setColor(0x9924395c);
-            canvas.drawCircle(cx, cy, getWidth() / 2f, paint);
-            paint.setColor(MainActivity.WHITE);
-            if (!a.prepared) {
-                paint.setStrokeWidth(a.dp(3));
-                paint.setStyle(Paint.Style.STROKE);
-                canvas.drawCircle(cx, cy, a.dp(12), paint);
-                paint.setStyle(Paint.Style.FILL);
-                return;
-            }
-            if (a.playing) {
-                canvas.drawRoundRect(
-                        new RectF(cx - a.dp(10), cy - a.dp(13), cx - a.dp(3), cy + a.dp(13)),
-                        a.dp(2),
-                        a.dp(2),
-                        paint);
-                canvas.drawRoundRect(
-                        new RectF(cx + a.dp(3), cy - a.dp(13), cx + a.dp(10), cy + a.dp(13)),
-                        a.dp(2),
-                        a.dp(2),
-                        paint);
-            } else {
-                Path p = new Path();
-                p.moveTo(cx - a.dp(8), cy - a.dp(14));
-                p.lineTo(cx + a.dp(15), cy);
-                p.lineTo(cx - a.dp(8), cy + a.dp(14));
-                p.close();
-                paint.setStrokeJoin(Paint.Join.ROUND);
-                paint.setStrokeWidth(a.dp(3));
-                paint.setStyle(Paint.Style.FILL_AND_STROKE);
-                canvas.drawPath(p, paint);
-                paint.setStyle(Paint.Style.FILL);
-            }
-        }
     }
 }

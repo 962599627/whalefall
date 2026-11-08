@@ -137,8 +137,9 @@ final class VideoFilters {
         Map<String, String> values = new LinkedHashMap<>();
         for (Definition def : definitions) {
             String value = selected.get(def.dimension);
-            if (def.remote && value != null && !value.isEmpty())
-                values.put(def.key, value.split(",", 2)[0]);
+            // 多选时不发远程过滤（多数 CMS 只接受单值），交给本地 OR 匹配
+            if (def.remote && value != null && !value.isEmpty() && !value.contains(","))
+                values.put(def.key, value);
         }
         return values;
     }
@@ -156,11 +157,13 @@ final class VideoFilters {
             boolean match = true;
             for (Definition def : definitions) {
                 String value = selected.get(def.dimension);
-                if (def.remote || value == null || value.isEmpty()) continue;
+                if (value == null || value.isEmpty()) continue;
                 String raw =
                         def.dimension.equals("class")
                                 ? video.genre
                                 : def.dimension.equals("area") ? video.area : video.year;
+                // 资料缺失时不硬判失败（远程源可能已经筛过），交给远程结果
+                if (raw == null || raw.trim().isEmpty()) continue;
                 boolean any = false;
                 for (String one : value.split(",")) {
                     if (one.isEmpty()) continue;

@@ -21,6 +21,7 @@ public final class MainActivity extends Activity {
     static final int WHITE = Skin.INK, MUTED = Skin.INK_DIM, DARK = Skin.BG;
     static final int PINK = Skin.PINK;
     VideoWallpaper videoWallpaper;
+    AdminConsole adminConsole;
     final Handler ui = new Handler(Looper.getMainLooper());
     final ExecutorService worker = Executors.newFixedThreadPool(4);
     final ExecutorService details = Executors.newFixedThreadPool(4);
