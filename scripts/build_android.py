@@ -130,7 +130,7 @@ def main():
     generated=BUILD/'generated';generated.mkdir(exist_ok=True)
     for old in generated.rglob('*.java'):old.unlink()
     extra=['--extra-packages',':'.join(sorted(set(packages)))] if packages else []
-    run(exe(SDK,'aapt2'),'link','-o',BUILD/'resources.apk','--manifest',SRC/'AndroidManifest.xml','-I',ANDROID,'-A',SRC/'assets','-A',catpaw_tv_assets,'--java',generated,'--auto-add-overlay',*extra,*overlays,'-R',BUILD/'resources.zip')
+    run(exe(SDK,'aapt2'),'link','-o',BUILD/'resources.apk','--manifest',SRC/'AndroidManifest.xml','-I',ANDROID,'-A',SRC/'assets','-A',catpaw_tv_assets,'-A',ROOT/'android/assets-baseline','--java',generated,'--auto-add-overlay',*extra,*overlays,'-R',BUILD/'resources.zip')
     sources=sorted((SRC/'java').rglob('*.java'))+sorted((ROOT/'shared/java').rglob('*.java'))+sorted(generated.rglob('*.java'))
     run(exe(JDK/'bin','javac'),'-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-classpath',os.pathsep.join(str(p) for p in [ANDROID,*dependencies]),'-d',BUILD/'classes',*sources)
     with zipfile.ZipFile(BUILD/'classes.jar','w',zipfile.ZIP_DEFLATED) as z:
@@ -181,7 +181,7 @@ def main():
     mobile_manifest=BUILD/'AndroidManifest.mobile.xml'
     mobile_xml=(SRC/'AndroidManifest.xml').read_text(encoding='utf-8').replace('android:value="tv"','android:value="mobile"').replace('<category android:name="android.intent.category.LEANBACK_LAUNCHER" />','')
     mobile_manifest.write_text(mobile_xml,encoding='utf-8')
-    run(exe(SDK,'aapt2'),'link','-o',BUILD/'resources-mobile.apk','--manifest',mobile_manifest,'-I',ANDROID,'-A',SRC/'assets','-A',catpaw_mobile_assets,'--auto-add-overlay',*extra,*overlays,'-R',BUILD/'resources.zip')
+    run(exe(SDK,'aapt2'),'link','-o',BUILD/'resources-mobile.apk','--manifest',mobile_manifest,'-I',ANDROID,'-A',SRC/'assets','-A',catpaw_mobile_assets,'-A',ROOT/'android/assets-baseline','--auto-add-overlay',*extra,*overlays,'-R',BUILD/'resources.zip')
     with zipfile.ZipFile(BUILD/'resources-mobile.apk') as source, zipfile.ZipFile(BUILD/'unsigned-mobile.apk','w',zipfile.ZIP_DEFLATED) as dest:
         for entry in source.infolist():dest.writestr(entry,source.read(entry.filename))
         for dex in (BUILD/'dex').glob('*.dex'):dest.write(dex,dex.name)

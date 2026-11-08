@@ -7,7 +7,7 @@
   "prerelease": false,
   "notes": "# 鲸落 1.2.2（手机 / 平板 / 电视）\n\n- 电视频道补全：央视新增 4K/8K，卫视补齐北京/浙江/天津/辽宁/吉林/河南/陕西/青海/西藏/兵团/东南/厦门/卡通等，内置 47→67 个\n- 电视频道列表改用 RecyclerView，长列表滚动更流畅\n- 存储空间与缓存清理（临时缓存/插件缓存/更新包/日志/上传文件分别统计，一键清理）\n- 片源与直播配置傻瓜教程（内置 Markdown 阅读），可预览当前片源配置原文\n- 遥控器按键说明；图片预览双指缩放\n- 更新检查默认渠道修正为 stable，支持多镜像回退（gh-proxy / ghproxy / 直连）\n- 首页滚动位置在重建/恢复后保留\n- 构建：Gradle 支持 mobile/tv flavor，EDITION 与 LEANBACK_LAUNCHER 自动区分；版本号单点定义",
   "size": 61988139,
-  "sha256": "15dc14c558d84b888c208795226aab0d5b9782d42c8cc6d6574e37d30f1f0dbe",
+  "sha256": "e2c2cd251e24291c96919902acf849ad93c9877ccc326bf6dff2ab2ac4a8fa0e",
   "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.2.2/WhaleFall-1.2.2-android-mobile.apk",
   "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.2.2/WhaleFall-1.2.2-android-mobile.apk",
   "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.2.2"
