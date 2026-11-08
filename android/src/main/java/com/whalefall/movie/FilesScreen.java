@@ -301,24 +301,73 @@ final class FilesScreen {
         overlay.setClickable(true);
         final android.widget.ImageView image = new android.widget.ImageView(a);
         image.setAdjustViewBounds(true);
-        image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        image.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
         final String path = file.getAbsolutePath();
         new Thread(
                         () -> {
                             android.graphics.Bitmap bitmap =
                                     android.graphics.BitmapFactory.decodeFile(path);
-                            if (bitmap != null)
-                                a.ui.post(() -> image.setImageBitmap(bitmap));
+                            if (bitmap != null) a.ui.post(() -> image.setImageBitmap(bitmap));
                         })
                 .start();
         overlay.addView(image, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
-        TextView hint = a.text(PushFiles.baseName(rel) + " · 点任意处返回", 12, 0xccffffff);
+        TextView hint = a.text(PushFiles.baseName(rel) + " · 双指缩放 · 点按返回", 12, 0xccffffff);
         hint.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams hintLp =
-                new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        FrameLayout.LayoutParams hintLp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
         hintLp.bottomMargin = a.dp(32);
         overlay.addView(hint, hintLp);
-        overlay.setOnClickListener(v -> a.root.removeView(overlay));
+
+        final android.graphics.Matrix matrix = new android.graphics.Matrix();
+        final float[] scale = {1f};
+        final float[] down = new float[2];
+        final float[] last = new float[2];
+        final android.view.ScaleGestureDetector scaler =
+                new android.view.ScaleGestureDetector(
+                        a,
+                        new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                            @Override
+                            public boolean onScale(android.view.ScaleGestureDetector detector) {
+                                float factor = detector.getScaleFactor();
+                                float next = Math.max(1f, Math.min(6f, scale[0] * factor));
+                                factor = next / scale[0];
+                                scale[0] = next;
+                                matrix.postScale(
+                                        factor, factor, detector.getFocusX(), detector.getFocusY());
+                                image.setImageMatrix(matrix);
+                                image.setScaleType(android.widget.ImageView.ScaleType.MATRIX);
+                                return true;
+                            }
+                        });
+        image.setOnTouchListener(
+                new android.view.View.OnTouchListener() {
+                    @Override
+                    public boolean onTouch(android.view.View v, android.view.MotionEvent event) {
+                        scaler.onTouchEvent(event);
+                        int action = event.getActionMasked();
+                        if (action == android.view.MotionEvent.ACTION_DOWN) {
+                            down[0] = event.getX();
+                            down[1] = event.getY();
+                            last[0] = down[0];
+                            last[1] = down[1];
+                        } else if (action == android.view.MotionEvent.ACTION_MOVE) {
+                            if (event.getPointerCount() == 1) {
+                                if (scale[0] > 1.02f) {
+                                    matrix.postTranslate(
+                                            event.getX() - last[0], event.getY() - last[1]);
+                                    image.setImageMatrix(matrix);
+                                }
+                                last[0] = event.getX();
+                                last[1] = event.getY();
+                            }
+                        } else if (action == android.view.MotionEvent.ACTION_UP) {
+                            float dx = Math.abs(event.getX() - down[0]);
+                            float dy = Math.abs(event.getY() - down[1]);
+                            if (scale[0] <= 1.02f && dx < 24 && dy < 24)
+                                a.root.removeView(overlay);
+                        }
+                        return true;
+                    }
+                });
         a.root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
     }
 

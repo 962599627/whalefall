@@ -3217,8 +3217,10 @@ final class MobileShell {
                                                             ? "关于鲸落"
                                                             : settingsSubPage == 7
                                                                     ? "观影统计"
-                                                                    : settingsSubPage == 8
-                                                                            ? "遥控器按键说明"
+                                                                    : settingsSubPage == 9
+                                                                            ? "片源与直播配置教程"
+                                                                            : settingsSubPage == 8
+                                                                                    ? "遥控器按键说明"
                                                                             : "备份、更新与诊断";
             TextView subTitle = a.text(subTitleText, 20, Color.WHITE);
             subTitle.setTypeface(null, Typeface.BOLD);
@@ -3276,6 +3278,17 @@ final class MobileShell {
                             a.closeEngines();
                             refreshInPlace.run();
                             a.toast(!cspEnabled ? "已开启扩展片源支持" : "已关闭扩展片源支持");
+                        });
+                a.gap(body, 12);
+                addSectionHeader(body, "新手教程");
+                addSettingCard(
+                        body,
+                        1,
+                        "片源与直播配置：傻瓜式教程",
+                        "从零开始：配置 JSON 怎么写、直播源格式、导入方式与常见问题",
+                        () -> {
+                            settingsSubPage = 9;
+                            refreshInPlace.run();
                         });
             } else if (settingsSubPage == 2) {
                 addSectionHeader(body, "播放器与解码器");
@@ -3526,6 +3539,8 @@ final class MobileShell {
                 addStatsPage(body);
             } else if (settingsSubPage == 8) {
                 addKeymapPage(body);
+            } else if (settingsSubPage == 9) {
+                addSourceGuidePage(body);
             } else {
                 addSectionHeader(body, "更新、备份与诊断");
                 addSettingCard(
@@ -3710,6 +3725,134 @@ final class MobileShell {
                         })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    /** 设置 → 片源与直播配置教程：面向小白的图文步骤 + 可复制示例。 */
+    private void addSourceGuidePage(LinearLayout body) {
+        addSectionHeader(body, "1. 片源配置是什么");
+        body.addView(
+                a.text(
+                        "一个 JSON 文件，告诉 App 去哪里找片、怎么搜索。常见 TVBox / CatVod 配置可以直接用。",
+                        13,
+                        0xffc9d4e6));
+        a.gap(body, 10);
+        final String jsonExample =
+                "{\n"
+                        + "  \"sites\": [\n"
+                        + "    {\n"
+                        + "      \"key\": \"demo\",\n"
+                        + "      \"name\": \"示例站点\",\n"
+                        + "      \"type\": 1,\n"
+                        + "      \"api\": \"https://example.com/api.php/provide/vod/\",\n"
+                        + "      \"searchable\": 1\n"
+                        + "    }\n"
+                        + "  ]\n"
+                        + "}";
+        addSettingCard(
+                body,
+                1,
+                "复制最小片源配置示例",
+                "含 key / name / type / api / searchable 五个字段，粘贴替换成你自己的接口即可",
+                () -> {
+                    android.content.ClipboardManager cm =
+                            (android.content.ClipboardManager)
+                                    a.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                    cm.setPrimaryClip(
+                            android.content.ClipData.newPlainText("鲸落片源配置", jsonExample));
+                    a.toast("示例已复制到剪贴板");
+                });
+
+        addSectionHeader(body, "2. 怎么导入");
+        String[] steps = {
+            "设置 → 片源与直播配置 → 从剪贴板一键粘贴（复制 JSON 或配置网址）",
+            "或用「输入或修改配置网址」填 https://.../config.json",
+            "或用「选择本地配置」导入手机里的 .json 文件",
+            "导入后在「切换默认片源」里选中它，回到首页刷新即可"
+        };
+        for (int i = 0; i < steps.length; i++) addGuideStep(body, (i + 1) + "", steps[i]);
+
+        addSectionHeader(body, "3. 直播源格式");
+        addGuideStep(body, "M3U", "#EXTM3U + #EXTINF:-1 group-title=\"央视\",CCTV-1 综合 + 地址");
+        addGuideStep(body, "TXT", "分组名,#genre#，下一行开始「频道名,播放地址」");
+        addGuideStep(body, "JSON", "按导入窗口里的字段说明填写频道分组与地址");
+        final String liveExample =
+                "#EXTM3U\n"
+                        + "#EXTINF:-1 group-title=\"央视频道\",CCTV-1 综合\n"
+                        + "http://example.com/live/cctv1.m3u8\n"
+                        + "#EXTINF:-1 group-title=\"卫视频道\",湖南卫视\n"
+                        + "http://example.com/live/hunan.m3u8";
+        addSettingCard(
+                body,
+                1,
+                "复制直播源 M3U 示例",
+                "两行一个频道：分组标题 + 频道名 + m3u8 地址",
+                () -> {
+                    android.content.ClipboardManager cm =
+                            (android.content.ClipboardManager)
+                                    a.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                    cm.setPrimaryClip(
+                            android.content.ClipData.newPlainText("鲸落直播源示例", liveExample));
+                    a.toast("直播示例已复制到剪贴板");
+                });
+
+        addSectionHeader(body, "4. 电视 tab「导入频道列表」");
+        String[] liveSteps = {
+            "底部「电视」tab → 左下角「导入」",
+            "粘贴 JSON 后点「导入」，频道立刻出现",
+            "点频道直接播放；长按可收藏",
+            "批量维护：设置 → 片源与直播配置 → 导入或管理电视直播源"
+        };
+        for (int i = 0; i < liveSteps.length; i++) addGuideStep(body, (i + 1) + "", liveSteps[i]);
+        final String channelsExample =
+                "{\n"
+                        + "  \"channels\": [\n"
+                        + "    {\"name\": \"CCTV-1 综合\", \"url\": \"https://example.com/live/cctv1.m3u8\"},\n"
+                        + "    {\"name\": \"湖南卫视\", \"url\": \"https://example.com/live/hunan.m3u8\"}\n"
+                        + "  ]\n"
+                        + "}";
+        addSettingCard(
+                body,
+                1,
+                "复制「导入频道列表」JSON 示例",
+                "电视 tab → 导入 → 粘贴这段 JSON 即可批量添加频道",
+                () -> {
+                    android.content.ClipboardManager cm =
+                            (android.content.ClipboardManager)
+                                    a.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                    cm.setPrimaryClip(
+                            android.content.ClipData.newPlainText("鲸落频道列表", channelsExample));
+                    a.toast("频道列表示例已复制，去电视 tab → 导入 粘贴");
+                });
+
+        addSectionHeader(body, "4. 常见问题");
+        addGuideStep(body, "没内容", "先确认默认片源已选中；部分站点还需要 ext 参数");
+        addGuideStep(body, "需要插件", "JS / PY / JAR 类片源要插件文件，光有 JSON 不行");
+        addGuideStep(body, "搜索为空", "检查站点 searchable 是否为 1，以及接口是否支持搜索");
+        addGuideStep(body, "直播 403", "源地址过期或限地区，换源即可；App 不代理直播源");
+
+        a.gap(body, 14);
+        body.addView(
+                a.text(
+                        "只用你自己信任、且有权访问的配置与插件。本 App 只是播放器，不内置、不提供任何影视资源。",
+                        12,
+                        0xff8d9cb6));
+    }
+
+    private void addGuideStep(LinearLayout body, String tag, String text) {
+        LinearLayout row = a.row();
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
+        row.setBackground(glassBg(0xcc16283f, 0xb3121d2e, a.dp(14), a.dp(0.8f), 0x33ffffff));
+        TextView t = a.text(tag, 12.5f, 0xffffb3c8);
+        t.setTypeface(null, Typeface.BOLD);
+        t.setMinWidth(a.dp(64));
+        row.addView(t);
+        TextView d = a.text(text, 12.5f, 0xffc9d4e6);
+        d.setPadding(a.dp(8), 0, 0, 0);
+        row.addView(d, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.bottomMargin = a.dp(6);
+        body.addView(row, lp);
     }
 
     /** 设置 → 遥控器按键说明：电视端遥控器 / 键盘 / 手机手势对照。 */
