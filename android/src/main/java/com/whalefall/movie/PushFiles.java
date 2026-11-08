@@ -10,7 +10,7 @@ import java.util.*;
  * <p>支持子目录（文件管理里可以新建文件夹），路径以相对 pushed/ 的 "/" 分隔路径表示。
  */
 final class PushFiles {
-    static final long MAX_BYTES = 60L * 1024 * 1024;
+    static final long MAX_BYTES = 200L * 1024 * 1024;
 
     private PushFiles() {}
 

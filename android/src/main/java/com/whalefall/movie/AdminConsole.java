@@ -18,6 +18,7 @@ import org.json.*;
 final class AdminConsole implements Closeable {
     /** 每次打开后台生成的一次性访问令牌：URL 里带 ?t=…，无令牌一律 403。 */
     final String token;
+    private final long expiresAt = System.currentTimeMillis() + 10 * 60 * 1000L;
     private final MainActivity a;
     private final ServerSocket socket;
     private volatile boolean closed;
@@ -80,7 +81,7 @@ final class AdminConsole implements Closeable {
     }
 
     boolean closed() {
-        return closed;
+        return closed || System.currentTimeMillis() > expiresAt;
     }
 
     @Override
@@ -127,8 +128,48 @@ final class AdminConsole implements Closeable {
                     } catch (NumberFormatException ignored) {
                     }
             }
+            final OutputStream response = s.getOutputStream();
+            // 大文件直传：/api/files/raw?name=...&t=...，边读边写，不走 base64/JSON
+            if (path.equals("/api/files/raw") && method.equals("POST")) {
+                String name = "";
+                for (String part : query.split("&")) {
+                    int eq = part.indexOf('=');
+                    String k = eq < 0 ? part : part.substring(0, eq);
+                    String v = eq < 0 ? "" : part.substring(eq + 1);
+                    if (k.equals("name")) name = URLDecoder.decode(v, "UTF-8");
+                }
+                if (!tokenMatches(query, originHeader)) {
+                    send(response, 403, "text/plain; charset=utf-8", "403 invalid token");
+                    return;
+                }
+                if (!(s.getInetAddress().isLoopbackAddress()
+                        || s.getInetAddress().isSiteLocalAddress())) {
+                    send(response, 403, "text/plain; charset=utf-8", "403 only LAN allowed");
+                    return;
+                }
+                if (length <= 0 || length > PushFiles.MAX_BYTES) {
+                    send(response, 400, "text/plain; charset=utf-8", "400 bad size");
+                    return;
+                }
+                try (InputStream raw = in;
+                        OutputStream file =
+                                new java.io.FileOutputStream(PushFiles.file(a, name))) {
+                    byte[] chunk = new byte[64 * 1024];
+                    long remaining = length;
+                    int n;
+                    while (remaining > 0 && (n = raw.read(chunk, 0, (int) Math.min(chunk.length, remaining))) > 0) {
+                        file.write(chunk, 0, n);
+                        remaining -= n;
+                    }
+                }
+                refreshUi();
+                JSONObject ok = new JSONObject();
+                ok.put("ok", true);
+                send(response, "application/json; charset=utf-8", ok.toString());
+                return;
+            }
             String body = "";
-            if (length > 0 && length < 2 * 1024 * 1024) {
+            if (length > 0 && length < 96 * 1024 * 1024) {
                 byte[] buf = new byte[length];
                 int read = 0;
                 while (read < length) {
@@ -146,7 +187,11 @@ final class AdminConsole implements Closeable {
                 send(s.getOutputStream(), "text/plain; charset=utf-8", "403 only LAN allowed");
                 return;
             }
-            if (!closed) route(s.getOutputStream(), method, path, query, originHeader, body);
+            if (closed()) {
+                send(s.getOutputStream(), 403, "text/plain; charset=utf-8", "403 session expired");
+                return;
+            }
+            route(s.getOutputStream(), method, path, query, originHeader, body);
         } catch (Exception ignored) {
         }
     }

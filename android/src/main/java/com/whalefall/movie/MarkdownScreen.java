@@ -86,8 +86,9 @@ final class MarkdownScreen {
         boolean inCode = false;
         StringBuilder code = new StringBuilder();
         List<String> listBuffer = new ArrayList<>();
-        for (String raw : lines) {
-            String line = raw;
+        int i = 0;
+        while (i < lines.length) {
+            String line = lines[i];
             if (line.trim().startsWith("```")) {
                 if (inCode) {
                     addCodeBlock(a, column, code.toString());
@@ -97,29 +98,56 @@ final class MarkdownScreen {
                     flushList(a, column, listBuffer);
                     inCode = true;
                 }
+                i++;
                 continue;
             }
             if (inCode) {
                 code.append(line).append('\n');
+                i++;
                 continue;
             }
             String trimmed = line.trim();
             if (trimmed.isEmpty()) {
                 flushList(a, column, listBuffer);
                 a.gap(column, 8);
+                i++;
+                continue;
+            }
+            // 表格：当前行含 | 且下一行是分隔行
+            if (trimmed.contains("|")
+                    && i + 1 < lines.length
+                    && lines[i + 1].trim().matches("^\\|?\\s*:?-{2,}.*")) {
+                flushList(a, column, listBuffer);
+                int end = i;
+                while (end < lines.length && lines[end].contains("|")) end++;
+                addTable(a, column, lines, i, end);
+                i = end;
+                continue;
+            }
+            // 图片
+            java.util.regex.Matcher image =
+                    java.util.regex.Pattern.compile("!\\[[^\\]]*\\]\\(([^)\\s]+)[^)]*\\)")
+                            .matcher(trimmed);
+            if (image.find()) {
+                flushList(a, column, listBuffer);
+                addImage(a, column, image.group(1).trim());
+                i++;
                 continue;
             }
             if (trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.startsWith("+ ")) {
                 listBuffer.add("• " + trimmed.substring(2));
+                i++;
                 continue;
             }
             if (trimmed.matches("^\\d+[.)]\\s+.*")) {
                 listBuffer.add(trimmed);
+                i++;
                 continue;
             }
             flushList(a, column, listBuffer);
             if (trimmed.startsWith(">")) {
                 addQuote(a, column, trimmed.substring(1).trim());
+                i++;
                 continue;
             }
             if (trimmed.matches("^(-{3,}|\\*{3,}|_{3,})$")) {
@@ -129,6 +157,7 @@ final class MarkdownScreen {
                 lp.topMargin = a.dp(8);
                 lp.bottomMargin = a.dp(8);
                 column.addView(divider, lp);
+                i++;
                 continue;
             }
             int heading = 0;
@@ -138,15 +167,68 @@ final class MarkdownScreen {
                 h.setTypeface(null, Typeface.BOLD);
                 h.setPadding(0, a.dp(heading <= 2 ? 10 : 6), 0, a.dp(4));
                 column.addView(h);
+                i++;
                 continue;
             }
             TextView p = a.text("", 14.5f, 0xffe6edf9);
             p.setLineSpacing(a.dp(5), 1.1f);
             inline(p, trimmed);
             column.addView(p, new LinearLayout.LayoutParams(-1, -2));
+            i++;
         }
         if (inCode && code.length() > 0) addCodeBlock(a, column, code.toString());
         flushList(a, column, listBuffer);
+    }
+
+    private static void addImage(MainActivity a, LinearLayout column, String url) {
+        android.widget.ImageView image = new android.widget.ImageView(a);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        image.setMinimumHeight(a.dp(80));
+        image.setBackground(MobileDetailScreen.glassBg(a, 0xcc0d1626, 0x26ffffff, 12));
+        image.setContentDescription("Markdown 图片");
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = a.dp(6);
+        lp.bottomMargin = a.dp(6);
+        column.addView(image, lp);
+        if (url.startsWith("http")) a.poster(url, image);
+    }
+
+    private static void addTable(
+            MainActivity a, LinearLayout column, String[] lines, int start, int end) {
+        List<String[]> rows = new ArrayList<>();
+        boolean first = true;
+        for (int i = start; i < end; i++) {
+            String line = lines[i].trim();
+            if (first) {
+                first = false;
+                continue;
+            }
+            if (line.matches("^\\|?\\s*:?-{2,}.*")) continue;
+            String[] cells = line.replaceAll("^\\||\\|$", "").split("\\|");
+            for (int c = 0; c < cells.length; c++) cells[c] = cells[c].trim();
+            rows.add(cells);
+        }
+        if (rows.isEmpty()) return;
+        LinearLayout table = a.vertical();
+        table.setBackground(MobileDetailScreen.glassBg(a, 0xcc0d1626, 0x26ffffff, 12));
+        table.setPadding(a.dp(2), a.dp(2), a.dp(2), a.dp(2));
+        for (int r = 0; r < rows.size(); r++) {
+            String[] cells = rows.get(r);
+            LinearLayout row = a.row();
+            for (int c = 0; c < cells.length; c++) {
+                TextView cell = a.text(cells[c], 12.5f, r == 0 ? MainActivity.WHITE : 0xffdbe4f3);
+                if (r == 0) cell.setTypeface(null, Typeface.BOLD);
+                cell.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
+                if (r > 0) cell.setBackgroundColor(0x0affffff);
+                row.addView(cell, new LinearLayout.LayoutParams(0, -2, 1f));
+            }
+            table.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        }
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = a.dp(6);
+        lp.bottomMargin = a.dp(6);
+        column.addView(table, lp);
     }
 
     private static final float[] headingSizes = {26, 22, 19, 17, 15.5f, 14.5f};
