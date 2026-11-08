@@ -43,9 +43,28 @@ def toolchain():
     return Path(ndk) / 'toolchains/llvm/prebuilt' / host
 
 
+def build_prebuilt(output, root):
+    """Reuse the release's 16 KB bridge when the pinned NDK is unavailable locally."""
+    files = {}
+    for abi in ('armeabi-v7a', 'arm64-v8a'):
+        source = Path(root) / abi / 'libmovie-quickjs-deadline.so'
+        if not source.is_file():
+            raise FileNotFoundError('Missing prebuilt deadline library: ' + str(source))
+        data = source.read_bytes()
+        elf = inspect_elf(data)
+        if elf['machine'] != {'armeabi-v7a': 40, 'arm64-v8a': 183}[abi] or not elf['compatible_16kb']:
+            raise ValueError('Prebuilt deadline library architecture mismatch: ' + abi)
+        files['lib/' + abi + '/' + source.name] = data
+    (output / 'manifest.json').write_text(json.dumps({'version': 1, 'source': 'prebuilt-release'}, indent=2) + '\n', encoding='utf-8')
+    return files
+
+
 def build(output=OUT):
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
+    prebuilt = os.environ.get('MARCOMOVIE_PREBUILT_DEADLINE_DIR')
+    if prebuilt:
+        return build_prebuilt(output, prebuilt)
     dependencies = json.loads((ROOT / 'android/dependencies.json').read_text(encoding='utf-8'))
     wrapper = next(x for x in dependencies if x['name'] == 'wrapper-android')
     java = next(x for x in dependencies if x['name'] == 'wrapper-java')

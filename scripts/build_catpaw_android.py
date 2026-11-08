@@ -78,7 +78,51 @@ def toolchain():
     return Path(ndk)/'toolchains/llvm/prebuilt'/host
 
 
+def package_assets(assets, extra_licenses=()):
+    """Copy the app-owned JS runtime assets that ship next to the native libraries."""
+    assets.mkdir(parents=True,exist_ok=True)
+    for name in ['host.cjs','fetch.cjs','fetch-LICENSE.txt','node-mobile-LICENSE.txt',*extra_licenses]:
+        shutil.copy2(ROOT/'shared/catpaw'/name,assets/name)
+    listing = json.loads((ROOT/'shared/catpaw/drpy-assets.json').read_text(encoding='utf-8'))
+    for entry in listing['files']:
+        name = entry['name']
+        if '/' in name or '\\' in name or not name.startswith('drpy-'):
+            raise ValueError('Invalid DRPY asset path')
+        source = ROOT/'shared/catpaw'/name
+        if source.stat().st_size != entry['bytes'] or hashlib.sha256(source.read_bytes()).hexdigest() != entry['sha256']:
+            raise ValueError('DRPY asset manifest is stale: '+name)
+        shutil.copy2(source,assets/name)
+    shutil.copy2(ROOT/'shared/catpaw/drpy-assets.json',assets/'drpy-assets.json')
+
+
+def build_prebuilt(root):
+    """Reuse the pinned release's native bytes when no Android NDK is available.
+
+    The Node runtime, the app-owned JNI bridge and the 16 KB page-aligned C++
+    library are extracted verbatim from the official APK; hashes are checked
+    against the runtime capability manifest that ships with that same build.
+    """
+    root=Path(root)
+    capability=json.loads((root/'runtime-capabilities.json').read_text(encoding='utf-8'))
+    files={}
+    for abi in ('armeabi-v7a','arm64-v8a'):
+        for name,expected in capability['abis'][abi].items():
+            data=(root/abi/name).read_bytes()
+            if inspect_elf(data)['machine'] != {'armeabi-v7a':40,'arm64-v8a':183}[abi]:
+                raise ValueError('Prebuilt CatPaw library architecture mismatch: '+abi+'/'+name)
+            if hashlib.sha256(data).hexdigest()!=expected['sha256']:
+                raise ValueError('Prebuilt CatPaw library digest mismatch: '+abi+'/'+name)
+            files['lib/'+abi+'/'+name]=data
+    assets=ROOT/'android/build/catpaw/assets/catpaw'
+    package_assets(assets)
+    shutil.copy2(root/'runtime-capabilities.json',assets/'runtime-capabilities.json')
+    return files,assets.parent
+
+
 def build():
+    prebuilt=os.environ.get('MARCOMOVIE_PREBUILT_CATPAW_DIR')
+    if prebuilt:
+        return build_prebuilt(prebuilt)
     ndk=toolchain()
     clang=ndk/'bin'/('clang.exe' if os.name=='nt' else 'clang')
     unpack=ROOT/'tools/catpaw/android'
