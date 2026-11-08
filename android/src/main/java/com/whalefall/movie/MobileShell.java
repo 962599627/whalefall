@@ -3346,12 +3346,6 @@ final class MobileShell {
                 int subBg = Prefs.clampSubtitleBgStyle(a.prefs.getInt(Prefs.SUBTITLE_BG_STYLE, 0));
                 addSettingCard(
                         body,
-                        0,
-                        "管理员后台（网页）",
-                        "扫码或浏览器访问，管理片源 / 收藏 / 电视频道 / 设置",
-                        () -> AdminPanel.show(a));
-                addSettingCard(
-                        body,
                         2,
                         "电视台画面比例",
                         tvAspectLabel(),
@@ -3385,38 +3379,17 @@ final class MobileShell {
                 addSettingCard(
                         body,
                         4,
-                        "屏幕保护时长",
-                        "当前：" + a.prefs.getInt(Prefs.SCREENSAVER_TIMEOUT_MIN, 5) + " 分钟（点击切换 1 / 5 / 10 / 30）",
-                        () -> {
-                            int now = a.prefs.getInt(Prefs.SCREENSAVER_TIMEOUT_MIN, 5);
-                            int next = now == 5 ? 10 : now == 10 ? 30 : now == 30 ? 1 : 5;
-                            a.prefs.edit().putInt(Prefs.SCREENSAVER_TIMEOUT_MIN, next).apply();
-                            refreshInPlace.run();
-                        });
-                addSettingCard(
-                        body,
-                        4,
-                        "屏保时钟样式",
-                        new String[] {"数字时钟 · 大号", "极简 · 仅时间", "超大字 · 时间+日期"}[
-                                Math.max(0, Math.min(2, a.prefs.getInt(Prefs.SCREENSAVER_CLOCK_STYLE, 0)))]
-                                + "（点击切换）",
-                        () -> {
-                            int now = a.prefs.getInt(Prefs.SCREENSAVER_CLOCK_STYLE, 0);
-                            a.prefs.edit().putInt(Prefs.SCREENSAVER_CLOCK_STYLE, (now + 1) % 3).apply();
-                            refreshInPlace.run();
-                        });
-                addSettingCard(
-                        body,
-                        4,
-                        "屏幕保护（5 分钟）",
-                        a.prefs.getBoolean(Prefs.SCREENSAVER_ENABLED, false)
-                                ? "已开启 · 空闲时用动态壁纸做屏保，触摸退出"
-                                : "已关闭 · 开启后空闲 5 分钟进入屏保",
-                        () -> {
-                            boolean on = !a.prefs.getBoolean(Prefs.SCREENSAVER_ENABLED, false);
-                            a.prefs.edit().putBoolean(Prefs.SCREENSAVER_ENABLED, on).apply();
-                            refreshInPlace.run();
-                        });
+                        "屏幕保护",
+                        new StringBuilder()
+                                .append(a.prefs.getBoolean(Prefs.SCREENSAVER_ENABLED, false) ? "已开启" : "已关闭")
+                                .append(" · ")
+                                .append(a.prefs.getInt(Prefs.SCREENSAVER_TIMEOUT_MIN, 5))
+                                .append(" 分钟 · ")
+                                .append(
+                                        new String[] {"数字时钟", "极简", "超大字"}[
+                                                Math.max(0, Math.min(2, a.prefs.getInt(Prefs.SCREENSAVER_CLOCK_STYLE, 0)))])
+                                .toString(),
+                        () -> showScreensaverSettings());
                 final int scale = a.prefs.getInt(Prefs.UI_SCALE_PERCENT, 100);
                 addSettingCard(
                         body,
@@ -3546,7 +3519,7 @@ final class MobileShell {
                         body,
                         5,
                         "文件管理（上传 / Markdown 阅读）",
-                        "管理后台上传文件；内置 Markdown 阅读器可直接打开 .md/.txt",
+                        "内置文件管理 / Markdown 阅读；右上角可打开「管理员后台」上传文件",
                         () -> FilesScreen.show(a));
                 addSettingCard(
                         body,
@@ -3795,6 +3768,41 @@ final class MobileShell {
         l.setPadding(0, a.dp(3), 0, 0);
         card.addView(l);
         return card;
+    }
+
+    /** 屏幕保护设置：开关 / 时长 / 时钟样式统一在一个对话框里。 */
+    void showScreensaverSettings() {
+        boolean on = a.prefs.getBoolean(Prefs.SCREENSAVER_ENABLED, false);
+        int minutes = a.prefs.getInt(Prefs.SCREENSAVER_TIMEOUT_MIN, 5);
+        int style = Math.max(0, Math.min(2, a.prefs.getInt(Prefs.SCREENSAVER_CLOCK_STYLE, 0)));
+        String[] labels = {
+            "开关：" + (on ? "已开启" : "已关闭"),
+            "时长：" + minutes + " 分钟",
+            "时钟样式：" + new String[] {"数字时钟 · 大号", "极简 · 仅时间", "超大字 · 时间+日期"}[style]
+        };
+        new AppDialog.Builder(a)
+                .setTitle("屏幕保护")
+                .setMessage("空闲进入屏保时用动态壁纸铺满屏幕，触摸退出；播放视频时不会触发。")
+                .setItems(
+                        labels,
+                        (d, index) -> {
+                            if (index == 0)
+                                a.prefs
+                                        .edit()
+                                        .putBoolean(Prefs.SCREENSAVER_ENABLED, !on)
+                                        .apply();
+                            else if (index == 1) {
+                                int next = minutes == 5 ? 10 : minutes == 10 ? 30 : minutes == 30 ? 1 : 5;
+                                a.prefs.edit().putInt(Prefs.SCREENSAVER_TIMEOUT_MIN, next).apply();
+                            } else
+                                a.prefs
+                                        .edit()
+                                        .putInt(Prefs.SCREENSAVER_CLOCK_STYLE, (style + 1) % 3)
+                                        .apply();
+                            a.toast("已更新屏幕保护设置");
+                        })
+                .setNegativeButton("关闭", null)
+                .show();
     }
 
     private void addSectionHeader(LinearLayout parent, String title) {

@@ -67,6 +67,15 @@ final class FilesScreen {
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, -2, 1f);
         titleLp.leftMargin = a.dp(12);
         nav.addView(title, titleLp);
+        TextView adminBtn = a.text("管理员后台", 12, 0xffffb3c8);
+        adminBtn.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+        adminBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+        MobileDetailScreen.bindTouchFeedback(adminBtn);
+        adminBtn.setOnClickListener(v -> AdminPanel.show(a));
+        LinearLayout.LayoutParams adminLp = new LinearLayout.LayoutParams(-2, -2);
+        adminLp.rightMargin = a.dp(8);
+        nav.addView(adminBtn, adminLp);
+
         TextView mkdir = a.text("＋ 文件夹", 12.5f, 0xffffb3c8);
         mkdir.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
         mkdir.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));

@@ -262,6 +262,26 @@ public final class MainActivity extends Activity {
      * 主线程崩溃前把堆栈 + 最近 AppLog 落盘（files/crash-last.txt），
      * 下次启动仍可读，便于真机排查「点播放闪退」这类没有 logcat 的问题。
      */
+    /** 把上次崩溃栈复制到应用外部目录，便于直接取出排查。 */
+    private void exportCrashLog() {
+        try {
+            java.io.File src = new java.io.File(getFilesDir(), "crash-last.txt");
+            if (!src.isFile()) return;
+            java.io.File dir = getExternalFilesDir(null);
+            if (dir == null) return;
+            java.io.File dst = new java.io.File(dir, "crash-last.txt");
+            if (dst.isFile() && dst.lastModified() >= src.lastModified()) return;
+            java.io.FileInputStream in = new java.io.FileInputStream(src);
+            java.io.FileOutputStream out = new java.io.FileOutputStream(dst);
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            in.close();
+            out.close();
+        } catch (Throwable ignored) {
+        }
+    }
+
     private static void writeCrashLog(Thread thread, Throwable error) {
         try {
             MainActivity activity = activeActivity;
@@ -592,6 +612,7 @@ public final class MainActivity extends Activity {
                     });
         }
         layoutIntro = b == null || b.getBoolean("layout_initial_launch", false);
+        exportCrashLog();
         if (b != null) {
             MobileShell.pendingRestoreTab = b.getInt("whale_tab", -1);
             String keyword = b.getString("whale_search", "");
