@@ -12,8 +12,14 @@ final class UpdatePolicy {
     // 更新检查以 GitHub 最新发布版为准：清单与安装包都放在 Release 资产里，
     // releases/latest/download/<文件名> 永远指向最新一版，不需要每次改代码。
     static final String FEED = "https://github.com/962599627/whalefall/releases/latest/download/";
-    static final String MIRROR =
-            "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/latest/download/";
+    /** 下载/清单镜像前缀（按可用性排序，最后一个直连 GitHub）。 */
+    static final String[] MIRRORS = {
+        "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/latest/download/",
+        "https://gh-proxy.com/https://github.com/962599627/whalefall/releases/latest/download/",
+        "https://ghproxy.net/https://github.com/962599627/whalefall/releases/latest/download/",
+        FEED
+    };
+    static final String MIRROR = MIRRORS[0];
 
     /** 允许的更新源主机；留空表示接受任意 HTTPS 主机（自建源最省事）。 */
     static final String[] ALLOWED_HOSTS = {};
@@ -43,7 +49,9 @@ final class UpdatePolicy {
             throw new IllegalArgumentException("channel");
         // Release 资产名不能带 "/"，清单直接命名为 android-mobile.json 等
         String name = platform(mobile) + ("preview".equals(channel) ? "-preview" : "");
-        return new String[] {MIRROR + name + ".json", FEED + name + ".json"};
+        String[] out = new String[MIRRORS.length];
+        for (int i = 0; i < MIRRORS.length; i++) out[i] = MIRRORS[i] + name + ".json";
+        return out;
     }
 
     static boolean editionUrl(String url, String version, boolean mobile) {
@@ -61,14 +69,18 @@ final class UpdatePolicy {
         if (!editionUrl(primary, version, mobile))
             throw new IllegalArgumentException("APK edition");
         String file = primary.substring(primary.lastIndexOf('/') + 1);
-        String mirror = MIRROR.isEmpty() ? primary : MIRROR + file;
+        java.util.List<String> urls = new java.util.ArrayList<>();
+        urls.add(primary);
+        for (String mirror : MIRRORS) {
+            String candidate = mirror + file;
+            if (!urls.contains(candidate)) urls.add(candidate);
+        }
         if (github != null && !github.isEmpty()) {
             if (!editionUrl(github, version, mobile) || !github.endsWith("/" + file))
                 throw new IllegalArgumentException("Invalid release download URL");
-            if (!github.equals(primary) && !mirror.equals(github))
-                return new String[] {primary, mirror, github};
+            if (!urls.contains(github)) urls.add(github);
         }
-        return primary.equals(mirror) ? new String[] {primary} : new String[] {primary, mirror};
+        return urls.toArray(new String[0]);
     }
 
     static String[] downloads(String version) {

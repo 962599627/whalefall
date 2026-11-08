@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.2.0",
-  "versionCode": 12000,
+  "versionName": "1.2.1",
+  "versionCode": 12010,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.2.0（手机 / 平板 / 电视）\n\n- 默认静态壁纸改为内置「深海鲸落」主题图，可在设置中更换或恢复默认\n- 新增：文件管理（上传/新建文件夹/重命名/删除）、Markdown 阅读（图片/表格）、图片预览、APK 安装\n- 新增：局域网管理员后台（令牌/10 分钟 TTL/Host/Origin 校验）与 FTP 口令上传\n- 新增：屏幕保护（时长/时钟样式）、观影统计、播放队列、继续观看清理\n- 优化：片库历史/收藏与搜索结果 RecyclerView 化；配置变更后恢复当前页面\n- 修复：电视直播页按钮裁切、图片预览黑屏、网页上传 APK 选择器问题\n- 构建：Gradle(AGP)+R8 打通（keep 规则已覆盖 CSP 插件依赖），arm64 R8 包约 33MB",
-  "size": 61971605,
-  "sha256": "d670c0890981e3b6bd2560acb4e6aed0ad73391b7b727c7f14f9ae1e48edd1d5",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.2.0/WhaleFall-1.2.0-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.2.0/WhaleFall-1.2.0-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.2.0"
+  "notes": "# 鲸落 1.2.1（手机 / 平板 / 电视）\n\n- 新增：存储空间与缓存清理（临时缓存/插件缓存/更新包/日志/上传文件分别统计，一键清理）\n- 新增：片源与直播配置傻瓜教程（内置 Markdown 阅读器打开），支持预览当前片源配置原文\n- 新增：遥控器按键说明页；图片预览支持双指缩放\n- 优化：首页滚动位置在页面重建/进程恢复后保留；配置变更后恢复当前页面与搜索词\n- 修复：离开首页时滚动位置被 0 覆盖的问题\n- 构建：Gradle 自包含构建（运行时资源自动生成），R8 arm64 包 33MB",
+  "size": 61979874,
+  "sha256": "71f5d029a320425119a4dc473ea6a23f88582312fbc2207ca3ca2e2865ad8817",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.2.1/WhaleFall-1.2.1-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.2.1/WhaleFall-1.2.1-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.2.1"
 }
