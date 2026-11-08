@@ -25,6 +25,17 @@ normal landscape, reverse landscape, portrait, a deliberately smaller parent
 viewport and restoration to the full viewport. It checks the whole timeline,
 progress region and Dock against visible safe bounds, and verifies touch seeking.
 
+At `d956ab0`, [Android 16 run 42440372966](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42440372966)
+passed all 27 assertions in each navigation mode (54 total). The reviewed
+screenshots also show the timeline within the available area and compact headings
+clear of the central buttons. The first gesture-navigation attempt was interrupted
+by an emulator SystemUI startup ANR; its failed evidence is retained separately.
+The failed job alone was rerun on the same source revision and passed.
+
+[Android 6 run 42440373128](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42440373128)
+at the same revision passed 25 subtitle, 96 home/history and 86 source-host
+assertions, including the player subtitle dialog and live-directory wrappers.
+
 Inspect that workflow's results and screenshots before recording a runtime
 pass. The smaller viewport is an intentional layout fixture, not a reproduced
 Xiaomi firmware fault. These checks omit ARM decoder libraries and do not

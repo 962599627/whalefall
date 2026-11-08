@@ -53,10 +53,10 @@ does not publish a new installer or change the live mirror.
 - Exercise imported user subscriptions on the Android phone runtime, including
   HTTP(S) JSON/PHP endpoints, text lists, JS/Python scripts, local packages,
   multi-repository configurations and live channels.
-- Verify the [published-default Node packaging path](android-node-runtime-packaging.md)
-  separately from the completed candidate and source-runtime checks. Continue
-  physical phone decoder, source and playback validation; aligned libraries alone
-  do not complete this stage.
+- The [published-default Node packaging path](android-node-runtime-packaging.md)
+  passed separately from the candidate and source-runtime checks at `b9b5444`.
+  Continue physical phone decoder, source and playback validation; aligned
+  libraries alone do not complete this stage.
 - Keep JAR/runtime limitations, remote service failures and successful playback
   distinct. The original cross-platform plugin obligations and iPhone publication
   gate remain open.

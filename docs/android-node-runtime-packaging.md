@@ -110,3 +110,13 @@ does not set either local-override variable. The production build must therefore
 download and verify its actual published default, after which the same independent
 APK checks compare the result with the original reviewed libraries. Keep that run
 separate from candidate-mode evidence when recording a default-pin promotion.
+
+At `b9b5444`, [pinned-default run 42440520903](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42440520903)
+passed using `runtime_source=pinned`. The downloaded Actions archive was checked
+against its published digest, and local APK verification reproduced the CI report.
+The runtime archive matches the published `e259f5ad...f69cc` pin. Every 64-bit
+native library in the phone APK passes ELF and ZIP alignment; the ARMv7-only TV
+APK has no large-page capability. Both packages contain the NDK toolchain notice,
+and their compatibility filenames contain identical bytes with matching checksums.
+These are development-signed verification packages, not application releases or
+physical-device playback evidence.
