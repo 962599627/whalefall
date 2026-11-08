@@ -53,6 +53,8 @@ final class MobileShell {
     static int activeTab = 0;
     /** 配置变更/进程重建后要恢复到的 tab；-1 表示不恢复。 */
     static int pendingRestoreTab = -1;
+    /** 重建/切换标签后要恢复的首页滚动位置；-1 表示不恢复。 */
+    static int pendingHomeScroll = -1;
     static String pendingRestoreKeyword = "";
     static String pendingSearchKeyword = "";
 
@@ -804,7 +806,10 @@ final class MobileShell {
 
         final ScrollView scrollView = new ScrollView(a);
         homeScroll = scrollView;
-        scrollView.post(() -> scrollView.scrollTo(0, homeScrollY));
+        final int restoreScroll =
+                pendingHomeScroll >= 0 ? pendingHomeScroll : homeScrollY;
+        pendingHomeScroll = -1;
+        scrollView.post(() -> scrollView.scrollTo(0, Math.max(0, restoreScroll)));
         scrollView.setFillViewport(true);
         scrollView.setVerticalScrollBarEnabled(false);
         scrollView.setClipToPadding(false);
