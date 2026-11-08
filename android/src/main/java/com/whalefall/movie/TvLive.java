@@ -27,6 +27,8 @@ import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import android.widget.TextView;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -643,20 +645,10 @@ final class TvLive {
         head.addView(hint);
         mid.addView(head, new LinearLayout.LayoutParams(-1, -2));
 
-        final ScrollView scroll = new ScrollView(a);
-        scroll.setVerticalScrollBarEnabled(false);
-        scroll.setFillViewport(true);
-        scroll.setClipToPadding(false);
-        scroll.getViewTreeObserver()
-                .addOnScrollChangedListener(() -> page.listScrollY = scroll.getScrollY());
-
-        LinearLayout rows = a.vertical();
-        rows.setPadding(a.dp(5), 0, a.dp(5), a.dp(10));
-        scroll.addView(rows, new ScrollView.LayoutParams(-1, -2));
-        mid.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
-
         if (list.isEmpty()) {
-            rows.addView(
+            LinearLayout emptyBox = a.vertical();
+            emptyBox.setPadding(a.dp(5), 0, a.dp(5), a.dp(10));
+            emptyBox.addView(
                     emptyState(
                             a,
                             !page.query.isEmpty(),
@@ -670,50 +662,92 @@ final class TvLive {
                                 else page.search.setText("");
                             }),
                     new LinearLayout.LayoutParams(-1, -2));
+            mid.addView(emptyBox, new LinearLayout.LayoutParams(-1, 0, 1f));
             return mid;
         }
 
         final int rowH = a.dp(wide ? 40 : 56);
-        for (int i = 0; i < list.size(); i++) {
-            final Channel ch = list.get(i);
-            final String openGroup = page.query.isEmpty() ? page.group : ch.group;
-            final boolean active = chosen != null && ch.name.equals(chosen.name);
-            final boolean fav = page.store.favorites.contains(ch.name);
-            LinearLayout row =
-                    channelRow(
-                            page,
-                            ch,
-                            i + 1,
-                            active,
-                            fav,
-                            () -> {
-                                page.selected = ch.name;
-                                open(page.a, page.store, openGroup, ch, () -> page.refresh());
-                            },
-                            () -> {
-                                boolean now = toggleFavorite(page.a, page.store, ch);
-                                page.a.toast((now ? "已收藏 " : "已取消收藏 ") + ch.name);
-                                page.refresh();
-                            });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, rowH);
-            if (i > 0) lp.topMargin = a.dp(1);
-            rows.addView(row, lp);
-        }
-        final int savedY = page.listScrollY;
-        if (savedY > 0) {
-            scroll.post(() -> scroll.scrollTo(0, savedY));
-        } else if (page.query.isEmpty()) {
+        final RecyclerView recycler = new RecyclerView(a);
+        final LinearLayoutManager layout = new LinearLayoutManager(a);
+        recycler.setLayoutManager(layout);
+        recycler.setClipToPadding(false);
+        recycler.setPadding(a.dp(5), 0, a.dp(5), a.dp(10));
+        recycler.setVerticalScrollBarEnabled(false);
+        recycler.setItemAnimator(null);
+        recycler.setAdapter(
+                new RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+                    @Override
+                    public RecyclerView.ViewHolder onCreateViewHolder(
+                            android.view.ViewGroup parent, int viewType) {
+                        FrameLayout cell = new FrameLayout(a);
+                        cell.setLayoutParams(
+                                new RecyclerView.LayoutParams(
+                                        RecyclerView.LayoutParams.MATCH_PARENT, rowH));
+                        return new RecyclerView.ViewHolder(cell) {};
+                    }
+
+                    @Override
+                    public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+                        FrameLayout cell = (FrameLayout) holder.itemView;
+                        cell.removeAllViews();
+                        final Channel ch = list.get(position);
+                        final String openGroup = page.query.isEmpty() ? page.group : ch.group;
+                        final boolean active = chosen != null && ch.name.equals(chosen.name);
+                        final boolean fav = page.store.favorites.contains(ch.name);
+                        cell.addView(
+                                channelRow(
+                                        page,
+                                        ch,
+                                        position + 1,
+                                        active,
+                                        fav,
+                                        () -> {
+                                            page.selected = ch.name;
+                                            open(
+                                                    page.a,
+                                                    page.store,
+                                                    openGroup,
+                                                    ch,
+                                                    () -> page.refresh());
+                                        },
+                                        () -> {
+                                            boolean now = toggleFavorite(page.a, page.store, ch);
+                                            page.a.toast(
+                                                    (now ? "已收藏 " : "已取消收藏 ") + ch.name);
+                                            page.refresh();
+                                        }),
+                                new FrameLayout.LayoutParams(-1, rowH));
+                    }
+
+                    @Override
+                    public int getItemCount() {
+                        return list.size();
+                    }
+                });
+        recycler.addOnScrollListener(
+                new RecyclerView.OnScrollListener() {
+                    @Override
+                    public void onScrolled(RecyclerView rv, int dx, int dy) {
+                        page.listScrollY = rv.computeVerticalScrollOffset();
+                    }
+                });
+        mid.addView(recycler, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        final int savedIndex = page.listScrollY > 0 ? page.listScrollY / Math.max(1, rowH) : 0;
+        int topPosition = savedIndex;
+        if (page.listScrollY <= 0 && page.query.isEmpty()) {
             String lastWatched = a.prefs.getString(LAST, "");
             if (!lastWatched.isEmpty()) {
                 String lastName = lastWatched.split("\n", 2)[0];
                 for (int i = 0; i < list.size(); i++)
                     if (list.get(i).name.equals(lastName)) {
-                        final int target = i * (rowH + a.dp(1));
-                        scroll.post(() -> scroll.scrollTo(0, Math.max(0, target - a.dp(60))));
+                        topPosition = Math.max(0, i - 1);
                         break;
                     }
             }
         }
+        final int scrollTo = topPosition;
+        recycler.post(() -> layout.scrollToPositionWithOffset(scrollTo, 0));
         return mid;
     }
 

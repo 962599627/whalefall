@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.0.0",
-  "versionCode": 10000,
+  "versionName": "1.2.1",
+  "versionCode": 12010,
   "minSdk": 23,
-  "prerelease": false,
-  "notes": "# 鲸落 1.0.0（手机 / 平板）\n\n基于 Marco Movie 0.5.3（作者 Pilipala，GPL-3.0-only）二次开发。\n\n- 品牌改为「鲸落」：新图标、启动页、应用名、包名 com.whalefall.movie\n- 应用内更新检查指向本仓库\n- 功能与上游 0.5.3 一致：点播 / 直播 / 磁力 / 弹幕 / 脚本源等\n- 安装包分电视版（ARM 32 位）与手机版（arm64 + armv7），请勿混装",
-  "size": 61621268,
-  "sha256": "4a8a0935f5fd3c1c40e40ab2e621038c2cea14329e2ed4f8e1df44adbd75488f",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.0.0/WhaleFall-1.0.0-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.0.0/WhaleFall-1.0.0-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.0.0"
+  "prerelease": true,
+  "notes": "# 鲸落 1.2.1（手机 / 平板 / 电视）\n\n- 新增：存储空间与缓存清理（临时缓存/插件缓存/更新包/日志/上传文件分别统计，一键清理）\n- 新增：片源与直播配置傻瓜教程（内置 Markdown 阅读器打开），支持预览当前片源配置原文\n- 新增：遥控器按键说明页；图片预览支持双指缩放\n- 优化：首页滚动位置在页面重建/进程恢复后保留；配置变更后恢复当前页面与搜索词\n- 修复：离开首页时滚动位置被 0 覆盖的问题\n- 构建：Gradle 自包含构建（运行时资源自动生成），R8 arm64 包 33MB",
+  "size": 61979874,
+  "sha256": "5292ce7bcb030fb296c518617092cceba61a439317b307bc609ef131dda5d679",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.2.1/WhaleFall-1.2.1-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.2.1/WhaleFall-1.2.1-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.2.1"
 }

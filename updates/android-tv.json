@@ -7,7 +7,7 @@
   "prerelease": false,
   "notes": "# 鲸落 1.2.1（手机 / 平板 / 电视）\n\n- 新增：存储空间与缓存清理（临时缓存/插件缓存/更新包/日志/上传文件分别统计，一键清理）\n- 新增：片源与直播配置傻瓜教程（内置 Markdown 阅读器打开），支持预览当前片源配置原文\n- 新增：遥控器按键说明页；图片预览支持双指缩放\n- 优化：首页滚动位置在页面重建/进程恢复后保留；配置变更后恢复当前页面与搜索词\n- 修复：离开首页时滚动位置被 0 覆盖的问题\n- 构建：Gradle 自包含构建（运行时资源自动生成），R8 arm64 包 33MB",
   "size": 36203261,
-  "sha256": "1e3e5f76ecfe0b397f184fae7742577e1d812b7f1299b0641167f2179d583360",
+  "sha256": "ce314f5e32fb436aef07217e7d3c4bcc43a804cebfcccb382d1fd8f1782816dc",
   "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.2.1/WhaleFall-1.2.1-android-tv.apk",
   "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.2.1/WhaleFall-1.2.1-android-tv.apk",
   "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.2.1"
