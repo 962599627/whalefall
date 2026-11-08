@@ -429,8 +429,7 @@ final class PlaybackControls {
             b.setTextSize(11);
             return b;
         }
-        return UiIcon.button(
-                a, UiIcon.kindForKey(key), title, UiTokens.TOUCH_MIN, 24, click);
+        return UiIcon.iconCell(a, UiIcon.kindForKey(key), title, 24, click);
     }
 
     void registerHiddenAction(String key, Runnable action) {
@@ -1338,8 +1337,20 @@ final class PlaybackControls {
                     new PlayerToolsSheet.Tool(
                             UiIcon.BACK, "返回频道列表", a::leavePlayback));
         } else {
-            items.add(new PlayerToolsSheet.Tool(UiIcon.PREV, "上一集", tap("prev-episode")));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.NEXT, "下一集", tap("next-episode")));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.PREV,
+                            "上一集",
+                            () -> {
+                                if (!step(-1)) message("已经是第一集。");
+                            }));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.NEXT,
+                            "下一集",
+                            () -> {
+                                if (!step(1)) message("无下集。");
+                            }));
             items.add(new PlayerToolsSheet.Tool(UiIcon.EPISODES, "选集", this::chooseEpisodes));
             items.add(new PlayerToolsSheet.Tool(UiIcon.SWAP, "换源", this::chooseLine));
             items.add(new PlayerToolsSheet.Tool(UiIcon.SPEED, "倍速", this::speed));
@@ -1400,14 +1411,6 @@ final class PlaybackControls {
                         });
     }
 
-    /** 按 key 触发已有按钮的回调（保持既有逻辑与回调不变）。 */
-    private Runnable tap(String key) {
-        return () -> {
-            View v = buttons.get(key);
-            if (v != null) v.performClick();
-        };
-    }
-
     void playbackInfo() {
         message(
                 a.player == null
@@ -1440,12 +1443,11 @@ final class PlaybackControls {
 
     private void tintIcon(String key, boolean active) {
         View b = buttons.get(key);
-        if (b instanceof android.widget.ImageView) {
-            UiIcon.tint(
-                    (android.widget.ImageView) b,
-                    active ? UiTokens.PLAYER_ACTIVE : UiTokens.PLAYER_ICON);
-        } else if (b instanceof TextView) {
-            ((TextView) b).setTextColor(active ? UiTokens.PLAYER_ACTIVE : UiTokens.PLAYER_ICON);
+        int color = active ? UiTokens.PLAYER_ACTIVE : UiTokens.PLAYER_ICON;
+        if (b instanceof TextView) {
+            ((TextView) b).setTextColor(color);
+        } else if (b != null) {
+            UiIcon.tintIconCell(b, color);
         }
     }
 

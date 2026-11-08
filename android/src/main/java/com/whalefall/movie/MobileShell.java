@@ -1175,6 +1175,21 @@ final class MobileShell {
                                     java.util.Map<String, String> remoteSent =
                                             VideoFilters.remoteValues(
                                                     definitions, filterSnapshot);
+                                    boolean multiRemote = false;
+                                    for (String v : filterSnapshot.values())
+                                        if (v != null && v.contains(",")) multiRemote = true;
+                                    if (multiRemote
+                                            && !remoteSent.isEmpty()
+                                            && a.prefs.getBoolean(
+                                                    "filter_multi_toast", true)) {
+                                        a.prefs.edit()
+                                                .putBoolean("filter_multi_toast", false)
+                                                .apply();
+                                        a.ui.post(
+                                                () ->
+                                                        a.toast(
+                                                                "该片源远程筛选只支持单选，多选时先用第一个条件"));
+                                    }
                                     boolean remoteIgnored =
                                             !remoteSent.isEmpty()
                                                     && !list.videos.isEmpty()
@@ -1191,7 +1206,10 @@ final class MobileShell {
                                                     .putBoolean(
                                                             "filter_unsupported_toast", false)
                                                     .apply();
-                                            a.toast("该片源不返回筛选结果，已按本地影片资料筛选");
+                                            a.ui.post(
+                                                    () ->
+                                                            a.toast(
+                                                                    "该片源不返回筛选结果，已按本地影片资料筛选"));
                                         }
                                     }
                                     final boolean filterEmpty =

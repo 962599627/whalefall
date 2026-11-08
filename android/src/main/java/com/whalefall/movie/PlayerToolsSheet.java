@@ -88,9 +88,10 @@ final class PlayerToolsSheet {
         titleRow.addView(close, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
         card.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
 
-        // 3 列网格（每格 72dp，可滚动）
+        // 3 列网格（每格 76dp，可滚动）
         LinearLayout grid = a.vertical();
         grid.setPadding(a.dp(UiTokens.SP_12), a.dp(UiTokens.SP_10), a.dp(UiTokens.SP_12), 0);
+        int rows = (tools.size() + 2) / 3;
         for (int i = 0; i < tools.size(); i += 3) {
             LinearLayout row = a.row();
             row.setGravity(Gravity.CENTER_VERTICAL);
@@ -131,9 +132,14 @@ final class PlayerToolsSheet {
         scroll.setClipChildren(false);
         scroll.setClipToPadding(false);
         scroll.addView(grid);
+        // 面板最大高度 = 屏幕 76%，超出时网格区域内部滚动
         int screenHeight = a.root == null ? a.windowHeight() : a.root.getHeight();
-        int maxHeight = Math.max(a.dp(220), Math.round(screenHeight * 0.72f));
-        card.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+        int maxSheet = Math.min(a.dp(640), Math.round(screenHeight * 0.76f));
+        int headerEstimate = a.dp(108);
+        int gridPx = rows * a.dp(84) + a.dp(10);
+        int available = Math.max(a.dp(150), maxSheet - headerEstimate);
+        int scrollHeight = gridPx > available ? available : -2;
+        card.addView(scroll, new LinearLayout.LayoutParams(-1, scrollHeight));
         card.setPadding(0, 0, 0, a.dp(UiTokens.SP_20));
 
         int width =
@@ -167,17 +173,6 @@ final class PlayerToolsSheet {
             window.setGravity(Gravity.BOTTOM);
             window.getDecorView().setSystemUiVisibility(5894);
         }
-        // 先量一次高度，超高时让 ScrollView 限高
-        card.post(
-                () -> {
-                    if (card.getHeight() > maxHeight && card.getLayoutParams() != null) {
-                        int header =
-                                card.getHeight() - (scroll.getHeight() > 0 ? scroll.getHeight() : 0);
-                        scroll.setLayoutParams(
-                                new LinearLayout.LayoutParams(
-                                        -1, Math.max(a.dp(120), maxHeight - header)));
-                    }
-                });
         if (!a.reduced) {
             root.setTranslationY(a.dp(28));
             root.setAlpha(0f);

@@ -147,6 +147,50 @@ final class UiIcon {
         }
     }
 
+    /**
+     * 图标单元格：可点、48dp 触控、圆角涟漪；内部固定 24dp 图标居中。
+     * 宽度由调用方（权重/固定宽）决定，图标不会被拉伸——避免 ImageButton FIT_CENTER
+     * 在宽格子里把 24dp 图标放大。
+     */
+    static FrameLayout iconCell(
+            MainActivity a, int kind, String desc, int iconDp, Runnable click) {
+        FrameLayout cell = new FrameLayout(a);
+        cell.setClickable(true);
+        cell.setFocusable(false);
+        cell.setContentDescription(desc);
+        cell.setBackground(UiTokens.roundedRipple(a, UiTokens.RADIUS_12, 0x1fffffff));
+        ImageView icon = new ImageView(a);
+        icon.setImageResource(res(kind));
+        icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        icon.setColorFilter(UiTokens.PLAYER_ICON, PorterDuff.Mode.SRC_IN);
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        cell.addView(
+                icon,
+                new FrameLayout.LayoutParams(a.dp(iconDp), a.dp(iconDp), android.view.Gravity.CENTER));
+        cell.setOnClickListener(click == null ? null : v -> click.run());
+        cell.setMinimumWidth(a.dp(UiTokens.TOUCH_MIN));
+        cell.setMinimumHeight(a.dp(UiTokens.TOUCH_MIN));
+        return cell;
+    }
+
+    /** 给单元格或 ImageView 上色（用于倍速等激活态变粉）。 */
+    static void tintIconCell(View v, int color) {
+        if (v instanceof ImageView) {
+            tint((ImageView) v, color);
+            return;
+        }
+        if (v instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) v;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                if (child instanceof ImageView) {
+                    tint((ImageView) child, color);
+                    return;
+                }
+            }
+        }
+    }
+
     /** 静态图标。 */
     static ImageView view(MainActivity a, int kind, int color, int sizeDp) {
         ImageView v = new ImageView(a);

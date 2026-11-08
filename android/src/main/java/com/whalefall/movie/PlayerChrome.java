@@ -670,7 +670,14 @@ final class PlayerChrome {
             hint = "双击暂停 · 左右滑快进 · 上下滑调亮度音量";
         }
         if (progressOnlyMode) hint = "";
-        if (gesturePill.getText().toString().trim().isEmpty() || !a.seekGesture.active) {
+        if (a.seekGesture.active) {
+            // 手势 seek 中：显示 PlaybackController 写入的实时提示（快进 +N 秒 · 松开跳转）
+            String seekMsg = a.playStatus == null ? "" : a.playStatus.getText().toString().trim();
+            if (!seekMsg.isEmpty()) {
+                gesturePill.setText(seekMsg);
+                gesturePill.setVisibility(View.VISIBLE);
+            }
+        } else {
             gesturePill.setText(hint);
             gesturePill.setVisibility(hint.isEmpty() ? View.GONE : View.VISIBLE);
         }

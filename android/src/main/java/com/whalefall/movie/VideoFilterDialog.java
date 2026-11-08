@@ -128,26 +128,17 @@ final class VideoFilterDialog {
                             hs.addView(chips);
                             for (VideoFilters.Choice choice : def.choices) {
                                 final String value = choice.value;
-                                final java.util.List<String> current =
-                                        new java.util.ArrayList<>();
-                                String stored = selections.get(def.dimension);
-                                if (stored != null && !stored.isEmpty())
-                                    java.util.Collections.addAll(current, stored.split(","));
-                                boolean on = value.isEmpty() ? current.isEmpty() : current.contains(value);
+                                boolean on =
+                                        value.isEmpty()
+                                                ? !selections.containsKey(def.dimension)
+                                                : value.equals(selections.get(def.dimension));
                                 TextView chip = TvUiKit.pill(a, choice.label, 12.5f, on);
                                 chip.setOnClickListener(
                                         v -> {
                                             if (value.isEmpty()) {
                                                 selections.remove(def.dimension);
                                             } else {
-                                                if (current.contains(value)) current.remove(value);
-                                                else current.add(value);
-                                                if (current.isEmpty())
-                                                    selections.remove(def.dimension);
-                                                else
-                                                    selections.put(
-                                                            def.dimension,
-                                                            String.join(",", current));
+                                                selections.put(def.dimension, value);
                                             }
                                             renderRows[0].run();
                                             changed.run();

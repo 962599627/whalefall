@@ -137,9 +137,9 @@ final class VideoFilters {
         Map<String, String> values = new LinkedHashMap<>();
         for (Definition def : definitions) {
             String value = selected.get(def.dimension);
-            // 多选时不发远程过滤（多数 CMS 只接受单值），交给本地 OR 匹配
-            if (def.remote && value != null && !value.isEmpty() && !value.contains(","))
-                values.put(def.key, value);
+            // 远程接口只接受单值：多选时取第一个值发过去（本地再用 OR 精确筛）
+            if (def.remote && value != null && !value.isEmpty())
+                values.put(def.key, value.split(",", 2)[0]);
         }
         return values;
     }
