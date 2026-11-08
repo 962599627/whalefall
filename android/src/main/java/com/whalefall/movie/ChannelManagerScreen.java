@@ -31,13 +31,15 @@ final class ChannelManagerScreen {
         final String group;
         final boolean builtin;
         final boolean hidden;
+        final boolean edited;
 
-        Row(String name, String url, String group, boolean builtin, boolean hidden) {
+        Row(String name, String url, String group, boolean builtin, boolean hidden, boolean edited) {
             this.name = name;
             this.url = url;
             this.group = group;
             this.builtin = builtin;
             this.hidden = hidden;
+            this.edited = edited;
         }
     }
 
@@ -187,24 +189,33 @@ final class ChannelManagerScreen {
     private static List<Row> collect(MainActivity a) {
         List<Row> rows = new ArrayList<>();
         Set<String> hidden = TvLive.readHidden(a);
-        for (Object[] row : TvLive.CCTV)
+        java.util.Map<String, String> overrides = TvLive.readUrlOverrides(a);
+        for (Object[] row : TvLive.CCTV) {
+            String name = (String) row[0];
+            String url = overrides.getOrDefault(name, (String) row[1]);
             rows.add(
                     new Row(
-                            (String) row[0],
-                            (String) row[1],
+                            name,
+                            url,
                             TvLive.GROUP_CCTV,
                             true,
-                            hidden.contains((String) row[0])));
-        for (Object[] row : TvLive.SAT)
+                            hidden.contains(name),
+                            overrides.containsKey(name)));
+        }
+        for (Object[] row : TvLive.SAT) {
+            String name = (String) row[0];
+            String url = overrides.getOrDefault(name, (String) row[1]);
             rows.add(
                     new Row(
-                            (String) row[0],
-                            (String) row[1],
+                            name,
+                            url,
                             TvLive.GROUP_SAT,
                             true,
-                            hidden.contains((String) row[0])));
+                            hidden.contains(name),
+                            overrides.containsKey(name)));
+        }
         for (TvLive.Channel c : TvLive.readCustom(a))
-            rows.add(new Row(c.name, c.url, c.group, false, false));
+            rows.add(new Row(c.name, c.url, c.group, false, false, false));
         return rows;
     }
 
@@ -273,6 +284,7 @@ final class ChannelManagerScreen {
             text.addView(name);
             String badge = item.builtin ? "内置 · " : "自定义 · ";
             if (item.hidden) badge = "已隐藏 · 内置 · ";
+            if (item.edited) badge = "已改地址 · " + badge;
             TextView sub = a.text(badge + item.group + " · " + item.url, 10.5f, 0xff8d9cb6);
             sub.setSingleLine(true);
             sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -285,11 +297,30 @@ final class ChannelManagerScreen {
                                     .setTitle(item.name)
                                     .setItems(
                                             item.builtin
-                                                    ? new String[] {"隐藏该频道", "复制地址"}
-                                                    : new String[] {"修改频道", "删除频道", "复制地址"},
+                                                    ? (item.edited
+                                                            ? new String[] {
+                                                                "编辑地址", "恢复默认地址", "隐藏该频道", "复制地址"
+                                                            }
+                                                            : new String[] {"编辑地址", "隐藏该频道", "复制地址"})
+                                                    : new String[] {"修改频道", "编辑地址", "删除频道", "复制地址"},
                                             (d, index) -> {
                                                 if (item.builtin) {
-                                                    if (index == 0) {
+                                                    String choice = item.edited
+                                                            ? new String[] {
+                                                                "编辑地址", "恢复默认地址", "隐藏该频道", "复制地址"
+                                                            }[index]
+                                                            : new String[] {"编辑地址", "隐藏该频道", "复制地址"}[index];
+                                                    if (choice.equals("编辑地址")) {
+                                                        editChannel(a, item, refresh);
+                                                        return;
+                                                    }
+                                                    if (choice.equals("恢复默认地址")) {
+                                                        java.util.Map<String, String> overrides =
+                                                                TvLive.readUrlOverrides(a);
+                                                        overrides.remove(item.name);
+                                                        TvLive.saveUrlOverrides(a, overrides);
+                                                        a.toast("已恢复默认地址：" + item.name);
+                                                    } else if (choice.equals("隐藏该频道")) {
                                                         Set<String> hidden = TvLive.readHidden(a);
                                                         hidden.add(item.name);
                                                         TvLive.saveHidden(a, hidden);
@@ -301,6 +332,10 @@ final class ChannelManagerScreen {
                                                         return;
                                                     }
                                                     if (index == 1) {
+                                                        editChannel(a, item, refresh);
+                                                        return;
+                                                    }
+                                                    if (index == 2) {
                                                         List<TvLive.Channel> custom =
                                                                 new ArrayList<>(TvLive.readCustom(a));
                                                         for (int i = custom.size() - 1; i >= 0; i--)
@@ -405,6 +440,17 @@ final class ChannelManagerScreen {
                             String u = url.getText().toString().trim();
                             if (n.isEmpty() || u.isEmpty()) {
                                 a.toast("名称和地址不能为空");
+                                return;
+                            }
+                            if (row != null && TvLive.isBuiltin(row.name)) {
+                                java.util.Map<String, String> overrides =
+                                        TvLive.readUrlOverrides(a);
+                                if (u.equals(TvLive.defaultUrl(row.name)))
+                                    overrides.remove(row.name);
+                                else overrides.put(row.name, u);
+                                TvLive.saveUrlOverrides(a, overrides);
+                                a.toast("已保存地址：" + n);
+                                if (refresh != null) refresh.run();
                                 return;
                             }
                             List<TvLive.Channel> list = new ArrayList<>(TvLive.readCustom(a));

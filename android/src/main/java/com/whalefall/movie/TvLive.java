@@ -37,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 import org.json.JSONArray;
@@ -53,6 +54,7 @@ final class TvLive {
 
     static final String CUSTOM_FILE = "tv_channels.json";
     static final String HIDDEN = "tv_hidden_channels";
+    static final String URL_OVERRIDES = "tv_url_overrides";
     static final String FAVORITES = "tv_favorites";
     static final String LAST = "tv_last";
 
@@ -153,12 +155,21 @@ final class TvLive {
 
         Store(MainActivity a) {
             Set<String> hidden = readHidden(a);
+            Map<String, String> overrides = readUrlOverrides(a);
             for (Object[] row : CCTV)
                 if (!hidden.contains((String) row[0]))
-                    builtin.add(new Channel((String) row[0], (String) row[1], GROUP_CCTV));
+                    builtin.add(
+                            new Channel(
+                                    (String) row[0],
+                                    overrides.getOrDefault((String) row[0], (String) row[1]),
+                                    GROUP_CCTV));
             for (Object[] row : SAT)
                 if (!hidden.contains((String) row[0]))
-                    builtin.add(new Channel((String) row[0], (String) row[1], GROUP_SAT));
+                    builtin.add(
+                            new Channel(
+                                    (String) row[0],
+                                    overrides.getOrDefault((String) row[0], (String) row[1]),
+                                    GROUP_SAT));
             custom.addAll(readCustom(a));
             favorites.addAll(readFavorites(a));
         }
@@ -1342,6 +1353,36 @@ final class TvLive {
         } catch (Exception ignored) {
         }
         return list;
+    }
+
+    /** 内置频道地址覆盖（用户手动改成别的直播地址）。 */
+    static Map<String, String> readUrlOverrides(MainActivity a) {
+        Map<String, String> map = new java.util.LinkedHashMap<>();
+        try {
+            JSONObject json = new JSONObject(a.prefs.getString(URL_OVERRIDES, "{}"));
+            java.util.Iterator<String> it = json.keys();
+            while (it.hasNext()) {
+                String key = it.next();
+                map.put(key, json.optString(key));
+            }
+        } catch (Exception ignored) {
+        }
+        return map;
+    }
+
+    static void saveUrlOverrides(MainActivity a, Map<String, String> map) {
+        try {
+            JSONObject json = new JSONObject();
+            for (Map.Entry<String, String> e : map.entrySet()) json.put(e.getKey(), e.getValue());
+            a.prefs.edit().putString(URL_OVERRIDES, json.toString()).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    static String defaultUrl(String name) {
+        for (Object[] row : CCTV) if (row[0].equals(name)) return (String) row[1];
+        for (Object[] row : SAT) if (row[0].equals(name)) return (String) row[1];
+        return "";
     }
 
     /** 被隐藏的内置频道（名字集合）。 */
