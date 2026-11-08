@@ -90,6 +90,11 @@ ARM media decoding and third-party stream availability remain separate gates.
 
 ## Separate update editions
 
+The [HTTP T4 adapter and system results](http-source-compatibility.md) cover
+generic remote `type: 4` endpoints independently of local CatPaw and JAR adapters.
+Its API 23 fixture passed; the API 36 phone suite currently stops at a Python
+initialization timeout before the new T4 checks, so phone acceptance remains open.
+
 [Update isolation](android-update-isolation.md) records the phone/TV feeds,
 explicit package names, old-name migration and APK verification tests. This work
 does not publish a new installer or change the live mirror.

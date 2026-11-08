@@ -33,3 +33,20 @@ playback, and third-party endpoint availability remain distinct acceptance steps
 
 This does not claim that every JAR, Python dependency, webpage parser, proprietary
 plugin or third-party service is supported. No installer release is implied.
+
+## System results at `936e925`
+
+- [Windows/macOS HTTP run 42445466014](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42445466014):
+  18 tests passed on each OS, including the eight T4 tests. Retained JSON events
+  were independently checked for skips, failures and test counts.
+- [Android 6 TV run 42445465886](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42445465886):
+  all 122 source assertions passed, including 22 T4 assertions, plus 25 subtitle
+  and 96 home/history assertions. This uses the x86 Android TV system image.
+- [Android 16 phone run 42445465902](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42445465902):
+  both attempts failed at the same Python initialization timeout after the first
+  30 existing assertions, before reaching T4. Neither is a passing phone result.
+  Original errors and logs are retained; the execution limit was not relaxed.
+  A smaller HTML parser dependency is being investigated separately.
+
+The full public checks passed at that commit. Phone acceptance and physical
+device playback remain open, so these results do not authorize an installer release.
