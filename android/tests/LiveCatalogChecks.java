@@ -18,6 +18,26 @@ public final class LiveCatalogChecks {
 
     public static void main(String[] args) throws Exception {
         Map<String, String> inherited = new LinkedHashMap<>();
+        List<LiveCatalog.Source> declared =
+                LiveCatalog.sources(
+                        "{\"lives\":[{\"name\":\"Owned\",\"url\":\"list.php\",\"origin\":\"https://origin.test\"}]}",
+                        "https://list.test/config.json");
+        check(
+                declared.get(0).headers.get("Origin").equals("https://origin.test"),
+                "TVBox source origin becomes request header");
+        LiveCatalog.Catalog originCatalogue =
+                LiveCatalog.parse(
+                        "{\"groups\":[{\"name\":\"Owned\",\"origin\":\"https://origin.test\",\"channels\":[{\"name\":\"Test\",\"url\":\"https://video.test/live.m3u8\"}]}]}",
+                        "https://list.test/config.json",
+                        inherited);
+        check(
+                first(originCatalogue)
+                        .streams
+                        .get(0)
+                        .headers
+                        .get("Origin")
+                        .equals("https://origin.test"),
+                "TVBox group origin inherited by stream");
         inherited.put("User-Agent", "Source-UA");
         String m3u =
                 "\uFEFF#EXTM3U x-tvg-url=\"https://epg.test/e.xml\"\n#EXTINF:-1 tvg-id=\"c1\" tvg-logo=\"../logo.png\" group-title=\"News, World\" http-user-agent=\"Channel-UA\",News, live\n#EXTVLCOPT:http-referrer=https://ref.test/\n#KODIPROP:inputstream.adaptive.manifest_type=hls\n../live/a.m3u8\n#EXTINF:-1 group-title=\"Second\",Other\nhttps://video.test/x.m3u8\n";

@@ -120,6 +120,7 @@ public final class LiveCatalog {
                 copyHeaders(s.headers, j.opt("header"));
                 header(s.headers, "User-Agent", j.optString("ua", ""));
                 header(s.headers, "Referer", j.optString("referer", ""));
+                header(s.headers, "Origin", j.optString("origin", ""));
                 int seconds = j.optInt("timeout", 15);
                 s.timeoutMs = Math.max(1000, Math.min(30000, seconds * 1000));
                 s.url = resolve(origin, j.optString("url", ""));
@@ -213,7 +214,7 @@ public final class LiveCatalog {
                                     ? Cms.document(bytes)
                                     : new String(bytes, Charset.forName(charset)),
                             next.toString(),
-                            source.headers);
+                            requestHeaders);
                 } catch (java.nio.charset.UnsupportedCharsetException e) {
                     throw new IOException("直播列表字符编码不受支持", e);
                 }
@@ -266,6 +267,7 @@ public final class LiveCatalog {
         copyHeaders(headers, j.opt("header"));
         header(headers, "User-Agent", j.optString("ua", ""));
         header(headers, "Referer", j.optString("referer", ""));
+        header(headers, "Origin", j.optString("origin", ""));
         if (j.has("lives")) {
             parseJson(j.opt("lives"), group, out, headers, depth + 1);
             return;

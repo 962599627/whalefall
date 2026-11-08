@@ -9,8 +9,17 @@ public final class LiveNetworkChecks {
         source.url = args[0] + "cross";
         source.headers.put("authorization", "test-auth");
         source.headers.put("cOoKiE", "test-cookie");
-        if (LiveCatalog.load(source).channelCount() != 1) throw new AssertionError("redirect");
+        LiveCatalog.Catalog cross = LiveCatalog.load(source);
+        if (cross.channelCount() != 1) throw new AssertionError("redirect");
+        for (String name : cross.groups.get(0).channels.get(0).streams.get(0).headers.keySet()) {
+            if (name.equalsIgnoreCase("Authorization") || name.equalsIgnoreCase("Cookie"))
+                throw new AssertionError("removed credentials restored into redirected stream");
+        }
+        if (!source.headers.containsKey("authorization") || !source.headers.containsKey("cOoKiE"))
+            throw new AssertionError("loading mutated source credentials");
         System.out.println("PASS cross-origin redirect removes mixed-case credentials");
+        System.out.println(
+                "PASS redirected stream does not restore credentials removed from request");
         source.url = args[0] + "list.php";
         LiveCatalog.Catalog utf16 = LiveCatalog.load(source);
         LiveCatalog.Channel channel = utf16.groups.get(0).channels.get(0);
@@ -18,6 +27,9 @@ public final class LiveNetworkChecks {
                 || !channel.streams.get(0).url.equals(args[0] + "media/video.m3u8"))
             throw new AssertionError("PHP UTF16 playlist or relative stream decode failed");
         System.out.println("PASS PHP endpoint with UTF16 BOM playlist and relative media");
+        if (!channel.streams.get(0).headers.equals(source.headers))
+            throw new AssertionError("same-origin playlist lost credentials");
+        System.out.println("PASS same-origin stream retains explicit source credentials");
         source.url = args[0] + "slow";
         ExecutorService executor = Executors.newSingleThreadExecutor();
         RequestScope scope = new RequestScope();
