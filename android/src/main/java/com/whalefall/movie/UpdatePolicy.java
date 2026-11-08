@@ -9,7 +9,7 @@ final class UpdatePolicy {
     static final long MAX_APK = 128L * 1024 * 1024;
     // 二次开发者的自有更新源；留空即关闭应用内更新检查。
     // FEED 为 JSON 目录前缀（如 https://example.com/updates/），MIRROR 为安装包镜像前缀。
-    static final String FEED = "https://cdn.jsdelivr.net/gh/962599627/whalefall@main/updates/";
+    static final String FEED = "https://gh-proxy.org/https://raw.githubusercontent.com/962599627/whalefall/main/updates/";
     static final String MIRROR = "https://raw.githubusercontent.com/962599627/whalefall/main/";
 
     /** 允许的更新源主机；留空表示接受任意 HTTPS 主机（自建源最省事）。 */
