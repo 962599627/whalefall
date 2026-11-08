@@ -474,193 +474,26 @@ final class MobileDetailScreen {
         a.releasePlayer();
         a.generation++;
 
-        // Edge-to-edge transparent status bar so the full-bleed poster reaches physical top y=0
+        // Edge-to-edge transparent status bar so the preview reaches near the physical top
         a.applyMobileSystemBars(false);
 
+        final float density = a.getResources().getDisplayMetrics().density;
+        final int widthDp = Math.round(a.windowWidth() / density);
+        // 平板横向：左右两栏（52% 预览 + 48% 资料）；手机/竖屏：上下堆叠单列
+        final boolean wide = widthDp >= 600 && !a.isPortrait();
         final int topPad = getStatusBarHeight(a);
-        final int screenH = a.getResources().getDisplayMetrics().heightPixels;
-        // 响应式：宽屏（平板横向）用更矮更宽的居中内容列；手机保持沉浸式全宽
-        final int widthDp =
-                Math.round(a.windowWidth() / a.getResources().getDisplayMetrics().density);
-        final boolean wide = widthDp >= 600;
-        final int contentMaxW = a.dp(900);
-        final int contentSide =
-                wide
-                        ? Math.max(a.dp(24), (a.windowWidth() - contentMaxW) / 2)
-                        : a.dp(18);
-        final int posterWindowH =
-                wide
-                        ? Math.max(a.dp(430), Math.min(a.dp(600), Math.round(screenH * 0.62f)))
-                        : Math.max(a.dp(560), Math.min(a.dp(740), Math.round(screenH * 0.77f)));
-        final int foregroundHeroH =
-                wide
-                        ? Math.max(a.dp(320), Math.min(a.dp(430), Math.round(posterWindowH * 0.72f)))
-                        : Math.max(a.dp(420), Math.min(a.dp(535), Math.round(posterWindowH * 0.74f)));
-        final int initAmbient = defaultAmbientForTitle(listing.title);
+        final int sidePad = a.dp(wide ? 24 : 18);
+        final int contentTop = topPad + a.dp(wide ? 60 : 56);
 
         a.root = new FrameLayout(a);
-        a.root.setBackgroundColor(initAmbient);
+        a.root.setBackground(Skin.backdrop(a));
         a.setContentView(a.root);
 
-        // 1. Full-Screen Immersive Backdrop & Poster Layer
-        final PortraitBackdropView backdropView =
-                new PortraitBackdropView(a, posterWindowH, topPad + a.dp(54), initAmbient);
-        backdropView.setTag("detail-backdrop");
-        a.root.addView(backdropView, new FrameLayout.LayoutParams(-1, -1));
-
-        final PosterHookImageView posterHook =
-                new PosterHookImageView(
-                        a,
-                        backdropView,
-                        () -> {
-                            if (a.root != null) {
-                                a.root.setBackgroundColor(backdropView.getAmbientColor());
-                            }
-                        });
-        posterHook.setTag("detail-cover");
-        posterHook.setVisibility(View.GONE);
-        a.root.addView(posterHook, new FrameLayout.LayoutParams(1, 1));
-        if (listing.poster != null && !listing.poster.isEmpty()) {
-            a.poster(listing.poster, posterHook, true);
-        }
-
-        // 2. Main Scrollable Foreground Content
-        final ScrollView scrollView = new ScrollView(a);
-        scrollView.setTag("detail-scroll");
-        scrollView.setFillViewport(true);
-        scrollView.setVerticalScrollBarEnabled(false);
-        scrollView
-                .getViewTreeObserver()
-                .addOnScrollChangedListener(
-                        () -> backdropView.setScrollOffset(scrollView.getScrollY()));
-        a.scroll = scrollView;
-        a.root.addView(scrollView, new FrameLayout.LayoutParams(-1, -1));
-
-        LinearLayout mainCol = a.vertical();
-        mainCol.setPadding(0, 0, 0, a.dp(46));
-        scrollView.addView(mainCol, new ScrollView.LayoutParams(-1, -2));
-
-        // 2A. Foreground Hero Container (bottom-aligned over the lower poster transition zone)
-        FrameLayout heroStage = new FrameLayout(a);
-        heroStage.setTag("detail-hero");
-        mainCol.addView(
-                heroStage,
-                new LinearLayout.LayoutParams(-1, wide ? -2 : foregroundHeroH));
-
-        final LinearLayout heroCenterCol = a.vertical();
-        final LinearLayout wideLeftCol = wide ? a.vertical() : null;
-        final ImageView[] widePoster = new ImageView[1];
-        final LinearLayout wideInfoCol = wide ? heroCenterCol : null;
-        if (wide) {
-            heroCenterCol.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-            heroCenterCol.setPadding(a.dp(24), a.dp(6), a.dp(8), 0);
-            LinearLayout heroRow = a.row();
-            heroRow.setGravity(Gravity.CENTER_VERTICAL);
-            FrameLayout.LayoutParams heroRowLp =
-                    new FrameLayout.LayoutParams(
-                            Math.min(contentMaxW, a.windowWidth() - a.dp(48)),
-                            -2,
-                            Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-            heroRowLp.bottomMargin = a.dp(14);
-            heroStage.addView(heroRow, heroRowLp);
-            ImageView tabletPoster = new ImageView(a);
-            tabletPoster.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            tabletPoster.setBackground(a.bg(0xff122434, 16));
-            tabletPoster.setClipToOutline(true);
-            widePoster[0] = tabletPoster;
-            if (listing.poster != null && !listing.poster.isEmpty())
-                a.poster(listing.poster, tabletPoster);
-            heroRow.addView(wideLeftCol, new LinearLayout.LayoutParams(a.dp(290), -2));
-            heroRow.addView(heroCenterCol, new LinearLayout.LayoutParams(0, -2, 1f));
-        } else {
-            heroCenterCol.setGravity(Gravity.CENTER_HORIZONTAL);
-            heroCenterCol.setPadding(a.dp(20), 0, a.dp(20), a.dp(14));
-            FrameLayout.LayoutParams heroCenterLp =
-                    new FrameLayout.LayoutParams(
-                            -1, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        View heroScrim = new View(a);
-        heroScrim.setBackground(
-                new GradientDrawable(
-                        GradientDrawable.Orientation.TOP_BOTTOM,
-                        new int[] {0x00000000, 0x4d0b1220, 0xcc0b1220}));
-        heroStage.addView(heroScrim, new FrameLayout.LayoutParams(-1, -1));
-            heroStage.addView(heroCenterCol, heroCenterLp);
-        }
-
-        final TextView titleView = a.text(listing.title, wide ? 30 : 28, MainActivity.WHITE);
-        titleView.setTag("detail-title");
-        titleView.setTypeface(null, Typeface.BOLD);
-        titleView.setGravity(wide ? Gravity.START : Gravity.CENTER);
-        titleView.setMaxLines(2);
-        titleView.setEllipsize(TextUtils.TruncateAt.END);
-        titleView.setShadowLayer(a.dp(18), 0, a.dp(5), 0xf0000000);
-        if (wide && wideLeftCol != null) {
-            // 片名放在顶部返回键右侧（在 topNavRow 里挂载），左栏只放海报
-            titleView.setTextSize(22);
-            titleView.setGravity(Gravity.START);
-            titleView.setMaxLines(1);
-            titleView.setEllipsize(TextUtils.TruncateAt.END);
-            if (widePoster[0] != null)
-                wideLeftCol.addView(
-                        widePoster[0], new LinearLayout.LayoutParams(a.dp(290), a.dp(435)));
-        } else {
-            heroCenterCol.addView(titleView, new LinearLayout.LayoutParams(-1, -2));
-        }
-
-        final LinearLayout pillsRow = a.row();
-        pillsRow.setGravity(wide ? Gravity.START : Gravity.CENTER);
-        LinearLayout.LayoutParams pillsRowLp = new LinearLayout.LayoutParams(-1, -2);
-        pillsRowLp.topMargin = a.dp(12);
-        heroCenterCol.addView(pillsRow, pillsRowLp);
-
-        // TMDB + Rating + Douban + Site Name Row
-        LinearLayout ratingRow = a.row();
-        ratingRow.setGravity(wide ? Gravity.START : Gravity.CENTER);
-        LinearLayout.LayoutParams ratingLp = new LinearLayout.LayoutParams(-2, -2);
-        ratingLp.topMargin = a.dp(10);
-        heroCenterCol.addView(ratingRow, ratingLp);
-
-        TextView siteBadge = a.text(s.name, 12, 0xccffffff);
-        siteBadge.setPadding(a.dp(6), 0, 0, 0);
-        ratingRow.addView(siteBadge);
-
-        // 2B. Lower Content Column (Synopsis + White Capsule Play Button + Episodes Section)
-        LinearLayout lowerBody = a.vertical();
-        if (wide) {
-            lowerBody.setPadding(a.dp(4), a.dp(10), a.dp(24), a.dp(24));
-            wideInfoCol.addView(lowerBody, new LinearLayout.LayoutParams(-1, -2));
-        } else {
-            lowerBody.setPadding(contentSide, 0, contentSide, 0);
-            mainCol.addView(lowerBody, new LinearLayout.LayoutParams(-1, -2));
-        }
-
-        final LinearLayout synopsisWrap = a.vertical();
-        synopsisWrap.setGravity(Gravity.CENTER_HORIZONTAL);
-        lowerBody.addView(synopsisWrap, new LinearLayout.LayoutParams(-1, -2));
-
-        final LinearLayout playBtnWrap = a.vertical();
-        LinearLayout.LayoutParams playWrapLp = new LinearLayout.LayoutParams(-1, -2);
-        playWrapLp.topMargin = a.dp(14);
-        lowerBody.addView(playBtnWrap, playWrapLp);
-
-        final TextView loadingState = a.text("正在加载剧集资源…", 13.5f, 0xb3ffffff);
-        loadingState.setTag("detail-loading");
-        loadingState.setGravity(Gravity.CENTER);
-        loadingState.setPadding(a.dp(4), a.dp(24), a.dp(4), a.dp(16));
-        lowerBody.addView(loadingState, new LinearLayout.LayoutParams(-1, -2));
-
-        final LinearLayout detailsBody = a.vertical();
-        LinearLayout.LayoutParams detailsLp = new LinearLayout.LayoutParams(-1, -2);
-        detailsLp.topMargin = a.dp(18);
-        lowerBody.addView(detailsBody, detailsLp);
-
-        // 3. Floating Liquid Glass Top Navigation Bar
-        //    Left: Circular `<` Back button
-        //    Right: Independent `[ ⇄ 线路名 ⌄ ]` Source Picker + `[ ⬇ | ♥ ]` Download & Favorite Pill
+        // ---------------- 顶部：返回 / 片源 / 下载 / 收藏 ----------------
         LinearLayout topNavRow = a.row();
         topNavRow.setGravity(Gravity.CENTER_VERTICAL);
         FrameLayout.LayoutParams topNavLp = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
-        topNavLp.setMargins(a.dp(16), topPad + a.dp(8), a.dp(16), 0);
+        topNavLp.setMargins(sidePad, topPad + a.dp(8), sidePad, 0);
         a.root.addView(topNavRow, topNavLp);
 
         TextView backBtn = a.text("‹", 22, Color.WHITE);
@@ -670,59 +503,42 @@ final class MobileDetailScreen {
         a.glass(backBtn, 999);
         bindTouchFeedback(backBtn);
         backBtn.setOnClickListener(v -> a.onBackPressed());
-        topNavRow.addView(backBtn, new LinearLayout.LayoutParams(a.dp(40), a.dp(40)));
+        topNavRow.addView(backBtn, new LinearLayout.LayoutParams(a.dp(38), a.dp(38)));
 
-        if (wide) {
-            LinearLayout.LayoutParams titleNavLp = new LinearLayout.LayoutParams(0, -2, 1f);
-            titleNavLp.leftMargin = a.dp(12);
-            titleNavLp.rightMargin = a.dp(12);
-            topNavRow.addView(titleView, titleNavLp);
-        } else {
-            View topSpacer = new View(a);
-            topNavRow.addView(topSpacer, new LinearLayout.LayoutParams(0, 1, 1f));
-        }
+        View topSpacer = new View(a);
+        topNavRow.addView(topSpacer, new LinearLayout.LayoutParams(0, 1, 1f));
 
-        // Top-right Independent Source Selector Button (`选源`)
-        final TextView sourceTopBtn = a.text("⇄ 加载片源…", 13, Color.WHITE);
+        final TextView sourceTopBtn = a.text("⇄ 片源…", 12.5f, Color.WHITE);
         sourceTopBtn.setTag("detail-source-picker");
         sourceTopBtn.setTypeface(null, Typeface.BOLD);
         sourceTopBtn.setGravity(Gravity.CENTER);
         sourceTopBtn.setSingleLine(true);
         sourceTopBtn.setEllipsize(TextUtils.TruncateAt.END);
         sourceTopBtn.setMaxWidth(a.dp(156));
-        sourceTopBtn.setPadding(a.dp(13), 0, a.dp(13), 0);
+        sourceTopBtn.setPadding(a.dp(14), 0, a.dp(14), 0);
         a.glass(sourceTopBtn, 999);
         bindTouchFeedback(sourceTopBtn);
         sourceTopBtn.setOnClickListener(v -> a.crossSearch(Cms.searchTitle(listing)));
-        LinearLayout.LayoutParams sourceTopLp = new LinearLayout.LayoutParams(-2, a.dp(40));
+        LinearLayout.LayoutParams sourceTopLp = new LinearLayout.LayoutParams(-2, a.dp(38));
         sourceTopLp.rightMargin = a.dp(8);
         topNavRow.addView(sourceTopBtn, sourceTopLp);
-
-        // Top-right Dual Action Capsule (`[ ⬇ | ♥ ]`)
-        LinearLayout rightActionPill = a.row();
-        rightActionPill.setGravity(Gravity.CENTER_VERTICAL);
-        rightActionPill.setPadding(a.dp(4), 0, a.dp(4), 0);
-        a.glass(rightActionPill, 999);
-        topNavRow.addView(rightActionPill, new LinearLayout.LayoutParams(-2, a.dp(40)));
 
         final TextView downloadTopBtn = a.text("⬇", 16, Color.WHITE);
         downloadTopBtn.setTag("episodes-download");
         downloadTopBtn.setGravity(Gravity.CENTER);
-        downloadTopBtn.setPadding(a.dp(11), 0, a.dp(11), 0);
+        a.glass(downloadTopBtn, 999);
         bindTouchFeedback(downloadTopBtn);
         downloadTopBtn.setOnClickListener(v -> a.toast("正在加载剧集列表，请稍候…"));
-        rightActionPill.addView(downloadTopBtn, new LinearLayout.LayoutParams(-2, a.dp(36)));
-
-        View pillDivider = new View(a);
-        pillDivider.setBackgroundColor(0x36ffffff);
-        rightActionPill.addView(pillDivider, new LinearLayout.LayoutParams(1, a.dp(18)));
+        LinearLayout.LayoutParams downloadLp = new LinearLayout.LayoutParams(a.dp(38), a.dp(38));
+        downloadLp.rightMargin = a.dp(8);
+        topNavRow.addView(downloadTopBtn, downloadLp);
 
         final TextView favTopBtn = a.text("♥", 17, Color.WHITE);
         favTopBtn.setTag("detail-favorite");
         favTopBtn.setGravity(Gravity.CENTER);
-        favTopBtn.setPadding(a.dp(11), 0, a.dp(11), 0);
+        a.glass(favTopBtn, 999);
         bindTouchFeedback(favTopBtn);
-        rightActionPill.addView(favTopBtn, new LinearLayout.LayoutParams(-2, a.dp(36)));
+        topNavRow.addView(favTopBtn, new LinearLayout.LayoutParams(a.dp(38), a.dp(38)));
 
         final Runnable syncFavStyle =
                 () -> {
@@ -730,9 +546,254 @@ final class MobileDetailScreen {
                             Favorites.contains(
                                     a.prefs.getString(Prefs.FAVORITES, "[]"), s.key, listing.id);
                     favTopBtn.setText(faved ? "♥" : "♡");
-                    favTopBtn.setTextColor(faved ? 0xffff453a : Color.WHITE);
+                    favTopBtn.setTextColor(faved ? 0xffff8fb1 : Color.WHITE);
+                    View actFav = a.root == null ? null : a.root.findViewWithTag("detail-act-favorite");
+                    if (actFav instanceof TextView)
+                        ((TextView) actFav).setText(faved ? "♥ 已收藏" : "♡ 收藏");
                 };
         syncFavStyle.run();
+
+        // ---------------- 右侧/下方资料列（两种布局共用） ----------------
+        final LinearLayout lowerBody = a.vertical();
+
+        final TextView titleView = a.text(listing.title, wide ? 28 : 24, MainActivity.WHITE);
+        titleView.setTag("detail-title");
+        titleView.setTypeface(null, Typeface.BOLD);
+        titleView.setMaxLines(2);
+        titleView.setEllipsize(TextUtils.TruncateAt.END);
+        titleView.setLineSpacing(a.dp(2), 1f);
+        titleView.setShadowLayer(a.dp(10), 0, a.dp(3), 0x99000000);
+        lowerBody.addView(titleView, new LinearLayout.LayoutParams(-1, -2));
+
+        final LinearLayout pillsRow = a.row();
+        pillsRow.setGravity(Gravity.START);
+        LinearLayout.LayoutParams pillsRowLp = new LinearLayout.LayoutParams(-1, -2);
+        pillsRowLp.topMargin = a.dp(12);
+        lowerBody.addView(pillsRow, pillsRowLp);
+
+        final TextView actorTv = a.text(actorLine(listing.actor), 12.5f, 0xffb9c7dd);
+        actorTv.setTag("detail-actors");
+        actorTv.setMaxLines(2);
+        actorTv.setEllipsize(TextUtils.TruncateAt.END);
+        actorTv.setLineSpacing(a.dp(6), 1f);
+        actorTv.setVisibility(actorTv.getText().length() == 0 ? View.GONE : View.VISIBLE);
+        LinearLayout.LayoutParams actorLp = new LinearLayout.LayoutParams(-1, -2);
+        actorLp.topMargin = a.dp(12);
+        lowerBody.addView(actorTv, actorLp);
+
+        final TextView directorTv = a.text(directorLine(listing.director), 12.5f, 0xffb9c7dd);
+        directorTv.setTag("detail-director");
+        directorTv.setMaxLines(2);
+        directorTv.setEllipsize(TextUtils.TruncateAt.END);
+        directorTv.setLineSpacing(a.dp(6), 1f);
+        directorTv.setVisibility(directorTv.getText().length() == 0 ? View.GONE : View.VISIBLE);
+        LinearLayout.LayoutParams directorLp = new LinearLayout.LayoutParams(-1, -2);
+        directorLp.topMargin = a.dp(5);
+        lowerBody.addView(directorTv, directorLp);
+
+        final Runnable[] toggleSynopsis = new Runnable[1];
+
+        final LinearLayout synopsisWrap = a.vertical();
+        LinearLayout.LayoutParams synopsisLp = new LinearLayout.LayoutParams(-1, -2);
+        synopsisLp.topMargin = a.dp(10);
+        lowerBody.addView(synopsisWrap, synopsisLp);
+
+        // ---------------- 操作胶囊行（横向滚动） ----------------
+        HorizontalScrollView actionScroll = new HorizontalScrollView(a);
+        actionScroll.setHorizontalScrollBarEnabled(false);
+        actionScroll.setClipToPadding(false);
+        LinearLayout actionRow = a.row();
+        actionScroll.addView(actionRow);
+        LinearLayout.LayoutParams actionScrollLp = new LinearLayout.LayoutParams(-1, -2);
+        actionScrollLp.topMargin = a.dp(16);
+        lowerBody.addView(actionScroll, actionScrollLp);
+
+        LinearLayout.LayoutParams actLp = new LinearLayout.LayoutParams(-2, a.dp(34));
+        actLp.rightMargin = a.dp(8);
+        actionRow.addView(
+                actionPill(a, "⌕ 快搜", v -> a.crossSearch(Cms.searchTitle(listing))), actLp);
+
+        TextView orderAct = actionPill(a, "⇅ 倒序", v -> {});
+        orderAct.setTag("detail-act-order");
+        LinearLayout.LayoutParams orderLp = new LinearLayout.LayoutParams(-2, a.dp(34));
+        orderLp.rightMargin = a.dp(8);
+        actionRow.addView(orderAct, orderLp);
+
+        TextView downloadAct =
+                actionPill(a, "⤓ 下载", v -> downloadTopBtn.performClick());
+        downloadAct.setTag("detail-act-download");
+        LinearLayout.LayoutParams dlLp = new LinearLayout.LayoutParams(-2, a.dp(34));
+        dlLp.rightMargin = a.dp(8);
+        actionRow.addView(downloadAct, dlLp);
+
+        TextView synopsisAct =
+                actionPill(
+                        a,
+                        "▤ 简介",
+                        v -> {
+                            if (toggleSynopsis[0] != null) toggleSynopsis[0].run();
+                        });
+        synopsisAct.setTag("detail-act-synopsis");
+        LinearLayout.LayoutParams synLp = new LinearLayout.LayoutParams(-2, a.dp(34));
+        synLp.rightMargin = a.dp(8);
+        actionRow.addView(synopsisAct, synLp);
+
+        TextView favAct = actionPill(a, "♡ 收藏", v -> favTopBtn.performClick());
+        favAct.setTag("detail-act-favorite");
+        LinearLayout.LayoutParams favActLp = new LinearLayout.LayoutParams(-2, a.dp(34));
+        favActLp.rightMargin = a.dp(8);
+        actionRow.addView(favAct, favActLp);
+
+        TextView copyAct = actionPill(a, "⧉ 复制", v -> copyTitle(a, listing));
+        copyAct.setTag("detail-act-copy");
+        actionRow.addView(copyAct, new LinearLayout.LayoutParams(-2, a.dp(34)));
+        // 操作行里的收藏胶囊与顶部 ♥ 状态同步
+        syncFavStyle.run();
+
+        // ---------------- 主播放按钮（粉色胶囊，B 段填充内容） ----------------
+        final LinearLayout playBtnWrap = a.vertical();
+        LinearLayout.LayoutParams playWrapLp = new LinearLayout.LayoutParams(-1, -2);
+        playWrapLp.topMargin = a.dp(14);
+        lowerBody.addView(playBtnWrap, playWrapLp);
+
+        final TextView loadingState = a.text("正在加载剧集资源…", 13, 0xff8d9cb6);
+        loadingState.setTag("detail-loading");
+        loadingState.setGravity(Gravity.CENTER);
+        loadingState.setPadding(a.dp(4), a.dp(22), a.dp(4), a.dp(14));
+        lowerBody.addView(loadingState, new LinearLayout.LayoutParams(-1, -2));
+
+        // ---------------- 片源 / 线路列表（平板在左栏下方，手机在资料列里） ----------------
+        LinearLayout lineSection = a.vertical();
+        lineSection.setTag("detail-lines");
+        LinearLayout lineHeader = a.row();
+        lineHeader.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams lineHeaderLp = new LinearLayout.LayoutParams(-1, -2);
+        lineHeaderLp.topMargin = a.dp(14);
+        lineHeaderLp.bottomMargin = a.dp(6);
+        TextView lineTitle = a.text("片源 · 线路", 13, MainActivity.WHITE);
+        lineTitle.setTypeface(null, Typeface.BOLD);
+        lineHeader.addView(lineTitle, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView lineSite = a.text(s.name, 11, 0xff8d9cb6);
+        lineSite.setSingleLine(true);
+        lineSite.setEllipsize(TextUtils.TruncateAt.END);
+        lineHeader.addView(lineSite);
+        lineSection.addView(lineHeader, lineHeaderLp);
+
+        final LinearLayout lineList = a.vertical();
+        lineList.setTag("detail-line-list");
+        lineSection.addView(lineList, new LinearLayout.LayoutParams(-1, -2));
+
+        final LinearLayout detailsBody = a.vertical();
+        LinearLayout.LayoutParams detailsLp = new LinearLayout.LayoutParams(-1, -2);
+        detailsLp.topMargin = a.dp(16);
+
+        // ---------------- 预览卡：封面 + 中央播放钮 + 底部渐变 ----------------
+        int contentW = a.windowWidth() - sidePad * 2 - a.dp(wide ? 20 : 0);
+        int leftW = wide ? Math.round(contentW * 0.52f) : contentW;
+        int previewH = Math.round(leftW * 9f / 16f);
+        previewH = Math.max(a.dp(wide ? 240 : 180), Math.min(a.dp(wide ? 430 : 260), previewH));
+
+        FrameLayout previewCard = new FrameLayout(a);
+        GradientDrawable previewBg = new GradientDrawable();
+        previewBg.setColor(0xff0d1a2b);
+        previewBg.setCornerRadius(a.dp(wide ? 20 : 18));
+        previewBg.setStroke(Math.max(1, a.dp(0.8f)), 0x22ffffff);
+        previewCard.setBackground(previewBg);
+        previewCard.setClipToOutline(true);
+
+        final ImageView posterHook = new ImageView(a);
+        posterHook.setTag("detail-cover");
+        posterHook.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        previewCard.addView(posterHook, new FrameLayout.LayoutParams(-1, -1));
+        if (listing.poster != null && !listing.poster.isEmpty()) {
+            a.poster(listing.poster, posterHook, true);
+        }
+
+        View previewScrim = new View(a);
+        previewScrim.setBackground(
+                new GradientDrawable(
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[] {0x00000000, 0x44000000, 0xcc050b14}));
+        FrameLayout.LayoutParams previewScrimLp = new FrameLayout.LayoutParams(-1, a.dp(150), Gravity.BOTTOM);
+        previewCard.addView(previewScrim, previewScrimLp);
+
+        TextView bigPlayHint = a.text("▶ 点击播放", 12, 0xd9ffffff);
+        bigPlayHint.setShadowLayer(a.dp(6), 0, a.dp(2), 0xcc000000);
+        FrameLayout.LayoutParams bigHintLp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.LEFT);
+        bigHintLp.setMargins(a.dp(16), 0, 0, a.dp(14));
+        previewCard.addView(bigPlayHint, bigHintLp);
+
+        TextView bigPlay = a.text("▶", 26, 0xff31141f);
+        bigPlay.setTag("detail-play-big");
+        bigPlay.setTypeface(null, Typeface.BOLD);
+        bigPlay.setGravity(Gravity.CENTER);
+        GradientDrawable bigFill =
+                new GradientDrawable(
+                        GradientDrawable.Orientation.LEFT_RIGHT,
+                        new int[] {0xffffc7d6, 0xfff59ab5});
+        bigFill.setCornerRadius(a.dp(999));
+        bigPlay.setBackground(bigFill);
+        bigPlay.setElevation(a.dp(8));
+        bindTouchFeedback(bigPlay);
+        bigPlay.setOnClickListener(
+                v -> {
+                    View pb = a.root.findViewWithTag("detail-play");
+                    if (pb != null) pb.performClick();
+                });
+        previewCard.addView(
+                bigPlay, new FrameLayout.LayoutParams(a.dp(72), a.dp(72), Gravity.CENTER));
+
+        // ---------------- 组装两套布局 ----------------
+        if (wide) {
+            LinearLayout bodyRow = a.row();
+            bodyRow.setGravity(Gravity.TOP);
+            FrameLayout.LayoutParams bodyLp = new FrameLayout.LayoutParams(-1, -1);
+            bodyLp.setMargins(sidePad, contentTop, sidePad, a.dp(20));
+            a.root.addView(bodyRow, bodyLp);
+
+            LinearLayout leftCol = a.vertical();
+            bodyRow.addView(leftCol, new LinearLayout.LayoutParams(0, -1, 0.52f));
+            leftCol.addView(previewCard, new LinearLayout.LayoutParams(-1, previewH));
+            View colGap = new View(a);
+            leftCol.addView(colGap, new LinearLayout.LayoutParams(1, a.dp(16)));
+            ScrollView lineScroll = new ScrollView(a);
+            lineScroll.setVerticalScrollBarEnabled(false);
+            lineScroll.setClipToPadding(false);
+            lineScroll.addView(lineSection, new ScrollView.LayoutParams(-1, -2));
+            leftCol.addView(lineScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+            View rowGap = new View(a);
+            bodyRow.addView(rowGap, new LinearLayout.LayoutParams(a.dp(20), 1));
+
+            lowerBody.addView(detailsBody, detailsLp);
+            final ScrollView rightScroll = new ScrollView(a);
+            rightScroll.setTag("detail-scroll");
+            rightScroll.setFillViewport(true);
+            rightScroll.setVerticalScrollBarEnabled(false);
+            rightScroll.setClipToPadding(false);
+            lowerBody.setPadding(0, 0, 0, a.dp(30));
+            rightScroll.addView(lowerBody, new ScrollView.LayoutParams(-1, -2));
+            bodyRow.addView(rightScroll, new LinearLayout.LayoutParams(0, -1, 0.48f));
+            a.scroll = rightScroll;
+        } else {
+            final ScrollView scrollView = new ScrollView(a);
+            scrollView.setTag("detail-scroll");
+            scrollView.setFillViewport(true);
+            scrollView.setVerticalScrollBarEnabled(false);
+            scrollView.setClipToPadding(false);
+            a.scroll = scrollView;
+            a.root.addView(scrollView, new FrameLayout.LayoutParams(-1, -1));
+
+            LinearLayout mainCol = a.vertical();
+            mainCol.setPadding(sidePad, contentTop, sidePad, a.dp(34));
+            scrollView.addView(mainCol, new ScrollView.LayoutParams(-1, -2));
+            mainCol.addView(previewCard, new LinearLayout.LayoutParams(-1, previewH));
+            View colGap = new View(a);
+            mainCol.addView(colGap, new LinearLayout.LayoutParams(1, a.dp(16)));
+            lowerBody.addView(lineSection, new LinearLayout.LayoutParams(-1, -2));
+            lowerBody.addView(detailsBody, detailsLp);
+            mainCol.addView(lowerBody, new LinearLayout.LayoutParams(-1, -2));
+        }
 
         // Populate initial metadata pills from listing
         populateHeroPills(a, pillsRow, listing, 0);
@@ -742,6 +803,16 @@ final class MobileDetailScreen {
                     if (v.poster == null || v.poster.isEmpty()) v.poster = listing.poster;
                     if (v.title == null || v.title.isEmpty()) v.title = listing.title;
                     titleView.setText(v.title);
+                    actorTv.setText(actorLine(v.actor));
+                    actorTv.setVisibility(
+                            actorTv.getText().length() == 0 ? View.GONE : View.VISIBLE);
+                    directorTv.setText(directorLine(v.director));
+                    directorTv.setVisibility(
+                            directorTv.getText().length() == 0 ? View.GONE : View.VISIBLE);
+                    TextView bigHint = null;
+                    View bigHintView = a.root == null ? null : a.root.findViewWithTag("detail-play-big");
+                    if (bigHintView instanceof TextView) bigHint = (TextView) bigHintView;
+                    if (bigHint != null) bigHint.setContentDescription("播放 " + v.title);
                     if (!Objects.equals(v.poster, listing.poster)
                             && v.poster != null
                             && !v.poster.isEmpty()) {
@@ -781,7 +852,14 @@ final class MobileDetailScreen {
                                                 s.key,
                                                 v.id);
                                 favTopBtn.setText(faved ? "♥" : "♡");
-                                favTopBtn.setTextColor(faved ? 0xffff453a : Color.WHITE);
+                                favTopBtn.setTextColor(faved ? 0xffff8fb1 : Color.WHITE);
+                                View actFav =
+                                        a.root == null
+                                                ? null
+                                                : a.root.findViewWithTag("detail-act-favorite");
+                                if (actFav instanceof TextView)
+                                    ((TextView) actFav)
+                                            .setText(faved ? "♥ 已收藏" : "♡ 收藏");
                                 a.toast(faved ? "已加入收藏片库" : "已从片库移除");
                             });
 
@@ -793,16 +871,17 @@ final class MobileDetailScreen {
                                     : "";
                     if (!descRaw.isEmpty() || !castRaw.isEmpty()) {
                         final TextView descTv =
-                                a.text(descRaw.isEmpty() ? castRaw : descRaw, 13.5f, 0xd9ffffff);
-                        descTv.setGravity(Gravity.CENTER);
-                        descTv.setLineSpacing(a.dp(3.5f), 1f);
-                        descTv.setMaxLines(2);
+                                a.text(descRaw.isEmpty() ? castRaw : descRaw, 13, 0xffa9b7d0);
+                        descTv.setTag("detail-synopsis");
+                        descTv.setGravity(Gravity.START);
+                        descTv.setLineSpacing(a.dp(4), 1.45f);
+                        descTv.setMaxLines(4);
                         descTv.setEllipsize(TextUtils.TruncateAt.END);
                         synopsisWrap.addView(descTv, new LinearLayout.LayoutParams(-1, -2));
 
-                        final TextView castTv = a.text(castRaw, 12, 0x99ffffff);
-                        castTv.setGravity(Gravity.CENTER);
-                        castTv.setPadding(0, a.dp(5), 0, 0);
+                        final TextView castTv = a.text(castRaw, 11.5f, 0xff8d9cb6);
+                        castTv.setGravity(Gravity.START);
+                        castTv.setPadding(0, a.dp(6), 0, 0);
                         castTv.setMaxLines(3);
                         castTv.setEllipsize(TextUtils.TruncateAt.END);
                         castTv.setVisibility(View.GONE);
@@ -811,15 +890,24 @@ final class MobileDetailScreen {
                         }
 
                         final boolean[] expanded = {false};
-                        synopsisWrap.setOnClickListener(
-                                view -> {
+                        toggleSynopsis[0] =
+                                () -> {
                                     expanded[0] = !expanded[0];
-                                    descTv.setMaxLines(expanded[0] ? 18 : 2);
+                                    descTv.setMaxLines(expanded[0] ? 18 : 4);
+                                    View actSyn =
+                                            a.root == null
+                                                    ? null
+                                                    : a.root.findViewWithTag(
+                                                            "detail-act-synopsis");
+                                    if (actSyn instanceof TextView)
+                                        ((TextView) actSyn)
+                                                .setText(expanded[0] ? "▤ 收起" : "▤ 简介");
                                     if (!descRaw.isEmpty() && !castRaw.isEmpty()) {
                                         castTv.setVisibility(
                                                 expanded[0] ? View.VISIBLE : View.GONE);
                                     }
-                                });
+                                };
+                        synopsisWrap.setOnClickListener(view -> toggleSynopsis[0].run());
                     }
 
                     if (v.lines.isEmpty()) {
@@ -876,16 +964,16 @@ final class MobileDetailScreen {
                     playBtn.setEllipsize(TextUtils.TruncateAt.MIDDLE);
                     playBtn.setGravity(Gravity.CENTER);
                     playBtn.setIncludeFontPadding(false);
-                    playBtn.setTextSize(wide ? 16f : 14.5f);
+                    playBtn.setTextSize(14);
                     playBtn.setTypeface(null, Typeface.BOLD);
                     playBtn.setTextColor(0xff31141f);
                     GradientDrawable playFill =
                             new GradientDrawable(
                                     GradientDrawable.Orientation.LEFT_RIGHT,
-                                    new int[] {0xffffc7d6, 0xfff59ab5});
+                                    new int[] {0xffffc7d6, 0xffff9ab5});
                     playFill.setCornerRadius(a.dp(999));
                     playBtn.setBackground(playFill);
-                    playBtn.setElevation(a.dp(6));
+                    playBtn.setElevation(a.dp(4));
                     playBtn.setPadding(a.dp(18), 0, a.dp(18), 0);
                     bindTouchFeedback(playBtn);
                     playBtn.setText(playLabel);
@@ -902,9 +990,10 @@ final class MobileDetailScreen {
                                                     .episodes
                                                     .get(0));
                             });
+                    playBtnWrap.setGravity(Gravity.START);
+                    int playWidth = Math.min(a.dp(320), a.windowWidth() - a.dp(48));
                     playBtnWrap.addView(
-                            playBtn,
-                            new LinearLayout.LayoutParams(-1, a.dp(wide ? 56 : 48)));
+                            playBtn, new LinearLayout.LayoutParams(playWidth, a.dp(46)));
 
                     if (remembered != null) {
                         EpisodeDisplay bmDisp = parseEpisodeDisplay(remembered.episode, 1);
@@ -917,11 +1006,11 @@ final class MobileDetailScreen {
                                                 + " · 线路："
                                                 + remembered.line
                                         : "已观看 [" + bmDisp.cleanTitle + "] · 线路：" + remembered.line;
-                        TextView bmInfo = a.text(bmSummary, 12, 0xccffffff);
+                        TextView bmInfo = a.text(bmSummary, 11.5f, 0xff8d9cb6);
                         bmInfo.setSingleLine(true);
                         bmInfo.setEllipsize(TextUtils.TruncateAt.MIDDLE);
-                        bmInfo.setGravity(Gravity.CENTER);
-                        bmInfo.setPadding(a.dp(8), a.dp(8), a.dp(8), 0);
+                        bmInfo.setGravity(Gravity.START);
+                        bmInfo.setPadding(0, a.dp(8), 0, 0);
                         playBtnWrap.addView(bmInfo, new LinearLayout.LayoutParams(-1, -2));
                     }
 
@@ -960,11 +1049,57 @@ final class MobileDetailScreen {
                     discoveredSeasons.put(curSeason.seasonNumber, v);
                     discoveredLabels.put(curSeason.seasonNumber, curSeason.seasonLabel);
 
+                    // 片源 / 线路列表：选中项 2dp 樱花粉短线 + 白字，点击切换线路并重排剧集
+                    final int startLineIdx = initLine;
+                    final int[] selLine = {startLineIdx};
+                    final PlayerBubble.IntAction[] linePick = new PlayerBubble.IntAction[1];
+                    linePick[0] =
+                            idx -> {
+                                selLine[0] = idx;
+                                renderLineList(a, lineList, v, idx, linePick[0]);
+                                renderMobileEpisodes(
+                                        a,
+                                        s,
+                                        v,
+                                        idx,
+                                        0,
+                                        episodePanel,
+                                        remembered,
+                                        discoveredSeasons,
+                                        discoveredLabels);
+                            };
+                    renderLineList(a, lineList, v, startLineIdx, linePick[0]);
+                    View orderAction =
+                            a.root == null ? null : a.root.findViewWithTag("detail-act-order");
+                    if (orderAction != null) {
+                        orderAction.setOnClickListener(
+                                vw -> {
+                                    boolean nowDescending =
+                                            a.prefs.getBoolean(
+                                                    Prefs.EPISODES_DESCENDING, false);
+                                    a.prefs
+                                            .edit()
+                                            .putBoolean(
+                                                    Prefs.EPISODES_DESCENDING, !nowDescending)
+                                            .apply();
+                                    renderMobileEpisodes(
+                                            a,
+                                            s,
+                                            v,
+                                            selLine[0],
+                                            0,
+                                            episodePanel,
+                                            remembered,
+                                            discoveredSeasons,
+                                            discoveredLabels);
+                                });
+                    }
+
                     renderMobileEpisodes(
                             a,
                             s,
                             v,
-                            initLine,
+                            selLine[0],
                             initPage,
                             episodePanel,
                             remembered,
@@ -992,6 +1127,108 @@ final class MobileDetailScreen {
         }
     }
 
+    private static String actorLine(String actor) {
+        if (actor == null) return "";
+        String text = actor.trim();
+        return text.isEmpty() ? "" : "演员：" + text;
+    }
+
+    private static String directorLine(String director) {
+        if (director == null) return "";
+        String text = director.trim();
+        return text.isEmpty() ? "" : "导演：" + text;
+    }
+
+    /** 资料区的操作胶囊：玻璃底 + 胶囊圆角，与电视台页按钮同色系。 */
+    private static TextView actionPill(
+            MainActivity a, String label, View.OnClickListener click) {
+        TextView t = a.text(label, 12, 0xffe6edf9);
+        t.setSingleLine(true);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(a.dp(14), 0, a.dp(14), 0);
+        t.setBackground(glassBg(a, 0x14ffffff, 0x2effffff, 999));
+        bindTouchFeedback(t);
+        t.setOnClickListener(click);
+        return t;
+    }
+
+    private static void copyTitle(MainActivity a, Cms.Video video) {
+        try {
+            StringBuilder text = new StringBuilder();
+            if (video.title != null) text.append(video.title);
+            if (video.year != null && !video.year.trim().isEmpty())
+                text.append(" · ").append(video.year.trim());
+            if (video.area != null && !video.area.trim().isEmpty())
+                text.append(" · ").append(video.area.trim());
+            if (video.genre != null && !video.genre.trim().isEmpty())
+                text.append(" · ").append(video.genre.trim());
+            android.content.ClipboardManager clipboard =
+                    (android.content.ClipboardManager)
+                            a.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+            if (clipboard == null) return;
+            clipboard.setPrimaryClip(
+                    android.content.ClipData.newPlainText("片名", text.toString()));
+            a.toast("已复制片名与元信息");
+        } catch (Throwable error) {
+            a.toast("复制失败");
+        }
+    }
+
+    /**
+     * 片源 / 线路列表：选中项白字 + 2dp 樱花粉短线，未选中 #8D9CB6；点击切换线路并重排剧集。
+     */
+    private static void renderLineList(
+            MainActivity a,
+            LinearLayout list,
+            Cms.Video video,
+            int selected,
+            PlayerBubble.IntAction onPick) {
+        list.removeAllViews();
+        if (video == null || video.lines == null) return;
+        for (int i = 0; i < video.lines.size(); i++) {
+            final int index = i;
+            Cms.Line line = video.lines.get(i);
+            boolean on = i == selected;
+            LinearLayout row = a.vertical();
+            row.setPadding(a.dp(12), a.dp(7), a.dp(12), a.dp(7));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(on ? 0x14ff8fb1 : 0x0affffff);
+            bg.setCornerRadius(a.dp(12));
+            row.setBackground(bg);
+            bindTouchFeedback(row);
+
+            LinearLayout top = a.row();
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            TextView name = a.text(line.name, on ? 13.5f : 13, on ? Color.WHITE : 0xff8d9cb6);
+            name.setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
+            name.setSingleLine(true);
+            name.setEllipsize(TextUtils.TruncateAt.END);
+            top.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+            TextView count =
+                    a.text(line.episodes == null ? "" : line.episodes.size() + " 集", 10.5f, 0xff6f7f99);
+            top.addView(count);
+            row.addView(top, new LinearLayout.LayoutParams(-1, -2));
+
+            if (on) {
+                View underline = new View(a);
+                GradientDrawable lineBg = new GradientDrawable();
+                lineBg.setColor(0xffff8fb1);
+                lineBg.setCornerRadius(a.dp(1));
+                underline.setBackground(lineBg);
+                LinearLayout.LayoutParams underlineLp =
+                        new LinearLayout.LayoutParams(a.dp(28), a.dp(2));
+                underlineLp.topMargin = a.dp(5);
+                row.addView(underline, underlineLp);
+            }
+            if (onPick != null) {
+                row.setOnClickListener(v -> onPick.accept(index));
+            }
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = a.dp(6);
+            list.addView(row, lp);
+        }
+    }
+
     private static void populateHeroPills(
             MainActivity a, LinearLayout pillsRow, Cms.Video v, int epCount) {
         pillsRow.removeAllViews();
@@ -1006,10 +1243,10 @@ final class MobileDetailScreen {
         }
         int limit = Math.min(4, tags.size());
         for (int i = 0; i < limit; i++) {
-            TextView pill = a.text(tags.get(i), 12, 0xf2ffffff);
+            TextView pill = a.text(tags.get(i), 11.5f, 0xffd9e3f2);
             pill.setTypeface(null, Typeface.BOLD);
             pill.setSingleLine(true);
-            pill.setPadding(a.dp(12), a.dp(4), a.dp(12), a.dp(4));
+            pill.setPadding(a.dp(11), a.dp(3), a.dp(11), a.dp(3));
             a.glass(pill, 999);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
             if (i > 0) lp.leftMargin = a.dp(8);
@@ -1215,168 +1452,93 @@ final class MobileDetailScreen {
         int start = page * 50;
         int end = Math.min(start + 50, total);
 
-        // 2. Quick Episode Number Strip (`1` `2` `3` `4` ... white circle when active)
-        a.gap(panel, 12);
-        HorizontalScrollView numScroll = new HorizontalScrollView(a);
-        numScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout numRow = a.row();
-        numScroll.addView(numRow);
-        panel.addView(numScroll, new LinearLayout.LayoutParams(-1, -2));
-
-        for (int i = start; i < end; i++) {
-            final int posIdx = descending ? (total - 1 - i) : i;
-            final Cms.Episode ep = line.episodes.get(posIdx);
-            boolean isCurrent = posIdx == activeEpIdx;
-
-            TextView numPill =
-                    a.text(String.valueOf(posIdx + 1), 12.5f, isCurrent ? 0xff0c1524 : 0xd9ffffff);
-            numPill.setTag("episode:" + line.name + ":" + posIdx);
-            numPill.setTypeface(null, Typeface.BOLD);
-            numPill.setGravity(Gravity.CENTER);
-            numPill.setMinWidth(a.dp(32));
-            numPill.setMinimumWidth(a.dp(32));
-            numPill.setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5));
-            numPill.setBackground(
-                    isCurrent ? a.bg(Color.WHITE, 999) : glassBg(a, 0x30ffffff, 0x33ffffff, 999));
-            bindTouchFeedback(numPill);
-            numPill.setOnClickListener(
-                    v -> {
-                        a.resumeAt = 0;
-                        a.resolvePlayer(site, video, line, ep);
-                    });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(30));
-            lp.rightMargin = a.dp(7);
-            numRow.addView(numPill, lp);
-        }
-
-        // 3. Horizontal 16:9 Landscape Episode Preview Cards (matches iPhone `detail_screen.dart`)
-        a.gap(panel, 14);
-        HorizontalScrollView cardScroll = new HorizontalScrollView(a);
-        cardScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout cardRow = a.row();
-        cardScroll.addView(cardRow);
-        panel.addView(cardScroll, new LinearLayout.LayoutParams(-1, -2));
-
+        // 2. 紧凑剧集网格：每行 2 个 46dp 胶囊（编号 + 集名；当前集粉底白字）
+        a.gap(panel, 10);
+        final int epColumns = 2;
+        LinearLayout gridRow = null;
         for (int i = start; i < end; i++) {
             final int posIdx = descending ? (total - 1 - i) : i;
             final Cms.Episode ep = line.episodes.get(posIdx);
             boolean isCurrent = posIdx == activeEpIdx;
             EpisodeDisplay disp = parseEpisodeDisplay(ep.name, posIdx + 1);
-            String eBadgeText = "▶ E" + String.format(Locale.US, "%02d", posIdx + 1);
 
-            LinearLayout cardWrap = a.vertical();
-            cardWrap.setTag("ep-card:" + line.name + ":" + posIdx);
-            bindTouchFeedback(cardWrap);
-            cardWrap.setOnClickListener(
+            int slot = i - start;
+            if (slot % epColumns == 0) {
+                gridRow = a.row();
+                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+                if (slot != 0) rowLp.topMargin = a.dp(8);
+                panel.addView(gridRow, rowLp);
+            }
+
+            LinearLayout cell = a.row();
+            cell.setTag("episode:" + line.name + ":" + posIdx);
+            cell.setGravity(Gravity.CENTER_VERTICAL);
+            cell.setPadding(a.dp(12), 0, a.dp(10), 0);
+            GradientDrawable cellBg = new GradientDrawable();
+            if (isCurrent) {
+                cellBg.setColor(0xffff8fb1);
+                cellBg.setStroke(Math.max(1, a.dp(1f)), 0x66ffb3c8);
+            } else {
+                cellBg.setColor(0x1affffff);
+                cellBg.setStroke(Math.max(1, a.dp(0.8f)), 0x26ffffff);
+            }
+            cellBg.setCornerRadius(a.dp(14));
+            cell.setBackground(cellBg);
+            bindTouchFeedback(cell);
+            cell.setOnClickListener(
                     v -> {
                         a.resumeAt = 0;
                         a.resolvePlayer(site, video, line, ep);
                     });
-            cardWrap.setOnLongClickListener(
+            cell.setOnLongClickListener(
                     v -> {
-                        List<Cms.Episode> one = Collections.singletonList(ep);
-                        MobileDownloads.enqueue(a, site, video, line, one);
+                        MobileDownloads.enqueue(
+                                a, site, video, line, Collections.singletonList(ep));
                         return true;
                     });
 
-            FrameLayout frame = new FrameLayout(a);
-            GradientDrawable frameBg = new GradientDrawable();
-            frameBg.setColor(0xff141d18);
-            frameBg.setCornerRadius(a.dp(14));
-            frame.setBackground(frameBg);
-            frame.setClipToOutline(true);
+            TextView num =
+                    a.text(
+                            String.format(Locale.US, "%02d", posIdx + 1),
+                            11.5f,
+                            isCurrent ? 0xff31141f : 0xff8d9cb6);
+            num.setTypeface(null, Typeface.BOLD);
+            num.setGravity(Gravity.CENTER);
+            num.setMinWidth(a.dp(24));
+            cell.addView(num, new LinearLayout.LayoutParams(-2, -2));
 
-            EpisodeStillCropView stillImg = new EpisodeStillCropView(a, posIdx);
-            frame.addView(stillImg, new FrameLayout.LayoutParams(-1, -1));
-            if (video.poster != null && !video.poster.isEmpty()) {
-                a.poster(video.poster, stillImg, true);
-            }
+            TextView nameTv =
+                    a.text(disp.cleanTitle, 12.5f, isCurrent ? Color.WHITE : 0xffe6edf9);
+            nameTv.setTypeface(null, isCurrent ? Typeface.BOLD : Typeface.NORMAL);
+            nameTv.setSingleLine(true);
+            nameTv.setEllipsize(TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(0, -2, 1f);
+            nameLp.leftMargin = a.dp(8);
+            cell.addView(nameTv, nameLp);
 
-            // Subtle dark bottom gradient inside the 16:9 card
-            View cardScrim = new View(a);
-            GradientDrawable scrimGd =
-                    new GradientDrawable(
-                            GradientDrawable.Orientation.TOP_BOTTOM,
-                            new int[] {0x18000000, 0x88000000});
-            scrimGd.setCornerRadius(a.dp(14));
-            cardScrim.setBackground(scrimGd);
-            frame.addView(cardScrim, new FrameLayout.LayoutParams(-1, -1));
-
-            // Top-right spec badge (e.g. `5.17GB` / `4K`)
             if (disp.specBadge != null && !disp.specBadge.isEmpty()) {
-                TextView specTv = a.text(disp.specBadge, 10, Color.WHITE);
-                specTv.setTypeface(null, Typeface.BOLD);
-                specTv.setPadding(a.dp(7), a.dp(2), a.dp(7), a.dp(2));
-                specTv.setBackground(glassBg(a, 0xb3121215, 0x40ffffff, 6));
-                FrameLayout.LayoutParams specLp =
-                        new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT);
-                specLp.setMargins(a.dp(8), a.dp(8), a.dp(8), a.dp(8));
-                frame.addView(specTv, specLp);
+                TextView badge =
+                        a.text(
+                                disp.specBadge,
+                                9.5f,
+                                isCurrent ? 0xb331141f : 0xff7f8fa9);
+                badge.setSingleLine(true);
+                badge.setEllipsize(TextUtils.TruncateAt.END);
+                LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(-2, -2);
+                badgeLp.leftMargin = a.dp(6);
+                cell.addView(badge, badgeLp);
             }
 
-            // Bottom overlay row (`▶ E01` pill on left, `line.name` on right)
-            LinearLayout bottomBar = a.row();
-            bottomBar.setGravity(Gravity.CENTER_VERTICAL);
-            FrameLayout.LayoutParams bottomLp =
-                    new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
-            bottomLp.setMargins(a.dp(9), a.dp(8), a.dp(9), a.dp(8));
-            frame.addView(bottomBar, bottomLp);
+            LinearLayout.LayoutParams cellLp = new LinearLayout.LayoutParams(0, a.dp(46), 1f);
+            if (slot % epColumns != 0) cellLp.leftMargin = a.dp(8);
+            gridRow.addView(cell, cellLp);
 
-            TextView ePill = a.text(eBadgeText, 10.5f, isCurrent ? 0xff0c1524 : Color.WHITE);
-            ePill.setTypeface(null, Typeface.BOLD);
-            ePill.setPadding(a.dp(7), a.dp(2.5f), a.dp(7), a.dp(2.5f));
-            ePill.setBackground(a.bg(isCurrent ? Color.WHITE : 0xa6121215, 6));
-            bottomBar.addView(ePill);
-
-            TextView lineLabel = a.text(line.name, 10.5f, 0xd9ffffff);
-            lineLabel.setTypeface(null, Typeface.BOLD);
-            lineLabel.setGravity(Gravity.RIGHT);
-            lineLabel.setSingleLine(true);
-            lineLabel.setEllipsize(TextUtils.TruncateAt.END);
-            bottomBar.addView(lineLabel, new LinearLayout.LayoutParams(0, -2, 1f));
-
-            // Foreground rounded border overlay (2dp white when current, 0.8dp glass otherwise)
-            View borderOverlay = new View(a);
-            GradientDrawable borderGd = new GradientDrawable();
-            borderGd.setColor(Color.TRANSPARENT);
-            borderGd.setCornerRadius(a.dp(14));
-            borderGd.setStroke(a.dp(isCurrent ? 2f : 0.8f), isCurrent ? Color.WHITE : 0x33ffffff);
-            borderOverlay.setBackground(borderGd);
-            frame.addView(borderOverlay, new FrameLayout.LayoutParams(-1, -1));
-
-            cardWrap.addView(frame, new LinearLayout.LayoutParams(a.dp(224), a.dp(126)));
-
-            // Below card: meta + headline
-            String yearPrefix =
-                    (video.year != null && !video.year.trim().isEmpty())
-                            ? video.year.trim() + " · "
-                            : "";
-            String subMeta =
-                    yearPrefix
-                            + "第"
-                            + (posIdx + 1)
-                            + "集"
-                            + (disp.specBadge != null ? " · " + disp.specBadge : "");
-            TextView subMetaTv = a.text(subMeta, 11, 0x99ffffff);
-            subMetaTv.setSingleLine(true);
-            subMetaTv.setEllipsize(TextUtils.TruncateAt.END);
-            subMetaTv.setPadding(a.dp(2), a.dp(8), a.dp(2), 0);
-            cardWrap.addView(subMetaTv);
-
-            String headline =
-                    disp.cleanTitle.startsWith("第")
-                            ? disp.cleanTitle
-                            : "第 " + (posIdx + 1) + " 集 · " + disp.cleanTitle;
-            TextView headlineTv = a.text(headline, 13.5f, Color.WHITE);
-            headlineTv.setTypeface(null, Typeface.BOLD);
-            headlineTv.setSingleLine(true);
-            headlineTv.setEllipsize(TextUtils.TruncateAt.END);
-            headlineTv.setPadding(a.dp(2), a.dp(2), a.dp(2), 0);
-            cardWrap.addView(headlineTv);
-
-            LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(a.dp(224), -2);
-            cardLp.rightMargin = a.dp(14);
-            cardRow.addView(cardWrap, cardLp);
+            if (i == end - 1 && (end - start) % epColumns != 0) {
+                View filler = new View(a);
+                LinearLayout.LayoutParams fillerLp = new LinearLayout.LayoutParams(0, 1, 1f);
+                fillerLp.leftMargin = a.dp(8);
+                gridRow.addView(filler, fillerLp);
+            }
         }
 
         // 4. Range Capsules (`1 · 50`, `51 · 100` ...) when > 50 episodes

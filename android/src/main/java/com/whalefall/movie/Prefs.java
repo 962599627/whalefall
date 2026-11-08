@@ -28,6 +28,9 @@ final class Prefs {
     static final String WALLPAPER_SOUND = "wallpaper_sound";
     static final String TV_ASPECT = "tv_aspect";
     static final String TV_FILL = "tv_fill";
+    static final String HOME_SHOW_HISTORY = "home_show_history";
+    static final String HOME_SHOW_HERO = "home_show_hero";
+    static final String HOME_SHOW_TONIGHT = "home_show_tonight";
     static final String REDUCED = "reduced";
     static final String REDUCED_TRANSPARENCY = "reduced_transparency";
     static final String PLAYER_ENGINE = "player_engine";
@@ -85,6 +88,9 @@ final class Prefs {
         WALLPAPER_SOUND,
         TV_ASPECT,
         TV_FILL,
+        HOME_SHOW_HISTORY,
+        HOME_SHOW_HERO,
+        HOME_SHOW_TONIGHT,
         REDUCED,
         REDUCED_TRANSPARENCY,
         PLAYER_ENGINE,
@@ -120,6 +126,9 @@ final class Prefs {
                                     WALLPAPER_SOUND,
         TV_ASPECT,
         TV_FILL,
+        HOME_SHOW_HISTORY,
+        HOME_SHOW_HERO,
+        HOME_SHOW_TONIGHT,
                                     REDUCED,
                                     REDUCED_TRANSPARENCY,
                                     AUTO_NEXT,

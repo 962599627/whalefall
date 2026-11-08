@@ -402,7 +402,13 @@ final class MobileShell {
             }
         } else {
             a.releaseWallpaper();
-            a.root.addView(new AmbientCanvasView(a), new FrameLayout.LayoutParams(-1, -1));
+            if (a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) {
+                a.root.addView(
+                        ImageLoader.createAtmosphere(a),
+                        new FrameLayout.LayoutParams(-1, -1));
+            } else {
+                a.root.addView(new AmbientCanvasView(a), new FrameLayout.LayoutParams(-1, -1));
+            }
         }
 
         float widthDp = a.windowWidth() / a.getResources().getDisplayMetrics().density;
@@ -791,6 +797,7 @@ final class MobileShell {
         scrollView.setClipToPadding(false);
         a.scroll = scrollView;
         contentContainer.addView(scrollView, new FrameLayout.LayoutParams(-1, -1));
+        if (filterSummaryBar != null) filterSummaryBar.view().bringToFront();
 
         // 底部常驻筛选摘要条：未选时是入口，已选时展示条件 chips，点击展开筛选浮层
         final float homeDensity = a.getResources().getDisplayMetrics().density;
@@ -824,7 +831,7 @@ final class MobileShell {
 
         // 2. History shelf; the newest entry remains first and resumes on tap.
         List<WatchHistory.Entry> history = a.watchHistory();
-        if (!history.isEmpty()) {
+        if (a.prefs.getBoolean(Prefs.HOME_SHOW_HISTORY, true) && !history.isEmpty()) {
             LinearLayout histHeader = a.row();
             histHeader.setGravity(Gravity.CENTER_VERTICAL);
             histHeader.setPadding(a.dp(16), a.dp(14), a.dp(16), a.dp(8));
@@ -911,7 +918,9 @@ final class MobileShell {
         final FrameLayout heroContainer = new FrameLayout(a);
         heroContainer.setPadding(a.dp(16), a.dp(14), a.dp(16), 0);
         heroContainer.setVisibility(View.GONE);
-        body.addView(heroContainer, new LinearLayout.LayoutParams(-1, -2));
+        if (a.prefs.getBoolean(Prefs.HOME_SHOW_HERO, true)) {
+            body.addView(heroContainer, new LinearLayout.LayoutParams(-1, -2));
+        }
 
         // 3.5 「今晚看什么」：随机三部，换一批
         final LinearLayout tonightCard = a.vertical();
@@ -949,6 +958,10 @@ final class MobileShell {
         final Runnable[] refreshTonight = new Runnable[1];
         refreshTonight[0] =
                 () -> {
+                    if (!a.prefs.getBoolean(Prefs.HOME_SHOW_TONIGHT, true)) {
+                        tonightCard.setVisibility(View.GONE);
+                        return;
+                    }
                     if (currentVideos.size() < 3) {
                         tonightCard.setVisibility(View.GONE);
                         return;
@@ -2945,7 +2958,11 @@ final class MobileShell {
                             ? "片源与直播配置"
                             : settingsSubPage == 2
                                     ? "播放、解码与字幕"
-                                    : settingsSubPage == 3 ? "界面外观与偏好" : "备份、更新与诊断";
+                                    : settingsSubPage == 3
+                                            ? "界面外观与偏好"
+                                            : settingsSubPage == 5
+                                                    ? "首页设置"
+                                                    : "备份、更新与诊断";
             TextView subTitle = a.text(subTitleText, 20, Color.WHITE);
             subTitle.setTypeface(null, Typeface.BOLD);
             topNav.addView(subTitle, new LinearLayout.LayoutParams(0, -2, 1));
@@ -3192,6 +3209,43 @@ final class MobileShell {
                             cachedSearchHits.clear();
                             a.toast("已清空搜索历史记录");
                         });
+            } else if (settingsSubPage == 5) {
+                addSectionHeader(body, "首页板块");
+                addSettingCard(
+                        body,
+                        3,
+                        "历史记录",
+                        a.prefs.getBoolean(Prefs.HOME_SHOW_HISTORY, true)
+                                ? "显示在首页顶部，可继续观看"
+                                : "已隐藏",
+                        () -> {
+                            boolean on = !a.prefs.getBoolean(Prefs.HOME_SHOW_HISTORY, true);
+                            a.prefs.edit().putBoolean(Prefs.HOME_SHOW_HISTORY, on).apply();
+                            refreshInPlace.run();
+                        });
+                addSettingCard(
+                        body,
+                        3,
+                        "今日首推",
+                        a.prefs.getBoolean(Prefs.HOME_SHOW_HERO, true) ? "首页大卡片推荐" : "已隐藏",
+                        () -> {
+                            boolean on = !a.prefs.getBoolean(Prefs.HOME_SHOW_HERO, true);
+                            a.prefs.edit().putBoolean(Prefs.HOME_SHOW_HERO, on).apply();
+                            refreshInPlace.run();
+                        });
+                addSettingCard(
+                        body,
+                        3,
+                        "今晚看什么",
+                        a.prefs.getBoolean(Prefs.HOME_SHOW_TONIGHT, true) ? "随机三部推荐" : "已隐藏",
+                        () -> {
+                            boolean on = !a.prefs.getBoolean(Prefs.HOME_SHOW_TONIGHT, true);
+                            a.prefs.edit().putBoolean(Prefs.HOME_SHOW_TONIGHT, on).apply();
+                            refreshInPlace.run();
+                        });
+                a.gap(body, 10);
+                body.addView(
+                        a.text("关闭的板块只在首页隐藏，数据不会删除；随时可以再打开。", 12, 0xff8d9cb6));
             } else {
                 addSectionHeader(body, "更新、备份与诊断");
                 addSettingCard(
@@ -3233,8 +3287,10 @@ final class MobileShell {
         body.addView(pageTitle);
 
         a.gap(body, 14);
-        final String[] categories = {"片源与直播配置", "播放、解码与字幕", "界面外观与偏好", "备份、更新与诊断"};
-        final int[] icons = {1, 3, 4, 5};
+        final String[] categories = {
+            "片源与直播配置", "播放、解码与字幕", "界面外观与偏好", "备份、更新与诊断", "首页设置"
+        };
+        final int[] icons = {1, 3, 4, 5, 2};
         for (int i = 0; i < categories.length; i++) {
             final int page = i + 1;
             addSettingCard(

@@ -17,7 +17,7 @@ import java.util.Map;
  * 选中色 #FFB3C8，未选中文字 #7F8FA9。
  */
 final class FilterSummaryBar {
-    static final int HEIGHT_DP = 44;
+    static final int HEIGHT_DP = 48;
 
     private final MainActivity a;
     private final Map<String, String> selections;
@@ -27,6 +27,7 @@ final class FilterSummaryBar {
     private final TvUiKit.FilterGlyph icon;
     private final TvUiKit.ChevronUpGlyph chevron;
     private final TextView placeholder;
+    private final TextView countView;
 
     FilterSummaryBar(MainActivity a, Map<String, String> selections, Runnable onExpand) {
         this.a = a;
@@ -35,17 +36,17 @@ final class FilterSummaryBar {
 
         root = a.row();
         root.setGravity(Gravity.CENTER_VERTICAL);
-        root.setPadding(a.dp(14), 0, a.dp(12), 0);
-        root.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
-        root.setElevation(a.dp(6));
+        root.setPadding(a.dp(14), 0, a.dp(14), 0);
+        root.setBackground(MobileDetailScreen.glassBg(a, 0xf20b1220, 0x26ffffff, 16));
+        root.setElevation(a.dp(8));
         root.setClickable(true);
         MobileDetailScreen.bindTouchFeedback(root);
         root.setOnClickListener(v -> onExpand.run());
 
-        icon = new TvUiKit.FilterGlyph(a, 0xffa9b7d0);
-        root.addView(icon, new LinearLayout.LayoutParams(a.dp(16), a.dp(16)));
+        icon = new TvUiKit.FilterGlyph(a, 0xffff8fb1);
+        root.addView(icon, new LinearLayout.LayoutParams(a.dp(18), a.dp(18)));
 
-        TextView label = a.text("筛选", 12.5f, 0xffe6edf9);
+        TextView label = a.text("筛选", 13, 0xfff5f7fc);
         label.setTypeface(null, android.graphics.Typeface.BOLD);
         label.setIncludeFontPadding(false);
         LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(-2, -2);
@@ -59,11 +60,16 @@ final class FilterSummaryBar {
         chipsLp.rightMargin = a.dp(8);
         root.addView(chips, chipsLp);
 
-        placeholder = a.text("类型 / 地区 / 年份", 11.5f, 0xff7f8fa9);
+        placeholder = a.text("类型 / 地区 / 年份", 11.5f, 0xff8d9cb6);
         placeholder.setSingleLine(true);
         placeholder.setEllipsize(android.text.TextUtils.TruncateAt.END);
 
-        chevron = new TvUiKit.ChevronUpGlyph(a, 0xff7f8fa9);
+        countView = a.text("", 11, 0xffffb3c8);
+        countView.setIncludeFontPadding(false);
+        LinearLayout.LayoutParams countLp = new LinearLayout.LayoutParams(-2, -2);
+        countLp.rightMargin = a.dp(8);
+        root.addView(countView, countLp);
+        chevron = new TvUiKit.ChevronUpGlyph(a, 0xffff8fb1);
         root.addView(chevron, new LinearLayout.LayoutParams(a.dp(14), a.dp(14)));
 
         refresh(null);
@@ -79,7 +85,11 @@ final class FilterSummaryBar {
         chips.removeAllViews();
         boolean active = !selections.isEmpty();
         icon.setColor(active ? 0xffff8fb1 : 0xffa9b7d0);
-        chevron.setColor(active ? 0xffffb3c8 : 0xff7f8fa9);
+        int picked = 0;
+        for (String v : selections.values())
+            if (v != null && !v.isEmpty()) picked += v.split(",").length;
+        countView.setText(picked == 0 ? "筛选" : "已选 " + picked);
+        countView.setTextColor(picked == 0 ? 0xffa9b7d0 : 0xffffb3c8);
         if (!active) {
             chips.addView(placeholder);
             return;
@@ -87,14 +97,14 @@ final class FilterSummaryBar {
         int shown = 0;
         for (Map.Entry<String, String> entry : selections.entrySet()) {
             if (shown >= 2) break;
-            TextView chip = a.text(displayLabel(definitions, entry.getKey(), entry.getValue()), 11, 0xffffb3c8);
+            TextView chip = a.text(displayLabel(definitions, entry.getKey(), entry.getValue()), 11.5f, 0xffffb3c8);
             chip.setSingleLine(true);
             chip.setEllipsize(android.text.TextUtils.TruncateAt.END);
             chip.setMaxWidth(a.dp(92));
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(a.dp(9), 0, a.dp(9), 0);
             chip.setBackground(MobileDetailScreen.glassBg(a, 0x26ff8fb1, 0x4dffb3c8, 999));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(26));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(28));
             lp.rightMargin = a.dp(6);
             chips.addView(chip, lp);
             shown++;
@@ -105,7 +115,7 @@ final class FilterSummaryBar {
             more.setGravity(Gravity.CENTER);
             more.setPadding(a.dp(8), 0, a.dp(8), 0);
             more.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
-            chips.addView(more, new LinearLayout.LayoutParams(-2, a.dp(26)));
+            chips.addView(more, new LinearLayout.LayoutParams(-2, a.dp(28)));
         }
     }
 
@@ -118,6 +128,22 @@ final class FilterSummaryBar {
                     if (choice.value.equals(value)) return choice.label;
                 }
             }
+        }
+        if (value != null && value.contains(",")) {
+            StringBuilder out = new StringBuilder();
+            for (String one : value.split(",")) {
+                if (one.isEmpty()) continue;
+                if (out.length() > 0) out.append("·");
+                String label = null;
+                if (definitions != null)
+                    for (VideoFilters.Definition def : definitions) {
+                        if (!def.dimension.equals(dimension)) continue;
+                        for (VideoFilters.Choice choice : def.choices)
+                            if (choice.value.equals(one)) label = choice.label;
+                    }
+                out.append(label != null ? label : one);
+            }
+            return out.toString();
         }
         return value;
     }
