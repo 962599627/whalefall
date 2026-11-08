@@ -158,4 +158,14 @@ final class AdminPanel {
         gd.setStroke(Math.max(1, a.dp(0.8f)), stroke);
         return gd;
     }
+
+    /** 面板内容包进 ScrollView，保证令牌 / FTP / 说明在小屏上也能看到。 */
+    private static android.view.View panelScroll(LinearLayout panel) {
+        android.widget.ScrollView scroll = new android.widget.ScrollView(panel.getContext());
+        scroll.setFillViewport(false);
+        scroll.setVerticalScrollBarEnabled(true);
+        scroll.addView(panel, new android.widget.ScrollView.LayoutParams(-1, -2));
+        return scroll;
+    }
+
 }
