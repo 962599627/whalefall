@@ -412,9 +412,12 @@ final class TvLive {
         final List<Channel> list;
         int index;
         FrameLayout overlay;
-        WebView web;
+        TvWebView web;
         TextView title;
         LinearLayout bar;
+        LinearLayout topBar;
+        View fullView;
+        WebChromeClient.CustomViewCallback fullCallback;
         final Handler handler = new Handler(Looper.getMainLooper());
         final Runnable inject =
                 new Runnable() {
@@ -444,7 +447,7 @@ final class TvLive {
             overlay.setFocusable(true);
             overlay.setFocusableInTouchMode(true);
 
-            web = new WebView(a);
+            web = new TvWebView(a);
             WebSettings s = web.getSettings();
             s.setJavaScriptEnabled(true);
             s.setDomStorageEnabled(true);
@@ -460,12 +463,35 @@ final class TvLive {
                         public void onProgressChanged(WebView v, int progress) {
                             if (progress > 80) handler.post(inject);
                         }
+
+                        @Override
+                        public void onShowCustomView(View view, CustomViewCallback callback) {
+                            if (fullView != null) callback.onCustomViewHidden();
+                            fullView = view;
+                            fullCallback = callback;
+                            overlay.addView(view, new FrameLayout.LayoutParams(-1, -1));
+                            if (topBar != null) topBar.setVisibility(View.GONE);
+                        }
+
+                        @Override
+                        public void onHideCustomView() {
+                            if (fullView != null && fullView.getParent() instanceof FrameLayout)
+                                ((FrameLayout) fullView.getParent()).removeView(fullView);
+                            fullView = null;
+                            if (fullCallback != null) {
+                                fullCallback.onCustomViewHidden();
+                                fullCallback = null;
+                            }
+                            if (topBar != null) topBar.setVisibility(View.VISIBLE);
+                        }
                     });
             web.setWebViewClient(
                     new WebViewClient() {
                         @Override
                         public void onPageFinished(WebView v, String url) {
                             handler.post(inject);
+                            handler.postDelayed(Player.this::pressFullscreenKey, 1800);
+                            handler.postDelayed(Player.this::pressFullscreenKey, 4500);
                         }
                     });
             overlay.addView(web, new FrameLayout.LayoutParams(-1, -1));
@@ -490,6 +516,7 @@ final class TvLive {
             listBtn.setBackground(a.bg(0x33ffffff, 999));
             listBtn.setOnClickListener(v -> toggleBar());
             top.addView(listBtn);
+            topBar = top;
             FrameLayout.LayoutParams topLp =
                     new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
             topLp.setMargins(a.dp(8), statusBar(a) + a.dp(6), a.dp(8), 0);
@@ -518,12 +545,6 @@ final class TvLive {
             barLp.setMargins(a.dp(8), 0, a.dp(8), a.dp(18));
             overlay.addView(hs, barLp);
             hs.setVisibility(View.GONE);
-
-            // 手势层：上下滑调亮度/音量（左亮度右音量）
-            View gesture = new View(a);
-            gesture.setBackgroundColor(Color.TRANSPARENT);
-            gesture.setOnTouchListener(new SwipeGesture());
-            overlay.addView(gesture, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
 
             overlay.setOnKeyListener(
                     (v, code, event) -> {
@@ -557,6 +578,19 @@ final class TvLive {
                 c.setTextColor(on ? 0xff31141f : Color.WHITE);
             }
             load();
+        }
+
+        /** 向网页发送 F 键，触发 CCTV / 芒果等网页播放器的全屏（参考 WebViewTvLive）。 */
+        void pressFullscreenKey() {
+            if (web == null) return;
+            try {
+                long now = android.os.SystemClock.uptimeMillis();
+                web.dispatchKeyEvent(
+                        new KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_F, 0));
+                web.dispatchKeyEvent(
+                        new KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_F, 0));
+            } catch (Throwable ignored) {
+            }
         }
 
         void load() {
@@ -616,6 +650,62 @@ final class TvLive {
                     android.media.AudioManager.STREAM_MUSIC,
                     Math.round(max * percent / 100f),
                     0);
+        }
+
+        /** 自定义 WebView：普通点击交给网页；明显的上下滑才拦截成亮度/音量手势。 */
+        final class TvWebView extends WebView {
+            private float startX, startY;
+            private int startBrightness, startVolume;
+            private boolean vertical;
+
+            TvWebView(Context c) {
+                super(c);
+            }
+
+            @Override
+            public boolean dispatchTouchEvent(MotionEvent e) {
+                switch (e.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        startX = e.getX();
+                        startY = e.getY();
+                        vertical = false;
+                        WindowManager.LayoutParams lp = a.getWindow().getAttributes();
+                        startBrightness =
+                                lp.screenBrightness < 0
+                                        ? 128
+                                        : Math.round(lp.screenBrightness * 255);
+                        startVolume = volume();
+                        break;
+                    case MotionEvent.ACTION_MOVE:
+                        float dx = Math.abs(e.getX() - startX);
+                        float dy = Math.abs(e.getY() - startY);
+                        if (dy > a.dp(30) && dy > dx * 1.5f) vertical = true;
+                        if (vertical) {
+                            int delta =
+                                    Math.round((startY - e.getY()) / a.dp(360) * 255);
+                            if (startX < getWidth() / 2f) {
+                                int level = Math.max(10, Math.min(255, startBrightness + delta));
+                                WindowManager.LayoutParams attrs = a.getWindow().getAttributes();
+                                attrs.screenBrightness = level / 255f;
+                                a.getWindow().setAttributes(attrs);
+                            } else {
+                                setVolume(Math.max(0, Math.min(100, startVolume + delta * 100 / 255)));
+                            }
+                            return true;
+                        }
+                        break;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        if (vertical) {
+                            vertical = false;
+                            return true;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+                return super.dispatchTouchEvent(e);
+            }
         }
 
         final class SwipeGesture implements View.OnTouchListener {
