@@ -190,7 +190,93 @@ final class HomeScreen {
                 && (state.snapshot != null || System.currentTimeMillis() - saved.time < 300000)) {
             snapshot = saved;
             renderSnapshot();
-        } else loadHome();
+            return;
+        }
+        if (!a.reduced) {
+            Snapshot disk = readDiskSnapshot(a, site.key);
+            if (disk != null && !disk.videos.isEmpty()) {
+                snapshot = disk;
+                a.homeData.put(site.key, disk);
+                renderSnapshot();
+                if (System.currentTimeMillis() - disk.time >= 300000) {
+                    refreshHomeSilently();
+                }
+                return;
+            }
+        }
+        loadHome();
+    }
+
+    static Cms.Listing parseHomeListing(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return new Cms.Listing();
+        try {
+            String trimmed = raw.trim();
+            if (trimmed.startsWith("<")) {
+                return Cms.listing(raw);
+            }
+            if (new JSONObject(raw).has("list")) {
+                return Cms.listing(raw);
+            }
+        } catch (Throwable ignored) {
+        }
+        return new Cms.Listing();
+    }
+
+    void refreshHomeSilently() {
+        final int token = request;
+        a.worker.execute(
+                () -> {
+                    try {
+                        SourceEngine engine = a.engine(site);
+                        String raw = engine.home();
+                        List<Cms.Category> categories = Cms.categories(raw);
+                        Cms.Listing list = parseHomeListing(raw);
+                        clean(list.videos);
+                        if (list.videos.isEmpty())
+                            try {
+                                list = Cms.listing(engine.homeVideos());
+                                clean(list.videos);
+                            } catch (Throwable ignored) {
+                            }
+                        String skip = "";
+                        if (list.videos.isEmpty() && !categories.isEmpty()) {
+                            skip = categories.get(0).id;
+                            list = Cms.listing(engine.category(skip, 1));
+                            clean(list.videos);
+                        }
+                        if (list.videos.isEmpty() && categories.isEmpty()) return;
+                        final Snapshot fresh =
+                                new Snapshot(list.videos, categories, skip, list.pageCount);
+                        writeDiskSnapshot(a, site.key, fresh);
+                        a.ui.post(
+                                () -> {
+                                    a.homeData.put(site.key, fresh);
+                                    if (!active() || busy || token != request) return;
+                                    boolean onDefaultTab =
+                                            state != null
+                                                    && (state.category == null
+                                                            || state.category.isEmpty())
+                                                    && state.page == 1;
+                                    if (onDefaultTab && snapshot != null) {
+                                        String oldFirst =
+                                                snapshot.videos.isEmpty()
+                                                        ? ""
+                                                        : snapshot.videos.get(0).id;
+                                        String newFirst =
+                                                fresh.videos.isEmpty()
+                                                        ? ""
+                                                        : fresh.videos.get(0).id;
+                                        snapshot = fresh;
+                                        if (!Objects.equals(oldFirst, newFirst)
+                                                || state.videos.size() != fresh.videos.size()) {
+                                            state.ready = false;
+                                            renderSnapshot();
+                                        }
+                                    }
+                                });
+                    } catch (Throwable ignored) {
+                    }
+                });
     }
 
     Map<String, Object> appearance() {
@@ -269,10 +355,7 @@ final class HomeScreen {
                         SourceEngine engine = a.engine(site);
                         String raw = engine.home();
                         List<Cms.Category> categories = Cms.categories(raw);
-                        Cms.Listing list =
-                                new JSONObject(raw).has("list")
-                                        ? Cms.listing(raw)
-                                        : new Cms.Listing();
+                        Cms.Listing list = parseHomeListing(raw);
                         clean(list.videos);
                         if (list.videos.isEmpty())
                             try {
@@ -289,6 +372,9 @@ final class HomeScreen {
                         Snapshot result =
                                 new Snapshot(list.videos, categories, skip, list.pageCount);
                         result.filterSchema = raw;
+                        if (!a.reduced) {
+                            a.worker.execute(() -> writeDiskSnapshot(a, site.key, result));
+                        }
                         a.ui.post(
                                 () -> {
                                     a.prefs.edit().putString(Prefs.LOADING_SITE, "").apply();
@@ -315,6 +401,124 @@ final class HomeScreen {
                 });
     }
 
+    private static java.io.File snapshotCacheFile(MainActivity a, String siteKey) {
+        try {
+            java.io.File dir = new java.io.File(a.getCacheDir(), "home_snap_v1");
+            if (!dir.exists()) dir.mkdirs();
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest =
+                    md.digest(
+                            (siteKey == null ? "" : siteKey)
+                                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(32);
+            for (int i = 0; i < 16 && i < digest.length; i++) {
+                hex.append(String.format(java.util.Locale.US, "%02x", digest[i] & 0xff));
+            }
+            return new java.io.File(dir, hex + ".json");
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static void writeDiskSnapshot(MainActivity a, String siteKey, Snapshot snap) {
+        if (a == null || snap == null || (snap.videos.isEmpty() && snap.categories.isEmpty()))
+            return;
+        java.io.File file = snapshotCacheFile(a, siteKey);
+        if (file == null) return;
+        try {
+            JSONObject root = new JSONObject();
+            root.put("skip", snap.skip == null ? "" : snap.skip);
+            root.put("pages", snap.pages);
+            org.json.JSONArray cats = new org.json.JSONArray();
+            for (Cms.Category c : snap.categories) {
+                JSONObject cj = new JSONObject();
+                cj.put("id", c.id);
+                cj.put("name", c.name);
+                cats.put(cj);
+            }
+            root.put("categories", cats);
+            org.json.JSONArray vids = new org.json.JSONArray();
+            int limit = Math.min(40, snap.videos.size());
+            for (int i = 0; i < limit; i++) {
+                Cms.Video v = snap.videos.get(i);
+                JSONObject vj = new JSONObject();
+                vj.put("id", v.id == null ? "" : v.id);
+                vj.put("title", v.title == null ? "" : v.title);
+                vj.put("poster", v.poster == null ? "" : v.poster);
+                vj.put("remarks", v.remarks == null ? "" : v.remarks);
+                vj.put("year", v.year == null ? "" : v.year);
+                vj.put("area", v.area == null ? "" : v.area);
+                vj.put("actor", v.actor == null ? "" : v.actor);
+                vj.put("director", v.director == null ? "" : v.director);
+                vj.put("description", v.description == null ? "" : v.description);
+                vj.put("tag", v.tag == null ? "" : v.tag);
+                vj.put("action", v.action == null ? "" : v.action);
+                vids.put(vj);
+            }
+            root.put("videos", vids);
+            byte[] bytes = root.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(file)) {
+                out.write(bytes);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static Snapshot readDiskSnapshot(MainActivity a, String siteKey) {
+        java.io.File file = snapshotCacheFile(a, siteKey);
+        if (file == null || !file.exists() || file.length() <= 0 || file.length() > 512 * 1024)
+            return null;
+        // Expire disk snapshot after 3 days
+        if (System.currentTimeMillis() - file.lastModified() > 3L * 24 * 3600 * 1000) return null;
+        try (java.io.InputStream in = new java.io.FileInputStream(file)) {
+            JSONObject root = new JSONObject(Cms.read(in, 512 * 1024));
+            String skip = root.optString("skip", "");
+            int pages = Math.max(1, root.optInt("pages", 1));
+            List<Cms.Category> categories = new ArrayList<>();
+            org.json.JSONArray cats = root.optJSONArray("categories");
+            if (cats != null) {
+                for (int i = 0; i < cats.length(); i++) {
+                    JSONObject cj = cats.optJSONObject(i);
+                    if (cj != null) {
+                        String id = cj.optString("id", "");
+                        String name = cj.optString("name", "");
+                        if (!id.isEmpty() && !name.isEmpty()) {
+                            categories.add(new Cms.Category(id, name));
+                        }
+                    }
+                }
+            }
+            List<Cms.Video> videos = new ArrayList<>();
+            org.json.JSONArray vids = root.optJSONArray("videos");
+            if (vids != null) {
+                for (int i = 0; i < vids.length(); i++) {
+                    JSONObject vj = vids.optJSONObject(i);
+                    if (vj != null) {
+                        Cms.Video v = new Cms.Video();
+                        v.id = vj.optString("id", "");
+                        v.title = vj.optString("title", "");
+                        v.poster = vj.optString("poster", "");
+                        v.remarks = vj.optString("remarks", "");
+                        v.year = vj.optString("year", "");
+                        v.area = vj.optString("area", "");
+                        v.actor = vj.optString("actor", "");
+                        v.director = vj.optString("director", "");
+                        v.description = vj.optString("description", "");
+                        v.tag = vj.optString("tag", "");
+                        v.action = vj.optString("action", "");
+                        if (!v.id.isEmpty() && !v.title.isEmpty()) {
+                            videos.add(v);
+                        }
+                    }
+                }
+            }
+            if (videos.isEmpty()) return null;
+            return new Snapshot(videos, categories, skip, pages);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     void historySection() {
         List<WatchHistory.Entry> entries = a.watchHistory();
         if (entries.isEmpty()) return;
@@ -323,8 +527,8 @@ final class HomeScreen {
         section.setTag("home-history-section");
         section.setGravity(Gravity.TOP);
         section.setClipChildren(false);
-        a.body.addView(section);
         section.setClipToPadding(false);
+        a.body.addView(section);
         LinearLayout heading = a.row();
         heading.setClipChildren(false);
         heading.setClipToPadding(false);
@@ -338,23 +542,24 @@ final class HomeScreen {
                         "home-history-all",
                         () -> a.open(new MainActivity.Screen(a::historyPage), true));
         heading.addView(allHistory, new LinearLayout.LayoutParams(-2, a.dp(30)));
-        section.addView(heading);
+        section.addView(heading, new LinearLayout.LayoutParams(-1, -2));
         a.gap(section, 6);
         LinearLayout recent = compactStack ? a.vertical() : a.row();
         if (!compactStack) recent.setWeightSum(4);
         recent.setTag("home-history-list");
         recent.setClipChildren(false);
         recent.setClipToPadding(false);
-        section.addView(recent);
-        for (int i = 0; i < Math.min(4, entries.size()); i++) {
+        section.addView(recent, new LinearLayout.LayoutParams(-1, -2));
+        int count = Math.min(4, entries.size());
+        for (int i = 0; i < count; i++) {
             LinearLayout.LayoutParams cell =
                     compactStack
                             ? new LinearLayout.LayoutParams(-1, a.dp(72))
                             : new LinearLayout.LayoutParams(0, a.dp(72), 1);
             boolean last = i == Math.min(3, entries.size() - 1);
-            cell.rightMargin = a.dp(compactStack || last ? 0 : 12);
+            cell.rightMargin = a.dp(compactStack ? 0 : (i == 3 ? 0 : 12));
             cell.bottomMargin = a.dp(compactStack && !last ? 10 : 0);
-            WatchHistory.Entry e = entries.get(i);
+            final WatchHistory.Entry e = entries.get(i);
             LinearLayout card = a.row();
             card.setPadding(a.dp(9), a.dp(6), a.dp(12), a.dp(6));
             card.setBackground(a.bg(0xff222228, 14));
@@ -403,6 +608,24 @@ final class HomeScreen {
                     (v, f) -> {
                         outline(card, f, 14, 0xff222228);
                         if (f && ambient != null) ambient.follow(image);
+                        if (f && !a.reduced && a.config != null) {
+                            v.postDelayed(
+                                    () -> {
+                                        if (v.hasFocus() && active() && a.config != null) {
+                                            for (Cms.Site s : a.config.sites) {
+                                                if (s.key.equals(e.site)) {
+                                                    Cms.Video listing = new Cms.Video();
+                                                    listing.id = e.id;
+                                                    listing.title = e.title;
+                                                    listing.poster = e.poster;
+                                                    SourceController.prefetchDetail(a, s, listing);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    },
+                                    150);
+                        }
                     });
             if (i == 0
                     && ambient != null
@@ -410,6 +633,15 @@ final class HomeScreen {
                 ambient.follow(image);
             recent.addView(card, cell);
             historyCards.add(card);
+        }
+        if (!compactStack && count < 4) {
+            for (int slot = count; slot < 4; slot++) {
+                View filler = new View(a);
+                filler.setFocusable(false);
+                LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, a.dp(72), 1);
+                cell.rightMargin = a.dp(slot == 3 ? 0 : 12);
+                recent.addView(filler, cell);
+            }
         }
         a.gap(a.body, 4);
     }
@@ -863,8 +1095,10 @@ final class HomeScreen {
         pendingGrid = null;
         if (!active() || epoch != gridEpoch) return;
         int end = start;
+        int batchCount = start == 0 ? Math.max(COLUMNS * 2, 10) : Math.max(COLUMNS, 5);
+        long budgetNs = start == 0 ? 12000000L : 5000000L;
         long batchStarted = System.nanoTime();
-        for (int index = start; index < windowEnd() && index < start + 4; index++) {
+        for (int index = start; index < windowEnd() && index < start + batchCount; index++) {
             int column = index % COLUMNS;
             LinearLayout row;
             List<View> focusRow;
@@ -892,7 +1126,7 @@ final class HomeScreen {
             row.addView(card, column, size);
             focusRow.add(card);
             end = index + 1;
-            if (System.nanoTime() - batchStarted >= 3000000L) break;
+            if (System.nanoTime() - batchStarted >= budgetNs) break;
         }
         wireNavigation(Math.max(0, (start - state.windowStart) / COLUMNS - 1));
         resolvePendingFocus(false);
@@ -912,6 +1146,14 @@ final class HomeScreen {
                     && a.current != null
                     && a.current.focus != null
                     && a.current.focus.startsWith("home-video:")) restoreFocus();
+            if (!a.reduced && !state.videos.isEmpty()) {
+                final Cms.Video firstVid = state.videos.get(0);
+                content.postDelayed(
+                        () -> {
+                            if (active()) SourceController.prefetchDetail(a, site, firstVid);
+                        },
+                        350);
+            }
         }
     }
 
@@ -940,10 +1182,20 @@ final class HomeScreen {
                     outline(card, f, 13, Color.TRANSPARENT);
                     title.setTextColor(f ? Color.WHITE : 0xffc8c8d0);
                     if (f && ambient != null) ambient.follow(art);
-                    if (f)
+                    if (f) {
                         v.requestRectangleOnScreen(
                                 new Rect(0, -a.dp(8), v.getWidth(), v.getHeight() + a.dp(10)),
                                 false);
+                        if (!a.reduced) {
+                            v.postDelayed(
+                                    () -> {
+                                        if (v.hasFocus() && active()) {
+                                            SourceController.prefetchDetail(a, site, video);
+                                        }
+                                    },
+                                    200);
+                        }
+                    }
                 });
         if (index == 0
                 && ambient != null

@@ -195,9 +195,12 @@ final class SourcePicker {
                             }));
         }
         ScrollView scrolling = new TvScrollView(a);
+        scrolling.setClipChildren(false);
         scrolling.setClipToPadding(false);
         LinearLayout grid = a.vertical();
-        grid.setPadding(a.dp(5), a.dp(5), a.dp(5), a.dp(5));
+        grid.setClipChildren(false);
+        grid.setClipToPadding(false);
+        grid.setPadding(a.dp(6), a.dp(6), a.dp(6), a.dp(6));
         scrolling.addView(grid);
         panel.addView(scrolling, new LinearLayout.LayoutParams(-1, a.dp(286)));
         String selected = a.prefs.getString(Prefs.SELECTED_SITE, "");
@@ -355,7 +358,7 @@ final class SourcePicker {
         if (window != null) window.setLayout(Math.min(a.dp(720), a.root.getWidth() - a.dp(48)), -2);
     }
 
-    private static void showWarehouses(MainActivity a) {
+    static void showWarehouses(MainActivity a) {
         Cms.Config previous = a.config;
         org.json.JSONArray rows = previous.depots;
         String[] names = new String[rows.length()];

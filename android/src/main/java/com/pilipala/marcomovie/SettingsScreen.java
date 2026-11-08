@@ -314,6 +314,13 @@ final class SettingsScreen {
                 "支持 M3U、TXT (#genre#)、JSON 及本地直播文件",
                 "settings-live-import",
                 () -> SourceController.showLiveImportDialog(a));
+        if (a.config != null && a.config.depots.length() > 1) {
+            link(
+                    "切换影视仓线路",
+                    "当前订阅包含 " + a.config.depots.length() + " 个子仓库，点击切换",
+                    "settings-depots",
+                    () -> SourcePicker.showWarehouses(a));
+        }
         toggle("启用来源扩展", Prefs.EXPERIMENTAL_CSP, true, a::closeEngines);
         link(
                 "网盘与账号",
@@ -344,11 +351,17 @@ final class SettingsScreen {
                                 }));
         link(
                 "重新加载首页图片与片单",
-                "清除内存中的首页缓存",
+                "清除内存与磁盘中的首页缓存",
                 "settings-clear-images",
                 () -> {
                     a.images.evictAll();
                     a.homeData.clear();
+                    try {
+                        File snapDir = new File(a.getCacheDir(), "home_snap_v1");
+                        File[] files = snapDir.listFiles();
+                        if (files != null) for (File f : files) f.delete();
+                    } catch (Throwable ignored) {
+                    }
                     a.toast("已清除首页缓存");
                 });
         link("运行日志", "查看本机最近异常与诊断记录", "settings-logs", this::diagnostics);
@@ -367,7 +380,7 @@ final class SettingsScreen {
                                     a.recreate();
                                 }));
         a.paragraph(
-                "Marco Movie 0.4.26 · 作者 Pilipala · github.com/Pilipala9919/MarcoMovie。本产品仅为工具，不含任何影视资源；内容与配置请自行合法获取。播放能力取决于服务授权和设备支持。");
+                "Marco Movie 0.5.2 · 作者 Pilipala · github.com/Pilipala9919/MarcoMovie。本产品仅为工具，不含任何影视资源；内容与配置请自行合法获取。播放能力取决于服务授权和设备支持。");
     }
 
     void confirm(String title, Runnable action) {

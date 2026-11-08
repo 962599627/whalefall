@@ -25,13 +25,13 @@ final class ImageDecodePolicy {
 
     static int targetWidth(int viewWidth, boolean detail) {
         return Math.max(
-                1, Math.min(detail ? 1080 : 480, viewWidth > 0 ? viewWidth : detail ? 720 : 320));
+                1, Math.min(detail ? 1080 : 480, viewWidth > 64 ? viewWidth : detail ? 720 : 320));
     }
 
     static int targetHeight(int viewHeight, boolean detail) {
         return Math.max(
                 1,
-                Math.min(detail ? 1620 : 720, viewHeight > 0 ? viewHeight : detail ? 1080 : 480));
+                Math.min(detail ? 1620 : 720, viewHeight > 64 ? viewHeight : detail ? 1080 : 480));
     }
 
     static String cacheKey(String address, int width, int height, boolean crop, boolean detail) {

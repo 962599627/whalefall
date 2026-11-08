@@ -154,45 +154,81 @@ final class PlaybackControls {
         currentMobileLandscape = mobileLandscape;
         LinearLayout row = a.row();
         boolean live = "live".equals(site.key);
-        if (!a.isTvDevice() && !live) {
+        if (a.isTvDevice()) {
             add(
                     row,
-                    "上集",
-                    "prev-episode",
+                    live ? "下台" : "下一集",
+                    "next-episode",
                     () -> {
-                        if (!step(-1)) showBubble("已是第一集", new String[] {"知道了"}, -1, i -> {}, "");
+                        if (live) a.liveStep(1);
+                        else if (!step(1)) showBubble("无下集", new String[] {"知道了"}, -1, i -> {}, "");
                     });
-        }
-        add(
-                row,
-                live ? "下台" : "下集",
-                "next-episode",
-                () -> {
-                    if (live) a.liveStep(1);
-                    else if (!step(1)) showBubble("无下集", new String[] {"知道了"}, -1, i -> {}, "");
-                });
-        add(
-                row,
-                live ? "频道" : "选集",
-                "episodes",
-                () -> {
-                    if (live) a.chooseLiveChannel();
-                    else chooseEpisodes();
-                });
-        add(
-                row,
-                "线路",
-                "lines",
-                () -> {
-                    if (live) a.chooseLiveStream();
-                    else chooseLine();
-                });
-        add(row, "1.0×", "speed", () -> speed());
-        add(row, "画面", "aspect", () -> aspect());
-        add(row, "字幕", "subtitles", () -> tracks(3));
-        if (!a.isTvDevice()) {
+            add(
+                    row,
+                    live ? "频道" : "选集",
+                    "episodes",
+                    () -> {
+                        if (live) a.chooseLiveChannel();
+                        else chooseEpisodes();
+                    });
+            add(
+                    row,
+                    live ? "线路" : "换源",
+                    "lines",
+                    () -> {
+                        if (live) a.chooseLiveStream();
+                        else chooseLine();
+                    });
+            add(row, "倍速", "speed", this::speed);
+            add(row, "音轨", "audio-tracks", () -> tracks(1));
+            add(row, "解码", "decoder", this::decoderMenu);
+            add(row, "片头", "skip-intro-tool", () -> skip(true));
+            add(row, "片尾", "skip-outro-tool", () -> skip(false));
+            add(row, "更多", "more", this::more);
+            // Keep aspect/subtitles action references in map for programmatic callers
+            registerHiddenAction("aspect", this::aspect);
+            registerHiddenAction("subtitles", () -> tracks(3));
+        } else {
+            if (!live) {
+                add(
+                        row,
+                        "上集",
+                        "prev-episode",
+                        () -> {
+                            if (!step(-1))
+                                showBubble("已是第一集", new String[] {"知道了"}, -1, i -> {}, "");
+                        });
+            }
+            add(
+                    row,
+                    live ? "下台" : "下集",
+                    "next-episode",
+                    () -> {
+                        if (live) a.liveStep(1);
+                        else if (!step(1)) showBubble("无下集", new String[] {"知道了"}, -1, i -> {}, "");
+                    });
+            add(
+                    row,
+                    live ? "频道" : "选集",
+                    "episodes",
+                    () -> {
+                        if (live) a.chooseLiveChannel();
+                        else chooseEpisodes();
+                    });
+            add(
+                    row,
+                    "换源",
+                    "lines",
+                    () -> {
+                        if (live) a.chooseLiveStream();
+                        else chooseLine();
+                    });
+            add(row, "1.0×", "speed", this::speed);
+            add(row, "画面", "aspect", this::aspect);
+            add(row, "字幕", "subtitles", () -> tracks(3));
             add(row, "全屏", "fullscreen-tool", a::togglePlayerOrientation);
             add(row, "音轨", "audio-tracks", () -> tracks(1));
+            add(row, "解码", "decoder", this::decoderMenu);
             add(row, "弹幕", "danmaku-tool", this::danmaku);
             add(row, "跳片头", "skip-intro-tool", () -> skip(true));
             add(row, "跳片尾", "skip-outro-tool", () -> skip(false));
@@ -208,10 +244,14 @@ final class PlaybackControls {
                             a.playing = true;
                         } else reload(false);
                     });
+            add(row, "更多", "more", this::more);
         }
-        add(row, "更多", "more", () -> more());
         timeline.setId(UiCompat.generateViewId());
-        List<Button> all = new ArrayList<>(buttons.values());
+        List<Button> all = new ArrayList<>();
+        for (int i = 0; i < row.getChildCount(); i++) {
+            View child = row.getChildAt(i);
+            if (child instanceof Button) all.add((Button) child);
+        }
         for (Button b : all) b.setId(UiCompat.generateViewId());
         for (Button b : all) b.setNextFocusUpId(timeline.getId());
         timeline.setNextFocusDownId(all.get(0).getId());
@@ -250,25 +290,27 @@ final class PlaybackControls {
 
     private void rebuildToolDock(boolean mobileLandscape) {
         dockOverlay.removeAllViews();
+        boolean tv = a.isTvDevice();
         LinearLayout row = mobileLandscape ? a.vertical() : a.row();
         row.setGravity(
                 mobileLandscape ? (Gravity.CENTER_HORIZONTAL | Gravity.TOP) : Gravity.CENTER);
         row.setClipChildren(false);
+        row.setClipToPadding(false);
         row.setPadding(a.dp(1), a.dp(2), a.dp(1), a.dp(2));
         for (Button b : buttons.values()) {
+            if (b.getVisibility() == View.GONE) continue;
             if (b.getParent() instanceof ViewGroup) {
                 ((ViewGroup) b.getParent()).removeView(b);
             }
             b.setSingleLine(true);
-            b.setPadding(a.dp(mobileLandscape ? 4 : 6), 0, a.dp(mobileLandscape ? 4 : 6), 0);
-            LinearLayout.LayoutParams size =
-                    new LinearLayout.LayoutParams(
-                            a.dp(mobileLandscape ? 64 : 68), a.dp(mobileLandscape ? 40 : 42));
-            size.setMargins(
-                    a.dp(mobileLandscape ? 2 : 4),
-                    a.dp(mobileLandscape ? 3 : 4),
-                    a.dp(mobileLandscape ? 2 : 4),
-                    a.dp(mobileLandscape ? 3 : 4));
+            int padH = a.dp(mobileLandscape || tv ? 4 : 6);
+            b.setPadding(padH, 0, padH, 0);
+            int w = a.dp(mobileLandscape ? 64 : (tv ? 58 : 68));
+            int h = a.dp(mobileLandscape ? 40 : 42);
+            LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(w, h);
+            int mh = a.dp(mobileLandscape ? 2 : (tv ? 3 : 4));
+            int mv = a.dp(mobileLandscape ? 3 : 4);
+            size.setMargins(mh, mv, mh, mv);
             row.addView(b, size);
         }
         Button fsTool = buttons.get("fullscreen-tool");
@@ -279,6 +321,7 @@ final class PlaybackControls {
             ScrollView vScroller = new ScrollView(a);
             vScroller.setVerticalScrollBarEnabled(false);
             vScroller.setFillViewport(false);
+            vScroller.setClipChildren(false);
             vScroller.setClipToPadding(false);
             vScroller.addView(row, new FrameLayout.LayoutParams(-1, -2));
             dockOverlay.addView(vScroller, new LinearLayout.LayoutParams(-1, -1));
@@ -286,10 +329,24 @@ final class PlaybackControls {
             HorizontalScrollView scroller = new HorizontalScrollView(a);
             scroller.setHorizontalScrollBarEnabled(false);
             scroller.setFillViewport(true);
+            scroller.setClipChildren(false);
             scroller.setClipToPadding(false);
             scroller.addView(row);
             dockOverlay.addView(scroller, new LinearLayout.LayoutParams(-1, -2));
         }
+    }
+
+    void registerHiddenAction(String key, Runnable action) {
+        Button b =
+                a.button(
+                        key,
+                        key,
+                        () -> {
+                            menuAnchor = buttons.get("more");
+                            action.run();
+                        });
+        b.setVisibility(View.GONE);
+        buttons.put(key, b);
     }
 
     Button add(LinearLayout row, String title, String key, Runnable action) {
@@ -302,13 +359,15 @@ final class PlaybackControls {
                             action.run();
                         });
         b.setSingleLine(true);
-        b.setTextSize(13);
+        b.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        b.setTextSize(a.isTvDevice() ? 12.5f : 13f);
         b.setMinWidth(0);
         b.setMinimumWidth(0);
         b.setMinHeight(a.dp(42));
         b.setMinimumHeight(a.dp(42));
-        b.setPadding(a.dp(6), 0, a.dp(6), 0);
         b.setBackground(a.bg(0x16ffffff, 19));
+        int padH = a.dp(a.isTvDevice() ? 4 : 6);
+        b.setPadding(padH, 0, padH, 0);
         b.setOnFocusChangeListener(
                 (view, focused) -> {
                     FocusMotion.style(
@@ -322,9 +381,12 @@ final class PlaybackControls {
                             MainActivity.DARK,
                             false,
                             1.025f);
+                    b.setPadding(padH, 0, padH, 0);
                 });
-        LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(a.dp(68), a.dp(42));
-        size.setMargins(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
+        int btnWidth = a.dp(a.isTvDevice() ? 58 : 68);
+        int marginH = a.dp(a.isTvDevice() ? 3 : 4);
+        LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(btnWidth, a.dp(42));
+        size.setMargins(marginH, a.dp(4), marginH, a.dp(4));
         row.addView(b, size);
         buttons.put(key, b);
         return b;
@@ -455,7 +517,12 @@ final class PlaybackControls {
                         ? resolved.media.optJSONArray("qualities")
                         : null;
         int qCount = qualities != null && qualities.length() > 1 ? qualities.length() : 0;
-        if (video.lines.isEmpty() && qCount == 0) {
+        boolean canCrossSearch =
+                video != null
+                        && video.title != null
+                        && !video.title.trim().isEmpty()
+                        && !"live".equals(site.key);
+        if (video.lines.isEmpty() && qCount == 0 && !canCrossSearch) {
             message("此内容只有当前地址。");
             return;
         }
@@ -472,14 +539,23 @@ final class PlaybackControls {
         for (int i = 0; i < video.lines.size(); i++) {
             items.add((qCount > 0 ? "线路 · " : "") + video.lines.get(i).name);
         }
+        final int crossSearchIndex = canCrossSearch ? items.size() : -1;
+        if (canCrossSearch) {
+            items.add("搜索同名其他片源 · " + video.title);
+        }
         int selected = qCount > 0 ? currentQualityIdx : lineIndex();
         final int finalQCount = qCount;
         final org.json.JSONArray finalQualities = qualities;
         choose(
-                qCount > 0 ? "选择画质或播放线路" : "选择播放线路",
+                qCount > 0 ? "选择画质或播放线路" : "换源 · 选择线路或片源",
                 items.toArray(new String[0]),
                 selected,
                 i -> {
+                    if (crossSearchIndex >= 0 && i == crossSearchIndex) {
+                        a.leavePlayback();
+                        a.crossSearch(Cms.searchTitle(video));
+                        return;
+                    }
                     if (i < finalQCount && finalQualities != null) {
                         org.json.JSONObject qObj = finalQualities.optJSONObject(i);
                         if (qObj != null) {
@@ -593,7 +669,36 @@ final class PlaybackControls {
                 a.prefs.getInt(Prefs.DECODER_MODE, 0),
                 i -> {
                     a.prefs.edit().putInt(Prefs.DECODER_MODE, i).apply();
+                    updateLabels();
                     reload(true);
+                });
+    }
+
+    void decoderMenu() {
+        int decMode = a.prefs.getInt(Prefs.DECODER_MODE, 0);
+        int engMode = a.prefs.getInt(Prefs.PLAYER_ENGINE, 0);
+        int outMode = a.prefs.getInt(Prefs.VIDEO_OUTPUT, 0);
+        String[] items = {
+            (decMode == 0 ? "✓ " : "") + "自动解码（默认）",
+            (decMode == 1 ? "✓ " : "") + "设备硬件解码 (HW)",
+            (decMode == 2 ? "✓ " : "") + "软件解码优先 (SW)",
+            "播放器内核 · " + (engMode == 0 ? "Media3" : "系统播放器"),
+            "画面输出 · " + (outMode == 0 ? "保真输出 (HDR)" : "兼容输出 (调色)")
+        };
+        choose(
+                "解码与播放器",
+                items,
+                decMode >= 0 && decMode <= 2 ? decMode : 0,
+                i -> {
+                    if (i >= 0 && i <= 2) {
+                        a.prefs.edit().putInt(Prefs.DECODER_MODE, i).apply();
+                        updateLabels();
+                        reload(true);
+                    } else if (i == 3) {
+                        engine();
+                    } else if (i == 4) {
+                        output();
+                    }
                 });
     }
 
@@ -940,18 +1045,25 @@ final class PlaybackControls {
         }
         List<String> tracks = a.player.trackLabels(type);
         List<String> labels = new ArrayList<>();
-        labels.add("自动选择");
+        labels.add("自动选择默认音轨");
         labels.addAll(tracks);
-        if (tracks.isEmpty()) {
-            message("当前视频没有可选择的音轨。");
-            return;
-        }
+        final int trackOptionCount = labels.size();
+        boolean swAudio = a.prefs.getBoolean(Prefs.SOFTWARE_AUDIO, false);
+        labels.add("兼容音频解码：" + (swAudio ? "已开启" : "关闭"));
+        labels.add("音效模式 · 设置");
         choose(
-                "音轨",
+                "音轨与音频",
                 labels.toArray(new String[0]),
-                -1,
+                0,
                 i -> {
-                    if (a.player != null) a.player.selectTrack(type, i == 0 ? -1 : i - 1);
+                    if (i < trackOptionCount) {
+                        if (a.player != null) a.player.selectTrack(type, i == 0 ? -1 : i - 1);
+                    } else if (i == trackOptionCount) {
+                        a.prefs.edit().putBoolean(Prefs.SOFTWARE_AUDIO, !swAudio).apply();
+                        reload(true);
+                    } else {
+                        soundEffect();
+                    }
                 });
     }
 
@@ -1158,8 +1270,8 @@ final class PlaybackControls {
             return;
         }
         String[] labels = {
-            "音轨",
-            "播放器与解码",
+            "画面比例",
+            "字幕与显示",
             "刷新播放",
             "从头重播",
             "上一集",
@@ -1179,18 +1291,10 @@ final class PlaybackControls {
                 i -> {
                     switch (i) {
                         case 0:
-                            tracks(1);
+                            aspect();
                             break;
                         case 1:
-                            choose(
-                                    "播放器与解码",
-                                    new String[] {"切换播放器", "切换解码方式", "画面输出"},
-                                    -1,
-                                    n -> {
-                                        if (n == 0) engine();
-                                        else if (n == 1) decoder();
-                                        else output();
-                                    });
+                            tracks(3);
                             break;
                         case 2:
                             reload(true);
@@ -1257,16 +1361,24 @@ final class PlaybackControls {
     }
 
     void updateLabels() {
-        buttons.get("speed").setText(a.prefs.getFloat(Prefs.PLAY_SPEED, 1) + "×");
+        float rate = a.prefs.getFloat(Prefs.PLAY_SPEED, 1f);
+        Button speedBtn = buttons.get("speed");
+        if (speedBtn != null) {
+            if (a.isTvDevice()) {
+                speedBtn.setText(Math.abs(rate - 1f) < 0.01f ? "倍速" : rate + "×");
+            } else {
+                speedBtn.setText(rate + "×");
+            }
+        }
         Button introBtn = buttons.get("skip-intro-tool");
         if (introBtn != null) {
             int s = a.prefs.getInt(Prefs.SKIP_INTRO, 0);
-            introBtn.setText(s > 0 ? "片头" + s + "s" : "跳片头");
+            introBtn.setText(s > 0 ? "片头" + s + "s" : (a.isTvDevice() ? "片头" : "跳片头"));
         }
         Button outroBtn = buttons.get("skip-outro-tool");
         if (outroBtn != null) {
             int s = a.prefs.getInt(Prefs.SKIP_OUTRO, 0);
-            outroBtn.setText(s > 0 ? "片尾" + s + "s" : "跳片尾");
+            outroBtn.setText(s > 0 ? "片尾" + s + "s" : (a.isTvDevice() ? "片尾" : "跳片尾"));
         }
     }
 

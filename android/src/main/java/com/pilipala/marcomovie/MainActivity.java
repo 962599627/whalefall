@@ -20,11 +20,12 @@ import java.util.concurrent.*;
 public final class MainActivity extends Activity {
     static final int WHITE = 0xfff5f5f7, MUTED = 0xffa1a1aa, DARK = 0xff101013;
     final Handler ui = new Handler(Looper.getMainLooper());
-    final ExecutorService worker = Executors.newFixedThreadPool(3);
-    final ExecutorService details = Executors.newFixedThreadPool(2);
+    final ExecutorService worker = Executors.newFixedThreadPool(4);
+    final ExecutorService details = Executors.newFixedThreadPool(4);
     final DetailCache detailCache = new DetailCache();
+    final SingleFlight<String> detailFlights = new SingleFlight<>();
     final List<Future<?>> pageRequests = new ArrayList<>();
-    final ExecutorService artwork = Executors.newFixedThreadPool(3);
+    final ExecutorService artwork = Executors.newFixedThreadPool(8);
     final List<Future<?>> artworkRequests = new ArrayList<>();
     final ExecutorService phoneticWork = Executors.newSingleThreadExecutor();
     final LinkedHashSet<String> pendingTitles = new LinkedHashSet<>();
@@ -508,6 +509,26 @@ public final class MainActivity extends Activity {
             AppLog.w("MainActivity", "load saved config failed", e);
             config = null;
         }
+        if (!reduced && config != null) {
+            final String savedKey = prefs.getString(Prefs.SELECTED_SITE, "");
+            final String crashedKey = prefs.getString(Prefs.LOADING_SITE, "");
+            if (savedKey != null
+                    && !savedKey.isEmpty()
+                    && (crashedKey == null || crashedKey.isEmpty())) {
+                for (final Cms.Site s : config.sites) {
+                    if (s.key.equals(savedKey) && available(s)) {
+                        worker.execute(
+                                () -> {
+                                    try {
+                                        engine(s);
+                                    } catch (Throwable ignored) {
+                                    }
+                                });
+                        break;
+                    }
+                }
+            }
+        }
         // Phone / tablet only: restore the offline download queue (never started on TV).
         if (!isTvDevice()) DownloadManager.get(this);
         if (sharedPhonetic != null) {
@@ -662,6 +683,8 @@ public final class MainActivity extends Activity {
     LinearLayout vertical() {
         LinearLayout v = new LinearLayout(this);
         v.setOrientation(LinearLayout.VERTICAL);
+        v.setClipChildren(false);
+        v.setClipToPadding(false);
         return v;
     }
 
@@ -669,6 +692,8 @@ public final class MainActivity extends Activity {
         LinearLayout v = new LinearLayout(this);
         v.setOrientation(LinearLayout.HORIZONTAL);
         v.setGravity(Gravity.CENTER_VERTICAL);
+        v.setClipChildren(false);
+        v.setClipToPadding(false);
         return v;
     }
 
@@ -693,6 +718,7 @@ public final class MainActivity extends Activity {
         b.setGravity(Gravity.CENTER);
         b.setIncludeFontPadding(false);
         b.setStateListAnimator(null);
+        b.setOutlineProvider(null);
         b.setMinHeight(dp(48));
         b.setMinimumHeight(dp(48));
         b.setPadding(dp(20), dp(9), dp(20), dp(9));
@@ -798,6 +824,8 @@ public final class MainActivity extends Activity {
     void renderPage(String title, String eyebrow, boolean navigation) {
         preparePage(navigation);
         root = new FrameLayout(this);
+        root.setClipChildren(false);
+        root.setClipToPadding(false);
         root.setBackgroundColor(DARK);
         root.addView(ImageLoader.createAtmosphere(this), new FrameLayout.LayoutParams(-1, -1));
         homeAmbient = null;
@@ -809,6 +837,7 @@ public final class MainActivity extends Activity {
         }
         if (navigation) root.addView(homeGradient(), new FrameLayout.LayoutParams(-1, -1));
         scroll = new TvScrollView(this);
+        scroll.setClipChildren(false);
         scroll.setClipToPadding(false);
         scroll.setFillViewport(true);
         body = vertical();
@@ -935,6 +964,7 @@ public final class MainActivity extends Activity {
                         autoFocus = target;
                     } else {
                         View first = root.findViewWithTag("primary");
+                        if (first == null) first = root.findViewWithTag("detail-play");
                         if (first == null && s.home) {
                             first = root.findViewWithTag("home-tab:0");
                             if (first == null) first = root.findViewWithTag("source-switcher");
@@ -1510,6 +1540,12 @@ public final class MainActivity extends Activity {
                         });
         ui.removeCallbacks(automaticUpdate);
         ui.postDelayed(automaticUpdate, 4000);
+    }
+
+    @Override
+    protected void onPause() {
+        savePlaybackHistory(true);
+        super.onPause();
     }
 
     @Override

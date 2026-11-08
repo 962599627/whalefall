@@ -20,6 +20,19 @@ final class FocusMotion {
         boolean ready, pressed, border;
     }
 
+    static void unclipAncestors(View view) {
+        if (view == null) return;
+        ViewParent p = view.getParent();
+        while (p instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) p;
+            if (!g.getClipToOutline() && !"scroll-viewport-clip".equals(g.getTag())) {
+                if (g.getClipChildren()) g.setClipChildren(false);
+                if (g.getClipToPadding()) g.setClipToPadding(false);
+            }
+            p = g.getParent();
+        }
+    }
+
     static State state(View view) {
         State state = (State) view.getTag(R.id.focus_motion);
         if (state == null) {
@@ -28,7 +41,9 @@ final class FocusMotion {
             final State saved = state;
             view.addOnAttachStateChangeListener(
                     new View.OnAttachStateChangeListener() {
-                        public void onViewAttachedToWindow(View v) {}
+                        public void onViewAttachedToWindow(View v) {
+                            unclipAncestors(v);
+                        }
 
                         public void onViewDetachedFromWindow(View v) {
                             cancel(saved);
@@ -59,6 +74,7 @@ final class FocusMotion {
             int activeText,
             boolean border,
             float gain) {
+        unclipAncestors(view);
         State state = state(view);
         int strokePx = Math.round(view.getResources().getDisplayMetrics().density * 2);
         if (!state.ready) {

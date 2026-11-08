@@ -9,6 +9,10 @@ public final class JsonCmsEngine implements SourceEngine {
         this.site = site;
     }
 
+    private String detailAction() {
+        return site.type == 0 ? "videolist" : "detail";
+    }
+
     public String home() throws Exception {
         return Cms.fetch(Cms.query(site.api, "ac", "list"), site.headers);
     }
@@ -19,7 +23,7 @@ public final class JsonCmsEngine implements SourceEngine {
 
     public String category(String id, int page, java.util.Map<String, String> filters)
             throws Exception {
-        String url = Cms.query(site.api, "ac", "detail", "t", id, "pg", "" + page);
+        String url = Cms.query(site.api, "ac", detailAction(), "t", id, "pg", "" + page);
         for (java.util.Map.Entry<String, String> entry : filters.entrySet()) {
             // A remote filter schema cannot replace request routing/authentication.
             if (VideoFilters.allowedKey(entry.getKey()))
@@ -29,12 +33,13 @@ public final class JsonCmsEngine implements SourceEngine {
     }
 
     public String detail(String id) throws Exception {
-        return Cms.fetch(Cms.query(site.api, "ac", "detail", "ids", id), site.headers);
+        return Cms.fetch(Cms.query(site.api, "ac", detailAction(), "ids", id), site.headers);
     }
 
     public String search(String keyword, int page) throws Exception {
         return Cms.fetch(
-                Cms.query(site.api, "ac", "detail", "wd", keyword, "pg", "" + page), site.headers);
+                Cms.query(site.api, "ac", detailAction(), "wd", keyword, "pg", "" + page),
+                site.headers);
     }
 
     public boolean requiresExternalRuntime() {

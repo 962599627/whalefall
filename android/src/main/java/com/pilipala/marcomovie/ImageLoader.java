@@ -52,193 +52,303 @@ final class ImageLoader {
         image.setTag(address);
         if (!Cms.isHttp(address) && !address.startsWith("catpaw://")) return;
         final int ticket = a.generation;
-        image.post(
-                () -> {
-                    if (ticket != a.generation || !address.equals(image.getTag())) return;
-                    int width = ImageDecodePolicy.targetWidth(image.getWidth(), detail);
-                    int height = ImageDecodePolicy.targetHeight(image.getHeight(), detail);
-                    boolean crop = image.getScaleType() == ImageView.ScaleType.CENTER_CROP;
-                    final String key =
-                            ImageDecodePolicy.cacheKey(address, width, height, crop, detail);
-                    Bitmap cached = a.images.get(key);
-                    if (cached != null) {
-                        image.setImageBitmap(cached);
-                        com.pilipala.glass.GlassworkSurface.invalidateBackdrop(image);
-                        return;
-                    }
-                    Bitmap preview = a.images.get(address);
-                    if (preview != null) {
-                        image.setImageBitmap(preview);
-                        com.pilipala.glass.GlassworkSurface.invalidateBackdrop(image);
-                        if (!detail
-                                || (preview.getWidth() >= width && preview.getHeight() >= height))
-                            return;
-                    }
-                    final java.util.List<ImageView> owned = new java.util.ArrayList<>(2);
-                    synchronized (IN_FLIGHT) {
-                        java.util.List<ImageView> waiters = IN_FLIGHT.get(key);
-                        if (waiters != null) {
-                            if (!waiters.contains(image)) waiters.add(image);
-                            return;
-                        }
-                        owned.add(image);
-                        IN_FLIGHT.put(key, owned);
-                    }
-                    Future<?> request =
-                            RequestScope.submit(
-                                    a.artwork,
-                                    () -> {
-                                        if (ticket != a.generation) {
-                                            synchronized (IN_FLIGHT) {
-                                                if (IN_FLIGHT.get(key) == owned)
-                                                    IN_FLIGHT.remove(key);
-                                            }
-                                            return;
-                                        }
-                                        HttpURLConnection connection = null;
-                                        try {
-                                            Cms.ImageRequest source = Cms.imageRequest(address);
-                                            String targetUrl = Cms.normalizeHttp(source.url);
-                                            if (targetUrl.startsWith("catpaw://"))
-                                                targetUrl =
-                                                        new com.pilipala.catpaw.CatPawHost(a)
-                                                                .resolve(targetUrl);
-                                            if (targetUrl.contains("doubanio.com")) {
-                                                targetUrl =
-                                                        targetUrl
-                                                                .replace(
-                                                                        "img9.doubanio.com",
-                                                                        "img3.doubanio.com")
-                                                                .replace(
-                                                                        "/s_ratio_poster/",
-                                                                        "/l_ratio_poster/")
-                                                                .replace(
-                                                                        "/m_ratio_poster/",
-                                                                        "/l_ratio_poster/")
-                                                                .replace(
-                                                                        "/view/photo/spic/",
-                                                                        "/view/photo/lpic/")
-                                                                .replace(
-                                                                        "/view/photo/mpic/",
-                                                                        "/view/photo/lpic/");
-                                            }
-                                            connection =
-                                                    (HttpURLConnection)
-                                                            new URL(targetUrl).openConnection();
-                                            for (Map.Entry<String, String> header :
-                                                    source.headers.entrySet())
-                                                connection.setRequestProperty(
-                                                        header.getKey(), header.getValue());
-                                            String fragment = new URL(targetUrl).getRef();
-                                            if (fragment != null
-                                                    && fragment.startsWith("mm-emby=")) {
-                                                connection.setInstanceFollowRedirects(false);
-                                                com.pilipala.emby.EmbyLibrary library =
-                                                        com.pilipala.emby.EmbyAccounts.open(
-                                                                a,
-                                                                "emby://account/"
-                                                                        + fragment.substring(8));
-                                                for (Map.Entry<String, String> h :
-                                                        library.imageHeaders(targetUrl).entrySet())
-                                                    connection.setRequestProperty(
-                                                            h.getKey(), h.getValue());
-                                            }
-                                            connection.setConnectTimeout(7000);
-                                            connection.setReadTimeout(8000);
-                                            if (!source.headers.containsKey("User-Agent"))
-                                                connection.setRequestProperty(
-                                                        "User-Agent", Cms.USER_AGENT);
-                                            RequestScope.attach(connection);
-                                            byte[] bytes;
-                                            try (InputStream in = connection.getInputStream()) {
-                                                ByteArrayOutputStream out =
-                                                        new ByteArrayOutputStream();
-                                                byte[] buffer = new byte[8192];
-                                                int n;
-                                                while ((n = in.read(buffer)) != -1) {
-                                                    RequestScope.current().check();
-                                                    if (out.size() + n
-                                                            > (detail ? 8 : 3) * 1024 * 1024)
-                                                        throw new IOException("Poster too large");
-                                                    out.write(buffer, 0, n);
-                                                }
-                                                bytes = out.toByteArray();
-                                            }
-                                            BitmapFactory.Options options =
-                                                    new BitmapFactory.Options();
-                                            options.inJustDecodeBounds = true;
-                                            BitmapFactory.decodeByteArray(
-                                                    bytes, 0, bytes.length, options);
-                                            if (options.outWidth <= 0 || options.outHeight <= 0)
-                                                return;
-                                            options.inSampleSize =
-                                                    ImageDecodePolicy.sample(
-                                                            options.outWidth,
-                                                            options.outHeight,
-                                                            width,
-                                                            height,
-                                                            crop,
-                                                            detail);
-                                            options.inJustDecodeBounds = false;
+        int initialW = ImageDecodePolicy.targetWidth(image.getWidth(), detail);
+        int initialH = ImageDecodePolicy.targetHeight(image.getHeight(), detail);
+        boolean initialCrop = image.getScaleType() == ImageView.ScaleType.CENTER_CROP;
+        String initialKey =
+                ImageDecodePolicy.cacheKey(address, initialW, initialH, initialCrop, detail);
+        Bitmap immediate = a.images.get(initialKey);
+        if (immediate != null && !immediate.isRecycled()) {
+            image.setImageBitmap(immediate);
+            com.pilipala.glass.GlassworkSurface.invalidateBackdrop(image);
+            return;
+        }
+        Bitmap preview = a.images.get(address);
+        if (preview != null && !preview.isRecycled()) {
+            image.setImageBitmap(preview);
+            com.pilipala.glass.GlassworkSurface.invalidateBackdrop(image);
+            if (!detail || (preview.getWidth() >= initialW && preview.getHeight() >= initialH)) {
+                return;
+            }
+        }
+        startPosterLoad(a, address, image, detail, ticket);
+    }
+
+    private static void startPosterLoad(
+            MainActivity a, String address, ImageView image, boolean detail, final int ticket) {
+        if (ticket != a.generation || !address.equals(image.getTag())) return;
+        final int width = ImageDecodePolicy.targetWidth(image.getWidth(), detail);
+        final int height = ImageDecodePolicy.targetHeight(image.getHeight(), detail);
+        final boolean crop = image.getScaleType() == ImageView.ScaleType.CENTER_CROP;
+        final String key = ImageDecodePolicy.cacheKey(address, width, height, crop, detail);
+        Bitmap cached = a.images.get(key);
+        if (cached != null && !cached.isRecycled()) {
+            image.setImageBitmap(cached);
+            com.pilipala.glass.GlassworkSurface.invalidateBackdrop(image);
+            return;
+        }
+        final java.util.List<ImageView> owned = new java.util.ArrayList<>(2);
+        synchronized (IN_FLIGHT) {
+            java.util.List<ImageView> waiters = IN_FLIGHT.get(key);
+            if (waiters != null) {
+                if (!waiters.contains(image)) waiters.add(image);
+                return;
+            }
+            owned.add(image);
+            IN_FLIGHT.put(key, owned);
+        }
+        Future<?> request =
+                RequestScope.submit(
+                        a.artwork,
+                        () -> {
+                            if (ticket != a.generation) {
+                                synchronized (IN_FLIGHT) {
+                                    if (IN_FLIGHT.get(key) == owned) IN_FLIGHT.remove(key);
+                                }
+                                return;
+                            }
+                            HttpURLConnection connection = null;
+                            try {
+                                Cms.ImageRequest source = Cms.imageRequest(address);
+                                String resolvedUrl = Cms.normalizeHttp(source.url);
+                                if (resolvedUrl.startsWith("catpaw://")) {
+                                    resolvedUrl =
+                                            new com.pilipala.catpaw.CatPawHost(a)
+                                                    .resolve(resolvedUrl);
+                                }
+                                String targetUrl = upgradePosterUrl(resolvedUrl, detail);
+                                byte[] bytes = readDiskCachedPoster(a, targetUrl);
+                                if (bytes == null) {
+                                    connection =
+                                            (HttpURLConnection) new URL(targetUrl).openConnection();
+                                    for (Map.Entry<String, String> header :
+                                            source.headers.entrySet())
+                                        connection.setRequestProperty(
+                                                header.getKey(), header.getValue());
+                                    String fragment = new URL(targetUrl).getRef();
+                                    if (fragment != null && fragment.startsWith("mm-emby=")) {
+                                        connection.setInstanceFollowRedirects(false);
+                                        com.pilipala.emby.EmbyLibrary library =
+                                                com.pilipala.emby.EmbyAccounts.open(
+                                                        a,
+                                                        "emby://account/" + fragment.substring(8));
+                                        for (Map.Entry<String, String> h :
+                                                library.imageHeaders(targetUrl).entrySet())
+                                            connection.setRequestProperty(h.getKey(), h.getValue());
+                                    }
+                                    applyArtworkHeaders(connection, targetUrl, source.headers);
+                                    connection.setConnectTimeout(4500);
+                                    connection.setReadTimeout(5500);
+                                    if (!source.headers.containsKey("User-Agent"))
+                                        connection.setRequestProperty("User-Agent", Cms.USER_AGENT);
+                                    RequestScope.attach(connection);
+                                    try (InputStream in = connection.getInputStream()) {
+                                        ByteArrayOutputStream out = new ByteArrayOutputStream();
+                                        byte[] buffer = new byte[8192];
+                                        int n;
+                                        while ((n = in.read(buffer)) != -1) {
                                             RequestScope.current().check();
-                                            Bitmap bitmap =
-                                                    BitmapFactory.decodeByteArray(
-                                                            bytes, 0, bytes.length, options);
-                                            if (bitmap != null) {
-                                                if (ticket != a.generation
-                                                        || Thread.currentThread().isInterrupted()) {
-                                                    bitmap.recycle();
-                                                    return;
-                                                }
-                                                a.images.put(key, bitmap);
-                                                final java.util.List<ImageView> targets;
-                                                synchronized (IN_FLIGHT) {
-                                                    java.util.List<ImageView> removed =
-                                                            IN_FLIGHT.get(key) == owned
-                                                                    ? IN_FLIGHT.remove(key)
-                                                                    : null;
-                                                    targets =
-                                                            removed == null
-                                                                    ? java.util.Collections
-                                                                            .singletonList(image)
-                                                                    : new java.util.ArrayList<>(
-                                                                            removed);
-                                                }
-                                                a.ui.post(
-                                                        () -> {
-                                                            if (ticket != a.generation
-                                                                    || a.isFinishing()) return;
-                                                            for (ImageView target : targets) {
-                                                                if (target != null
-                                                                        && address.equals(
-                                                                                target.getTag())) {
-                                                                    target.setImageBitmap(bitmap);
-                                                                    com.pilipala.glass
-                                                                            .GlassworkSurface
-                                                                            .invalidateBackdrop(
-                                                                                    target);
-                                                                }
-                                                            }
-                                                        });
-                                            }
-                                        } catch (Exception ignored) {
-                                        } finally {
-                                            synchronized (IN_FLIGHT) {
-                                                if (IN_FLIGHT.get(key) == owned)
-                                                    IN_FLIGHT.remove(key);
-                                            }
-                                            if (connection != null) {
-                                                RequestScope.detach(connection);
-                                                connection.disconnect();
-                                            }
+                                            if (out.size() + n > (detail ? 8 : 3) * 1024 * 1024)
+                                                throw new IOException("Poster too large");
+                                            out.write(buffer, 0, n);
                                         }
-                                    });
-                    for (java.util.Iterator<Future<?>> it = a.artworkRequests.iterator();
-                            it.hasNext(); ) {
-                        if (it.next().isDone()) it.remove();
-                    }
-                    a.artworkRequests.add(request);
-                });
+                                        bytes = out.toByteArray();
+                                    }
+                                    if (bytes != null && bytes.length > 128) {
+                                        writeDiskCachedPoster(a, targetUrl, bytes);
+                                    }
+                                }
+                                if (bytes == null || bytes.length == 0) return;
+                                BitmapFactory.Options options = new BitmapFactory.Options();
+                                options.inJustDecodeBounds = true;
+                                BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+                                if (options.outWidth <= 0 || options.outHeight <= 0) return;
+                                options.inSampleSize =
+                                        ImageDecodePolicy.sample(
+                                                options.outWidth,
+                                                options.outHeight,
+                                                width,
+                                                height,
+                                                crop,
+                                                detail);
+                                options.inJustDecodeBounds = false;
+                                RequestScope.current().check();
+                                Bitmap bitmap =
+                                        BitmapFactory.decodeByteArray(
+                                                bytes, 0, bytes.length, options);
+                                if (bitmap != null) {
+                                    if (ticket != a.generation
+                                            || Thread.currentThread().isInterrupted()) {
+                                        bitmap.recycle();
+                                        return;
+                                    }
+                                    a.images.put(key, bitmap);
+                                    Bitmap existingPreview = a.images.get(address);
+                                    if (existingPreview == null
+                                            || existingPreview.isRecycled()
+                                            || bitmap.getWidth() >= existingPreview.getWidth()) {
+                                        a.images.put(address, bitmap);
+                                    }
+                                    final java.util.List<ImageView> targets;
+                                    synchronized (IN_FLIGHT) {
+                                        java.util.List<ImageView> removed =
+                                                IN_FLIGHT.get(key) == owned
+                                                        ? IN_FLIGHT.remove(key)
+                                                        : null;
+                                        targets =
+                                                removed == null
+                                                        ? java.util.Collections.singletonList(image)
+                                                        : new java.util.ArrayList<>(removed);
+                                    }
+                                    a.ui.post(
+                                            () -> {
+                                                if (ticket != a.generation || a.isFinishing())
+                                                    return;
+                                                for (ImageView target : targets) {
+                                                    if (target != null
+                                                            && address.equals(target.getTag())) {
+                                                        target.setImageBitmap(bitmap);
+                                                        com.pilipala.glass.GlassworkSurface
+                                                                .invalidateBackdrop(target);
+                                                    }
+                                                }
+                                            });
+                                }
+                            } catch (Exception ignored) {
+                            } finally {
+                                synchronized (IN_FLIGHT) {
+                                    if (IN_FLIGHT.get(key) == owned) IN_FLIGHT.remove(key);
+                                }
+                                if (connection != null) {
+                                    RequestScope.detach(connection);
+                                    connection.disconnect();
+                                }
+                            }
+                        });
+        for (java.util.Iterator<Future<?>> it = a.artworkRequests.iterator(); it.hasNext(); ) {
+            if (it.next().isDone()) it.remove();
+        }
+        a.artworkRequests.add(request);
+    }
+
+    private static File diskCacheFile(MainActivity a, String url) {
+        try {
+            File dir = new File(a.getCacheDir(), "posters_v2");
+            if (!dir.exists()) dir.mkdirs();
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest(url.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder(32);
+            for (int i = 0; i < 16; i++) {
+                sb.append(String.format(java.util.Locale.ROOT, "%02x", d[i] & 255));
+            }
+            return new File(dir, sb.toString() + ".img");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static byte[] readDiskCachedPoster(MainActivity a, String url) {
+        try {
+            File f = diskCacheFile(a, url);
+            if (f == null || !f.isFile()) return null;
+            long len = f.length();
+            if (len <= 128 || len > 8 * 1024 * 1024) return null;
+            if (System.currentTimeMillis() - f.lastModified() > 7L * 24 * 3600 * 1000L) {
+                return null;
+            }
+            byte[] buf = new byte[(int) len];
+            try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+                int off = 0;
+                while (off < buf.length) {
+                    int r = in.read(buf, off, buf.length - off);
+                    if (r < 0) break;
+                    off += r;
+                }
+                if (off != buf.length) return null;
+            }
+            return buf;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static void writeDiskCachedPoster(MainActivity a, String url, byte[] bytes) {
+        try {
+            File f = diskCacheFile(a, url);
+            if (f == null) return;
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
+                out.write(bytes);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    static String upgradePosterUrl(String rawUrl, boolean detail) {
+        if (rawUrl == null || rawUrl.isEmpty()) return "";
+        String url = rawUrl;
+        if (url.contains("doubanio.com")) {
+            url =
+                    url.replace("img9.doubanio.com", "img3.doubanio.com")
+                            .replace("img1.doubanio.com", "img3.doubanio.com")
+                            .replace("img2.doubanio.com", "img3.doubanio.com");
+            if (detail) {
+                url =
+                        url.replace("/s_ratio_poster/", "/l_ratio_poster/")
+                                .replace("/m_ratio_poster/", "/l_ratio_poster/")
+                                .replace("/view/photo/spic/", "/view/photo/lpic/")
+                                .replace("/view/photo/mpic/", "/view/photo/lpic/")
+                                .replace("/view/photo/s/", "/view/photo/l/")
+                                .replace("/view/photo/m/", "/view/photo/l/");
+                if (url.endsWith(".webp")) {
+                    url = url.substring(0, url.length() - 5) + ".jpg";
+                }
+            } else {
+                url =
+                        url.replace("/s_ratio_poster/", "/m_ratio_poster/")
+                                .replace("/view/photo/spic/", "/view/photo/mpic/");
+            }
+        }
+        if (detail) {
+            if (url.contains("lain.bgm.tv") || url.contains("bgm.tv/pic/cover/")) {
+                url =
+                        url.replace("/pic/cover/c/", "/pic/cover/l/")
+                                .replace("/pic/cover/m/", "/pic/cover/l/")
+                                .replace("/pic/cover/s/", "/pic/cover/l/")
+                                .replace("/r/400/", "/r/800/");
+            }
+            if (url.contains("hdslb.com") || url.contains("biliimg.com")) {
+                int at = url.indexOf('@');
+                if (at > 0) url = url.substring(0, at);
+            }
+            if (url.contains("bcebos.com")) {
+                int q = url.indexOf('?');
+                if (q > 0) url = url.substring(0, q);
+            }
+        }
+        return url;
+    }
+
+    static void applyArtworkHeaders(
+            HttpURLConnection connection, String url, Map<String, String> existing) {
+        if (existing != null && existing.containsKey("Referer")) return;
+        String lower = url.toLowerCase();
+        if (lower.contains("doubanio.com") || lower.contains("douban.com")) {
+            connection.setRequestProperty("Referer", "https://movie.douban.com/");
+        } else if (lower.contains("hdslb.com")
+                || lower.contains("biliimg.com")
+                || lower.contains("bilibili.com")) {
+            connection.setRequestProperty("Referer", "https://www.bilibili.com/");
+        } else if (lower.contains("bcebos.com") || lower.contains("baidu.com")) {
+            connection.setRequestProperty("Referer", "https://baike.baidu.com/");
+        } else if (lower.contains("bgm.tv") || lower.contains("bangumi.tv")) {
+            connection.setRequestProperty("Referer", "https://bgm.tv/");
+        } else if (lower.contains("bing.net") || lower.contains("bing.com")) {
+            connection.setRequestProperty("Referer", "https://cn.bing.com/");
+        } else if (lower.contains("qpic.cn") || lower.contains("gtimg.cn")) {
+            connection.setRequestProperty("Referer", "https://v.qq.com/");
+        } else if (lower.contains("sinaimg.cn")) {
+            connection.setRequestProperty("Referer", "https://weibo.com/");
+        }
     }
 
     static View createAtmosphere(MainActivity a) {

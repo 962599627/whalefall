@@ -50,10 +50,12 @@ final class PlayerBubble {
         panel.addView(heading);
         ScrollView scroll = new TvScrollView(a);
         scroll.setVerticalScrollBarEnabled(false);
-        scroll.setClipChildren(true);
-        scroll.setClipToPadding(true);
+        scroll.setClipChildren(false);
+        scroll.setClipToPadding(false);
         LinearLayout items = a.vertical();
-        items.setClipChildren(true);
+        items.setClipChildren(false);
+        items.setClipToPadding(false);
+        items.setPadding(a.dp(6), a.dp(4), a.dp(6), a.dp(4));
         scroll.addView(items);
         int[] origin = new int[2];
         anchor.getLocationInWindow(origin);
@@ -68,6 +70,7 @@ final class PlayerBubble {
                         canvas.restoreToCount(save);
                     }
                 };
+        viewport.setTag("scroll-viewport-clip");
         viewport.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         panel.addView(
                 viewport,

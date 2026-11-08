@@ -159,6 +159,48 @@ final class SourceController {
                     .start();
     }
 
+    static void prefetchDetail(MainActivity a, Cms.Site site, Cms.Video video) {
+        if (a == null
+                || a.reduced
+                || site == null
+                || video == null
+                || video.id == null
+                || video.id.isEmpty()) return;
+        if (ListingRoute.isRedirect(video.tag, video.action, video.id)) return;
+        if (video.lines != null
+                && !video.lines.isEmpty()
+                && video.description != null
+                && !video.description.trim().isEmpty()) return;
+        final int epoch = a.engineEpoch;
+        final String id = video.id;
+        final String key = epoch + ":" + site.key.length() + ":" + site.key + id;
+        if (a.detailCache.get(key) != null) return;
+        RequestScope.submit(
+                a.details,
+                () -> {
+                    try {
+                        if (a.detailCache.get(key) != null) return;
+                        String raw =
+                                a.detailFlights.get(
+                                        key,
+                                        () -> {
+                                            String cached = a.detailCache.get(key);
+                                            if (cached != null) return cached;
+                                            SourceEngine source = a.engine(site);
+                                            long[] phases = new long[2];
+                                            String fetched =
+                                                    SourceGate.measured(
+                                                            phases, () -> source.detail(id));
+                                            if (fetched != null && epoch == a.engineEpoch) {
+                                                a.detailCache.put(key, fetched);
+                                            }
+                                            return fetched;
+                                        });
+                    } catch (Throwable ignored) {
+                    }
+                });
+    }
+
     static void loadDetail(
             MainActivity a, Cms.Site site, String id, MainActivity.Done<Cms.Video> done) {
         final int ticket = a.generation, epoch = a.engineEpoch;
@@ -173,10 +215,28 @@ final class SourceController {
                                 String raw = a.detailCache.get(key);
                                 timing.cached = raw != null;
                                 if (raw == null) {
-                                    SourceEngine source = a.engine(site);
-                                    timing.engineReady = SystemClock.elapsedRealtime();
-                                    long[] phases = new long[2];
-                                    raw = SourceGate.measured(phases, () -> source.detail(id));
+                                    final long[] phases = new long[2];
+                                    raw =
+                                            a.detailFlights.get(
+                                                    key,
+                                                    () -> {
+                                                        String cached = a.detailCache.get(key);
+                                                        if (cached != null) return cached;
+                                                        SourceEngine source = a.engine(site);
+                                                        timing.engineReady =
+                                                                SystemClock.elapsedRealtime();
+                                                        String fetched =
+                                                                SourceGate.measured(
+                                                                        phases,
+                                                                        () -> source.detail(id));
+                                                        if (fetched != null
+                                                                && epoch == a.engineEpoch) {
+                                                            a.detailCache.put(key, fetched);
+                                                        }
+                                                        return fetched;
+                                                    });
+                                    if (timing.engineReady == 0)
+                                        timing.engineReady = SystemClock.elapsedRealtime();
                                     timing.gateWaitNanos = phases[0];
                                     timing.delegateNanos = phases[1];
                                     timing.returned = SystemClock.elapsedRealtime();

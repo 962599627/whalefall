@@ -11,8 +11,15 @@ public final class Cms {
     public static final int MAX_JSON = 4 * 1024 * 1024;
     public static final String USER_AGENT = "okhttp/3.15";
 
+    public static final class Parse {
+        public String name = "", url = "";
+        public int type;
+        public final Map<String, String> headers = new LinkedHashMap<>();
+    }
+
     public static final class Config {
         public final List<Site> sites = new ArrayList<>();
+        public final List<Parse> parses = new ArrayList<>();
         public String raw;
         public String spider;
         public String origin = "", warehouse = "";
@@ -28,20 +35,26 @@ public final class Cms {
         public Object ext;
 
         public boolean supported() {
-            return type == 1 && isHttp(api) && !requiresParser;
+            return (type == 0 || type == 1) && isHttp(api);
         }
 
         public String limitation() {
-            if (requiresParser) return "此来源需要网页解析，基础版尚未支持。";
             if (type == 3 || api.startsWith("csp_") || api.endsWith(".js"))
                 return "此来源需要 Spider / JS / JAR 运行环境，基础版尚未支持。";
-            if (type != 1) return "基础版暂支持 type 1 JSON CMS，此来源已保留但不能浏览。";
-            return "此来源不是可直接请求的 HTTP(S) JSON CMS。";
+            if (type != 0 && type != 1) return "暂不支持此类型来源，已保留在列表中。";
+            return "此来源不是可直接请求的 HTTP(S) CMS。";
         }
     }
 
     public static final class Category {
         public String id, name;
+
+        public Category() {}
+
+        public Category(String id, String name) {
+            this.id = id;
+            this.name = name;
+        }
     }
 
     public static final class Video {
@@ -108,14 +121,44 @@ public final class Cms {
     }
 
     public static boolean isMedia(String value) {
-        return isHttp(value)
-                || (value != null
-                        && (value.startsWith("rtsp://")
-                                || value.startsWith("rtmp://")
-                                || value.startsWith("mms://")
-                                || value.startsWith("udp://")
-                                || value.startsWith("file://")
-                                || value.startsWith("content://")));
+        if (isHttp(value)) return true;
+        if (value == null) return false;
+        String lower = value.toLowerCase(Locale.ROOT);
+        return lower.startsWith("rtsp://")
+                || lower.startsWith("rtmp://")
+                || lower.startsWith("mms://")
+                || lower.startsWith("udp://")
+                || lower.startsWith("rtp://")
+                || lower.startsWith("file://")
+                || lower.startsWith("content://");
+    }
+
+    public static boolean isDirectStreamUrl(String value) {
+        if (value == null || value.isEmpty()) return false;
+        String lower = value.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("rtsp://")
+                || lower.startsWith("rtmp://")
+                || lower.startsWith("udp://")
+                || lower.startsWith("rtp://")
+                || lower.startsWith("mms://")
+                || lower.startsWith("file://")
+                || lower.startsWith("content://")
+                || lower.startsWith("magnet:?")) return true;
+        if (!isHttp(value)) return false;
+        String path = value.split("[?#]", 2)[0].toLowerCase(Locale.ROOT);
+        return path.endsWith(".m3u8")
+                || path.endsWith(".mp4")
+                || path.endsWith(".flv")
+                || path.endsWith(".mkv")
+                || path.endsWith(".ts")
+                || path.endsWith(".webm")
+                || path.endsWith(".mpd")
+                || path.endsWith(".mov")
+                || path.endsWith(".avi")
+                || lower.contains(".m3u8?")
+                || lower.contains(".mp4?")
+                || lower.contains(".flv?")
+                || lower.contains("/proxy?");
     }
 
     public static boolean isHttp(String value) {
@@ -338,11 +381,63 @@ public final class Cms {
         return prefix + " 扩展片源";
     }
 
+    private static void copySafeHeaders(Map<String, String> target, Object headerObj) {
+        if (headerObj instanceof String) {
+            String str = ((String) headerObj).trim();
+            if (str.startsWith("{")) {
+                try {
+                    headerObj = new JSONObject(str);
+                } catch (Exception ignored) {
+                    headerObj = null;
+                }
+            }
+        }
+        if (headerObj instanceof JSONObject) {
+            JSONObject o = (JSONObject) headerObj;
+            Iterator<String> it = o.keys();
+            while (it.hasNext()) {
+                String k = it.next();
+                String v = o.optString(k, "");
+                if (k == null || v == null || v.isEmpty() || v.contains("\r") || v.contains("\n"))
+                    continue;
+                for (String allowed :
+                        new String[] {
+                            "User-Agent", "Referer", "Cookie", "Origin", "Authorization"
+                        }) {
+                    if (k.equalsIgnoreCase(allowed)) {
+                        target.put(allowed, v);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     public static Config parseConfig(String text, String origin) throws Exception {
         if (text == null || text.length() > MAX_JSON) throw new IOException("配置超过 4 MB 限制");
         String trimmed = text.trim().replaceFirst("^\\uFEFF", "");
         if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
-            if (looksLikeDrpyRule(trimmed) && (origin == null || origin.isEmpty())) {
+            if (origin != null
+                    && isHttp(origin)
+                    && !trimmed.startsWith("/")
+                    && (trimmed.startsWith("#EXTM3U")
+                            || trimmed.contains("#EXTINF:")
+                            || trimmed.contains(",#genre#"))) {
+                JSONObject synthetic = new JSONObject();
+                JSONArray lives = new JSONArray();
+                lives.put(new JSONObject().put("name", "电视直播").put("url", origin));
+                synthetic.put("lives", lives);
+                JSONArray sites = new JSONArray();
+                sites.put(
+                        new JSONObject()
+                                .put("key", "live-only-placeholder")
+                                .put("name", "仅直播源 (请在直播页观看)")
+                                .put("type", 3)
+                                .put("api", "csp_LivePlaceholder"));
+                synthetic.put("sites", sites);
+                trimmed = synthetic.toString();
+                text = trimmed;
+            } else if (looksLikeDrpyRule(trimmed) && (origin == null || origin.isEmpty())) {
                 JSONObject rule =
                         new JSONObject()
                                 .put("key", "drpy_" + Math.abs(trimmed.hashCode()))
@@ -353,8 +448,7 @@ public final class Cms {
                 return parseConfig(
                         new JSONObject().put("sites", new JSONArray().put(rule)).toString(),
                         origin);
-            }
-            if (looksLikeJsSpider(trimmed, origin)
+            } else if (looksLikeJsSpider(trimmed, origin)
                     && origin != null
                     && (isHttp(origin) || origin.startsWith("file://"))) {
                 String title = extractScriptTitle(trimmed, origin, "JS");
@@ -368,8 +462,7 @@ public final class Cms {
                                 .put("searchable", 1);
                 JSONObject synth = new JSONObject().put("sites", new JSONArray().put(siteObj));
                 return parseConfig(synth.toString(), origin);
-            }
-            if (looksLikePySpider(trimmed, origin)) {
+            } else if (looksLikePySpider(trimmed, origin)) {
                 String title = extractScriptTitle(trimmed, origin, "PY");
                 JSONObject siteObj = new JSONObject();
                 siteObj.put(
@@ -417,6 +510,17 @@ public final class Cms {
                             (raw, base) -> parseConfig(raw, base));
             return parseConfig(resolved, origin);
         }
+        if ((sites == null || sites.length() == 0)
+                && root.optJSONArray("lives") != null
+                && root.optJSONArray("lives").length() > 0) {
+            sites = new JSONArray();
+            sites.put(
+                    new JSONObject()
+                            .put("key", "live-only-placeholder")
+                            .put("name", "仅直播配置 (请前往直播页)")
+                            .put("type", 3)
+                            .put("api", "csp_LivePlaceholder"));
+        }
         origin = root.optString(Warehouse.ORIGIN, origin);
         if (sites == null || sites.length() == 0) throw new IOException("配置中没有 sites 来源列表");
         if (sites.length() > 500) throw new IOException("来源超过 500 个限制");
@@ -427,12 +531,35 @@ public final class Cms {
         JSONArray directory = root.optJSONArray(Warehouse.DEPOTS);
         if (directory != null) out.depots = directory;
         String rawSpider = root.optString("spider", "");
+        if (rawSpider.isEmpty()) rawSpider = root.optString("jar", "");
         if (!rawSpider.isEmpty()) {
             String[] spParts = rawSpider.split(";md5;", 2);
             out.spider =
                     resolve(origin, spParts[0]) + (spParts.length == 2 ? ";md5;" + spParts[1] : "");
         } else {
             out.spider = "";
+        }
+        JSONArray parses = root.optJSONArray("parses");
+        if (parses != null) {
+            for (int i = 0; i < Math.min(100, parses.length()); i++) {
+                JSONObject pj = parses.optJSONObject(i);
+                if (pj == null) continue;
+                String pUrl = pj.optString("url", "").trim();
+                if (!isHttp(pUrl)) continue;
+                Parse p = new Parse();
+                p.name = pj.optString("name", "解析 " + (i + 1));
+                p.url = pUrl;
+                p.type = pj.optInt("type", 0);
+                p.headers.put("User-Agent", USER_AGENT);
+                copySafeHeaders(p.headers, pj.opt("header"));
+                copySafeHeaders(p.headers, pj.opt("headers"));
+                JSONObject pExt = pj.optJSONObject("ext");
+                if (pExt != null) {
+                    copySafeHeaders(p.headers, pExt.opt("header"));
+                    copySafeHeaders(p.headers, pExt.opt("headers"));
+                }
+                out.parses.add(p);
+            }
         }
         Set<String> keys = new HashSet<>();
         for (int i = 0; i < sites.length(); i++) {
@@ -461,13 +588,13 @@ public final class Cms {
             s.requiresParser =
                     !s.playUrl.isEmpty() || j.optInt("parse", 0) == 1 || j.optInt("jx", 0) == 1;
             s.headers.put("User-Agent", USER_AGENT);
-            Object h = j.opt("header");
-            if (h instanceof String) {
-                try {
-                    h = new JSONObject((String) h);
-                } catch (Exception ignored) {
-                    h = null;
-                }
+            Object h = j.opt("headers");
+            if (h == null) h = j.opt("header");
+            copySafeHeaders(s.headers, j.opt("header"));
+            copySafeHeaders(s.headers, j.opt("headers"));
+            String ua = j.optString("ua", "");
+            if (!ua.isEmpty() && !ua.contains("\r") && !ua.contains("\n")) {
+                s.headers.put("User-Agent", ua);
             }
             if (h instanceof JSONObject) {
                 JSONObject o = (JSONObject) h;
@@ -486,6 +613,15 @@ public final class Cms {
                                                     "connection")
                                             .contains(k.toLowerCase(Locale.ROOT))))
                         s.headers.put(k, o.optString(k));
+                }
+            }
+            if (s.ext instanceof JSONObject) {
+                JSONObject extObj = (JSONObject) s.ext;
+                copySafeHeaders(s.headers, extObj.opt("header"));
+                copySafeHeaders(s.headers, extObj.opt("headers"));
+                String extUa = extObj.optString("ua", "");
+                if (!extUa.isEmpty() && !extUa.contains("\r") && !extUa.contains("\n")) {
+                    s.headers.put("User-Agent", extUa);
                 }
             }
             out.sites.add(s);
@@ -537,7 +673,36 @@ public final class Cms {
             }
             clean.append(ch);
         }
-        return clean.toString();
+        // Strip trailing commas before '}' or ']' outside string literals
+        String noComments = clean.toString();
+        StringBuilder out = new StringBuilder(noComments.length());
+        quoted = false;
+        escaped = false;
+        for (int i = 0; i < noComments.length(); i++) {
+            char ch = noComments.charAt(i);
+            if (quoted) {
+                out.append(ch);
+                if (escaped) escaped = false;
+                else if (ch == '\\') escaped = true;
+                else if (ch == '"') quoted = false;
+                continue;
+            }
+            if (ch == '"') {
+                quoted = true;
+                out.append(ch);
+                continue;
+            }
+            if (ch == ',') {
+                int j = i + 1;
+                while (j < noComments.length() && Character.isWhitespace(noComments.charAt(j))) j++;
+                if (j < noComments.length()
+                        && (noComments.charAt(j) == '}' || noComments.charAt(j) == ']')) {
+                    continue;
+                }
+            }
+            out.append(ch);
+        }
+        return out.toString();
     }
 
     public static String read(InputStream in, int limit) throws IOException {
@@ -552,8 +717,41 @@ public final class Cms {
         return document(out.toByteArray());
     }
 
-    /** Some operator-provided TVBox configs are JPEG + '**' + Base64(JSON). */
+    private static byte[] gunzipIfNeeded(byte[] bytes) {
+        if (bytes != null
+                && bytes.length >= 2
+                && (bytes[0] & 0xff) == 0x1f
+                && (bytes[1] & 0xff) == 0x8b) {
+            try (java.util.zip.GZIPInputStream gis =
+                            new java.util.zip.GZIPInputStream(new ByteArrayInputStream(bytes));
+                    ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = gis.read(buf)) != -1) {
+                    if (bos.size() + n > MAX_JSON) break;
+                    bos.write(buf, 0, n);
+                }
+                return bos.toByteArray();
+            } catch (Exception ignored) {
+            }
+        }
+        return bytes;
+    }
+
+    private static boolean looksLikeConfigPayload(String s) {
+        if (s == null) return false;
+        String t = s.trim().replaceFirst("^\\uFEFF", "");
+        return t.startsWith("{")
+                || t.startsWith("[")
+                || t.startsWith("//")
+                || t.startsWith("/*")
+                || t.startsWith("#EXTM3U")
+                || t.contains(",#genre#");
+    }
+
+    /** Some operator-provided TVBox configs are JPEG/PNG/GIF + '**' + Base64(JSON) or AES hex. */
     public static String document(byte[] bytes) throws IOException {
+        bytes = gunzipIfNeeded(bytes);
         if (bytes.length >= 2 && (bytes[0] & 255) == 255 && (bytes[1] & 255) == 216) {
             int end = -1;
             for (int i = 2; i < bytes.length - 1; i++)
@@ -568,8 +766,37 @@ public final class Cms {
                         marker = i + 2;
                         break;
                     }
+            if (marker < 0) {
+                for (int i = bytes.length - 2; i >= 2; i--) {
+                    if (bytes[i] == '*' && bytes[i + 1] == '*') {
+                        marker = i + 2;
+                        break;
+                    }
+                }
+            }
             if (marker < 0) throw new IOException("配置图片中没有受支持的 JSON 载荷");
             return decodeBase64Range(bytes, marker, bytes.length);
+        }
+        // Check binary PNG / GIF / arbitrary carrier with '**' + Base64
+        boolean isPngOrGif =
+                (bytes.length >= 4
+                                && (bytes[0] & 0xff) == 0x89
+                                && bytes[1] == 'P'
+                                && bytes[2] == 'N'
+                                && bytes[3] == 'G')
+                        || (bytes.length >= 4
+                                && bytes[0] == 'G'
+                                && bytes[1] == 'I'
+                                && bytes[2] == 'F'
+                                && bytes[3] == '8');
+        if (isPngOrGif) {
+            for (int i = bytes.length - 2; i >= 4; i--) {
+                if (bytes[i] == '*' && bytes[i + 1] == '*') {
+                    String decoded = decodeBase64Range(bytes, i + 2, bytes.length);
+                    if (looksLikeConfigPayload(decoded)) return decoded;
+                    break;
+                }
+            }
         }
         String text;
         if (bytes.length >= 2 && (bytes[0] & 255) == 255 && (bytes[1] & 255) == 254)
@@ -579,30 +806,34 @@ public final class Cms {
         else text = new String(bytes, "UTF-8");
         String trimmed = text.trim().replaceFirst("^\\uFEFF", "");
         if (looksLikeJsSpider(trimmed, "") || looksLikePySpider(trimmed, "")) return text;
-        if (!trimmed.startsWith("{") && !trimmed.startsWith("[") && !trimmed.startsWith("/")) {
+        if (!trimmed.startsWith("{")
+                && !trimmed.startsWith("[")
+                && !trimmed.startsWith("/")
+                && !trimmed.startsWith("<")) {
             int star = trimmed.lastIndexOf("**");
             if (star >= 0 && star + 2 < trimmed.length()) {
                 try {
                     byte[] sub = trimmed.substring(star + 2).getBytes("US-ASCII");
                     String decoded = decodeBase64Range(sub, 0, sub.length);
-                    if (decoded.trim().replaceFirst("^\\uFEFF", "").startsWith("{")) return decoded;
+                    if (looksLikeConfigPayload(decoded)) return decoded;
                 } catch (Exception ignored) {
                 }
             }
-            if (trimmed.startsWith("2423") && trimmed.length() > 36 && trimmed.length() % 2 == 0) {
+            String compactHex = trimmed.replaceAll("\\s+", "");
+            if (compactHex.startsWith("2423")
+                    && compactHex.length() > 36
+                    && compactHex.length() % 2 == 0) {
                 try {
-                    String decrypted = decryptHexAes(trimmed);
-                    if (decrypted != null
-                            && decrypted.trim().replaceFirst("^\\uFEFF", "").startsWith("{"))
-                        return decrypted;
+                    String decrypted = decryptHexAes(compactHex);
+                    if (looksLikeConfigPayload(decrypted)) return decrypted;
                 } catch (Exception ignored) {
                 }
             }
-            if (trimmed.startsWith("eyJ")) {
+            if (trimmed.startsWith("eyJ") || (trimmed.length() >= 32 && !trimmed.contains(" "))) {
                 try {
                     byte[] sub = trimmed.getBytes("US-ASCII");
                     String decoded = decodeBase64Range(sub, 0, sub.length);
-                    if (decoded.trim().replaceFirst("^\\uFEFF", "").startsWith("{")) return decoded;
+                    if (looksLikeConfigPayload(decoded)) return decoded;
                 } catch (Exception ignored) {
                 }
             }
@@ -735,7 +966,11 @@ public final class Cms {
                     continue;
                 }
                 if (status < 200 || status >= 300) throw new IOException("来源返回 HTTP " + status);
-                try (InputStream input = c.getInputStream()) {
+                InputStream rawIn = c.getInputStream();
+                if ("gzip".equalsIgnoreCase(c.getContentEncoding())) {
+                    rawIn = new java.util.zip.GZIPInputStream(rawIn);
+                }
+                try (InputStream input = rawIn) {
                     return read(input, MAX_JSON);
                 }
             } finally {
@@ -791,7 +1026,49 @@ public final class Cms {
         return base + "?" + joined;
     }
 
+    private static String unescapeXml(String text) {
+        if (text == null || text.isEmpty()) return "";
+        String s = text.trim();
+        if (s.startsWith("<![CDATA[") && s.endsWith("]]>")) {
+            s = s.substring(9, s.length() - 3).trim();
+        } else {
+            s = s.replaceAll("<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>", "$1");
+        }
+        return s.replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&apos;", "'")
+                .replace("&#39;", "'")
+                .trim();
+    }
+
+    private static String xmlTagValue(String xmlBlock, String tag) {
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile(
+                                "<" + tag + "\\b[^>]*>([\\s\\S]*?)</" + tag + ">",
+                                java.util.regex.Pattern.CASE_INSENSITIVE)
+                        .matcher(xmlBlock);
+        return m.find() ? unescapeXml(m.group(1)) : "";
+    }
+
     public static List<Category> categories(String json) throws Exception {
+        if (json != null && json.trim().startsWith("<")) {
+            List<Category> result = new ArrayList<>();
+            java.util.regex.Matcher m =
+                    java.util.regex.Pattern.compile(
+                                    "<ty\\b[^>]*\\bid\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>([\\s\\S]*?)</ty>",
+                                    java.util.regex.Pattern.CASE_INSENSITIVE)
+                            .matcher(json);
+            while (m.find()) {
+                Category c = new Category();
+                c.id = m.group(1).trim();
+                c.name = unescapeXml(m.group(2));
+                if (c.name.isEmpty()) c.name = c.id;
+                if (!c.id.isEmpty()) result.add(c);
+            }
+            return result;
+        }
         JSONObject o = new JSONObject(json);
         JSONArray a = o.optJSONArray("class");
         List<Category> result = new ArrayList<>();
@@ -820,6 +1097,26 @@ public final class Cms {
         return v.title == null ? "" : v.title.trim();
     }
 
+    private static void parsePlayLines(Video v, String[] from, String[] urls) {
+        for (int i = 0; i < urls.length; i++) {
+            if (urls[i] == null || urls[i].trim().isEmpty()) continue;
+            Line l = new Line();
+            l.name =
+                    i < from.length && from[i] != null && !from[i].trim().isEmpty()
+                            ? from[i].trim()
+                            : "线路 " + (i + 1);
+            for (String part : urls[i].split("#")) {
+                if (part.trim().isEmpty()) continue;
+                int at = part.indexOf('$');
+                Episode e = new Episode();
+                e.name = at >= 0 ? part.substring(0, at) : "播放";
+                e.url = at >= 0 ? part.substring(at + 1) : part;
+                l.episodes.add(e);
+            }
+            if (!l.episodes.isEmpty()) v.lines.add(l);
+        }
+    }
+
     private static Video video(JSONObject j) {
         Video v = new Video();
         v.id = j.optString("vod_id");
@@ -838,24 +1135,106 @@ public final class Cms {
                 j.optString("vod_content").replaceAll("<[^>]*>", " ").replace("&nbsp;", " ").trim();
         String[] from = j.optString("vod_play_from").split("\\$\\$\\$", -1),
                 urls = j.optString("vod_play_url").split("\\$\\$\\$", -1);
-        for (int i = 0; i < urls.length; i++) {
-            if (urls[i].isEmpty()) continue;
-            Line l = new Line();
-            l.name = i < from.length && !from[i].isEmpty() ? from[i] : "线路 " + (i + 1);
-            for (String part : urls[i].split("#")) {
-                if (part.trim().isEmpty()) continue;
-                int at = part.indexOf('$');
-                Episode e = new Episode();
-                e.name = at >= 0 ? part.substring(0, at) : "播放";
-                e.url = at >= 0 ? part.substring(at + 1) : part;
-                l.episodes.add(e);
+        parsePlayLines(v, from, urls);
+        return v;
+    }
+
+    private static Video videoXml(String block) {
+        Video v = new Video();
+        v.id = xmlTagValue(block, "id");
+        if (v.id.isEmpty()) v.id = xmlTagValue(block, "vod_id");
+        v.title = xmlTagValue(block, "name");
+        if (v.title.isEmpty()) v.title = xmlTagValue(block, "vod_name");
+        if (v.title.isEmpty()) v.title = "未命名影片";
+        v.poster = xmlTagValue(block, "pic");
+        if (v.poster.isEmpty()) v.poster = xmlTagValue(block, "vod_pic");
+        v.remarks = xmlTagValue(block, "note");
+        if (v.remarks.isEmpty()) v.remarks = xmlTagValue(block, "vod_remarks");
+        v.action = "";
+        v.tag = xmlTagValue(block, "type");
+        v.year = xmlTagValue(block, "year");
+        v.area = xmlTagValue(block, "area");
+        v.actor = xmlTagValue(block, "actor");
+        v.director = xmlTagValue(block, "director");
+        String des = xmlTagValue(block, "des");
+        if (des.isEmpty()) des = xmlTagValue(block, "vod_content");
+        v.description = des.replaceAll("<[^>]*>", " ").replace("&nbsp;", " ").trim();
+
+        java.util.regex.Matcher ddMatcher =
+                java.util.regex.Pattern.compile(
+                                "<dd\\b([^>]*)>([\\s\\S]*?)</dd>",
+                                java.util.regex.Pattern.CASE_INSENSITIVE)
+                        .matcher(block);
+        int lineIdx = 0;
+        while (ddMatcher.find()) {
+            String attrs = ddMatcher.group(1);
+            String body = unescapeXml(ddMatcher.group(2));
+            if (body.isEmpty()) continue;
+            String flag = "";
+            java.util.regex.Matcher flagM =
+                    java.util.regex.Pattern.compile(
+                                    "flag\\s*=\\s*[\"']([^\"']+)[\"']",
+                                    java.util.regex.Pattern.CASE_INSENSITIVE)
+                            .matcher(attrs);
+            if (flagM.find()) flag = flagM.group(1).trim();
+            String[] subUrls = body.split("\\$\\$\\$", -1);
+            String[] subFrom = new String[subUrls.length];
+            for (int i = 0; i < subUrls.length; i++) {
+                lineIdx++;
+                subFrom[i] =
+                        !flag.isEmpty()
+                                ? (subUrls.length > 1 ? flag + " " + (i + 1) : flag)
+                                : ("线路 " + lineIdx);
             }
-            if (!l.episodes.isEmpty()) v.lines.add(l);
+            parsePlayLines(v, subFrom, subUrls);
         }
         return v;
     }
 
     public static Listing listing(String json) throws Exception {
+        if (json != null && json.trim().startsWith("<")) {
+            Listing l = new Listing();
+            java.util.regex.Matcher listM =
+                    java.util.regex.Pattern.compile(
+                                    "<list\\b([^>]*)>", java.util.regex.Pattern.CASE_INSENSITIVE)
+                            .matcher(json);
+            if (listM.find()) {
+                String attrs = listM.group(1);
+                java.util.regex.Matcher pgM =
+                        java.util.regex.Pattern.compile(
+                                        "\\bpage\\s*=\\s*[\"']?(\\d+)",
+                                        java.util.regex.Pattern.CASE_INSENSITIVE)
+                                .matcher(attrs);
+                if (pgM.find()) {
+                    try {
+                        l.page = Math.max(1, Integer.parseInt(pgM.group(1)));
+                    } catch (Exception ignored) {
+                    }
+                }
+                java.util.regex.Matcher pcM =
+                        java.util.regex.Pattern.compile(
+                                        "\\bpagecount\\s*=\\s*[\"']?(\\d+)",
+                                        java.util.regex.Pattern.CASE_INSENSITIVE)
+                                .matcher(attrs);
+                if (pcM.find()) {
+                    try {
+                        l.pageCount = Math.max(l.page, Integer.parseInt(pcM.group(1)));
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            java.util.regex.Matcher vidM =
+                    java.util.regex.Pattern.compile(
+                                    "<video\\b[^>]*>([\\s\\S]*?)</video>",
+                                    java.util.regex.Pattern.CASE_INSENSITIVE)
+                            .matcher(json);
+            while (vidM.find()) {
+                if (l.videos.size() >= 500) throw new IOException("单页超过 500 项限制");
+                Video v = videoXml(vidM.group(1));
+                if (v.id != null && !v.id.isEmpty()) l.videos.add(v);
+            }
+            return l;
+        }
         JSONObject o = new JSONObject(json);
         Listing l = new Listing();
         l.page = Math.max(1, o.optInt("page", 1));

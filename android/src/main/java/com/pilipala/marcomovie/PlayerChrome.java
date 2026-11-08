@@ -136,6 +136,7 @@ final class PlayerChrome {
         dock.setPadding(
                 a.dp(mobileLandscape ? 4 : 6), a.dp(5), a.dp(mobileLandscape ? 4 : 6), a.dp(5));
         dock.setClipChildren(false);
+        dock.setClipToPadding(false);
         a.glass(dock, 26);
         UiCompat.setElevation(dock, a.dp(10));
         FrameLayout.LayoutParams bottom =
@@ -147,7 +148,10 @@ final class PlayerChrome {
                                         Math.max(a.dp(180), a.windowHeight() - a.dp(40))),
                                 Gravity.RIGHT | Gravity.CENTER_VERTICAL)
                         : new FrameLayout.LayoutParams(
-                                Math.min(a.dp(552), Math.max(a.dp(240), width - a.dp(32))),
+                                a.isTvDevice()
+                                        ? Math.min(a.dp(612), Math.max(a.dp(240), width - a.dp(32)))
+                                        : Math.min(
+                                                a.dp(552), Math.max(a.dp(240), width - a.dp(32))),
                                 -2,
                                 Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         if (mobileLandscape) bottom.rightMargin = a.dp(8);
@@ -307,7 +311,8 @@ final class PlayerChrome {
                     Math.min(a.dp(8), edge),
                     0);
         } else {
-            dockWidth = Math.max(0, Math.min(a.dp(552), width - edge * 2));
+            int maxDock = a.isTvDevice() ? a.dp(612) : a.dp(552);
+            dockWidth = Math.max(0, Math.min(maxDock, width - edge * 2));
             place(
                     dock,
                     dockWidth,

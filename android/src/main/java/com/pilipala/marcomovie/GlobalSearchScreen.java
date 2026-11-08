@@ -124,10 +124,11 @@ public final class GlobalSearchScreen implements AutoCloseable {
                                 - 30);
         a.body.addView(split, new LinearLayout.LayoutParams(-1, a.dp(height)));
         LinearLayout left = a.vertical();
-        left.setPadding(0, 0, a.dp(24), 0);
+        left.setPadding(a.dp(4), a.dp(4), a.dp(24), a.dp(8));
         ScrollView keyboardScroll = new TvScrollView(a);
         keyboardScroll.setTag("search-keyboard-scroll");
         keyboardScroll.setVerticalScrollBarEnabled(false);
+        keyboardScroll.setClipChildren(false);
         keyboardScroll.setClipToPadding(false);
         keyboardScroll.addView(left, new ScrollView.LayoutParams(-1, -2));
         split.addView(keyboardScroll, new LinearLayout.LayoutParams(a.dp(282), -1));
@@ -324,9 +325,11 @@ public final class GlobalSearchScreen implements AutoCloseable {
         HorizontalScrollView filterScroll = new HorizontalScrollView(a);
         filterScroll.setTag("search-source-scroll");
         filterScroll.setHorizontalScrollBarEnabled(false);
+        filterScroll.setClipChildren(false);
         filterScroll.setClipToPadding(false);
         sourceFilters = a.row();
         sourceFilters.setClipChildren(false);
+        sourceFilters.setClipToPadding(false);
         sourceFilters.setPadding(a.dp(4), a.dp(5), a.dp(4), a.dp(5));
         filterScroll.addView(sourceFilters);
         right.addView(filterScroll, new LinearLayout.LayoutParams(-1, a.dp(46)));

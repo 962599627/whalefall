@@ -22,7 +22,7 @@ final class StartupIntro extends FrameLayout {
         a.startupIntro = intro;
         ((FrameLayout) a.findViewById(android.R.id.content))
                 .addView(intro, new FrameLayout.LayoutParams(-1, -1));
-        intro.postDelayed(intro.timeout, 4000);
+        intro.postDelayed(intro.timeout, 1500);
     }
 
     StartupIntro(MainActivity a) {
@@ -41,7 +41,7 @@ final class StartupIntro extends FrameLayout {
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         timeline = ValueAnimator.ofFloat(0, 1);
-        timeline.setDuration(2800);
+        timeline.setDuration(950);
         timeline.setInterpolator(new LinearInterpolator());
         timeline.addUpdateListener(
                 v -> {
@@ -74,7 +74,7 @@ final class StartupIntro extends FrameLayout {
         removeCallbacks(timeout);
         release();
         if (fade && isAttachedToWindow() && !a.reduced) {
-            animate().alpha(0).setDuration(240).withEndAction(this::remove).start();
+            animate().alpha(0).setDuration(160).withEndAction(this::remove).start();
         } else remove();
     }
 

@@ -17,6 +17,8 @@ final class TvScrollView extends ScrollView {
         a = host;
         setOverScrollMode(OVER_SCROLL_NEVER);
         setSmoothScrollingEnabled(false);
+        setClipChildren(false);
+        setClipToPadding(false);
     }
 
     int limit() {

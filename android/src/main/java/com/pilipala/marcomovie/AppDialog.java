@@ -58,7 +58,9 @@ final class AppDialog extends Dialog {
             a.gap(panel, 14);
         }
         LinearLayout content = a.vertical();
-        content.setPadding(a.dp(3), a.dp(2), a.dp(3), a.dp(4));
+        content.setClipChildren(false);
+        content.setClipToPadding(false);
+        content.setPadding(a.dp(8), a.dp(6), a.dp(8), a.dp(6));
         if (spec.message != null) {
             TextView message = a.text(spec.message, 15, 0xffd0d0d5);
             message.setLineSpacing(a.dp(4), 1);
@@ -107,6 +109,7 @@ final class AppDialog extends Dialog {
                         c.restoreToCount(save);
                     }
                 };
+        clip.setTag("scroll-viewport-clip");
         clip.addView(scroller, new FrameLayout.LayoutParams(-1, -1));
         panel.addView(
                 clip,

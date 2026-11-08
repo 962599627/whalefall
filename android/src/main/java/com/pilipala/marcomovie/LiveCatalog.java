@@ -171,6 +171,15 @@ public final class LiveCatalog {
         return out;
     }
 
+    public static String unwrapProxyExtUrl(String url) {
+        try {
+            String dirUrl = liveDirectoryUrl(url, "");
+            if (dirUrl != null && !dirUrl.equals(url) && Cms.isHttp(dirUrl)) return dirUrl;
+        } catch (Exception ignored) {
+        }
+        return "";
+    }
+
     public static Catalog load(Source source) throws Exception {
         return load(source, null);
     }
@@ -279,6 +288,61 @@ public final class LiveCatalog {
             throws Exception {
         if (text == null || text.length() > MAX_BYTES) throw new IOException("直播列表为空或超过大小限制");
         text = text.replaceFirst("^\\uFEFF", "").trim();
+        if (!text.startsWith("{")
+                && !text.startsWith("[")
+                && !text.startsWith("#EXTM3U")
+                && !text.startsWith("<")
+                && !text.contains("#EXTINF:")
+                && !text.contains(",#genre#")
+                && !text.contains("://")) {
+            try {
+                String doc =
+                        Cms.document(text.getBytes("UTF-8")).replaceFirst("^\\uFEFF", "").trim();
+                if (!doc.equals(text)
+                        && (doc.startsWith("{")
+                                || doc.startsWith("[")
+                                || doc.startsWith("#EXTM3U")
+                                || doc.contains("#EXTINF:")
+                                || doc.contains("://"))) {
+                    text = doc;
+                } else {
+                    String candidate = text;
+                    int star = candidate.lastIndexOf("**");
+                    if (star >= 0 && star + 2 < candidate.length()) {
+                        candidate = candidate.substring(star + 2).trim();
+                    }
+                    String encoded =
+                            candidate.replaceAll("\\s+", "").replace('-', '+').replace('_', '/');
+                    String alphabet =
+                            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                    ByteArrayOutputStream decoded = new ByteArrayOutputStream();
+                    int bits = 0, count = 0;
+                    for (int i = 0; i < encoded.length() && encoded.charAt(i) != '='; i++) {
+                        int v = alphabet.indexOf(encoded.charAt(i));
+                        if (v < 0) break;
+                        bits = (bits << 6) | v;
+                        count += 6;
+                        if (count >= 8) {
+                            count -= 8;
+                            decoded.write((bits >> count) & 255);
+                        }
+                    }
+                    String str =
+                            new String(decoded.toByteArray(), "UTF-8")
+                                    .replaceFirst("^\\uFEFF", "")
+                                    .trim();
+                    if (str.startsWith("#EXTM3U")
+                            || str.contains("#EXTINF:")
+                            || str.contains(",#genre#")
+                            || str.contains("://")
+                            || str.startsWith("{")
+                            || str.startsWith("[")) {
+                        text = str;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
         Catalog out = new Catalog();
         out.origin = origin == null ? "" : origin;
         String lower = text.substring(0, Math.min(100, text.length())).toLowerCase(Locale.ROOT);

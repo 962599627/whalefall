@@ -207,7 +207,11 @@ final class PlaybackController {
             }
         }
         if (s.supported()) {
-            openPlayer(a, s, v, ep);
+            if (!s.requiresParser || Cms.isDirectStreamUrl(ep.url)) {
+                openPlayer(a, s, v, ep);
+                return;
+            }
+            resolveCmsWithParser(a, s, v, ep, s.playUrl);
             return;
         }
         if (a.playbackLoading != null) return;
@@ -403,13 +407,17 @@ final class PlaybackController {
                                                 }
                                                 if (finalResult.optInt("parse", 0) != 0
                                                         || finalResult.optInt("jx", 0) != 0) {
-                                                    resolveWebPage(
-                                                            a,
-                                                            s,
-                                                            v,
-                                                            resolved,
+                                                    String playPrefix =
                                                             finalResult.optString(
-                                                                    "playUrl", s.playUrl));
+                                                                    "playUrl", s.playUrl);
+                                                    if ((playPrefix == null || playPrefix.isEmpty())
+                                                            && a.config != null
+                                                            && !a.config.parses.isEmpty()) {
+                                                        clearPlaybackLoading(a);
+                                                        resolveCmsWithParser(a, s, v, resolved, "");
+                                                        return;
+                                                    }
+                                                    resolveWebPage(a, s, v, resolved, playPrefix);
                                                     return;
                                                 }
                                                 clearPlaybackLoading(a);
@@ -474,6 +482,85 @@ final class PlaybackController {
                                             failInPlaceSwitch(a, a.message(error));
                                         });
                             }
+                        });
+        a.pageRequests.add(request);
+    }
+
+    static void resolveCmsWithParser(
+            MainActivity a, Cms.Site s, Cms.Video v, Cms.Episode ep, String preferredPrefix) {
+        if (a.playbackLoading != null) return;
+        showPlaybackLoading(a);
+        final int serial = a.playbackResolveSerial, ticket = a.generation;
+        Future<?> request =
+                RequestScope.submit(
+                        a.details,
+                        () -> {
+                            // 1. Try preferredPrefix or JSON parsers in config.parses
+                            List<Cms.Parse> candidates = new java.util.ArrayList<>();
+                            if (preferredPrefix != null && Cms.isHttp(preferredPrefix)) {
+                                Cms.Parse direct = new Cms.Parse();
+                                direct.name = s.name;
+                                direct.url = preferredPrefix;
+                                direct.type = 1;
+                                direct.headers.putAll(s.headers);
+                                candidates.add(direct);
+                            }
+                            if (a.config != null && a.config.parses != null) {
+                                for (Cms.Parse p : a.config.parses) {
+                                    if (p != null && Cms.isHttp(p.url)) candidates.add(p);
+                                }
+                            }
+                            String webFallbackPrefix =
+                                    preferredPrefix != null ? preferredPrefix : "";
+                            for (int i = 0; i < Math.min(4, candidates.size()); i++) {
+                                if (Thread.currentThread().isInterrupted()) return;
+                                Cms.Parse p = candidates.get(i);
+                                if (p.type == 0 && webFallbackPrefix.isEmpty()) {
+                                    webFallbackPrefix = p.url;
+                                }
+                                if (p.type == 1 || p.type == 2 || p.type == 3 || i == 0) {
+                                    try {
+                                        String targetUrl =
+                                                p.url + java.net.URLEncoder.encode(ep.url, "UTF-8");
+                                        String resp = Cms.fetch(targetUrl, p.headers);
+                                        if (resp != null && resp.trim().startsWith("{")) {
+                                            JSONObject jo = new JSONObject(resp.trim());
+                                            String mediaUrl = jo.optString("url", "").trim();
+                                            if (Cms.isMedia(mediaUrl)) {
+                                                final Cms.Episode resolved =
+                                                        MediaOptions.episode(s, ep, jo);
+                                                a.ui.post(
+                                                        () -> {
+                                                            if (serial != a.playbackResolveSerial
+                                                                    || ticket != a.generation
+                                                                    || a.isFinishing()) return;
+                                                            clearPlaybackLoading(a);
+                                                            openPlayer(a, s, v, resolved);
+                                                        });
+                                                return;
+                                            }
+                                        }
+                                    } catch (Exception ignored) {
+                                    }
+                                }
+                            }
+                            final String finalPrefix = webFallbackPrefix;
+                            a.ui.post(
+                                    () -> {
+                                        if (serial != a.playbackResolveSerial
+                                                || ticket != a.generation
+                                                || a.isFinishing()) return;
+                                        if (Cms.isHttp(finalPrefix + ep.url)) {
+                                            resolveWebPage(a, s, v, ep, finalPrefix);
+                                        } else if (Cms.isMedia(ep.url)) {
+                                            clearPlaybackLoading(a);
+                                            openPlayer(a, s, v, ep);
+                                        } else {
+                                            a.changingMiniEpisode = false;
+                                            clearPlaybackLoading(a);
+                                            failInPlaceSwitch(a, "此剧集需要外部解析，未找到可用解析接口");
+                                        }
+                                    });
                         });
         a.pageRequests.add(request);
     }
@@ -772,6 +859,19 @@ final class PlaybackController {
             a.playingBookmark.index = a.activeLine.episodes.indexOf(a.activeEpisode);
             a.playingBookmark.position = Math.max(0, initialResume);
             a.playingBookmark.duration = saved != null ? Math.max(0, saved.duration) : 0;
+            a.playingBookmark.updated = System.currentTimeMillis();
+            try {
+                a.prefs
+                        .edit()
+                        .putString(
+                                Prefs.WATCH_HISTORY,
+                                WatchHistory.upsert(
+                                        a.prefs.getString(Prefs.WATCH_HISTORY, "[]"),
+                                        a.playingBookmark))
+                        .commit();
+                a.lastBookmarkSave = a.playingBookmark.updated;
+            } catch (Exception ignored) {
+            }
         }
         a.generation++;
         final int ticket = a.generation;
@@ -1214,6 +1314,7 @@ final class PlaybackController {
             if (a.player.isPlaying()) {
                 a.player.pause();
                 a.playing = false;
+                savePlaybackHistory(a, true);
                 a.playStatus.setText(a.isTvDevice() ? "已暂停 · 按确认继续" : "已暂停 · 双击继续");
             } else {
                 if (a.player.getDuration() > 0
@@ -1265,7 +1366,13 @@ final class PlaybackController {
         int target = a.seekGesture.target;
         a.seekGesture.cancel();
         a.ui.removeCallbacks(a.seekPulse);
-        if (commit && a.player != null && a.prepared) a.player.seekTo(target);
+        if (commit && a.player != null && a.prepared) {
+            a.player.seekTo(target);
+            if (a.playingBookmark != null) {
+                a.playingBookmark.position = Math.max(0, target);
+            }
+            savePlaybackHistory(a, true);
+        }
         if (a.playStatus != null) a.playStatus.setText(a.seekStatus);
         if (a.player != null && a.prepared && a.playbackControls != null) {
             int position = commit ? target : a.player.getCurrentPosition();
@@ -1304,7 +1411,7 @@ final class PlaybackController {
                             WatchHistory.upsert(
                                     a.prefs.getString(Prefs.WATCH_HISTORY, "[]"),
                                     a.playingBookmark))
-                    .apply();
+                    .commit();
             a.lastBookmarkSave = a.playingBookmark.updated;
         } catch (Exception error) {
             AppLog.w("PlaybackController", "savePlaybackHistoryOnPrepared failed", error);
@@ -1315,7 +1422,7 @@ final class PlaybackController {
         if (a.privateMode) return;
         if (a.player == null || !a.prepared || a.playingBookmark == null) return;
         long now = System.currentTimeMillis();
-        if (!force && now - a.lastBookmarkSave < 5000) return;
+        if (!force && now - a.lastBookmarkSave < 2000) return;
         try {
             int rawPos = a.player.getCurrentPosition();
             int position =
@@ -1328,7 +1435,7 @@ final class PlaybackController {
                 position = a.playbackControls.pendingResumeMs;
             }
             if (position < 1000 && a.playingBookmark.position == 0) return;
-            if (position < 1000 && a.playingBookmark.position >= 3000) {
+            if (position < 1000 && a.playingBookmark.position >= 1000) {
                 position = a.playingBookmark.position;
             }
             a.playingBookmark.position = Math.max(0, position);
@@ -1344,7 +1451,7 @@ final class PlaybackController {
                             WatchHistory.upsert(
                                     a.prefs.getString(Prefs.WATCH_HISTORY, "[]"),
                                     a.playingBookmark))
-                    .apply();
+                    .commit();
             a.lastBookmarkSave = now;
         } catch (Exception error) {
             AppLog.w("PlaybackController", "savePlaybackHistory failed", error);
