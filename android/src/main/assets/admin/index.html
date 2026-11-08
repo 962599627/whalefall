@@ -225,7 +225,10 @@ footer{margin-top:26px;text-align:center;font-size:11px;color:#5f6f88;line-heigh
         也可以用 FTP：<b>{{ftp}}</b>（用户 wf / 密码见 App 面板）</div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <input type="file" ref="picker" style="display:none" @change="pickFile">
-        <button class="btn" @click="$refs.picker.click()">{{uploadBusy?'上传中…':'选择文件上传'}}</button>
+        <button class="btn" @click="openPicker('apk')" :disabled="uploadBusy || offline">{{uploadBusy?'上传中…':'上传 APK'}}</button>
+        <button class="btn ghost" @click="openPicker('video')" :disabled="uploadBusy || offline">上传视频</button>
+        <button class="btn ghost" @click="openPicker('image')" :disabled="uploadBusy || offline">上传图片</button>
+        <button class="btn ghost" @click="openPicker('text')" :disabled="uploadBusy || offline">上传文本</button>
         <span style="font-size:11.5px;color:var(--dim)" v-if="uploadName">{{uploadName}}</span>
       </div>
       <div class="row" v-for="f in files" :key="f.name">
@@ -366,6 +369,18 @@ createApp({
         this.files=j.files||[];
         this.ftp=this.ftpAddress();
       }catch(e){}
+    },
+    openPicker(kind){
+      const map={
+        apk:'.apk',
+        video:'.mp4,.mkv,.webm,.mov,.m4v,.avi,.flv',
+        image:'.jpg,.jpeg,.png,.webp,.gif,.bmp',
+        text:'.md,.markdown,.txt,.log,.json'
+      };
+      const input=this.$refs.picker;
+      input.accept=map[kind]||'*/*';
+      input.value='';
+      input.click();
     },
     pickFile(ev){
       const file=ev.target.files[0];
