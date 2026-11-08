@@ -1,6 +1,9 @@
 name: Android phone and TV update isolation
 on:
   workflow_dispatch:
+  push:
+    branches: ['fix/plugin-ports-16kb-20261107']
+    paths: ['.github/workflows/android-update-isolation.yml']
 permissions:
   contents: read
 jobs:
