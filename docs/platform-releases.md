@@ -6,6 +6,11 @@ The owner allows each platform to release independently after its own checks. Ve
 
 Desktop/Apple tags use `windows-vX.Y.Z`, `ios-vX.Y.Z` and `macos-vX.Y.Z`. They do not trigger the legacy `v*` all-platform publisher. Build the desired platform with the existing workflow dispatch, verify the artifact, and attach the package, SHA-256 file and corresponding source archive before publishing. Do not replace existing versioned assets. Keep the legacy all-platform release as GitHub's global latest so old clients are not directed to another platform's package.
 
+Android phone/tablet and TV editions now have separate update feeds and explicit
+`android-mobile` / `android-tv` package names. See [Android update isolation](android-update-isolation.md)
+for the release tags, old-client migration aliases and runtime verification scope.
+This is implementation work, not an announcement of a new Android release.
+
 Clients from 0.5.1 first read their own `movie/updates/{platform}.json` feed, then select the newest matching official GitHub release containing that platform's package. Other platform versions, drafts and prereleases are ignored. Clients at 0.5.0 still use the legacy shared feed; install the first independent platform update from the download page, then subsequent updates use the new platform feed.
 
 The mirror runs `scripts/sync_platform_packages.py`. It patches existing download-card package URLs, byte sizes and hashes, writes the relevant platform feed, and updates only the existing changelog section with version-specific notes. It does not render a new HTML page or alter CSS, layout, images, unrelated prose/packages or legacy Android update channels. Large files retain the site's existing verified GitHub download behavior. Corresponding source remains attached to each platform's release.

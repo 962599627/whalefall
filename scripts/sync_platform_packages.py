@@ -1,8 +1,8 @@
-"""Update independently released desktop/Apple packages without rendering the site.
+"""Update independently released platform packages without rendering the site.
 
 The existing page is the template: package URLs, sizes and checksums inside
 matching download cards change, and the existing changelog section receives
-version-specific release notes. CSS and Android's update channels stay intact.
+version-specific release notes. CSS and legacy Android update channels stay intact.
 """
 import argparse
 import html
@@ -24,6 +24,8 @@ PLATFORM_LABELS = {
     'android-lite': 'Android Lite',
 }
 NOTE_SUFFIXES = {
+    'android-tv.apk': 'android-tv', 'android-mobile.apk': 'android-mobile',
+    'android-lite.apk': 'android-lite',
     'preview.apk': 'android-tv', 'mobile.apk': 'android-mobile',
     'lite.apk': 'android-lite', 'ios-unsigned.ipa': 'ios',
     'windows-setup.exe': 'windows', 'windows-x64.zip': 'windows',
@@ -187,7 +189,10 @@ def choose_platform(releases, platform):
 
 
 def patch_card(page, suffix, package):
-    name_pattern = r'MarcoMovie-\d+\.\d+\.\d+-' + re.escape(suffix)
+    aliases = {'android-tv.apk': 'preview.apk', 'android-mobile.apk': 'mobile.apk',
+               'android-lite.apk': 'lite.apk'}
+    endings = [suffix] + ([aliases[suffix]] if suffix in aliases else [])
+    name_pattern = r'MarcoMovie-\d+\.\d+\.\d+-(?:' + '|'.join(map(re.escape, endings)) + ')'
     cards = list(re.finditer(r'<div class="dl"(?:\s+[^>]*)?>.*?</div>', page, re.S))
     matches = [card for card in cards if re.search(name_pattern, card[0])]
     if len(matches) != 1:
@@ -218,7 +223,10 @@ def sync(output, releases=None):
     page = original.decode('utf-8')
     if releases is None:
         releases = json.loads(fetch(f'https://api.github.com/repos/{REPO}/releases?per_page=100', 4 * 1024 * 1024))
-    files, versions = {}, {}
+    from android_update_packages import plan as android_plan
+    files, versions, android_cards = android_plan(output, releases)
+    for platform, package in android_cards.items():
+        page = patch_card(page, platform + '.apk', package)
     for platform, suffixes in SUFFIXES.items():
         release = choose_platform(releases, platform)
         if release is None:
@@ -259,7 +267,7 @@ def sync(output, releases=None):
     # the complete snapshot; never rewrite a previously published binary.
     for name, body in files.items():
         target = output / name
-        if target.exists() and target.suffix in ('.ipa', '.exe', '.zip') and target.read_bytes() != body:
+        if target.exists() and target.suffix in ('.ipa', '.exe', '.zip', '.apk') and target.read_bytes() != body:
             raise ValueError('Immutable package differs: ' + name)
     for name, body in files.items():
         target = output / name

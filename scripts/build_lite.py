@@ -80,9 +80,11 @@ def build():
  apk.with_suffix('.apk.sha256').write_text(sha+'  '+apk.name+'\n')
  if not candidate:
   version=ET.parse(SRC/'AndroidManifest.xml').getroot().get('{http://schemas.android.com/apk/res/android}versionName','0.4.35')
-  release_apk=ROOT/'dist'/f'MarcoMovie-{version}-lite.apk'
+  from android_package_names import package_name, compatibility_alias
+  release_apk=ROOT/'dist'/package_name(version, 'lite')
   shutil.copy2(apk,release_apk)
   release_apk.with_suffix('.apk.sha256').write_text(sha+'  '+release_apk.name+'\n',encoding='utf8')
+  compatibility_alias(release_apk, version, 'lite')
  result=dict(package='com.pilipala.marcomovie.lite',experimental_candidate=candidate,compile_api=14,min_api=14,bytes=apk.stat().st_size,sha256=sha,signature=signature,signer_sha256=signer,release_signer_verified=bool(expected),physical_tv_tested=False)
  (BUILD/'build-report.json').write_text(json.dumps(result,indent=2),encoding='utf8');print(json.dumps(result,indent=2))
 if __name__=='__main__':build()

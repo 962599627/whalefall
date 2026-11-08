@@ -14,25 +14,9 @@ import org.json.JSONObject;
 
 /** Separate network queue; installs only an official same-signed newer APK after explicit user action. */
 final class UpdateManager {
-    static final class Release {
-        final int code, minSdk;
-        final long size;
-        final String version, url, sha, notes;
-        final boolean preview;
-
+    static final class Release extends UpdateRelease {
         Release(JSONObject o, String channel, boolean mobile) throws Exception {
-            JSONObject artifact = mobile ? o.getJSONObject("mobile") : o;
-            if (o.getInt("schema") != 1) throw new IOException("Unsupported feed");
-            code = o.getInt("versionCode");
-            minSdk = o.getInt("minSdk");
-            size = artifact.getLong("size");
-            version = o.getString("versionName");
-            url = artifact.getString("url");
-            sha = artifact.getString("sha256");
-            preview = o.getBoolean("prerelease");
-            notes = o.optString("notes", "");
-            UpdatePolicy.validate(code, version, minSdk, size, sha, url, preview, channel, mobile);
-            if (notes.length() > 8000) throw new IOException("Notes too long");
+            super(o, channel, mobile);
         }
     }
 
@@ -124,8 +108,10 @@ final class UpdateManager {
                     context.getPackageManager()
                             .getApplicationInfo(
                                     context.getPackageName(), PackageManager.GET_META_DATA);
-            return info.metaData != null
-                    && "mobile".equals(info.metaData.getString("com.pilipala.marcomovie.EDITION"));
+            return UpdatePolicy.mobileEdition(
+                    info.metaData == null
+                            ? null
+                            : info.metaData.getString("com.pilipala.marcomovie.EDITION"));
         } catch (PackageManager.NameNotFoundException e) {
             throw new IllegalStateException("无法识别安装版本", e);
         }
@@ -319,11 +305,15 @@ final class UpdateManager {
         try {
             Exception failure = null;
             boolean valid = false;
-            String[] sources = UpdatePolicy.downloads(r.version, mobileEdition());
+            String[] sources = r.downloads;
             for (int source = 0; source < sources.length && !valid; source++) {
                 for (int attempt = 0; attempt < 2 && part.length() < r.size; attempt++) {
                     if (cancel) throw new InterruptedIOException();
-                    message = (source == 0 ? "正在从镜像站下载 " : "镜像暂不可用，改从 GitHub 下载 ") + r.version;
+                    message =
+                            (sources[source].startsWith(UpdatePolicy.MIRROR)
+                                            ? "正在从镜像站下载 "
+                                            : "正在从 GitHub 下载 ")
+                                    + r.version;
                     changed();
                     try {
                         transfer(r, part, sources[source]);
@@ -422,11 +412,11 @@ final class UpdateManager {
                                 || next.applicationInfo.minSdkVersion > Build.VERSION.SDK_INT)))
             throw new IOException("package identity or compatibility");
         boolean nextMobile =
-                next.applicationInfo.metaData != null
-                        && "mobile"
-                                .equals(
-                                        next.applicationInfo.metaData.getString(
-                                                "com.pilipala.marcomovie.EDITION", "tv"));
+                UpdatePolicy.mobileEdition(
+                        next.applicationInfo.metaData == null
+                                ? null
+                                : next.applicationInfo.metaData.getString(
+                                        "com.pilipala.marcomovie.EDITION"));
         if (nextMobile != mobileEdition(c)) throw new IOException("安装包类型不匹配");
         Set<String> a = packageSignatures(current), b = packageSignatures(next);
         if (a.isEmpty() || !a.equals(b)) throw new IOException("signer");
@@ -503,7 +493,7 @@ final class UpdateManager {
 
     private JSONObject readRelease(String channel) throws Exception {
         Exception failure = null;
-        for (String address : UpdatePolicy.feeds(channel)) {
+        for (String address : UpdatePolicy.feeds(channel, mobileEdition())) {
             if (cancel) throw new InterruptedIOException();
             try {
                 JSONObject data = new JSONObject(new String(readFeed(address), "UTF-8"));

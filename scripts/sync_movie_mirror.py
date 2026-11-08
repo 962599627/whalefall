@@ -53,7 +53,7 @@ def apk_identity(apk):
         data = z.read(entry)
     if struct.unpack_from('<H', data)[0] != 3:
         raise ValueError('Expected binary Android manifest')
-    strings, values = [], {}
+    strings, values, editions, elements = [], {}, [], []
     offset = 8
     while offset < len(data):
         kind, header, size = struct.unpack_from('<HHI', data, offset)
@@ -82,16 +82,29 @@ def apk_identity(apk):
             start, stride, count = struct.unpack_from('<HHH', data, offset + 24)
             if stride < 20 or 16 + start + stride * count > size:
                 raise ValueError('Invalid attributes')
-            if name in ('manifest', 'uses-sdk'):
+            if name in ('manifest', 'uses-sdk', 'meta-data'):
+                attributes = {}
                 for i in range(count):
                     pos = offset + 16 + start + i * stride
                     _, key, raw, _, _, value_type, value = struct.unpack_from('<IIIHBBI', data, pos)
-                    values[(name, strings[key])] = strings[raw] if raw != 0xffffffff else strings[value] if value_type == 3 else value
+                    attributes[strings[key]] = strings[raw] if raw != 0xffffffff else strings[value] if value_type == 3 else value
+                    values[(name, strings[key])] = attributes[strings[key]]
+                if name == 'meta-data' and elements == ['manifest', 'application'] and attributes.get('name') == 'com.pilipala.marcomovie.EDITION':
+                    editions.append(attributes.get('value'))
+            elements.append(name)
+        elif kind == 0x103:
+            name = strings[struct.unpack_from('<I', data, offset + 20)[0]]
+            if not elements or elements.pop() != name:
+                raise ValueError('Unbalanced Android manifest')
         offset += size
     result = {'package': values[('manifest', 'package')], 'versionName': values[('manifest', 'versionName')],
               'versionCode': int(values[('manifest', 'versionCode')]), 'minSdk': int(values[('uses-sdk', 'minSdkVersion')])}
     if result['package'] != 'com.pilipala.marcomovie' or result['minSdk'] < 23 or result['versionCode'] <= 0:
         raise ValueError('Wrong application identity')
+    if editions:
+        if len(editions) != 1 or editions[0] not in ('tv', 'mobile'):
+            raise ValueError('Invalid application edition')
+        result['edition'] = editions[0]
     return result
 
 

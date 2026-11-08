@@ -4,6 +4,7 @@ import hashlib, json, os, re, subprocess, zipfile, urllib.request
 import xml.etree.ElementTree as ET
 from build_catpaw_android import build as build_catpaw, assets_for_package
 from build_quickjs_deadline import build as build_quickjs_deadline
+from android_package_names import package_name, compatibility_alias
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'android/src/main'
@@ -114,7 +115,7 @@ def main():
     manifest_root=ET.parse(SRC/'AndroidManifest.xml').getroot()
     version=manifest_root.get('{http://schemas.android.com/apk/res/android}versionName')
     version_code=int(manifest_root.get('{http://schemas.android.com/apk/res/android}versionCode','0'))
-    apk=DIST/f'MarcoMovie-{version}-preview.apk'
+    apk=DIST/package_name(version, 'tv')
     run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','sign','--ks',key,'--ks-key-alias','marcomovie','--ks-pass','env:MARCOMOVIE_KEY_PASSWORD','--out',apk,BUILD/'aligned.apk')
     signature=run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','verify','--verbose','--print-certs',apk,capture=True)
     cert_match=re.search(r'certificate SHA-256 digest:\s*([0-9a-fA-F]{64})',signature)
@@ -133,6 +134,7 @@ def main():
         except Exception:
             pass
     (DIST/(apk.name+'.sha256')).write_text(digest+'  '+apk.name+'\n',encoding='ascii')
+    compatibility_alias(apk, version, 'tv')
     mobile_manifest=BUILD/'AndroidManifest.mobile.xml'
     mobile_xml=(SRC/'AndroidManifest.xml').read_text(encoding='utf-8').replace('android:value="tv"','android:value="mobile"').replace('<category android:name="android.intent.category.LEANBACK_LAUNCHER" />','')
     mobile_manifest.write_text(mobile_xml,encoding='utf-8')
@@ -142,12 +144,13 @@ def main():
         for dex in (BUILD/'dex').glob('*.dex'):dest.write(dex,dex.name)
         for name,data in native_files_mobile.items():dest.writestr(name,data)
     run(exe(SDK,'zipalign'),'-f','4',BUILD/'unsigned-mobile.apk',BUILD/'aligned-mobile.apk')
-    mobile_apk=DIST/f'MarcoMovie-{version}-mobile.apk'
+    mobile_apk=DIST/package_name(version, 'mobile')
     run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','sign','--ks',key,'--ks-key-alias','marcomovie','--ks-pass','env:MARCOMOVIE_KEY_PASSWORD','--out',mobile_apk,BUILD/'aligned-mobile.apk')
     run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','verify','--verbose','--print-certs',mobile_apk,capture=True)
     run(exe(SDK,'zipalign'),'-c','4',mobile_apk,capture=True)
     mobile_digest=hashlib.sha256(mobile_apk.read_bytes()).hexdigest()
     (DIST/(mobile_apk.name+'.sha256')).write_text(mobile_digest+'  '+mobile_apk.name+'\n',encoding='ascii')
+    compatibility_alias(mobile_apk, version, 'mobile')
     (BUILD/'apk-signature.txt').write_text(signature,encoding='utf-8')
     (BUILD/'apk-badging.txt').write_text(badging,encoding='utf-8')
     result={'apk':apk.name,'sha256':digest,'bytes':apk.stat().st_size,'mobile_apk':mobile_apk.name,'mobile_sha256':mobile_digest,'mobile_bytes':mobile_apk.stat().st_size,'signature_verified':True,'signer_sha256':signer_sha256,'zipalign_verified':True,'package':'com.pilipala.marcomovie','version':version,'version_code':version_code,'git_commit':git_commit,'git_dirty':git_dirty,'min_sdk':23,'target_sdk':28,'device_install_tested':False,'device_playback_tested':False,'signing':'release-verified signing key' if expected_signer else 'independent local development key; not a store release'}
