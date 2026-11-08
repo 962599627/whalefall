@@ -113,7 +113,10 @@ def main():
     with zipfile.ZipFile(BUILD/'classes.jar','w',zipfile.ZIP_DEFLATED) as z:
         for p in (BUILD/'classes').rglob('*.class'): z.write(p,p.relative_to(BUILD/'classes').as_posix())
     if os.environ.get('MARCOMOVIE_R8','').strip() in ('1','true','yes'):
-        run(exe(JDK/'bin','java'),'-cp',SDK/'lib/d8.jar','com.android.tools.r8.R8',
+        r8jar = ROOT/'tools/r8.jar'
+        if not r8jar.exists():
+            r8jar = SDK/'lib/d8.jar'
+        run(exe(JDK/'bin','java'),'-cp',r8jar,'com.android.tools.r8.R8',
             '--release','--min-api','23','--lib',ANDROID,
             '--pg-conf',ROOT/'scripts/r8-rules.pro',
             '--output',BUILD/'dex',BUILD/'classes.jar',*dependencies)
