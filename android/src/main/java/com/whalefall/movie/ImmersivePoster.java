@@ -165,7 +165,7 @@ final class ImmersivePoster extends FrameLayout {
         HD_POOL.execute(
                 () -> {
                     final int extractedAmbient =
-                            MobileDetailScreen.extractAmbientColor(bitmap, 0xff090c14);
+                            MobileDetailScreen.extractAmbientColor(bitmap, 0xff070d18);
                     Bitmap blurred = createSoftenedBitmap(bitmap, 72, 108, 3, 3);
                     a.ui.post(
                             () -> {
@@ -328,7 +328,7 @@ final class ImmersivePoster extends FrameLayout {
     }
 
     private void postWideBitmap(Bitmap wide, int token, int generation) {
-        final int ambient = MobileDetailScreen.extractAmbientColor(wide, 0xff090c14);
+        final int ambient = MobileDetailScreen.extractAmbientColor(wide, 0xff070d18);
         final Bitmap softWide = createSoftenedBitmap(wide, 96, 54, 3, 2);
         a.ui.post(
                 () -> {
@@ -350,7 +350,7 @@ final class ImmersivePoster extends FrameLayout {
         backdrop.wideBitmap = wide;
         HD_POOL.execute(
                 () -> {
-                    final int ambient = MobileDetailScreen.extractAmbientColor(wide, 0xff090c14);
+                    final int ambient = MobileDetailScreen.extractAmbientColor(wide, 0xff070d18);
                     final Bitmap softWide = createSoftenedBitmap(wide, 96, 54, 3, 2);
                     a.ui.post(
                             () -> {
@@ -726,7 +726,7 @@ final class ImmersivePoster extends FrameLayout {
         Bitmap rawBitmap;
         Bitmap wideBitmap;
         Bitmap wideBlurredBitmap;
-        int ambientColor = 0xff090c14;
+        int ambientColor = 0xff070d18;
         float scrollProgress = 0f;
         final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
         final Paint maskPaint = new Paint(Paint.ANTI_ALIAS_FLAG);

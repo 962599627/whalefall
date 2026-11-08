@@ -98,7 +98,7 @@ final class MobileDownloads {
                 holder.addView(item(tasks.get(i)), lp);
             }
         }
-        TextView where = a.text("保存位置：" + manager.folderPath(), 11, 0xff6b7280);
+        TextView where = a.text("保存位置：" + manager.folderPath(), 11, 0xff7f90ad);
         where.setPadding(a.dp(4), a.dp(8), a.dp(4), a.dp(16));
         holder.addView(where, new LinearLayout.LayoutParams(-1, -2));
     }
@@ -117,7 +117,7 @@ final class MobileDownloads {
         summary.setEllipsize(TextUtils.TruncateAt.END);
         bar.addView(summary, new LinearLayout.LayoutParams(0, -2, 1));
         if (tasks.isEmpty()) return bar;
-        TextView startAll = chip("全部开始", 0xff8ab4f8);
+        TextView startAll = chip("全部开始", 0xff9ccbff);
         startAll.setTag("downloads-start-all");
         startAll.setOnClickListener(
                 v -> {
@@ -125,7 +125,7 @@ final class MobileDownloads {
                     update();
                 });
         bar.addView(startAll);
-        TextView pauseAll = chip("全部暂停", 0xff8ab4f8);
+        TextView pauseAll = chip("全部暂停", 0xff9ccbff);
         pauseAll.setTag("downloads-pause-all");
         pauseAll.setOnClickListener(
                 v -> {
@@ -143,7 +143,7 @@ final class MobileDownloads {
         chip.setGravity(Gravity.CENTER);
         chip.setSingleLine(true);
         chip.setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5));
-        chip.setBackground(a.bg(0xff252734, 14));
+        chip.setBackground(a.bg(0xff182a45, 14));
         MobileDetailScreen.bindTouchFeedback(chip);
         return chip;
     }
@@ -158,7 +158,7 @@ final class MobileDownloads {
 
         ImageView thumb = new ImageView(a);
         thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        thumb.setBackground(a.bg(0xff252734, 8));
+        thumb.setBackground(a.bg(0xff182a45, 8));
         thumb.setClipToOutline(true);
         LinearLayout.LayoutParams thumbLp = new LinearLayout.LayoutParams(a.dp(52), a.dp(72));
         thumbLp.rightMargin = a.dp(12);
@@ -196,7 +196,7 @@ final class MobileDownloads {
         row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
 
         LinearLayout actions = a.vertical();
-        TextView main = chip(actionLabel(t.state), 0xff8ab4f8);
+        TextView main = chip(actionLabel(t.state), 0xff9ccbff);
         main.setTag("download-action:" + t.id);
         main.setOnClickListener(v -> primary(t));
         actions.addView(main, new LinearLayout.LayoutParams(-1, -2));
@@ -235,14 +235,14 @@ final class MobileDownloads {
     private static int statusColor(int state) {
         if (state == DownloadManager.FAILED) return 0xffef4444;
         if (state == DownloadManager.DONE) return 0xff22c55e;
-        if (state == DownloadManager.RUNNING) return 0xff8ab4f8;
+        if (state == DownloadManager.RUNNING) return 0xff9ccbff;
         return MainActivity.MUTED;
     }
 
     private static int barColor(int state) {
         if (state == DownloadManager.FAILED) return 0xffef4444;
         if (state == DownloadManager.DONE) return 0xff22c55e;
-        if (state == DownloadManager.PAUSED) return 0xff6b7280;
+        if (state == DownloadManager.PAUSED) return 0xff7f90ad;
         return 0xff3b82f6;
     }
 
@@ -350,7 +350,7 @@ final class MobileDownloads {
                 grid.addView(rowView, new LinearLayout.LayoutParams(-1, -2));
             }
             final int index = i;
-            TextView cell = a.text(line.episodes.get(i).name, 13, 0xffe4e4e7);
+            TextView cell = a.text(line.episodes.get(i).name, 13, 0xffe3eaf7);
             cell.setTag("download-pick:" + i);
             cell.setGravity(Gravity.CENTER);
             cell.setSingleLine(true);
@@ -412,17 +412,17 @@ final class MobileDownloads {
     }
 
     private static TextView pickerChip(MainActivity a, String label) {
-        TextView chip = a.text(label, 12, 0xff8ab4f8);
+        TextView chip = a.text(label, 12, 0xff9ccbff);
         chip.setGravity(Gravity.CENTER);
         chip.setPadding(a.dp(12), a.dp(5), a.dp(12), a.dp(5));
-        chip.setBackground(a.bg(0xff252734, 14));
+        chip.setBackground(a.bg(0xff182a45, 14));
         MobileDetailScreen.bindTouchFeedback(chip);
         return chip;
     }
 
     private static void styleCell(MainActivity a, TextView cell, boolean selected) {
-        cell.setTextColor(selected ? Color.WHITE : 0xffe4e4e7);
-        cell.setBackground(a.bg(selected ? 0xff3b82f6 : 0xff252734, 10));
+        cell.setTextColor(selected ? Color.WHITE : 0xffe3eaf7);
+        cell.setBackground(a.bg(selected ? 0xff3b82f6 : 0xff182a45, 10));
     }
 
     private static String summaryText(boolean[] chosen) {

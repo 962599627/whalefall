@@ -18,7 +18,7 @@ final class HomeAmbient extends View {
     ValueAnimator animation;
     Bitmap from, to;
     float fraction = 1;
-    int left = 0xff354553, right = 0xff403847;
+    int left = 0xff3a4c7a, right = 0xff6b4660;
     int applied;
 
     HomeAmbient(MainActivity host) {
@@ -80,7 +80,7 @@ final class HomeAmbient extends View {
                 blue += Color.blue(c) * w;
                 weight += w;
             }
-        if (weight == 0) return side == 0 ? 0xff354553 : 0xff403847;
+        if (weight == 0) return side == 0 ? 0xff3a4c7a : 0xff6b4660;
         Color.colorToHSV(
                 Color.rgb((int) (red / weight), (int) (green / weight), (int) (blue / weight)),
                 hsv);
@@ -101,7 +101,7 @@ final class HomeAmbient extends View {
         Canvas c = new Canvas(b);
         Paint p = new Paint(3);
         p.setShader(
-                new LinearGradient(0, 0, 0, 135, 0xff191c22, 0xff101013, Shader.TileMode.CLAMP));
+                new LinearGradient(0, 0, 0, 135, 0xff191c22, 0xff0b1220, Shader.TileMode.CLAMP));
         c.drawRect(0, 0, 240, 135, p);
         p.setShader(
                 new RadialGradient(

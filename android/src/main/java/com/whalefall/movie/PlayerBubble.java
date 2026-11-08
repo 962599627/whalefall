@@ -39,7 +39,7 @@ final class PlayerBubble {
         shell.setClipToPadding(false);
         LinearLayout panel = a.vertical();
         panel.setPadding(a.dp(16), a.dp(16), a.dp(16), a.dp(12));
-        android.graphics.drawable.GradientDrawable glass = a.bg(0xfa29292e, 26);
+        android.graphics.drawable.GradientDrawable glass = a.bg(0xfa1a2b47, 26);
         glass.setStroke(a.dp(1), 0x38ffffff);
         panel.setBackground(glass);
         panel.setClipChildren(false);
@@ -80,7 +80,7 @@ final class PlayerBubble {
                                 (labels.length + (message.isEmpty() ? 0 : 6)) * a.dp(44),
                                 maxHeight)));
         if (!message.isEmpty()) {
-            TextView description = a.text(message, 13, 0xffdddddf);
+            TextView description = a.text(message, 13, 0xffdde6f5);
             description.setPadding(a.dp(10), a.dp(4), a.dp(10), a.dp(14));
             description.setLineSpacing(a.dp(4), 1);
             description.setFocusable(true);
@@ -118,7 +118,7 @@ final class PlayerBubble {
                                         : android.text.TextUtils.TruncateAt.END);
                         if (f && labels[index] != null && labels[index].length() > 14) {
                             hint.setText(labels[index]);
-                            hint.setTextColor(0xffdddddf);
+                            hint.setTextColor(0xffdde6f5);
                         } else if (f) {
                             hint.setText(defaultHint);
                             hint.setTextColor(MainActivity.MUTED);
@@ -156,7 +156,7 @@ final class PlayerBubble {
                     final Paint p = new Paint(3);
 
                     protected void onDraw(Canvas c) {
-                        p.setColor(0xfa29292e);
+                        p.setColor(0xfa1a2b47);
                         Path path = new Path();
                         path.moveTo(tip - a.dp(10), 0);
                         path.lineTo(tip + a.dp(10), 0);

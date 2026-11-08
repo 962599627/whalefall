@@ -943,10 +943,10 @@ final class PlaybackControls {
                 };
 
         if (a.isTvDevice()) {
-            TextView tvExitHint = a.text("✓ 每次调节均已实时保存  ·  按【返回键】或长按【确认键】完成退出", 12.5f, 0xffe5e7eb);
+            TextView tvExitHint = a.text("✓ 每次调节均已实时保存  ·  按【返回键】或长按【确认键】完成退出", 12.5f, 0xffe6edf9);
             tvExitHint.setGravity(Gravity.CENTER);
             tvExitHint.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
-            tvExitHint.setBackground(a.bg(0x28ffffff, 12));
+            tvExitHint.setBackground(a.bg(0x33ffffff, 12));
             card.addView(tvExitHint, new LinearLayout.LayoutParams(-1, -2));
         } else {
             LinearLayout controlsRow = a.row();
@@ -965,7 +965,7 @@ final class PlaybackControls {
                 TextView b = a.text(btnLabels[i], 12, MainActivity.WHITE);
                 b.setGravity(Gravity.CENTER);
                 b.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
-                b.setBackground(a.bg(i == btnLabels.length - 1 ? 0xff1f6f4a : 0x26ffffff, 12));
+                b.setBackground(a.bg(i == btnLabels.length - 1 ? 0xff1f6f4a : 0x33ffffff, 12));
                 b.setOnClickListener(v -> act.run());
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
                 lp.rightMargin = a.dp(6);
@@ -1219,7 +1219,7 @@ final class PlaybackControls {
             b.setGravity(Gravity.CENTER);
             b.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
             b.setFocusable(true);
-            b.setBackground(a.bg(d == 999 ? 0xff1f6f4a : 0x24ffffff, 12));
+            b.setBackground(a.bg(d == 999 ? 0xff1f6f4a : 0x30ffffff, 12));
             b.setOnClickListener(
                     v -> {
                         if (d == 999) {

@@ -36,7 +36,7 @@ final class TouchPlayerGesture implements View.OnTouchListener {
         this.hud.setTag("player-touch-hud");
         this.hud.setGravity(Gravity.CENTER);
         this.hud.setPadding(activity.dp(18), activity.dp(10), activity.dp(18), activity.dp(10));
-        UiCompat.setBackground(this.hud, activity.bg(0xd8202026, 20));
+        UiCompat.setBackground(this.hud, activity.bg(0xd816243c, 20));
         this.hud.setVisibility(View.GONE);
         FrameLayout.LayoutParams lp =
                 new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);

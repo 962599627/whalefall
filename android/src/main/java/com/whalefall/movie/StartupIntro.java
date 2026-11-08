@@ -163,12 +163,12 @@ final class StartupIntro extends FrameLayout {
                 c.restore();
             }
             c.restore();
-            paint.setColor(0xfff5f5f7);
+            paint.setColor(com.whalefall.movie.Skin.INK);
             paint.setAlpha(Math.round(255 * type));
             paint.setTextAlign(Paint.Align.CENTER);
             paint.setTextSize(33);
             c.drawText("鲸落", 0, 87 + 5 * (1 - type), paint);
-            paint.setColor(0xff9298a1);
+            paint.setColor(com.whalefall.movie.Skin.INK_MUTED);
             paint.setAlpha(Math.round(255 * type));
             paint.setTextSize(9);
             c.drawText("D E E P   S E A   C I N E M A", 0, 109, paint);

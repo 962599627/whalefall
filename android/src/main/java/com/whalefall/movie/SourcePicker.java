@@ -288,7 +288,7 @@ final class SourcePicker {
                                 a,
                                 button,
                                 focused,
-                                current ? 0xff35353f : 0xff242429,
+                                current ? 0xff35353f : 0xff172742,
                                 MainActivity.WHITE,
                                 12,
                                 enabled ? MainActivity.WHITE : MainActivity.MUTED,

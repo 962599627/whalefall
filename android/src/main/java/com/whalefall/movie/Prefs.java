@@ -24,6 +24,7 @@ final class Prefs {
     static final String HOME_SECTIONS = "home_sections";
     static final String WALLPAPER_ENABLED = "wallpaper_enabled";
     static final String WALLPAPER_DIM = "wallpaper_dim";
+    static final String WALLPAPER_VIDEO = "wallpaper_video";
     static final String REDUCED = "reduced";
     static final String REDUCED_TRANSPARENCY = "reduced_transparency";
     static final String PLAYER_ENGINE = "player_engine";
@@ -77,6 +78,7 @@ final class Prefs {
         HOME_SECTIONS,
         WALLPAPER_ENABLED,
         WALLPAPER_DIM,
+        WALLPAPER_VIDEO,
         REDUCED,
         REDUCED_TRANSPARENCY,
         PLAYER_ENGINE,
@@ -108,6 +110,7 @@ final class Prefs {
                                     STARTUP_ANIMATION,
                                     HOME_AMBIENT,
                                     WALLPAPER_ENABLED,
+                                    WALLPAPER_VIDEO,
                                     REDUCED,
                                     REDUCED_TRANSPARENCY,
                                     AUTO_NEXT,

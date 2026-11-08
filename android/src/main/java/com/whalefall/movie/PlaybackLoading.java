@@ -16,7 +16,7 @@ final class PlaybackLoading extends FrameLayout {
         setClickable(true);
         LinearLayout pill = a.row();
         pill.setPadding(a.dp(24), a.dp(18), a.dp(24), a.dp(18));
-        pill.setBackground(a.bg(0xf529292e, 24));
+        pill.setBackground(a.bg(0xf51a2b47, 24));
         pill.addView(new Ring(a), new LinearLayout.LayoutParams(a.dp(26), a.dp(26)));
         boolean inPlayer = a.current != null && a.current.player && !a.miniMode;
         String label =

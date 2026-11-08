@@ -330,14 +330,14 @@ final class MiniDetails {
                             winH * 0.32f,
                             0,
                             winH,
-                            new int[] {0x00090c14, 0x58090c14, 0xc8090c14, 0xf2090c14, 0xff090c14},
+                            new int[] {0x00090c14, 0x58090c14, 0xc8090c14, 0xf2090c14, 0xff070d18},
                             new float[] {0f, 0.34f, 0.68f, 0.88f, 1f},
                             Shader.TileMode.CLAMP));
             c.drawRect(0, winH * 0.32f, w, winH + 2f, paint);
             paint.setShader(null);
 
             // 3. Solid dark surface below winH so the episode list has a pure dark background
-            paint.setColor(0xff090c14);
+            paint.setColor(0xff070d18);
             c.drawRect(0, winH, w, h, paint);
 
             // 4. Scroll-driven veil when user scrolls down into the episode grid

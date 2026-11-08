@@ -105,7 +105,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         emptyResult = null;
         moreResults = null;
         pageTicket = a.generation;
-        a.root.setBackgroundColor(0xff101013);
+        a.root.setBackgroundColor(0xff0b1220);
         if (a.root.getChildAt(0) instanceof ImageLoader.Atmosphere) a.root.removeViewAt(0);
         a.body.setPadding(a.dp(32), a.dp(14), a.dp(32), a.dp(16));
         try {
@@ -217,7 +217,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         input.setCursorVisible(false);
         input.setEllipsize(android.text.TextUtils.TruncateAt.START);
         input.setPadding(a.dp(14), a.dp(10), a.dp(12), a.dp(10));
-        input.setBackground(a.bg(0xff29292e, 10));
+        input.setBackground(a.bg(0xff1a2b47, 10));
         input.setFocusable(true);
         input.setFocusableInTouchMode(true);
         input.setClickable(true);
@@ -233,7 +233,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
                             a,
                             input,
                             f,
-                            0xff29292e,
+                            0xff1a2b47,
                             0xff35353e,
                             10,
                             MainActivity.WHITE,
@@ -384,14 +384,14 @@ public final class GlobalSearchScreen implements AutoCloseable {
         b.setMinimumHeight(0);
         b.setTextSize(14);
         b.setPadding(a.dp(2), 0, a.dp(2), 0);
-        b.setBackground(a.bg(0xff29292e, 7));
+        b.setBackground(a.bg(0xff1a2b47, 7));
         b.setOnFocusChangeListener(
                 (v, focus) -> {
                     FocusMotion.style(
                             a,
                             b,
                             focus,
-                            0xff29292e,
+                            0xff1a2b47,
                             MainActivity.WHITE,
                             7,
                             MainActivity.WHITE,
@@ -956,7 +956,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
                 a,
                 b,
                 focused,
-                selected ? 0xff465c76 : 0xff272f3a,
+                selected ? 0xff3a5d8c : 0xff272f3a,
                 MainActivity.WHITE,
                 17,
                 selected ? MainActivity.WHITE : 0xffc2cbd7,
@@ -1100,7 +1100,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         card.setPadding(a.dp(4), a.dp(4), a.dp(4), a.dp(8));
         ImageView poster = new ImageView(a);
         poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        poster.setBackground(a.bg(0xff25252a, 9));
+        poster.setBackground(a.bg(0xff182a45, 9));
         poster.setClipToOutline(true);
         LinearLayout.LayoutParams posterSize = new LinearLayout.LayoutParams(a.dp(110), a.dp(165));
         posterSize.gravity = Gravity.CENTER_HORIZONTAL;

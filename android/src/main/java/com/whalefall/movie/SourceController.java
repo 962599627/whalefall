@@ -497,7 +497,7 @@ final class SourceController {
             UpdateScreen.result(a);
             return;
         }
-        if (request >= 44 && request <= 46) {
+        if (request >= 44 && request <= 47) {
             if (result == Activity.RESULT_OK && data != null && data.getData() != null)
                 SettingsScreen.result(a, request, data.getData());
             return;
@@ -592,12 +592,12 @@ final class SourceController {
 
         final android.widget.EditText input = new android.widget.EditText(a);
         input.setHint("https://…/live.txt 或 #EXTM3U…");
-        input.setHintTextColor(0xff6b7280);
+        input.setHintTextColor(0xff7f90ad);
         input.setTextColor(MainActivity.WHITE);
         input.setTextSize(14);
         input.setMaxLines(4);
         input.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
-        input.setBackground(a.bg(0xff1e2623, 12));
+        input.setBackground(a.bg(0xff122434, 12));
         String savedLive = a.prefs.getString(Prefs.LIVE_URL, "");
         if (Cms.isHttp(savedLive)) {
             input.setText(savedLive);
@@ -610,7 +610,7 @@ final class SourceController {
         pasteBtn.setTypeface(null, android.graphics.Typeface.BOLD);
         pasteBtn.setGravity(android.view.Gravity.CENTER);
         pasteBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
-        pasteBtn.setBackground(a.bg(0xff0a84ff, 999));
+        pasteBtn.setBackground(a.bg(0xffff8fb1, 999));
         MobileDetailScreen.bindTouchFeedback(pasteBtn);
         panel.addView(pasteBtn, new LinearLayout.LayoutParams(-1, -2));
         a.gap(panel, 8);
@@ -618,7 +618,7 @@ final class SourceController {
         TextView fileBtn = a.text("📂 选择本地直播源文件 (TXT / M3U / JSON)", 13, MainActivity.WHITE);
         fileBtn.setGravity(android.view.Gravity.CENTER);
         fileBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
-        fileBtn.setBackground(a.bg(0xff1e2623, 999));
+        fileBtn.setBackground(a.bg(0xff122434, 999));
         MobileDetailScreen.bindTouchFeedback(fileBtn);
         panel.addView(fileBtn, new LinearLayout.LayoutParams(-1, -2));
 

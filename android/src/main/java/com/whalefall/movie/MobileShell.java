@@ -183,7 +183,7 @@ final class MobileShell {
 
         final EditText input = new EditText(a);
         input.setHint("https://…/config.json 或 .js / .py / .txt / .zip");
-        input.setHintTextColor(0xff6b7280);
+        input.setHintTextColor(0xff7f90ad);
         input.setTextColor(MainActivity.WHITE);
         input.setTextSize(14);
         input.setSingleLine(true);
@@ -191,7 +191,7 @@ final class MobileShell {
         input.setLongClickable(true);
         input.setTextIsSelectable(true);
         input.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
-        input.setBackground(a.bg(0xff1e2623, 12));
+        input.setBackground(a.bg(0xff122434, 12));
         String savedOrigin = a.prefs.getString(Prefs.ORIGIN, "");
         if (!savedOrigin.isEmpty()) {
             input.setText(savedOrigin);
@@ -204,7 +204,7 @@ final class MobileShell {
         pasteBtn.setTypeface(null, Typeface.BOLD);
         pasteBtn.setGravity(Gravity.CENTER);
         pasteBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
-        pasteBtn.setBackground(a.bg(0xff0a84ff, 999));
+        pasteBtn.setBackground(a.bg(0xffff8fb1, 999));
         MobileDetailScreen.bindTouchFeedback(pasteBtn);
         panel.addView(pasteBtn, new LinearLayout.LayoutParams(-1, -2));
         a.gap(panel, 8);
@@ -212,7 +212,7 @@ final class MobileShell {
         TextView fileBtn = a.text("选择本地配置或本地包 (.json/.js/.py/.txt/.zip)", 13, MainActivity.WHITE);
         fileBtn.setGravity(Gravity.CENTER);
         fileBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
-        fileBtn.setBackground(a.bg(0xff1e2623, 999));
+        fileBtn.setBackground(a.bg(0xff122434, 999));
         MobileDetailScreen.bindTouchFeedback(fileBtn);
         panel.addView(fileBtn, new LinearLayout.LayoutParams(-1, -2));
         a.gap(panel, 8);
@@ -220,7 +220,7 @@ final class MobileShell {
         TextView liveBtn = a.text("导入或管理电视直播源 (M3U / TXT / JSON)", 13, MainActivity.WHITE);
         liveBtn.setGravity(Gravity.CENTER);
         liveBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
-        liveBtn.setBackground(a.bg(0xff1e2623, 999));
+        liveBtn.setBackground(a.bg(0xff122434, 999));
         MobileDetailScreen.bindTouchFeedback(liveBtn);
         panel.addView(liveBtn, new LinearLayout.LayoutParams(-1, -2));
 
@@ -380,11 +380,17 @@ final class MobileShell {
         resolveActiveSite();
 
         a.root = new FrameLayout(a);
-        a.root.setBackgroundColor(0xff070c0a);
+        a.root.setBackground(Skin.backdrop(a));
         a.setContentView(a.root);
 
-        // Layer 0: iOS 27 Emerald-Obsidian Ambient Background
-        a.root.addView(new AmbientCanvasView(a), new FrameLayout.LayoutParams(-1, -1));
+        // Layer 0: 视频动态壁纸优先，否则用海报环境背景
+        a.releaseWallpaper();
+        if (a.videoWallpaperEnabled()) {
+            a.videoWallpaper = new VideoWallpaper(a);
+            a.root.addView(a.videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
+        } else {
+            a.root.addView(new AmbientCanvasView(a), new FrameLayout.LayoutParams(-1, -1));
+        }
 
         float widthDp = a.windowWidth() / a.getResources().getDisplayMetrics().density;
         boolean tabletSideRail = widthDp >= 640 && !a.isPortrait();
@@ -666,7 +672,7 @@ final class MobileShell {
             tab.addView(
                     glyph, new LinearLayout.LayoutParams(a.dp(22 * navScale), a.dp(22 * navScale)));
 
-            TextView label = a.text(TAB_NAMES[tabIdx], 10.5f * navScale, 0xffe5e7eb);
+            TextView label = a.text(TAB_NAMES[tabIdx], 10.5f * navScale, 0xffe6edf9);
             label.setGravity(Gravity.CENTER);
             label.setPadding(0, a.dp(2), 0, 0);
             navLabels[tabIdx] = label;
@@ -709,7 +715,7 @@ final class MobileShell {
                 }
             }
             if (navLabels[i] != null) {
-                navLabels[i].setTextColor(selected ? 0xff0a84ff : 0xffe5e7eb);
+                navLabels[i].setTextColor(selected ? 0xffff8fb1 : 0xffe6edf9);
                 navLabels[i].setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
             }
             if (navIcons[i] != null) {
@@ -772,7 +778,7 @@ final class MobileShell {
             TextView hTitle = a.text("历史记录", 18, MainActivity.WHITE);
             hTitle.setTypeface(null, Typeface.BOLD);
             histHeader.addView(hTitle, new LinearLayout.LayoutParams(0, -2, 1));
-            TextView moreHist = a.text("查看全部", 13, 0xff0a84ff);
+            TextView moreHist = a.text("查看全部", 13, 0xffff8fb1);
             moreHist.setTypeface(null, Typeface.BOLD);
             MobileDetailScreen.bindTouchFeedback(moreHist);
             moreHist.setOnClickListener(
@@ -796,13 +802,13 @@ final class MobileShell {
                 card.setGravity(Gravity.CENTER_VERTICAL);
                 card.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
                 card.setBackground(
-                        glassBg(0xb81e2724, 0xb8151b19, a.dp(18), a.dp(0.8f), 0x2effffff));
+                        glassBg(0xcc1e3557, 0xb8151b19, a.dp(18), a.dp(0.8f), 0x38ffffff));
                 MobileDetailScreen.bindTouchFeedback(card);
                 card.setOnClickListener(v -> a.resumeHistory(e));
 
                 ImageView thumb = new ImageView(a);
                 thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                thumb.setBackground(a.bg(0xff232b28, 10));
+                thumb.setBackground(a.bg(0xff1b2e48, 10));
                 thumb.setClipToOutline(true);
                 LinearLayout.LayoutParams thumbLp =
                         new LinearLayout.LayoutParams(a.dp(46), a.dp(64));
@@ -817,7 +823,7 @@ final class MobileShell {
                 t.setEllipsize(TextUtils.TruncateAt.END);
                 meta.addView(t);
 
-                TextView sub = a.text(a.historyLabel(e), 11.5f, 0xff9ca3af);
+                TextView sub = a.text(a.historyLabel(e), 11.5f, 0xff9fb0c9);
                 sub.setSingleLine(true);
                 sub.setEllipsize(TextUtils.TruncateAt.END);
                 sub.setPadding(0, a.dp(3), 0, a.dp(7));
@@ -831,7 +837,7 @@ final class MobileShell {
                                 ? Math.max(0.12f, Math.min(1f, (float) e.position / e.duration))
                                 : 0.2f;
                 View progFill = new View(a);
-                progFill.setBackground(a.bg(0xff0a84ff, 2));
+                progFill.setBackground(a.bg(0xffff8fb1, 2));
                 progTrack.addView(
                         progFill,
                         new FrameLayout.LayoutParams(
@@ -907,7 +913,7 @@ final class MobileShell {
         loadMoreBtn.setGravity(Gravity.CENTER);
         loadMoreBtn.setPadding(a.dp(20), a.dp(11), a.dp(20), a.dp(11));
         loadMoreBtn.setBackground(
-                glassBg(0xcc262e2b, 0xb81a211f, a.dp(999), a.dp(0.8f), 0x33ffffff));
+                glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.8f), 0x33ffffff));
         loadMoreBtn.setVisibility(View.GONE);
         MobileDetailScreen.bindTouchFeedback(loadMoreBtn);
         LinearLayout.LayoutParams moreLp = new LinearLayout.LayoutParams(-1, -2);
@@ -1177,7 +1183,7 @@ final class MobileShell {
     private View buildHeroShowcaseCard(final Cms.Site site, final Cms.Video featured) {
         FrameLayout card = new FrameLayout(a);
         card.setTag("hero-watch-now-button");
-        card.setBackground(glassBg(0xff141c19, 0xff0d1311, a.dp(24), a.dp(0.8f), 0x38ffffff));
+        card.setBackground(glassBg(0xff16283f, 0xff101e33, a.dp(24), a.dp(0.8f), 0x38ffffff));
         card.setClipToOutline(true);
         MobileDetailScreen.bindTouchFeedback(card);
         card.setOnClickListener(v -> a.openListing(site, featured));
@@ -1205,7 +1211,7 @@ final class MobileShell {
         // Left 2:3 Poster
         ImageView poster = new ImageView(a);
         poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        poster.setBackground(a.bg(0xff1e2623, 14));
+        poster.setBackground(a.bg(0xff122434, 14));
         poster.setClipToOutline(true);
         LinearLayout.LayoutParams posterLp = new LinearLayout.LayoutParams(a.dp(110), a.dp(166));
         posterLp.rightMargin = a.dp(14);
@@ -1222,7 +1228,7 @@ final class MobileShell {
         topBadge.setSingleLine(true);
         topBadge.setEllipsize(TextUtils.TruncateAt.END);
         topBadge.setPadding(a.dp(9), a.dp(3), a.dp(9), a.dp(3));
-        topBadge.setBackground(glassBg(0x38ffffff, 0x24ffffff, a.dp(999), a.dp(0.6f), 0x33ffffff));
+        topBadge.setBackground(glassBg(0x38ffffff, 0x30ffffff, a.dp(999), a.dp(0.6f), 0x33ffffff));
         rightCol.addView(topBadge, new LinearLayout.LayoutParams(-2, -2));
 
         TextView title = a.text(featured.title, 18, Color.WHITE);
@@ -1237,7 +1243,7 @@ final class MobileShell {
         boolean hasChip = false;
         for (String rawTag : tags) {
             if (rawTag == null || rawTag.trim().isEmpty()) continue;
-            TextView chip = a.text(rawTag.trim(), 10.5f, 0xffd1d5db);
+            TextView chip = a.text(rawTag.trim(), 10.5f, 0xffd2dced);
             chip.setTypeface(null, Typeface.BOLD);
             chip.setSingleLine(true);
             chip.setEllipsize(TextUtils.TruncateAt.END);
@@ -1263,7 +1269,7 @@ final class MobileShell {
         watchBtn.setTypeface(null, Typeface.BOLD);
         watchBtn.setGravity(Gravity.CENTER);
         watchBtn.setPadding(a.dp(14), a.dp(7), a.dp(14), a.dp(7));
-        watchBtn.setBackground(glassBg(0xffffffff, 0xffeaeaf0, a.dp(999), 0, 0));
+        watchBtn.setBackground(glassBg(0xffffffff, 0xffe9eef9, a.dp(999), 0, 0));
         bottomRow.addView(watchBtn, new LinearLayout.LayoutParams(-2, -2));
         rightCol.addView(bottomRow, new LinearLayout.LayoutParams(-1, -2));
 
@@ -1301,9 +1307,9 @@ final class MobileShell {
         chip.setPadding(
                 a.dp(15 * navScale), a.dp(7 * navScale), a.dp(15 * navScale), a.dp(7 * navScale));
         if (active) {
-            chip.setBackground(glassBg(0xffffffff, 0xffeaeaf0, a.dp(999), a.dp(0.7f), 0xffffffff));
+            chip.setBackground(glassBg(0xffffffff, 0xffe9eef9, a.dp(999), a.dp(0.7f), 0xffffffff));
         } else {
-            chip.setBackground(glassBg(0xcc262e2b, 0xb81a211f, a.dp(999), a.dp(0.7f), 0x2effffff));
+            chip.setBackground(glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
         }
         MobileDetailScreen.bindTouchFeedback(chip);
         chip.setOnClickListener(
@@ -1348,7 +1354,7 @@ final class MobileShell {
             card.setOnClickListener(view -> a.openListing(site, v));
 
             FrameLayout art = new FrameLayout(a);
-            art.setBackground(glassBg(0xff1c2421, 0xff141a18, a.dp(12), a.dp(0.6f), 0x26ffffff));
+            art.setBackground(glassBg(0xff1a2c45, 0xff13233a, a.dp(12), a.dp(0.6f), 0x33ffffff));
             art.setClipToOutline(true);
 
             ImageView img = new ImageView(a);
@@ -1445,7 +1451,7 @@ final class MobileShell {
         LinearLayout card = a.vertical();
         card.setGravity(Gravity.CENTER_HORIZONTAL);
         card.setPadding(a.dp(24), a.dp(26), a.dp(24), a.dp(26));
-        card.setBackground(glassBg(0xd818221e, 0xd8101715, a.dp(26), a.dp(0.8f), 0x33ffffff));
+        card.setBackground(glassBg(0xd81a2e4a, 0xd8101715, a.dp(26), a.dp(0.8f), 0x33ffffff));
         wrap.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
         ImageView logo = new ImageView(a);
@@ -1463,7 +1469,7 @@ final class MobileShell {
             addMobileActionBtn(
                     card,
                     "退出隐私空间",
-                    0xff1e2724,
+                    0xff13253d,
                     MainActivity.WHITE,
                     () -> PrivacySpace.switchSpace(a, false));
             a.gap(card, 12);
@@ -1485,7 +1491,7 @@ final class MobileShell {
         LinearLayout urlRow = a.row();
         final EditText urlInput = new EditText(a);
         urlInput.setHint("输入或长按粘贴配置网址 https://…");
-        urlInput.setHintTextColor(0xff6b7280);
+        urlInput.setHintTextColor(0xff7f90ad);
         urlInput.setTextColor(MainActivity.WHITE);
         urlInput.setTextSize(13);
         urlInput.setSingleLine(true);
@@ -1493,7 +1499,7 @@ final class MobileShell {
         urlInput.setLongClickable(true);
         urlInput.setTextIsSelectable(true);
         urlInput.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
-        urlInput.setBackground(a.bg(0xff1e2724, 999));
+        urlInput.setBackground(a.bg(0xff13253d, 999));
         LinearLayout.LayoutParams urlLp = new LinearLayout.LayoutParams(0, -2, 1);
         urlLp.rightMargin = a.dp(8);
         urlRow.addView(urlInput, urlLp);
@@ -1502,7 +1508,7 @@ final class MobileShell {
         goBtn.setTypeface(null, Typeface.BOLD);
         goBtn.setGravity(Gravity.CENTER);
         goBtn.setPadding(a.dp(18), a.dp(10), a.dp(18), a.dp(10));
-        goBtn.setBackground(a.bg(0xff0a84ff, 999));
+        goBtn.setBackground(a.bg(0xffff8fb1, 999));
         MobileDetailScreen.bindTouchFeedback(goBtn);
         goBtn.setOnClickListener(v -> importTextOrUrl(a, urlInput.getText().toString()));
         urlRow.addView(goBtn);
@@ -1510,24 +1516,24 @@ final class MobileShell {
         a.gap(card, 12);
 
         addMobileActionBtn(
-                card, "一键粘贴剪贴板并导入", 0xff0a84ff, Color.WHITE, () -> pasteConfigFromClipboard(a));
+                card, "一键粘贴剪贴板并导入", 0xffff8fb1, Color.WHITE, () -> pasteConfigFromClipboard(a));
         a.gap(card, 10);
         addMobileActionBtn(
                 card,
                 "选择本地配置或本地包 (.json/.js/.py/.zip)",
-                0xff1e2724,
+                0xff13253d,
                 MainActivity.WHITE,
                 a::pickConfig);
         a.gap(card, 10);
         addMobileActionBtn(
                 card,
                 "导入电视直播源 (M3U / TXT / JSON)",
-                0xff1e2724,
+                0xff13253d,
                 MainActivity.WHITE,
                 () -> SourceController.showLiveImportDialog(a));
 
         a.gap(wrap, 18);
-        TextView legal = a.text("本产品仅为播放工具，不内置、不提供、不托管任何影视资源或配置地址。", 11.5f, 0xff6b7280);
+        TextView legal = a.text("本产品仅为播放工具，不内置、不提供、不托管任何影视资源或配置地址。", 11.5f, 0xff7f90ad);
         legal.setGravity(Gravity.CENTER);
         legal.setLineSpacing(a.dp(3), 1f);
         wrap.addView(legal);
@@ -1569,11 +1575,11 @@ final class MobileShell {
         LinearLayout inputRow = a.row();
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
         inputRow.setPadding(a.dp(14), a.dp(3), a.dp(5), a.dp(3));
-        inputRow.setBackground(glassBg(0xd4222a27, 0xc4181e1c, a.dp(999), a.dp(0.8f), 0x33ffffff));
+        inputRow.setBackground(glassBg(0xd41a2c46, 0xc4181e1c, a.dp(999), a.dp(0.8f), 0x33ffffff));
 
         final EditText input = new EditText(a);
         input.setHint("搜索片名、演员或拼音首字母…");
-        input.setHintTextColor(0xff7c858e);
+        input.setHintTextColor(0xff8496b2);
         input.setTextColor(MainActivity.WHITE);
         input.setTextSize(14);
         input.setSingleLine(true);
@@ -1596,7 +1602,7 @@ final class MobileShell {
         searchBtn.setTypeface(null, Typeface.BOLD);
         searchBtn.setGravity(Gravity.CENTER);
         searchBtn.setPadding(a.dp(14), a.dp(7), a.dp(14), a.dp(7));
-        searchBtn.setBackground(a.bg(0xff0a84ff, 999));
+        searchBtn.setBackground(a.bg(0xffff8fb1, 999));
         MobileDetailScreen.bindTouchFeedback(searchBtn);
         inputRow.addView(searchBtn);
 
@@ -1674,7 +1680,7 @@ final class MobileShell {
                         hRow.setPadding(a.dp(2), a.dp(10), a.dp(2), a.dp(4));
                         TextView hLabel = a.text("历史搜索", 12, MainActivity.MUTED);
                         hRow.addView(hLabel, new LinearLayout.LayoutParams(0, -2, 1));
-                        TextView clearHist = a.text("清空", 12, 0xff0a84ff);
+                        TextView clearHist = a.text("清空", 12, 0xffff8fb1);
                         MobileDetailScreen.bindTouchFeedback(clearHist);
                         clearHist.setOnClickListener(
                                 v -> {
@@ -1694,15 +1700,15 @@ final class MobileShell {
                         for (int i = 0; i < Math.min(12, arr.length()); i++) {
                             final String kw = arr.optString(i);
                             if (kw.isEmpty()) continue;
-                            TextView chip = a.text(kw, 12, 0xffe5e7eb);
+                            TextView chip = a.text(kw, 12, 0xffe6edf9);
                             chip.setPadding(a.dp(13), a.dp(6), a.dp(13), a.dp(6));
                             chip.setBackground(
                                     glassBg(
-                                            0xcc262e2b,
-                                            0xb81a211f,
+                                            0xcc172842,
+                                            0xcc182b4c,
                                             a.dp(999),
                                             a.dp(0.7f),
-                                            0x2effffff));
+                                            0x38ffffff));
                             MobileDetailScreen.bindTouchFeedback(chip);
                             chip.setOnClickListener(
                                     v -> {
@@ -1919,7 +1925,7 @@ final class MobileShell {
         LinearLayout row = a.row();
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
-        row.setBackground(glassBg(0xb81b2320, 0xb8131917, a.dp(16), a.dp(0.7f), 0x26ffffff));
+        row.setBackground(glassBg(0xcc1e3557, 0xcc17294a, a.dp(16), a.dp(0.7f), 0x33ffffff));
         MobileDetailScreen.bindTouchFeedback(row);
         row.setOnClickListener(
                 view -> {
@@ -1929,7 +1935,7 @@ final class MobileShell {
 
         ImageView poster = new ImageView(a);
         poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        poster.setBackground(a.bg(0xff232b28, 10));
+        poster.setBackground(a.bg(0xff1b2e48, 10));
         poster.setClipToOutline(true);
         LinearLayout.LayoutParams posterLp = new LinearLayout.LayoutParams(a.dp(60), a.dp(86));
         posterLp.rightMargin = a.dp(12);
@@ -1945,7 +1951,7 @@ final class MobileShell {
         title.setEllipsize(TextUtils.TruncateAt.END);
         info.addView(title);
 
-        TextView badge = a.text("来源：" + site.name, 12, 0xff0a84ff);
+        TextView badge = a.text("来源：" + site.name, 12, 0xffff8fb1);
         badge.setTypeface(null, Typeface.BOLD);
         badge.setPadding(0, a.dp(4), 0, 0);
         info.addView(badge);
@@ -1985,7 +1991,7 @@ final class MobileShell {
             addMobileActionBtn(
                     page,
                     "导入电视直播源 (M3U / TXT / JSON)",
-                    0xff0a84ff,
+                    0xffff8fb1,
                     Color.WHITE,
                     () -> SourceController.showLiveImportDialog(a));
             return;
@@ -2004,13 +2010,13 @@ final class MobileShell {
 
         final EditText searchInput = new EditText(a);
         searchInput.setHint("搜索频道…");
-        searchInput.setHintTextColor(0xff7c858e);
+        searchInput.setHintTextColor(0xff8496b2);
         searchInput.setTextColor(Color.WHITE);
         searchInput.setTextSize(12.5f);
         searchInput.setSingleLine(true);
         searchInput.setPadding(a.dp(13), a.dp(6), a.dp(13), a.dp(6));
         searchInput.setBackground(
-                glassBg(0xd4222a27, 0xc4181e1c, a.dp(999), a.dp(0.8f), 0x33ffffff));
+                glassBg(0xd41a2c46, 0xc4181e1c, a.dp(999), a.dp(0.8f), 0x33ffffff));
         titleSearchRow.addView(searchInput, new LinearLayout.LayoutParams(a.dp(168), -2));
         topHeader.addView(titleSearchRow, new LinearLayout.LayoutParams(-1, -2));
 
@@ -2081,18 +2087,18 @@ final class MobileShell {
                         final int idx = i;
                         boolean active = i == activeSrcIdx[0];
                         TextView chip =
-                                a.text(sources.get(i).name, 12, active ? Color.WHITE : 0xffd1d5db);
+                                a.text(sources.get(i).name, 12, active ? Color.WHITE : 0xffd2dced);
                         chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
                         chip.setPadding(a.dp(13), a.dp(5), a.dp(13), a.dp(5));
                         chip.setBackground(
                                 active
-                                        ? a.bg(0xff0a84ff, 999)
+                                        ? a.bg(0xffff8fb1, 999)
                                         : glassBg(
-                                                0xcc262e2b,
-                                                0xb81a211f,
+                                                0xcc172842,
+                                                0xcc182b4c,
                                                 a.dp(999),
                                                 a.dp(0.7f),
-                                                0x2effffff));
+                                                0x38ffffff));
                         MobileDetailScreen.bindTouchFeedback(chip);
                         chip.setOnClickListener(
                                 v -> {
@@ -2108,7 +2114,7 @@ final class MobileShell {
                     importLiveChip.setTypeface(null, Typeface.BOLD);
                     importLiveChip.setPadding(a.dp(13), a.dp(5), a.dp(13), a.dp(5));
                     importLiveChip.setBackground(
-                            glassBg(0xcc262e2b, 0xb81a211f, a.dp(999), a.dp(0.7f), 0x2effffff));
+                            glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
                     MobileDetailScreen.bindTouchFeedback(importLiveChip);
                     importLiveChip.setOnClickListener(
                             v -> SourceController.showLiveImportDialog(a));
@@ -2178,13 +2184,13 @@ final class MobileShell {
                 a.text(
                         "全部 (" + catalog.channelCount() + ")",
                         12,
-                        allActive ? 0xff000000 : 0xffe5e7eb);
+                        allActive ? 0xff000000 : 0xffe6edf9);
         allBtn.setTypeface(null, allActive ? Typeface.BOLD : Typeface.NORMAL);
         allBtn.setPadding(a.dp(13), a.dp(5), a.dp(13), a.dp(5));
         allBtn.setBackground(
                 allActive
-                        ? glassBg(0xffffffff, 0xffeaeaf0, a.dp(999), 0, 0)
-                        : glassBg(0xcc262e2b, 0xb81a211f, a.dp(999), a.dp(0.7f), 0x2effffff));
+                        ? glassBg(0xffffffff, 0xffe9eef9, a.dp(999), 0, 0)
+                        : glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
         MobileDetailScreen.bindTouchFeedback(allBtn);
         allBtn.setOnClickListener(
                 v -> {
@@ -2204,14 +2210,14 @@ final class MobileShell {
                     a.text(
                             g.name + " (" + g.channels.size() + ")",
                             12,
-                            active ? 0xff000000 : 0xffe5e7eb);
+                            active ? 0xff000000 : 0xffe6edf9);
             gBtn.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
             gBtn.setSingleLine(true);
             gBtn.setPadding(a.dp(13), a.dp(5), a.dp(13), a.dp(5));
             gBtn.setBackground(
                     active
-                            ? glassBg(0xffffffff, 0xffeaeaf0, a.dp(999), 0, 0)
-                            : glassBg(0xcc262e2b, 0xb81a211f, a.dp(999), a.dp(0.7f), 0x2effffff));
+                            ? glassBg(0xffffffff, 0xffe9eef9, a.dp(999), 0, 0)
+                            : glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
             MobileDetailScreen.bindTouchFeedback(gBtn);
             gBtn.setOnClickListener(
                     v -> {
@@ -2299,7 +2305,7 @@ final class MobileShell {
         LinearLayout card = a.row();
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(a.dp(10), a.dp(10), a.dp(10), a.dp(10));
-        card.setBackground(glassBg(0xb81c2522, 0xb8141a18, a.dp(16), a.dp(0.8f), 0x28ffffff));
+        card.setBackground(glassBg(0xb8162740, 0xb8141a18, a.dp(16), a.dp(0.8f), 0x33ffffff));
         MobileDetailScreen.bindTouchFeedback(card);
 
         // Left: Smart Callsign Badge
@@ -2325,7 +2331,7 @@ final class MobileShell {
                                 + " · "
                                 + (ch.streams.size() > 1 ? ch.streams.size() + "源" : "直连"),
                         11,
-                        0xff9ca3af);
+                        0xff9fb0c9);
         sub.setSingleLine(true);
         sub.setEllipsize(TextUtils.TruncateAt.END);
         subRow.addView(sub, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -2467,17 +2473,17 @@ final class MobileShell {
                                 row.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
                                 row.setBackground(
                                         glassBg(
-                                                0xb81b2320,
-                                                0xb8131917,
+                                                0xcc1e3557,
+                                                0xcc17294a,
                                                 a.dp(16),
                                                 a.dp(0.7f),
-                                                0x26ffffff));
+                                                0x33ffffff));
                                 MobileDetailScreen.bindTouchFeedback(row);
                                 row.setOnClickListener(v -> a.resumeHistory(e));
 
                                 ImageView thumb = new ImageView(a);
                                 thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                                thumb.setBackground(a.bg(0xff232b28, 10));
+                                thumb.setBackground(a.bg(0xff1b2e48, 10));
                                 thumb.setClipToOutline(true);
                                 LinearLayout.LayoutParams thumbLp =
                                         new LinearLayout.LayoutParams(a.dp(52), a.dp(74));
@@ -2535,16 +2541,16 @@ final class MobileShell {
                                 row.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
                                 row.setBackground(
                                         glassBg(
-                                                0xb81b2320,
-                                                0xb8131917,
+                                                0xcc1e3557,
+                                                0xcc17294a,
                                                 a.dp(16),
                                                 a.dp(0.7f),
-                                                0x26ffffff));
+                                                0x33ffffff));
                                 MobileDetailScreen.bindTouchFeedback(row);
 
                                 ImageView thumb = new ImageView(a);
                                 thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                                thumb.setBackground(a.bg(0xff232b28, 10));
+                                thumb.setBackground(a.bg(0xff1b2e48, 10));
                                 thumb.setClipToOutline(true);
                                 LinearLayout.LayoutParams thumbLp =
                                         new LinearLayout.LayoutParams(a.dp(52), a.dp(74));
@@ -2627,13 +2633,13 @@ final class MobileShell {
     }
 
     private void styleLibraryPill(TextView pill, boolean active) {
-        pill.setTextColor(active ? 0xff000000 : 0xffe5e7eb);
+        pill.setTextColor(active ? 0xff000000 : 0xffe6edf9);
         pill.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
         pill.setPadding(a.dp(15), a.dp(7), a.dp(15), a.dp(7));
         if (active) {
-            pill.setBackground(glassBg(0xffffffff, 0xffeaeaf0, a.dp(999), 0, 0));
+            pill.setBackground(glassBg(0xffffffff, 0xffe9eef9, a.dp(999), 0, 0));
         } else {
-            pill.setBackground(glassBg(0xcc262e2b, 0xb81a211f, a.dp(999), a.dp(0.7f), 0x2effffff));
+            pill.setBackground(glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
         }
     }
 
@@ -2891,6 +2897,20 @@ final class MobileShell {
                         });
                 addSettingCard(
                         body,
+                        3,
+                        "首页壁纸与动态壁纸",
+                        a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
+                                ? "视频动态壁纸（循环静音）"
+                                : a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)
+                                        ? "自定义图片壁纸"
+                                        : "海报配色柔光（默认）",
+                        () ->
+                                a.open(
+                                        new MainActivity.Screen(
+                                                () -> new SettingsScreen(a).wallpaper()),
+                                        true));
+                addSettingCard(
+                        body,
                         4,
                         "清空搜索历史记录",
                         "清除搜索页保存的全部历史关键词",
@@ -2972,7 +2992,7 @@ final class MobileShell {
         LinearLayout row = a.row();
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(a.dp(14), a.dp(13), a.dp(14), a.dp(13));
-        row.setBackground(glassBg(0xb81b2320, 0xb8131917, a.dp(18), a.dp(0.7f), 0x26ffffff));
+        row.setBackground(glassBg(0xcc1e3557, 0xcc17294a, a.dp(18), a.dp(0.7f), 0x33ffffff));
         MobileDetailScreen.bindTouchFeedback(row);
         row.setOnClickListener(v -> action.run());
 
@@ -3134,7 +3154,7 @@ final class MobileShell {
                             0,
                             0,
                             h,
-                            new int[] {0xff11241c, 0xff0b1612, 0xff060a08},
+                            new int[] {0xff152a45, 0xff0a1424, 0xff060b14},
                             new float[] {0f, 0.52f, 1f},
                             Shader.TileMode.CLAMP));
             canvas.drawRect(0, 0, w, h, paint);
@@ -3145,7 +3165,7 @@ final class MobileShell {
                             w * 0.5f,
                             h * 0.14f,
                             radius,
-                            new int[] {0x38205c44, 0x14123628, 0x00070c0a},
+                            new int[] {0x33ff9dbb, 0x14243a5e, 0x00060c15},
                             new float[] {0f, 0.55f, 1f},
                             Shader.TileMode.CLAMP));
             canvas.drawRect(0, 0, w, h, glowPaint);
@@ -3242,7 +3262,7 @@ final class MobileShell {
         protected void onDraw(Canvas c) {
             float w = getWidth(), h = getHeight();
             float cx = w / 2f, cy = h / 2f;
-            int color = customTint != 0 ? customTint : (selected ? 0xff0a84ff : 0xffe5e7eb);
+            int color = customTint != 0 ? customTint : (selected ? 0xffff8fb1 : 0xffe6edf9);
             paint.setColor(color);
             paint.setStrokeWidth(a.dp(1.75f));
             paint.setStrokeCap(Paint.Cap.ROUND);

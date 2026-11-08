@@ -304,7 +304,7 @@ final class LiveController {
                     label = a.text("", 30, MainActivity.WHITE);
                     label.setTag("live-number");
                     label.setPadding(a.dp(18), a.dp(10), a.dp(18), a.dp(10));
-                    label.setBackground(a.bg(0xee25252b, 18));
+                    label.setBackground(a.bg(0xee182a45, 18));
                     FrameLayout.LayoutParams size =
                             new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT);
                     size.setMargins(0, a.dp(30), a.dp(40), 0);

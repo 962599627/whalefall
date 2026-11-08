@@ -59,7 +59,7 @@ final class PlayerChrome {
             topActions.setPadding(0, 0, 0, a.dp(8));
             Button backBtn = a.navButton("‹ 返回", "player-back", a::leavePlayback);
             backBtn.setTextColor(MainActivity.WHITE);
-            backBtn.setBackground(chromeSurface(0xcc22222a, 17, 0x33ffffff));
+            backBtn.setBackground(chromeSurface(0xcc15233a, 17, 0x33ffffff));
             topActions.addView(backBtn, new LinearLayout.LayoutParams(-2, a.dp(34)));
             View spacer = new View(a);
             topActions.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
@@ -82,12 +82,12 @@ final class PlayerChrome {
         resolution.setSingleLine();
         resolution.setEllipsize(android.text.TextUtils.TruncateAt.END);
         resolution.setPadding(a.dp(9), a.dp(3), a.dp(9), a.dp(3));
-        resolution.setBackground(chromeSurface(0xb824242c, 10, 0x28ffffff));
+        resolution.setBackground(chromeSurface(0xb8172742, 10, 0x33ffffff));
         titleRow.addView(resolution, new LinearLayout.LayoutParams(-2, -2));
         heading.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
         String line = a.activeLine == null ? "" : a.activeLine.name;
         episodeLabel =
-                a.text(episode.name + (line.isEmpty() ? "" : "  ·  " + line), 14, 0xffdddddf);
+                a.text(episode.name + (line.isEmpty() ? "" : "  ·  " + line), 14, 0xffdde6f5);
         episodeLabel.setTag("player-episode");
         episodeLabel.setSingleLine();
         episodeLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -108,7 +108,7 @@ final class PlayerChrome {
         a.playClock.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
         a.playClock.setPadding(a.dp(8), 0, a.dp(12), 0);
         clockRow.addView(a.playClock, new LinearLayout.LayoutParams(0, -2, 1));
-        seekHint = a.text("", 12, 0xffe5e7eb);
+        seekHint = a.text("", 12, 0xffe6edf9);
         seekHint.setTag("player-seek-hint");
         seekHint.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         seekHint.setPadding(a.dp(8), 0, a.dp(8), 0);
@@ -125,7 +125,7 @@ final class PlayerChrome {
             fsBtn.setMinHeight(a.dp(30));
             fsBtn.setMinimumHeight(a.dp(30));
             fsBtn.setPadding(a.dp(12), a.dp(4), a.dp(12), a.dp(4));
-            fsBtn.setBackground(chromeSurface(0xcc22222a, 15, 0x33ffffff));
+            fsBtn.setBackground(chromeSurface(0xcc15233a, 15, 0x33ffffff));
             clockRow.addView(fsBtn, new LinearLayout.LayoutParams(-2, a.dp(30)));
         } else {
             fsBtn = null;
@@ -234,7 +234,7 @@ final class PlayerChrome {
         TextView btn = a.text(label, 12, MainActivity.WHITE);
         btn.setGravity(Gravity.CENTER);
         btn.setTypeface(null, Typeface.BOLD);
-        GradientDrawable bg = a.bg(0x99303034, 29);
+        GradientDrawable bg = a.bg(0x9924395c, 29);
         bg.setStroke(a.dp(1), 0x33ffffff);
         btn.setBackground(bg);
         btn.setOnClickListener(
@@ -451,7 +451,7 @@ final class PlayerChrome {
         @Override
         protected void onDraw(Canvas canvas) {
             float cx = getWidth() / 2f, cy = getHeight() / 2f;
-            paint.setColor(0x99303034);
+            paint.setColor(0x9924395c);
             canvas.drawCircle(cx, cy, getWidth() / 2f, paint);
             paint.setColor(MainActivity.WHITE);
             if (!a.prepared) {

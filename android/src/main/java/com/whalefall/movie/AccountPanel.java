@@ -14,7 +14,7 @@ final class AccountPanel {
         LinearLayout panel = a.vertical();
         panel.setTag("account-panel");
         panel.setPadding(a.dp(24), a.dp(22), a.dp(24), a.dp(18));
-        panel.setBackground(a.bg(0xf5222227, 28));
+        panel.setBackground(a.bg(0xf516243c, 28));
         panel.addView(a.text("网盘与账号", 24, MainActivity.WHITE));
         a.gap(panel, 8);
         TextView note = a.text("登录与账号状态由你导入的配置提供。", 13, MainActivity.MUTED);

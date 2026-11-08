@@ -84,11 +84,11 @@ final class MobileDetailScreen {
 
     static int defaultAmbientForTitle(String title) {
         int[] palette = {
-            0xff1a341e, // Deep forest green (e.g. 谷雨)
+            0xff16314a, // Deep forest green (e.g. 谷雨)
             0xff182638, // Deep midnight blue
             0xff2a1d33, // Deep plum
-            0xff2e2118, // Deep warm umber
-            0xff162e2e, // Deep teal
+            0xff2a2f4a, // Deep warm umber
+            0xff163048, // Deep teal
             0xff291c24 // Deep burgundy
         };
         int h = title == null ? 0 : Math.abs(title.hashCode());
@@ -807,7 +807,7 @@ final class MobileDetailScreen {
                     playBtn.setIncludeFontPadding(false);
                     playBtn.setTextSize(14.5f);
                     playBtn.setTypeface(null, Typeface.BOLD);
-                    playBtn.setTextColor(0xff121215);
+                    playBtn.setTextColor(0xff0c1524);
                     playBtn.setBackground(a.bg(0xf5ffffff, 999));
                     playBtn.setPadding(a.dp(18), 0, a.dp(18), 0);
                     bindTouchFeedback(playBtn);
@@ -1055,7 +1055,7 @@ final class MobileDetailScreen {
             TextView countBadge = a.text("共" + discoveredSeasons.size() + "季", 10.5f, 0xf2ffffff);
             countBadge.setTypeface(null, Typeface.BOLD);
             countBadge.setPadding(a.dp(7), a.dp(2), a.dp(7), a.dp(2));
-            countBadge.setBackground(a.bg(0x2effffff, 999));
+            countBadge.setBackground(a.bg(0x38ffffff, 999));
             LinearLayout.LayoutParams cbLp = new LinearLayout.LayoutParams(-2, -2);
             cbLp.leftMargin = a.dp(6);
             seasonBtn.addView(countBadge, cbLp);
@@ -1076,7 +1076,7 @@ final class MobileDetailScreen {
         sortBtn.setTag("episodes-order");
         sortBtn.setTypeface(null, Typeface.BOLD);
         sortBtn.setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5));
-        sortBtn.setBackground(glassBg(a, 0x24ffffff, 0x30ffffff, 999));
+        sortBtn.setBackground(glassBg(a, 0x30ffffff, 0x30ffffff, 999));
         bindTouchFeedback(sortBtn);
         sortBtn.setOnClickListener(
                 v -> {
@@ -1101,7 +1101,7 @@ final class MobileDetailScreen {
         allGridBtn.setTag("episodes-all-grid");
         allGridBtn.setTypeface(null, Typeface.BOLD);
         allGridBtn.setPadding(a.dp(11), a.dp(5), a.dp(11), a.dp(5));
-        allGridBtn.setBackground(glassBg(a, 0x24ffffff, 0x30ffffff, 999));
+        allGridBtn.setBackground(glassBg(a, 0x30ffffff, 0x30ffffff, 999));
         bindTouchFeedback(allGridBtn);
         allGridBtn.setOnClickListener(
                 v -> showAllEpisodesDialog(a, site, video, line, descending, remembered));
@@ -1150,7 +1150,7 @@ final class MobileDetailScreen {
             boolean isCurrent = posIdx == activeEpIdx;
 
             TextView numPill =
-                    a.text(String.valueOf(posIdx + 1), 12.5f, isCurrent ? 0xff121215 : 0xd9ffffff);
+                    a.text(String.valueOf(posIdx + 1), 12.5f, isCurrent ? 0xff0c1524 : 0xd9ffffff);
             numPill.setTag("episode:" + line.name + ":" + posIdx);
             numPill.setTypeface(null, Typeface.BOLD);
             numPill.setGravity(Gravity.CENTER);
@@ -1158,7 +1158,7 @@ final class MobileDetailScreen {
             numPill.setMinimumWidth(a.dp(32));
             numPill.setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5));
             numPill.setBackground(
-                    isCurrent ? a.bg(Color.WHITE, 999) : glassBg(a, 0x24ffffff, 0x28ffffff, 999));
+                    isCurrent ? a.bg(Color.WHITE, 999) : glassBg(a, 0x30ffffff, 0x33ffffff, 999));
             bindTouchFeedback(numPill);
             numPill.setOnClickListener(
                     v -> {
@@ -1243,7 +1243,7 @@ final class MobileDetailScreen {
             bottomLp.setMargins(a.dp(9), a.dp(8), a.dp(9), a.dp(8));
             frame.addView(bottomBar, bottomLp);
 
-            TextView ePill = a.text(eBadgeText, 10.5f, isCurrent ? 0xff121215 : Color.WHITE);
+            TextView ePill = a.text(eBadgeText, 10.5f, isCurrent ? 0xff0c1524 : Color.WHITE);
             ePill.setTypeface(null, Typeface.BOLD);
             ePill.setPadding(a.dp(7), a.dp(2.5f), a.dp(7), a.dp(2.5f));
             ePill.setBackground(a.bg(isCurrent ? Color.WHITE : 0xa6121215, 6));
@@ -1317,10 +1317,10 @@ final class MobileDetailScreen {
                         descending
                                 ? (total - g * 50) + " · " + Math.max(1, total - gEnd + 1)
                                 : gStart + " · " + gEnd;
-                TextView tab = a.text(label, 12.5f, selectedGroup ? 0xff121215 : 0xd9ffffff);
+                TextView tab = a.text(label, 12.5f, selectedGroup ? 0xff0c1524 : 0xd9ffffff);
                 tab.setTypeface(null, Typeface.BOLD);
                 tab.setPadding(a.dp(15), a.dp(6), a.dp(15), a.dp(6));
-                tab.setBackground(a.bg(selectedGroup ? Color.WHITE : 0x24ffffff, 999));
+                tab.setBackground(a.bg(selectedGroup ? Color.WHITE : 0x30ffffff, 999));
                 bindTouchFeedback(tab);
                 tab.setOnClickListener(
                         v ->
@@ -1425,7 +1425,7 @@ final class MobileDetailScreen {
             cell.setSingleLine(true);
             cell.setEllipsize(TextUtils.TruncateAt.END);
             cell.setPadding(a.dp(8), a.dp(10), a.dp(8), a.dp(10));
-            cell.setBackground(a.bg(isCurrent ? Color.WHITE : 0xff252734, 10));
+            cell.setBackground(a.bg(isCurrent ? Color.WHITE : 0xff182a45, 10));
             bindTouchFeedback(cell);
             cell.setOnClickListener(
                     v -> {
@@ -1469,12 +1469,12 @@ final class MobileDetailScreen {
             boolean active =
                     (targetVid != null && Objects.equals(targetVid.id, currentVideo.id))
                             || sNum == curMeta.seasonNumber;
-            TextView pill = a.text(sLabel, 12.5f, active ? 0xff121215 : 0xe6ffffff);
+            TextView pill = a.text(sLabel, 12.5f, active ? 0xff0c1524 : 0xe6ffffff);
             pill.setTag("detail-season:" + sNum);
             pill.setTypeface(null, Typeface.BOLD);
             pill.setPadding(a.dp(14), a.dp(5), a.dp(14), a.dp(5));
             pill.setBackground(
-                    active ? a.bg(Color.WHITE, 999) : glassBg(a, 0x24ffffff, 0x30ffffff, 999));
+                    active ? a.bg(Color.WHITE, 999) : glassBg(a, 0x30ffffff, 0x30ffffff, 999));
             bindTouchFeedback(pill);
             pill.setOnClickListener(
                     v -> {

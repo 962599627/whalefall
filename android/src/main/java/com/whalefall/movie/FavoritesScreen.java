@@ -41,7 +41,7 @@ final class FavoritesScreen {
             card.setClickable(true);
             ImageView poster = new ImageView(a);
             poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            poster.setBackground(a.bg(0xff29292e, 10));
+            poster.setBackground(a.bg(0xff1a2b47, 10));
             poster.setClipToOutline(true);
             card.addView(poster, new LinearLayout.LayoutParams(a.dp(width), a.dp(width * 1.5f)));
             a.poster(e.poster, poster);
@@ -72,7 +72,7 @@ final class FavoritesScreen {
                                 card,
                                 f,
                                 0,
-                                0xff29292f,
+                                0xff1a2b47,
                                 16,
                                 MainActivity.WHITE,
                                 MainActivity.WHITE,

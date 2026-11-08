@@ -18,7 +18,9 @@ import java.util.concurrent.*;
 
 /** Independent first native build. No original APK code or artwork is embedded. */
 public final class MainActivity extends Activity {
-    static final int WHITE = 0xfff5f5f7, MUTED = 0xffa1a1aa, DARK = 0xff101013;
+    static final int WHITE = Skin.INK, MUTED = Skin.INK_DIM, DARK = Skin.BG;
+    static final int PINK = Skin.PINK;
+    VideoWallpaper videoWallpaper;
     final Handler ui = new Handler(Looper.getMainLooper());
     final ExecutorService worker = Executors.newFixedThreadPool(4);
     final ExecutorService details = Executors.newFixedThreadPool(4);
@@ -566,7 +568,7 @@ public final class MainActivity extends Activity {
         }
         layoutIntro = b == null || b.getBoolean("layout_initial_launch", false);
         root = new FrameLayout(this);
-        root.setBackgroundColor(DARK);
+        root.setBackground(Skin.backdrop(this));
         setContentView(root);
         root.addOnLayoutChangeListener(
                 new View.OnLayoutChangeListener() {
@@ -718,7 +720,7 @@ public final class MainActivity extends Activity {
         b.setMinHeight(dp(48));
         b.setMinimumHeight(dp(48));
         b.setPadding(dp(20), dp(9), dp(20), dp(9));
-        b.setBackground(bg(0xff242429, 12));
+        b.setBackground(bg(0xff172742, 12));
         b.setTag(key);
         b.setFocusable(true);
         b.setFocusableInTouchMode(isTvDevice());
@@ -727,7 +729,7 @@ public final class MainActivity extends Activity {
         b.setOnFocusChangeListener(
                 (v, f) ->
                         FocusMotion.style(
-                                this, b, f, 0xff242429, WHITE, 12, WHITE, DARK, false, 1.025f));
+                                this, b, f, 0xff172742, WHITE, 12, WHITE, DARK, false, 1.025f));
         return b;
     }
 
@@ -768,14 +770,14 @@ public final class MainActivity extends Activity {
         b.setPadding(dp(14), dp(6), dp(14), dp(6));
         b.setMinHeight(dp(38));
         b.setMinimumHeight(dp(38));
-        GradientDrawable pill = bg(0xff282832, 19);
-        pill.setStroke(Math.max(1, dp(1)), 0x26ffffff);
+        GradientDrawable pill = bg(0xff1b2c49, 19);
+        pill.setStroke(Math.max(1, dp(1)), 0x33ffffff);
         b.setBackground(pill);
-        b.setTextColor(0xffe6e6ee);
+        b.setTextColor(0xffe6edfb);
         b.setOnFocusChangeListener(
                 (v, f) ->
                         FocusMotion.style(
-                                this, b, f, 0xff282832, WHITE, 19, 0xffe6e6ee, DARK, false, 1.02f));
+                                this, b, f, 0xff1b2c49, WHITE, 19, 0xffe6edfb, DARK, false, 1.02f));
         return b;
     }
 
@@ -806,6 +808,7 @@ public final class MainActivity extends Activity {
         stopWeb();
         stopMagnet();
         releasePlayer();
+        releaseWallpaper();
         if (!isTvDevice()) {
             applyMobileSystemBars(false);
         }
@@ -817,12 +820,19 @@ public final class MainActivity extends Activity {
         root = new FrameLayout(this);
         root.setClipChildren(false);
         root.setClipToPadding(false);
-        root.setBackgroundColor(DARK);
-        root.addView(ImageLoader.createAtmosphere(this), new FrameLayout.LayoutParams(-1, -1));
+        root.setBackground(Skin.backdrop(this));
+        releaseWallpaper();
+        if (videoWallpaperEnabled()) {
+            videoWallpaper = new VideoWallpaper(this);
+            root.addView(videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
+        } else {
+            root.addView(ImageLoader.createAtmosphere(this), new FrameLayout.LayoutParams(-1, -1));
+        }
         homeAmbient = null;
         if (navigation
                 && prefs.getBoolean(Prefs.HOME_AMBIENT, true)
-                && !prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) {
+                && !prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)
+                && !videoWallpaperEnabled()) {
             homeAmbient = new HomeAmbient(this);
             root.addView(homeAmbient, new FrameLayout.LayoutParams(-1, -1));
         }
@@ -856,7 +866,7 @@ public final class MainActivity extends Activity {
             LinearLayout.LayoutParams brandSize = new LinearLayout.LayoutParams(dp(30), dp(30));
             brandSize.rightMargin = dp(10);
             brandRow.addView(brandMark, brandSize);
-            TextView brand = text("MARCO MOVIE", 14, WHITE);
+            TextView brand = text("鲸落 · WHALEFALL", 14, WHITE);
             brand.setLetterSpacing(.10f);
             brand.setTypeface(null, Typeface.BOLD);
             brandRow.addView(brand);
@@ -865,7 +875,7 @@ public final class MainActivity extends Activity {
             homeDock = new HomeDock(this);
         }
         if (!title.isEmpty()) {
-            TextView eye = text(eyebrow, 12, 0xffa9c9f3);
+            TextView eye = text(eyebrow, 12, 0xffffc2d4);
             eye.setLetterSpacing(.15f);
             body.addView(eye);
             gap(body, 10);
@@ -888,11 +898,24 @@ public final class MainActivity extends Activity {
      * Soft home backdrop: a cool light from the top, deepening toward the bottom, with gentle
      * side shading. Sits above the poster colors or wallpaper and below all content.
      */
+    boolean videoWallpaperEnabled() {
+        return !reduced
+                && prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
+                && VideoWallpaper.file(this).isFile();
+    }
+
+    void releaseWallpaper() {
+        if (videoWallpaper != null) {
+            videoWallpaper.release();
+            videoWallpaper = null;
+        }
+    }
+
     View homeGradient() {
         GradientDrawable vertical =
                 new GradientDrawable(
                         GradientDrawable.Orientation.TOP_BOTTOM,
-                        new int[] {0x3a3b5a80, 0x0d1a2233, 0x00101013, 0x8c0a0a0d, 0xe60a0a0d});
+                        new int[] {0x3a3b5a80, 0x0d1a2233, 0x00101013, 0x8c06101f, 0xe6060c18});
         GradientDrawable sides =
                 new GradientDrawable(
                         GradientDrawable.Orientation.LEFT_RIGHT,
@@ -902,7 +925,7 @@ public final class MainActivity extends Activity {
         scrim.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         scrim.setBackground(
                 new android.graphics.drawable.LayerDrawable(
-                        new android.graphics.drawable.Drawable[] {vertical, sides}));
+                        new android.graphics.drawable.Drawable[] {vertical, sides, new Skin.Glow()}));
         return scrim;
     }
 
@@ -1008,6 +1031,7 @@ public final class MainActivity extends Activity {
             }
             if (miniMode) {
                 releasePlayer();
+        releaseWallpaper();
                 if (!back.isEmpty()) back.pop();
                 if (!back.isEmpty()) {
                     current = back.pop();
@@ -1039,6 +1063,7 @@ public final class MainActivity extends Activity {
                 return;
             }
             releasePlayer();
+        releaseWallpaper();
             finish();
             return;
         }
@@ -1049,6 +1074,7 @@ public final class MainActivity extends Activity {
             restore(current);
         } else {
             releasePlayer();
+        releaseWallpaper();
             finish();
         }
     }
@@ -1583,6 +1609,7 @@ public final class MainActivity extends Activity {
         stopMagnet();
         generation++;
         releasePlayer();
+        releaseWallpaper();
         closeEngines();
         cancelArtwork();
         cancelPageRequests();

@@ -491,7 +491,7 @@ final class DetailScreen {
         d.setCornerRadius(h > 0 ? h / 2f : a.dp(23));
         if (focused) {
             d.setColor(MainActivity.WHITE);
-            b.setTextColor(0xff090c14);
+            b.setTextColor(0xff070d18);
             b.animate().scaleX(1.05f).scaleY(1.05f).setDuration(140).start();
         } else {
             d.setColor(0xd8ffffff);
@@ -542,7 +542,7 @@ final class DetailScreen {
         LinearLayout row = a.row();
         row.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView tmdb = a.text("TMDB", 10, 0xff111318);
+        TextView tmdb = a.text("TMDB", 10, 0xff0c1626);
         tmdb.setTypeface(null, Typeface.BOLD);
         tmdb.setPadding(a.dp(6), a.dp(2), a.dp(6), a.dp(2));
         GradientDrawable tmdbBg = new GradientDrawable();
@@ -672,7 +672,7 @@ final class DetailScreen {
             choice.setTextSize(13);
             choice.setMinHeight(a.dp(36));
             choice.setMinimumHeight(a.dp(36));
-            choice.setBackground(a.bg(selected ? 0xff3b5472 : 0x991c202b, 18));
+            choice.setBackground(a.bg(selected ? 0xff33557f : 0x99122036, 18));
             choice.setPadding(a.dp(15), a.dp(7), a.dp(15), a.dp(7));
             choice.setOnFocusChangeListener(
                     (view, focus) -> {
@@ -680,7 +680,7 @@ final class DetailScreen {
                                 a,
                                 choice,
                                 focus,
-                                selected ? 0xff3b5472 : 0x991c202b,
+                                selected ? 0xff33557f : 0x99122036,
                                 MainActivity.WHITE,
                                 18,
                                 MainActivity.WHITE,
@@ -890,14 +890,14 @@ final class DetailScreen {
             button.setMinHeight(a.dp(54));
             button.setMinimumHeight(a.dp(54));
             button.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
-            button.setBackground(a.bg(0xb81b202c, 12));
+            button.setBackground(a.bg(0xcc1e3557, 12));
             button.setOnFocusChangeListener(
                     (view, focus) -> {
                         FocusMotion.style(
                                 a,
                                 button,
                                 focus,
-                                0xb81b202c,
+                                0xcc1e3557,
                                 MainActivity.WHITE,
                                 12,
                                 MainActivity.WHITE,
@@ -1076,7 +1076,7 @@ final class DetailScreen {
                                                     btn.setPadding(
                                                             a.dp(14), a.dp(6), a.dp(14), a.dp(6));
                                                     if (active) {
-                                                        btn.setBackground(a.bg(0xff465c76, 10));
+                                                        btn.setBackground(a.bg(0xff3a5d8c, 10));
                                                         btn.setPadding(
                                                                 a.dp(14), a.dp(6), a.dp(14),
                                                                 a.dp(6));
@@ -1086,7 +1086,7 @@ final class DetailScreen {
                                                                             a,
                                                                             btn,
                                                                             f,
-                                                                            0xff465c76,
+                                                                            0xff3a5d8c,
                                                                             MainActivity.WHITE,
                                                                             10,
                                                                             MainActivity.WHITE,

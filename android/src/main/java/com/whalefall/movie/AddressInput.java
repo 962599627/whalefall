@@ -25,14 +25,14 @@ final class AddressInput extends LinearLayout {
         input.setInputType(17);
         input.setShowSoftInputOnFocus(!a.isTvDevice());
         input.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
-        input.setBackground(a.bg(0xff36363e, 16));
+        input.setBackground(a.bg(0xff22375a, 16));
         input.setOnFocusChangeListener(
                 (v, f) ->
                         FocusMotion.style(
                                 a,
                                 input,
                                 f,
-                                0xff36363e,
+                                0xff22375a,
                                 0xff41414a,
                                 16,
                                 MainActivity.WHITE,

@@ -575,7 +575,7 @@ final class HomeScreen {
             final WatchHistory.Entry e = entries.get(i);
             LinearLayout card = a.row();
             card.setPadding(a.dp(9), a.dp(6), a.dp(12), a.dp(6));
-            card.setBackground(a.bg(0xff222228, 14));
+            card.setBackground(a.bg(0xff16243c, 14));
             ImageView image = new AmbientPoster();
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
             image.setBackground(a.bg(0xff303038, 7));
@@ -596,11 +596,11 @@ final class HomeScreen {
             info.addView(detail);
             a.gap(info, 9);
             FrameLayout track = new FrameLayout(a);
-            track.setBackground(a.bg(0xff45454e, 2));
+            track.setBackground(a.bg(0xff4a5f85, 2));
             track.setClipToOutline(true);
             info.addView(track, new LinearLayout.LayoutParams(-1, a.dp(3)));
             View progress = new View(a);
-            progress.setBackgroundColor(0xffededf2);
+            progress.setBackgroundColor(0xffeef2fb);
             float fraction =
                     e.duration > 0 ? Math.max(0, Math.min(1, e.position / (float) e.duration)) : 0;
             track.addView(progress, new FrameLayout.LayoutParams(0, -1));
@@ -614,12 +614,12 @@ final class HomeScreen {
                         }
                     });
             focusable(card, "home-history:" + i);
-            outline(card, false, 14, 0xff222228);
+            outline(card, false, 14, 0xff16243c);
             card.setContentDescription(e.title + "，" + a.historyLabel(e));
             card.setOnClickListener(v -> a.resumeHistory(e));
             card.setOnFocusChangeListener(
                     (v, f) -> {
-                        outline(card, f, 14, 0xff222228);
+                        outline(card, f, 14, 0xff16243c);
                         if (f && ambient != null) ambient.follow(image);
                         if (f && !a.reduced && a.config != null) {
                             v.postDelayed(
@@ -704,7 +704,7 @@ final class HomeScreen {
                                         .show();
                             });
             extra.setOnFocusChangeListener(
-                    (v, f) -> outline(extra, f, 17, extra.isSelected() ? 0xffededf2 : 0xff24242b));
+                    (v, f) -> outline(extra, f, 17, extra.isSelected() ? 0xffeef2fb : 0xff172742));
             addTabView(extra);
         }
         addTabView(pill("筛选", "home-filters", this::showFilters));
@@ -855,11 +855,11 @@ final class HomeScreen {
                 a,
                 b,
                 b.hasFocus(),
-                selected ? 0xffededf2 : 0xff222228,
-                selected ? 0xffededf2 : 0xff36363e,
+                selected ? 0xffeef2fb : 0xff16243c,
+                selected ? 0xffeef2fb : 0xff22375a,
                 Math.round(17 * navScale),
-                selected ? 0xff17171b : MainActivity.WHITE,
-                selected ? 0xff17171b : MainActivity.WHITE,
+                selected ? 0xff101a2e : MainActivity.WHITE,
+                selected ? 0xff101a2e : MainActivity.WHITE,
                 true,
                 1.02f);
     }
@@ -889,11 +889,11 @@ final class HomeScreen {
                         a,
                         b,
                         b.hasFocus(),
-                        hidden ? 0xffededf2 : 0xff24242b,
-                        hidden ? 0xffededf2 : 0xff36363e,
+                        hidden ? 0xffeef2fb : 0xff172742,
+                        hidden ? 0xffeef2fb : 0xff22375a,
                         Math.round(17 * navScale),
-                        hidden ? 0xff17171b : MainActivity.WHITE,
-                        hidden ? 0xff17171b : MainActivity.WHITE,
+                        hidden ? 0xff101a2e : MainActivity.WHITE,
+                        hidden ? 0xff101a2e : MainActivity.WHITE,
                         true,
                         1.02f);
             }
@@ -1215,12 +1215,12 @@ final class HomeScreen {
         card.setClipChildren(false);
         ImageView art = new AmbientPoster();
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        art.setBackground(a.bg(0xff25252d, 10));
+        art.setBackground(a.bg(0xff182a45, 10));
         art.setClipToOutline(true);
         card.addView(
                 art, new LinearLayout.LayoutParams(a.dp(posterWidth), a.dp(posterWidth * 1.5f)));
         a.poster(video.poster, art);
-        TextView title = a.text(video.title, 13, 0xffc8c8d0);
+        TextView title = a.text(video.title, 13, 0xffc8d5ea);
         single(title);
         title.setPadding(a.dp(2), a.dp(7), a.dp(2), 0);
         card.addView(title, new LinearLayout.LayoutParams(-1, a.dp(27)));
@@ -1231,7 +1231,7 @@ final class HomeScreen {
         card.setOnFocusChangeListener(
                 (v, f) -> {
                     outline(card, f, 13, Color.TRANSPARENT);
-                    title.setTextColor(f ? Color.WHITE : 0xffc8c8d0);
+                    title.setTextColor(f ? Color.WHITE : 0xffc8d5ea);
                     if (f && ambient != null) ambient.follow(art);
                     if (f) {
                         v.requestRectangleOnScreen(
@@ -1292,9 +1292,9 @@ final class HomeScreen {
         int radius = Math.round(18 * navScale);
         b.setPadding(padH, 0, padH, 0);
         focusable(b, tag);
-        b.setBackground(a.bg(0xff24242b, radius));
+        b.setBackground(a.bg(0xff172742, radius));
         b.setOnClickListener(v -> action.run());
-        b.setOnFocusChangeListener((v, f) -> outline(b, f, radius, 0xff24242b));
+        b.setOnFocusChangeListener((v, f) -> outline(b, f, radius, 0xff172742));
         return b;
     }
 
@@ -1444,7 +1444,7 @@ final class HomeScreen {
                 0xff344452,
                 // Fully rounded capsule matching the 34dp pill height.
                 17,
-                0xffd7e2ed,
+                0xffd8e6fb,
                 Color.WHITE,
                 true,
                 1.02f);
@@ -1473,7 +1473,7 @@ final class HomeScreen {
 
         public void draw(android.graphics.Canvas canvas) {
             android.graphics.Rect b = getBounds();
-            paint.setColor(0xffd7e2ed);
+            paint.setColor(0xffd8e6fb);
             paint.setStyle(android.graphics.Paint.Style.STROKE);
             paint.setStrokeWidth(a.dp(1.4f));
             paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);

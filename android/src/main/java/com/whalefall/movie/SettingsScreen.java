@@ -38,15 +38,15 @@ final class SettingsScreen {
         row.setFocusable(true);
         row.setFocusableInTouchMode(true);
         row.setClickable(true);
-        row.setBackground(a.bg(0xff222226, 12));
+        row.setBackground(a.bg(0xff16243c, 12));
         row.setOnFocusChangeListener(
                 (v, f) -> {
                     FocusMotion.style(
                             a,
                             row,
                             f,
-                            0xff222226,
-                            0xff37373e,
+                            0xff16243c,
+                            0xff334564,
                             12,
                             MainActivity.WHITE,
                             MainActivity.WHITE,
@@ -134,9 +134,11 @@ final class SettingsScreen {
                 5);
         link(
                 "首页壁纸",
-                a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)
-                        ? "自定义壁纸"
-                        : a.prefs.getBoolean(Prefs.HOME_AMBIENT, true) ? "海报配色柔光" : "纯深色",
+                a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
+                        ? "视频动态壁纸"
+                        : a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)
+                                ? "自定义壁纸"
+                                : a.prefs.getBoolean(Prefs.HOME_AMBIENT, true) ? "海报配色柔光" : "纯深色",
                 "settings-wallpaper",
                 () -> open(this::wallpaper));
         toggle(
@@ -154,8 +156,25 @@ final class SettingsScreen {
     }
 
     void wallpaper() {
-        page("首页壁纸", "壁纸只影响应用背景，不会更改电视桌面。图片以居中裁切显示，自动缩小以减少电视内存占用。");
+        page(
+                "首页壁纸",
+                "壁纸只影响应用背景，不会更改电视桌面。图片以居中裁切显示；视频壁纸循环静音播放，耗电更高。");
         link("选择本地图片", "JPG、PNG、WebP", "wallpaper-file", () -> pick(44, "image/*", false));
+        link(
+                "选择视频壁纸",
+                "MP4 / WebM / MKV，循环静音，仅首页背景播放",
+                "wallpaper-video-file",
+                () -> pick(47, "video/*", false));
+        if (VideoWallpaper.file(a).isFile())
+            link(
+                    a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false) ? "关闭视频壁纸" : "启用视频壁纸",
+                    "动态壁纸持续解码，耗电高于静态图片",
+                    "wallpaper-video-toggle",
+                    () -> {
+                        boolean on = !a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false);
+                        a.prefs.edit().putBoolean(Prefs.WALLPAPER_VIDEO, on).apply();
+                        a.refresh();
+                    });
         link("从图片地址导入", "输入你自己的 HTTP / HTTPS 图片地址", "wallpaper-url", this::wallpaperUrl);
         ints(
                 "背景压暗",
@@ -168,7 +187,10 @@ final class SettingsScreen {
                 "保留图片文件，随时可以重新启用",
                 "wallpaper-reset",
                 () -> {
-                    a.prefs.edit().putBoolean(Prefs.WALLPAPER_ENABLED, false).apply();
+                    a.prefs.edit()
+                            .putBoolean(Prefs.WALLPAPER_ENABLED, false)
+                            .putBoolean(Prefs.WALLPAPER_VIDEO, false)
+                            .apply();
                     a.refresh();
                 });
         if (new File(a.getFilesDir(), "wallpaper.jpg").exists())
@@ -386,7 +408,7 @@ final class SettingsScreen {
                                     a.recreate();
                                 }));
         a.paragraph(
-                "鲸落 1.0.0 · 基于 Marco Movie 0.5.3（作者 Pilipala，GPL-3.0-only）二次开发 · 本产品仅为工具，不含任何影视资源；内容与配置请自行合法获取。播放能力取决于服务授权和设备支持。");
+                "鲸落 1.1.0 · 基于 Marco Movie 0.5.3（作者 Pilipala，GPL-3.0-only）二次开发 · 本产品仅为工具，不含任何影视资源；内容与配置请自行合法获取。播放能力取决于服务授权和设备支持。");
     }
 
     void confirm(String title, Runnable action) {
@@ -457,7 +479,7 @@ final class SettingsScreen {
     }
 
     void pick(int request, String mime, boolean create) {
-        if (a.privateMode && (request == 45 || request == 46)) {
+        if (a.privateMode && (request == 45 || request == 46 || request == 47)) {
             a.toast("请先退出隐私空间，再导出或恢复公开备份");
             return;
         }
@@ -517,6 +539,34 @@ final class SettingsScreen {
                 .show();
     }
 
+    static void saveVideoWallpaper(MainActivity a, InputStream stream) throws Exception {
+        File target = VideoWallpaper.file(a);
+        File partial = new File(target.getPath() + ".part");
+        long limit = 512L * 1024 * 1024;
+        long copied = 0;
+        try (java.io.OutputStream output = new java.io.FileOutputStream(partial)) {
+            byte[] chunk = new byte[256 * 1024];
+            int length;
+            while ((length = stream.read(chunk)) != -1) {
+                copied += length;
+                if (copied > limit) throw new java.io.IOException("Video wallpaper too large");
+                output.write(chunk, 0, length);
+            }
+        }
+        if (copied == 0) {
+            partial.delete();
+            throw new java.io.IOException("Empty video wallpaper");
+        }
+        if (!partial.renameTo(target)) {
+            partial.delete();
+            throw new java.io.IOException("Cannot store video wallpaper");
+        }
+        a.prefs.edit()
+                .putBoolean(Prefs.WALLPAPER_VIDEO, true)
+                .putBoolean(Prefs.WALLPAPER_ENABLED, false)
+                .apply();
+    }
+
     static void saveWallpaper(MainActivity a, InputStream stream) throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         byte[] chunk = new byte[8192];
@@ -561,6 +611,10 @@ final class SettingsScreen {
                         if (request == 44) {
                             try (InputStream input = a.getContentResolver().openInputStream(uri)) {
                                 saveWallpaper(a, input);
+                            }
+                        } else if (request == 47) {
+                            try (InputStream input = a.getContentResolver().openInputStream(uri)) {
+                                saveVideoWallpaper(a, input);
                             }
                         } else if (request == 45) {
                             org.json.JSONObject backup =
