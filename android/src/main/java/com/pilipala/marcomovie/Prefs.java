@@ -16,6 +16,7 @@ final class Prefs {
 
     // User-facing appearance & playback preferences included in backups.
     static final String UI_SCALE_PERCENT = "ui_scale_percent";
+    static final String NAV_SCALE_PERCENT = "nav_scale_percent";
     static final String STARTUP_ANIMATION = "startup_animation";
     static final String HOME_AMBIENT = "home_ambient";
     static final String HOME_COLUMNS = "home_columns";
@@ -68,6 +69,7 @@ final class Prefs {
 
     static final String[] KEYS = {
         UI_SCALE_PERCENT,
+        NAV_SCALE_PERCENT,
         STARTUP_ANIMATION,
         HOME_AMBIENT,
         HOME_COLUMNS,
@@ -119,6 +121,7 @@ final class Prefs {
     static {
         Map<String, int[]> ranges = new HashMap<>();
         ranges.put(HOME_COLUMNS, new int[] {5, 8});
+        ranges.put(NAV_SCALE_PERCENT, new int[] {85, 140});
         ranges.put(HOME_ROWS, new int[] {1, 4});
         ranges.put(HOME_SECTIONS, new int[] {0, 5});
         ranges.put(WALLPAPER_DIM, new int[] {0, 100});
@@ -132,7 +135,7 @@ final class Prefs {
         ranges.put(SKIP_OUTRO, new int[] {0, 180});
         ranges.put(SUBTITLE_SIZE, new int[] {25, 65});
         ranges.put(SUBTITLE_BOTTOM, new int[] {0, 180});
-        ranges.put(SUBTITLE_STYLE, new int[] {0, 4});
+        ranges.put(SUBTITLE_STYLE, new int[] {0, 5});
         ranges.put(PICTURE_EFFECT, new int[] {0, 3});
         ranges.put(AUDIO_EFFECT, new int[] {0, 3});
         ranges.put(SEARCH_THREADS, new int[] {2, 6});
@@ -183,7 +186,11 @@ final class Prefs {
     }
 
     static int clampSubtitleStyle(int style) {
-        return Math.max(0, Math.min(4, style));
+        return Math.max(0, Math.min(5, style));
+    }
+
+    static int clampNavScale(int percent) {
+        return Math.max(85, Math.min(140, percent));
     }
 
     static int clampSubtitleBgStyle(int style) {

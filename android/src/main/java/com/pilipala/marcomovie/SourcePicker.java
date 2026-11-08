@@ -156,53 +156,74 @@ final class SourcePicker {
                 });
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout panel = a.vertical();
-        panel.setPadding(a.dp(26), a.dp(24), a.dp(26), a.dp(18));
+        panel.setTag("source-picker");
+        panel.setPadding(a.dp(24), a.dp(22), a.dp(24), a.dp(18));
         a.glass(panel, 22);
-        TextView title = a.text("选择片源", 26, MainActivity.WHITE);
+        TextView title = a.text("选择片源", 24, MainActivity.WHITE);
         title.setTypeface(null, Typeface.BOLD);
         panel.addView(title);
-        a.gap(panel, 6);
-        TextView hint = a.text("选择后返回首页，显示该片源的内容", 14, MainActivity.MUTED);
+        a.gap(panel, 4);
+        TextView hint = a.text("选择后返回首页，显示该片源的内容", 13, MainActivity.MUTED);
         panel.addView(hint);
-        a.gap(panel, 16);
+        a.gap(panel, 12);
+        LinearLayout topActions = a.row();
         if (a.config.depots.length() > 0) {
-            panel.addView(
+            Button depotBtn =
                     a.navButton(
                             "切换子仓库",
                             "warehouse-switch",
                             () -> {
                                 dialog.dismiss();
                                 showWarehouses(a);
-                            }));
-            a.gap(panel, 8);
+                            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, a.dp(38), 1);
+            lp.rightMargin = a.dp(6);
+            topActions.addView(depotBtn, lp);
         }
-        panel.addView(
+        Button prefBtn =
                 a.navButton(
-                        "设置默认偏好源",
+                        "默认偏好源",
                         "source-preferred",
                         () -> {
                             dialog.dismiss();
                             SourcePreferences.choose(a);
-                        }));
+                        });
+        LinearLayout.LayoutParams prefLp = new LinearLayout.LayoutParams(0, a.dp(38), 1);
+        if (CatPawSettings.available(a)) prefLp.rightMargin = a.dp(6);
+        topActions.addView(prefBtn, prefLp);
         if (CatPawSettings.available(a)) {
-            panel.addView(
+            Button catBtn =
                     a.navButton(
-                            "CatPaw 本机配置",
+                            "CatPaw 配置",
                             "catpaw-settings",
                             () -> {
                                 dialog.dismiss();
                                 CatPawSettings.choose(a);
-                            }));
+                            });
+            topActions.addView(catBtn, new LinearLayout.LayoutParams(0, a.dp(38), 1));
         }
+        panel.addView(topActions, new LinearLayout.LayoutParams(-1, -2));
+        a.gap(panel, 10);
         ScrollView scrolling = new TvScrollView(a);
-        scrolling.setClipChildren(false);
-        scrolling.setClipToPadding(false);
+        scrolling.setVerticalScrollBarEnabled(false);
         LinearLayout grid = a.vertical();
-        grid.setClipChildren(false);
-        grid.setClipToPadding(false);
-        grid.setPadding(a.dp(6), a.dp(6), a.dp(6), a.dp(6));
+        grid.setPadding(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
         scrolling.addView(grid);
-        panel.addView(scrolling, new LinearLayout.LayoutParams(-1, a.dp(286)));
+        FrameLayout viewport =
+                new FrameLayout(a) {
+                    @Override
+                    protected void dispatchDraw(android.graphics.Canvas c) {
+                        int save = c.save();
+                        c.clipRect(0, 0, getWidth(), getHeight());
+                        super.dispatchDraw(c);
+                        c.restoreToCount(save);
+                    }
+                };
+        viewport.setTag("scroll-viewport-clip");
+        viewport.setClipChildren(true);
+        viewport.setClipToPadding(true);
+        viewport.addView(scrolling, new FrameLayout.LayoutParams(-1, -1));
+        panel.addView(viewport, new LinearLayout.LayoutParams(-1, a.dp(286)));
         String selected = a.prefs.getString(Prefs.SELECTED_SITE, "");
         Button selectedButton = null;
         LinearLayout row = null;
@@ -286,10 +307,11 @@ final class SourcePicker {
         if (row != null)
             while (index++ % columns != 0)
                 row.addView(new View(a), new LinearLayout.LayoutParams(0, 1, 1));
-        a.gap(panel, 14);
-        LinearLayout footer = a.row();
-        TextView count = a.text(a.config.sites.size() + " 个片源", 13, MainActivity.MUTED);
+        a.gap(panel, 10);
+        TextView count = a.text(a.config.sites.size() + " 个片源", 12, MainActivity.MUTED);
         panel.addView(count);
+        a.gap(panel, 6);
+        LinearLayout footer = a.row();
         a.addButton(
                 footer,
                 a.navButton(
@@ -311,25 +333,27 @@ final class SourcePicker {
         a.addButton(footer, a.navButton("完成", "source-close", dialog::dismiss));
         for (int i = 0; i < footer.getChildCount(); i++) {
             View control = footer.getChildAt(i);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1);
-            params.setMargins(a.dp(2), a.dp(4), a.dp(2), a.dp(4));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, a.dp(40), 1);
+            params.setMargins(a.dp(3), a.dp(2), a.dp(3), a.dp(2));
             control.setLayoutParams(params);
             if (control instanceof TextView) {
-                ((TextView) control).setSingleLine(false);
+                ((TextView) control).setSingleLine(true);
+                ((TextView) control).setEllipsize(android.text.TextUtils.TruncateAt.END);
                 ((TextView) control).setTextSize(13);
-                control.setPadding(a.dp(4), a.dp(8), a.dp(4), a.dp(8));
+                control.setPadding(a.dp(8), 0, a.dp(8), 0);
             }
         }
-        panel.addView(footer);
-        int panelWidth = Math.min(a.dp(720), a.windowWidth() - a.dp(48));
-        int maxHeight = Math.max(a.dp(120), a.windowHeight() - a.dp(32));
+        panel.addView(footer, new LinearLayout.LayoutParams(-1, -2));
+        int marginH = a.isTvDevice() ? a.dp(48) : a.dp(28);
+        int panelWidth = Math.min(a.dp(720), a.windowWidth() - marginH);
+        int maxHeight = Math.max(a.dp(180), a.windowHeight() - a.dp(a.isTvDevice() ? 32 : 96));
         panel.measure(
                 View.MeasureSpec.makeMeasureSpec(panelWidth, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
         int controlsHeight = panel.getMeasuredHeight() - a.dp(286);
-        scrolling.setLayoutParams(
+        viewport.setLayoutParams(
                 new LinearLayout.LayoutParams(
-                        -1, Math.max(a.dp(64), Math.min(a.dp(286), maxHeight - controlsHeight))));
+                        -1, Math.max(a.dp(96), Math.min(a.dp(320), maxHeight - controlsHeight))));
         panel.measure(
                 View.MeasureSpec.makeMeasureSpec(panelWidth, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
@@ -341,7 +365,7 @@ final class SourcePicker {
         Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawableResource(android.R.color.transparent);
-            window.setLayout(a.dp(720), -2);
+            window.setLayout(panelWidth, -2);
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             WindowManager.LayoutParams params = window.getAttributes();
             params.dimAmount = .65f;
@@ -355,7 +379,7 @@ final class SourcePicker {
                         ((LinearLayout) grid.getChildAt(0)).getChildAt(0).requestFocus();
                 });
         dialog.show();
-        if (window != null) window.setLayout(Math.min(a.dp(720), a.root.getWidth() - a.dp(48)), -2);
+        if (window != null) window.setLayout(Math.min(a.dp(720), a.root.getWidth() - marginH), -2);
     }
 
     static void showWarehouses(MainActivity a) {

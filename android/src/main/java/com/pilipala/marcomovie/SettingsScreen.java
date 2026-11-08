@@ -121,6 +121,12 @@ final class SettingsScreen {
                                 .setNegativeButton("返回", null)
                                 .show());
         ints(
+                "导航栏字体与按钮大小",
+                Prefs.NAV_SCALE_PERCENT,
+                new String[] {"紧凑 · 85%", "标准 · 100%", "偏大 · 115%", "大号 · 130%", "特大 · 140%"},
+                new int[] {85, 100, 115, 130, 140},
+                100);
+        ints(
                 "每行海报",
                 Prefs.HOME_COLUMNS,
                 new String[] {"最多 5 张 · 舒展", "最多 6 张", "最多 7 张", "最多 8 张"},
@@ -269,7 +275,7 @@ final class SettingsScreen {
                 "字幕样式",
                 Prefs.SUBTITLE_STYLE,
                 SubtitleOverlayView.STYLE_LABELS,
-                new int[] {0, 1, 2, 3, 4},
+                new int[] {0, 1, 2, 3, 4, 5},
                 0);
         toggle("自动加载来源弹幕", Prefs.DANMAKU_DEFAULT, true, null);
         ints(
@@ -380,7 +386,7 @@ final class SettingsScreen {
                                     a.recreate();
                                 }));
         a.paragraph(
-                "Marco Movie 0.5.2 · 作者 Pilipala · github.com/Pilipala9919/MarcoMovie。本产品仅为工具，不含任何影视资源；内容与配置请自行合法获取。播放能力取决于服务授权和设备支持。");
+                "Marco Movie 0.5.3 · 作者 Pilipala · github.com/Pilipala9919/MarcoMovie。本产品仅为工具，不含任何影视资源；内容与配置请自行合法获取。播放能力取决于服务授权和设备支持。");
     }
 
     void confirm(String title, Runnable action) {

@@ -21,6 +21,7 @@ final class HomeScreen {
     final MainActivity a;
     final Cms.Site site;
     final int COLUMNS;
+    final float navScale;
     final Map<View, String> tabIds = new HashMap<>();
     final List<View> historyCards = new ArrayList<>(), tabs = new ArrayList<>();
     final List<List<View>> rows = new ArrayList<>();
@@ -29,6 +30,7 @@ final class HomeScreen {
     HomeAmbient ambient;
     TextView status, source, more, earlier, allHistory;
     int ticket, request, posterWidth, gridEpoch;
+    long lastCategoryDpadTime;
     Runnable pendingGrid;
 
     /** Tag of the card that should take focus once drawn after "加载更多". */
@@ -70,6 +72,7 @@ final class HomeScreen {
         boolean ready, initialized;
         Snapshot snapshot;
         final Map<String, String> selectedFilters = new LinkedHashMap<>();
+        final Map<String, Cms.Listing> categoryCache = new HashMap<>();
 
         State(String key) {
             site = key;
@@ -79,6 +82,7 @@ final class HomeScreen {
     HomeScreen(MainActivity activity, Cms.Site selected) {
         a = activity;
         site = selected;
+        navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
         COLUMNS =
                 TvLayoutPolicy.responsiveHomeColumns(
                         a.windowWidth() / a.getResources().getDisplayMetrics().density,
@@ -103,16 +107,18 @@ final class HomeScreen {
             if (a.current != null) a.current.homeState = state;
         }
         boolean bottomDock = a.useBottomDock();
+        int rightPadDp = Math.max(100, Math.round(50 * navScale) + 50);
+        int bottomPadDp = Math.max(86, Math.round(50 * navScale) + 36);
         if (bottomDock) {
-            a.body.setPadding(a.dp(18), a.dp(16), a.dp(18), a.dp(86));
+            a.body.setPadding(a.dp(18), a.dp(16), a.dp(18), a.dp(bottomPadDp));
         } else {
-            a.body.setPadding(a.dp(34), a.dp(18), a.dp(100), a.dp(36));
+            a.body.setPadding(a.dp(34), a.dp(18), a.dp(rightPadDp), a.dp(36));
         }
         a.body.setClipChildren(false);
         a.body.setClipToPadding(false);
         a.scroll.setClipChildren(false);
         float width = a.windowWidth() / a.getResources().getDisplayMetrics().density;
-        int marginDp = bottomDock ? 36 : 134;
+        int marginDp = bottomDock ? 36 : (34 + rightPadDp);
         posterWidth = Math.max(48, (int) ((width - marginDp - (COLUMNS - 1) * 14) / COLUMNS) - 8);
         historySection();
         LinearLayout heading = a.row();
@@ -123,14 +129,15 @@ final class HomeScreen {
         title.setTypeface(null, Typeface.BOLD);
         heading.addView(title, new LinearLayout.LayoutParams(-2, -2));
         source = pill(site.name, "source-switcher", a::chooseSources);
-        source.setPadding(a.dp(14), 0, a.dp(14), 0);
+        source.setPadding(a.dp(Math.round(14 * navScale)), 0, a.dp(Math.round(14 * navScale)), 0);
         source.setCompoundDrawablePadding(a.dp(9));
         source.setCompoundDrawables(null, null, new SourceChevron(a), null);
         source.setOnFocusChangeListener((v, f) -> styleSource(f));
         styleSource(false);
-        source.setMaxWidth(a.dp(220));
+        source.setMaxWidth(a.dp(Math.round(220 * Math.max(1f, navScale))));
         source.setContentDescription("当前片源：" + site.name + "，按确认键切换");
-        LinearLayout.LayoutParams sourceSize = new LinearLayout.LayoutParams(-2, a.dp(34));
+        LinearLayout.LayoutParams sourceSize =
+                new LinearLayout.LayoutParams(-2, a.dp(Math.round(34 * navScale)));
         sourceSize.leftMargin = a.dp(14);
         heading.addView(source, sourceSize);
         a.body.addView(heading);
@@ -192,7 +199,7 @@ final class HomeScreen {
             renderSnapshot();
             return;
         }
-        if (!a.reduced) {
+        if (!a.reduced && (site.api == null || !site.api.contains("fixture.test"))) {
             Snapshot disk = readDiskSnapshot(a, site.key);
             if (disk != null && !disk.videos.isEmpty()) {
                 snapshot = disk;
@@ -292,7 +299,8 @@ final class HomeScreen {
                     Prefs.WALLPAPER_DIM,
                     Prefs.REDUCED,
                     Prefs.REDUCED_TRANSPARENCY,
-                    Prefs.UI_SCALE_PERCENT
+                    Prefs.UI_SCALE_PERCENT,
+                    Prefs.NAV_SCALE_PERCENT
                 }) values.put(key, prefs.get(key));
         return values;
     }
@@ -372,7 +380,8 @@ final class HomeScreen {
                         Snapshot result =
                                 new Snapshot(list.videos, categories, skip, list.pageCount);
                         result.filterSchema = raw;
-                        if (!a.reduced) {
+                        if (!a.reduced
+                                && (site.api == null || !site.api.contains("fixture.test"))) {
                             a.worker.execute(() -> writeDiskSnapshot(a, site.key, result));
                         }
                         a.ui.post(
@@ -429,6 +438,7 @@ final class HomeScreen {
             JSONObject root = new JSONObject();
             root.put("skip", snap.skip == null ? "" : snap.skip);
             root.put("pages", snap.pages);
+            root.put("filterSchema", snap.filterSchema == null ? "{}" : snap.filterSchema);
             org.json.JSONArray cats = new org.json.JSONArray();
             for (Cms.Category c : snap.categories) {
                 JSONObject cj = new JSONObject();
@@ -513,7 +523,9 @@ final class HomeScreen {
                 }
             }
             if (videos.isEmpty()) return null;
-            return new Snapshot(videos, categories, skip, pages);
+            Snapshot snap = new Snapshot(videos, categories, skip, pages);
+            snap.filterSchema = root.optString("filterSchema", "{}");
+            return snap;
         } catch (Throwable ignored) {
             return null;
         }
@@ -541,7 +553,8 @@ final class HomeScreen {
                         "全部历史  ›",
                         "home-history-all",
                         () -> a.open(new MainActivity.Screen(a::historyPage), true));
-        heading.addView(allHistory, new LinearLayout.LayoutParams(-2, a.dp(30)));
+        heading.addView(
+                allHistory, new LinearLayout.LayoutParams(-2, a.dp(Math.round(30 * navScale))));
         section.addView(heading, new LinearLayout.LayoutParams(-1, -2));
         a.gap(section, 6);
         LinearLayout recent = compactStack ? a.vertical() : a.row();
@@ -556,8 +569,8 @@ final class HomeScreen {
                     compactStack
                             ? new LinearLayout.LayoutParams(-1, a.dp(72))
                             : new LinearLayout.LayoutParams(0, a.dp(72), 1);
-            boolean last = i == Math.min(3, entries.size() - 1);
-            cell.rightMargin = a.dp(compactStack ? 0 : (i == 3 ? 0 : 12));
+            boolean last = i == count - 1;
+            cell.rightMargin = a.dp(compactStack ? 0 : (last ? (4 - count) * 12 : 12));
             cell.bottomMargin = a.dp(compactStack && !last ? 10 : 0);
             final WatchHistory.Entry e = entries.get(i);
             LinearLayout card = a.row();
@@ -633,15 +646,6 @@ final class HomeScreen {
                 ambient.follow(image);
             recent.addView(card, cell);
             historyCards.add(card);
-        }
-        if (!compactStack && count < 4) {
-            for (int slot = count; slot < 4; slot++) {
-                View filler = new View(a);
-                filler.setFocusable(false);
-                LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, a.dp(72), 1);
-                cell.rightMargin = a.dp(slot == 3 ? 0 : 12);
-                recent.addView(filler, cell);
-            }
         }
         a.gap(a.body, 4);
     }
@@ -796,7 +800,39 @@ final class HomeScreen {
     void addTab(String label, String id, int index) {
         TextView button = pill(label, "home-tab:" + index, () -> choose(id, true));
         tabIds.put(button, id);
-        button.setOnFocusChangeListener((v, f) -> styleTab(button));
+        button.setOnKeyListener(
+                (v, keyCode, event) -> {
+                    FocusMotion.key(a, v, keyCode, event);
+                    if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                || keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
+                                || ((keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP
+                                                || keyCode
+                                                        == android.view.KeyEvent.KEYCODE_DPAD_DOWN)
+                                        && v.isSelected())) {
+                            lastCategoryDpadTime = android.os.SystemClock.uptimeMillis();
+                        }
+                    }
+                    return false;
+                });
+        button.setOnFocusChangeListener(
+                (v, f) -> {
+                    styleTab(button);
+                    if (f
+                            && a.isTvDevice()
+                            && android.os.SystemClock.uptimeMillis() - lastCategoryDpadTime < 450
+                            && !id.equals(state.category)) {
+                        button.postDelayed(
+                                () -> {
+                                    if (button.hasFocus()
+                                            && active()
+                                            && !id.equals(state.category)) {
+                                        choose(id, true);
+                                    }
+                                },
+                                130);
+                    }
+                });
         addTabView(button);
     }
 
@@ -804,8 +840,10 @@ final class HomeScreen {
         button.setSingleLine(false);
         button.setMaxLines(Integer.MAX_VALUE);
         button.setEllipsize(null);
-        button.setMinHeight(a.dp(34));
-        button.setPadding(a.dp(15), a.dp(8), a.dp(15), a.dp(8));
+        button.setMinHeight(a.dp(Math.round(34 * navScale)));
+        int padH = a.dp(Math.round(15 * navScale));
+        int padV = a.dp(Math.round(8 * navScale));
+        button.setPadding(padH, padV, padH, padV);
         filters.addView(button, new android.view.ViewGroup.LayoutParams(-2, -2));
         tabs.add(button);
     }
@@ -819,7 +857,7 @@ final class HomeScreen {
                 b.hasFocus(),
                 selected ? 0xffededf2 : 0xff222228,
                 selected ? 0xffededf2 : 0xff36363e,
-                17,
+                Math.round(17 * navScale),
                 selected ? 0xff17171b : MainActivity.WHITE,
                 selected ? 0xff17171b : MainActivity.WHITE,
                 true,
@@ -853,7 +891,7 @@ final class HomeScreen {
                         b.hasFocus(),
                         hidden ? 0xffededf2 : 0xff24242b,
                         hidden ? 0xffededf2 : 0xff36363e,
-                        17,
+                        Math.round(17 * navScale),
                         hidden ? 0xff17171b : MainActivity.WHITE,
                         hidden ? 0xff17171b : MainActivity.WHITE,
                         true,
@@ -868,7 +906,7 @@ final class HomeScreen {
     }
 
     void choose(String category, boolean user) {
-        if (state.ready && category.equals(state.category)) return;
+        if (category.equals(state.category) && (state.ready || busy)) return;
         a.cancelPageRequests();
         request++;
         busy = false;
@@ -899,6 +937,13 @@ final class HomeScreen {
                     VideoFilters.apply(
                             snapshot.videos, filterDefinitions(), state.selectedFilters));
             state.pages = snapshot.skip.isEmpty() ? 1 : snapshot.pages;
+            state.ready = true;
+            drawGrid(false);
+            if (!user) restoreFocus();
+        } else if (state.selectedFilters.isEmpty() && state.categoryCache.containsKey(category)) {
+            Cms.Listing cached = state.categoryCache.get(category);
+            state.videos.addAll(cached.videos);
+            state.pages = Math.max(1, cached.pageCount);
             state.ready = true;
             drawGrid(false);
             if (!user) restoreFocus();
@@ -953,6 +998,12 @@ final class HomeScreen {
                                     state.pages =
                                             received == 0 ? page : Math.max(page, list.pageCount);
                                     state.ready = true;
+                                    if (first && selections.isEmpty() && !state.videos.isEmpty()) {
+                                        Cms.Listing cached = new Cms.Listing();
+                                        cached.videos.addAll(state.videos);
+                                        cached.pageCount = state.pages;
+                                        state.categoryCache.put(category, cached);
+                                    }
                                     // Keep focus on the button until the first new card exists,
                                     // so focus never falls back to the category tabs at the top.
                                     pendingFocus =
@@ -1233,15 +1284,17 @@ final class HomeScreen {
     }
 
     TextView pill(String label, String tag, Runnable action) {
-        TextView b = a.text(label, 12, MainActivity.WHITE);
+        TextView b = a.text(label, 12f * navScale, MainActivity.WHITE);
         single(b);
         b.setGravity(Gravity.CENTER);
         b.setIncludeFontPadding(false);
-        b.setPadding(a.dp(15), 0, a.dp(15), 0);
+        int padH = a.dp(Math.round(15 * navScale));
+        int radius = Math.round(18 * navScale);
+        b.setPadding(padH, 0, padH, 0);
         focusable(b, tag);
-        b.setBackground(a.bg(0xff24242b, 18));
+        b.setBackground(a.bg(0xff24242b, radius));
         b.setOnClickListener(v -> action.run());
-        b.setOnFocusChangeListener((v, f) -> outline(b, f, 18, 0xff24242b));
+        b.setOnFocusChangeListener((v, f) -> outline(b, f, radius, 0xff24242b));
         return b;
     }
 

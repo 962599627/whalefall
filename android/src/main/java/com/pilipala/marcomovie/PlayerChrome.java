@@ -9,16 +9,26 @@ import android.widget.*;
 final class PlayerChrome {
     final MainActivity a;
     final FrameLayout overlay;
+    final View topShade, bottomShade;
     final LinearLayout dock, progress, heading;
     final LinearLayout loadingPill;
     final LinearLayout centerRow;
-    final TextView loadingText, episodeLabel, titleView;
+    final TextView loadingText, episodeLabel, titleView, seekHint;
     final Button fsBtn;
     final StateGlyph state;
     final TextView resolution;
     boolean loading = true;
+    boolean progressOnlyMode = false;
     final Rect windowInsets = new Rect();
     boolean layoutPending;
+
+    private GradientDrawable chromeSurface(int color, float radiusDp, int strokeColor) {
+        GradientDrawable d = a.bg(color, radiusDp);
+        if (strokeColor != 0) {
+            d.setStroke(Math.max(1, a.dp(1)), strokeColor);
+        }
+        return d;
+    }
 
     PlayerChrome(MainActivity host, Cms.Video video, Cms.Episode episode, boolean live) {
         a = host;
@@ -30,13 +40,13 @@ final class PlayerChrome {
                 (view, l, t, r, b, ol, ot, or, ob) -> {
                     if (l != ol || t != ot || r != or || b != ob) scheduleLayout();
                 });
-        View topShade = new View(a);
+        topShade = new View(a);
         topShade.setBackground(
                 new GradientDrawable(
                         GradientDrawable.Orientation.TOP_BOTTOM,
                         new int[] {0xc4000000, 0x00000000}));
         overlay.addView(topShade, new FrameLayout.LayoutParams(-1, a.dp(160), Gravity.TOP));
-        View bottomShade = new View(a);
+        bottomShade = new View(a);
         bottomShade.setBackground(
                 new GradientDrawable(
                         GradientDrawable.Orientation.BOTTOM_TOP,
@@ -49,7 +59,7 @@ final class PlayerChrome {
             topActions.setPadding(0, 0, 0, a.dp(8));
             Button backBtn = a.navButton("‹ 返回", "player-back", a::leavePlayback);
             backBtn.setTextColor(MainActivity.WHITE);
-            a.glass(backBtn, 16);
+            backBtn.setBackground(chromeSurface(0xcc22222a, 17, 0x33ffffff));
             topActions.addView(backBtn, new LinearLayout.LayoutParams(-2, a.dp(34)));
             View spacer = new View(a);
             topActions.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
@@ -72,7 +82,7 @@ final class PlayerChrome {
         resolution.setSingleLine();
         resolution.setEllipsize(android.text.TextUtils.TruncateAt.END);
         resolution.setPadding(a.dp(9), a.dp(3), a.dp(9), a.dp(3));
-        a.glass(resolution, 10);
+        resolution.setBackground(chromeSurface(0xb824242c, 10, 0x28ffffff));
         titleRow.addView(resolution, new LinearLayout.LayoutParams(-2, -2));
         heading.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
         String line = a.activeLine == null ? "" : a.activeLine.name;
@@ -98,6 +108,12 @@ final class PlayerChrome {
         a.playClock.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
         a.playClock.setPadding(a.dp(8), 0, a.dp(12), 0);
         clockRow.addView(a.playClock, new LinearLayout.LayoutParams(0, -2, 1));
+        seekHint = a.text("", 12, 0xffe5e7eb);
+        seekHint.setTag("player-seek-hint");
+        seekHint.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        seekHint.setPadding(a.dp(8), 0, a.dp(8), 0);
+        seekHint.setVisibility(View.GONE);
+        clockRow.addView(seekHint, new LinearLayout.LayoutParams(-2, -2));
         if (!a.isTvDevice()) {
             fsBtn =
                     a.navButton(
@@ -109,7 +125,7 @@ final class PlayerChrome {
             fsBtn.setMinHeight(a.dp(30));
             fsBtn.setMinimumHeight(a.dp(30));
             fsBtn.setPadding(a.dp(12), a.dp(4), a.dp(12), a.dp(4));
-            a.glass(fsBtn, 15);
+            fsBtn.setBackground(chromeSurface(0xcc22222a, 15, 0x33ffffff));
             clockRow.addView(fsBtn, new LinearLayout.LayoutParams(-2, a.dp(30)));
         } else {
             fsBtn = null;
@@ -135,9 +151,10 @@ final class PlayerChrome {
         dock.setTag("player-dock");
         dock.setPadding(
                 a.dp(mobileLandscape ? 4 : 6), a.dp(5), a.dp(mobileLandscape ? 4 : 6), a.dp(5));
-        dock.setClipChildren(false);
-        dock.setClipToPadding(false);
-        a.glass(dock, 26);
+        dock.setClipChildren(true);
+        dock.setClipToPadding(true);
+        dock.setClipToOutline(true);
+        dock.setBackground(chromeSurface(0xd81c1c22, 26, 0x2affffff));
         UiCompat.setElevation(dock, a.dp(10));
         FrameLayout.LayoutParams bottom =
                 mobileLandscape
@@ -191,7 +208,7 @@ final class PlayerChrome {
         loadingPill.setTag("player-loading");
         loadingPill.setGravity(Gravity.CENTER_VERTICAL);
         loadingPill.setPadding(a.dp(24), a.dp(16), a.dp(24), a.dp(16));
-        a.glass(loadingPill, 24);
+        loadingPill.setBackground(chromeSurface(0xe01c1c22, 24, 0x2affffff));
         UiCompat.setElevation(loadingPill, a.dp(10));
         loadingPill.addView(
                 new PlaybackLoading.Ring(a), new LinearLayout.LayoutParams(a.dp(26), a.dp(26)));
@@ -398,13 +415,28 @@ final class PlayerChrome {
         update();
     }
 
+    void setProgressOnlyMode(boolean progressOnly) {
+        if (this.progressOnlyMode == progressOnly) return;
+        this.progressOnlyMode = progressOnly;
+        int otherVis = progressOnly ? View.INVISIBLE : View.VISIBLE;
+        topShade.setVisibility(otherVis);
+        heading.setVisibility(otherVis);
+        dock.setVisibility(otherVis);
+        seekHint.setVisibility(progressOnly ? View.VISIBLE : View.GONE);
+        update();
+        if (a.playbackControls != null) {
+            a.playbackControls.visible(a.controlsVisible);
+        }
+    }
+
     void update() {
         if (a.prepared) loading = false;
         if (a.player != null && a.prepared) resolution.setText(a.player.videoResolution());
         boolean showSpinner = loading && !a.prepared && a.playbackLoading == null && !a.miniMode;
         loadingPill.setVisibility(showSpinner ? View.VISIBLE : View.GONE);
-        state.setVisibility(showSpinner ? View.GONE : View.VISIBLE);
-        if (centerRow != null) centerRow.setVisibility(showSpinner ? View.GONE : View.VISIBLE);
+        int stateVis = showSpinner ? View.GONE : (progressOnlyMode ? View.INVISIBLE : View.VISIBLE);
+        state.setVisibility(stateVis);
+        if (centerRow != null) centerRow.setVisibility(stateVis);
         state.setContentDescription(!a.prepared ? "正在准备" : a.playing ? "正在播放，确认暂停" : "已暂停，确认继续");
         state.invalidate();
     }

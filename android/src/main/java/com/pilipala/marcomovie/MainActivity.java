@@ -683,8 +683,6 @@ public final class MainActivity extends Activity {
     LinearLayout vertical() {
         LinearLayout v = new LinearLayout(this);
         v.setOrientation(LinearLayout.VERTICAL);
-        v.setClipChildren(false);
-        v.setClipToPadding(false);
         return v;
     }
 
@@ -692,8 +690,6 @@ public final class MainActivity extends Activity {
         LinearLayout v = new LinearLayout(this);
         v.setOrientation(LinearLayout.HORIZONTAL);
         v.setGravity(Gravity.CENTER_VERTICAL);
-        v.setClipChildren(false);
-        v.setClipToPadding(false);
         return v;
     }
 
@@ -764,27 +760,22 @@ public final class MainActivity extends Activity {
 
     Button navButton(String label, String key, Runnable action) {
         Button b = button(label, key, action);
-        b.setTextSize(14);
+        b.setTextSize(13.5f);
+        b.setSingleLine(true);
+        b.setEllipsize(android.text.TextUtils.TruncateAt.END);
         b.setMinWidth(0);
         b.setMinimumWidth(0);
-        b.setPadding(dp(14), dp(5), dp(14), dp(5));
+        b.setPadding(dp(14), dp(6), dp(14), dp(6));
         b.setMinHeight(dp(38));
         b.setMinimumHeight(dp(38));
-        b.setBackground(bg(Color.TRANSPARENT, 20));
-        b.setTextColor(MUTED);
+        GradientDrawable pill = bg(0xff282832, 19);
+        pill.setStroke(Math.max(1, dp(1)), 0x26ffffff);
+        b.setBackground(pill);
+        b.setTextColor(0xffe6e6ee);
         b.setOnFocusChangeListener(
                 (v, f) ->
                         FocusMotion.style(
-                                this,
-                                b,
-                                f,
-                                Color.TRANSPARENT,
-                                WHITE,
-                                20,
-                                MUTED,
-                                DARK,
-                                false,
-                                1.02f));
+                                this, b, f, 0xff282832, WHITE, 19, 0xffe6e6ee, DARK, false, 1.02f));
         return b;
     }
 

@@ -92,7 +92,8 @@ final class AppDialog extends Dialog {
                 content.addView(item, lp);
                 if (checked || selected == null) selected = item;
             }
-        int width = Math.min(a.dp(spec.view == null ? 500 : 680), a.windowWidth() - a.dp(72));
+        int marginH = a.isTvDevice() ? a.dp(72) : a.dp(32);
+        int width = Math.min(a.dp(spec.view == null ? 500 : 680), a.windowWidth() - marginH);
         int maxHeight = Math.max(a.dp(140), a.windowHeight() - a.dp(200));
         content.measure(
                 View.MeasureSpec.makeMeasureSpec(width - a.dp(48), View.MeasureSpec.EXACTLY),
@@ -110,6 +111,8 @@ final class AppDialog extends Dialog {
                     }
                 };
         clip.setTag("scroll-viewport-clip");
+        clip.setClipChildren(true);
+        clip.setClipToPadding(true);
         clip.addView(scroller, new FrameLayout.LayoutParams(-1, -1));
         panel.addView(
                 clip,
@@ -118,7 +121,8 @@ final class AppDialog extends Dialog {
         LinearLayout footer = a.row();
         footer.setGravity(Gravity.RIGHT);
         a.gap(panel, 14);
-        panel.addView(footer);
+        panel.addView(footer, new LinearLayout.LayoutParams(-1, -2));
+        boolean compactFooter = spec.buttons.size() >= 3 || !a.isTvDevice();
         for (int code : new int[] {-3, -2, -1})
             if (spec.buttons.containsKey(code)) {
                 Button button =
@@ -131,8 +135,20 @@ final class AppDialog extends Dialog {
                                             spec.callbacks.get(code);
                                     if (action != null) action.onClick(this, code);
                                 });
-                button.setTextSize(14);
-                a.addButton(footer, button);
+                button.setSingleLine(true);
+                button.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                button.setMinWidth(0);
+                button.setMinimumWidth(0);
+                if (compactFooter) {
+                    button.setTextSize(spec.buttons.size() >= 3 ? 13f : 14f);
+                    button.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, a.dp(42), 1);
+                    lp.setMargins(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
+                    footer.addView(button, lp);
+                } else {
+                    button.setTextSize(14);
+                    a.addButton(footer, button);
+                }
                 actions.put(code, button);
             }
         for (int i = 0; i < content.getChildCount(); i++)

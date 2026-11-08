@@ -388,6 +388,7 @@ final class MobileShell {
 
         float widthDp = a.windowWidth() / a.getResources().getDisplayMetrics().density;
         boolean tabletSideRail = widthDp >= 640 && !a.isPortrait();
+        float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
 
         if (tabletSideRail) {
             LinearLayout mainRow = a.row();
@@ -401,7 +402,8 @@ final class MobileShell {
             railWrap.setPadding(a.dp(8), statusBarHeight() + a.dp(12), a.dp(12), a.dp(12));
             LinearLayout sideRail = buildNavigationBar(true);
             FrameLayout.LayoutParams railLp =
-                    new FrameLayout.LayoutParams(a.dp(72), a.dp(296), Gravity.CENTER_VERTICAL);
+                    new FrameLayout.LayoutParams(
+                            a.dp(72 * navScale), a.dp(296 * navScale), Gravity.CENTER_VERTICAL);
             railWrap.addView(sideRail, railLp);
             mainRow.addView(railWrap, new LinearLayout.LayoutParams(-2, -1));
         } else {
@@ -421,14 +423,19 @@ final class MobileShell {
             BottomEdgeFadeView bottomFade = new BottomEdgeFadeView(a);
             bottomFade.setClickable(false);
             bottomFade.setFocusable(false);
-            a.root.addView(bottomFade, new FrameLayout.LayoutParams(-1, a.dp(92), Gravity.BOTTOM));
+            a.root.addView(
+                    bottomFade,
+                    new FrameLayout.LayoutParams(-1, a.dp(92 * navScale), Gravity.BOTTOM));
 
             // Layer 4: iPhone Floating Liquid Glass 4-Tab Pill Dock
             LinearLayout bottomDock = buildNavigationBar(false);
-            int dockWidthPx = Math.min(a.dp(286), Math.max(a.dp(244), a.windowWidth() - a.dp(40)));
+            int dockWidthPx =
+                    Math.min(a.dp(286 * navScale), Math.max(a.dp(244), a.windowWidth() - a.dp(32)));
             FrameLayout.LayoutParams dockLp =
                     new FrameLayout.LayoutParams(
-                            dockWidthPx, a.dp(64), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+                            dockWidthPx,
+                            a.dp(64 * navScale),
+                            Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
             dockLp.bottomMargin = a.dp(16);
             a.root.addView(bottomDock, dockLp);
         }
@@ -644,6 +651,7 @@ final class MobileShell {
         bar.setElevation(a.dp(18));
 
         String[] navKeys = {"nav-home", "nav-search", "nav-live", "nav-favorites", "nav-settings"};
+        float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
 
         for (int pos = 0; pos < DOCK_TAB_INDICES.length; pos++) {
             final int tabIdx = DOCK_TAB_INDICES[pos];
@@ -655,9 +663,10 @@ final class MobileShell {
 
             NavGlyph glyph = new NavGlyph(a, tabIdx);
             navIcons[tabIdx] = glyph;
-            tab.addView(glyph, new LinearLayout.LayoutParams(a.dp(22), a.dp(22)));
+            tab.addView(
+                    glyph, new LinearLayout.LayoutParams(a.dp(22 * navScale), a.dp(22 * navScale)));
 
-            TextView label = a.text(TAB_NAMES[tabIdx], 10.5f, 0xffe5e7eb);
+            TextView label = a.text(TAB_NAMES[tabIdx], 10.5f * navScale, 0xffe5e7eb);
             label.setGravity(Gravity.CENTER);
             label.setPadding(0, a.dp(2), 0, 0);
             navLabels[tabIdx] = label;
@@ -846,22 +855,39 @@ final class MobileShell {
         body.addView(heroContainer, new LinearLayout.LayoutParams(-1, -2));
 
         // 4. Horizontal Scrollable Category Pill Bar
-        HorizontalScrollView catScroll = new HorizontalScrollView(a);
+        HorizontalScrollView catScroll =
+                new HorizontalScrollView(a) {
+                    @Override
+                    protected void dispatchDraw(Canvas canvas) {
+                        int save = canvas.save();
+                        canvas.clipRect(getScrollX(), 0, getScrollX() + getWidth(), getHeight());
+                        super.dispatchDraw(canvas);
+                        canvas.restoreToCount(save);
+                    }
+                };
         catScroll.setHorizontalScrollBarEnabled(false);
+        catScroll.setClipChildren(true);
         catScroll.setClipToPadding(false);
-        catScroll.setPadding(a.dp(16), a.dp(14), a.dp(16), a.dp(10));
+        catScroll.setPadding(a.dp(16), a.dp(14), a.dp(8), a.dp(10));
         final LinearLayout catRow = a.row();
         catRow.setGravity(Gravity.CENTER_VERTICAL);
         catScroll.addView(catRow);
         LinearLayout categoryBar = a.row();
+        categoryBar.setClipChildren(true);
+        categoryBar.setGravity(Gravity.CENTER_VERTICAL);
         categoryBar.addView(catScroll, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView filterButton = a.text("筛选", 13, MainActivity.WHITE);
+        float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
+        TextView filterButton = a.text("筛选", 13 * navScale, MainActivity.WHITE);
         filterButton.setTag("home-filters");
+        filterButton.setSingleLine(true);
         filterButton.setGravity(Gravity.CENTER);
-        filterButton.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
+        filterButton.setPadding(
+                a.dp(14 * navScale), a.dp(9 * navScale), a.dp(14 * navScale), a.dp(9 * navScale));
         a.glass(filterButton, 999);
         LinearLayout.LayoutParams filterSize = new LinearLayout.LayoutParams(-2, -2);
+        filterSize.leftMargin = a.dp(8);
         filterSize.rightMargin = a.dp(16);
+        filterSize.topMargin = a.dp(2);
         categoryBar.addView(filterButton, filterSize);
         body.addView(categoryBar, new LinearLayout.LayoutParams(-1, -2));
 
@@ -1268,10 +1294,12 @@ final class MobileShell {
             Runnable refreshChips,
             Runnable loadPage) {
         boolean active = selectedCategoryId.equals(catId);
-        TextView chip = a.text(label, 13, active ? 0xff000000 : 0xfff3f4f6);
+        float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
+        TextView chip = a.text(label, 13 * navScale, active ? 0xff000000 : 0xfff3f4f6);
         chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
         chip.setGravity(Gravity.CENTER);
-        chip.setPadding(a.dp(15), a.dp(7), a.dp(15), a.dp(7));
+        chip.setPadding(
+                a.dp(15 * navScale), a.dp(7 * navScale), a.dp(15 * navScale), a.dp(7 * navScale));
         if (active) {
             chip.setBackground(glassBg(0xffffffff, 0xffeaeaf0, a.dp(999), a.dp(0.7f), 0xffffffff));
         } else {
@@ -2814,6 +2842,25 @@ final class MobileShell {
                         () -> {
                             int next = scale == 100 ? 110 : (scale == 110 ? 90 : 100);
                             a.prefs.edit().putInt(Prefs.UI_SCALE_PERCENT, next).apply();
+                            a.recreate();
+                        });
+                final int navScalePct =
+                        Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100));
+                addSettingCard(
+                        body,
+                        4,
+                        "导航栏字体与按钮大小",
+                        "当前：" + navScalePct + "%（自适应排版 · 点击切换紧凑 / 标准 / 放大 / 特大）",
+                        () -> {
+                            int next =
+                                    navScalePct < 100
+                                            ? 100
+                                            : navScalePct == 100
+                                                    ? 115
+                                                    : navScalePct == 115
+                                                            ? 130
+                                                            : navScalePct == 130 ? 140 : 85;
+                            a.prefs.edit().putInt(Prefs.NAV_SCALE_PERCENT, next).apply();
                             a.recreate();
                         });
                 final boolean reduced = a.prefs.getBoolean(Prefs.REDUCED, false);

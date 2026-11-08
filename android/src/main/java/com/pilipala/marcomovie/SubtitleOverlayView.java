@@ -11,14 +11,19 @@ import java.util.List;
 
 /** Wrapper around Media3 SubtitleView so shared playback controls do not depend on Media3 classes. */
 final class SubtitleOverlayView extends FrameLayout {
-    static final String[] STYLE_NAMES = {"白字黑边·透明底", "暖黄黑边·透明底", "白字阴影·透明底", "白字半透底", "青蓝黑边·透明底"};
+    static final String[] STYLE_NAMES = {
+        "纯白黑边·透明底", "暖黄黑边·透明底", "天青黑边·透明底", "翠绿黑边·透明底", "珊瑚粉黑边·透明底", "纯白黑边·半透底"
+    };
     static final String[] STYLE_LABELS = STYLE_NAMES;
+    static final int[] STYLE_COLORS = {
+        Color.WHITE, 0xFFFFE066, 0xFF8BE9FD, 0xFF69F0AE, 0xFFFF9EBB, Color.WHITE
+    };
 
     static String bgStyleLabel(int preset) {
         return styleName(preset);
     }
 
-    private static final String PREVIEW_LINE = "字幕实时预览 · 上下键调位置 · 左右键调大小 · 确认键换样式";
+    private static final String PREVIEW_LINE = "字幕实时预览 · ▲▼ 调高低位置 · ◀▶ 调字体大小 · 确认键 切换字体颜色";
 
     final androidx.media3.ui.SubtitleView delegate;
     private List<Cue> currentCues = Collections.emptyList();
@@ -69,28 +74,6 @@ final class SubtitleOverlayView extends FrameLayout {
                                 bold);
                 break;
             case 2:
-                // White text + soft drop shadow, transparent background
-                style =
-                        new CaptionStyleCompat(
-                                Color.WHITE,
-                                Color.TRANSPARENT,
-                                Color.TRANSPARENT,
-                                CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,
-                                0xE6000000,
-                                bold);
-                break;
-            case 3:
-                // White text + subtle 48% translucent dark background (never solid black!)
-                style =
-                        new CaptionStyleCompat(
-                                Color.WHITE,
-                                0x7A000000,
-                                Color.TRANSPARENT,
-                                CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-                                0xAA000000,
-                                bold);
-                break;
-            case 4:
                 // Soft cyan text + crisp black outline, transparent background
                 style =
                         new CaptionStyleCompat(
@@ -99,6 +82,39 @@ final class SubtitleOverlayView extends FrameLayout {
                                 Color.TRANSPARENT,
                                 CaptionStyleCompat.EDGE_TYPE_OUTLINE,
                                 0xF0000000,
+                                bold);
+                break;
+            case 3:
+                // Mint green text + crisp black outline, transparent background
+                style =
+                        new CaptionStyleCompat(
+                                0xFF69F0AE,
+                                Color.TRANSPARENT,
+                                Color.TRANSPARENT,
+                                CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                                0xF0000000,
+                                bold);
+                break;
+            case 4:
+                // Coral pink text + crisp black outline, transparent background
+                style =
+                        new CaptionStyleCompat(
+                                0xFFFF9EBB,
+                                Color.TRANSPARENT,
+                                Color.TRANSPARENT,
+                                CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                                0xF0000000,
+                                bold);
+                break;
+            case 5:
+                // White text + subtle 48% translucent dark background
+                style =
+                        new CaptionStyleCompat(
+                                Color.WHITE,
+                                0x7A000000,
+                                Color.TRANSPARENT,
+                                CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                                0xAA000000,
                                 bold);
                 break;
             case 0:
@@ -120,6 +136,10 @@ final class SubtitleOverlayView extends FrameLayout {
     void setPreviewActive(boolean active) {
         this.previewActive = active;
         refreshCues();
+    }
+
+    boolean isPreviewActive() {
+        return previewActive;
     }
 
     @Override

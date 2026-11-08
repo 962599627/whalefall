@@ -21,6 +21,15 @@ final class TvScrollView extends ScrollView {
         setClipToPadding(false);
     }
 
+    @Override
+    protected void dispatchDraw(android.graphics.Canvas canvas) {
+        int save = canvas.save();
+        canvas.clipRect(
+                getScrollX(), getScrollY(), getScrollX() + getWidth(), getScrollY() + getHeight());
+        super.dispatchDraw(canvas);
+        canvas.restoreToCount(save);
+    }
+
     int limit() {
         return getChildCount() == 0
                 ? 0

@@ -117,47 +117,9 @@ final class ImageLoader {
                                                     .resolve(resolvedUrl);
                                 }
                                 String targetUrl = upgradePosterUrl(resolvedUrl, detail);
-                                byte[] bytes = readDiskCachedPoster(a, targetUrl);
-                                if (bytes == null) {
-                                    connection =
-                                            (HttpURLConnection) new URL(targetUrl).openConnection();
-                                    for (Map.Entry<String, String> header :
-                                            source.headers.entrySet())
-                                        connection.setRequestProperty(
-                                                header.getKey(), header.getValue());
-                                    String fragment = new URL(targetUrl).getRef();
-                                    if (fragment != null && fragment.startsWith("mm-emby=")) {
-                                        connection.setInstanceFollowRedirects(false);
-                                        com.pilipala.emby.EmbyLibrary library =
-                                                com.pilipala.emby.EmbyAccounts.open(
-                                                        a,
-                                                        "emby://account/" + fragment.substring(8));
-                                        for (Map.Entry<String, String> h :
-                                                library.imageHeaders(targetUrl).entrySet())
-                                            connection.setRequestProperty(h.getKey(), h.getValue());
-                                    }
-                                    applyArtworkHeaders(connection, targetUrl, source.headers);
-                                    connection.setConnectTimeout(4500);
-                                    connection.setReadTimeout(5500);
-                                    if (!source.headers.containsKey("User-Agent"))
-                                        connection.setRequestProperty("User-Agent", Cms.USER_AGENT);
-                                    RequestScope.attach(connection);
-                                    try (InputStream in = connection.getInputStream()) {
-                                        ByteArrayOutputStream out = new ByteArrayOutputStream();
-                                        byte[] buffer = new byte[8192];
-                                        int n;
-                                        while ((n = in.read(buffer)) != -1) {
-                                            RequestScope.current().check();
-                                            if (out.size() + n > (detail ? 8 : 3) * 1024 * 1024)
-                                                throw new IOException("Poster too large");
-                                            out.write(buffer, 0, n);
-                                        }
-                                        bytes = out.toByteArray();
-                                    }
-                                    if (bytes != null && bytes.length > 128) {
-                                        writeDiskCachedPoster(a, targetUrl, bytes);
-                                    }
-                                }
+                                byte[] bytes =
+                                        fetchPosterBytesWithFallback(
+                                                a, source, resolvedUrl, targetUrl, detail);
                                 if (bytes == null || bytes.length == 0) return;
                                 BitmapFactory.Options options = new BitmapFactory.Options();
                                 options.inJustDecodeBounds = true;
@@ -283,6 +245,71 @@ final class ImageLoader {
         }
     }
 
+    private static byte[] fetchPosterBytesWithFallback(
+            MainActivity a,
+            Cms.ImageRequest source,
+            String resolvedUrl,
+            String targetUrl,
+            boolean detail)
+            throws Exception {
+        String[] candidates =
+                detail && !targetUrl.equals(resolvedUrl)
+                        ? new String[] {
+                            targetUrl, upgradePosterUrl(resolvedUrl, false), resolvedUrl
+                        }
+                        : new String[] {targetUrl, resolvedUrl};
+        Exception lastError = null;
+        java.util.HashSet<String> tried = new java.util.HashSet<>();
+        for (String candidate : candidates) {
+            if (candidate == null || candidate.isEmpty() || !tried.add(candidate)) continue;
+            byte[] cached = readDiskCachedPoster(a, candidate);
+            if (cached != null) return cached;
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(candidate).openConnection();
+                for (Map.Entry<String, String> header : source.headers.entrySet())
+                    connection.setRequestProperty(header.getKey(), header.getValue());
+                String fragment = new URL(candidate).getRef();
+                if (fragment != null && fragment.startsWith("mm-emby=")) {
+                    connection.setInstanceFollowRedirects(false);
+                    com.pilipala.emby.EmbyLibrary library =
+                            com.pilipala.emby.EmbyAccounts.open(
+                                    a, "emby://account/" + fragment.substring(8));
+                    for (Map.Entry<String, String> h : library.imageHeaders(candidate).entrySet())
+                        connection.setRequestProperty(h.getKey(), h.getValue());
+                }
+                applyArtworkHeaders(connection, candidate, source.headers);
+                connection.setConnectTimeout(4500);
+                connection.setReadTimeout(5500);
+                if (!source.headers.containsKey("User-Agent"))
+                    connection.setRequestProperty("User-Agent", Cms.USER_AGENT);
+                RequestScope.attach(connection);
+                try (InputStream in = connection.getInputStream()) {
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[8192];
+                    int n;
+                    while ((n = in.read(buffer)) != -1) {
+                        RequestScope.current().check();
+                        if (out.size() + n > (detail ? 8 : 3) * 1024 * 1024)
+                            throw new IOException("Poster too large");
+                        out.write(buffer, 0, n);
+                    }
+                    byte[] bytes = out.toByteArray();
+                    if (bytes.length > 128) {
+                        writeDiskCachedPoster(a, candidate, bytes);
+                        return bytes;
+                    }
+                }
+            } catch (Exception e) {
+                lastError = e;
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }
+        if (lastError != null) throw lastError;
+        return null;
+    }
+
     static String upgradePosterUrl(String rawUrl, boolean detail) {
         if (rawUrl == null || rawUrl.isEmpty()) return "";
         String url = rawUrl;
@@ -299,13 +326,24 @@ final class ImageLoader {
                                 .replace("/view/photo/mpic/", "/view/photo/lpic/")
                                 .replace("/view/photo/s/", "/view/photo/l/")
                                 .replace("/view/photo/m/", "/view/photo/l/");
-                if (url.endsWith(".webp")) {
-                    url = url.substring(0, url.length() - 5) + ".jpg";
-                }
             } else {
                 url =
                         url.replace("/s_ratio_poster/", "/m_ratio_poster/")
                                 .replace("/view/photo/spic/", "/view/photo/mpic/");
+            }
+        }
+        if (url.contains("image.tmdb.org/t/p/")) {
+            if (detail) {
+                url =
+                        url.replace("/t/p/w185/", "/t/p/w780/")
+                                .replace("/t/p/w300/", "/t/p/w780/")
+                                .replace("/t/p/w342/", "/t/p/w780/")
+                                .replace("/t/p/w500/", "/t/p/w780/");
+            } else {
+                url =
+                        url.replace("/t/p/w185/", "/t/p/w500/")
+                                .replace("/t/p/w300/", "/t/p/w500/")
+                                .replace("/t/p/w342/", "/t/p/w500/");
             }
         }
         if (detail) {

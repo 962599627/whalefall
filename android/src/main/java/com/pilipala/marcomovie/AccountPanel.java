@@ -12,10 +12,9 @@ final class AccountPanel {
         a.accountDialog = dialog;
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout panel = a.vertical();
+        panel.setTag("account-panel");
         panel.setPadding(a.dp(24), a.dp(22), a.dp(24), a.dp(18));
-        panel.setBackground(a.bg(0xf5222227, 30));
-        panel.setClipChildren(false);
-        panel.setClipToPadding(false);
+        panel.setBackground(a.bg(0xf5222227, 28));
         panel.addView(a.text("网盘与账号", 24, MainActivity.WHITE));
         a.gap(panel, 8);
         TextView note = a.text("登录与账号状态由你导入的配置提供。", 13, MainActivity.MUTED);
@@ -54,8 +53,9 @@ final class AccountPanel {
             size.bottomMargin = a.dp(6);
             panel.addView(item, size);
         }
+        a.gap(panel, 6);
         Button close = a.navButton("完成", "account-close", dialog::dismiss);
-        panel.addView(close, new LinearLayout.LayoutParams(-1, a.dp(38)));
+        panel.addView(close, new LinearLayout.LayoutParams(-1, a.dp(42)));
         dialog.setContentView(panel);
         dialog.setOnDismissListener(
                 d -> {
@@ -66,14 +66,21 @@ final class AccountPanel {
         Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawableResource(android.R.color.transparent);
-            window.setLayout(a.dp(410), -2);
-            window.setGravity(Gravity.TOP | Gravity.RIGHT);
+            int panelW = Math.min(a.dp(410), a.windowWidth() - a.dp(a.isTvDevice() ? 48 : 32));
+            window.setLayout(panelW, -2);
             WindowManager.LayoutParams lp = window.getAttributes();
-            int[] point = {0, 0};
-            if (anchor != null) anchor.getLocationInWindow(point);
-            lp.x = a.dp(38);
-            lp.y = anchor == null ? a.dp(80) : point[1] + anchor.getHeight() + a.dp(8);
-            lp.dimAmount = .4f;
+            if (a.isTvDevice()) {
+                window.setGravity(Gravity.TOP | Gravity.RIGHT);
+                int[] point = {0, 0};
+                if (anchor != null) anchor.getLocationInWindow(point);
+                lp.x = a.dp(38);
+                lp.y = anchor == null ? a.dp(80) : point[1] + anchor.getHeight() + a.dp(8);
+            } else {
+                window.setGravity(Gravity.CENTER);
+                lp.x = 0;
+                lp.y = 0;
+            }
+            lp.dimAmount = .5f;
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             window.setAttributes(lp);
         }

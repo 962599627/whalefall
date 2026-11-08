@@ -20,12 +20,39 @@ final class FocusMotion {
         boolean ready, pressed, border;
     }
 
+    static boolean hasDirectScrollChild(ViewGroup g) {
+        for (int i = 0, n = g.getChildCount(); i < n; i++) {
+            View c = g.getChildAt(i);
+            if (c instanceof android.widget.ScrollView
+                    || c instanceof android.widget.HorizontalScrollView
+                    || "scroll-viewport-clip".equals(c.getTag())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     static void unclipAncestors(View view) {
         if (view == null) return;
+        if (view.getContext() instanceof MainActivity
+                && !((MainActivity) view.getContext()).isTvDevice()) {
+            return;
+        }
         ViewParent p = view.getParent();
         while (p instanceof ViewGroup) {
             ViewGroup g = (ViewGroup) p;
-            if (!g.getClipToOutline() && !"scroll-viewport-clip".equals(g.getTag())) {
+            Object tag = g.getTag();
+            if (g instanceof android.widget.ScrollView
+                    || g instanceof android.widget.HorizontalScrollView
+                    || g.getClipToOutline()
+                    || "scroll-viewport-clip".equals(tag)
+                    || "player-dock".equals(tag)
+                    || "app-dialog".equals(tag)
+                    || "source-picker".equals(tag)
+                    || "account-panel".equals(tag)) {
+                break;
+            }
+            if (!hasDirectScrollChild(g)) {
                 if (g.getClipChildren()) g.setClipChildren(false);
                 if (g.getClipToPadding()) g.setClipToPadding(false);
             }

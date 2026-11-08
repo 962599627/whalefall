@@ -16,40 +16,53 @@ final class HomeDock {
     };
 
     final boolean bottomMode;
+    final float navScale;
+    final int crossDp, mainDp, cellDp, hintHeightDp;
 
     HomeDock(MainActivity host) {
         a = host;
         bottomMode = a.useBottomDock();
+        navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
+        cellDp = Math.round(38 * navScale);
+        crossDp = Math.round(50 * navScale);
+        mainDp = Math.round((bottomMode ? 296 : 292) * navScale);
+        hintHeightDp = Math.round(28 * navScale);
         rail = bottomMode ? a.row() : a.vertical();
         rail.setTag("home-dock");
         rail.setGravity(Gravity.CENTER);
+        rail.setClipChildren(false);
+        rail.setClipToPadding(false);
         rail.setPadding(
-                a.dp(bottomMode ? 10 : 6),
-                a.dp(bottomMode ? 6 : 8),
-                a.dp(bottomMode ? 10 : 6),
-                a.dp(bottomMode ? 6 : 8));
-        a.glass(rail, 25);
+                a.dp(Math.round((bottomMode ? 10 : 6) * navScale)),
+                a.dp(Math.round((bottomMode ? 6 : 8) * navScale)),
+                a.dp(Math.round((bottomMode ? 10 : 6) * navScale)),
+                a.dp(Math.round((bottomMode ? 6 : 8) * navScale)));
+        a.glass(rail, Math.round(25 * navScale));
         rail.setElevation(a.dp(8));
         FrameLayout.LayoutParams size =
                 bottomMode
                         ? new FrameLayout.LayoutParams(
-                                a.dp(296), a.dp(50), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL)
+                                a.dp(mainDp),
+                                a.dp(crossDp),
+                                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL)
                         : new FrameLayout.LayoutParams(
-                                a.dp(50), a.dp(292), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+                                a.dp(crossDp),
+                                a.dp(mainDp),
+                                Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         if (bottomMode) size.bottomMargin = a.dp(14);
         else size.rightMargin = a.dp(20);
         a.root.addView(rail, size);
-        hint = a.text("", 12, MainActivity.WHITE);
+        hint = a.text("", 12f * navScale, MainActivity.WHITE);
         hint.setTag("home-dock-label");
         hint.setGravity(Gravity.CENTER);
         hint.setIncludeFontPadding(false);
-        hint.setPadding(a.dp(12), 0, a.dp(16), 0);
+        hint.setPadding(a.dp(Math.round(12 * navScale)), 0, a.dp(Math.round(16 * navScale)), 0);
         hint.setBackground(new LabelBubble());
         hint.setElevation(rail.getElevation() + a.dp(1));
         hint.setVisibility(View.INVISIBLE);
         FrameLayout.LayoutParams tip =
-                new FrameLayout.LayoutParams(-2, a.dp(28), Gravity.RIGHT | Gravity.TOP);
-        tip.rightMargin = a.dp(78);
+                new FrameLayout.LayoutParams(-2, a.dp(hintHeightDp), Gravity.RIGHT | Gravity.TOP);
+        tip.rightMargin = a.dp(crossDp + 28);
         a.root.addView(hint, tip);
         Runnable[] actions = {
             () -> {
@@ -77,13 +90,15 @@ final class HomeDock {
             icon.setClickable(true);
             icon.setSelected(i == 0);
             a.pressFeedback(icon);
-            LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(a.dp(38), a.dp(38));
+            int cellGap = a.dp(Math.max(3, Math.round(4 * navScale)));
+            LinearLayout.LayoutParams cell =
+                    new LinearLayout.LayoutParams(a.dp(cellDp), a.dp(cellDp));
             if (bottomMode) {
-                cell.leftMargin = a.dp(4);
-                cell.rightMargin = a.dp(4);
+                cell.leftMargin = cellGap;
+                cell.rightMargin = cellGap;
             } else {
-                cell.topMargin = a.dp(4);
-                cell.bottomMargin = a.dp(4);
+                cell.topMargin = cellGap;
+                cell.bottomMargin = cellGap;
             }
             rail.addView(icon, cell);
             icon.setOnClickListener(v -> actions[index].run());
@@ -96,8 +111,8 @@ final class HomeDock {
                                 focused,
                                 Color.TRANSPARENT,
                                 MainActivity.WHITE,
-                                // Half of the 38dp cell or more: a true circle, not a squircle.
-                                24,
+                                // Half of the cell or more: a true circle, not a squircle.
+                                Math.max(24, (cellDp + 2) / 2),
                                 MainActivity.WHITE,
                                 MainActivity.DARK,
                                 false,
@@ -172,7 +187,7 @@ final class HomeDock {
                         p.topMargin =
                                 rail.getTop()
                                         + items[index].getTop()
-                                        + (items[index].getHeight() - a.dp(28)) / 2;
+                                        + (items[index].getHeight() - a.dp(hintHeightDp)) / 2;
                     hint.setLayoutParams(p);
                     hint.setAlpha(1);
                     hint.setTranslationX(0);
@@ -272,8 +287,9 @@ final class HomeDock {
         protected void onDraw(Canvas c) {
             super.onDraw(c);
             c.save();
-            c.translate(getWidth() / 2f - a.dp(10.5f), getHeight() / 2f - a.dp(10.5f));
-            c.scale(a.dp(21) / 24f, a.dp(21) / 24f);
+            float iconDp = 21f * navScale;
+            c.translate(getWidth() / 2f - a.dp(iconDp / 2f), getHeight() / 2f - a.dp(iconDp / 2f));
+            c.scale(a.dp(iconDp) / 24f, a.dp(iconDp) / 24f);
             FocusMotion.State motion = (FocusMotion.State) getTag(R.id.focus_motion);
             boolean light = hasFocus() && (motion == null || Color.alpha(motion.color) > 150);
             p.setColor(light ? MainActivity.DARK : 0xffd6d6dd);

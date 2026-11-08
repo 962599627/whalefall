@@ -148,6 +148,11 @@ final class MobileDetailScreen {
 
     static EpisodeDisplay parseEpisodeDisplay(String rawName, int epNumber) {
         String s = rawName == null ? "" : rawName.trim();
+        int nl = s.indexOf('\n');
+        if (nl >= 0) {
+            s = s.substring(0, nl).trim();
+        }
+        s = s.replace('\r', ' ').replaceAll("\\s+", " ").trim();
         String badge = null;
         Matcher m = Pattern.compile("^\\[([^\\]]+)\\]\\s*(.*)$").matcher(s);
         if (m.matches()) {
@@ -155,6 +160,13 @@ final class MobileDetailScreen {
             s = m.group(2).trim();
         }
         s = s.replaceAll("(?i)\\.(mkv|mp4|ts|flv|avi|mov|m3u8)$", "").trim();
+        if (s.length() > 12 && s.length() % 2 == 1) {
+            int half = s.length() / 2;
+            if (s.charAt(half) == ' '
+                    && s.substring(0, half).equalsIgnoreCase(s.substring(half + 1))) {
+                s = s.substring(0, half).trim();
+            }
+        }
         if (s.isEmpty() || s.matches("(?i)^[Ee]?0*\\d+$")) {
             s = "E" + String.format(Locale.US, "%02d", epNumber);
         }
@@ -298,35 +310,18 @@ final class MobileDetailScreen {
                 bitmapPaint.setAlpha(255);
                 canvas.drawBitmap(rawBitmap, drawMatrix, bitmapPaint);
 
-                // Lower frosted-glass / scroll-blur overlay inside the poster window
+                // Scroll-driven frosted blur ONLY when scrolling down to the episode list
                 if (blurredBitmap != null && !blurredBitmap.isRecycled()) {
-                    RectF dst = new RectF(0, 0, w, winH);
-                    // Draw full-window scroll blur when scrolling down
                     int scrollBlurAlpha = Math.round(scrollProgress * 225f);
                     if (scrollBlurAlpha > 4) {
+                        RectF dst = new RectF(0, 0, w, winH);
                         bitmapPaint.setAlpha(scrollBlurAlpha);
                         canvas.drawBitmap(blurredBitmap, null, dst, bitmapPaint);
                     }
-                    // Progressive lower overlap blur (56%..100% of poster window)
-                    int overlapTop = Math.round(winH * 0.56f);
-                    int saveOverlap = canvas.saveLayer(0, overlapTop, w, winH, null);
-                    bitmapPaint.setAlpha(235);
-                    canvas.drawBitmap(blurredBitmap, null, dst, bitmapPaint);
-                    maskPaint.setShader(
-                            new LinearGradient(
-                                    0,
-                                    overlapTop,
-                                    0,
-                                    winH,
-                                    new int[] {0x00ffffff, 0x99ffffff, 0xffffffff, 0xffffffff},
-                                    new float[] {0f, 0.38f, 0.78f, 1f},
-                                    Shader.TileMode.CLAMP));
-                    canvas.drawRect(0, overlapTop, w, winH, maskPaint);
-                    maskPaint.setShader(null);
-                    canvas.restoreToCount(saveOverlap);
                 }
 
-                // Intrinsic vertical alpha feathering (top 62% is 100% clear, bottom feathers to 0)
+                // Intrinsic vertical alpha feathering (top 72% is 100% sharp, bottom feathers
+                // smoothly)
                 maskPaint.setShader(
                         new LinearGradient(
                                 0,
@@ -334,14 +329,9 @@ final class MobileDetailScreen {
                                 0,
                                 winH,
                                 new int[] {
-                                    0xffffffff,
-                                    0xffffffff,
-                                    0xbfffffff,
-                                    0x4dffffff,
-                                    0x00ffffff,
-                                    0x00ffffff
+                                    0xffffffff, 0xffffffff, 0xd9ffffff, 0x66ffffff, 0x00ffffff
                                 },
-                                new float[] {0f, 0.62f, 0.78f, 0.90f, 0.98f, 1f},
+                                new float[] {0f, 0.72f, 0.85f, 0.94f, 1f},
                                 Shader.TileMode.CLAMP));
                 canvas.drawRect(0, 0, w, winH, maskPaint);
                 maskPaint.setShader(null);
@@ -410,6 +400,11 @@ final class MobileDetailScreen {
             super(a);
             this.target = target;
             this.onLoaded = onLoaded;
+            setScaleType(ScaleType.CENTER_CROP);
+            int targetW = Math.max(1080, a.windowWidth());
+            int targetH = Math.max(1620, Math.round(targetW * 1.5f));
+            setLayoutParams(new FrameLayout.LayoutParams(targetW, targetH));
+            layout(0, 0, targetW, targetH);
         }
 
         @Override
@@ -805,11 +800,16 @@ final class MobileDetailScreen {
                     Button playBtn = new Button(a);
                     playBtn.setTag("detail-play");
                     playBtn.setAllCaps(false);
-                    playBtn.setTextSize(15);
+                    playBtn.setSingleLine(true);
+                    playBtn.setMaxLines(1);
+                    playBtn.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+                    playBtn.setGravity(Gravity.CENTER);
+                    playBtn.setIncludeFontPadding(false);
+                    playBtn.setTextSize(14.5f);
                     playBtn.setTypeface(null, Typeface.BOLD);
                     playBtn.setTextColor(0xff121215);
                     playBtn.setBackground(a.bg(0xf5ffffff, 999));
-                    playBtn.setPadding(a.dp(20), 0, a.dp(20), 0);
+                    playBtn.setPadding(a.dp(18), 0, a.dp(18), 0);
                     bindTouchFeedback(playBtn);
                     playBtn.setText(playLabel);
                     playBtn.setOnClickListener(
@@ -828,21 +828,21 @@ final class MobileDetailScreen {
                     playBtnWrap.addView(playBtn, new LinearLayout.LayoutParams(-1, a.dp(48)));
 
                     if (remembered != null) {
+                        EpisodeDisplay bmDisp = parseEpisodeDisplay(remembered.episode, 1);
                         String bmSummary =
                                 remembered.position > 0
                                         ? "已观看 ["
-                                                + remembered.episode
+                                                + bmDisp.cleanTitle
                                                 + "] 至 "
                                                 + PlaybackController.formatTime(remembered.position)
                                                 + " · 线路："
                                                 + remembered.line
-                                        : "已观看 ["
-                                                + remembered.episode
-                                                + "] · 线路："
-                                                + remembered.line;
+                                        : "已观看 [" + bmDisp.cleanTitle + "] · 线路：" + remembered.line;
                         TextView bmInfo = a.text(bmSummary, 12, 0xccffffff);
+                        bmInfo.setSingleLine(true);
+                        bmInfo.setEllipsize(TextUtils.TruncateAt.MIDDLE);
                         bmInfo.setGravity(Gravity.CENTER);
-                        bmInfo.setPadding(0, a.dp(8), 0, 0);
+                        bmInfo.setPadding(a.dp(8), a.dp(8), a.dp(8), 0);
                         playBtnWrap.addView(bmInfo, new LinearLayout.LayoutParams(-1, -2));
                     }
 
@@ -1210,7 +1210,7 @@ final class MobileDetailScreen {
             EpisodeStillCropView stillImg = new EpisodeStillCropView(a, posIdx);
             frame.addView(stillImg, new FrameLayout.LayoutParams(-1, -1));
             if (video.poster != null && !video.poster.isEmpty()) {
-                a.poster(video.poster, stillImg);
+                a.poster(video.poster, stillImg, true);
             }
 
             // Subtle dark bottom gradient inside the 16:9 card

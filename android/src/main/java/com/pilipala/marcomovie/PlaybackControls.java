@@ -2,6 +2,7 @@ package com.pilipala.marcomovie;
 
 import android.app.Dialog;
 import android.content.res.ColorStateList;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.view.*;
 import android.widget.*;
@@ -318,19 +319,39 @@ final class PlaybackControls {
             fsTool.setText(mobileLandscape ? "竖屏" : "全屏");
         }
         if (mobileLandscape) {
-            ScrollView vScroller = new ScrollView(a);
+            ScrollView vScroller =
+                    new ScrollView(a) {
+                        @Override
+                        protected void dispatchDraw(Canvas canvas) {
+                            int save = canvas.save();
+                            canvas.clipRect(
+                                    0, getScrollY(), getWidth(), getScrollY() + getHeight());
+                            super.dispatchDraw(canvas);
+                            canvas.restoreToCount(save);
+                        }
+                    };
             vScroller.setVerticalScrollBarEnabled(false);
             vScroller.setFillViewport(false);
-            vScroller.setClipChildren(false);
-            vScroller.setClipToPadding(false);
+            vScroller.setClipChildren(true);
+            vScroller.setClipToPadding(true);
             vScroller.addView(row, new FrameLayout.LayoutParams(-1, -2));
             dockOverlay.addView(vScroller, new LinearLayout.LayoutParams(-1, -1));
         } else {
-            HorizontalScrollView scroller = new HorizontalScrollView(a);
+            HorizontalScrollView scroller =
+                    new HorizontalScrollView(a) {
+                        @Override
+                        protected void dispatchDraw(Canvas canvas) {
+                            int save = canvas.save();
+                            canvas.clipRect(
+                                    getScrollX(), 0, getScrollX() + getWidth(), getHeight());
+                            super.dispatchDraw(canvas);
+                            canvas.restoreToCount(save);
+                        }
+                    };
             scroller.setHorizontalScrollBarEnabled(false);
             scroller.setFillViewport(true);
-            scroller.setClipChildren(false);
-            scroller.setClipToPadding(false);
+            scroller.setClipChildren(true);
+            scroller.setClipToPadding(true);
             scroller.addView(row);
             dockOverlay.addView(scroller, new LinearLayout.LayoutParams(-1, -2));
         }
@@ -834,6 +855,7 @@ final class PlaybackControls {
         }
         if (liveSub != null) {
             liveSub.setPreviewActive(true);
+            if (a.controlsVisible) a.showControls(false);
         }
 
         LinearLayout card = a.vertical();
@@ -844,7 +866,7 @@ final class PlaybackControls {
         card.setFocusable(true);
         card.setFocusableInTouchMode(true);
 
-        TextView title = a.text("字幕方向键直调（实时预览）", 17, MainActivity.WHITE);
+        TextView title = a.text("字幕方向键直调（实时生效）", 17, MainActivity.WHITE);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         card.addView(title);
         a.gap(card, 6);
@@ -852,12 +874,12 @@ final class PlaybackControls {
         TextView guide =
                 a.text(
                         a.isTvDevice()
-                                ? "◀ ▶ 调整字号大小  ·  ▲ ▼ 调整高低位置  ·  确认键 切换字幕样式  ·  返回键 完成"
-                                : "可使用方向键或下方按钮实时调节字号、高低位置与透明描边样式",
+                                ? "▲ ▼ 调整高度位置  ·  ◀ ▶ 调整字体大小  ·  确认键 切换字体颜色"
+                                : "可使用方向键或下方按钮实时调节高度位置、字体大小与字体颜色",
                         12,
                         MainActivity.MUTED);
         card.addView(guide);
-        a.gap(card, 12);
+        a.gap(card, 10);
 
         final TextView statusView = a.text("", 14, 0xff2ad47a);
         statusView.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -881,12 +903,13 @@ final class PlaybackControls {
                     int bt = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
                     int st = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
                     statusView.setText(
-                            "字号："
-                                    + sz
-                                    + "   ·   底部高度："
+                            "底部高度："
                                     + bt
-                                    + "dp   ·   样式："
+                                    + "dp   ·   字体大小："
+                                    + sz
+                                    + "   ·   颜色样式："
                                     + SubtitleOverlayView.STYLE_LABELS[st]);
+                    statusView.setTextColor(SubtitleOverlayView.STYLE_COLORS[st]);
                     if (previewBox != null) {
                         previewBox.applyStylePreset(st);
                         previewBox.setFractionalTextSize(sz / 1000f);
@@ -919,32 +942,40 @@ final class PlaybackControls {
                     syncState.run();
                 };
 
-        LinearLayout controlsRow = a.row();
-        controlsRow.setGravity(Gravity.CENTER);
-        String[] btnLabels = {"字号 -", "字号 +", "▼ 下移", "▲ 上移", "切换样式", "完成"};
-        Runnable[] btnActions = {
-            () -> stepSize.accept(-2),
-            () -> stepSize.accept(2),
-            () -> stepBottom.accept(-6),
-            () -> stepBottom.accept(6),
-            cycleStyle,
-            dlg::dismiss
-        };
-        for (int i = 0; i < btnLabels.length; i++) {
-            final Runnable act = btnActions[i];
-            TextView b = a.text(btnLabels[i], 12, MainActivity.WHITE);
-            b.setGravity(Gravity.CENTER);
-            b.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
-            b.setBackground(a.bg(i == btnLabels.length - 1 ? 0xff1f6f4a : 0x26ffffff, 12));
-            b.setOnClickListener(v -> act.run());
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-            lp.rightMargin = a.dp(6);
-            controlsRow.addView(b, lp);
+        if (a.isTvDevice()) {
+            TextView tvExitHint = a.text("✓ 每次调节均已实时保存  ·  按【返回键】或长按【确认键】完成退出", 12.5f, 0xffe5e7eb);
+            tvExitHint.setGravity(Gravity.CENTER);
+            tvExitHint.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
+            tvExitHint.setBackground(a.bg(0x28ffffff, 12));
+            card.addView(tvExitHint, new LinearLayout.LayoutParams(-1, -2));
+        } else {
+            LinearLayout controlsRow = a.row();
+            controlsRow.setGravity(Gravity.CENTER);
+            String[] btnLabels = {"字号 -", "字号 +", "▼ 下移", "▲ 上移", "切换颜色", "完成"};
+            Runnable[] btnActions = {
+                () -> stepSize.accept(-2),
+                () -> stepSize.accept(2),
+                () -> stepBottom.accept(-6),
+                () -> stepBottom.accept(6),
+                cycleStyle,
+                dlg::dismiss
+            };
+            for (int i = 0; i < btnLabels.length; i++) {
+                final Runnable act = btnActions[i];
+                TextView b = a.text(btnLabels[i], 12, MainActivity.WHITE);
+                b.setGravity(Gravity.CENTER);
+                b.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
+                b.setBackground(a.bg(i == btnLabels.length - 1 ? 0xff1f6f4a : 0x26ffffff, 12));
+                b.setOnClickListener(v -> act.run());
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+                lp.rightMargin = a.dp(6);
+                controlsRow.addView(b, lp);
+            }
+            HorizontalScrollView hScroll = new HorizontalScrollView(a);
+            hScroll.setHorizontalScrollBarEnabled(false);
+            hScroll.addView(controlsRow);
+            card.addView(hScroll, new LinearLayout.LayoutParams(-1, -2));
         }
-        HorizontalScrollView hScroll = new HorizontalScrollView(a);
-        hScroll.setHorizontalScrollBarEnabled(false);
-        hScroll.addView(controlsRow);
-        card.addView(hScroll, new LinearLayout.LayoutParams(-1, -2));
 
         dlg.setOnKeyListener(
                 (dialog, keyCode, event) -> {
@@ -967,10 +998,16 @@ final class PlaybackControls {
                     }
                     if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
                             || keyCode == KeyEvent.KEYCODE_ENTER) {
+                        if (event.getRepeatCount() > 0) {
+                            dlg.dismiss();
+                            return true;
+                        }
                         cycleStyle.run();
                         return true;
                     }
-                    if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                    if (keyCode == KeyEvent.KEYCODE_BACK
+                            || keyCode == KeyEvent.KEYCODE_ESCAPE
+                            || keyCode == KeyEvent.KEYCODE_MENU) {
                         dlg.dismiss();
                         return true;
                     }
@@ -978,7 +1015,10 @@ final class PlaybackControls {
                 });
         dlg.setOnDismissListener(
                 d -> {
-                    if (liveSub != null) liveSub.setPreviewActive(false);
+                    if (liveSub != null) {
+                        liveSub.setPreviewActive(false);
+                        if (onChanged != null) onChanged.run();
+                    }
                 });
         FrameLayout wrapper = new FrameLayout(a);
         FrameLayout.LayoutParams wlp =
@@ -1520,8 +1560,24 @@ final class PlaybackControls {
 
     void visible(boolean visible) {
         int bottomDp = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+        int basePx = a.dp(bottomDp);
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) subtitle.getLayoutParams();
-        lp.bottomMargin = a.dp(visible ? Math.max(168, bottomDp + 24) : bottomDp);
-        subtitle.setLayoutParams(lp);
+        if (lp.bottomMargin != basePx) {
+            lp.bottomMargin = basePx;
+            subtitle.setLayoutParams(lp);
+        }
+        if (subtitle.isPreviewActive()) {
+            subtitle.setTranslationY(0f);
+            return;
+        }
+        boolean progressOnly = a.playerChrome != null && a.playerChrome.progressOnlyMode;
+        int targetPx =
+                visible
+                        ? a.dp(
+                                progressOnly
+                                        ? Math.max(82, bottomDp + 16)
+                                        : Math.max(168, bottomDp + 24))
+                        : basePx;
+        subtitle.setTranslationY(-(targetPx - basePx));
     }
 }

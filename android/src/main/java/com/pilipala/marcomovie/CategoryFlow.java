@@ -11,7 +11,8 @@ final class CategoryFlow extends ViewGroup {
 
     CategoryFlow(MainActivity a, Runnable ready) {
         super(a);
-        gap = a.dp(8);
+        float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
+        gap = a.dp(Math.max(6, Math.round(8 * navScale)));
         layoutReady = ready;
         setClipChildren(false);
         setClipToPadding(false);

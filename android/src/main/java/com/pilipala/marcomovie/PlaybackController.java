@@ -1214,41 +1214,51 @@ final class PlaybackController {
     }
 
     static void showControls(MainActivity a, boolean visible) {
+        showControls(a, visible, false);
+    }
+
+    static void showControls(MainActivity a, boolean visible, boolean progressOnly) {
         if (!visible) finishSeek(a, false);
         if (a.miniMode && visible) return;
         boolean changed = a.controlsVisible != visible;
         a.controlsVisible = visible;
+        if (a.playerChrome != null) {
+            a.playerChrome.setProgressOnlyMode(visible && progressOnly && a.isTvDevice());
+        }
         if (a.playbackControls != null) a.playbackControls.visible(visible);
         if (a.playerChrome != null) a.playerChrome.update();
         if (a.playerOverlay != null) {
             a.playerOverlay.animate().cancel();
             if (visible) {
+                a.playerOverlay.setAlpha(1f);
+                a.playerOverlay.setTranslationY(0f);
                 a.playerOverlay.setVisibility(View.VISIBLE);
-                if (changed && !a.reduced) {
-                    a.playerOverlay.setAlpha(0);
-                    a.playerOverlay.setTranslationY(0);
+                if (changed && !a.reduced && !a.isTvDevice()) {
+                    a.playerOverlay.setAlpha(0f);
+                    a.playerOverlay.animate().alpha(1f).setDuration(150).start();
                 }
-                a.playerOverlay
-                        .animate()
-                        .alpha(1)
-                        .translationY(0)
-                        .setDuration(a.reduced ? 0 : 180)
-                        .start();
             } else {
-                long hideDur = a.reduced ? 0 : 150;
-                UiCompat.startWithEndAction(
-                        a.playerOverlay.animate().alpha(0).translationY(0).setDuration(hideDur),
-                        a.playerOverlay,
-                        hideDur,
-                        () -> {
-                            if (!a.controlsVisible && a.playerOverlay != null)
-                                a.playerOverlay.setVisibility(View.GONE);
-                        });
+                if (a.reduced || a.isTvDevice()) {
+                    a.playerOverlay.setAlpha(0f);
+                    a.playerOverlay.setVisibility(View.GONE);
+                } else {
+                    long hideDur = 140;
+                    UiCompat.startWithEndAction(
+                            a.playerOverlay.animate().alpha(0f).setDuration(hideDur),
+                            a.playerOverlay,
+                            hideDur,
+                            () -> {
+                                if (!a.controlsVisible && a.playerOverlay != null)
+                                    a.playerOverlay.setVisibility(View.GONE);
+                            });
+                }
                 a.root.requestFocus();
             }
         }
         if (visible) {
-            if (changed && a.playbackControls != null) a.playbackControls.timeline.requestFocus();
+            if (changed && a.playbackControls != null && a.isTvDevice()) {
+                a.playbackControls.timeline.requestFocus();
+            }
             scheduleHide(a);
         } else if (a.hideControls != null) a.ui.removeCallbacks(a.hideControls);
     }
@@ -1269,8 +1279,6 @@ final class PlaybackController {
         if (ticket != a.generation || a.player == null || !a.prepared) return;
         savePlaybackHistory(a, false);
         try {
-            if (a.playbackControls != null)
-                a.playbackControls.surface.setFrameAdvancing(a.player.isPlaying());
             if (a.embyReporter != null)
                 a.embyReporter.update(a.player.getCurrentPosition(), !a.player.isPlaying());
             if (a.seekGesture.active) previewSeek(a);
@@ -1341,8 +1349,10 @@ final class PlaybackController {
         if (!a.seekGesture.active) a.seekStatus = a.playStatus.getText().toString();
         a.seekGesture.begin(
                 direction, position, a.player.getDuration(), SystemClock.uptimeMillis());
-        showControls(a, true);
-        if (a.playbackControls != null) a.playbackControls.timeline.requestFocus();
+        showControls(a, true, a.isTvDevice());
+        if (a.playbackControls != null && a.isTvDevice()) {
+            a.playbackControls.timeline.requestFocus();
+        }
         previewSeek(a);
         a.ui.removeCallbacks(a.seekPulse);
         a.ui.postDelayed(a.seekPulse, 100);
@@ -1353,11 +1363,19 @@ final class PlaybackController {
         a.playbackControls.timeline.setProgress(a.seekGesture.target);
         a.playClock.setText(
                 formatTime(a.seekGesture.target) + " / " + formatTime(a.seekGesture.duration));
-        int seekSpeed = a.seekGesture.speed(SystemClock.uptimeMillis());
-        a.playStatus.setText(
+        long now = SystemClock.uptimeMillis();
+        int seekSpeed = a.seekGesture.speed(now);
+        boolean accel = a.seekGesture.accelerated(now);
+        String msg =
                 (a.seekGesture.direction > 0 ? "快进" : "快退")
-                        + (seekSpeed > 0 ? " · " + seekSpeed + " 秒/秒" : " · 15 秒")
-                        + " · 松开跳转");
+                        + (seekSpeed > 0
+                                ? (accel ? " · 加速 " : " · ") + seekSpeed + " 秒/秒"
+                                : " · 15 秒")
+                        + " · 松开跳转";
+        if (a.playStatus != null) a.playStatus.setText(msg);
+        if (a.playerChrome != null && a.playerChrome.seekHint != null) {
+            a.playerChrome.seekHint.setText(msg);
+        }
     }
 
     static void finishSeek(MainActivity a, boolean commit) {
@@ -1374,6 +1392,9 @@ final class PlaybackController {
             savePlaybackHistory(a, true);
         }
         if (a.playStatus != null) a.playStatus.setText(a.seekStatus);
+        if (a.playerChrome != null && a.playerChrome.seekHint != null) {
+            a.playerChrome.seekHint.setText("");
+        }
         if (a.player != null && a.prepared && a.playbackControls != null) {
             int position = commit ? target : a.player.getCurrentPosition();
             a.playbackControls.timeline.setProgress(position);
@@ -1514,14 +1535,26 @@ final class PlaybackController {
             }
             return true;
         }
-        if (!a.controlsVisible
+        if ((!a.controlsVisible || (a.playerChrome != null && a.playerChrome.progressOnlyMode))
                 && (key == KeyEvent.KEYCODE_DPAD_UP
                         || key == KeyEvent.KEYCODE_DPAD_DOWN
                         || key == KeyEvent.KEYCODE_MENU)) {
             if (down) {
-                showControls(a, true);
+                showControls(a, true, false);
                 if (a.playbackControls != null)
                     a.playbackControls.buttons.get("next-episode").requestFocus();
+            }
+            return true;
+        }
+        if (a.controlsVisible && key == KeyEvent.KEYCODE_MENU) {
+            if (down && event.getRepeatCount() == 0) {
+                if (a.playbackControls != null
+                        && focus == a.playbackControls.timeline
+                        && a.playbackControls.buttons.get("next-episode") != null) {
+                    a.playbackControls.buttons.get("next-episode").requestFocus();
+                } else {
+                    showControls(a, false);
+                }
             }
             return true;
         }

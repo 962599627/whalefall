@@ -184,7 +184,17 @@ public final class ReviewFixChecks {
                         && ImageDecodePolicy.cacheBytes(512) == 32 * 1024 * 1024,
                 "image memory cache budget scales within 10MB..32MB bounds");
 
-        check(Prefs.KEYS.length == 30, "backup settings key table includes reduced transparency");
+        check(
+                Prefs.KEYS.length == 31,
+                "backup settings key table includes reduced transparency and nav scale");
+        check(
+                Prefs.clampNavScale(50) == 85
+                        && Prefs.clampNavScale(100) == 100
+                        && Prefs.clampNavScale(180) == 140
+                        && Integer.valueOf(115)
+                                .equals(Prefs.sanitizeSetting(Prefs.NAV_SCALE_PERCENT, 115))
+                        && Prefs.sanitizeSetting(Prefs.NAV_SCALE_PERCENT, 50) == null,
+                "nav_scale_percent clamps and validates within 85..140 range");
         check(
                 Boolean.TRUE.equals(Prefs.sanitizeSetting(Prefs.AUTO_NEXT, true))
                         && Boolean.TRUE.equals(
