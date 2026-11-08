@@ -20,6 +20,8 @@ import time
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 TRANSPORT = HERE.parent / "ios_cpython_transport"
+NATIVE_SOURCE = ROOT / "android/src/main/assets/python-native"
+PRODUCT_TRANSPORT = ROOT / "flutter/src/core/python_http_transport.dart"
 sys.path.insert(0, str(HERE.parent / "ios_cpython"))
 import run_cpython_probe as native
 
@@ -52,6 +54,16 @@ REQUIRED = frozenset((
     "transport_closed_adapter", "transport_ui_responsive", "transport_native_cancel_ack",
     "transport_tasks_drained", "transport_no_server_errors", "transport_quickjs_survives",
     "transport_node_survives",
+    "source_shared_host_home", "source_raw_extension", "source_relative_module",
+    "source_package_resource", "source_http_transport", "source_init_once",
+    "source_same_instance", "source_same_name_isolation", "source_recommendations",
+    "source_category_filters", "source_search_unicode", "source_detail_opaque",
+    "source_play_proxy_url", "source_proxy_get_bytes", "source_proxy_headers",
+    "source_proxy_head", "source_proxy_retains_instance", "source_release",
+    "source_released_proxy_not_rebound", "source_stale_handle",
+    "source_other_session_survives", "source_recreate_state",
+    "source_transport_drained", "source_server_clean", "source_ui_responsive",
+    "source_quickjs_survives", "source_node_survives", "source_live_json", "source_live_text",
 ))
 
 
@@ -115,6 +127,9 @@ def stage_layout(out, arch, cache, node_cache):
     staged.mkdir()
     inputs = native.stage(staged, "simulator", arch, cache)
     shutil.copyfile(HERE / "session_fixture.py", staged / "app/session_fixture.py")
+    shutil.copyfile(HERE / "source_session_fixture.py", staged / "app/source_session_fixture.py")
+    shutil.copyfile(NATIVE_SOURCE / "host.py", staged / "app/native_source_host.py")
+    shutil.copytree(NATIVE_SOURCE / "base", staged / "app/base", ignore=shutil.ignore_patterns("__pycache__"))
     for name in ("requests_adapter.py", "transport_fixture.py"):
         shutil.copyfile(TRANSPORT / name, staged / "app" / name)
     packages = out / "packages"
@@ -180,6 +195,9 @@ end
     inputs["transport_inputs"] = {p.relative_to(ROOT).as_posix(): native.digest(p)
         for p in sorted(TRANSPORT.rglob("*")) if p.is_file()
         and not any(part in ("__pycache__", ".dart_tool", "build") for part in p.parts)}
+    inputs["native_source_inputs"] = {p.relative_to(ROOT).as_posix(): native.digest(p)
+        for p in sorted(NATIVE_SOURCE.rglob("*.py"))}
+    inputs["product_transport_inputs"] = {PRODUCT_TRANSPORT.relative_to(ROOT).as_posix(): native.digest(PRODUCT_TRANSPORT)}
     inputs["existing_runtime_inputs"] = {p.relative_to(ROOT).as_posix(): native.digest(p)
         for parent in (ROOT / "flutter/packages/catpaw_runtime/ios/Classes", ROOT / "flutter/packages/quickjs_engine")
         for p in sorted(parent.rglob("*")) if p.is_file()
@@ -225,6 +243,8 @@ flutter:
 """, encoding="utf-8")
     shutil.copyfile(HERE / "main.dart", project / "lib/main.dart")
     shutil.copyfile(HERE / "transport_fixture.dart", project / "lib/transport_fixture.dart")
+    shutil.copyfile(HERE / "source_fixture.dart", project / "lib/source_fixture.dart")
+    shutil.copyfile(PRODUCT_TRANSPORT, project / "lib/python_http_transport.dart")
     shutil.copyfile(TRANSPORT / "dart/fixture_http_transport.dart", project / "lib/fixture_http_transport.dart")
     (project / "assets").mkdir(exist_ok=True)
     shutil.copyfile(HERE / "node-fixture.cjs", project / "assets/node-fixture.cjs")

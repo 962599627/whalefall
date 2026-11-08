@@ -79,8 +79,8 @@ duplicate cookies, path/Secure rules, cross-origin inherited credentials versus
 new destination cookies, deadlines, actual cancellation, recovery, and close.
 Six Flutter-side checks require a live UI heartbeat, the native cancellation
 acknowledgment, drained HTTP tasks, clean fixture servers, and surviving Node and
-QuickJS state. Reports require exactly 60 unique passing checks per launch, 120
-over both orders, with a matching nested 12-check transport inventory. These are
+QuickJS state. Reports retain the original 60 unique passing checks per launch
+with a matching nested 12-check transport inventory. These are
 new requirements, not a claim that the earlier 84-check run covered this transport.
 
 The Dart client disables automatic redirects and decompression and returns
@@ -110,6 +110,22 @@ Still unverified until separately exercised: actual iPhone/iOS14, background
 resume, player memory/threads and playback leases, arbitrary user Python sources,
 native third-party wheels, secure filesystem isolation, and hard cancellation of
 Python/native work. Existing production script runtimes remain unchanged.
+
+## Shared source-loader integration
+
+An additional 29 required checks execute the shared `NativePythonSource` loader
+and the product `PythonHttpTransport` in this real Flutter/native process. A
+bundled memory package supplies relative modules, a JSON resource, all seven
+Spider/proxy operations and `liveContent` returning JSON or raw M3U text. The
+same source is retained through playback resolution and actual HTTP GET/HEAD
+binary proxy requests. Two same-name packages run in separate interpreters;
+release revokes the old proxy URL, even after a new source is created.
+
+The suite now requires 89 uniquely passing checks per launch, 178 per CPU over
+both launch orders. This is a new acceptance target, not a reinterpretation of
+the older 120-check result. Input manifests hash the shared Python files and
+product Dart transport separately. The experiment accepts only the bundled
+`native-source-v1` package and does not open arbitrary-source production routing.
 
 ## Recorded simulator result
 

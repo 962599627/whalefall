@@ -2,10 +2,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:quickjs_engine/quickjs_engine.dart';
+
 import 'transport_fixture.dart';
+import 'source_fixture.dart';
 
 const python = MethodChannel('marco_movie/experimental_python');
 const node = MethodChannel('marco_movie/catpaw');
@@ -359,6 +362,18 @@ Future<void> runFixture() async {
       'transport_node_survives',
       (jsonDecode(await getText('$origin/ping?q=transport')) as Map)['q'] ==
           'transport',
+    );
+    await pythonHttp.close();
+    pythonHttp = null;
+    await runNativeSourceFixture(python, check, () => beats);
+    check(
+      'source_quickjs_survives',
+      js.evaluate('++fixtureCount').stringResult == '4',
+    );
+    check(
+      'source_node_survives',
+      (jsonDecode(await getText('$origin/ping?q=source')) as Map)['q'] ==
+          'source',
     );
     report['passed'] = true;
   } catch (error, stack) {

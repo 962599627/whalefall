@@ -8,6 +8,8 @@
 @property(nonatomic,assign) PyThreadState *state;
 @property(nonatomic,assign) PyObject *module;
 @property(nonatomic,assign) PyObject *spider;
+@property(nonatomic,assign) BOOL nativeSource;
+@property(nonatomic,copy) NSString *origin;
 @end
 @implementation MMFixtureSession
 @end
@@ -50,7 +52,7 @@ static id toJSON(PyObject *value) {
     Py_XDECREF(json);
     Py_ssize_t size=0;const char *utf8=text?PyUnicode_AsUTF8AndSize(text,&size):NULL;
     id result=nil;
-    if (utf8 && size<=1024*1024) result=[NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:utf8 length:size] options:0 error:nil];
+    if (utf8 && size<=1024*1024) result=[NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:utf8 length:size] options:NSJSONReadingFragmentsAllowed error:nil];
     Py_XDECREF(text);
     if (!result && !PyErr_Occurred()) PyErr_SetString(PyExc_ValueError,"Fixture result exceeds JSON contract");
     return result;
@@ -140,7 +142,7 @@ failed:
         NSUInteger count=[self.transport cancelCall:identity];
         result(@{@"cancelled":@(count)});return;
     }
-    if (![@[@"capabilities",@"open",@"call",@"release",@"transportProbe"] containsObject:call.method]) {
+    if (![@[@"capabilities",@"open",@"call",@"release",@"transportProbe",@"openSource",@"callSource"] containsObject:call.method]) {
         result(FlutterMethodNotImplemented);return;
     }
     [self performSelector:@selector(execute:) onThread:self.worker withObject:@{@"method":call.method,@"arguments":call.arguments?:NSNull.null,@"result":[result copy]} waitUntilDone:NO];
@@ -208,11 +210,14 @@ failed:
                 self.mainState=PyEval_SaveThread();[self.transport endProbe];
             }
         }
-        else if ([method isEqualToString:@"open"]) {
+        else if ([method isEqualToString:@"open"] || [method isEqualToString:@"openSource"]) {
+            BOOL nativeSource=[method isEqualToString:@"openSource"];
             NSURLComponents *url=[args[@"origin"] isKindOfClass:NSString.class]?[NSURLComponents componentsWithString:args[@"origin"]]:nil;
             NSRegularExpression *path=[NSRegularExpression regularExpressionWithPattern:@"^/[a-f0-9]{32}$" options:0 error:nil];
             BOOL origin=url && [url.scheme isEqualToString:@"http"] && [url.host isEqualToString:@"127.0.0.1"] && url.port.integerValue>0 && url.port.integerValue<=65535 && !url.user && !url.password && !url.query && !url.fragment && [path numberOfMatchesInString:url.path options:0 range:NSMakeRange(0,url.path.length)]==1;
-            if (!keysAre(args,@[@"version",@"source",@"origin"]) || ![args[@"source"] isEqual:@"synthetic-v1"] || !origin) code=@"invalid_request";
+            if (!keysAre(args,@[@"version",@"source",@"origin"])
+                    || CFGetTypeID((__bridge CFTypeRef)args[@"version"])==CFBooleanGetTypeID()
+                    || ![args[@"source"] isEqual:nativeSource?@"native-source-v1":@"synthetic-v1"] || !origin) code=@"invalid_request";
             else if (self.sessions.count>=2) code=@"runtime_limit";
             else {
                 PyEval_RestoreThread(self.mainState);
@@ -223,14 +228,22 @@ failed:
                     code=@"python_error";message=status.err_msg?[NSString stringWithUTF8String:status.err_msg]:@"Subinterpreter creation failed";
                     if (!PyThreadState_GetUnchecked()) PyEval_RestoreThread(self.mainState);
                 } else {
-                    PyObject *module=PyImport_ImportModule("session_fixture");
-                    PyObject *spider=module?PyObject_CallMethod(module,"create","s",[args[@"origin"] UTF8String]):NULL;
+                    PyObject *module=PyImport_ImportModule(nativeSource?"source_session_fixture":"session_fixture");
+                    PyObject *bridge=module&&nativeSource?MMCreateFixtureTransportBridge(self.transport):NULL;
+                    NSString *handle=NSUUID.UUID.UUIDString;
+                    NSString *proxy=[NSString stringWithFormat:@"%@/proxy?do=py&siteKey=%@",args[@"origin"],handle];
+                    PyObject *spider=NULL;
+                    if (nativeSource) {
+                        if (bridge) spider=PyObject_CallMethod(module,"create","ssO",[args[@"origin"] UTF8String],proxy.UTF8String,bridge);
+                    } else if (module) spider=PyObject_CallMethod(module,"create","s",[args[@"origin"] UTF8String]);
+                    Py_XDECREF(bridge);
                     if (!spider) {
                         code=@"python_error";message=pyError();Py_XDECREF(module);Py_EndInterpreter(state);PyEval_RestoreThread(self.mainState);
                     } else {
-                        MMFixtureSession *session=[MMFixtureSession new];session.module=module;session.spider=spider;session.state=PyEval_SaveThread();
+                        MMFixtureSession *session=[MMFixtureSession new];session.module=module;session.spider=spider;
+                        session.nativeSource=nativeSource;session.origin=args[@"origin"];session.state=PyEval_SaveThread();
                         PyEval_RestoreThread(self.mainState);
-                        NSString *handle=NSUUID.UUID.UUIDString;self.sessions[handle]=session;output=@{@"handle":handle};
+                        self.sessions[handle]=session;output=@{@"handle":handle};
                     }
                 }
                 self.mainState=PyEval_SaveThread();
@@ -247,14 +260,27 @@ failed:
                     session.state=NULL;session.spider=NULL;session.module=NULL;
                 }
                 output=@{@"released":@(session!=nil)};
-            } else if ([method isEqualToString:@"call"] && keysAre(args,@[@"version",@"handle",@"method",@"args"]) && [args[@"args"] isKindOfClass:NSArray.class] && [@[@"home",@"homeVod",@"category",@"search",@"detail",@"play",@"proxy"] containsObject:args[@"method"]]) {
+            } else if (([method isEqualToString:@"call"] || [method isEqualToString:@"callSource"])
+                    && keysAre(args,[method isEqualToString:@"callSource"]?@[@"version",@"handle",@"method",@"args",@"callId"]:@[@"version",@"handle",@"method",@"args"])
+                    && CFGetTypeID((__bridge CFTypeRef)args[@"version"])!=CFBooleanGetTypeID()
+                    && [args[@"args"] isKindOfClass:NSArray.class] && [@[@"home",@"homeVod",@"category",@"search",@"detail",@"play",@"proxy",@"liveContent"] containsObject:args[@"method"]]) {
                 if (!session) code=@"invalid_handle";
+                else if (session.nativeSource!=[method isEqualToString:@"callSource"]) code=@"invalid_request";
+                else if (session.nativeSource && (![args[@"callId"] isKindOfClass:NSString.class]
+                        || [args[@"callId"] length]!=32
+                        || [args[@"callId"] rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"].invertedSet].location!=NSNotFound)) code=@"invalid_request";
+                else if (session.nativeSource && ![self.transport beginOrigins:@[session.origin]]) code=@"runtime_limit";
                 else {
                     PyEval_RestoreThread(session.state);PyObject *arguments=fromJSON(args[@"args"]);
-                    PyObject *value=arguments?PyObject_CallMethod(session.module,"dispatch","OsO",session.spider,[args[@"method"] UTF8String],arguments):NULL;
+                    PyObject *value=NULL;
+                    if (arguments) {
+                        value=session.nativeSource?PyObject_CallMethod(session.module,"dispatch","OsOs",session.spider,[args[@"method"] UTF8String],arguments,[args[@"callId"] UTF8String])
+                            :PyObject_CallMethod(session.module,"dispatch","OsO",session.spider,[args[@"method"] UTF8String],arguments);
+                    }
                     Py_XDECREF(arguments);if (value) { output=toJSON(value);Py_DECREF(value); }
                     if (!output) { code=@"python_error";message=pyError(); }
                     session.state=PyEval_SaveThread();
+                    if (session.nativeSource) [self.transport endProbe];
                 }
             } else code=@"invalid_request";
         }
