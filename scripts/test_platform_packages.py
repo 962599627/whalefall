@@ -83,13 +83,39 @@ class PackageTests(unittest.TestCase):
         self.assertIn('legacy.ipa', m.patch_card(page, 'ios-unsigned.ipa',
                       dict(url='https://fixture.invalid/legacy.ipa', size=123, sha256='c'*64)))
 
-    def test_named_windows_setup_remains_the_updater_package(self):
-        names = ['MarcoMovie-0.5.1-windows-x64-setup.exe', 'MarcoMovie-0.5.1-windows-x64-portable.zip']
+    def test_named_windows_card_preserves_the_installed_client_updater(self):
+        names = ['MarcoMovie-0.5.1-windows-x64-setup.exe', 'MarcoMovie-0.5.1-windows-x64-portable.zip',
+                 'MarcoMovie-0.5.1-windows-setup.exe']
         release = dict(self.release, tag_name='windows-v0.5.1', assets=[{'name': name} for name in names])
-        with patch.object(m, 'platform_asset', side_effect=lambda rel, name, output: ('https://fixture.invalid/'+name, 123, 'b'*64, None)):
+        body = b'installer fixture'
+        digest = hashlib.sha256(body).hexdigest()
+        with patch.object(m, 'platform_asset', side_effect=lambda rel, name, output: (name, len(body), digest, body)):
             m.sync(self.out, [release])
         feed = json.loads((self.out/'updates/windows.json').read_text())
-        self.assertEqual(feed['windows']['url'], 'https://fixture.invalid/' + names[0])
+        self.assertEqual(feed['windows']['url'], m.BASE + names[2])
+        self.assertEqual(feed['windows']['sha256'], digest)
+        self.assertEqual(set(feed['packages']), set(names))
+        page = (self.out/'index.html').read_text(encoding='utf-8')
+        self.assertIn('href="' + m.BASE + names[0] + '"', page)
+        self.assertNotIn('href="' + m.BASE + names[2] + '"', page)
+        self.assertEqual((self.out/names[2]).read_bytes(), body)
+        self.assertEqual((self.out/(names[2]+'.sha256')).read_text().split(), [digest, names[2]])
+
+    def test_missing_or_different_windows_updater_alias_prevents_all_writes(self):
+        names = ['MarcoMovie-0.5.1-windows-x64-setup.exe', 'MarcoMovie-0.5.1-windows-x64-portable.zip']
+        legacy = 'MarcoMovie-0.5.1-windows-setup.exe'
+        for mismatch in ('missing', 'size', 'digest'):
+            listed = names if mismatch == 'missing' else names + [legacy]
+            release = dict(self.release, tag_name='windows-v0.5.1', assets=[{'name': name} for name in listed])
+            def download(rel, name, output):
+                return (name, 124 if mismatch == 'size' and name == legacy else 123,
+                        'c'*64 if mismatch == 'digest' and name == legacy else 'b'*64, b'fixture')
+            with self.subTest(mismatch=mismatch), patch.object(m, 'platform_asset', side_effect=download):
+                with self.assertRaisesRegex(ValueError, 'alias'):
+                    m.sync(self.out, [release])
+                self.assertEqual((self.out/'index.html').read_text(encoding='utf-8'), self.page)
+                self.assertFalse((self.out/'updates/windows.json').exists())
+                self.assertFalse((self.out/names[0]).exists())
 
     def test_drafts_unrecognized_and_no_release_leave_page_unchanged(self):
         self.sync([dict(self.release, draft=True), dict(self.release, tag_name='unrelated'), dict(self.release, tag_name='v0.5.0-preview')])

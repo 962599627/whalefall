@@ -256,8 +256,24 @@ def sync(output, releases=None):
                     notes=release.get('body') or '', packages=packages,
                     release_url=f'https://github.com/{REPO}/releases/tag/{release["tag_name"]}')
         if platform == 'windows':
-            feed['windows'] = next(package for name, package in packages.items()
-                                   if name.endswith(('-windows-x64-setup.exe', '-windows-setup.exe')))
+            # Installed 0.5.x clients require this exact legacy filename. The
+            # public card can use the clearer name, but the update channel must
+            # retain a verified, byte-identical alias until those clients migrate.
+            legacy_name = f'MarcoMovie-{version}-windows-setup.exe'
+            setup = next(package for name, package in packages.items()
+                         if name.endswith(('-windows-x64-setup.exe', '-windows-setup.exe')))
+            if legacy_name not in packages:
+                if legacy_name not in names:
+                    raise ValueError('Missing Windows updater compatibility alias')
+                href, size, digest, body = platform_asset(release, legacy_name, output)
+                if size != setup['size'] or digest != setup['sha256']:
+                    raise ValueError('Windows updater alias differs from the public installer')
+                packages[legacy_name] = dict(size=size, sha256=digest,
+                                            url=href if href.startswith('https://') else BASE + legacy_name)
+                if body is not None:
+                    files[legacy_name] = body
+                    files[legacy_name + '.sha256'] = (digest + '  ' + legacy_name + '\n').encode('ascii')
+            feed['windows'] = packages[legacy_name]
         path = f'updates/{platform}.json'
         previous_path = output / path
         if previous_path.exists():
