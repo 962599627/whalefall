@@ -1,0 +1,16 @@
+{
+  "abis": {
+    "arm64-v8a": {
+      "libc++_shared.so": "ab4e6c71b96b851de45a8a9bd86369e7dbc2130a44b3b4520564be94847910f2",
+      "libmarco_node.so": "eb72566faed3b8a5a463209fa78ab2425bea98ff8ea9745485c73d4ec2aefa2a",
+      "libnode.so": "158d3ce1e6cd0559ae394407a4a464c4a606cd28865403394438385e40da93a5"
+    },
+    "armeabi-v7a": {
+      "libc++_shared.so": "10ee48131d6742899619f7cfb3b8df150ad787d723c766a3fb80d4bb275711ff",
+      "libmarco_node.so": "4e609b9123986e07f726cf48132c54ec57632f80946c4a5ef69dfd78cc62c08b",
+      "libnode.so": "c776a4867d2aed2ec1b5e352b1ecc15e10e6a3b07bef3963569f1a4baa9fa168"
+    }
+  },
+  "maxPageSize": 16384,
+  "version": 1
+}

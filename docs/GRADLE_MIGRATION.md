@@ -36,3 +36,19 @@
 ## 已知限制
 - 无网络时首次同步会失败（依赖已在 tools/java-dependencies 时仍会拉 AGP/插件，首次需联网）
 - AGP 9 需要 Gradle 9.x；本轮用 AGP 8.7.3 与 Gradle 8.13 验证路径，升级是配置项而非重写
+
+## 第二轮：运行时打包验证（同轮完成）
+在 `gradle/app/build.gradle` 追加：
+- `jniLibs.srcDirs = ['../../../native-prebuilt/catpaw', '../../../native-prebuilt/deadline']`（注意相对工程目录是三级 `../../../`）
+- `assets.srcDirs += ['../../android/build/catpaw/assets-mobile']`（复用脚本已生成的 catpaw 运行时资源；更新时先跑一次 `python3 scripts/build_android.py` 或后续拆独立 task）
+- `signingConfigs.release` 读取 `MARCOMOVIE_KEY_PASSWORD` 环境变量 + 现有 `android/private/development.p12`
+
+结果：`:app:assembleDebug` 再次 **BUILD SUCCESSFUL in 16s**，APK 180.6MB（debug、双 ABI、未做 R8/ABI 过滤），已确认包含：
+- `lib/arm64-v8a/libnode.so`（63.8MB）、`libmarco_node.so`、`libmovie-quickjs-deadline.so`、`libquickjs-android-wrapper.so`、`libjlibtorrent-*.so`
+- `assets/python-host/*`、`assets/catpaw/*` 等运行时资源
+
+说明：debug APK 使用 AGP 自动生成的 debug 签名，与现有 release 签名不同，不能覆盖安装；本轮只做内容与流程验证。
+
+## 结论
+Gradle 化路径已经跑通「源码 + 资源 + 运行时 assets + jniLibs + 签名配置」的完整打包链路；
+剩余工作是把 `scripts/build_android.py` 中的资产生成/ABI 过滤/版本注入抽成 Gradle task，并补 R8/Baseline Profile 与 mobile/tv flavor。

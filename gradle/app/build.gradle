@@ -31,3 +31,28 @@ dependencies {
     implementation fileTree(dir: '../../tools/java-dependencies', include: ['*.jar'])
     implementation fileTree(dir: '../../tools/java-dependencies', include: ['*.aar'])
 }
+
+// ---- P1 正式化：复用脚本产物（运行时 assets / jniLibs / release 签名） ----
+android {
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['../../../native-prebuilt/catpaw', '../../../native-prebuilt/deadline']
+            assets.srcDirs += ['../../android/build/catpaw/assets-mobile']
+        }
+    }
+    signingConfigs {
+        release {
+            storeFile file('../../android/private/development.p12')
+            storeType 'PKCS12'
+            keyAlias 'marcomovie'
+            storePassword System.getenv('MARCOMOVIE_KEY_PASSWORD') ?: ''
+            keyPassword System.getenv('MARCOMOVIE_KEY_PASSWORD') ?: ''
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+}
