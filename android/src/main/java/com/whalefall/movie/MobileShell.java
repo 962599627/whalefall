@@ -723,7 +723,7 @@ final class MobileShell {
         return bar;
     }
 
-    private int homeScrollY;
+    private static int homeScrollY;
     private ScrollView homeScroll;
     private LinearLayout homeBody;
 
