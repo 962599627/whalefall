@@ -46,6 +46,7 @@ final class SourceController {
     static boolean available(MainActivity a, Cms.Site s) {
         return s.api.startsWith(com.pilipala.emby.EmbyLibrary.PREFIX)
                 || s.api.startsWith("catpaw://")
+                || HttpT4Engine.eligible(s)
                 || s.supported()
                 || (a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true)
                         && ((CspEngine.eligible(s)
@@ -83,6 +84,7 @@ final class SourceController {
                     if (s.api.startsWith(com.pilipala.emby.EmbyLibrary.PREFIX))
                         raw = new EmbyEngine(a, s);
                     else if (s.api.startsWith("catpaw://")) raw = new CatPawEngine(a, s);
+                    else if (HttpT4Engine.eligible(s)) raw = new HttpT4Engine(s);
                     else if (s.supported()) raw = new JsonCmsEngine(s);
                     else if (a.prefs.getBoolean(Prefs.EXPERIMENTAL_CSP, true)
                             && DrpyEngine.eligible(s)

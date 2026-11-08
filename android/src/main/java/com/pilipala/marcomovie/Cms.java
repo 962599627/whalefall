@@ -474,7 +474,17 @@ public final class Cms {
                 Iterator<String> it = o.keys();
                 while (it.hasNext()) {
                     String k = it.next();
-                    if (k.equalsIgnoreCase("User-Agent") || k.equalsIgnoreCase("Referer"))
+                    if (k.equalsIgnoreCase("User-Agent")
+                            || k.equalsIgnoreCase("Referer")
+                            || (s.type == 4
+                                    && k.matches("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+                                    && !o.optString(k).contains("\r")
+                                    && !o.optString(k).contains("\n")
+                                    && !Arrays.asList(
+                                                    "content-length",
+                                                    "transfer-encoding",
+                                                    "connection")
+                                            .contains(k.toLowerCase(Locale.ROOT))))
                         s.headers.put(k, o.optString(k));
                 }
             }
@@ -655,9 +665,27 @@ public final class Cms {
     }
 
     public static String fetch(String address, Map<String, String> headers) throws Exception {
+        return fetch(address, headers, null);
+    }
+
+    /** A non-null form selects POST; redirects preserve the existing credential boundary. */
+    public static String fetch(
+            String address, Map<String, String> headers, Map<String, String> form)
+            throws Exception {
         if (!isHttp(address)) throw new IOException("只支持 HTTP(S) 地址");
         URL next = new URL(normalizeHttp(address));
         Map<String, String> forwarded = new LinkedHashMap<>();
+        byte[] body = null;
+        if (form != null) {
+            StringBuilder encoded = new StringBuilder();
+            for (Map.Entry<String, String> item : form.entrySet()) {
+                if (encoded.length() > 0) encoded.append('&');
+                encoded.append(URLEncoder.encode(item.getKey(), "UTF-8"))
+                        .append('=')
+                        .append(URLEncoder.encode(item.getValue(), "UTF-8"));
+            }
+            body = encoded.toString().getBytes("UTF-8");
+        }
         if (headers != null) mergeHeaders(forwarded, headers);
         if (next.getUserInfo() != null) {
             boolean explicit = false;
@@ -680,6 +708,16 @@ public final class Cms {
                 c.setRequestProperty(e.getKey(), e.getValue());
             try {
                 RequestScope.attach(c);
+                if (body != null) {
+                    c.setRequestMethod("POST");
+                    c.setDoOutput(true);
+                    c.setRequestProperty(
+                            "Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+                    c.setFixedLengthStreamingMode(body.length);
+                    try (OutputStream output = c.getOutputStream()) {
+                        output.write(body);
+                    }
+                }
                 int status = c.getResponseCode();
                 if (status == 301
                         || status == 302
@@ -692,6 +730,7 @@ public final class Cms {
                     if (!isHttp(target.toString())) throw new IOException("不支持此重定向协议");
                     if (target.getUserInfo() != null) throw new IOException("来源重定向不能注入登录凭据");
                     forwarded = inheritedHeaders(next.toString(), target.toString(), forwarded);
+                    if (status == 301 || status == 302 || status == 303) body = null;
                     next = target;
                     continue;
                 }

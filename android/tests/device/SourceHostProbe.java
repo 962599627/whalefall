@@ -1280,6 +1280,7 @@ public final class SourceHostProbe extends Instrumentation {
             exerciseNativeDeadlines();
             exerciseFullSpiderContract();
             exerciseCatvodContract();
+            HttpT4Checks.run(this::check);
             report.put("passed", true);
         } catch (Throwable failure) {
             android.util.Log.e("SourceHostProbe", "source fixture failed", failure);

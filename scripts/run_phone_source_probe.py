@@ -44,8 +44,9 @@ def main():
                     'live_api_config_selects_isolated_engines', 'live_api_js_text', 'live_api_js_json',
                     'live_api_python_text', 'live_api_python_json', 'live_api_js_state_retained',
                     'live_api_jar_text', 'live_api_jar_json', 'live_api_jar_state_retained',
-                    'live_api_missing_method_explicit')
-        if (result.get('passed') is not True or result.get('checks', 0) < 100
+                    'live_api_missing_method_explicit', 't4_http_selected', 't4_category_base64url',
+                    't4_player_opaque_id_and_flag', 't4_large_extension_post', 't4_invalid_response_explicit')
+        if (result.get('passed') is not True or result.get('checks', 0) < 122
                 or any(result.get(key) is not True for key in required)
                 or any(value is False for value in result.values())):
             raise RuntimeError('Phone source regression failed; see results and native logs')

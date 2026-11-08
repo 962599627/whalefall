@@ -163,6 +163,7 @@ public final class SearchCoordinator implements AutoCloseable {
                 job.future =
                         RequestScope.submit(
                                 job.site.supported()
+                                                || HttpT4Engine.eligible(job.site)
                                                 || (job.site.api != null
                                                         && job.site.api.startsWith(
                                                                 "emby://account/"))

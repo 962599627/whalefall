@@ -297,6 +297,7 @@ class CmsSite {
   bool get canBrowse =>
       isEmby ||
       isCatPaw ||
+      (type == 4 && isHttpApi) ||
       (isScriptOrJarApi
           ? CspBridge.hasAdapter(this)
           : isM3uVodApi ||
@@ -411,7 +412,7 @@ class CmsEpisode {
   });
   bool get isScriptEpisode => url.startsWith('mmjs://play?');
   bool get needsSourceResolution =>
-      isScriptEpisode || url.startsWith('mmemby://play?') || url.startsWith('mmpaw://play?');
+      isScriptEpisode || url.startsWith('mmemby://play?') || url.startsWith('mmpaw://play?') || url.startsWith('mmt4://play?');
 
   /// Whether [url] points to an already-downloaded local file (offline playback).
   bool get isLocalFile {

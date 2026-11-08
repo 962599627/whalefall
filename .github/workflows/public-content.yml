@@ -47,6 +47,7 @@ jobs:
       - name: Offline behavior checks
         run: |
           python android/tests/run_checks.py
+          python android/tests/run_http_t4_checks.py
           python android/tests/run_compat_checks.py
           python android/tests/run_global_search_checks.py
           python android/tests/run_js_player_checks.py

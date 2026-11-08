@@ -30,6 +30,7 @@ class CmsClient {
   final http.Client? _http;
   final Duration timeout;
   final CatPawHost _scriptHost;
+  final Expando<Future<String>> _t4Extensions = Expando<Future<String>>();
   late final DrpySource _drpy = DrpySource(host: _scriptHost,
       read: (url, headers) => _getText(url, headers: headers));
   late final GuardSource _guard = GuardSource(host: _scriptHost, drpy: _drpy,
@@ -67,6 +68,7 @@ class CmsClient {
     Duration? requestTimeout,
     String defaultUa = tvBoxUserAgent,
     int byteLimit = maxResponseBytes,
+    Map<String, String>? form,
   }) async {
     final normalized = CmsParser.normalizeUrl(url);
     final uri = Uri.parse(normalized);
@@ -90,11 +92,16 @@ class CmsClient {
         requestHeaders['Authorization'] = 'Basic ${base64Encode(utf8.encode(Uri.decodeComponent(uri.userInfo)))}';
       }
       var current = uri.replace(userInfo: '').removeFragment();
+      var requestForm = form;
       late http.StreamedResponse response;
       for (var redirects = 0; ; redirects++) {
-        final request = http.AbortableRequest('GET', current, abortTrigger: abort.future)
+        final request = http.AbortableRequest(requestForm == null ? 'GET' : 'POST', current, abortTrigger: abort.future)
           ..followRedirects = false
           ..headers.addAll(requestHeaders);
+        if (requestForm != null) {
+          request.headers.removeWhere((key, _) => const ['content-type', 'content-length', 'transfer-encoding'].contains(key.toLowerCase()));
+          request.bodyFields = requestForm;
+        }
         response = await transport.send(request);
         final location = response.headers['location'];
         if (![301, 302, 303, 307, 308].contains(response.statusCode) || location == null) break;
@@ -110,6 +117,7 @@ class CmsClient {
           ].contains(name.toLowerCase()));
         }
         current = next;
+        if ([301, 302, 303].contains(response.statusCode)) requestForm = null;
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException('HTTP ${response.statusCode}');
@@ -135,6 +143,7 @@ class CmsClient {
     String url, {
     Map<String, String> headers = const {},
     Duration? requestTimeout,
+    Map<String, String>? form,
   }) async {
     if (CatPawHost.matches(url)) return CatPawHost.instance.read(url);
     final bytes = await _getBytes(
@@ -142,6 +151,7 @@ class CmsClient {
       headers: headers,
       requestTimeout: requestTimeout,
       defaultUa: tvBoxUserAgent,
+      form: form,
     );
     return CmsParser.decodeTextDocument(bytes);
   }
@@ -158,6 +168,37 @@ class CmsClient {
     }
     merged.addAll(params);
     return base.replace(queryParameters: merged);
+  }
+  bool _isHttpT4(CmsSite site) => site.type == 4 && site.isHttpApi;
+
+  Future<String> _t4Extension(CmsSite site) async {
+    final existing = _t4Extensions[site];
+    if (existing != null) return existing;
+    Future<String> load() async {
+      final value = site.ext.trim();
+      final uri = Uri.tryParse(value);
+      if (uri == null || !['http', 'https'].contains(uri.scheme) || uri.host.isEmpty) return value;
+      final api = Uri.parse(site.api);
+      final same = api.scheme == uri.scheme && api.host == uri.host && api.port == uri.port;
+      final headers = Map<String, String>.of(site.headers);
+      if (!same) headers.removeWhere((key, _) => const [
+        'authorization', 'proxy-authorization', 'cookie', 'cookie2',
+      ].contains(key.toLowerCase()));
+      return (await _getText(value, headers: headers)).trim();
+    }
+    final pending = load();
+    _t4Extensions[site] = pending;
+    try { return await pending; }
+    catch (_) { if (identical(_t4Extensions[site], pending)) _t4Extensions[site] = null; rethrow; }
+  }
+
+  Future<String> _callT4(CmsSite site, Map<String, String> params) async {
+    final extension = await _t4Extension(site);
+    final values = {...params, if (extension.isNotEmpty) 'extend': extension};
+    final raw = await _getText(extension.length > 1000 ? site.api : _appendQuery(site.api, values).toString(),
+      headers: site.headers, form: extension.length > 1000 ? values : null);
+    if (jsonDecode(raw) is! Map) throw const FormatException('T4 来源没有返回有效的数据');
+    return raw;
   }
   static String _archivePath(String name) {
     final path = name.replaceAll('\\', '/');
@@ -827,6 +868,13 @@ class CmsClient {
   }
 
   Future<(List<CmsCategory>, CmsListing)> fetchHome(CmsSite site) async {
+    if (_isHttpT4(site)) {
+      final raw = await _callT4(site, {'filter': 'true'});
+      final categories = CmsParser.parseCategories(raw);
+      var listing = CmsParser.parseListing(_wrapJsEpisodeIds(raw, scheme: 'mmt4'));
+      if (listing.videos.isEmpty && categories.isNotEmpty) listing = await fetchCategory(site, categories.first.id, 1);
+      return (categories, listing);
+    }
     if (site.isCatPaw) {
       final raw = await _getText(site.api);
       final categories = CmsParser.parseCategories(raw);
@@ -901,6 +949,18 @@ class CmsClient {
     List<String> childIds = const [],
     CmsFilter? filter,
   }) async {
+    if (_isHttpT4(site)) {
+      final filters = <String, String>{
+        if (filter != null && filter.genreLabel.isNotEmpty && filter.genreLabel != '全部') 'class': filter.genreLabel,
+        if (filter != null && filter.area.isNotEmpty && filter.area != '全部') 'area': filter.area,
+        if (filter != null && filter.year.isNotEmpty && filter.year != '全部') 'year': filter.year,
+      };
+      final raw = await _callT4(site, {'ac': 'detail', 't': categoryId, 'pg': '$page',
+        'ext': base64Url.encode(utf8.encode(jsonEncode(filters)))});
+      final listing = CmsParser.parseListing(_wrapJsEpisodeIds(raw, scheme: 'mmt4'));
+      return CmsListing(page: listing.page, pageCount: listing.pageCount,
+        videos: listing.videos, sourceFiltered: filters.isNotEmpty);
+    }
     if (site.isEmby) return (await EmbyLibrary.open(site)).list(categoryId, '', page);
     if (_usesJs(site)) {
       final extend = <String, String>{
@@ -1002,6 +1062,10 @@ class CmsClient {
     String keyword, {
     int page = 1,
   }) async {
+    if (_isHttpT4(site)) {
+      final raw = await _callT4(site, {'wd': keyword.trim(), 'quick': 'false', 'pg': '$page'});
+      return CmsParser.parseListing(_wrapJsEpisodeIds(raw, scheme: 'mmt4'));
+    }
     if (site.isEmby) return (await EmbyLibrary.open(site)).list('', keyword, page);
     if (_usesJs(site)) return CmsParser.parseListing(await _callJs(site, 'search', [keyword, false, page]));
     if (site.isM3uVodApi) {
@@ -1072,6 +1136,11 @@ class CmsClient {
   }
 
   Future<CmsVideo> fetchDetail(CmsSite site, CmsVideo fallback) async {
+    if (_isHttpT4(site)) {
+      final raw = await _callT4(site, {'ac': 'detail', 'ids': fallback.id});
+      final listing = CmsParser.parseListing(_wrapJsEpisodeIds(raw, scheme: 'mmt4'));
+      return listing.videos.isEmpty ? fallback : _mergeDetail(listing.videos.first, fallback);
+    }
     if (site.isCatPaw) {
       final raw = await _getText(_appendQuery(site.api, {'ac':'detail','ids':fallback.id}).toString());
       final listing = CmsParser.parseListing(_wrapJsEpisodeIds(raw,scheme:'mmpaw'));
@@ -1143,6 +1212,13 @@ class CmsClient {
     CmsSite site,
     CmsEpisode episode,
   ) async {
+    if (_isHttpT4(site) && episode.url.startsWith('mmt4://play?')) {
+      final parameters = Uri.parse(episode.url).queryParameters;
+      final raw = jsonDecode(await _callT4(site,
+        {'play': parameters['id'] ?? '', 'flag': parameters['flag'] ?? ''}));
+      return SourcePlayback.decode(raw as Map, episode, localUrl: _scriptHost.resolve,
+        sourceHeaders: site.headers, sourceOrigin: _sourceCredentialOrigin(site));
+    }
     if (site.isCatPaw && episode.url.startsWith('mmpaw://play?')) {
       final parameters = Uri.parse(episode.url).queryParameters;
       final raw = jsonDecode(await _getText(_appendQuery(site.api,
