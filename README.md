@@ -1,4 +1,5 @@
 > **鲸落 / WhaleFall 分支**：本仓库是 Marco Movie 的二次开发分支（品牌「鲸落」，包名 `com.whalefall.movie`）。
+> 仓库：https://github.com/962599627/whalefall · 下载：见 Releases
 > 改动清单、构建方式、更新源配置与 GPL-3.0 署名要求见 [docs/WHALEFALL.md](docs/WHALEFALL.md)。
 > 上游项目与作者：Pilipala / Marco Movie（GPL-3.0-only）。
 

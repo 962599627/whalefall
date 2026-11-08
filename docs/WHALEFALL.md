@@ -8,6 +8,8 @@
 - 最低系统：Android 6.0（API 23），targetSdk 28
 - 产物：`dist/WhaleFall-1.0.0-android-tv.apk`（ARM 32 位，电视/盒子）、
   `dist/WhaleFall-1.0.0-android-mobile.apk`（arm64-v8a + armeabi-v7a，手机/平板）
+- 仓库与下载：https://github.com/962599627/whalefall
+  （Release 里附两个 APK，应用内更新检查也读这个仓库的 `updates/`）
 
 ## 相对上游改了什么
 
@@ -22,19 +24,21 @@
 | 原生库 | 为在 ARM Linux 上构建，`scripts/build_catpaw_android.py`、`scripts/build_quickjs_deadline.py` 增加「复用官方发行版预编译原生库」分支（`MARCOMOVIE_PREBUILT_*`）；不设置环境变量时行为与上游一致 |
 | JNI 兼容 | `QuickJsDeadline` 保留在上游包 `com.pilipala.marcomovie`，因为官方 `libmovie-quickjs-deadline.so` 的符号名固化在旧包名下 |
 
-## 配置自己的更新源
+## 更新源（已配置为本仓库）
 
-编辑 `android/src/main/java/com/whalefall/movie/UpdatePolicy.java`：
+应用内更新检查已指向本公开仓库：
 
 ```java
-static final String FEED = "https://你的域名/updates/";   // JSON 目录，文件名如 android-mobile.json
-static final String MIRROR = "https://你的域名/downloads/"; // APK 镜像前缀，可留空
-static final String[] ALLOWED_HOSTS = {"你的域名"};        // 留空 = 接受任意 HTTPS 主机
+// android/src/main/java/com/whalefall/movie/UpdatePolicy.java
+static final String FEED = "https://cdn.jsdelivr.net/gh/962599627/whalefall@main/updates/";
+static final String MIRROR = "https://raw.githubusercontent.com/962599627/whalefall/main/";
+static final String[] ALLOWED_HOSTS = {};   // 留空 = 接受任意 HTTPS 主机
 ```
 
-更新源 JSON 结构见上游 `marco` 镜像的 `movie/updates/android-mobile.json`（schema=1）。
-APK 文件名需满足 `WhaleFall-<版本>-android-tv.apk` / `WhaleFall-<版本>-android-mobile.apk`。
-两项都留空则应用内更新检查显示未配置，不会去安装官方包。
+- 发布新版本：构建 → 生成新的 `updates/android-tv.json` / `updates/android-mobile.json`
+  （更新 versionName/versionCode/size/sha256/url）→ 上传 APK 到新的 GitHub Release → 提交推送。
+- APK 文件名需满足 `WhaleFall-<版本>-android-tv.apk` / `WhaleFall-<版本>-android-mobile.apk`。
+- 两个地址都依赖本仓库公开可访问；raw.githubusercontent 在部分网络需代理。
 
 ## 在 Linux / ARM 机器上构建（本次实际采用的流程）
 
