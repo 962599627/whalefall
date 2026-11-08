@@ -882,7 +882,7 @@ final class TvLive {
         badgeLp.topMargin = a.dp(10);
         badgeLp.rightMargin = a.dp(10);
         hero.addView(badge, badgeLp);
-        panel.addView(hero, new LinearLayout.LayoutParams(-1, a.dp(112)));
+        panel.addView(hero, new LinearLayout.LayoutParams(-1, a.dp(96)));
 
         TextView name = a.text(chosen.name, 19, 0xfff7fbff);
         name.setTypeface(null, Typeface.BOLD);
@@ -941,10 +941,6 @@ final class TvLive {
                                 numberInList(page, chosen),
                                 totalInList)),
                 new LinearLayout.LayoutParams(-1, -2));
-        panel.addView(
-                infoRow(a, "播放", "官方网页直播"),
-                new LinearLayout.LayoutParams(-1, -2));
-
         View fill = new View(a);
         panel.addView(fill, new LinearLayout.LayoutParams(1, 0, 1f));
 
@@ -963,8 +959,8 @@ final class TvLive {
                     page.a.toast((now ? "已收藏 " : "已取消收藏 ") + sel.name);
                     page.refresh();
                 });
-        LinearLayout.LayoutParams favLp = new LinearLayout.LayoutParams(-1, a.dp(40));
-        favLp.bottomMargin = a.dp(8);
+        LinearLayout.LayoutParams favLp = new LinearLayout.LayoutParams(-1, a.dp(36));
+        favLp.bottomMargin = a.dp(6);
         panel.addView(favBtn, favLp);
 
         TextView watch = TvUiKit.pill(a, "▶  观看直播", 14, true);
@@ -974,7 +970,9 @@ final class TvLive {
                     page.selected = sel.name;
                     open(page.a, page.store, openGroup, sel, () -> page.refresh());
                 });
-        panel.addView(watch, new LinearLayout.LayoutParams(-1, a.dp(46)));
+        LinearLayout.LayoutParams watchLp = new LinearLayout.LayoutParams(-1, a.dp(42));
+        watchLp.bottomMargin = a.dp(4);
+        panel.addView(watch, watchLp);
         return panel;
     }
 
