@@ -2035,27 +2035,20 @@ final class MobileShell {
         searchStatus.setPadding(a.dp(4), a.dp(10), a.dp(4), a.dp(8));
         page.addView(searchStatus);
 
-        final ScrollView resultScroll = new ScrollView(a);
-        resultScroll.setFillViewport(true);
-        resultScroll.setVerticalScrollBarEnabled(false);
+        final RecyclerView resultScroll = new RecyclerView(a);
+        final LinearLayoutManager searchLayoutManager = new LinearLayoutManager(a);
+        resultScroll.setLayoutManager(searchLayoutManager);
         resultScroll.setClipToPadding(false);
-        resultScroll
-                .getViewTreeObserver()
-                .addOnScrollChangedListener(
-                        () -> {
-                            cachedSearchScrollY = resultScroll.getScrollY();
-                        });
+        resultScroll.setPadding(0, 0, 0, a.dp(106));
         page.addView(resultScroll, new LinearLayout.LayoutParams(-1, 0, 1));
-
-        final LinearLayout resultList = a.vertical();
-        resultList.setPadding(0, 0, 0, a.dp(106));
-        resultScroll.addView(resultList, new ScrollView.LayoutParams(-1, -2));
 
         final int[] searchSerial = {0};
         final TextView sourceNotices = a.text("", 12, MainActivity.MUTED);
         sourceNotices.setPadding(a.dp(4), 0, a.dp(4), a.dp(10));
         sourceNotices.setVisibility(View.GONE);
-        resultList.addView(sourceNotices);
+        final SearchResultsAdapter searchAdapter =
+                new SearchResultsAdapter(sourceNotices);
+        resultScroll.setAdapter(searchAdapter);
         final Runnable renderSearchStatus =
                 () -> {
                     int separator = cachedSearchStatus.indexOf('\n');
@@ -2077,10 +2070,9 @@ final class MobileShell {
                     cachedSearchStatus = "";
                     cachedSearchHits.clear();
                     cachedSearchScrollY = 0;
-                    resultList.removeAllViews();
+                    searchAdapter.clear();
                     sourceNotices.setText("");
                     sourceNotices.setVisibility(View.GONE);
-                    resultList.addView(sourceNotices);
                     searchStatus.setText("输入关键词搜索全部已启用的片源");
                 });
 
@@ -2183,10 +2175,9 @@ final class MobileShell {
 
                     final int searchTicket = ++searchSerial[0];
                     a.cancelPageRequests();
-                    resultList.removeAllViews();
+                    searchAdapter.clear();
                     sourceNotices.setText("");
                     sourceNotices.setVisibility(View.GONE);
-                    resultList.addView(sourceNotices);
                     cachedSearchKeyword = kw;
                     cachedSearchHits.clear();
                     cachedSearchScrollY = 0;
@@ -2251,8 +2242,9 @@ final class MobileShell {
                                                                         new CachedSearchHit(
                                                                                 site, v));
                                                             }
-                                                            resultList.addView(
-                                                                    buildSearchResultRow(site, v));
+                                                            searchAdapter.add(
+                                                                    new CachedSearchHit(
+                                                                            site, v));
                                                         }
                                                         if (completed[0] < searchableSites.size()) {
                                                             cachedSearchStatus =
@@ -2308,15 +2300,14 @@ final class MobileShell {
             input.setText(wantedKw);
             input.setSelection(wantedKw.length());
             if (wantedKw.equals(cachedSearchKeyword) && !cachedSearchHits.isEmpty()) {
-                for (CachedSearchHit hit : cachedSearchHits) {
-                    resultList.addView(buildSearchResultRow(hit.site, hit.video));
-                }
+                searchAdapter.setHits(cachedSearchHits);
                 if (cachedSearchStatus.isEmpty())
                     cachedSearchStatus = "已保留搜索结果，共 " + cachedSearchHits.size() + " 条";
                 renderSearchStatus.run();
                 final int savedScroll = cachedSearchScrollY;
                 if (savedScroll > 0) {
-                    resultScroll.post(() -> resultScroll.scrollTo(0, savedScroll));
+                    resultScroll.post(
+                            () -> searchLayoutManager.scrollToPositionWithOffset(0, -savedScroll));
                 }
             } else {
                 triggerSearch[0].run();
@@ -2324,16 +2315,83 @@ final class MobileShell {
         } else if (!cachedSearchKeyword.isEmpty()) {
             input.setText(cachedSearchKeyword);
             input.setSelection(cachedSearchKeyword.length());
-            for (CachedSearchHit hit : cachedSearchHits) {
-                resultList.addView(buildSearchResultRow(hit.site, hit.video));
-            }
+            searchAdapter.setHits(cachedSearchHits);
             if (cachedSearchStatus.isEmpty())
                 cachedSearchStatus = "已保留搜索结果，共 " + cachedSearchHits.size() + " 条";
             renderSearchStatus.run();
             final int savedScroll = cachedSearchScrollY;
             if (savedScroll > 0) {
-                resultScroll.post(() -> resultScroll.scrollTo(0, savedScroll));
+                resultScroll.post(
+                        () -> searchLayoutManager.scrollToPositionWithOffset(0, -savedScroll));
             }
+        }
+    }
+
+    /** 搜索页结果列表适配器：第 0 项是来源提示，其余是结果行，按需构建视图。 */
+    private final class SearchResultsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+        private final TextView notices;
+        private final List<CachedSearchHit> hits = new ArrayList<>();
+
+        SearchResultsAdapter(TextView notices) {
+            this.notices = notices;
+            if (notices.getParent() instanceof ViewGroup)
+                ((ViewGroup) notices.getParent()).removeView(notices);
+        }
+
+        void clear() {
+            hits.clear();
+            notifyDataSetChanged();
+        }
+
+        void setHits(List<CachedSearchHit> source) {
+            hits.clear();
+            hits.addAll(source);
+            notifyDataSetChanged();
+        }
+
+        void add(CachedSearchHit hit) {
+            hits.add(hit);
+            notifyItemInserted(hits.size());
+        }
+
+        @Override
+        public int getItemCount() {
+            return 1 + hits.size();
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            return position == 0 ? 0 : 1;
+        }
+
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            if (viewType == 0) {
+                FrameLayout head = new FrameLayout(a);
+                head.setPadding(0, 0, 0, a.dp(6));
+                return new RowHolder(head);
+            }
+            FrameLayout cell = new FrameLayout(a);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = a.dp(8);
+            cell.setLayoutParams(lp);
+            return new RowHolder(cell);
+        }
+
+        @Override
+        public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+            FrameLayout cell = (FrameLayout) holder.itemView;
+            cell.removeAllViews();
+            if (position == 0) {
+                if (notices.getParent() instanceof ViewGroup)
+                    ((ViewGroup) notices.getParent()).removeView(notices);
+                cell.addView(notices, new FrameLayout.LayoutParams(-1, -2));
+                return;
+            }
+            CachedSearchHit hit = hits.get(position - 1);
+            cell.addView(
+                    buildSearchResultRow(hit.site, hit.video),
+                    new FrameLayout.LayoutParams(-1, -2));
         }
     }
 
