@@ -18,6 +18,56 @@ public final class LiveCatalogChecks {
 
     public static void main(String[] args) throws Exception {
         Map<String, String> inherited = new LinkedHashMap<>();
+        String wrapper = "proxy://do=live&type=txt&ext=aHR0cHM6Ly9saXN0LnRlc3QvbGl2ZS50eHQ=";
+        List<LiveCatalog.Source> wrapped =
+                LiveCatalog.sources(
+                        "{\"lives\":[{\"group\":\"频道组\",\"ua\":\"Group-UA\",\"channels\":["
+                                + "{\"name\":\"目录\",\"urls\":[\""
+                                + wrapper
+                                + "\",\"https://video.test/direct.m3u8\"]},"
+                                + "{\"name\":\"普通频道\",\"url\":\"https://video.test/other.m3u8\"}]}]}",
+                        "https://list.test/config.json");
+        check(
+                wrapped.size() == 2
+                        && wrapped.get(0).url.equals(wrapper)
+                        && wrapped.get(0).name.equals("目录")
+                        && wrapped.get(0).inline == null,
+                "legacy TVBox catalogue wrapper becomes its own selectable source");
+        check(
+                wrapped.get(0).headers.get("User-Agent").equals("Group-UA")
+                        && !wrapped.get(0).isLocalProxy(),
+                "directory wrapper inherits headers and does not require a plugin host");
+        LiveCatalog.Catalog ordinary = LiveCatalog.load(wrapped.get(1));
+        check(
+                ordinary.channelCount() == 2
+                        && ordinary.streamCount() == 2
+                        && ordinary.groups.get(0).name.equals("频道组"),
+                "extracting directories preserves ordinary channels and legacy group name");
+        List<LiveCatalog.Source> plugin =
+                LiveCatalog.sources(
+                        "{\"lives\":[{\"name\":\"插件\",\"url\":\"http://127.0.0.1:9978/proxy?do=custom&type=txt&ext=owned\"}]}",
+                        "");
+        check(plugin.get(0).isLocalProxy(), "custom plugin proxy remains a plugin source");
+        for (String invalid :
+                new String[] {
+                    "",
+                    "@@@",
+                    "Z===",
+                    "aHR0cHM6Ly9saXN0LnRlc3Qv&ext=duplicate",
+                    "ZmlsZTovLy90bXAvbG9jYWwudHh0",
+                    "cHJveHk6Ly9kbz1saXZlJnR5cGU9dHh0"
+                }) {
+            LiveCatalog.Source source = new LiveCatalog.Source();
+            source.url = "proxy://do=live&type=txt&ext=" + invalid;
+            source.origin = "https://list.test/config.json";
+            boolean rejected = false;
+            try {
+                LiveCatalog.load(source);
+            } catch (IOException expected) {
+                rejected = expected.getMessage().contains("ext");
+            }
+            check(rejected, "invalid, recursive or remote-to-local directory reference rejected");
+        }
         List<LiveCatalog.Source> declared =
                 LiveCatalog.sources(
                         "{\"lives\":[{\"name\":\"Owned\",\"url\":\"list.php\",\"origin\":\"https://origin.test\"}]}",

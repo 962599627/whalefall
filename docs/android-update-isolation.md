@@ -68,3 +68,11 @@ It verifies both installed editions using isolated signed candidate APKs;
 candidate updates are never installed. Its target derivatives omit native
 media libraries, so results cannot establish decoder, source or physical-device
 acceptance. Inspect the workflow result before claiming those runtime checks pass.
+
+At commit `800383c6ad9a6630ed67fd2ec580c4a605cd2fd9`,
+[run 42438513734](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42438513734)
+passed 72 independently checked assertions: 18 per installed edition on each
+API level. This includes the production download path, two failed mirror
+attempts, fallback to the exact same-edition GitHub release, and verification of
+the downloaded APK bytes. These emulator checks do not install the candidate
+update or establish physical-device playback.

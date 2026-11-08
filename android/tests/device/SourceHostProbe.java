@@ -843,6 +843,54 @@ public final class SourceHostProbe extends Instrumentation {
         }
     }
 
+    void exerciseLiveDirectories() throws Exception {
+        File list = write("live-list.txt", "自有频道,#genre#\n测试,https://fixture.invalid/live.m3u8\n");
+        String ext =
+                android.util.Base64.encodeToString(
+                        Cms.fileUri(list).getBytes("UTF-8"), android.util.Base64.NO_WRAP);
+        String origin = Cms.fileUri(new File(folder, "config.json"));
+        String proxy = "proxy://do=live&type=txt&ext=" + ext;
+        String config =
+                "{\"lives\":[{\"group\":\"目录\",\"ua\":\"Local-UA\",\"channels\":[{\"name\":\"本地直播\",\"urls\":[\""
+                        + proxy
+                        + "\"]},{\"name\":\"直接频道\",\"url\":\"https://fixture.invalid/direct.m3u8\"}]}]}";
+        List<LiveCatalog.Source> sources = LiveCatalog.sources(config, origin);
+        check("live_wrapper_split", sources.size() == 2 && sources.get(0).inline == null);
+        LiveCatalog.Catalog catalogue = LiveCatalog.load(sources.get(0));
+        check(
+                "live_wrapper_local_package",
+                catalogue.channelCount() == 1 && catalogue.groups.get(0).name.equals("自有频道"));
+        check(
+                "live_wrapper_header",
+                catalogue
+                        .groups
+                        .get(0)
+                        .channels
+                        .get(0)
+                        .streams
+                        .get(0)
+                        .headers
+                        .get("User-Agent")
+                        .equals("Local-UA"));
+        check(
+                "live_wrapper_preserves_inline",
+                LiveCatalog.load(sources.get(1)).groups.get(0).channels.get(0).name.equals("直接频道"));
+        LiveCatalog.Source loopback = new LiveCatalog.Source();
+        loopback.url = "http://127.0.0.1:9978/proxy?do=live&type=txt&ext=" + ext;
+        loopback.origin = origin;
+        check(
+                "live_wrapper_no_jar_required",
+                !loopback.isLocalProxy() && LiveCatalog.load(loopback).channelCount() == 1);
+        loopback.origin = "https://fixture.invalid/config.json";
+        boolean rejected = false;
+        try {
+            LiveCatalog.load(loopback);
+        } catch (IOException expected) {
+            rejected = true;
+        }
+        check("live_remote_wrapper_cannot_read_local_file", rejected);
+    }
+
     @Override
     public void onStart() {
         try {
@@ -851,6 +899,7 @@ public final class SourceHostProbe extends Instrumentation {
                             getTargetContext().getFilesDir(),
                             "source-host-probe-" + System.nanoTime());
             if (!folder.mkdir()) throw new IllegalStateException("fixture directory unavailable");
+            exerciseLiveDirectories();
             write("data.json", "{\"title\":\"Local fixture\"}");
             write("helper.js", "exports.echo = value => Promise.resolve(value);");
             JsEngine js =

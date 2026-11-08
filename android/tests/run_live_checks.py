@@ -12,7 +12,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path=='/redirect':self.send_response(302);self.send_header('Location','lists/index.m3u');self.end_headers()
         elif self.path=='/failure':self.send_response(503);self.end_headers()
         elif self.path=='/loop':self.send_response(302);self.send_header('Location','loop');self.end_headers()
-        elif self.path=='/list.php':self.send_response(200);self.send_header('Content-Type','text/plain');self.end_headers();self.wfile.write(('\ufeff#EXTM3U\n#EXTINF:-1,中文频道\nmedia/video.m3u8\n').encode('utf-16le'))
+        elif self.path.split('?',1)[0]=='/list.php':self.send_response(200);self.send_header('Content-Type','text/plain');self.end_headers();self.wfile.write(('\ufeff#EXTM3U\n#EXTINF:-1,中文频道\nmedia/video.m3u8\n').encode('utf-16le'))
         else:self.send_response(200);self.send_header('Content-Type','audio/x-mpegurl; charset=utf-8');self.end_headers();self.wfile.write(b'#EXTM3U\n#EXTINF:-1,Local test\n../media/test.m3u8\n')
 server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=server.serve_forever,daemon=True).start()
 out=ROOT/'android/tests/live-classes';out.mkdir(exist_ok=True)

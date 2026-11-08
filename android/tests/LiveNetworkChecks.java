@@ -30,6 +30,36 @@ public final class LiveNetworkChecks {
         if (!channel.streams.get(0).headers.equals(source.headers))
             throw new AssertionError("same-origin playlist lost credentials");
         System.out.println("PASS same-origin stream retains explicit source credentials");
+        String url = args[0] + "list.php?token=+/?value";
+        for (String ext :
+                new String[] {
+                    java.util.Base64.getEncoder().encodeToString(url.getBytes("UTF-8")),
+                    java.util.Base64.getUrlEncoder()
+                            .withoutPadding()
+                            .encodeToString(url.getBytes("UTF-8")),
+                    java.net.URLEncoder.encode(url, "UTF-8")
+                }) {
+            for (String prefix : new String[] {"proxy://", "http://127.0.0.1:9978/proxy?"}) {
+                LiveCatalog.Source wrapped = new LiveCatalog.Source();
+                wrapped.url = prefix + "do=live&type=txt&ext=" + ext;
+                wrapped.origin = args[0] + "config.json";
+                wrapped.headers.put("Origin", "https://origin.test");
+                LiveCatalog.Catalog loaded = LiveCatalog.load(wrapped);
+                if (loaded.channelCount() != 1
+                        || !loaded.origin.equals(url)
+                        || !loaded.groups.get(0).channels.get(0).name.equals("中文频道"))
+                    throw new AssertionError(
+                            "wrapped catalogue did not load or changed literal plus");
+                System.out.println(
+                        "PASS encoded TVBox directory loads through production HTTP reader");
+            }
+        }
+        LiveCatalog.Source relative = new LiveCatalog.Source();
+        relative.url = "proxy://do=live&type=txt&ext=Li9saXN0LnBocA==";
+        relative.origin = args[0] + "config.json";
+        if (!LiveCatalog.load(relative).origin.equals(args[0] + "list.php"))
+            throw new AssertionError("relative wrapped catalogue lost subscription origin");
+        System.out.println("PASS relative directory resolves against subscription origin");
         source.url = args[0] + "slow";
         ExecutorService executor = Executors.newSingleThreadExecutor();
         RequestScope scope = new RequestScope();

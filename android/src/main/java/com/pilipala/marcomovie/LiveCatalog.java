@@ -22,6 +22,7 @@ public final class LiveCatalog {
                 options = new LinkedHashMap<>();
 
         public boolean isLocalProxy() {
+            if (liveDirectoryQuery(url) != null) return false;
             try {
                 URL u = new URL(url);
                 return (u.getHost().equals("127.0.0.1")
@@ -97,6 +98,8 @@ public final class LiveCatalog {
     }
 
     public static List<Source> sources(String configJson, String origin) throws Exception {
+        if (configJson == null || configJson.length() > MAX_BYTES)
+            throw new IOException("直播配置为空或超过大小限制");
         Object root =
                 new JSONTokener(Cms.withoutComments(configJson.replaceFirst("^\\uFEFF", "")))
                         .nextValue();
@@ -127,7 +130,9 @@ public final class LiveCatalog {
                 if (j.has("groups") || j.has("channels")) s.inline = j;
             } else continue;
             if (!s.headers.containsKey("User-Agent")) s.headers.put("User-Agent", Cms.USER_AGENT);
+            if (s.inline != null) s.inline = separateDirectories(s.inline, s, out, 0);
             if (s.inline != null || !s.url.isEmpty()) out.add(s);
+            if (out.size() > MAX_CHANNELS) throw new IOException("直播目录数量过多");
         }
         return out;
     }
@@ -135,14 +140,15 @@ public final class LiveCatalog {
     public static Catalog load(Source source) throws Exception {
         if (source.inline != null)
             return parse(source.inline.toString(), source.origin, source.headers);
-        if (source.url != null && source.url.startsWith("file://")) {
-            File localFile = new File(URI.create(source.url));
+        String sourceUrl = liveDirectoryUrl(source.url, source.origin);
+        if (sourceUrl != null && sourceUrl.startsWith("file://")) {
+            File localFile = new File(URI.create(sourceUrl));
             try (InputStream in = new FileInputStream(localFile)) {
-                return parse(Cms.read(in, MAX_BYTES), source.url, source.headers);
+                return parse(Cms.read(in, MAX_BYTES), sourceUrl, source.headers);
             }
         }
-        if (!Cms.isHttp(source.url)) throw new IOException("直播列表地址不是 HTTP(S)");
-        URL next = new URL(Cms.normalizeHttp(source.url));
+        if (!Cms.isHttp(sourceUrl)) throw new IOException("直播列表地址不是 HTTP(S)");
+        URL next = new URL(Cms.normalizeHttp(sourceUrl));
         long deadline = System.nanoTime() + source.timeoutMs * 1000000L;
         Map<String, String> requestHeaders = new LinkedHashMap<>(source.headers);
         for (int hop = 0; hop < 6; hop++) {
@@ -277,7 +283,12 @@ public final class LiveCatalog {
             return;
         }
         if (j.has("channels")) {
-            parseJson(j.opt("channels"), j.optString("name", group), out, headers, depth + 1);
+            parseJson(
+                    j.opt("channels"),
+                    j.optString("name", j.optString("group", group)),
+                    out,
+                    headers,
+                    depth + 1);
             return;
         }
         Channel channel = new Channel();
@@ -479,6 +490,155 @@ public final class LiveCatalog {
         } catch (Exception ignored) {
             return value;
         }
+    }
+
+    /** TVBox's do=live&type=txt wrapper points at a catalogue, not a video or JAR. */
+    private static Map<String, String> liveDirectoryQuery(String value) {
+        if (value == null || value.length() > 16384) return null;
+        String query;
+        if (value.startsWith("proxy://")) {
+            query = value.substring(8);
+            if (query.startsWith("?")) query = query.substring(1);
+        } else {
+            try {
+                URL url = new URL(value);
+                if (!(url.getProtocol().equals("http") || url.getProtocol().equals("https"))
+                        || !(url.getHost().equals("127.0.0.1")
+                                || url.getHost().equals("localhost")
+                                || url.getHost().equals("[::1]"))
+                        || !url.getPath().equals("/proxy")) return null;
+                query = url.getQuery();
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        if (query == null) return null;
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String pair : query.split("&")) {
+            int eq = pair.indexOf('=');
+            if (eq < 0) continue;
+            String key = decode(pair.substring(0, eq));
+            // URI query '+' is literal: standard Base64 can contain it.
+            String decoded = decode(pair.substring(eq + 1).replace("+", "%2B"));
+            if (values.containsKey(key)) values.put("duplicate", "true");
+            values.put(key, decoded);
+        }
+        return "live".equals(values.get("do")) && "txt".equals(values.get("type")) ? values : null;
+    }
+
+    private static String liveDirectoryUrl(String value, String origin) throws IOException {
+        Map<String, String> query = liveDirectoryQuery(value);
+        if (query == null) return value;
+        String ext = query.get("ext");
+        if (ext == null || ext.trim().isEmpty() || query.containsKey("duplicate"))
+            throw new IOException("直播目录包装地址缺少有效 ext 参数");
+        ext = ext.trim();
+        if (!(Cms.isHttp(ext)
+                || ext.startsWith("file://")
+                || ext.startsWith("./")
+                || ext.startsWith("../"))) {
+            // Keep API 23 compatibility: java.util.Base64 requires Android API 26.
+            String encoded = ext.replaceAll("\\s", "").replace('-', '+').replace('_', '/');
+            if (!encoded.matches("[A-Za-z0-9+/]+={0,2}")
+                    || encoded.length() % 4 == 1
+                    || (encoded.contains("=") && encoded.length() % 4 != 0))
+                throw new IOException("直播目录 ext 不是有效的地址或 Base64");
+            ByteArrayOutputStream decoded = new ByteArrayOutputStream();
+            String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            int bits = 0, count = 0;
+            for (int i = 0; i < encoded.length() && encoded.charAt(i) != '='; i++) {
+                bits = (bits << 6) | alphabet.indexOf(encoded.charAt(i));
+                count += 6;
+                if (count >= 8) {
+                    count -= 8;
+                    decoded.write((bits >> count) & 255);
+                }
+            }
+            ext = new String(decoded.toByteArray(), "UTF-8").trim();
+        }
+        String target = resolve(origin, ext);
+        if (Cms.isHttp(target)) return target;
+        if (target.startsWith("file://") && origin != null && origin.startsWith("file://"))
+            return target;
+        throw new IOException("直播目录 ext 必须指向 HTTP(S) 或本地包内的列表");
+    }
+
+    /** Split directory placeholders from ordinary inline channels without discarding either. */
+    private static Object separateDirectories(
+            Object item, Source parent, List<Source> directories, int depth) throws Exception {
+        if (depth > 8) throw new IOException("直播分组层级过深");
+        if (item instanceof JSONArray) {
+            JSONArray remaining = new JSONArray();
+            JSONArray items = (JSONArray) item;
+            for (int i = 0; i < items.length(); i++) {
+                Object next = separateDirectories(items.opt(i), parent, directories, depth + 1);
+                if (next != null) remaining.put(next);
+            }
+            return remaining.length() == 0 ? null : remaining;
+        }
+        if (!(item instanceof JSONObject)) return item;
+        JSONObject object = new JSONObject(item.toString());
+        Source scoped = new Source();
+        scoped.name = object.optString("name", object.optString("group", parent.name));
+        scoped.origin = parent.origin;
+        scoped.timeoutMs =
+                object.has("timeout")
+                        ? Math.max(1000, Math.min(30000, object.optInt("timeout", 15) * 1000))
+                        : parent.timeoutMs;
+        scoped.headers.putAll(parent.headers);
+        scoped.options.putAll(parent.options);
+        scoped.options.putAll(attributes(object));
+        copyHeaders(scoped.headers, object.opt("headers"));
+        copyHeaders(scoped.headers, object.opt("header"));
+        header(scoped.headers, "User-Agent", object.optString("ua", ""));
+        header(scoped.headers, "Referer", object.optString("referer", ""));
+        header(scoped.headers, "Origin", object.optString("origin", ""));
+        String children =
+                object.has("groups") ? "groups" : object.has("channels") ? "channels" : "";
+        if (!children.isEmpty()) {
+            Object remaining =
+                    separateDirectories(object.opt(children), scoped, directories, depth + 1);
+            if (remaining == null) return null;
+            object.put(children, remaining);
+            return object;
+        }
+        Object urls = object.has("urls") ? object.opt("urls") : object.opt("url");
+        JSONArray entries =
+                urls instanceof JSONArray ? (JSONArray) urls : new JSONArray().put(urls);
+        JSONArray remaining = new JSONArray();
+        boolean extracted = false;
+        for (int i = 0; i < entries.length(); i++) {
+            Object entry = entries.opt(i);
+            String url =
+                    entry instanceof JSONObject
+                            ? ((JSONObject) entry).optString("url", "")
+                            : entry instanceof String ? (String) entry : "";
+            if (liveDirectoryQuery(url) == null) {
+                remaining.put(entry);
+                continue;
+            }
+            Source directory = new Source();
+            directory.name = scoped.name;
+            directory.url = url;
+            directory.origin = scoped.origin;
+            directory.timeoutMs = scoped.timeoutMs;
+            directory.headers.putAll(scoped.headers);
+            directory.options.putAll(scoped.options);
+            if (entry instanceof JSONObject) {
+                JSONObject definition = (JSONObject) entry;
+                directory.name = definition.optString("name", directory.name);
+                copyHeaders(directory.headers, definition.opt("headers"));
+                copyHeaders(directory.headers, definition.opt("header"));
+            }
+            directories.add(directory);
+            if (directories.size() > MAX_CHANNELS) throw new IOException("直播目录数量过多");
+            extracted = true;
+        }
+        if (!extracted) return object;
+        if (remaining.length() == 0) return null;
+        object.remove("url");
+        object.put("urls", remaining);
+        return object;
     }
 
     private static Map<String, String> attrs(String value) {

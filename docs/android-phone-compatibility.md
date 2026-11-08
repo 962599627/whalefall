@@ -21,6 +21,23 @@ credential retention and cancellation of in-flight requests. These are client
 transport checks; no claim is made that all remote channels or Xiaomi firmware
 now play successfully.
 
+## Legacy live directory wrappers
+
+The reader now recognizes TVBox `proxy://do=live&type=txt&ext=...` and the
+equivalent loopback `/proxy` form. Plain percent-encoded URLs, standard/URL-safe
+Base64, and local-package-relative lists use the existing bounded HTTP/file
+reader. This is a catalogue reference, so it does not start an Android JAR host.
+Nested placeholders are separated from ordinary inline channels without losing
+either; group headers and the legacy `group` name are retained. Invalid,
+duplicate or recursive references fail with a directory error, and a remote
+configuration cannot use this wrapper to read a local file.
+
+The protocol behavior was checked against the upstream
+[TVBox configuration reader](https://github.com/takagen99/Box/blob/main/app/src/main/java/com/github/tvbox/osc/api/ApiConfig.java).
+Local regression now covers 31 catalogue assertions and 12 real-loopback HTTP
+checks. Device execution of the six new local-package assertions is tracked
+separately in the Android 6 source-host workflow; parser success is not playback.
+
 ## Separate update editions
 
 [Update isolation](android-update-isolation.md) records the phone/TV feeds,
