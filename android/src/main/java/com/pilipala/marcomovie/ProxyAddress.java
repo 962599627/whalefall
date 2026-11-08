@@ -1,7 +1,10 @@
 package com.pilipala.marcomovie;
 
 import java.net.URI;
+import java.net.URLDecoder;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /** Pure URL routing and request validation for the reserved source proxy endpoint. */
 final class ProxyAddress {
@@ -10,6 +13,62 @@ final class ProxyAddress {
 
     static String base() {
         return "http://127.0.0.1:" + port;
+    }
+
+    /** Recognize only the source endpoint that rewrite() can route to this listener. */
+    static boolean isSourceProxy(String address) {
+        return isListenerAddress(rewrite(address));
+    }
+
+    private static boolean isListenerAddress(String address) {
+        try {
+            URI uri = new URI(address);
+            return "http".equalsIgnoreCase(uri.getScheme())
+                    && isLoopbackHost(uri.getHost())
+                    && uri.getPort() == port
+                    && "/proxy".equals(uri.getPath());
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /** A source's Origin/Host are upstream metadata, not the local HTTP authority. */
+    static Map<String, String> requestHeaders(String address, Map<String, String> original) {
+        Map<String, String> out = new LinkedHashMap<>(original);
+        if (!isListenerAddress(address) || token.isEmpty()) return out;
+        try {
+            String query = new URI(address).getRawQuery();
+            int matches = 0;
+            if (query != null)
+                for (String pair : query.split("&")) {
+                    String[] parts = pair.split("=", 2);
+                    if ("_mm_token".equalsIgnoreCase(URLDecoder.decode(parts[0], "UTF-8"))) {
+                        if (parts.length != 2
+                                || !token.equals(URLDecoder.decode(parts[1], "UTF-8"))) return out;
+                        matches++;
+                    }
+                }
+            if (matches != 1) return out;
+        } catch (Exception ignored) {
+            return out;
+        }
+        String origin = null, host = null;
+        for (java.util.Iterator<Map.Entry<String, String>> it = out.entrySet().iterator();
+                it.hasNext(); ) {
+            Map.Entry<String, String> header = it.next();
+            String name = header.getKey();
+            if ("Origin".equalsIgnoreCase(name)) {
+                origin = header.getValue();
+                it.remove();
+            } else if ("Host".equalsIgnoreCase(name)) {
+                host = header.getValue();
+                it.remove();
+            } else if ("X-Movie-Origin".equalsIgnoreCase(name)
+                    || "X-Movie-Host".equalsIgnoreCase(name)) it.remove();
+        }
+        if (origin != null && !origin.isEmpty()) out.put("X-Movie-Origin", origin);
+        if (host != null && !host.isEmpty()) out.put("X-Movie-Host", host);
+        return out;
     }
 
     static String rewrite(String value) {

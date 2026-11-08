@@ -5,6 +5,7 @@ QuickJS JNI. No ARM decoder/Node claims and no files are written to dist/.
 """
 
 from pathlib import Path
+import argparse
 import hashlib
 import json
 import os
@@ -31,8 +32,12 @@ def sign(source, name):
     return output
 
 
-def main():
-    source = BUILD / "unsigned.apk"
+def main(phone=False):
+    global OUT, PROBES
+    OUT = BUILD / ('phone-source-probe' if phone else 'api23-probes')
+    PROBES = ('SourceHostProbe',) if phone else ('SubtitleProbe', 'HomeProbe', 'SourceHostProbe')
+    abi = 'x86_64' if phone else 'x86'
+    source = BUILD / ('unsigned-mobile.apk' if phone else 'unsigned.apk')
     app_classes = BUILD / "classes.jar"
     if not source.exists() or not app_classes.exists():
         raise RuntimeError("Run build_android.py first; this script never builds the production app")
@@ -51,7 +56,7 @@ def main():
     manifest.write_text(
         '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.pilipala.marcomovie.test">'
         '<uses-sdk android:minSdkVersion="23" android:targetSdkVersion="28"/>'
-        '<application android:label="API 23 local regression"/>' + entries + '</manifest>', encoding="utf-8",
+        '<application android:label="Local source regression"/>' + entries + '</manifest>', encoding="utf-8",
     )
     with wave.open(str(OUT / "assets/timeline.wav"), "wb") as audio:
         audio.setparams((1, 2, 8000, 0, "NONE", "not compressed"))
@@ -84,19 +89,24 @@ def main():
         for entry in production.infolist():
             if not entry.filename.startswith("lib/"):
                 apk.writestr(entry, production.read(entry.filename))
-        apk.writestr("lib/x86/libquickjs-android-wrapper.so", jni.read("jni/x86/libquickjs-android-wrapper.so"))
-        apk.writestr("lib/x86/libmovie-quickjs-deadline.so", deadline_files['lib/x86/libmovie-quickjs-deadline.so'])
+        apk.writestr('lib/'+abi+'/libquickjs-android-wrapper.so', jni.read('jni/'+abi+'/libquickjs-android-wrapper.so'))
+        apk.writestr('lib/'+abi+'/libmovie-quickjs-deadline.so', deadline_files['lib/'+abi+'/libmovie-quickjs-deadline.so'])
     fixture = sign(OUT / "fixture-unsigned.apk", "fixture")
     (OUT / "scope.json").write_text(json.dumps({
-        "scope": "API 23 TV UI, local system-player subtitles, synthetic home/history and QuickJS/Python JNI only. No ARM decoder or CatPaw Node acceptance. Not distributable.",
+        "scope": ("API 36 phone QuickJS/Python JNI and local source requests only. " if phone else
+                  "API 23 TV UI, local system-player subtitles, synthetic home/history and QuickJS/Python JNI only. ")
+                 + "No ARM decoder or CatPaw Node acceptance. Not distributable.",
         "production_unsigned_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "production_classes_sha256": hashlib.sha256(app_classes.read_bytes()).hexdigest(),
         "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
         "probes": list(PROBES),
-        "fixture_abi": "x86",
+        "fixture_abi": abi,
+        "fixture_edition": 'mobile' if phone else 'tv',
     }, indent=2) + "\n", encoding="utf-8")
     print(OUT)
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--phone', action='store_true', help='Build API 36 phone SourceHostProbe with x86_64 JNI')
+    main(parser.parse_args().phone)

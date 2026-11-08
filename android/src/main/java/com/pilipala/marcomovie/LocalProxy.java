@@ -249,6 +249,7 @@ public final class LocalProxy implements Closeable {
             }
             String upstreamHost = headers.remove("x-movie-host");
             if (upstreamHost != null && !upstreamHost.isEmpty()) {
+                headers.put("host", upstreamHost);
                 params.put("Host", upstreamHost);
             }
             if (headers.containsKey("range")) {

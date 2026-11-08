@@ -146,7 +146,62 @@ public final class ScriptProxyChecks {
                 + server.token;
     }
 
+    private static void liveCatalogueHeaders() throws Exception {
+        try (LocalProxy server =
+                new LocalProxy(
+                        null,
+                        new Cms.Config(),
+                        params -> {
+                            JSONObject headers = new JSONObject(params.get("request-headers"));
+                            if (!"https://origin.test".equals(params.get("origin"))
+                                    || !"upstream.test".equals(params.get("host"))
+                                    || !"upstream.test".equals(params.get("Host"))
+                                    || !"https://origin.test".equals(headers.optString("origin"))
+                                    || !"upstream.test".equals(headers.optString("host")))
+                                throw new IOException("upstream headers changed before callback");
+                            return new Object[] {
+                                200,
+                                "text/plain",
+                                "Owned,#genre#\nChannel,https://media.test/live.m3u8\n"
+                            };
+                        })) {
+            LiveCatalog.Source source = new LiveCatalog.Source();
+            source.url = "proxy://do=js&site=cccccccccccccccccccccccccccccccc";
+            source.headers.put("oRiGiN", "https://origin.test");
+            source.headers.put("hOsT", "upstream.test");
+            source.headers.put("User-Agent", "Catalogue-UA");
+            check(source.isLocalProxy(), "plugin catalogue scheme selects local host");
+            source.url = LocalProxy.rewrite(source.url);
+            Map<String, String> original = new LinkedHashMap<>(source.headers);
+            LiveCatalog.Catalog result = LiveCatalog.load(source);
+            check(
+                    result.channelCount() == 1,
+                    "live reader reaches local callback with upstream Origin and Host");
+            check(
+                    source.headers.equals(original),
+                    "local catalogue load leaves source headers intact");
+            check(
+                    result.groups.get(0).channels.get(0).streams.get(0).headers.equals(original),
+                    "remote channel inherits upstream headers without internal transport names");
+            check(
+                    rawStatus(source.url, "Origin", "https://origin.test") == 403,
+                    "ordinary browser Origin still rejected by local catalogue listener");
+            for (String unrelated :
+                    new String[] {
+                        "https://media.test/proxy?_mm_token=" + server.token,
+                        "http://127.0.0.1:1234/proxy?_mm_token=" + server.token,
+                        LocalProxy.address() + "/other?_mm_token=" + server.token,
+                        source.url.replace(server.token, "wrong"),
+                        source.url + "&_mm_token=" + server.token
+                    })
+                check(
+                        ProxyAddress.requestHeaders(unrelated, original).equals(original),
+                        "header adaptation is restricted to one authenticated local route");
+        }
+    }
+
     public static void main(String[] args) throws Exception {
+        liveCatalogueHeaders();
         byte[] expected = new byte[] {0, (byte) 255, (byte) 128, 65};
         check(
                 Arrays.equals(

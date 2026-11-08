@@ -889,6 +889,45 @@ public final class SourceHostProbe extends Instrumentation {
             rejected = true;
         }
         check("live_remote_wrapper_cannot_read_local_file", rejected);
+        try (LocalProxy local =
+                new LocalProxy(
+                        (Application) getTargetContext().getApplicationContext(),
+                        new Cms.Config())) {
+            JsEngine live =
+                    engine(
+                            "live-catalogue.js",
+                            "module.exports={n:0,play(){return {url:proxyUrl({})};},proxy(p){"
+                                    + "const h=JSON.parse(p['request-headers']);"
+                                    + "if(p.origin!=='https://origin.test'||p.host!=='upstream.test'||"
+                                    + "h.origin!==p.origin||h.host!==p.host)throw Error('live header mismatch');"
+                                    + "return [200,'text/plain','Native,#genre#\\nChannel'+(++this.n)+',https://fixture.invalid/live.m3u8\\n'];}};");
+            live.activate();
+            String address = new JSONObject(live.player("", "catalogue")).getString("url");
+            LiveCatalog.Source plugin = new LiveCatalog.Source();
+            plugin.url = "proxy://" + new URL(address).getQuery();
+            plugin.headers.put("oRiGiN", "https://origin.test");
+            plugin.headers.put("hOsT", "upstream.test");
+            check("live_plugin_scheme_starts_host", plugin.isLocalProxy());
+            plugin.url = LocalProxy.rewrite(plugin.url);
+            LiveCatalog.Catalog fromPlugin = LiveCatalog.load(plugin);
+            check(
+                    "live_plugin_native_catalogue_headers",
+                    fromPlugin.groups.get(0).channels.get(0).name.equals("Channel1"));
+            check(
+                    "live_plugin_remote_channel_headers",
+                    fromPlugin
+                            .groups
+                            .get(0)
+                            .channels
+                            .get(0)
+                            .streams
+                            .get(0)
+                            .headers
+                            .equals(plugin.headers));
+            check(
+                    "live_plugin_reload_preserves_instance",
+                    LiveCatalog.load(plugin).groups.get(0).channels.get(0).name.equals("Channel2"));
+        }
     }
 
     @Override

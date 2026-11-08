@@ -23,15 +23,7 @@ public final class LiveCatalog {
 
         public boolean isLocalProxy() {
             if (liveDirectoryQuery(url) != null) return false;
-            try {
-                URL u = new URL(url);
-                return (u.getHost().equals("127.0.0.1")
-                                || u.getHost().equals("localhost")
-                                || u.getHost().equals("[::1]"))
-                        && u.getPath().startsWith("/proxy");
-            } catch (Exception e) {
-                return false;
-            }
+            return ProxyAddress.isSourceProxy(url);
         }
     }
 
@@ -159,7 +151,8 @@ public final class LiveCatalog {
             connection.setReadTimeout((int) Math.min(remaining, 12000));
             connection.setInstanceFollowRedirects(false);
             connection.setRequestProperty("Accept-Encoding", "gzip");
-            for (Map.Entry<String, String> h : requestHeaders.entrySet())
+            for (Map.Entry<String, String> h :
+                    ProxyAddress.requestHeaders(next.toString(), requestHeaders).entrySet())
                 connection.setRequestProperty(h.getKey(), h.getValue());
             try {
                 RequestScope.attach(connection);

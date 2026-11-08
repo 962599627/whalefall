@@ -42,6 +42,31 @@ passed all six new assertions on the actual API 23 runtime (86 total source-host
 checks), including local-package lookup, inherited headers and preserving inline
 channels. This still does not verify third-party media playback.
 
+## Local plugin live catalogues
+
+Custom `proxy://` catalogue addresses now select the local source listener, just
+like its reserved loopback HTTP form. An unrelated localhost service or a path
+such as `/proxy-other` does not select that listener. The direct text-directory
+wrapper above still bypasses the plugin host.
+
+Catalogue requests to the current authenticated listener carry upstream Origin
+and Host as internal transport metadata. The callback receives the original
+values, and returned remote channels inherit ordinary source headers. The source
+definition is unchanged, and unrelated endpoints, wrong/duplicate tokens and
+browser Origin checks retain their original behavior. Local tests exercise the
+actual HTTP reader and loopback listener, not just URL string matching.
+
+`phone-source.yml` runs the shared source probe inside an Android 16 phone image
+with the phone edition's bytecode and x86_64 QuickJS/Python JNI. It includes live
+catalogue headers and source state across reload, separately from the existing
+Android 6 TV probe. Neither isolated fixture contains ARM decoders or proves
+third-party stream playback.
+
+The newer `api`/`ext` live configuration is a separate remaining task: upstream
+[LiveParser](https://github.com/FongMi/TV/blob/fongmi/app/src/main/java/com/fongmi/android/tv/api/parser/LiveParser.java)
+dispatches it to `liveContent(url)`. It is not implemented merely by fixing the
+legacy proxy reader, and is not counted as supported by these checks.
+
 ## Separate update editions
 
 [Update isolation](android-update-isolation.md) records the phone/TV feeds,

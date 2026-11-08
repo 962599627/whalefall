@@ -48,6 +48,17 @@ public final class LiveCatalogChecks {
                         "{\"lives\":[{\"name\":\"插件\",\"url\":\"http://127.0.0.1:9978/proxy?do=custom&type=txt&ext=owned\"}]}",
                         "");
         check(plugin.get(0).isLocalProxy(), "custom plugin proxy remains a plugin source");
+        plugin.get(0).url = "proxy://do=custom&type=txt&ext=owned";
+        check(plugin.get(0).isLocalProxy(), "custom proxy scheme starts the local plugin host");
+        for (String other :
+                new String[] {
+                    "http://127.0.0.1:1234/proxy?do=custom",
+                    "http://127.0.0.1:9978/proxy-other?do=custom",
+                    "https://list.test/proxy?do=custom"
+                }) {
+            plugin.get(0).url = other;
+            check(!plugin.get(0).isLocalProxy(), "unrelated endpoint does not start a plugin host");
+        }
         for (String invalid :
                 new String[] {
                     "",
