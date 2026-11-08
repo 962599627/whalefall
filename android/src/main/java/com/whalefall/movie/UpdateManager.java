@@ -118,7 +118,7 @@ final class UpdateManager {
     }
 
     String channel() {
-        return prefs.getString("channel", "preview");
+        return prefs.getString("channel", "stable");
     }
 
     String mode() {
