@@ -39,6 +39,37 @@ native deadlines and memory limits are unchanged. Code is precompiled; live
 source objects, HTTP sessions and cookies are never shared.
 
 This addresses repeated parsing/compilation of app-provided Python during source
-initialization. System results for this follow-up must be recorded separately;
-the earlier run above does not validate it. No installer is released here, and
-the outstanding plugin ports and iPhone acceptance requirements remain open.
+initialization. It does not add unsupported CPython modules or complete plugin
+ports. No installer is released here.
+
+## Verified follow-up at `dd8484f`
+
+- [Android 16 phone](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42448199091)
+  passed all 122 source assertions, including all 22 T4 cases. The formerly
+  failing requests session fixture initialized in 1192 ms in this run. The HTML
+  fixture took 6850 ms including host initialization; this is not a claim that
+  every source or device now starts instantly.
+- [Android 6 TV](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42448199093)
+  passed 122 source, 25 subtitle and 96 home/history assertions.
+- [Windows/macOS](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42448199050)
+  each passed 36 selected tests without skips.
+- [iOS runtime](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42448199065)
+  passed 200 unique assertions per CPU on iOS 18.5. Intel passed on attempt 1.
+  The first ARM64 attempt timed out in `simctl launch` without an application
+  result; the failure was retained, and only that job was rerun with identical
+  code. ARM64 passed on attempt 2. All production and fixture hashes match the
+  exact commit, including both generated library and HTML assets. A successful
+  retry does not establish the cause of the first launch timeout.
+
+The initial public offline suite found an old proxy fixture that did not load
+the new asset. Commit `72760e5` adds the missing fixture input; the production
+loaders were already included at `dd8484f`. Its 56 real-loopback proxy checks
+passed locally, and the complete
+[public suite](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42448455517)
+passed. The automatically triggered
+[TV follow-up](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42448455521)
+also passed all 122/25/96 assertions. The earlier failure remains recorded.
+
+These results cover embedded source engines and synthetic protocols. Physical
+phone playback, third-party endpoint availability, the 33 original plugin-route
+obligations and the requested iPhone release gate remain open.

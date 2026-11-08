@@ -48,5 +48,17 @@ plugin or third-party service is supported. No installer release is implied.
   Original errors and logs are retained; the execution limit was not relaxed.
   A smaller HTML parser dependency is being investigated separately.
 
-The full public checks passed at that commit. Phone acceptance and physical
-device playback remain open, so these results do not authorize an installer release.
+The full public checks passed at that commit. That run did not authorize an
+installer release.
+
+## Phone initialization follow-up at `dd8484f`
+
+After the [Python startup changes](python-host-startup.md), the
+[Android 16 phone run 42448199091](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42448199091)
+passed all 122 source assertions, including the 22 T4 cases previously not reached.
+The [TV run 42448199093](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42448199093)
+passed the same source cases plus 25 subtitle and 96 home/history assertions.
+[Windows/macOS run 42448199050](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42448199050)
+each passed 36 HTTP/Python tests, retaining all eight T4 tests without skips.
+Recorded result counts and fixture editions were independently checked. Physical
+device playback and the remaining plugin acceptance requirements are still open.

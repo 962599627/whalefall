@@ -92,8 +92,10 @@ ARM media decoding and third-party stream availability remain separate gates.
 
 The [HTTP T4 adapter and system results](http-source-compatibility.md) cover
 generic remote `type: 4` endpoints independently of local CatPaw and JAR adapters.
-Its API 23 fixture passed; the API 36 phone suite currently stops at a Python
-initialization timeout before the new T4 checks, so phone acceptance remains open.
+Its API 23 and API 36 fixtures now pass all 122 source assertions, including the
+22 T4 checks. The [Python startup follow-up](python-host-startup.md) retains the
+earlier phone failures and records the fixed-library compilation change. These
+system fixtures do not close physical-phone or remote-media acceptance.
 
 [Update isolation](android-update-isolation.md) records the phone/TV feeds,
 explicit package names, old-name migration and APK verification tests. This work
