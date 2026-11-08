@@ -51,6 +51,10 @@ final class PlayerUiKit {
     static final int ICON_CHEVRON_RIGHT = 20;
     static final int ICON_PLAY = 21;
     static final int ICON_PAUSE = 22;
+    static final int ICON_SEEK_BACK = 23;
+    static final int ICON_SEEK_FWD = 24;
+    static final int ICON_CHEVRON_DOWN = 25;
+    static final int ICON_CHEVRON_UP = 26;
 
     static final int INK = 0xffe8eff9;
     static final int PINK = 0xffff8fb1;
@@ -578,6 +582,44 @@ final class PlayerUiKit {
                     paint.setStyle(Paint.Style.FILL);
                     c.drawRoundRect(new RectF(6f, 4f, 10f, 20f), 1.5f, 1.5f, paint);
                     c.drawRoundRect(new RectF(14f, 4f, 18f, 20f), 1.5f, 1.5f, paint);
+                    break;
+                case ICON_SEEK_BACK:
+                case ICON_SEEK_FWD:
+                    // 圆环箭头 + 「10」秒
+                    oval.set(2.5f, 2.5f, 21.5f, 21.5f);
+                    c.drawArc(oval, 40f, 280f, false, paint);
+                    paint.setStyle(Paint.Style.FILL);
+                    path.reset();
+                    if (type == ICON_SEEK_BACK) {
+                        path.moveTo(2.5f, 7.5f);
+                        path.lineTo(7.2f, 9.8f);
+                        path.lineTo(3.6f, 12.4f);
+                    } else {
+                        path.moveTo(21.5f, 7.5f);
+                        path.lineTo(16.8f, 9.8f);
+                        path.lineTo(20.4f, 12.4f);
+                    }
+                    path.close();
+                    c.drawPath(path, paint);
+                    paint.setTextAlign(Paint.Align.CENTER);
+                    paint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+                    paint.setTextSize(7.2f);
+                    c.drawText("10", 12f, 14.2f, paint);
+                    paint.setTextAlign(Paint.Align.LEFT);
+                    break;
+                case ICON_CHEVRON_DOWN:
+                    path.reset();
+                    path.moveTo(6f, 9f);
+                    path.lineTo(12f, 15f);
+                    path.lineTo(18f, 9f);
+                    c.drawPath(path, paint);
+                    break;
+                case ICON_CHEVRON_UP:
+                    path.reset();
+                    path.moveTo(6f, 15f);
+                    path.lineTo(12f, 9f);
+                    path.lineTo(18f, 15f);
+                    c.drawPath(path, paint);
                     break;
                 default:
                     break;

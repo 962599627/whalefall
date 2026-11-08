@@ -1272,7 +1272,7 @@ final class PlaybackController {
                             && (a.playbackControls == null || !a.playbackControls.dialogOpen))
                         showControls(a, false);
                 };
-        a.ui.postDelayed(a.hideControls, 5000);
+        a.ui.postDelayed(a.hideControls, 3000);
     }
 
     static void clock(MainActivity a, int ticket) {
