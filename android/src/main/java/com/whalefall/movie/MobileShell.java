@@ -3383,6 +3383,12 @@ final class MobileShell {
                 addSettingCard(
                         body,
                         0,
+                        "电视频道管理",
+                        "批量选择、隐藏内置频道、删除自定义频道、查看/编辑频道配置",
+                        () -> ChannelManagerScreen.show(a));
+                addSettingCard(
+                        body,
+                        0,
                         "遥控器按键说明",
                         "电视端遥控器 / 键盘操作对照表，手机端手势也一并列出",
                         () -> {

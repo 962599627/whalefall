@@ -52,6 +52,7 @@ final class TvLive {
     private TvLive() {}
 
     static final String CUSTOM_FILE = "tv_channels.json";
+    static final String HIDDEN = "tv_hidden_channels";
     static final String FAVORITES = "tv_favorites";
     static final String LAST = "tv_last";
 
@@ -151,10 +152,13 @@ final class TvLive {
         final Set<String> favorites = new LinkedHashSet<>();
 
         Store(MainActivity a) {
+            Set<String> hidden = readHidden(a);
             for (Object[] row : CCTV)
-                builtin.add(new Channel((String) row[0], (String) row[1], GROUP_CCTV));
+                if (!hidden.contains((String) row[0]))
+                    builtin.add(new Channel((String) row[0], (String) row[1], GROUP_CCTV));
             for (Object[] row : SAT)
-                builtin.add(new Channel((String) row[0], (String) row[1], GROUP_SAT));
+                if (!hidden.contains((String) row[0]))
+                    builtin.add(new Channel((String) row[0], (String) row[1], GROUP_SAT));
             custom.addAll(readCustom(a));
             favorites.addAll(readFavorites(a));
         }
@@ -623,7 +627,21 @@ final class TvLive {
         impTxtLp.leftMargin = a.dp(4);
         impPill.addView(impTxt, impTxtLp);
         impPill.setOnClickListener(v -> importDialog(a, page.store));
-        actions.addView(impPill, new LinearLayout.LayoutParams(0, a.dp(34), 1f));
+        LinearLayout.LayoutParams impPillLp = new LinearLayout.LayoutParams(0, a.dp(34), 1f);
+        impPillLp.rightMargin = a.dp(6);
+        actions.addView(impPill, impPillLp);
+
+        LinearLayout managePill = a.row();
+        managePill.setGravity(Gravity.CENTER);
+        managePill.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
+        MobileDetailScreen.bindTouchFeedback(managePill);
+        TextView manageTxt = a.text("管理", 11, 0xffc9d6ea);
+        managePill.addView(manageTxt);
+        managePill.setOnClickListener(
+                v -> {
+                    ChannelManagerScreen.show(a);
+                });
+        actions.addView(managePill, new LinearLayout.LayoutParams(0, a.dp(34), 1f));
         rail.addView(actions, new LinearLayout.LayoutParams(-1, a.dp(34)));
 
         TextView tip = a.text("长按频道可收藏", 9.5f, 0xff6f7f99);
@@ -1324,6 +1342,26 @@ final class TvLive {
         } catch (Exception ignored) {
         }
         return list;
+    }
+
+    /** 被隐藏的内置频道（名字集合）。 */
+    static Set<String> readHidden(MainActivity a) {
+        Set<String> set = new LinkedHashSet<>();
+        for (String s : a.prefs.getString(HIDDEN, "").split("\n"))
+            if (!s.isEmpty()) set.add(s);
+        return set;
+    }
+
+    static void saveHidden(MainActivity a, Set<String> hidden) {
+        StringBuilder sb = new StringBuilder();
+        for (String s : hidden) sb.append(s).append('\n');
+        a.prefs.edit().putString(HIDDEN, sb.toString()).apply();
+    }
+
+    static boolean isBuiltin(String name) {
+        for (Object[] row : CCTV) if (row[0].equals(name)) return true;
+        for (Object[] row : SAT) if (row[0].equals(name)) return true;
+        return false;
     }
 
     /** 切换收藏状态：先改内存（store），再按原格式落盘，返回是否已收藏。 */
