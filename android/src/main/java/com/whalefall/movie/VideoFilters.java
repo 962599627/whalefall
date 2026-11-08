@@ -137,7 +137,8 @@ final class VideoFilters {
         Map<String, String> values = new LinkedHashMap<>();
         for (Definition def : definitions) {
             String value = selected.get(def.dimension);
-            if (def.remote && value != null && !value.isEmpty()) values.put(def.key, value);
+            if (def.remote && value != null && !value.isEmpty())
+                values.put(def.key, value.split(",", 2)[0]);
         }
         return values;
     }
@@ -160,7 +161,15 @@ final class VideoFilters {
                         def.dimension.equals("class")
                                 ? video.genre
                                 : def.dimension.equals("area") ? video.area : video.year;
-                if (!matches(raw, def.labelFor(value), def.dimension)) {
+                boolean any = false;
+                for (String one : value.split(",")) {
+                    if (one.isEmpty()) continue;
+                    if (matches(raw, def.labelFor(one), def.dimension)) {
+                        any = true;
+                        break;
+                    }
+                }
+                if (!any) {
                     match = false;
                     break;
                 }

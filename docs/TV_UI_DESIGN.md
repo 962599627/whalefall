@@ -160,14 +160,160 @@
 
 | 项 | 调整前 | 调整后 |
 | --- | --- | --- |
-| 面板圆角 | `glassBg(..., a.dp(24))`（多乘了一次 density，圆角过大） | `glassBg(..., 24f)`，真 24dp 圆角；加 18dp 阴影、描边 `#33FFFFFF` |
+| 面板形态 | 浮空卡片（左右 8dp、底部 96dp） | **贴底 bottom sheet**：bottomMargin 0、手机全宽 / 平板居中限宽 760dp，只圆顶角 24dp、底边直角；展开时盖住底部 Dock 与摘要条 |
+| 面板圆角 | `glassBg(..., a.dp(24))`（多乘了一次 density，圆角过大） | 顶角真 24dp 圆角（`setCornerRadii` 只设上两角）；加 18dp 阴影、描边 `#33FFFFFF` |
 | 遮罩 | 纯黑 40% | 深海蓝 `#7305070C` |
 | chip | 30dp 高、无描边白 22% 填充、12sp | **复用 `TvUiKit.pill`**：34dp 高、玻璃 `#1AFFFFFF + #2EFFFFFF` 描边 / 樱花粉渐变选中、12.5sp |
 | 行标签 | 12.5sp、`#A9B7D0` | 11sp、`#8D9CB6` + 0.06 字距，与「频道分类」一致 |
-| 标题区 | 只有「筛选」 | 18sp 标题 + 11sp 提示「已选 N 项 · 点选即生效」（未选时显示「可多选」） |
+| 标题区 | 只有「筛选」 | 18sp 标题（有选中时「筛选 · 已选 N 项」）+ 11sp 提示「点选即生效 · 可多选 / 点『全部』可取消」 |
 | 按钮 | 30dp 高 | 与列表页一致的 34dp 玻璃/樱花粉胶囊；无选中时「重置」降到 45% 透明度 |
 | 动效 | 淡入 + 上滑 220ms | 淡入 160ms + 上滑 240ms；关闭时反向淡出 + 下沉 180ms |
 
 行距：行与行 6dp，chip 之间 7dp，chip 行高 34dp——与电视页的分组胶囊、操作胶囊保持同一节奏。
+
+## 10. 第四轮：底部筛选入口 / 双击筛选反馈 / 网页全屏注入
+
+### 10.1 「筛选要在底部显示」→ 常驻摘要条 + 展开浮层（已实现）
+
+**判断：不要**把三排筛选 chip 永久铺在底部（占掉 ~200dp、和 Dock 抢空间、首页变重）；
+也**不要**只保留「点按钮才弹出」的浮层（用户已经反馈「要在底部显示」，说明入口不够显眼）。
+采用**常驻 44dp 摘要条 + 点击展开底部浮层**：底部永远有一个筛选入口，选中后同一条变成条件摘要，
+不额外占高度，符合 B 站 / 腾讯视频这类「筛选栏常驻 + 面板展开」的成熟模式。同时把筛选浮层从
+96dp 的浮空卡片改成**贴底 bottom sheet**（bottomMargin 0、只圆顶角 24dp），展开时盖住 Dock 与摘要条，
+视觉上真正「在底部」。
+
+- 组件：新增 `FilterSummaryBar.java`，在 `MobileShell.renderHomeTab()` 里挂到 `contentContainer`
+  底部（`Gravity.BOTTOM`），`switchTab` 清空页面时同步置空引用。
+- 点击整条 → 调用 `showHomeFilters(null)` 打开筛选浮层；浮层打开时盖住摘要条，关闭后摘要条回来。
+
+| 元素 | 尺寸 / 颜色 |
+| --- | --- |
+| 摘要条容器 | 高 44dp，左右外边距 16dp，圆角 999（胶囊），填充 `#1AFFFFFF` + 1dp `#33FFFFFF` 描边，6dp elevation，内边距左 14 / 右 12dp |
+| 距底部 | 摘要条：手机 `16 + 64×navScale + 10` ≈ 90dp（悬浮 Dock 16 + Dock 64 + 10 间隙）；平板侧栏布局 16dp。筛选浮层改为贴底（bottomMargin 0），打开时盖住 Dock 与摘要条，不会露出半条边 |
+| 筛选图标 | Canvas 16dp，未选 `#A9B7D0`，已选 `#FF8FB1` |
+| 「筛选」文字 | 12.5sp BOLD `#E6EDF9`，去字体内边距，图标右侧 9dp |
+| 未选占位 | 11.5sp `#7F8FA9`「类型 / 地区 / 年份」，单行省略 |
+| 已选条件 chip | 最多 2 个；高 26dp、11sp `#FFB3C8`、填充 `#26FF8FB1` + `#4DFFB3C8` 描边、圆角 999、左右内边距 9dp、间距 6dp、单 chip 最宽 92dp |
+| 溢出计数 | `+N` 11sp `#8D9CB6`，玻璃底 `#1AFFFFFF + #2EFFFFFF` |
+| 展开箭头 | Canvas 上折角 14dp，未选 `#7F8FA9`，已选 `#FFB3C8` |
+| 内容避让 | 首页滚动内容底部 padding = 摘要条下边距 + 44 + 18（手机 ≈ 152dp，平板 ≈ 78dp），保证最后一行不被盖 |
+
+实现说明：`FilterSummaryBar.refresh(definitions)` 用 `VideoFilters.Definition.labelFor` 的等价逻辑把
+远程筛选的 value 还原成中文 label；schema 还没加载完时先显示原始 value，数据到达后 `renderCategoryChips`
+会再刷一遍。`filterSummaryBar` 在 `switchTab` 清空 `contentContainer` 时同步置空，避免跨 tab 脏引用。
+
+### 10.2 「分类标签点两下显示筛选」的视觉反馈（建议参数）
+
+**判断：需要反馈，但双击不应是唯一入口。** 双击是隐藏手势，用户第一次几乎不可能发现；
+所以 10.1 的常驻摘要条作为显性入口，双击只当快捷键。双击成功时给三层轻反馈：
+
+1. **chip 下方 2dp 粉色小条**：颜色 `#FF8FB1`，左右各内缩 14dp（相对 chip），距 chip 底 5dp，
+   圆角 1dp；`alpha 0→1` 100ms；保持 2.6 秒后 `alpha→0` 160ms 再 `GONE`（不常驻，避免和选中态混淆）。
+   实现建议：把 `addCategoryChip` 里的 `TextView chip` 包一层 `FrameLayout`，小条是第二个子 View
+   （`Gravity.BOTTOM`，`LayoutParams(-1, dp(2))`，左右 margin 14dp，bottomMargin 5dp，初始 `GONE`）。
+2. **chip 轻压**：`scale 0.97` 70ms → 回弹 1.0 90ms，配合 `bindTouchFeedback` 的 alpha 0.72 一起用。
+3. **Toast**：文案固定「已打开筛选」，短 toast；不要每次换长文案。
+4. （可选）一次性引导：首次进入主页在分类栏下方加一行 10.5sp `#7F8FA9`「双击分类可直接打开筛选」，
+   6 秒后随 `animate().alpha(0)` 移除，`Prefs` 里记 `home_hint_doubletap_filters=true` 只显示一次。
+   如果不想加这一行，至少首次双击时 toast 一次即可。
+
+注意：双击分支若切换了分类会触发 `refreshChips.run()` 重建 chip（小条被一起重建掉），
+建议在重建后对「当前分类 chip」补一次 2dp 小条，或者把反馈改挂在分类栏容器上（与 chip 生命周期解耦）。
+
+### 10.3 播放器「网页内全屏」注入建议（给 INJECT_JS）
+
+真机仍看到 CCTV 站点导航，说明当前「隐藏 `header/nav` + 给播放器 `position:fixed`」的写法被页面结构
+抵消了，常见三个原因：
+
+1. 央视网顶部导航不是语义标签，而是 `<div class="...">` / 自定义 class，`header,nav` 选择器打不中；
+2. 播放器某个祖辈有 `transform` / `filter` / `contain`，`position:fixed` 会退化成相对祖先定位；
+3. 页面自己的浮层 / 导航 z-index 比播放器高，或播放器内联样式覆盖了注入样式。
+
+**推荐策略（按优先级，逐级兜底）：**
+
+1. **F 键**（现有逻辑）——保留，K 帧级全屏最省事；
+2. **点播放器自带「网页全屏」按钮**——CCTV h5player 常用类名是成对出现的
+   `player_pagefullscreen_no` / `player_pagefullscreen_yes`、`fullscreen_no` / `fullscreen_yes`
+   （`_no` 表示未开启）。点击要发完整鼠标序列（部分播放器监听 `mousedown`），并且实际按钮可能是
+   `<i>` 图标，需要 `el.closest('a,button,div')` 后再点；
+3. **Reparent（把播放器挪到 body 顶层）+ 隐藏兄弟节点**——不依赖站点 class：
+   先把播放器 `/最高只含一个 video 的祖先/` 挪到 `document.body`，再隐藏 body 其它子节点，
+   这样页面的导航、页脚、广告和堆叠上下文全部失效；
+4. **CSS 兜底**：`position:fixed; inset:0; width:100vw; height:100vh; z-index:2147483000`，
+   同时 `documentElement/body` 设 `overflow:hidden; margin:0`。
+
+可用的参考 JS（在 WebView `evaluateJavascript` 里执行，末尾不要包 IIFE 返回值）：
+
+```js
+(function(){
+  try{
+    var player = document.querySelector('#h5player_player,.h5player_player,.h5player,#player,.video-player');
+    if(!player){ var v=document.querySelector('video'); player = v && v.closest('div[class*="player"],div[class*="h5"]') || v; }
+    if(!player) return;
+    /* 1) 先点站点自己的网页全屏按钮（_no 表示未开启） */
+    var sels=['.player_pagefullscreen_no','.player_fullscreen_no','.fullscreen_no',
+              '.h5player_fullscreen','.h5player_btn_fullscreen','.vjs-fullscreen-control',
+              '[class*="pagefullscreen_no"]','[class*="fullscreen_no"]',
+              '[title*="全屏"]','[aria-label*="全屏"]'];
+    for(var i=0;i<sels.length;i++){
+      var el=document.querySelector(sels[i]);
+      if(!el) continue;
+      var b=el.closest('a,button,div')||el;
+      ['mousedown','mouseup','click'].forEach(function(t){
+        b.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window}));
+      });
+      break;
+    }
+    /* 2) 找到“最高、且只包一个 video”的祖先，挪到 body 顶层 */
+    var panel=player;
+    while(panel.parentElement && panel.parentElement!==document.body &&
+          panel.parentElement.querySelectorAll('video').length===1){
+      panel=panel.parentElement;
+    }
+    if(panel.parentNode!==document.body) document.body.appendChild(panel);
+    panel.style.cssText += ';position:fixed!important;left:0!important;top:0!important;'+
+      'width:100vw!important;height:100vh!important;margin:0!important;padding:0!important;'+
+      'z-index:2147483000!important;background:#000!important;transform:none!important;';
+    /* 3) 隐藏 body 下所有与播放器无关的兄弟节点（导航/页脚/广告） */
+    var kids=document.body.children;
+    for(var k=0;k<kids.length;k++){
+      var node=kids[k];
+      if(node===panel || node.contains(panel)) continue;
+      if(node.tagName==='SCRIPT'||node.tagName==='STYLE') continue;
+      node.style.setProperty('display','none','important');
+    }
+    /* 4) 视频铺满 + 页面滚动锁 */
+    var vs=panel.querySelectorAll('video');
+    for(var j=0;j<vs.length;j++){
+      vs[j].style.width='100%';vs[j].style.height='100%';
+      vs[j].style.objectFit='contain';vs[j].style.maxWidth='none';
+    }
+    document.documentElement.style.overflow='hidden';
+    document.body.style.overflow='hidden';
+    document.body.style.margin='0';
+    /* 5) 自检：播放器没铺满就说明页面重渲染了，交给下一次重试 */
+    var r=panel.getBoundingClientRect();
+    if(r.width<innerWidth*0.95||r.height<innerHeight*0.95){
+      document.body.appendChild(panel);
+      panel.style.width='100vw';panel.style.height='100vh';
+    }
+  }catch(e){}
+})();
+```
+
+补充说明：
+
+- **重试**：页面会在 loading 结束后重渲染播放器，`onPageFinished` 后至少再跑 3 次（0.8s / 2.5s / 4.5s），
+  另外 `setInterval` 1.5s 跑 6 次，或监听 `window.resize` 重新执行；每次先判断 `document.body.children` 是否被还原。
+- **选择器验证**：上面的 `player_pagefullscreen_no` / `fullscreen_no` 是按央视网 h5player 的公开页面惯例整理的，
+  最终以真机 WebView 调试（`chrome://inspect` 或 `WebView.setWebContentsDebuggingEnabled(true)`）在控制台执行
+  `document.querySelectorAll('[class*="fullscreen"]')` 的结果为准，把实际 class 补进 `sels` 即可。
+- **iframe**：如果播放器在站内同源 iframe 里，先 `document.querySelectorAll('iframe')`，对每个
+  `if.contentDocument`（try/catch）重复步骤 2–4；跨域 iframe 只能退化成 F 键方案。
+- **点播/卫视页**：芒果、浙江等站点 DOM 完全不同，建议把上面的 `sels` 做成数组配置，逐站追加，
+  不要试图用一个选择器打所有站。
+- 注意 `display:none` 会连站点自己的弹幕/清晰度面板一起隐藏（如果它们在 body 顶层），
+  若用户需要网页内的清晰度切换，改为只隐藏「导航高度 > 120px 且不含 video」的兄弟节点。
+
 
 

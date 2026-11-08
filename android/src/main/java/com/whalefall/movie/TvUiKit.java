@@ -262,6 +262,77 @@ final class TvUiKit {
         }
     }
 
+    /** 筛选图标：三条横线 + 三个滑块圆点。 */
+    static final class FilterGlyph extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint dot = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int color;
+
+        FilterGlyph(Context c, int color) {
+            super(c);
+            this.color = color;
+            float density = c.getResources().getDisplayMetrics().density;
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(1.6f * density);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setColor(color);
+            dot.setStyle(Paint.Style.FILL);
+            dot.setColor(color);
+        }
+
+        void setColor(int color) {
+            this.color = color;
+            paint.setColor(color);
+            dot.setColor(color);
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+            if (w <= 0 || h <= 0) return;
+            float[][] rows = {{0.28f, 0.36f}, {0.50f, 0.64f}, {0.72f, 0.46f}};
+            for (float[] row : rows) {
+                float y = h * row[0];
+                canvas.drawLine(w * 0.14f, y, w * 0.86f, y, paint);
+                canvas.drawCircle(w * row[1], y, h * 0.075f, dot);
+            }
+        }
+    }
+
+    /** 上折角箭头（筛选摘要条展开提示）。 */
+    static final class ChevronUpGlyph extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int color;
+
+        ChevronUpGlyph(Context c, int color) {
+            super(c);
+            this.color = color;
+            float density = c.getResources().getDisplayMetrics().density;
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(1.8f * density);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setColor(color);
+        }
+
+        void setColor(int color) {
+            this.color = color;
+            paint.setColor(color);
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+            if (w <= 0 || h <= 0) return;
+            paint.setColor(color);
+            canvas.drawLine(w * 0.18f, h * 0.66f, w * 0.5f, h * 0.34f, paint);
+            canvas.drawLine(w * 0.5f, h * 0.34f, w * 0.82f, h * 0.66f, paint);
+        }
+    }
+
     /** 放大镜图标：纯 Canvas 画，避免 emoji 与系统字体差异。 */
     static final class SearchGlyph extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);

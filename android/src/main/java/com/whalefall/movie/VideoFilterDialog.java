@@ -1,5 +1,6 @@
 package com.whalefall.movie;
 
+import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -34,6 +35,19 @@ final class VideoFilterDialog {
             List<VideoFilters.Definition> definitions,
             Map<String, String> selections,
             Runnable changed) {
+        show(a, definitions, selections, changed, 0);
+    }
+
+    /**
+     * @param bottomMarginDp 面板距屏幕底部的距离：默认 0 = 贴底 bottom sheet（顶角 24dp、底边直角，
+     *     展开时盖住底部 Dock）；需要浮空卡片时传 90 左右。
+     */
+    static void show(
+            MainActivity a,
+            List<VideoFilters.Definition> definitions,
+            Map<String, String> selections,
+            Runnable changed,
+            int bottomMarginDp) {
         if (a.root == null) return;
 
         final FrameLayout overlay = new FrameLayout(a);
@@ -43,7 +57,7 @@ final class VideoFilterDialog {
 
         final LinearLayout sheet = a.vertical();
         sheet.setPadding(a.dp(18), a.dp(10), a.dp(18), a.dp(16));
-        sheet.setBackground(MobileDetailScreen.glassBg(a, 0xf00b1220, 0x33ffffff, 24f));
+        sheet.setBackground(topSheetBg(a, 0xf00b1220, 0x33ffffff, 24f));
         sheet.setElevation(a.dp(18));
         sheet.setClickable(true);
 
@@ -59,7 +73,10 @@ final class VideoFilterDialog {
 
         LinearLayout titleRow = a.row();
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = a.text("筛选", 18, MainActivity.WHITE);
+        int picked = 0;
+        for (String v : selections.values())
+            if (v != null && !v.isEmpty()) picked += v.split(",").length;
+        TextView title = a.text(picked == 0 ? "筛选" : "筛选 · 已选 " + picked + " 项", 18, MainActivity.WHITE);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setIncludeFontPadding(false);
         titleRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
@@ -111,17 +128,26 @@ final class VideoFilterDialog {
                             hs.addView(chips);
                             for (VideoFilters.Choice choice : def.choices) {
                                 final String value = choice.value;
-                                boolean on =
-                                        value.isEmpty()
-                                                ? !selections.containsKey(def.dimension)
-                                                : value.equals(selections.get(def.dimension));
+                                final java.util.List<String> current =
+                                        new java.util.ArrayList<>();
+                                String stored = selections.get(def.dimension);
+                                if (stored != null && !stored.isEmpty())
+                                    java.util.Collections.addAll(current, stored.split(","));
+                                boolean on = value.isEmpty() ? current.isEmpty() : current.contains(value);
                                 TextView chip = TvUiKit.pill(a, choice.label, 12.5f, on);
                                 chip.setOnClickListener(
                                         v -> {
                                             if (value.isEmpty()) {
                                                 selections.remove(def.dimension);
                                             } else {
-                                                selections.put(def.dimension, value);
+                                                if (current.contains(value)) current.remove(value);
+                                                else current.add(value);
+                                                if (current.isEmpty())
+                                                    selections.remove(def.dimension);
+                                                else
+                                                    selections.put(
+                                                            def.dimension,
+                                                            String.join(",", current));
                                             }
                                             renderRows[0].run();
                                             changed.run();
@@ -137,10 +163,14 @@ final class VideoFilterDialog {
                             if (i > 0) rowLp.topMargin = a.dp(6);
                             rows.addView(row, rowLp);
                         }
+                        int picked = 0;
+                        for (String v : selections.values())
+                            if (v != null && !v.isEmpty()) picked += v.split(",").length;
+                        title.setText(picked == 0 ? "筛选" : "筛选 · 已选 " + picked + " 项");
                         hint.setText(
-                                selections.isEmpty()
+                                picked == 0
                                         ? "点选即生效 · 可多选"
-                                        : "已选 " + selections.size() + " 项 · 点选即生效");
+                                        : "可继续叠加条件 · 点「全部」清空该项");
                         reset.setAlpha(selections.isEmpty() ? 0.45f : 1f);
                     }
                 };
@@ -172,12 +202,17 @@ final class VideoFilterDialog {
                             .start();
                 };
 
+        // 贴底 bottom sheet：平板限制最大宽度并居中，手机全宽；顶角 24dp、底边直角
+        float sheetDensity = a.getResources().getDisplayMetrics().density;
+        int sheetWindowDp = Math.round(a.windowWidth() / sheetDensity);
         FrameLayout.LayoutParams sheetLp =
                 new FrameLayout.LayoutParams(
-                        -1, Math.min(a.windowHeight() * 56 / 100, a.dp(430)), Gravity.BOTTOM);
-        sheetLp.leftMargin = a.dp(8);
-        sheetLp.rightMargin = a.dp(8);
-        sheetLp.bottomMargin = a.dp(96);
+                        sheetWindowDp >= 720 ? a.dp(760) : -1,
+                        Math.min(a.windowHeight() * 58 / 100, a.dp(430)),
+                        Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        sheetLp.leftMargin = 0;
+        sheetLp.rightMargin = 0;
+        sheetLp.bottomMargin = a.dp(bottomMarginDp);
         overlay.addView(sheet, sheetLp);
         a.root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
 
@@ -187,5 +222,17 @@ final class VideoFilterDialog {
         overlay.animate().alpha(1f).setDuration(160).start();
         sheet.setTranslationY(a.dp(56));
         sheet.animate().translationY(0).setDuration(240).start();
+    }
+
+    /** 贴底 bottom sheet 背景：只圆顶角，底边直角，和屏幕底部贴合。 */
+    private static GradientDrawable topSheetBg(
+            MainActivity a, int fill, int stroke, float radiusDp) {
+        float r = a.dp(radiusDp);
+        GradientDrawable gd = new GradientDrawable();
+        gd.setColor(fill);
+        // 顺序：左上、右上、右下、左下（每角 rx/ry）
+        gd.setCornerRadii(new float[] {r, r, r, r, 0, 0, 0, 0});
+        gd.setStroke(Math.max(1, a.dp(0.8f)), stroke);
+        return gd;
     }
 }

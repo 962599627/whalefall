@@ -94,6 +94,11 @@ final class MobileShell {
     private final java.util.Map<String, String> selectedFilters = new java.util.LinkedHashMap<>();
     private String lastChipTap = "";
     private long lastChipTapAt;
+    private Runnable homeFilterApply;
+    /** 底部常驻筛选摘要条（44dp）：入口 + 已选条件摘要。 */
+    private FilterSummaryBar filterSummaryBar;
+    /** 底部常驻筛选摘要条距屏幕底部的距离（手机让开悬浮 Dock，平板侧栏布局贴底）。 */
+    private int filterBarBottomDp = 90;
     private int homeRequest;
     private boolean homeReady;
     private Runnable resumeHome;
@@ -731,6 +736,7 @@ final class MobileShell {
             }
         }
         contentContainer.removeAllViews();
+        filterSummaryBar = null;
         switch (activeTab) {
             case 0:
                 renderHomeTab();
@@ -786,10 +792,31 @@ final class MobileShell {
         a.scroll = scrollView;
         contentContainer.addView(scrollView, new FrameLayout.LayoutParams(-1, -1));
 
+        // 底部常驻筛选摘要条：未选时是入口，已选时展示条件 chips，点击展开筛选浮层
+        final float homeDensity = a.getResources().getDisplayMetrics().density;
+        final boolean sideRailLayout = a.windowWidth() / homeDensity >= 640 && !a.isPortrait();
+        final float homeNavScale =
+                Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
+        filterBarBottomDp =
+                sideRailLayout ? 16 : Math.round(16 + 64 * homeNavScale + 10);
+        filterSummaryBar =
+                new FilterSummaryBar(a, selectedFilters, () -> showHomeFilters(null));
+        FrameLayout.LayoutParams filterBarLp =
+                new FrameLayout.LayoutParams(
+                        -1, a.dp(FilterSummaryBar.HEIGHT_DP), Gravity.BOTTOM);
+        filterBarLp.leftMargin = a.dp(16);
+        filterBarLp.rightMargin = a.dp(16);
+        filterBarLp.bottomMargin = a.dp(filterBarBottomDp);
+        contentContainer.addView(filterSummaryBar.view(), filterBarLp);
+
         final LinearLayout body = a.vertical();
         a.body = body;
         homeBody = body;
-        body.setPadding(0, statusBarHeight() + a.dp(8), 0, a.dp(106));
+        body.setPadding(
+                0,
+                statusBarHeight() + a.dp(8),
+                0,
+                a.dp(filterBarBottomDp + FilterSummaryBar.HEIGHT_DP + 18));
         scrollView.addView(body, new ScrollView.LayoutParams(-1, -2));
 
         // 1. Scrollable Top Header Row (Brand + Site Capsule + Netdisk Capsule + Search Icon)
@@ -967,6 +994,8 @@ final class MobileShell {
                                 selectedFilters.isEmpty()
                                         ? "筛选"
                                         : "筛选 · " + selectedFilters.size());
+                        if (filterSummaryBar != null)
+                            filterSummaryBar.refresh(mobileFilterDefinitions());
                         catRow.removeAllViews();
                         addCategoryChip(catRow, "推荐", "", this, fetchCategoryPage[0]);
                         for (Cms.Category c : currentCategories) {
@@ -982,6 +1011,7 @@ final class MobileShell {
                                     if (fetchCategoryPage[0] != null)
                                         fetchCategoryPage[0].run();
                                 }));
+        homeFilterApply = () -> fetchCategoryPage[0].run();
         fetchCategoryPage[0] =
                 () -> {
                     final int request = ++homeRequest;
@@ -1064,9 +1094,13 @@ final class MobileShell {
                                     final HomeScreen.Snapshot finalHomeSnapshot = homeSnapshot;
                                     final List<Cms.Category> finalCats = cats;
                                     final Cms.Listing finalList = list;
-                                    final List<Cms.Video> filtered =
+                                    List<Cms.Video> filtered =
                                             VideoFilters.apply(
                                                     list.videos, definitions, filterSnapshot);
+                                    final boolean filterEmpty =
+                                            filtered.isEmpty() && !filterSnapshot.isEmpty();
+                                    if (filterEmpty) filtered = list.videos;
+                                    final List<Cms.Video> finalFiltered = filtered;
                                     a.learnTitles(finalList.videos);
                                     a.ui.post(
                                             () -> {
@@ -1092,7 +1126,7 @@ final class MobileShell {
                                                 currentCategories = finalCats;
                                                 renderCategoryChips.run();
                                                 if (pageSnapshot == 1) currentVideos.clear();
-                                                for (Cms.Video v : filtered) {
+                                                for (Cms.Video v : finalFiltered) {
                                                     if (v.action == null || v.action.isEmpty()) {
                                                         currentVideos.add(v);
                                                     }
@@ -1366,8 +1400,12 @@ final class MobileShell {
                                         selectedFilters.isEmpty()
                                                 ? "筛选"
                                                 : "筛选 · " + selectedFilters.size());
+                    if (filterSummaryBar != null)
+                        filterSummaryBar.refresh(mobileFilterDefinitions());
+                    if (homeFilterApply != null) homeFilterApply.run();
                     if (after != null) after.run();
-                });
+                },
+                0);
     }
 
     private List<VideoFilters.Definition> mobileFilterDefinitions() {
