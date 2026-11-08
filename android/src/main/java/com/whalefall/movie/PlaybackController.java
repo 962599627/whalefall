@@ -1028,6 +1028,7 @@ final class PlaybackController {
                                         final MoviePlayer ready = candidate;
                                         a.ui.post(
                                                 () -> {
+                                                    try {
                                                     if (ticket != a.generation
                                                             || revision != surfaceRevision
                                                             || a.isFinishing()
@@ -1216,6 +1217,18 @@ final class PlaybackController {
                                                             });
                                                     a.playStatus.setText("正在加载播放…");
                                                     ready.prepareAsync();
+                                                    } catch (Throwable error) {
+                                                        AppLog.w(
+                                                                "Playback",
+                                                                "player wiring failed",
+                                                                error);
+                                                        try {
+                                                            ready.release();
+                                                        } catch (Throwable ignored) {
+                                                        }
+                                                        failInPlaceSwitch(
+                                                                a, "播放器初始化异常，已跳过该片源");
+                                                    }
                                                 });
                                     } catch (Exception ex) {
                                         AppLog.w("PlaybackController", "player init failed", ex);

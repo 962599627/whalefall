@@ -120,6 +120,8 @@ final class MobileShell {
         if (resumeHome != null) resumeHome.run();
         a.root = retainedRoot;
         a.setContentView(retainedRoot);
+        // 复用旧页面时补一次背景层：修「返回后静态壁纸黑屏」（不重建内容）
+        a.ensureBackdrop(retainedRoot);
         a.applyMobileSystemBars(false);
         a.scroll = homeScroll;
         a.body = homeBody;
@@ -3640,7 +3642,7 @@ final class MobileShell {
             glyph = UiIcon.drawable(activity, glyphKind(kind));
         }
 
-        /** Tab 顺序：主页 / 搜索 / 直播 / 片库 / 设置。 */
+        /** Tab 顺序：主页(0) / 搜索(1) / 直播(2) / 片库(3) / 设置(4) / 电视(5)。 */
         static int glyphKind(int kind) {
             switch (kind) {
                 case 0:
@@ -3651,6 +3653,8 @@ final class MobileShell {
                     return UiIcon.LIVE;
                 case 3:
                     return UiIcon.LIBRARY;
+                case 5:
+                    return UiIcon.TV;
                 default:
                     return UiIcon.TUNE;
             }

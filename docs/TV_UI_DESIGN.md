@@ -633,7 +633,7 @@ seek、双击暂停、左右滑快进、上下滑亮度/音量、自动淡出与
 | --- | --- |
 | 真三段进度 | `[时间][DefaultTimeBar weight=1][时间]`，去掉时间压在轨道上的 68dp 内边距 hack |
 | 中央播放簇 | 暂停/播放从图标行移到屏幕正中 72dp 实心圆（保留），两侧加 48dp「-10s / +10s」，直播隐藏 |
-| 图标行 | 10 格（宽屏均分 / 窄屏横滚），格子 48dp、图标 24dp、白色、无文字；删除 56dp 不透明黑条 |
+| 图标行 | 8 格（宽屏均分 / 窄屏横滚），格子 48dp、图标 22dp、白色、无文字；删除 56dp 不透明黑条 |
 | 折叠 | 28×40dp → 48dp 圆形触控目标，收起只隐藏时钟与图标行（进度条常驻） |
 | 顶部 | 删除假「— Mbps」；改为真实清晰度 chip；更多按钮 48dp |
 | 状态机 | 3s 自动隐藏、暂停/弹层/拖拽不隐藏、`progressOnlyMode`（TV）保留 |
@@ -661,6 +661,40 @@ seek、双击暂停、左右滑快进、上下滑亮度/音量、自动淡出与
 | 时钟/Mbps 视觉散 | 大时钟块加 **`#99000000` 圆角 14dp 底 + 1dp 10% 白描边 + 3dp 阴影**、内边距 12/6dp，保持右下；「— Mbps」移到右上「更多」左边、**10.5sp `#8D9CB6`**。 |
 | 进度条可读性差 | 轨道 **6dp**：底轨 `#80FFFFFF`、缓冲 `#CCFFFFFF`、已播 **`#FFB3C8`**；拖拽点默认 **16dp**、拖拽 **22dp**（白 + 1dp `#66000000` 描边）；SeekBar 高 **40dp**、左右内边距 **68dp**；两侧时间 **14sp 粗等宽**白字 + `#B3000000` 圆角 8dp 底 + 6dp 内边距；拖拽气泡按轨道内边距重新定位。 |
 | 「影片结束」偏小 | 11→**11.5sp**、颜色改 `#C7D2E3`。 |
+
+## 16. 第六轮：全局图标矢量化 + 播放器密度微调 + 稳定性修复
+
+### 16.1 全局图标（不再 Canvas 手绘）
+
+统一走 `UiIcon.drawable(context, kind)` + `UiIcon.drawCentered()`，颜色仍按焦点/选中动态 tint：
+
+| 位置 | 图标 |
+| --- | --- |
+| `HomeDock.Icon`（首页右/底部 Dock 6 项） | home / search / live_tv / favorite / cloud / settings |
+| `MobileShell.NavGlyph`（5 个 Tab） | home / search / live_tv / video_library / settings |
+| `MobileShell.SettingIconView`（设置卡片） | layers / cloud / play_circle / tune / tv / refresh |
+| `TvUiKit` Plus/Import/Filter/ChevronUp/Search glyph | add / file_download / filter_list / keyboard_arrow_up / search |
+| `FilterSummaryBar` | filter_list + chevron_up（颜色改用 `UiTokens` 语义色） |
+
+新增 `res/drawable/ic_whale_{home,search,live,favorite,cloud,library,plus,import,filter,chevron_up,chevron_down,tv,layers}.xml`
+（Material 路径，Apache-2.0，出处见 `docs/WHALEFALL_DESIGN_SYSTEM.md` §6）。
+
+### 16.2 播放器密度
+
+- 图标行 **10 → 8 格**（上集/下集/选集/倍速/换源/字幕/画面/更多），图标 **24 → 22dp**；
+  弹幕、音轨收进「更多」面板（功能不变，入口更清晰，格与格之间更透气）。
+- 「画面比例」图标重绘为「画幅边框 + 两侧比例刻度」，避免填充挖洞在小尺寸下丢失细节。
+- 「弹幕」图标换 Material `chat_bubble`（实心气泡，小尺寸更易辨认）。
+
+### 16.3 稳定性
+
+- `PlaybackController.openPlayer`：`Site/Video/Episode` 空值兜底、`Episode.url/media` 判空；
+  播放页构造整体 try-catch → 失败时 log + toast「该片源暂不可播放，已返回」，不再整页闪退。
+- `PlaybackController.playerPage`：`s.api` 判空（非 Emby 站点 api 为 null 时曾必崩）、`LocalProxy.rewrite(ep.url)` 判空。
+- `resolvePlayer / changeEpisode`：`episode` 空值/url 空值兜底。
+- 主线程 uncaught handler：崩溃前把堆栈 + 最近 200 条 `AppLog` 写到 `files/crash-last.txt`，方便无 logcat 时排查。
+- 背景层：`installBackdrop` 先去重（同 tag 旧层全部移除）再固定插入 index 0；
+  新增 `ensureBackdrop(root)` 供 `MobileShell.resume()` 复用旧页面时补铺，修「返回后静态壁纸黑屏」。
 
 
 

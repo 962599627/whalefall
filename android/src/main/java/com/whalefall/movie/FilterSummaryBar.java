@@ -43,10 +43,10 @@ final class FilterSummaryBar {
         MobileDetailScreen.bindTouchFeedback(root);
         root.setOnClickListener(v -> onExpand.run());
 
-        icon = new TvUiKit.FilterGlyph(a, 0xffff8fb1);
+        icon = new TvUiKit.FilterGlyph(a, UiTokens.ACCENT);
         root.addView(icon, new LinearLayout.LayoutParams(a.dp(18), a.dp(18)));
 
-        TextView label = a.text("筛选", 13, 0xfff5f7fc);
+        TextView label = a.text("筛选", 13, UiTokens.TEXT_PRIMARY);
         label.setTypeface(null, android.graphics.Typeface.BOLD);
         label.setIncludeFontPadding(false);
         LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(-2, -2);
@@ -60,16 +60,16 @@ final class FilterSummaryBar {
         chipsLp.rightMargin = a.dp(8);
         root.addView(chips, chipsLp);
 
-        placeholder = a.text("类型 / 地区 / 年份", 11.5f, 0xff8d9cb6);
+        placeholder = a.text("类型 / 地区 / 年份", 11.5f, UiTokens.TEXT_TERTIARY);
         placeholder.setSingleLine(true);
         placeholder.setEllipsize(android.text.TextUtils.TruncateAt.END);
 
-        countView = a.text("", 11, 0xffffb3c8);
+        countView = a.text("", 11, UiTokens.ACCENT_SOFT);
         countView.setIncludeFontPadding(false);
         LinearLayout.LayoutParams countLp = new LinearLayout.LayoutParams(-2, -2);
         countLp.rightMargin = a.dp(8);
         root.addView(countView, countLp);
-        chevron = new TvUiKit.ChevronUpGlyph(a, 0xffff8fb1);
+        chevron = new TvUiKit.ChevronUpGlyph(a, UiTokens.ACCENT);
         root.addView(chevron, new LinearLayout.LayoutParams(a.dp(14), a.dp(14)));
 
         refresh(null);
@@ -84,12 +84,12 @@ final class FilterSummaryBar {
         if (chips == null) return;
         chips.removeAllViews();
         boolean active = !selections.isEmpty();
-        icon.setColor(active ? 0xffff8fb1 : 0xffa9b7d0);
+        icon.setColor(active ? UiTokens.ACCENT : UiTokens.TEXT_SECONDARY);
         int picked = 0;
         for (String v : selections.values())
             if (v != null && !v.isEmpty()) picked += v.split(",").length;
         countView.setText(picked == 0 ? "筛选" : "已选 " + picked);
-        countView.setTextColor(picked == 0 ? 0xffa9b7d0 : 0xffffb3c8);
+        countView.setTextColor(picked == 0 ? UiTokens.TEXT_SECONDARY : UiTokens.ACCENT_SOFT);
         if (!active) {
             chips.addView(placeholder);
             return;
@@ -97,7 +97,11 @@ final class FilterSummaryBar {
         int shown = 0;
         for (Map.Entry<String, String> entry : selections.entrySet()) {
             if (shown >= 2) break;
-            TextView chip = a.text(displayLabel(definitions, entry.getKey(), entry.getValue()), 11.5f, 0xffffb3c8);
+            TextView chip =
+                    a.text(
+                            displayLabel(definitions, entry.getKey(), entry.getValue()),
+                            11.5f,
+                            UiTokens.ACCENT_SOFT);
             chip.setSingleLine(true);
             chip.setEllipsize(android.text.TextUtils.TruncateAt.END);
             chip.setMaxWidth(a.dp(92));
@@ -111,7 +115,7 @@ final class FilterSummaryBar {
         }
         int extra = selections.size() - shown;
         if (extra > 0) {
-            TextView more = a.text("+" + extra, 11, 0xff8d9cb6);
+            TextView more = a.text("+" + extra, 11, UiTokens.TEXT_TERTIARY);
             more.setGravity(Gravity.CENTER);
             more.setPadding(a.dp(8), 0, a.dp(8), 0);
             more.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));

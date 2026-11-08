@@ -850,24 +850,73 @@ public final class MainActivity extends Activity {
         generation++;
     }
 
+    static final String BACKDROP_TAG = "whale-backdrop";
+
     /** 统一给页面根容器铺背景：主题渐变 + 静态/视频壁纸（详情页等也复用）。 */
     void installBackdrop(android.widget.FrameLayout target) {
-        target.setBackground(Skin.backdrop(this));
+        if (target == null) return;
+        // 同一 root 重复铺背景时先清掉旧层：避免叠加成黑屏 / 多层壁纸闪烁
+        for (int i = target.getChildCount() - 1; i >= 0; i--) {
+            View child = target.getChildAt(i);
+            if (BACKDROP_TAG.equals(child.getTag())) target.removeViewAt(i);
+        }
+        View base = new View(this);
+        base.setTag(BACKDROP_TAG);
+        base.setBackground(Skin.backdrop(this));
+        base.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        // 保证背景永远在最底层
+        target.addView(base, 0, new FrameLayout.LayoutParams(-1, -1));
         if (videoWallpaperEnabled()) {
             if (videoWallpaper == null || videoWallpaper.isReleased()) {
                 releaseWallpaper();
                 videoWallpaper = new VideoWallpaper(this);
-                target.addView(videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
+                target.addView(videoWallpaper, Math.min(1, target.getChildCount()),
+                        new FrameLayout.LayoutParams(-1, -1));
             } else {
                 videoWallpaper.attachTo(target);
             }
         } else {
             releaseWallpaper();
             if (prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) {
-                target.addView(
-                        ImageLoader.createAtmosphere(this),
+                View atmosphere = ImageLoader.createAtmosphere(this);
+                atmosphere.setTag(BACKDROP_TAG);
+                target.addView(atmosphere, Math.min(1, target.getChildCount()),
                         new FrameLayout.LayoutParams(-1, -1));
             }
+        }
+    }
+
+    /**
+     * 返回已有页面（MobileShell.resume 复用 root）时只补背景层，不重建内容：
+     * 保证渐变底 + 壁纸仍存在且在最底层，修「返回后静态壁纸黑屏」。
+     */
+    void ensureBackdrop(android.widget.FrameLayout target) {
+        if (target == null) return;
+        boolean hasBase = false;
+        for (int i = 0; i < target.getChildCount(); i++) {
+            if (BACKDROP_TAG.equals(target.getChildAt(i).getTag())) {
+                hasBase = true;
+                break;
+            }
+        }
+        if (!hasBase) {
+            View base = new View(this);
+            base.setTag(BACKDROP_TAG);
+            base.setBackground(Skin.backdrop(this));
+            base.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            target.addView(base, 0, new FrameLayout.LayoutParams(-1, -1));
+            if (!videoWallpaperEnabled() && prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) {
+                View atmosphere = ImageLoader.createAtmosphere(this);
+                atmosphere.setTag(BACKDROP_TAG);
+                target.addView(atmosphere, Math.min(1, target.getChildCount()),
+                        new FrameLayout.LayoutParams(-1, -1));
+            }
+        }
+        if (videoWallpaperEnabled()
+                && (videoWallpaper == null || videoWallpaper.isReleased())) {
+            videoWallpaper = new VideoWallpaper(this);
+            target.addView(videoWallpaper, Math.min(1, target.getChildCount()),
+                    new FrameLayout.LayoutParams(-1, -1));
         }
     }
 

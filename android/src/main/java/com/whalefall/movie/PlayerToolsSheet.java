@@ -57,6 +57,8 @@ final class PlayerToolsSheet {
         sheet.setCornerRadii(corners);
         sheet.setStroke(Math.max(1, a.dp(1)), UiTokens.STROKE_SOFT);
         card.setBackground(sheet);
+        // 卡片自身吃掉点击，避免点在卡片空白处触发「点遮罩关闭」
+        card.setClickable(true);
         UiCompat.setElevation(card, a.dp(16));
 
         // 拖拽把手
