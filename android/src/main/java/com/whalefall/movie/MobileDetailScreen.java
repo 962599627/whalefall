@@ -479,10 +479,23 @@ final class MobileDetailScreen {
 
         final int topPad = getStatusBarHeight(a);
         final int screenH = a.getResources().getDisplayMetrics().heightPixels;
+        // 响应式：宽屏（平板横向）用更矮更宽的居中内容列；手机保持沉浸式全宽
+        final int widthDp =
+                Math.round(a.windowWidth() / a.getResources().getDisplayMetrics().density);
+        final boolean wide = widthDp >= 600 && !a.isPortrait();
+        final int contentMaxW = a.dp(900);
+        final int contentSide =
+                wide
+                        ? Math.max(a.dp(24), (a.windowWidth() - contentMaxW) / 2)
+                        : a.dp(18);
         final int posterWindowH =
-                Math.max(a.dp(560), Math.min(a.dp(740), Math.round(screenH * 0.77f)));
+                wide
+                        ? Math.max(a.dp(430), Math.min(a.dp(600), Math.round(screenH * 0.62f)))
+                        : Math.max(a.dp(560), Math.min(a.dp(740), Math.round(screenH * 0.77f)));
         final int foregroundHeroH =
-                Math.max(a.dp(420), Math.min(a.dp(535), Math.round(posterWindowH * 0.74f)));
+                wide
+                        ? Math.max(a.dp(320), Math.min(a.dp(430), Math.round(posterWindowH * 0.72f)))
+                        : Math.max(a.dp(420), Math.min(a.dp(535), Math.round(posterWindowH * 0.74f)));
         final int initAmbient = defaultAmbientForTitle(listing.title);
 
         a.root = new FrameLayout(a);
@@ -530,33 +543,67 @@ final class MobileDetailScreen {
         // 2A. Foreground Hero Container (bottom-aligned over the lower poster transition zone)
         FrameLayout heroStage = new FrameLayout(a);
         heroStage.setTag("detail-hero");
-        mainCol.addView(heroStage, new LinearLayout.LayoutParams(-1, foregroundHeroH));
+        mainCol.addView(
+                heroStage,
+                new LinearLayout.LayoutParams(-1, wide ? -2 : foregroundHeroH));
 
-        LinearLayout heroCenterCol = a.vertical();
-        heroCenterCol.setGravity(Gravity.CENTER_HORIZONTAL);
-        heroCenterCol.setPadding(a.dp(20), 0, a.dp(20), a.dp(14));
-        FrameLayout.LayoutParams heroCenterLp =
-                new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        heroStage.addView(heroCenterCol, heroCenterLp);
+        final LinearLayout heroCenterCol = a.vertical();
+        final LinearLayout wideInfoCol = wide ? heroCenterCol : null;
+        if (wide) {
+            heroCenterCol.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            heroCenterCol.setPadding(a.dp(24), 0, a.dp(8), 0);
+            LinearLayout heroRow = a.row();
+            heroRow.setGravity(Gravity.CENTER_VERTICAL);
+            FrameLayout.LayoutParams heroRowLp =
+                    new FrameLayout.LayoutParams(
+                            Math.min(contentMaxW, a.windowWidth() - a.dp(48)),
+                            -2,
+                            Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            heroRowLp.bottomMargin = a.dp(14);
+            heroStage.addView(heroRow, heroRowLp);
+            ImageView tabletPoster = new ImageView(a);
+            tabletPoster.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            tabletPoster.setBackground(a.bg(0xff122434, 16));
+            tabletPoster.setClipToOutline(true);
+            LinearLayout.LayoutParams tabletPosterLp =
+                    new LinearLayout.LayoutParams(a.dp(290), a.dp(435));
+            heroRow.addView(tabletPoster, tabletPosterLp);
+            if (listing.poster != null && !listing.poster.isEmpty())
+                a.poster(listing.poster, tabletPoster);
+            heroRow.addView(heroCenterCol, new LinearLayout.LayoutParams(0, -2, 1f));
+        } else {
+            heroCenterCol.setGravity(Gravity.CENTER_HORIZONTAL);
+            heroCenterCol.setPadding(a.dp(20), 0, a.dp(20), a.dp(14));
+            FrameLayout.LayoutParams heroCenterLp =
+                    new FrameLayout.LayoutParams(
+                            -1, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        View heroScrim = new View(a);
+        heroScrim.setBackground(
+                new GradientDrawable(
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[] {0x00000000, 0x4d0b1220, 0xcc0b1220}));
+        heroStage.addView(heroScrim, new FrameLayout.LayoutParams(-1, -1));
+            heroStage.addView(heroCenterCol, heroCenterLp);
+        }
 
-        final TextView titleView = a.text(listing.title, 28, MainActivity.WHITE);
+        final TextView titleView = a.text(listing.title, wide ? 30 : 28, MainActivity.WHITE);
         titleView.setTag("detail-title");
         titleView.setTypeface(null, Typeface.BOLD);
-        titleView.setGravity(Gravity.CENTER);
+        titleView.setGravity(wide ? Gravity.START : Gravity.CENTER);
         titleView.setMaxLines(2);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
-        titleView.setShadowLayer(a.dp(14), 0, a.dp(4), 0xb3000000);
+        titleView.setShadowLayer(a.dp(18), 0, a.dp(5), 0xf0000000);
         heroCenterCol.addView(titleView, new LinearLayout.LayoutParams(-1, -2));
 
         final LinearLayout pillsRow = a.row();
-        pillsRow.setGravity(Gravity.CENTER);
+        pillsRow.setGravity(wide ? Gravity.START : Gravity.CENTER);
         LinearLayout.LayoutParams pillsRowLp = new LinearLayout.LayoutParams(-1, -2);
         pillsRowLp.topMargin = a.dp(12);
         heroCenterCol.addView(pillsRow, pillsRowLp);
 
         // TMDB + Rating + Douban + Site Name Row
         LinearLayout ratingRow = a.row();
-        ratingRow.setGravity(Gravity.CENTER);
+        ratingRow.setGravity(wide ? Gravity.START : Gravity.CENTER);
         LinearLayout.LayoutParams ratingLp = new LinearLayout.LayoutParams(-2, -2);
         ratingLp.topMargin = a.dp(10);
         heroCenterCol.addView(ratingRow, ratingLp);
@@ -567,8 +614,13 @@ final class MobileDetailScreen {
 
         // 2B. Lower Content Column (Synopsis + White Capsule Play Button + Episodes Section)
         LinearLayout lowerBody = a.vertical();
-        lowerBody.setPadding(a.dp(18), 0, a.dp(18), 0);
-        mainCol.addView(lowerBody, new LinearLayout.LayoutParams(-1, -2));
+        if (wide) {
+            lowerBody.setPadding(a.dp(4), a.dp(10), a.dp(24), a.dp(24));
+            wideInfoCol.addView(lowerBody, new LinearLayout.LayoutParams(-1, -2));
+        } else {
+            lowerBody.setPadding(contentSide, 0, contentSide, 0);
+            mainCol.addView(lowerBody, new LinearLayout.LayoutParams(-1, -2));
+        }
 
         final LinearLayout synopsisWrap = a.vertical();
         synopsisWrap.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -805,10 +857,16 @@ final class MobileDetailScreen {
                     playBtn.setEllipsize(TextUtils.TruncateAt.MIDDLE);
                     playBtn.setGravity(Gravity.CENTER);
                     playBtn.setIncludeFontPadding(false);
-                    playBtn.setTextSize(14.5f);
+                    playBtn.setTextSize(wide ? 16f : 14.5f);
                     playBtn.setTypeface(null, Typeface.BOLD);
-                    playBtn.setTextColor(0xff0c1524);
-                    playBtn.setBackground(a.bg(0xf5ffffff, 999));
+                    playBtn.setTextColor(0xff31141f);
+                    GradientDrawable playFill =
+                            new GradientDrawable(
+                                    GradientDrawable.Orientation.LEFT_RIGHT,
+                                    new int[] {0xffffc7d6, 0xfff59ab5});
+                    playFill.setCornerRadius(a.dp(999));
+                    playBtn.setBackground(playFill);
+                    playBtn.setElevation(a.dp(6));
                     playBtn.setPadding(a.dp(18), 0, a.dp(18), 0);
                     bindTouchFeedback(playBtn);
                     playBtn.setText(playLabel);
@@ -825,7 +883,9 @@ final class MobileDetailScreen {
                                                     .episodes
                                                     .get(0));
                             });
-                    playBtnWrap.addView(playBtn, new LinearLayout.LayoutParams(-1, a.dp(48)));
+                    playBtnWrap.addView(
+                            playBtn,
+                            new LinearLayout.LayoutParams(-1, a.dp(wide ? 56 : 48)));
 
                     if (remembered != null) {
                         EpisodeDisplay bmDisp = parseEpisodeDisplay(remembered.episode, 1);
