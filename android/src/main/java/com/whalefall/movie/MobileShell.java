@@ -3223,8 +3223,10 @@ final class MobileShell {
                                                             ? "关于鲸落"
                                                             : settingsSubPage == 7
                                                                     ? "观影统计"
-                                                                    : settingsSubPage == 9
-                                                                            ? "片源与直播配置教程"
+                                                                    : settingsSubPage == 10
+                                                                            ? "存储空间与缓存清理"
+                                                                            : settingsSubPage == 9
+                                                                                    ? "片源与直播配置教程"
                                                                             : settingsSubPage == 8
                                                                                     ? "遥控器按键说明"
                                                                             : "备份、更新与诊断";
@@ -3550,6 +3552,8 @@ final class MobileShell {
                 addKeymapPage(body);
             } else if (settingsSubPage == 9) {
                 addSourceGuidePage(body);
+            } else if (settingsSubPage == 10) {
+                addStoragePage(body);
             } else {
                 addSectionHeader(body, "更新、备份与诊断");
                 addSettingCard(
@@ -3573,6 +3577,15 @@ final class MobileShell {
                         "查看运行诊断日志",
                         "排查片源网络请求、代理与播放解码日志",
                         () -> new SettingsScreen(a).diagnostics());
+                addSettingCard(
+                        body,
+                        5,
+                        "存储空间与缓存清理",
+                        "查看播放/插件/日志/上传占用，一键清理临时缓存",
+                        () -> {
+                            settingsSubPage = 10;
+                            refreshInPlace.run();
+                        });
                 addSettingCard(
                         body,
                         5,
@@ -3734,6 +3747,111 @@ final class MobileShell {
                         })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    /** 设置 → 存储空间与缓存清理：统计各类占用并提供清理。 */
+    private void addStoragePage(LinearLayout body) {
+        final java.io.File cache = a.getCacheDir();
+        final java.io.File csp = new java.io.File(a.getFilesDir(), "csp");
+        final java.io.File updates = new java.io.File(cache, "updates");
+        long cacheBytes = dirSize(cache) - dirSize(updates);
+        long cspBytes = dirSize(csp);
+        long logBytes = logBytes();
+        long pushBytes = dirSize(PushFiles.root(a));
+        long total = cacheBytes + cspBytes + logBytes;
+        addSectionHeader(body, "缓存占用");
+        body.addView(
+                a.text(
+                        "可清理缓存合计：" + android.text.format.Formatter.formatFileSize(a, Math.max(0, total)),
+                        13.5f,
+                        0xffffb3c8));
+        a.gap(body, 8);
+        addStorageRow(body, "临时缓存（图片/网页/JS 模块/磁力临时文件）", cacheBytes,
+                () -> clearDir(cache, false));
+        addStorageRow(body, "已下载的更新安装包", dirSize(updates), () -> clearDir(updates, true));
+        addStorageRow(body, "插件缓存（JS/PY/JAR 运行缓存）", cspBytes, () -> clearDir(csp, true));
+        addStorageRow(body, "运行日志", logBytes, this::clearLogs);
+        addStorageRow(body, "文件管理里上传的文件", pushBytes, () -> FilesScreen.show(a));
+        a.gap(body, 12);
+        addSettingCard(
+                body,
+                5,
+                "一键清理全部缓存",
+                "清理临时缓存、插件缓存和日志；不会删除观看历史、收藏和上传的文件",
+                () -> {
+                    clearDir(cache, true);
+                    clearDir(csp, true);
+                    clearLogs();
+                    a.toast("缓存已清理");
+                    a.refresh();
+                });
+    }
+
+    private void addStorageRow(LinearLayout body, String label, long bytes, Runnable action) {
+        LinearLayout row = a.row();
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
+        row.setBackground(glassBg(0xcc16283f, 0xb3121d2e, a.dp(14), a.dp(0.8f), 0x33ffffff));
+        LinearLayout text = a.vertical();
+        TextView t = a.text(label, 12.5f, 0xffe6edf9);
+        text.addView(t);
+        TextView size = a.text(android.text.format.Formatter.formatFileSize(a, Math.max(0, bytes)), 11.5f, 0xffffb3c8);
+        size.setPadding(0, a.dp(3), 0, 0);
+        text.addView(size);
+        row.addView(text, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView clean = a.text("清理", 12, 0xffff8fb1);
+        clean.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+        clean.setBackground(glassBg(0x1affffff, 0x33ffffff, a.dp(999), a.dp(0.8f), 0));
+        MobileDetailScreen.bindTouchFeedback(clean);
+        clean.setOnClickListener(v -> action.run());
+        row.addView(clean);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.bottomMargin = a.dp(6);
+        body.addView(row, lp);
+    }
+
+    private static long dirSize(java.io.File dir) {
+        if (dir == null || !dir.exists()) return 0;
+        if (dir.isFile()) return dir.length();
+        long total = 0;
+        java.io.File[] children = dir.listFiles();
+        if (children == null) return 0;
+        for (java.io.File child : children) total += dirSize(child);
+        return total;
+    }
+
+    private long logBytes() {
+        long bytes = 0;
+        java.io.File dir = a.getFilesDir();
+        java.io.File[] files = dir == null ? null : dir.listFiles();
+        if (files == null) return 0;
+        for (java.io.File f : files) {
+            String name = f.getName();
+            if (f.isFile() && (name.endsWith(".log") || name.equals("crash-last.txt")))
+                bytes += f.length();
+        }
+        return bytes;
+    }
+
+    private void clearLogs() {
+        java.io.File dir = a.getFilesDir();
+        java.io.File[] files = dir == null ? null : dir.listFiles();
+        if (files == null) return;
+        for (java.io.File f : files) {
+            String name = f.getName();
+            if (f.isFile() && (name.endsWith(".log") || name.equals("crash-last.txt"))) f.delete();
+        }
+    }
+
+    private void clearDir(java.io.File dir, boolean removeRoot) {
+        if (dir == null || !dir.exists()) return;
+        java.io.File[] children = dir.listFiles();
+        if (children != null)
+            for (java.io.File child : children) {
+                if (child.isDirectory()) clearDir(child, true);
+                else child.delete();
+            }
+        if (removeRoot) dir.delete();
     }
 
     /** 设置 → 片源与直播配置教程：面向小白的图文步骤 + 可复制示例。 */
