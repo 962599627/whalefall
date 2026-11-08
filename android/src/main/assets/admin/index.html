@@ -339,7 +339,7 @@ createApp({
         this.state=await r.json();
       }catch(e){this.say('连接失败：'+e);}
     },
-    get ftpAddress(){
+    ftpAddress(){
       return this.state.ip? 'ftp://'+this.state.ip+':2121/' : 'ftp://…:2121/';
     },
     async loadFiles(){
@@ -347,7 +347,7 @@ createApp({
         const r=await fetch(apiUrl('/api/files'),{cache:'no-store'});
         const j=await r.json();
         this.files=j.files||[];
-        this.ftp=this.ftpAddress;
+        this.ftp=this.ftpAddress();
       }catch(e){}
     },
     pickFile(ev){
