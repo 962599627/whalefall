@@ -363,8 +363,8 @@ public final class JsEngine implements SourceEngine {
                     });
             context.evaluate(
                     "globalThis.__moviePythonHtmlParser=function(){const navigator={appName:'Netscape'};\n"
-                            + asset("catpaw/drpy-dependencies.js")
-                            + "\nglobalThis.__moviePythonHtmlParser=()=>DRPYDeps.cheerio;return DRPYDeps.cheerio;};",
+                            + asset("python-host/parser.js")
+                            + "\nglobalThis.__moviePythonHtmlParser=()=>MoviePythonHtml;return MoviePythonHtml;};",
                     "python-html-loader.js");
             for (String file :
                     new String[] {

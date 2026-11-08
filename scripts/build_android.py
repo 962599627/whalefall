@@ -28,6 +28,8 @@ def run(*args, capture=False):
     return r.stdout if capture else None
 
 def main():
+    from prepare_python_html import verify as verify_python_html
+    verify_python_html()
     if 'MARCOMOVIE_ANDROID_JAR' not in os.environ:
         from prepare_android_platform import prepare
         prepare()

@@ -56,6 +56,24 @@ The native iOS and Android regression fixtures load the same production
 assets. Their results must be recorded for the commit under review; older
 runtime results do not establish this new feature's native compatibility.
 
+## Smaller parser initialization
+
+Python HTML now loads its own 257,284-byte Cheerio slim dependency instead of
+initializing the full 1,269,961-byte DRPY bundle. It retains the same pinned
+Cheerio/htmlparser2 versions and HTML-mode options, while omitting unrelated
+template, JSONPath, cryptography and parse5 initialization. The source's Skulpt
+8-second execution limit, native deadline, parser bounds and per-source state
+isolation remain unchanged. A smaller asset is not by itself proof of faster
+device execution or a resolved timeout.
+
+`scripts/prepare_python_html.py` rebuilds it using the existing npm lock and
+esbuild 0.25.12; `--check` verifies its recipe, dependency records, code and
+license digests without network access. Android and Flutter build preparation
+run this check. The complete reviewed npm notices accompany the new asset.
+Node tests compare the existing HTML/regular-expression oracles and real HTTP
+contracts. Native phone, TV and iOS results are recorded separately; the phone
+probe now also records Python HTML initialization duration, including failures.
+
 FY remains incomplete. Its imported module still needs file/module adaptation,
 cookie persistence, verification/OCR behavior and an exact plugin dispatch
 path. Adding HTML operations does not enable `csp_FyGuard`, complete any of the

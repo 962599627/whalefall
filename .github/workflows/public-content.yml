@@ -12,6 +12,8 @@ jobs:
           python-version: '3.12'
       - run: python scripts/check_public_content.py
       - run: python scripts/test_drpy_assets.py
+      - run: python scripts/prepare_python_html.py --check
+      - run: python scripts/test_python_html_assets.py
       - run: python scripts/update_drpy_assets.py --check
 
   format:

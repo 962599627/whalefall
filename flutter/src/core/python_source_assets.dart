@@ -9,7 +9,7 @@ Future<List<String>> loadPythonSourcePrelude() => _prelude ??= _loadPrelude();
 Future<List<String>> _loadPrelude() async {
   try {
     final assets = await Future.wait([
-      rootBundle.loadString('assets/catpaw/drpy-dependencies.js'),
+      rootBundle.loadString('assets/python-host/parser.js'),
       for (final name in [
         'skulpt.min.js',
         'skulpt-stdlib.js',
@@ -25,8 +25,8 @@ Future<List<String>> _loadPrelude() async {
       '''globalThis.__moviePythonHtmlParser = function() {
 const navigator = {appName:'Netscape'};
 ${assets.first}
-globalThis.__moviePythonHtmlParser = () => DRPYDeps.cheerio;
-return DRPYDeps.cheerio;
+globalThis.__moviePythonHtmlParser = () => MoviePythonHtml;
+return MoviePythonHtml;
 };''',
       ...assets.skip(1),
     ];

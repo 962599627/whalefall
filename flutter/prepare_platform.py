@@ -5,6 +5,7 @@ import plistlib
 import shutil
 import struct
 import subprocess
+import sys
 ROOT = Path(__file__).resolve().parent
 REPO_ROOT = ROOT.parent
 LOGO_MARK = REPO_ROOT / "android" / "src" / "main" / "res" / "drawable-nodpi" / "logo_mark.png"
@@ -54,6 +55,7 @@ def _write_windows_ico(ico_path: Path, source_png: Path) -> None:
 
 
 def main() -> None:
+    subprocess.run([sys.executable, str(REPO_ROOT / 'scripts/prepare_python_html.py'), '--check'], check=True)
     src = ROOT / "src"
     lib = ROOT / "lib"
     if src.exists():

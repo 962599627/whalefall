@@ -68,14 +68,21 @@ public final class SourceHostProbe extends Instrumentation {
         site.type = 3;
         site.api = Cms.fileUri(file);
         site.ext = extension;
-        JsEngine engine =
-                new JsEngine(
-                        (Application) getTargetContext().getApplicationContext(),
-                        new Cms.Config(),
-                        site,
-                        timeoutMillis);
-        engines.add(engine);
-        return engine;
+        long started = android.os.SystemClock.elapsedRealtime();
+        try {
+            JsEngine engine =
+                    new JsEngine(
+                            (Application) getTargetContext().getApplicationContext(),
+                            new Cms.Config(),
+                            site,
+                            timeoutMillis);
+            engines.add(engine);
+            return engine;
+        } finally {
+            if (name.equals("fixture.py"))
+                report.put(
+                        "python_html_init_ms", android.os.SystemClock.elapsedRealtime() - started);
+        }
     }
 
     interface CheckedCall {
