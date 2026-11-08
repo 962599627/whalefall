@@ -150,7 +150,7 @@ final class VideoFilterDialog {
                                                 else
                                                     selections.put(
                                                             def.dimension,
-                                                            String.join(",", current));
+                                                            android.text.TextUtils.join(",", current));
                                             }
                                             renderRows[0].run();
                                             changed.run();

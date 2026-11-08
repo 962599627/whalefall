@@ -34,7 +34,10 @@ final class AdminPanel {
         final String url = console.url();
         MiniFtpServer.start(a);
         final String ftpUrl =
-                MiniFtpServer.RUNNING == null ? "" : "ftp://" + AdminConsole.lanIp() + ":2121/";
+                MiniFtpServer.RUNNING == null
+                        ? ""
+                        : "ftp://" + AdminConsole.lanIp() + ":2121/（用户 wf / 密码 "
+                                + MiniFtpServer.password() + "）";
 
         LinearLayout panel = a.vertical();
         panel.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -102,7 +105,7 @@ final class AdminPanel {
         panel.addView(copy, copyLp);
 
         if (!ftpUrl.isEmpty()) {
-            TextView ftp = a.text("FTP 上传：" + ftpUrl + "（用户名/密码任意）", 12, 0xffffb3c8);
+            TextView ftp = a.text("FTP 上传：" + ftpUrl, 12, 0xffffb3c8);
             ftp.setGravity(Gravity.CENTER);
             ftp.setPadding(0, a.dp(10), 0, 0);
             ftp.setTextIsSelectable(true);

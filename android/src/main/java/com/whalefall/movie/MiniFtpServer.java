@@ -17,10 +17,21 @@ final class MiniFtpServer implements Closeable {
 
     private final MainActivity a;
     private final ServerSocket socket;
+    private final String password;
     private volatile boolean closed;
+
+    /** 面板上展示的一次性口令（每次打开管理员后台重新生成）。 */
+    static String password() {
+        MiniFtpServer server = RUNNING;
+        return server == null ? "" : server.password;
+    }
 
     MiniFtpServer(MainActivity host) throws IOException {
         a = host;
+        StringBuilder seed = new StringBuilder();
+        java.util.Random random = new java.util.Random();
+        for (int i = 0; i < 6; i++) seed.append(random.nextInt(10));
+        password = seed.toString();
         socket = new ServerSocket();
         socket.setReuseAddress(true);
         socket.bind(new InetSocketAddress("0.0.0.0", PORT));
@@ -72,7 +83,17 @@ final class MiniFtpServer implements Closeable {
                     new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
             OutputStream out = s.getOutputStream();
             ServerSocket dataServer = null;
-            reply(out, "220 WhaleFall FTP ready");
+            java.net.InetAddress remote = s.getInetAddress();
+            boolean localPeer =
+                    remote != null
+                            && (remote.isLoopbackAddress() || remote.isSiteLocalAddress());
+            if (!localPeer) {
+                reply(out, "421 only LAN allowed");
+                return;
+            }
+            boolean authenticated = false;
+            String user = "";
+            reply(out, "220 WhaleFall FTP ready (user wf)");
 
             String line;
             while ((line = in.readLine()) != null) {
@@ -80,9 +101,25 @@ final class MiniFtpServer implements Closeable {
                 int space = line.indexOf(' ');
                 String cmd = (space < 0 ? line : line.substring(0, space)).toUpperCase(Locale.ROOT);
                 String arg = space < 0 ? "" : line.substring(space + 1).trim();
+                if (cmd.equals("USER")) {
+                    user = arg;
+                    reply(out, "331 password required");
+                    continue;
+                }
+                if (cmd.equals("PASS")) {
+                    if (user.equals("wf") && arg.equals(password)) {
+                        authenticated = true;
+                        reply(out, "230 logged in");
+                    } else {
+                        reply(out, "530 login incorrect");
+                    }
+                    continue;
+                }
+                if (!authenticated) {
+                    reply(out, "530 please login");
+                    continue;
+                }
                 switch (cmd) {
-                    case "USER":
-                    case "PASS":
                     case "TYPE":
                     case "MODE":
                     case "STRU":
@@ -171,8 +208,14 @@ final class MiniFtpServer implements Closeable {
                         }
                         reply(out, "150 Opening data connection");
                         try (Socket data = dataServer == null ? null : dataServer.accept()) {
-                            java.nio.file.Files.copy(
-                                    f.toPath(), data.getOutputStream());
+                            if (data != null) {
+                                try (InputStream fin = new FileInputStream(f)) {
+                                    byte[] chunk = new byte[8192];
+                                    int n;
+                                    while ((n = fin.read(chunk)) > 0)
+                                        data.getOutputStream().write(chunk, 0, n);
+                                }
+                            }
                         }
                         reply(out, "226 Transfer complete");
                         break;

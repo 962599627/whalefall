@@ -240,22 +240,8 @@ public final class MainActivity extends Activity {
                                             activity.toast("片源扩展异常已拦截，请切换其他片源");
                                     });
                         }
-                        while (true) {
-                            try {
-                                android.os.Looper.loop();
-                                return;
-                            } catch (Throwable nextError) {
-                                if (!ListingRoute.hasPluginFrame(nextError)) {
-                                    if (previous != null)
-                                        previous.uncaughtException(thread, nextError);
-                                    return;
-                                }
-                                AppLog.w(
-                                        "PluginGuard",
-                                        "extension main-thread follow-up error",
-                                        nextError);
-                            }
-                        }
+                        if (previous != null) previous.uncaughtException(thread, error);
+                        return;
                     }
                     MainActivity activity = activeActivity;
                     if (thread == main) writeCrashLog(thread, error);

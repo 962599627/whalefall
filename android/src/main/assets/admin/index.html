@@ -314,6 +314,8 @@ footer{margin-top:26px;text-align:center;font-size:11px;color:#5f6f88;line-heigh
 
 <script>
 const {createApp} = Vue;
+const ADMIN_TOKEN='__ADMIN_TOKEN__';
+const apiUrl=(url)=>url+(url.includes('?')?'&':'?')+'t='+ADMIN_TOKEN;
 createApp({
   data(){
     return {
@@ -333,7 +335,7 @@ createApp({
   methods:{
     async load(){
       try{
-        const r=await fetch('/api/state',{cache:'no-store'});
+        const r=await fetch(apiUrl('/api/state'),{cache:'no-store'});
         this.state=await r.json();
       }catch(e){this.say('连接失败：'+e);}
     },
@@ -342,7 +344,7 @@ createApp({
     },
     async loadFiles(){
       try{
-        const r=await fetch('/api/files',{cache:'no-store'});
+        const r=await fetch(apiUrl('/api/files'),{cache:'no-store'});
         const j=await r.json();
         this.files=j.files||[];
         this.ftp=this.ftpAddress;
@@ -369,7 +371,7 @@ createApp({
     },
     async previewMd(f){
       try{
-        const r=await fetch('/api/files/text?name='+encodeURIComponent(f.name));
+        const r=await fetch(apiUrl('/api/files/text?name='+encodeURIComponent(f.name)));
         this.mdText=await r.text();
         this.mdName=f.name;
       }catch(e){this.say('预览失败');}
@@ -381,7 +383,7 @@ createApp({
     },
     async post(path,body){
       try{
-        const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+        const r=await fetch(apiUrl(path),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
         const j=await r.json();
         if(!j.ok) throw new Error(j.error||'操作失败');
         if(j.state) this.state=j.state; else await this.load();

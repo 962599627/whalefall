@@ -16,6 +16,8 @@ import org.json.*;
  * <p>只监听本机局域网；打开「管理员后台」时启动，关闭时停止。
  */
 final class AdminConsole implements Closeable {
+    /** 每次打开后台生成的一次性访问令牌：URL 里带 ?t=…，无令牌一律 403。 */
+    final String token;
     private final MainActivity a;
     private final ServerSocket socket;
     private volatile boolean closed;
@@ -34,6 +36,11 @@ final class AdminConsole implements Closeable {
 
     AdminConsole(MainActivity host) throws IOException {
         a = host;
+        byte[] seed = new byte[24];
+        new java.security.SecureRandom().nextBytes(seed);
+        StringBuilder sb = new StringBuilder();
+        for (byte b : seed) sb.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
+        token = sb.toString();
         socket = new ServerSocket();
         socket.bind(new InetSocketAddress("0.0.0.0", 0));
         Thread accept =
@@ -69,7 +76,7 @@ final class AdminConsole implements Closeable {
     }
 
     String url() {
-        return "http://" + lanIp() + ":" + port() + "/";
+        return "http://" + lanIp() + ":" + port() + "/?t=" + token;
     }
 
     boolean closed() {
@@ -106,7 +113,11 @@ final class AdminConsole implements Closeable {
             String[] requestLine = lines[0].split(" ");
             if (requestLine.length < 2) return;
             String method = requestLine[0];
-            String path = requestLine[1].split("\\?")[0];
+            String target = requestLine[1];
+            String path = target.split("\\?", 2)[0];
+            final String query = target.contains("?") ? target.substring(target.indexOf('?') + 1) : "";
+            final String hostHeader = header(lines, "host");
+            final String originHeader = header(lines, "origin");
             int length = 0;
             for (String line : lines) {
                 int colon = line.indexOf(':');
@@ -127,14 +138,30 @@ final class AdminConsole implements Closeable {
                 }
                 body = new String(buf, 0, read, StandardCharsets.UTF_8);
             }
-            if (!closed) route(s.getOutputStream(), method, path, body);
+            final java.net.InetAddress remote = s.getInetAddress();
+            boolean localPeer =
+                    remote != null
+                            && (remote.isLoopbackAddress() || remote.isSiteLocalAddress());
+            if (!localPeer) {
+                send(s.getOutputStream(), "text/plain; charset=utf-8", "403 only LAN allowed");
+                return;
+            }
+            if (!closed) route(s.getOutputStream(), method, path, query, originHeader, body);
         } catch (Exception ignored) {
         }
     }
 
-    private void route(OutputStream out, String method, String path, String body) throws IOException {
+    private void route(
+            OutputStream out, String method, String path, String query, String origin, String body)
+            throws IOException {
+        if (!tokenMatches(query, origin)) {
+            send(out, "text/plain; charset=utf-8", "403 invalid token");
+            return;
+        }
         if (path.equals("/") || path.equals("/index.html")) {
-            send(out, "text/html; charset=utf-8", asset("admin/index.html"));
+            String html = new String(asset("admin/index.html"), StandardCharsets.UTF_8);
+            html = html.replace("__ADMIN_TOKEN__", token);
+            send(out, "text/html; charset=utf-8", html);
             return;
         }
         if (path.equals("/vue.global.prod.js") || path.equals("/assets/vue.global.prod.js")) {
@@ -169,6 +196,34 @@ final class AdminConsole implements Closeable {
             return;
         }
         send(out, "text/plain; charset=utf-8", "not found");
+    }
+
+    private boolean tokenMatches(String query, String origin) {
+        if (origin != null && !origin.isEmpty()) {
+            String expectedPort = ":" + port();
+            if (!origin.endsWith(expectedPort)) return false;
+        }
+        String supplied = null;
+        if (query != null && !query.isEmpty())
+            for (String part : query.split("&")) {
+                int eq = part.indexOf('=');
+                String key = eq < 0 ? part : part.substring(0, eq);
+                if (key.equals("t")) {
+                    supplied = eq < 0 ? "" : part.substring(eq + 1);
+                    break;
+                }
+            }
+        return supplied != null && supplied.equals(token);
+    }
+
+    private static String header(String[] lines, String name) {
+        for (String line : lines) {
+            int colon = line.indexOf(':');
+            if (colon <= 0) continue;
+            if (line.substring(0, colon).trim().equalsIgnoreCase(name))
+                return line.substring(colon + 1).trim();
+        }
+        return "";
     }
 
     private JSONObject api(String path, JSONObject body) throws Exception {
@@ -216,6 +271,21 @@ final class AdminConsole implements Closeable {
                 break;
             case "/api/play":
                 PushFiles.playUrl(a, body.getString("url"), body.optString("title", ""));
+                break;
+            case "/api/queue":
+                return queueState();
+            case "/api/queue/add":
+                QueueStore.add(a, body.getString("url"), body.optString("title", ""));
+                refreshUi();
+                break;
+            case "/api/queue/remove":
+                QueueStore.remove(a, body.getString("url"));
+                break;
+            case "/api/queue/clear":
+                QueueStore.clear(a);
+                break;
+            case "/api/queue/next":
+                a.ui.post(() -> QueueStore.playNext(a));
                 break;
             default:
                 throw new IllegalArgumentException("未知接口");
@@ -373,7 +443,7 @@ final class AdminConsole implements Closeable {
 
     private void removeChannel(String name, String url) {
         List<TvLive.Channel> custom = new ArrayList<>(TvLive.readCustom(a));
-        custom.removeIf(ch -> ch.name.equals(name) && ch.url.equals(url));
+        for (int i = custom.size() - 1; i >= 0; i--) { TvLive.Channel c = custom.get(i); if (c.name.equals(name) && c.url.equals(url)) custom.remove(i); }
         TvLive.saveCustom(a, custom);
         refreshUi();
     }
@@ -415,6 +485,20 @@ final class AdminConsole implements Closeable {
         byte[] bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
         PushFiles.save(a, name, bytes);
         refreshUi();
+    }
+
+    private JSONObject queueState() throws Exception {
+        JSONObject out = new JSONObject();
+        out.put("ok", true);
+        JSONArray arr = new JSONArray();
+        for (QueueStore.Item item : QueueStore.list(a)) {
+            JSONObject o = new JSONObject();
+            o.put("url", item.url);
+            o.put("title", item.title);
+            arr.put(o);
+        }
+        out.put("queue", arr);
+        return out;
     }
 
     private String versionName() {

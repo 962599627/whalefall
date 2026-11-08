@@ -7,21 +7,30 @@ import java.util.*;
 /**
  * 「管理后台上传」与「内置文件管理」共用的文件区：应用私有目录 pushed/。
  *
- * <p>管理后台（网页 / FTP）上传的文件保存到这里；App 内文件管理读取同一目录。
+ * <p>支持子目录（文件管理里可以新建文件夹），路径以相对 pushed/ 的 "/" 分隔路径表示。
  */
 final class PushFiles {
     static final long MAX_BYTES = 60L * 1024 * 1024;
 
     private PushFiles() {}
 
-    static File dir(MainActivity a) {
+    static File root(MainActivity a) {
         File dir = new File(a.getFilesDir(), "pushed");
         if (!dir.isDirectory()) dir.mkdirs();
         return dir;
     }
 
-    /** 去掉路径分隔符与危险字符，只允许一层文件名。 */
+    /** 兼容旧调用：根目录。 */
+    static File dir(MainActivity a) {
+        return root(a);
+    }
+
+    /** 清理文件名（单段）。 */
     static String sanitize(String name) {
+        return sanitizeSegment(name);
+    }
+
+    private static String sanitizeSegment(String name) {
         if (name == null) return "";
         String base = new File(name).getName();
         StringBuilder out = new StringBuilder();
@@ -33,41 +42,104 @@ final class PushFiles {
             out.append(c);
         }
         String clean = out.toString().trim();
-        return clean.isEmpty() ? "未命名文件" : clean;
+        if (clean.equals(".") || clean.equals("..")) clean = "";
+        return clean;
     }
 
+    /** 清理相对路径（允许 / 分隔，禁止 .. 与绝对路径）。 */
+    static String sanitizePath(String path) {
+        if (path == null) return "";
+        StringBuilder out = new StringBuilder();
+        for (String part : path.replace('\\', '/').split("/")) {
+            String seg = sanitizeSegment(part);
+            if (seg.isEmpty()) continue;
+            if (out.length() > 0) out.append('/');
+            out.append(seg);
+        }
+        return out.toString();
+    }
+
+    static File resolve(MainActivity a, String relPath) {
+        String clean = sanitizePath(relPath);
+        return clean.isEmpty() ? root(a) : new File(root(a), clean);
+    }
+
+    /** 兼容旧调用（根目录下文件）。 */
     static File file(MainActivity a, String name) {
-        return new File(dir(a), sanitize(name));
+        return resolve(a, name);
     }
 
-    static List<File> list(MainActivity a) {
-        File[] files = dir(a).listFiles();
+    static List<File> list(MainActivity a, String relDir) {
+        File dir = resolve(a, relDir);
+        File[] files = dir.listFiles();
         List<File> out = new ArrayList<>();
-        if (files != null) for (File f : files) if (f.isFile()) out.add(f);
-        Collections.sort(out, (x, y) -> Long.compare(y.lastModified(), x.lastModified()));
+        if (files != null) for (File f : files) if (!f.getName().startsWith(".")) out.add(f);
+        Collections.sort(
+                out,
+                (x, y) -> {
+                    if (x.isDirectory() != y.isDirectory()) return x.isDirectory() ? -1 : 1;
+                    return x.getName().compareToIgnoreCase(y.getName());
+                });
         return out;
     }
 
-    static File save(MainActivity a, String name, byte[] bytes) throws IOException {
+    static List<File> list(MainActivity a) {
+        return list(a, "");
+    }
+
+    static void mkdirs(MainActivity a, String relDir) throws IOException {
+        File dir = resolve(a, relDir);
+        if (dir.isDirectory()) return;
+        if (!dir.mkdirs()) throw new IOException("创建文件夹失败");
+    }
+
+    static void rename(MainActivity a, String relPath, String newName) throws IOException {
+        File from = resolve(a, relPath);
+        if (!from.exists()) throw new IOException("文件不存在");
+        String parent = parentOf(relPath);
+        String clean = sanitizePath(parent.isEmpty() ? newName : parent + "/" + newName);
+        File to = resolve(a, clean);
+        if (to.exists()) throw new IOException("同名文件已存在");
+        if (!from.renameTo(to)) throw new IOException("重命名失败");
+    }
+
+    static void delete(MainActivity a, String relPath) {
+        deleteRecursive(resolve(a, relPath));
+    }
+
+    private static void deleteRecursive(File f) {
+        if (f == null || !f.exists()) return;
+        if (f.isDirectory()) {
+            File[] kids = f.listFiles();
+            if (kids != null) for (File kid : kids) deleteRecursive(kid);
+        }
+        f.delete();
+    }
+
+    static File save(MainActivity a, String relPath, byte[] bytes) throws IOException {
         if (bytes == null) throw new IOException("没有文件内容");
         if (bytes.length > MAX_BYTES) throw new IOException("文件超过 60MB 限制");
-        File target = file(a, name);
+        File target = resolve(a, relPath);
+        File parent = target.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs())
+            throw new IOException("无法创建目录");
         try (FileOutputStream out = new FileOutputStream(target)) {
             out.write(bytes);
         }
         return target;
     }
 
-    static void delete(MainActivity a, String name) {
-        File f = file(a, name);
-        if (f.isFile()) f.delete();
-    }
-
-    static String readText(MainActivity a, String name) throws IOException {
-        File f = file(a, name);
+    static String readText(MainActivity a, String relPath) throws IOException {
+        File f = resolve(a, relPath);
         if (!f.isFile()) throw new IOException("文件不存在");
         if (f.length() > 2L * 1024 * 1024) throw new IOException("文本文件过大");
-        return new String(java.nio.file.Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+        try (InputStream in = new FileInputStream(f)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
+        }
     }
 
     static boolean isMarkdown(String name) {
@@ -88,6 +160,22 @@ final class PushFiles {
         if (bytes < 1024L * 1024 * 1024)
             return String.format(Locale.US, "%.1f MB", bytes / (1024f * 1024f));
         return String.format(Locale.US, "%.2f GB", bytes / (1024f * 1024f * 1024f));
+    }
+
+    static String join(String dir, String name) {
+        return dir == null || dir.isEmpty() ? name : dir + "/" + name;
+    }
+
+    static String parentOf(String relPath) {
+        String clean = sanitizePath(relPath);
+        int slash = clean.lastIndexOf('/');
+        return slash < 0 ? "" : clean.substring(0, slash);
+    }
+
+    static String baseName(String relPath) {
+        String clean = sanitizePath(relPath);
+        int slash = clean.lastIndexOf('/');
+        return slash < 0 ? clean : clean.substring(slash + 1);
     }
 
     /** 推送链接直接播放：构造一个临时来源，交给现有播放器。 */

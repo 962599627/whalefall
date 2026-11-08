@@ -70,6 +70,7 @@ final class AccountPanel {
         TextView detailLabel;
         TextView sourceLabel;
         FrameLayout actionSlot;
+        LinearLayout panRows;
         int state = STATE_GUEST;
         List<Credential> credentials = new ArrayList<>();
         String accountName = "";
@@ -139,6 +140,7 @@ final class AccountPanel {
                 buildEmpty(body);
             } else {
                 buildStatusCard(body);
+                buildPanAccounts(body);
                 buildFunctions(body);
                 buildDanger(body);
                 refresh();
@@ -260,11 +262,111 @@ final class AccountPanel {
 
             TextView hint =
                     a.text(
-                            "本机只能读取本地凭据；登录界面与账号名由配置源提供。",
+                            "本机只能读取本地凭据；登录界面与启用状态由配置源提供。",
                             UiTokens.TYPE_MICRO,
                             UiTokens.TEXT_TERTIARY);
             hint.setPadding(a.dp(2), a.dp(8), a.dp(2), 0);
             body.addView(hint, new LinearLayout.LayoutParams(-1, -2));
+        }
+
+        // ---------------- 4 个网盘账号 ----------------
+
+        void buildPanAccounts(LinearLayout body) {
+            TextView label = a.text("网盘账号 · 4 个网盘", UiTokens.TYPE_MICRO, UiTokens.TEXT_TERTIARY);
+            label.setPadding(a.dp(2), a.dp(20), a.dp(2), a.dp(6));
+            body.addView(label, new LinearLayout.LayoutParams(-1, -2));
+            LinearLayout warn = a.row();
+            warn.setGravity(Gravity.CENTER_VERTICAL);
+            warn.setPadding(a.dp(12), a.dp(9), a.dp(12), a.dp(9));
+            warn.setBackground(UiTokens.round(a, UiTokens.RADIUS_12, 0x1affb454, 0x33ffb454));
+            ImageView info = new ImageView(a);
+            info.setImageResource(UiIcon.res(UiIcon.INFO));
+            info.setColorFilter(0xffffb454, android.graphics.PorterDuff.Mode.SRC_IN);
+            warn.addView(info, new LinearLayout.LayoutParams(a.dp(16), a.dp(16)));
+            TextView warnText =
+                    a.text(
+                            "登录/停用状态由配置源管理；本页展示本机可确认的状态并提供登录引导。",
+                            UiTokens.TYPE_MICRO,
+                            0xffe6d5b8);
+            warnText.setLineSpacing(a.dp(3), 1.3f);
+            LinearLayout.LayoutParams warnTextLp = new LinearLayout.LayoutParams(0, -2, 1f);
+            warnTextLp.leftMargin = a.dp(8);
+            warn.addView(warnText, warnTextLp);
+            LinearLayout.LayoutParams warnLp = new LinearLayout.LayoutParams(-1, -2);
+            warnLp.bottomMargin = a.dp(8);
+            body.addView(warn, warnLp);
+
+            panRows = a.vertical();
+            body.addView(panRows, new LinearLayout.LayoutParams(-1, -2));
+        }
+
+        void rebuildPanRows() {
+            if (panRows == null) return;
+            panRows.removeAllViews();
+            for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES) {
+                boolean logged = driveHasLocalCredential(credentials, drive.key);
+                LinearLayout row = a.row();
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(a.dp(14), a.dp(10), a.dp(12), a.dp(10));
+                row.setMinimumHeight(a.dp(62));
+                row.setBackground(UiTokens.round(a, UiTokens.RADIUS_14, 0x14ffffff));
+                row.setFocusable(true);
+                row.setFocusableInTouchMode(a.isTvDevice());
+                row.setClickable(true);
+                FrameLayout badge = new FrameLayout(a);
+                badge.setBackground(
+                        UiTokens.round(a, UiTokens.RADIUS_12, alpha(drive.color, 0x2e)));
+                ImageView icon = new ImageView(a);
+                icon.setImageResource(UiIcon.res(UiIcon.CLOUD));
+                icon.setColorFilter(drive.color, android.graphics.PorterDuff.Mode.SRC_IN);
+                badge.addView(
+                        icon,
+                        new FrameLayout.LayoutParams(a.dp(22), a.dp(22), Gravity.CENTER));
+                row.addView(badge, new LinearLayout.LayoutParams(a.dp(38), a.dp(38)));
+                LinearLayout col = a.vertical();
+                col.setPadding(a.dp(10), 0, a.dp(8), 0);
+                TextView name = a.text(drive.alias, UiTokens.TYPE_BODY_SM + 1, UiTokens.TEXT_PRIMARY);
+                name.setIncludeFontPadding(false);
+                col.addView(name);
+                TextView sub =
+                        a.text(
+                                drive.provider
+                                        + " · "
+                                        + (logged ? "已登录（本地凭据）" : "未登录 · 由源管理"),
+                                UiTokens.TYPE_MICRO,
+                                logged ? 0xff2ad47a : UiTokens.TEXT_TERTIARY);
+                sub.setSingleLine(true);
+                sub.setEllipsize(TextUtils.TruncateAt.END);
+                LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
+                subLp.topMargin = a.dp(2);
+                col.addView(sub, subLp);
+                row.addView(col, new LinearLayout.LayoutParams(0, -2, 1f));
+                TextView action = a.text(logged ? "管理" : "登录", 11.5f, UiTokens.ACCENT_SOFT);
+                action.setTypeface(null, Typeface.BOLD);
+                action.setGravity(Gravity.CENTER);
+                action.setPadding(a.dp(12), 0, a.dp(12), 0);
+                action.setBackground(UiTokens.round(a, 999, 0x26ff8fb1, 0x4dffb3c8));
+                row.addView(action, new LinearLayout.LayoutParams(-2, a.dp(32)));
+                MobileDetailScreen.bindTouchFeedback(row);
+                row.setOnClickListener(
+                        v -> PanLoginGuide.show(a, site, drive.key, this::refresh));
+                row.setOnFocusChangeListener(
+                        (v, focused) ->
+                                FocusMotion.style(
+                                        a,
+                                        row,
+                                        focused,
+                                        0x14ffffff,
+                                        0x33ffb3c8,
+                                        UiTokens.RADIUS_14,
+                                        UiTokens.TEXT_PRIMARY,
+                                        UiTokens.TEXT_PRIMARY,
+                                        true,
+                                        1.02f));
+                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+                rowLp.bottomMargin = a.dp(8);
+                panRows.addView(row, rowLp);
+            }
         }
 
         // ---------------- 功能列表 ----------------
@@ -312,8 +414,7 @@ final class AccountPanel {
                     UiIcon.view(a, UiIcon.CHEVRON_RIGHT, UiTokens.TEXT_TERTIARY, 18);
             row.addView(chevron, new LinearLayout.LayoutParams(a.dp(18), a.dp(18)));
             MobileDetailScreen.bindTouchFeedback(row);
-            row.setOnClickListener(
-                    v -> runAction(action));
+            row.setOnClickListener(v -> confirmSourcePanel(action, title));
             row.setOnFocusChangeListener(
                     (v, focused) ->
                             FocusMotion.style(
@@ -330,6 +431,16 @@ final class AccountPanel {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
             lp.bottomMargin = a.dp(8);
             body.addView(row, lp);
+        }
+
+        /** 打开源内设置面板前先给提示（白底样式由源绘制，用户有心理预期）。 */
+        void confirmSourcePanel(String action, String label) {
+            PanLoginGuide.confirmSourcePanel(
+                    a,
+                    "打开「" + label + "」",
+                    "该设置面板由配置源提供，界面样式不受本 App 控制（可能为白底系统样式）。"
+                            + "继续后会直接进入源面板。",
+                    () -> runAction(action));
         }
 
         // ---------------- 危险区 ----------------
@@ -367,7 +478,7 @@ final class AccountPanel {
             body.addView(clear, new LinearLayout.LayoutParams(-1, a.dp(48)));
             TextView note =
                     a.text(
-                            "仅清除本机保存的网盘登录数据，不影响其它设置。",
+                            "仅清除本机保存的网盘登录数据（夸父/优汐/嘟嘟/阿狸），不影响其它设置。",
                             UiTokens.TYPE_MICRO,
                             UiTokens.TEXT_TERTIARY);
             note.setPadding(a.dp(2), a.dp(6), a.dp(2), 0);
@@ -477,9 +588,14 @@ final class AccountPanel {
                 actionSlot.addView(enable, new FrameLayout.LayoutParams(-2, a.dp(44)));
             } else {
                 String actionLabel = state == STATE_LOCAL ? "管理" : "登录";
-                Button login = accentButton(actionLabel, "account-login", () -> runAction("LoginShow"));
+                Button login =
+                        accentButton(
+                                actionLabel,
+                                "account-login",
+                                () -> PanLoginGuide.show(a, site, "", this::refresh));
                 actionSlot.addView(login, new FrameLayout.LayoutParams(-2, a.dp(44)));
             }
+            rebuildPanRows();
             // 刷新后把 TV 焦点放回状态卡按钮，避免 dpad 失焦
             if (a.isTvDevice() && dialog != null && dialog.isShowing() && actionSlot.getChildCount() > 0) {
                 View focused =
@@ -903,6 +1019,52 @@ final class AccountPanel {
         } catch (Exception error) {
             return "";
         }
+    }
+
+    /** 从已扫描的凭据里判断某个网盘是否在本机留下登录数据（不猜测源内启用状态）。 */
+    static boolean driveHasLocalCredential(List<Credential> credentials, String driveKey) {
+        if (credentials == null || driveKey == null) return false;
+        for (Credential credential : credentials) {
+            String text =
+                    ((credential.file == null ? "" : credential.file)
+                                    + " "
+                                    + (credential.key == null ? "" : credential.key))
+                            .toLowerCase(Locale.ROOT);
+            String value =
+                    credential.value == null
+                            ? ""
+                            : credential.value.toLowerCase(Locale.ROOT);
+            switch (driveKey) {
+                case "quark":
+                    if (text.contains("quark") || text.contains("夸克") || text.contains("夸父"))
+                        return true;
+                    if (value.contains("quark") || value.contains("kps=")) return true;
+                    break;
+                case "uc":
+                    if (text.contains("uc.cn")
+                            || text.contains("drive.uc")
+                            || text.contains("uc_st")
+                            || text.contains("优汐")) return true;
+                    if (value.contains("uc_st")) return true;
+                    break;
+                case "baidu":
+                    if (text.contains("baidu")
+                            || text.contains("bduss")
+                            || text.contains("嘟嘟")) return true;
+                    if (value.contains("bduss") || value.contains("stoken=")) return true;
+                    break;
+                case "ali":
+                    if (text.contains("aliyun")
+                            || text.contains("alipan")
+                            || text.contains("ali")
+                            || text.contains("阿狸")) return true;
+                    if (value.contains("refresh_token") || value.contains("ali_")) return true;
+                    break;
+                default:
+                    break;
+            }
+        }
+        return false;
     }
 
     /** 从凭据里找可展示的账号名（只接受 user/name/account 之类短值，不展示 token）。 */

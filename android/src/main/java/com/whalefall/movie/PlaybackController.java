@@ -1107,6 +1107,8 @@ final class PlaybackController {
                                                                 stopEmbySession(a);
                                                                 a.playStatus.setText("播放结束");
                                                                 controls.completed();
+                                                                if (QueueStore.playNext(a))
+                                                                    a.toast("继续播放推送队列");
                                                             });
                                                     ready.setOnErrorListener(
                                                             (mp, what, extra) -> {
