@@ -5,9 +5,10 @@
   "versionCode": 10000,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.0.0（手机 / 平板）\n\n基于 Marco Movie 0.5.3（作者 Pilipala，GPL-3.0-only）二次开发。\n\n- 品牌改为「鲸落」：新图标、启动页、应用名、包名 com.whalefall.movie\n- 应用内更新检查指向本仓库，可在设置里检查新版本\n- 功能与上游 0.5.3 一致：点播/直播/磁力/弹幕/脚本源等",
+  "notes": "# 鲸落 1.0.0（手机 / 平板）\n\n基于 Marco Movie 0.5.3（作者 Pilipala，GPL-3.0-only）二次开发。\n\n- 品牌改为「鲸落」：新图标、启动页、应用名、包名 com.whalefall.movie\n- 应用内更新检查指向本仓库\n- 功能与上游 0.5.3 一致：点播 / 直播 / 磁力 / 弹幕 / 脚本源等\n- 安装包分电视版（ARM 32 位）与手机版（arm64 + armv7），请勿混装",
   "size": 61621268,
-  "sha256": "c1647406f27215ae15973f4b76777d63bcf2be9872aaeb24c79f39f75c7df830",
-  "url": "https://github.com/962599627/whalefall/releases/download/v1.0.0/WhaleFall-1.0.0-android-mobile.apk",
+  "sha256": "4a8a0935f5fd3c1c40e40ab2e621038c2cea14329e2ed4f8e1df44adbd75488f",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.0.0/WhaleFall-1.0.0-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.0.0/WhaleFall-1.0.0-android-mobile.apk",
   "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.0.0"
 }
