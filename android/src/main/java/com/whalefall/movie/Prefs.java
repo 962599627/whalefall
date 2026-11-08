@@ -32,6 +32,8 @@ final class Prefs {
     static final String HOME_SHOW_HERO = "home_show_hero";
     static final String HOME_SHOW_TONIGHT = "home_show_tonight";
     static final String SCREENSAVER_ENABLED = "screensaver_enabled";
+    static final String SCREENSAVER_TIMEOUT_MIN = "screensaver_timeout_min";
+    static final String SCREENSAVER_CLOCK_STYLE = "screensaver_clock_style";
     static final String REDUCED = "reduced";
     static final String REDUCED_TRANSPARENCY = "reduced_transparency";
     static final String PLAYER_ENGINE = "player_engine";
@@ -93,6 +95,8 @@ final class Prefs {
         HOME_SHOW_HERO,
         HOME_SHOW_TONIGHT,
         SCREENSAVER_ENABLED,
+        SCREENSAVER_TIMEOUT_MIN,
+        SCREENSAVER_CLOCK_STYLE,
         REDUCED,
         REDUCED_TRANSPARENCY,
         PLAYER_ENGINE,
@@ -132,6 +136,8 @@ final class Prefs {
         HOME_SHOW_HERO,
         HOME_SHOW_TONIGHT,
         SCREENSAVER_ENABLED,
+        SCREENSAVER_TIMEOUT_MIN,
+        SCREENSAVER_CLOCK_STYLE,
                                     REDUCED,
                                     REDUCED_TRANSPARENCY,
                                     AUTO_NEXT,
@@ -151,6 +157,8 @@ final class Prefs {
         ranges.put(WALLPAPER_DIM, new int[] {0, 100});
         ranges.put(TV_ASPECT, new int[] {0, 2});
         ranges.put(TV_FILL, new int[] {0, 2});
+        ranges.put(SCREENSAVER_TIMEOUT_MIN, new int[] {1, 60});
+        ranges.put(SCREENSAVER_CLOCK_STYLE, new int[] {0, 2});
         ranges.put(PLAYER_ENGINE, new int[] {0, 1});
         ranges.put(VIDEO_OUTPUT, new int[] {0, 1});
         ranges.put(DECODER_MODE, new int[] {0, 2});

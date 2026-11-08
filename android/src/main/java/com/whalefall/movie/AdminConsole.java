@@ -187,6 +187,14 @@ final class AdminConsole implements Closeable {
                 send(s.getOutputStream(), "text/plain; charset=utf-8", "403 only LAN allowed");
                 return;
             }
+            String expectedHost = lanIp() + ":" + port();
+            if (!hostHeader.isEmpty()
+                    && !hostHeader.equals(expectedHost)
+                    && !hostHeader.equals("127.0.0.1:" + port())
+                    && !hostHeader.equals("localhost:" + port())) {
+                send(s.getOutputStream(), 403, "text/plain; charset=utf-8", "403 bad host");
+                return;
+            }
             if (closed()) {
                 send(s.getOutputStream(), 403, "text/plain; charset=utf-8", "403 session expired");
                 return;

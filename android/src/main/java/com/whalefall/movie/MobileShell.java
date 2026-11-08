@@ -827,6 +827,13 @@ final class MobileShell {
             TextView hTitle = a.text("历史记录", 18, MainActivity.WHITE);
             hTitle.setTypeface(null, Typeface.BOLD);
             histHeader.addView(hTitle, new LinearLayout.LayoutParams(0, -2, 1));
+            TextView clearHist = a.text("清理", 12.5f, 0xff8d9cb6);
+            clearHist.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+            MobileDetailScreen.bindTouchFeedback(clearHist);
+            clearHist.setOnClickListener(v -> showHistoryCleanup());
+            LinearLayout.LayoutParams clearLp = new LinearLayout.LayoutParams(-2, -2);
+            clearLp.rightMargin = a.dp(10);
+            histHeader.addView(clearHist, clearLp);
             TextView moreHist = a.text("查看全部", 13, 0xffff8fb1);
             moreHist.setTypeface(null, Typeface.BOLD);
             MobileDetailScreen.bindTouchFeedback(moreHist);
@@ -3099,7 +3106,9 @@ final class MobileShell {
                                                     ? "首页设置"
                                                     : settingsSubPage == 6
                                                             ? "关于鲸落"
-                                                            : "备份、更新与诊断";
+                                                            : settingsSubPage == 7
+                                                                    ? "观影统计"
+                                                                    : "备份、更新与诊断";
             TextView subTitle = a.text(subTitleText, 20, Color.WHITE);
             subTitle.setTypeface(null, Typeface.BOLD);
             topNav.addView(subTitle, new LinearLayout.LayoutParams(0, -2, 1));
@@ -3267,6 +3276,29 @@ final class MobileShell {
                 addSettingCard(
                         body,
                         4,
+                        "屏幕保护时长",
+                        "当前：" + a.prefs.getInt(Prefs.SCREENSAVER_TIMEOUT_MIN, 5) + " 分钟（点击切换 1 / 5 / 10 / 30）",
+                        () -> {
+                            int now = a.prefs.getInt(Prefs.SCREENSAVER_TIMEOUT_MIN, 5);
+                            int next = now == 5 ? 10 : now == 10 ? 30 : now == 30 ? 1 : 5;
+                            a.prefs.edit().putInt(Prefs.SCREENSAVER_TIMEOUT_MIN, next).apply();
+                            refreshInPlace.run();
+                        });
+                addSettingCard(
+                        body,
+                        4,
+                        "屏保时钟样式",
+                        new String[] {"数字时钟 · 大号", "极简 · 仅时间", "超大字 · 时间+日期"}[
+                                Math.max(0, Math.min(2, a.prefs.getInt(Prefs.SCREENSAVER_CLOCK_STYLE, 0)))]
+                                + "（点击切换）",
+                        () -> {
+                            int now = a.prefs.getInt(Prefs.SCREENSAVER_CLOCK_STYLE, 0);
+                            a.prefs.edit().putInt(Prefs.SCREENSAVER_CLOCK_STYLE, (now + 1) % 3).apply();
+                            refreshInPlace.run();
+                        });
+                addSettingCard(
+                        body,
+                        4,
                         "屏幕保护（5 分钟）",
                         a.prefs.getBoolean(Prefs.SCREENSAVER_ENABLED, false)
                                 ? "已开启 · 空闲时用动态壁纸做屏保，触摸退出"
@@ -3397,6 +3429,8 @@ final class MobileShell {
                         a.text("关闭的板块只在首页隐藏，数据不会删除；随时可以再打开。", 12, 0xff8d9cb6));
             } else if (settingsSubPage == 6) {
                 addAboutPage(body);
+            } else if (settingsSubPage == 7) {
+                addStatsPage(body);
             } else {
                 addSectionHeader(body, "更新、备份与诊断");
                 addSettingCard(
@@ -3446,9 +3480,9 @@ final class MobileShell {
         a.gap(body, 14);
         final String[] categories = {
             "片源与直播配置", "播放、解码与字幕", "界面外观与偏好", "备份、更新与诊断", "首页设置",
-            "关于鲸落"
+            "关于鲸落", "观影统计"
         };
-        final int[] icons = {1, 3, 4, 5, 2, 6};
+        final int[] icons = {1, 3, 4, 5, 2, 6, 4};
         for (int i = 0; i < categories.length; i++) {
             final int page = i + 1;
             addSettingCard(
@@ -3547,6 +3581,111 @@ final class MobileShell {
                         0xff8d9cb6);
         footer.setGravity(Gravity.CENTER);
         body.addView(footer);
+    }
+
+    /** 首页「继续观看」清理：已完成 / 7 天前 / 全部。 */
+    void showHistoryCleanup() {
+        String[] options = {"清除已看完的", "清除 7 天前的", "全部清除"};
+        new AppDialog.Builder(a)
+                .setTitle("清理观看历史")
+                .setItems(
+                        options,
+                        (d, index) -> {
+                            java.util.List<WatchHistory.Entry> entries =
+                                    new java.util.ArrayList<>(a.watchHistory());
+                            StringBuilder raw = new StringBuilder("[");
+                            long now = System.currentTimeMillis() / 1000;
+                            java.util.List<WatchHistory.Entry> keep = new java.util.ArrayList<>();
+                            for (WatchHistory.Entry e : entries) {
+                                boolean remove = false;
+                                if (index == 0) remove = e.complete();
+                                else if (index == 1) remove = now - e.updated > 7 * 24 * 3600L;
+                                else remove = true;
+                                if (!remove) keep.add(e);
+                            }
+                            org.json.JSONArray arr = new org.json.JSONArray();
+                            for (WatchHistory.Entry e : keep)
+                                try {
+                                    arr.put(e.json());
+                                } catch (Exception ignored) {
+                                }
+                            a.prefs.edit().putString(Prefs.WATCH_HISTORY, arr.toString()).apply();
+                            a.toast("已清理 " + (entries.size() - keep.size()) + " 条记录");
+                            switchTab(0);
+                        })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /** 设置 → 观影统计：按本地观看历史统计本周数据。 */
+    private void addStatsPage(LinearLayout body) {
+        java.util.List<WatchHistory.Entry> entries = a.watchHistory();
+        long now = System.currentTimeMillis() / 1000;
+        long weekAgo = now - 7 * 24 * 3600L;
+        int weekTitles = 0;
+        long weekSeconds = 0;
+        java.util.Set<String> days = new java.util.HashSet<>();
+        java.util.List<WatchHistory.Entry> week = new java.util.ArrayList<>();
+        for (WatchHistory.Entry e : entries) {
+            if (e.updated < weekAgo) continue;
+            week.add(e);
+            weekTitles++;
+            weekSeconds += Math.max(0, Math.min(e.position, Math.max(1, e.duration))) / 1000L;
+            days.add(new java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.CHINA)
+                    .format(new java.util.Date(e.updated * 1000L)));
+        }
+        long minutes = weekSeconds / 60;
+        addSectionHeader(body, "本周观影");
+        LinearLayout metrics = a.row();
+        metrics.setGravity(Gravity.CENTER_VERTICAL);
+        metrics.addView(metricCard("本周观影", weekTitles + " 部", 0xffffb3c8),
+                new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout.LayoutParams m2 = new LinearLayout.LayoutParams(0, -2, 1f);
+        m2.leftMargin = a.dp(10);
+        metrics.addView(metricCard("本周时长", (minutes >= 60 ? (minutes / 60) + " 小时 " : "") + (minutes % 60) + " 分", 0xff8fc5ff), m2);
+        LinearLayout.LayoutParams m3 = new LinearLayout.LayoutParams(0, -2, 1f);
+        m3.leftMargin = a.dp(10);
+        metrics.addView(metricCard("活跃天数", days.size() + " 天", 0xff5ee0a0), m3);
+        body.addView(metrics, new LinearLayout.LayoutParams(-1, -2));
+        a.gap(body, 14);
+
+        addSectionHeader(body, "最近观看");
+        if (week.isEmpty()) {
+            body.addView(a.text("本周还没有观看记录", 13, 0xff8d9cb6));
+            return;
+        }
+        int limit = Math.min(10, week.size());
+        for (int i = 0; i < limit; i++) {
+            WatchHistory.Entry e = week.get(i);
+            LinearLayout row = a.row();
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
+            row.setBackground(glassBg(0xcc16283f, 0xb3121d2e, a.dp(14), a.dp(0.8f), 0x33ffffff));
+            TextView t = a.text(e.title, 13.5f, MainActivity.WHITE);
+            t.setTypeface(null, Typeface.BOLD);
+            t.setSingleLine(true);
+            t.setEllipsize(TextUtils.TruncateAt.END);
+            row.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+            int pct = e.duration > 0 ? Math.min(100, Math.round(e.position * 100f / e.duration)) : 0;
+            TextView p = a.text(pct + "%", 11.5f, 0xffffb3c8);
+            row.addView(p);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = a.dp(6);
+            body.addView(row, lp);
+        }
+    }
+
+    private LinearLayout metricCard(String label, String value, int accent) {
+        LinearLayout card = a.vertical();
+        card.setPadding(a.dp(14), a.dp(14), a.dp(14), a.dp(14));
+        card.setBackground(glassBg(0xcc16283f, 0xb3121d2e, a.dp(16), a.dp(0.8f), 0x33ffffff));
+        TextView v = a.text(value, 18, accent);
+        v.setTypeface(null, Typeface.BOLD);
+        card.addView(v);
+        TextView l = a.text(label, 11, 0xff8d9cb6);
+        l.setPadding(0, a.dp(3), 0, 0);
+        card.addView(l);
+        return card;
     }
 
     private void addSectionHeader(LinearLayout parent, String title) {

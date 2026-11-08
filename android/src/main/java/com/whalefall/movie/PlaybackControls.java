@@ -1391,6 +1391,12 @@ final class PlaybackControls {
                                                     !a.prefs.getBoolean(Prefs.AUTO_NEXT, true))
                                             .apply()));
             items.add(new PlayerToolsSheet.Tool(UiIcon.INFO, "播放信息", this::playbackInfo));
+            if (!QueueStore.list(a).isEmpty())
+                items.add(
+                        new PlayerToolsSheet.Tool(
+                                UiIcon.REPLAY,
+                                "播放队列（" + QueueStore.list(a).size() + "）",
+                                this::showQueue));
             items.add(
                     new PlayerToolsSheet.Tool(
                             UiIcon.BACK, "返回详情", a::leavePlayback));
@@ -1407,6 +1413,34 @@ final class PlaybackControls {
                             dialogOpen = false;
                             a.scheduleHide();
                         });
+    }
+
+    /** 推送队列：播放下一个 / 移除 / 清空。 */
+    private void showQueue() {
+        java.util.List<QueueStore.Item> queue = QueueStore.list(a);
+        if (queue.isEmpty()) {
+            a.toast("推送队列为空");
+            return;
+        }
+        String[] labels = new String[queue.size() + 1];
+        for (int i = 0; i < queue.size(); i++) labels[i] = (i + 1) + ". " + queue.get(i).title;
+        labels[queue.size()] = "清空队列";
+        new AppDialog.Builder(a)
+                .setTitle("播放队列")
+                .setItems(
+                        labels,
+                        (d, index) -> {
+                            if (index == queue.size()) {
+                                QueueStore.clear(a);
+                                a.toast("队列已清空");
+                                return;
+                            }
+                            QueueStore.Item item = queue.get(index);
+                            QueueStore.remove(a, item.url);
+                            PushFiles.playUrl(a, item.url, item.title);
+                        })
+                .setNegativeButton("关闭", null)
+                .show();
     }
 
     void playbackInfo() {

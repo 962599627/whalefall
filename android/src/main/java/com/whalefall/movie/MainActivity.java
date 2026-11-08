@@ -1637,7 +1637,8 @@ public final class MainActivity extends Activity {
         ui.removeCallbacks(screensaverTask);
         if (!prefs.getBoolean(Prefs.SCREENSAVER_ENABLED, false)) return;
         if (current != null && current.player) return;
-        ui.postDelayed(screensaverTask, SCREENSAVER_DELAY_MS);
+        int minutes = Math.max(1, Math.min(60, prefs.getInt(Prefs.SCREENSAVER_TIMEOUT_MIN, 5)));
+        ui.postDelayed(screensaverTask, minutes * 60 * 1000L);
     }
 
     void showScreensaver() {
@@ -1662,14 +1663,16 @@ public final class MainActivity extends Activity {
 
         LinearLayout column = vertical();
         column.setGravity(android.view.Gravity.CENTER);
-        TextView clock = text(new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(new java.util.Date()), 64, 0xfff5f7fc);
+        int clockStyle = Math.max(0, Math.min(2, prefs.getInt(Prefs.SCREENSAVER_CLOCK_STYLE, 0)));
+        float clockSize = clockStyle == 1 ? 44 : clockStyle == 2 ? 96 : 64;
+        TextView clock = text(new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(new java.util.Date()), clockSize, 0xfff5f7fc);
         clock.setTypeface(android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL));
         clock.setShadowLayer(dp(18), 0, dp(4), 0xcc000000);
         column.addView(clock);
         String dateText =
                 new java.text.SimpleDateFormat("M 月 d 日 EEEE", java.util.Locale.CHINA)
                         .format(new java.util.Date());
-        TextView date = text(dateText, 15, 0xccf5f7fc);
+        TextView date = text(dateText, clockStyle == 2 ? 20 : 15, 0xccf5f7fc);
         date.setShadowLayer(dp(8), 0, dp(2), 0xcc000000);
         column.addView(date);
         TextView brand = text("鲸落 · 沉入故事深处", 12, 0x99ffc7d6);
