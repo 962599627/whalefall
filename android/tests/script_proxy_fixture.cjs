@@ -44,7 +44,7 @@ async function dispatch(command) {
     let spider;
     vm.runInContext(command.helpers, context);
     if (command.kind === 'py') {
-      for (const file of ['skulpt.min.js','skulpt-stdlib.js','json.js','io.js','spider.js']) {
+      for (const file of ['skulpt.min.js','skulpt-stdlib.js','compiled-modules.js','json.js','io.js','spider.js']) {
         vm.runInContext(readAsset('python-host', file), context, {filename:file});
       }
       spider = context.createPythonSpider(python);
