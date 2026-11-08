@@ -262,6 +262,32 @@ public final class MainActivity extends Activity {
      * 主线程崩溃前把堆栈 + 最近 AppLog 落盘（files/crash-last.txt），
      * 下次启动仍可读，便于真机排查「点播放闪退」这类没有 logcat 的问题。
      */
+    /** 首次启动安装内置默认静态壁纸（鲸落主题图），之后用户可自行更换。 */
+    private void installDefaultWallpaper() {
+        try {
+            final String flag = "wallpaper_default_v2";
+            if (prefs.getBoolean(flag, false)) return;
+            java.io.File target = new java.io.File(getFilesDir(), "wallpaper.jpg");
+            boolean wrote = false;
+            if (!target.isFile()) {
+                java.io.InputStream in = getAssets().open("branding/wallpaper-default.jpg");
+                java.io.FileOutputStream out = new java.io.FileOutputStream(target);
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                in.close();
+                out.close();
+                wrote = true;
+            }
+            android.content.SharedPreferences.Editor editor =
+                    prefs.edit().putBoolean(flag, true);
+            if (wrote && !prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false))
+                editor.putBoolean(Prefs.WALLPAPER_ENABLED, true);
+            editor.apply();
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** 把上次崩溃栈复制到应用外部目录，便于直接取出排查。 */
     private void exportCrashLog() {
         try {
@@ -613,6 +639,7 @@ public final class MainActivity extends Activity {
         }
         layoutIntro = b == null || b.getBoolean("layout_initial_launch", false);
         exportCrashLog();
+        installDefaultWallpaper();
         if (b != null) {
             MobileShell.pendingRestoreTab = b.getInt("whale_tab", -1);
             String keyword = b.getString("whale_search", "");
