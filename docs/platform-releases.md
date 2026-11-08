@@ -9,7 +9,7 @@ Desktop/Apple tags use `windows-vX.Y.Z`, `ios-vX.Y.Z` and `macos-vX.Y.Z`. They d
 Android phone/tablet and TV editions now have separate update feeds and explicit
 `android-mobile` / `android-tv` package names. See [Android update isolation](android-update-isolation.md)
 for the release tags, old-client migration aliases and runtime verification scope.
-Android phone/tablet and TV 0.5.1 were independently published on November 8;
+Android phone/tablet and TV 0.5.2 were independently published on November 8;
 see the platform-specific records below.
 
 See [installation package names](installation-package-names.md) for explicit
@@ -43,16 +43,17 @@ This website deployment did not replace any application installer.
 
 ## Published Android maintenance update
 
+[Android phone/tablet 0.5.2](releases/android-mobile-v0.5.2.md) and
+[Android TV/box 0.5.2](releases/android-tv-v0.5.2.md) use build commit
+`5039665cccc344f635fd2730c8c5fcc9f7d6de66` (version code 52), building on
 [Android phone/tablet 0.5.1](releases/android-mobile-v0.5.1.md) and
-[Android TV/box 0.5.1](releases/android-tv-v0.5.1.md) use build commit
-`c10becae6aea8506858a8076b7938a196d6300b8` (version code 51).
-The scoped release ships adaptive phone landscape controls, Android 6 subtitle
-compatibility, history/search fixes, source-host improvements and isolated edition
-updates. Complete build 42449618961 and runtime packaging run 42449705860 passed.
-The downloaded CI packages were signed with the existing official key; every
-non-signature ZIP entry was retained, production host assets were checked against
-the exact build commit, and native runtime provenance and alignment were verified.
-The phone APK passes whole-package 16KB checks; the TV APK remains ARM 32-bit.
+[Android TV/box 0.5.1](releases/android-tv-v0.5.1.md) (`c10becae6aea8506858a8076b7938a196d6300b8`).
+The 0.5.2 release adds the full-bleed immersive TV detail screen with compact
+background-playback bar, 9-item persistent TV playback toolbar, two-level poster
+disk caching (`posters_v2`) and home snapshot fast startup (`home_snap_v1`),
+synchronous 2-second power-off resume persistence, unclipped D-pad focus containers,
+and extended TVBox/MacCMS XML/AES config compatibility while preserving all 0.5.1
+adaptive mobile controls, API 23 compatibility, and 16KB page alignment.
 
 Both releases include matching source archives, SHA-256 files and byte-identical
 legacy aliases. They do not replace the legacy global latest release. Users on
