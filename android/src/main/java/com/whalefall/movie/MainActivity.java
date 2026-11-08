@@ -265,20 +265,17 @@ public final class MainActivity extends Activity {
     /** 首次启动安装内置默认静态壁纸（鲸落主题图），之后用户可自行更换。 */
     private void installDefaultWallpaper() {
         try {
-            final String flag = "wallpaper_default_v2";
+            final String flag = "wallpaper_default_v3";
             if (prefs.getBoolean(flag, false)) return;
             java.io.File target = new java.io.File(getFilesDir(), "wallpaper.jpg");
-            boolean wrote = false;
-            if (!target.isFile()) {
-                java.io.InputStream in = getAssets().open("branding/wallpaper-default.jpg");
-                java.io.FileOutputStream out = new java.io.FileOutputStream(target);
-                byte[] buf = new byte[65536];
-                int n;
-                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-                in.close();
-                out.close();
-                wrote = true;
-            }
+            java.io.InputStream in = getAssets().open("branding/wallpaper-default.jpg");
+            java.io.FileOutputStream out = new java.io.FileOutputStream(target);
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            in.close();
+            out.close();
+            boolean wrote = true;
             android.content.SharedPreferences.Editor editor =
                     prefs.edit().putBoolean(flag, true);
             if (wrote && !prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false))
