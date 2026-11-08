@@ -25,6 +25,9 @@ final class Prefs {
     static final String WALLPAPER_ENABLED = "wallpaper_enabled";
     static final String WALLPAPER_DIM = "wallpaper_dim";
     static final String WALLPAPER_VIDEO = "wallpaper_video";
+    static final String WALLPAPER_SOUND = "wallpaper_sound";
+    static final String TV_ASPECT = "tv_aspect";
+    static final String TV_FILL = "tv_fill";
     static final String REDUCED = "reduced";
     static final String REDUCED_TRANSPARENCY = "reduced_transparency";
     static final String PLAYER_ENGINE = "player_engine";
@@ -79,6 +82,9 @@ final class Prefs {
         WALLPAPER_ENABLED,
         WALLPAPER_DIM,
         WALLPAPER_VIDEO,
+        WALLPAPER_SOUND,
+        TV_ASPECT,
+        TV_FILL,
         REDUCED,
         REDUCED_TRANSPARENCY,
         PLAYER_ENGINE,
@@ -111,6 +117,9 @@ final class Prefs {
                                     HOME_AMBIENT,
                                     WALLPAPER_ENABLED,
                                     WALLPAPER_VIDEO,
+                                    WALLPAPER_SOUND,
+        TV_ASPECT,
+        TV_FILL,
                                     REDUCED,
                                     REDUCED_TRANSPARENCY,
                                     AUTO_NEXT,
@@ -128,6 +137,8 @@ final class Prefs {
         ranges.put(HOME_ROWS, new int[] {1, 4});
         ranges.put(HOME_SECTIONS, new int[] {0, 5});
         ranges.put(WALLPAPER_DIM, new int[] {0, 100});
+        ranges.put(TV_ASPECT, new int[] {0, 2});
+        ranges.put(TV_FILL, new int[] {0, 2});
         ranges.put(PLAYER_ENGINE, new int[] {0, 1});
         ranges.put(VIDEO_OUTPUT, new int[] {0, 1});
         ranges.put(DECODER_MODE, new int[] {0, 2});

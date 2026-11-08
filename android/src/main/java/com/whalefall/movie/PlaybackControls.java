@@ -151,7 +151,7 @@ final class PlaybackControls {
                         }
                     }
                 });
-        boolean mobileLandscape = !a.isTvDevice() && !a.isPortrait();
+        boolean mobileLandscape = !a.isTvDevice() && a.windowWidth() >= a.dp(600);
         currentMobileLandscape = mobileLandscape;
         LinearLayout row = a.row();
         boolean live = "live".equals(site.key);

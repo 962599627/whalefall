@@ -167,6 +167,19 @@ final class SettingsScreen {
                 () -> pick(47, "video/*", false));
         if (VideoWallpaper.file(a).isFile())
             link(
+                    "壁纸声音",
+                    a.prefs.getBoolean(Prefs.WALLPAPER_SOUND, false)
+                            ? "有声（播放壁纸自带声音）"
+                            : "静音（推荐）",
+                    "wallpaper-sound",
+                    () -> {
+                        boolean on = !a.prefs.getBoolean(Prefs.WALLPAPER_SOUND, false);
+                        a.prefs.edit().putBoolean(Prefs.WALLPAPER_SOUND, on).apply();
+                        a.refresh();
+                        a.toast(on ? "壁纸声音：开" : "壁纸声音：静音");
+                    });
+        if (VideoWallpaper.file(a).isFile())
+            link(
                     a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false) ? "关闭视频壁纸" : "启用视频壁纸",
                     "动态壁纸持续解码，耗电高于静态图片",
                     "wallpaper-video-toggle",
@@ -206,6 +219,18 @@ final class SettingsScreen {
 
     void playback() {
         page("播放与字幕", "作为之后播放的默认设置；播放界面中仍可随时调整。");
+        ints(
+                "电视台画面比例",
+                Prefs.TV_ASPECT,
+                new String[] {"自适应", "16:9", "4:3"},
+                new int[] {0, 1, 2},
+                0);
+        ints(
+                "电视台填充模式",
+                Prefs.TV_FILL,
+                new String[] {"适应（完整画面）", "裁剪（铺满）", "拉伸"},
+                new int[] {0, 1, 2},
+                0);
         ints(
                 "画面输出",
                 Prefs.VIDEO_OUTPUT,

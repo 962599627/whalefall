@@ -482,7 +482,7 @@ final class MobileDetailScreen {
         // 响应式：宽屏（平板横向）用更矮更宽的居中内容列；手机保持沉浸式全宽
         final int widthDp =
                 Math.round(a.windowWidth() / a.getResources().getDisplayMetrics().density);
-        final boolean wide = widthDp >= 600 && !a.isPortrait();
+        final boolean wide = widthDp >= 600;
         final int contentMaxW = a.dp(900);
         final int contentSide =
                 wide

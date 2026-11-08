@@ -25,6 +25,7 @@ final class VideoWallpaper extends FrameLayout {
     private final PlayerView view;
     private final View dim;
     private boolean released;
+    private boolean moving;
 
     static File file(Context c) {
         return new File(c.getFilesDir(), FILE);
@@ -44,7 +45,7 @@ final class VideoWallpaper extends FrameLayout {
         applyDim(host.prefs.getInt(Prefs.WALLPAPER_DIM, 35));
         player = new ExoPlayer.Builder(host).build();
         player.setRepeatMode(Player.REPEAT_MODE_ONE);
-        player.setVolume(0f);
+        player.setVolume(host.prefs.getBoolean(Prefs.WALLPAPER_SOUND, false) ? 1f : 0f);
         view.setPlayer(player);
         player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file(host))));
         player.prepare();
@@ -79,9 +80,23 @@ final class VideoWallpaper extends FrameLayout {
         if (!released) player.setPlayWhenReady(true);
     }
 
+    boolean isReleased() {
+        return released;
+    }
+
+    /** 换页面时把同一个播放器视图搬过去，避免重建导致的黑屏/首帧闪烁。 */
+    void attachTo(android.widget.FrameLayout root) {
+        moving = true;
+        if (getParent() instanceof android.view.ViewGroup)
+            ((android.view.ViewGroup) getParent()).removeView(this);
+        root.addView(this, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        moving = false;
+        player.setPlayWhenReady(true);
+    }
+
     @Override
     protected void onDetachedFromWindow() {
-        if (!released) player.setPlayWhenReady(false);
+        if (!released && !moving) player.setPlayWhenReady(false);
         super.onDetachedFromWindow();
     }
 }

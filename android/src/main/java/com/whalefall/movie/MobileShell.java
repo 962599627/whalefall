@@ -385,15 +385,20 @@ final class MobileShell {
 
         // Layer 0: 视频动态壁纸优先，否则用海报环境背景
         if (a.videoWallpaperEnabled()) {
-            a.releaseWallpaper();
-            a.videoWallpaper = new VideoWallpaper(a);
-            a.root.addView(a.videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
+            if (a.videoWallpaper == null || a.videoWallpaper.isReleased()) {
+                a.releaseWallpaper();
+                a.videoWallpaper = new VideoWallpaper(a);
+                a.root.addView(a.videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
+            } else {
+                a.videoWallpaper.attachTo(a.root);
+            }
         } else {
+            a.releaseWallpaper();
             a.root.addView(new AmbientCanvasView(a), new FrameLayout.LayoutParams(-1, -1));
         }
 
         float widthDp = a.windowWidth() / a.getResources().getDisplayMetrics().density;
-        boolean tabletSideRail = widthDp >= 640 && !a.isPortrait();
+        boolean tabletSideRail = widthDp >= 640;
         float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
 
         if (tabletSideRail) {
@@ -746,6 +751,16 @@ final class MobileShell {
     }
 
     /** TAB 5：电视台直播（官方网页直播，内置央视 + 自定义频道）。 */
+    private String tvAspectLabel() {
+        int v = a.prefs.getInt(Prefs.TV_ASPECT, 0);
+        return v == 1 ? "16:9" : v == 2 ? "4:3" : "自适应（默认）";
+    }
+
+    private String tvFillLabel() {
+        int v = a.prefs.getInt(Prefs.TV_FILL, 0);
+        return v == 1 ? "裁剪（铺满）" : v == 2 ? "拉伸" : "适应（完整画面）";
+    }
+
     private void renderTvTab() {
         contentContainer.addView(TvLive.screen(a), new FrameLayout.LayoutParams(-1, -1));
     }
@@ -1400,7 +1415,7 @@ final class MobileShell {
         container.removeAllViews();
         float widthDp = a.windowWidth() / a.getResources().getDisplayMetrics().density;
         int cols = widthDp >= 720 ? 5 : (widthDp >= 520 ? 4 : 3);
-        int horizontalPaddingDp = widthDp >= 640 && !a.isPortrait() ? 116 : 32;
+        int horizontalPaddingDp = widthDp >= 640 ? 116 : 32;
         int cardWidthDp =
                 Math.max(92, (int) ((widthDp - horizontalPaddingDp - (cols - 1) * 12) / cols));
         int posterHeightDp = Math.round(cardWidthDp * 1.48f);
@@ -2892,6 +2907,26 @@ final class MobileShell {
 
                 int subSize = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE_SP, 40));
                 int subBg = Prefs.clampSubtitleBgStyle(a.prefs.getInt(Prefs.SUBTITLE_BG_STYLE, 0));
+                addSettingCard(
+                        body,
+                        2,
+                        "电视台画面比例",
+                        tvAspectLabel(),
+                        () -> {
+                            int v = a.prefs.getInt(Prefs.TV_ASPECT, 0);
+                            a.prefs.edit().putInt(Prefs.TV_ASPECT, (v + 1) % 3).apply();
+                            refreshInPlace.run();
+                        });
+                addSettingCard(
+                        body,
+                        2,
+                        "电视台填充模式",
+                        tvFillLabel(),
+                        () -> {
+                            int v = a.prefs.getInt(Prefs.TV_FILL, 0);
+                            a.prefs.edit().putInt(Prefs.TV_FILL, (v + 1) % 3).apply();
+                            refreshInPlace.run();
+                        });
                 addSettingCard(
                         body,
                         3,

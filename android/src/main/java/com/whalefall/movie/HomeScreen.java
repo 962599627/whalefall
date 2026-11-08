@@ -88,7 +88,7 @@ final class HomeScreen {
                         a.windowWidth() / a.getResources().getDisplayMetrics().density,
                         a.prefs.getInt(Prefs.HOME_COLUMNS, 5),
                         a.formFactor,
-                        a.isPortrait());
+                        a.windowWidth() < a.dp(600));
     }
 
     boolean active() {

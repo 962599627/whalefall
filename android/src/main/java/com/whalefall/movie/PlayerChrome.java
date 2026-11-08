@@ -68,7 +68,7 @@ final class PlayerChrome {
         }
         LinearLayout titleRow = a.row();
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        titleView = a.text(video.title, a.isPortrait() ? 20 : 26, MainActivity.WHITE);
+        titleView = a.text(video.title, a.windowWidth() < a.dp(600) ? 20 : 26, MainActivity.WHITE);
         titleView.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         titleView.getPaint().setFakeBoldText(true);
         titleView.setSingleLine();
@@ -97,7 +97,7 @@ final class PlayerChrome {
         a.playStatus.setPadding(0, a.dp(6), 0, 0);
         heading.addView(a.playStatus);
         FrameLayout.LayoutParams top = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
-        int sideMargin = a.isPortrait() ? a.dp(20) : a.dp(44);
+        int sideMargin = a.windowWidth() < a.dp(600) ? a.dp(20) : a.dp(44);
         top.setMargins(sideMargin, a.dp(24), sideMargin, 0);
         overlay.addView(heading, top);
 
@@ -117,7 +117,7 @@ final class PlayerChrome {
         if (!a.isTvDevice()) {
             fsBtn =
                     a.navButton(
-                            a.isPortrait() ? "⛶ 全屏横屏" : "⛶ 退出全屏",
+                            a.windowWidth() < a.dp(600) ? "⛶ 全屏横屏" : "⛶ 退出全屏",
                             "player-fullscreen",
                             a::togglePlayerOrientation);
             fsBtn.setTextColor(MainActivity.WHITE);
@@ -132,7 +132,7 @@ final class PlayerChrome {
         }
         progress.addView(clockRow, new LinearLayout.LayoutParams(-1, -2));
         int width = a.windowWidth();
-        boolean mobileLandscape = !a.isTvDevice() && !a.isPortrait();
+        boolean mobileLandscape = !a.isTvDevice() && a.windowWidth() >= a.dp(600);
         FrameLayout.LayoutParams track =
                 new FrameLayout.LayoutParams(
                         Math.min(

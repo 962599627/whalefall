@@ -822,10 +822,15 @@ public final class MainActivity extends Activity {
         root.setClipToPadding(false);
         root.setBackground(Skin.backdrop(this));
         if (videoWallpaperEnabled()) {
-            releaseWallpaper();
-            videoWallpaper = new VideoWallpaper(this);
-            root.addView(videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
+            if (videoWallpaper == null || videoWallpaper.isReleased()) {
+                releaseWallpaper();
+                videoWallpaper = new VideoWallpaper(this);
+                root.addView(videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
+            } else {
+                videoWallpaper.attachTo(root);
+            }
         } else {
+            releaseWallpaper();
             root.addView(ImageLoader.createAtmosphere(this), new FrameLayout.LayoutParams(-1, -1));
         }
         homeAmbient = null;
@@ -844,7 +849,7 @@ public final class MainActivity extends Activity {
         body = vertical();
         body.setClipChildren(false);
         body.setClipToPadding(false);
-        if (isPortrait() && !isTvDevice()) {
+        if (windowWidth() < dp(600) && !isTvDevice()) {
             body.setPadding(dp(18), dp(18), dp(18), dp(36));
         } else {
             body.setPadding(dp(46), dp(26), dp(46), dp(44));

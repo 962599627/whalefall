@@ -22,8 +22,9 @@ final class TvLayoutPolicy {
         return width > 0 && height > width;
     }
 
+    /** 底部 Dock 只看宽度（手机窄屏），与设备旋转无关。 */
     static boolean useBottomDock(int width, int height, int formFactor) {
-        return formFactor != FORM_TV && isPortrait(width, height);
+        return formFactor != FORM_TV && width > 0 && width < 600 * 2;
     }
 
     static int searchColumns(float availableWidthDp) {
@@ -36,9 +37,9 @@ final class TvLayoutPolicy {
     }
 
     static int responsiveHomeColumns(
-            float widthDp, int requested, int formFactor, boolean portrait) {
+            float widthDp, int requested, int formFactor, boolean ignoredPortrait) {
         if (formFactor == FORM_TV) return homeColumns(widthDp, requested);
-        if (portrait || widthDp < 480) {
+        if (widthDp < 600) {
             return Math.max(2, Math.min(3, (int) ((widthDp - 24) / 112)));
         }
         if (widthDp < 720) {
@@ -47,9 +48,9 @@ final class TvLayoutPolicy {
         return homeColumns(widthDp, requested);
     }
 
-    static int catalogColumns(float widthDp, int formFactor, boolean portrait) {
+    static int catalogColumns(float widthDp, int formFactor, boolean ignoredPortrait) {
         if (formFactor == FORM_TV) return 4;
-        if (portrait || widthDp < 480) {
+        if (widthDp < 600) {
             return Math.max(2, Math.min(3, (int) ((widthDp - 24) / 116)));
         }
         return widthDp < 700 ? 3 : 4;

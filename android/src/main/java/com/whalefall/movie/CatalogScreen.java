@@ -88,7 +88,7 @@ final class CatalogScreen {
                             TvLayoutPolicy.catalogColumns(
                                     a.windowWidth() / a.getResources().getDisplayMetrics().density,
                                     a.formFactor,
-                                    a.isPortrait());
+                                    a.windowWidth() < a.dp(600));
                     LinearLayout cards = null;
                     for (int i = 0; i < list.videos.size(); i++) {
                         if (i % cols == 0) {
