@@ -3217,7 +3217,9 @@ final class MobileShell {
                                                             ? "关于鲸落"
                                                             : settingsSubPage == 7
                                                                     ? "观影统计"
-                                                                    : "备份、更新与诊断";
+                                                                    : settingsSubPage == 8
+                                                                            ? "遥控器按键说明"
+                                                                            : "备份、更新与诊断";
             TextView subTitle = a.text(subTitleText, 20, Color.WHITE);
             subTitle.setTypeface(null, Typeface.BOLD);
             topNav.addView(subTitle, new LinearLayout.LayoutParams(0, -2, 1));
@@ -3352,6 +3354,15 @@ final class MobileShell {
                         () -> {
                             int v = a.prefs.getInt(Prefs.TV_ASPECT, 0);
                             a.prefs.edit().putInt(Prefs.TV_ASPECT, (v + 1) % 3).apply();
+                            refreshInPlace.run();
+                        });
+                addSettingCard(
+                        body,
+                        0,
+                        "遥控器按键说明",
+                        "电视端遥控器 / 键盘操作对照表，手机端手势也一并列出",
+                        () -> {
+                            settingsSubPage = 8;
                             refreshInPlace.run();
                         });
                 addSettingCard(
@@ -3513,6 +3524,8 @@ final class MobileShell {
                 addAboutPage(body);
             } else if (settingsSubPage == 7) {
                 addStatsPage(body);
+            } else if (settingsSubPage == 8) {
+                addKeymapPage(body);
             } else {
                 addSectionHeader(body, "更新、备份与诊断");
                 addSettingCard(
@@ -3697,6 +3710,49 @@ final class MobileShell {
                         })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    /** 设置 → 遥控器按键说明：电视端遥控器 / 键盘 / 手机手势对照。 */
+    private void addKeymapPage(LinearLayout body) {
+        String[][] rows = {
+            {"确定 / 回车", "播放 / 暂停；弹出控件时确认当前选项"},
+            {"返回", "收起控件 → 再按退出播放"},
+            {"上 / 下", "呼出工具条后选择按钮；直播时换台"},
+            {"左 / 右", "快退 / 快进 10 秒；列表内移动焦点"},
+            {"菜单键", "打开片源选择"},
+            {"数字键", "直播时直接输入频道号换台"},
+            {"首页三击上键", "回到首页顶部"},
+            {"长按确定", "收藏当前频道（直播页）"},
+            {"空格 / 回车（键盘）", "播放 / 暂停"},
+            {"Esc（键盘）", "退出播放或返回上一页"},
+            {"手机上双击", "播放 / 暂停"},
+            {"手机左右滑动", "快退 / 快进"},
+            {"手机左半屏上下滑", "调节屏幕亮度"},
+            {"手机右半屏上下滑", "调节音量"},
+            {"手机长按", "2 倍速快进"}
+        };
+        addSectionHeader(body, "电视遥控器");
+        for (int i = 0; i < 8; i++) addKeymapRow(body, rows[i][0], rows[i][1]);
+        a.gap(body, 14);
+        addSectionHeader(body, "键盘 / 手机手势");
+        for (int i = 8; i < rows.length; i++) addKeymapRow(body, rows[i][0], rows[i][1]);
+    }
+
+    private void addKeymapRow(LinearLayout body, String key, String desc) {
+        LinearLayout row = a.row();
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
+        row.setBackground(glassBg(0xcc16283f, 0xb3121d2e, a.dp(14), a.dp(0.8f), 0x33ffffff));
+        TextView keyView = a.text(key, 12.5f, 0xffffb3c8);
+        keyView.setTypeface(null, Typeface.BOLD);
+        keyView.setMinWidth(a.dp(120));
+        row.addView(keyView);
+        TextView descView = a.text(desc, 12.5f, 0xffc9d4e6);
+        descView.setPadding(a.dp(10), 0, 0, 0);
+        row.addView(descView, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.bottomMargin = a.dp(6);
+        body.addView(row, lp);
     }
 
     /** 设置 → 观影统计：按本地观看历史统计本周数据。 */
