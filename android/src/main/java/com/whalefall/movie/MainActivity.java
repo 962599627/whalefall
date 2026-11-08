@@ -255,6 +255,7 @@ public final class MainActivity extends Activity {
                         }
                     }
                     MainActivity activity = activeActivity;
+                    if (thread == main) writeCrashLog(thread, error);
                     if (activity != null && activity.prefs != null) {
                         String currentSite = activity.prefs.getString(Prefs.SELECTED_SITE, "");
                         if (currentSite != null && !currentSite.isEmpty()) {
@@ -266,6 +267,39 @@ public final class MainActivity extends Activity {
                     }
                     if (previous != null) previous.uncaughtException(thread, error);
                 });
+    }
+
+    /**
+     * 主线程崩溃前把堆栈 + 最近 AppLog 落盘（files/crash-last.txt），
+     * 下次启动仍可读，便于真机排查「点播放闪退」这类没有 logcat 的问题。
+     */
+    private static void writeCrashLog(Thread thread, Throwable error) {
+        try {
+            MainActivity activity = activeActivity;
+            if (activity == null) return;
+            java.io.File dir = activity.getFilesDir();
+            if (dir == null) return;
+            StringBuilder sb = new StringBuilder(1024);
+            sb.append("time=")
+                    .append(
+                            android.text.format.DateFormat.format(
+                                    "yyyy-MM-dd HH:mm:ss", System.currentTimeMillis()))
+                    .append('\n')
+                    .append("thread=")
+                    .append(thread == null ? "?" : thread.getName())
+                    .append('\n');
+            java.io.StringWriter writer = new java.io.StringWriter();
+            error.printStackTrace(new java.io.PrintWriter(writer));
+            sb.append(writer).append("\n--- recent app log ---\n").append(AppLog.dump());
+            java.io.FileOutputStream out =
+                    new java.io.FileOutputStream(new java.io.File(dir, "crash-last.txt"));
+            try {
+                out.write(sb.toString().getBytes("UTF-8"));
+            } finally {
+                out.close();
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     /** Opens a list card without leaving an invisible redirect page in the back stack. */

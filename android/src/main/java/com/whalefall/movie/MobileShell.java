@@ -1157,14 +1157,42 @@ final class MobileShell {
                                                 catSnapshot.isEmpty() && !cats.isEmpty()
                                                         ? cats.get(0).id
                                                         : catSnapshot;
-                                        list =
-                                                Cms.listing(
-                                                        eng.category(
-                                                                targetCat,
-                                                                pageSnapshot,
-                                                                VideoFilters.remoteValues(
-                                                                        definitions,
-                                                                        filterSnapshot)));
+                                        java.util.List<java.util.Map<String, String>> variants =
+                                                filterVariants(definitions, filterSnapshot);
+                                        if (variants.size() <= 1) {
+                                            list =
+                                                    Cms.listing(
+                                                            eng.category(
+                                                                    targetCat,
+                                                                    pageSnapshot,
+                                                                    variants.isEmpty()
+                                                                            ? java.util
+                                                                                    .Collections
+                                                                                    .<String, String>
+                                                                                            emptyMap()
+                                                                            : variants.get(0)));
+                                        } else {
+                                            // 多选：按每个取值分别请求再合并（片源只支持单值）
+                                            java.util.LinkedHashMap<String, Cms.Video> merged =
+                                                    new java.util.LinkedHashMap<>();
+                                            int pageCount = 1;
+                                            for (java.util.Map<String, String> variant :
+                                                    variants) {
+                                                Cms.Listing part =
+                                                        Cms.listing(
+                                                                eng.category(
+                                                                        targetCat,
+                                                                        pageSnapshot,
+                                                                        variant));
+                                                for (Cms.Video v : part.videos)
+                                                    if (!merged.containsKey(v.id))
+                                                        merged.put(v.id, v);
+                                                pageCount = Math.max(pageCount, part.pageCount);
+                                            }
+                                            list = new Cms.Listing();
+                                            list.videos.addAll(merged.values());
+                                            list.pageCount = pageCount;
+                                        }
                                     }
                                     final HomeScreen.Snapshot finalHomeSnapshot = homeSnapshot;
                                     final List<Cms.Category> finalCats = cats;
@@ -1211,6 +1239,27 @@ final class MobileShell {
                                                             a.toast(
                                                                     "该片源不返回筛选结果，已按本地影片资料筛选"));
                                         }
+                                    }
+                                    // 片源既不返回筛选结果、本地资料也筛不动：隐藏筛选入口并提示
+                                    if (!filterSnapshot.isEmpty()
+                                            && remoteSent.isEmpty()
+                                            && !list.videos.isEmpty()
+                                            && filtered.size() == list.videos.size()) {
+                                        a.ui.post(
+                                                () -> {
+                                                    View fbv =
+                                                            a.root == null
+                                                                    ? null
+                                                                    : a.root.findViewWithTag(
+                                                                            "home-filters");
+                                                    if (fbv != null)
+                                                        fbv.setVisibility(View.GONE);
+                                                    if (filterSummaryBar != null)
+                                                        filterSummaryBar
+                                                                .view()
+                                                                .setVisibility(View.GONE);
+                                                    a.toast("该片源不支持筛选，已隐藏筛选入口");
+                                                });
                                     }
                                     final boolean filterEmpty =
                                             filtered.isEmpty() && !filterSnapshot.isEmpty();
@@ -1522,6 +1571,38 @@ final class MobileShell {
                     if (after != null) after.run();
                 },
                 0);
+    }
+
+    /** 多选筛选拆成多个单值请求（片源只支持单值），最多展开第一个多选维度的 3 个值。 */
+    private static java.util.List<java.util.Map<String, String>> filterVariants(
+            List<VideoFilters.Definition> definitions,
+            java.util.Map<String, String> snapshot) {
+        java.util.List<java.util.Map<String, String>> out = new java.util.ArrayList<>();
+        if (snapshot.isEmpty()) {
+            out.add(new java.util.LinkedHashMap<String, String>());
+            return out;
+        }
+        java.util.Map<String, String> first = VideoFilters.remoteValues(definitions, snapshot);
+        java.util.Map<String, String> base = new java.util.LinkedHashMap<>(first);
+        if (base.isEmpty()) {
+            // 无远程维度：直接返回空 map，交给本地筛选
+            out.add(new java.util.LinkedHashMap<String, String>());
+            return out;
+        }
+        out.add(base);
+        for (VideoFilters.Definition def : definitions) {
+            String selected = snapshot.get(def.dimension);
+            if (selected == null || !selected.contains(",")) continue;
+            String[] parts = selected.split(",");
+            for (int i = 1; i < Math.min(parts.length, 3); i++) {
+                java.util.Map<String, String> variant =
+                        new java.util.LinkedHashMap<>(base);
+                variant.put(def.key, parts[i]);
+                out.add(variant);
+            }
+            break;
+        }
+        return out;
     }
 
     private List<VideoFilters.Definition> mobileFilterDefinitions() {
@@ -3368,22 +3449,40 @@ final class MobileShell {
         parent.addView(row, lp);
     }
 
-    /** Clean vector icon badge for Settings cards (replaces emojis). */
+    /** 设置卡片图标徽标：彩色圆角底 + 统一 vector 图标（不再 Canvas 手绘字形）。 */
     static final class SettingIconView extends View {
         private final MainActivity a;
         private final int kind;
+        private final android.graphics.drawable.Drawable glyph;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         SettingIconView(MainActivity activity, int kind) {
             super(activity);
             this.a = activity;
             this.kind = kind;
+            glyph = UiIcon.drawable(activity, glyphKind(kind));
+        }
+
+        static int glyphKind(int kind) {
+            switch (kind) {
+                case 1:
+                    return UiIcon.LAYERS;
+                case 2:
+                    return UiIcon.CLOUD;
+                case 3:
+                    return UiIcon.PLAY_CIRCLE;
+                case 4:
+                    return UiIcon.TUNE;
+                case 5:
+                    return UiIcon.TV;
+                default:
+                    return UiIcon.REFRESH;
+            }
         }
 
         @Override
         protected void onDraw(Canvas c) {
             float w = getWidth(), h = getHeight();
-            float cx = w / 2f, cy = h / 2f;
             int badgeBg;
             int strokeColor;
             switch (kind) {
@@ -3411,72 +3510,8 @@ final class MobileShell {
             paint.setStyle(Paint.Style.FILL);
             paint.setColor(badgeBg);
             c.drawRoundRect(new RectF(0, 0, w, h), a.dp(10), a.dp(10), paint);
-
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(strokeColor);
-            paint.setStrokeWidth(a.dp(1.6f));
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setStrokeJoin(Paint.Join.ROUND);
-
-            if (kind == 1) {
-                // Layers / source cube icon
-                Path top = new Path();
-                top.moveTo(cx, a.dp(8.5f));
-                top.lineTo(w - a.dp(8.5f), cy - a.dp(2f));
-                top.lineTo(cx, cy + a.dp(2.5f));
-                top.lineTo(a.dp(8.5f), cy - a.dp(2f));
-                top.close();
-                c.drawPath(top, paint);
-                c.drawLine(a.dp(8.5f), cy + a.dp(2.5f), cx, h - a.dp(8.5f), paint);
-                c.drawLine(w - a.dp(8.5f), cy + a.dp(2.5f), cx, h - a.dp(8.5f), paint);
-            } else if (kind == 2) {
-                // Cloud / netdisk icon
-                RectF base = new RectF(a.dp(8.5f), cy - a.dp(2f), w - a.dp(8.5f), h - a.dp(9.5f));
-                c.drawRoundRect(base, a.dp(4.5f), a.dp(4.5f), paint);
-                c.drawArc(
-                        new RectF(cx - a.dp(5f), a.dp(9f), cx + a.dp(5f), cy + a.dp(3f)),
-                        190,
-                        160,
-                        false,
-                        paint);
-            } else if (kind == 3) {
-                // Play circle + sliders icon
-                c.drawCircle(cx, cy, a.dp(8.5f), paint);
-                paint.setStyle(Paint.Style.FILL);
-                Path tri = new Path();
-                tri.moveTo(cx - a.dp(2.2f), cy - a.dp(3.4f));
-                tri.lineTo(cx + a.dp(3.6f), cy);
-                tri.lineTo(cx - a.dp(2.2f), cy + a.dp(3.4f));
-                tri.close();
-                c.drawPath(tri, paint);
-            } else if (kind == 5) {
-                // 电视台：带天线的电视
-                paint.setStyle(Paint.Style.STROKE);
-                RectF tv = new RectF(a.dp(2.5f), a.dp(7f), w - a.dp(2.5f), h - a.dp(3f));
-                c.drawRoundRect(tv, a.dp(3f), a.dp(3f), paint);
-                c.drawLine(cx - a.dp(5f), a.dp(3f), cx, a.dp(7f), paint);
-                c.drawLine(cx + a.dp(5f), a.dp(3f), cx, a.dp(7f), paint);
-                paint.setStyle(Paint.Style.FILL);
-            } else if (kind == 4) {
-                // Sliders / tuning icon
-                float x1 = a.dp(9.5f), x2 = w - a.dp(9.5f);
-                c.drawLine(x1, cy - a.dp(5f), x2, cy - a.dp(5f), paint);
-                c.drawLine(x1, cy + a.dp(5f), x2, cy + a.dp(5f), paint);
-                paint.setStyle(Paint.Style.FILL);
-                c.drawCircle(cx - a.dp(3f), cy - a.dp(5f), a.dp(2.3f), paint);
-                c.drawCircle(cx + a.dp(3f), cy + a.dp(5f), a.dp(2.3f), paint);
-            } else {
-                // Shield / update arrow icon
-                c.drawArc(
-                        new RectF(a.dp(9.5f), a.dp(9.5f), w - a.dp(9.5f), h - a.dp(9.5f)),
-                        -30,
-                        300,
-                        false,
-                        paint);
-                c.drawLine(cx, a.dp(13f), cx, cy + a.dp(3.5f), paint);
-                c.drawLine(cx - a.dp(2.8f), cy + a.dp(0.8f), cx, cy + a.dp(3.6f), paint);
-                c.drawLine(cx + a.dp(2.8f), cy + a.dp(0.8f), cx, cy + a.dp(3.6f), paint);
-            }
+            UiIcon.tintDrawable(glyph, strokeColor);
+            UiIcon.drawCentered(c, glyph, (int) w, (int) h, Math.min(w, h) * 0.62f);
         }
     }
 
@@ -3594,14 +3629,31 @@ final class MobileShell {
     static final class NavGlyph extends View {
         private final MainActivity a;
         private final int kind;
+        private final android.graphics.drawable.Drawable glyph;
         private boolean selected;
         private int customTint = 0;
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         NavGlyph(MainActivity activity, int kind) {
             super(activity);
             this.a = activity;
             this.kind = kind;
+            glyph = UiIcon.drawable(activity, glyphKind(kind));
+        }
+
+        /** Tab 顺序：主页 / 搜索 / 直播 / 片库 / 设置。 */
+        static int glyphKind(int kind) {
+            switch (kind) {
+                case 0:
+                    return UiIcon.HOME;
+                case 1:
+                    return UiIcon.SEARCH;
+                case 2:
+                    return UiIcon.LIVE;
+                case 3:
+                    return UiIcon.LIBRARY;
+                default:
+                    return UiIcon.TUNE;
+            }
         }
 
         void setSelectedState(boolean value) {
@@ -3616,80 +3668,12 @@ final class MobileShell {
 
         @Override
         protected void onDraw(Canvas c) {
-            float w = getWidth(), h = getHeight();
-            float cx = w / 2f, cy = h / 2f;
-            int color = customTint != 0 ? customTint : (selected ? 0xffff8fb1 : 0xffe6edf9);
-            paint.setColor(color);
-            paint.setStrokeWidth(a.dp(1.75f));
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setStrokeJoin(Paint.Join.ROUND);
-
-            if (kind == 0) {
-                // iPhone `play_rectangle` / `play_rectangle_fill`
-                RectF rect = new RectF(a.dp(2.5f), a.dp(4f), w - a.dp(2.5f), h - a.dp(4f));
-                if (selected) {
-                    paint.setStyle(Paint.Style.FILL);
-                    c.drawRoundRect(rect, a.dp(4.5f), a.dp(4.5f), paint);
-                    paint.setColor(0xff101820);
-                } else {
-                    paint.setStyle(Paint.Style.STROKE);
-                    c.drawRoundRect(rect, a.dp(4.5f), a.dp(4.5f), paint);
-                    paint.setStyle(Paint.Style.FILL);
-                }
-                Path tri = new Path();
-                tri.moveTo(cx - a.dp(2.2f), cy - a.dp(3.2f));
-                tri.lineTo(cx + a.dp(3.4f), cy);
-                tri.lineTo(cx - a.dp(2.2f), cy + a.dp(3.2f));
-                tri.close();
-                c.drawPath(tri, paint);
-            } else if (kind == 1) {
-                // Search magnifying glass
-                paint.setStyle(Paint.Style.STROKE);
-                float r = a.dp(5.5f);
-                c.drawCircle(cx - a.dp(1.2f), cy - a.dp(1.2f), r, paint);
-                c.drawLine(cx + a.dp(2.8f), cy + a.dp(2.8f), w - a.dp(2.5f), h - a.dp(2.5f), paint);
-            } else if (kind == 2) {
-                // iPhone `dot_radiowaves_left_right` (`((•))`)
-                paint.setStyle(Paint.Style.FILL);
-                c.drawCircle(cx, cy, a.dp(2f), paint);
-                paint.setStyle(Paint.Style.STROKE);
-                float r1 = a.dp(5.2f);
-                RectF inner = new RectF(cx - r1, cy - r1, cx + r1, cy + r1);
-                c.drawArc(inner, -48, 96, false, paint);
-                c.drawArc(inner, 132, 96, false, paint);
-                float r2 = a.dp(8.6f);
-                RectF outer = new RectF(cx - r2, cy - r2, cx + r2, cy + r2);
-                c.drawArc(outer, -52, 104, false, paint);
-                c.drawArc(outer, 128, 104, false, paint);
-            } else if (kind == 3) {
-                // iPhone `square_favorites_alt` (rounded square card with heart/lines)
-                paint.setStyle(Paint.Style.STROKE);
-                RectF box = new RectF(a.dp(3.5f), a.dp(3f), w - a.dp(3.5f), h - a.dp(3f));
-                c.drawRoundRect(box, a.dp(4f), a.dp(4f), paint);
-                c.drawLine(a.dp(6.8f), h - a.dp(6.5f), w - a.dp(6.8f), h - a.dp(6.5f), paint);
-                paint.setStyle(Paint.Style.FILL);
-                c.drawCircle(cx - a.dp(1.6f), cy - a.dp(2.2f), a.dp(1.6f), paint);
-                c.drawCircle(cx + a.dp(1.6f), cy - a.dp(2.2f), a.dp(1.6f), paint);
-                Path heartTip = new Path();
-                heartTip.moveTo(cx - a.dp(3.1f), cy - a.dp(1.7f));
-                heartTip.lineTo(cx + a.dp(3.1f), cy - a.dp(1.7f));
-                heartTip.lineTo(cx, cy + a.dp(1.8f));
-                heartTip.close();
-                c.drawPath(heartTip, paint);
-            } else {
-                // iPhone `gear_alt` (gear with 8 teeth + center circle)
-                paint.setStyle(Paint.Style.STROKE);
-                c.drawCircle(cx, cy, a.dp(3.1f), paint);
-                c.drawCircle(cx, cy, a.dp(6.2f), paint);
-                for (int deg = 0; deg < 360; deg += 45) {
-                    double rad = Math.toRadians(deg);
-                    float x1 = cx + (float) Math.cos(rad) * a.dp(6.2f);
-                    float y1 = cy + (float) Math.sin(rad) * a.dp(6.2f);
-                    float x2 = cx + (float) Math.cos(rad) * a.dp(8.3f);
-                    float y2 = cy + (float) Math.sin(rad) * a.dp(8.3f);
-                    c.drawLine(x1, y1, x2, y2, paint);
-                }
-            }
+            int color =
+                    customTint != 0
+                            ? customTint
+                            : (selected ? UiTokens.ACCENT : UiTokens.TEXT_PRIMARY);
+            UiIcon.tintDrawable(glyph, color);
+            UiIcon.drawCentered(c, glyph, getWidth(), getHeight(), Math.min(getWidth(), getHeight()));
         }
     }
 }

@@ -269,91 +269,50 @@ final class HomeDock {
 
     final class Icon extends View {
         final int kind;
-        final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.drawable.Drawable glyph;
+        private final Paint dotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         Icon(int kind) {
             super(a);
             this.kind = kind;
-        }
-
-        void line(Canvas c, float... xy) {
-            Path path = new Path();
-            path.moveTo(xy[0], xy[1]);
-            for (int i = 2; i < xy.length; i += 2) path.lineTo(xy[i], xy[i + 1]);
-            c.drawPath(path, p);
+            glyph = UiIcon.drawable(a, glyphKind(kind));
         }
 
         @Override
         protected void onDraw(Canvas c) {
             super.onDraw(c);
-            c.save();
-            float iconDp = 21f * navScale;
-            c.translate(getWidth() / 2f - a.dp(iconDp / 2f), getHeight() / 2f - a.dp(iconDp / 2f));
-            c.scale(a.dp(iconDp) / 24f, a.dp(iconDp) / 24f);
             FocusMotion.State motion = (FocusMotion.State) getTag(R.id.focus_motion);
             boolean light = hasFocus() && (motion == null || Color.alpha(motion.color) > 150);
-            p.setColor(light ? MainActivity.DARK : 0xffd6d6dd);
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeWidth(hasFocus() ? 2 : 1.7f);
-            p.setStrokeCap(Paint.Cap.ROUND);
-            p.setStrokeJoin(Paint.Join.ROUND);
-            switch (kind) {
-                case 0:
-                    line(c, 3, 10, 12, 3, 21, 10);
-                    line(c, 5, 9, 5, 21, 10, 21, 10, 15, 14, 15, 14, 21, 19, 21, 19, 9);
-                    break;
-                case 1:
-                    c.drawCircle(10.5f, 10.5f, 6.7f, p);
-                    line(c, 16, 16, 21, 21);
-                    break;
-                case 2:
-                    c.drawRoundRect(new RectF(3, 6, 21, 19), 3, 3, p);
-                    line(c, 8, 2, 12, 6, 16, 2);
-                    line(c, 9, 22, 15, 22);
-                    break;
-                case 3:
-                    Path heart = new Path();
-                    heart.moveTo(12, 21);
-                    heart.cubicTo(9, 18, 2, 13, 2, 8);
-                    heart.cubicTo(2, 2, 9, 1, 12, 6);
-                    heart.cubicTo(15, 1, 22, 2, 22, 8);
-                    heart.cubicTo(22, 13, 15, 18, 12, 21);
-                    c.drawPath(heart, p);
-                    break;
-                case 4:
-                    Path cloud = new Path();
-                    cloud.moveTo(6, 19);
-                    cloud.cubicTo(-1, 19, 0, 10, 6, 10);
-                    cloud.cubicTo(6, 1, 18, 1, 19, 10);
-                    cloud.cubicTo(25, 10, 25, 19, 19, 19);
-                    cloud.close();
-                    c.drawPath(cloud, p);
-                    break;
-                case 5:
-                    c.drawCircle(12, 12, 6.3f, p);
-                    c.drawCircle(12, 12, 2.5f, p);
-                    for (int n = 0; n < 8; n++) {
-                        double t = n * Math.PI / 4;
-                        line(
-                                c,
-                                12 + (float) Math.cos(t) * 7,
-                                12 + (float) Math.sin(t) * 7,
-                                12 + (float) Math.cos(t) * 9.7f,
-                                12 + (float) Math.sin(t) * 9.7f);
-                    }
-                    break;
-            }
-            c.restore();
+            UiIcon.tintDrawable(glyph, light ? MainActivity.DARK : UiTokens.TEXT_SECONDARY);
+            UiIcon.drawCentered(c, glyph, getWidth(), getHeight(), a.dp(21f * navScale));
             if (isSelected()) {
-                p.setStyle(Paint.Style.FILL);
-                p.setColor(hasFocus() ? MainActivity.DARK : MainActivity.WHITE);
-                c.drawCircle(a.dp(5), getHeight() / 2f, a.dp(1.5f), p);
+                dotPaint.setStyle(Paint.Style.FILL);
+                dotPaint.setColor(hasFocus() ? MainActivity.DARK : MainActivity.WHITE);
+                c.drawCircle(a.dp(5), getHeight() / 2f, a.dp(1.5f), dotPaint);
             }
         }
 
         @Override
         public CharSequence getAccessibilityClassName() {
             return Button.class.getName();
+        }
+    }
+
+    /** Dock 图标 → 统一 vector 图标（首页/搜索/直播/收藏/网盘/设置）。 */
+    static int glyphKind(int kind) {
+        switch (kind) {
+            case 0:
+                return UiIcon.HOME;
+            case 1:
+                return UiIcon.SEARCH;
+            case 2:
+                return UiIcon.LIVE;
+            case 3:
+                return UiIcon.FAVORITE;
+            case 4:
+                return UiIcon.CLOUD;
+            default:
+                return UiIcon.TUNE;
         }
     }
 }

@@ -294,7 +294,7 @@ final class PlaybackControls {
         updateLabels();
     }
 
-    /** 底部图标行：宽屏均分铺满（10 格），窄屏横向滚动；中央播放簇由 PlayerChrome 负责。 */
+    /** 底部图标行：宽屏均分铺满（8 格），窄屏横向滚动；中央播放簇由 PlayerChrome 负责。 */
     private static final String[] BAR_KEYS = {
         "prev-episode",
         "next-episode",
@@ -303,8 +303,6 @@ final class PlaybackControls {
         "lines",
         "subtitles",
         "aspect",
-        "danmaku-tool",
-        "audio-tracks",
         "more"
     };
 
@@ -429,7 +427,7 @@ final class PlaybackControls {
             b.setTextSize(11);
             return b;
         }
-        return UiIcon.iconCell(a, UiIcon.kindForKey(key), title, 24, click);
+        return UiIcon.iconCell(a, UiIcon.kindForKey(key), title, 22, click);
     }
 
     void registerHiddenAction(String key, Runnable action) {

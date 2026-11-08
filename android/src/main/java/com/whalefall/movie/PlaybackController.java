@@ -194,6 +194,12 @@ final class PlaybackController {
 
     static void resolvePlayer(
             MainActivity a, Cms.Site s, Cms.Video v, Cms.Line line, Cms.Episode ep) {
+        if (a == null || s == null || v == null) return;
+        if (ep == null) {
+            a.toast("暂无可播放的剧集");
+            return;
+        }
+        if (ep.url == null) ep.url = "";
         if (a.miniMode) {
             a.changingMiniEpisode = true;
             showEpisodeDetails(a, s, v);
@@ -587,6 +593,12 @@ final class PlaybackController {
     }
 
     static void openPlayer(MainActivity a, Cms.Site s, Cms.Video v, Cms.Episode e) {
+        if (a == null || s == null || v == null || e == null) {
+            if (a != null) a.toast("该片源数据不完整，无法播放");
+            return;
+        }
+        if (e.url == null) e.url = "";
+        if (e.media == null) e.media = new JSONObject();
         if (e.url.startsWith("magnet:?")) {
             magnetPlayer(a, s, v, e);
             return;
@@ -596,7 +608,28 @@ final class PlaybackController {
             a.notice("这条剧集需要解析或使用了特殊协议，基础版尚未支持。");
             return;
         }
-        MainActivity.Screen screen = new MainActivity.Screen(() -> playerPage(a, s, v, e));
+        MainActivity.Screen screen =
+                new MainActivity.Screen(
+                        () -> {
+                            // 播放页构造涉及大量站点数据，任何异常都降级成提示，不闪退
+                            try {
+                                playerPage(a, s, v, e);
+                            } catch (Throwable error) {
+                                AppLog.w("Playback", "playerPage failed", error);
+                                if (a.playerChrome != null) a.playerChrome.setLoading(false);
+                                clearPlaybackLoading(a);
+                                a.toast("该片源暂不可播放，已返回");
+                                try {
+                                    releasePlayer(a);
+                                    if (!a.back.isEmpty()) {
+                                        a.current = a.back.pop();
+                                        a.renderReturn(a.current);
+                                        a.restore(a.current);
+                                    }
+                                } catch (Throwable ignored) {
+                                }
+                            }
+                        });
         screen.player = true;
         a.open(screen, a.current == null || !a.current.player);
     }
@@ -693,6 +726,8 @@ final class PlaybackController {
             Cms.Line line,
             Cms.Episode episode,
             int position) {
+        if (a == null || video == null || episode == null) return;
+        if (episode.url == null) episode.url = "";
         a.changingMiniEpisode = a.miniMode;
         a.resumeAt = position;
         if (a.miniMode) {
@@ -803,6 +838,9 @@ final class PlaybackController {
     }
 
     static void playerPage(MainActivity a, Cms.Site s, Cms.Video v, Cms.Episode ep) {
+        if (a == null || s == null || v == null || ep == null) return;
+        if (ep.url == null) ep.url = "";
+        if (ep.media == null) ep.media = new JSONObject();
         ep.url = LocalProxy.rewrite(ep.url);
         try {
             JSONArray subtitles = ep.media.optJSONArray("subtitles");
@@ -820,7 +858,9 @@ final class PlaybackController {
         releasePlayer(a);
         a.embyReporter = retained;
         a.playingBookmark = null;
-        if (s.api.startsWith(com.pilipala.emby.EmbyLibrary.PREFIX) && embySession != null) {
+        if (s.api != null
+                && s.api.startsWith(com.pilipala.emby.EmbyLibrary.PREFIX)
+                && embySession != null) {
             try {
                 if (a.embyReporter == null)
                     a.embyReporter =

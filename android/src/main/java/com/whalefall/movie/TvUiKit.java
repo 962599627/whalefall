@@ -214,17 +214,14 @@ final class TvUiKit {
         return t;
     }
 
-    /** 加号图标：左侧分类栏底部「添加」胶囊用。 */
+    /** 加号图标：左侧分类栏底部「添加」胶囊用（统一 vector）。 */
     static final class PlusGlyph extends View {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.drawable.Drawable glyph;
 
         PlusGlyph(Context c, int color) {
             super(c);
-            float density = c.getResources().getDisplayMetrics().density;
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(1.8f * density);
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setColor(color);
+            glyph = UiIcon.drawable(c, UiIcon.PLUS);
+            UiIcon.tintDrawable(glyph, color);
         }
 
         @Override
@@ -232,22 +229,18 @@ final class TvUiKit {
             float w = getWidth();
             float h = getHeight();
             if (w <= 0 || h <= 0) return;
-            canvas.drawLine(w * 0.5f, h * 0.16f, w * 0.5f, h * 0.84f, paint);
-            canvas.drawLine(w * 0.16f, h * 0.5f, w * 0.84f, h * 0.5f, paint);
+            UiIcon.drawCentered(canvas, glyph, getWidth(), getHeight(), Math.min(w, h) * 0.92f);
         }
     }
 
-    /** 导入图标：向下箭头 + 托盘。 */
+    /** 导入图标：下载箭头 + 托盘（统一 vector）。 */
     static final class ImportGlyph extends View {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.drawable.Drawable glyph;
 
         ImportGlyph(Context c, int color) {
             super(c);
-            float density = c.getResources().getDisplayMetrics().density;
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(1.7f * density);
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setColor(color);
+            glyph = UiIcon.drawable(c, UiIcon.IMPORT);
+            UiIcon.tintDrawable(glyph, color);
         }
 
         @Override
@@ -255,35 +248,22 @@ final class TvUiKit {
             float w = getWidth();
             float h = getHeight();
             if (w <= 0 || h <= 0) return;
-            canvas.drawLine(w * 0.5f, h * 0.14f, w * 0.5f, h * 0.60f, paint);
-            canvas.drawLine(w * 0.5f, h * 0.60f, w * 0.29f, h * 0.38f, paint);
-            canvas.drawLine(w * 0.5f, h * 0.60f, w * 0.71f, h * 0.38f, paint);
-            canvas.drawLine(w * 0.18f, h * 0.82f, w * 0.82f, h * 0.82f, paint);
+            UiIcon.drawCentered(canvas, glyph, getWidth(), getHeight(), Math.min(w, h) * 0.92f);
         }
     }
 
-    /** 筛选图标：三条横线 + 三个滑块圆点。 */
+    /** 筛选图标：三条递减横线（统一 vector）。 */
     static final class FilterGlyph extends View {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint dot = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private int color;
+        private final android.graphics.drawable.Drawable glyph;
 
         FilterGlyph(Context c, int color) {
             super(c);
-            this.color = color;
-            float density = c.getResources().getDisplayMetrics().density;
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(1.6f * density);
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setColor(color);
-            dot.setStyle(Paint.Style.FILL);
-            dot.setColor(color);
+            glyph = UiIcon.drawable(c, UiIcon.FILTER);
+            UiIcon.tintDrawable(glyph, color);
         }
 
         void setColor(int color) {
-            this.color = color;
-            paint.setColor(color);
-            dot.setColor(color);
+            UiIcon.tintDrawable(glyph, color);
             invalidate();
         }
 
@@ -292,33 +272,22 @@ final class TvUiKit {
             float w = getWidth();
             float h = getHeight();
             if (w <= 0 || h <= 0) return;
-            float[][] rows = {{0.28f, 0.36f}, {0.50f, 0.64f}, {0.72f, 0.46f}};
-            for (float[] row : rows) {
-                float y = h * row[0];
-                canvas.drawLine(w * 0.14f, y, w * 0.86f, y, paint);
-                canvas.drawCircle(w * row[1], y, h * 0.075f, dot);
-            }
+            UiIcon.drawCentered(canvas, glyph, getWidth(), getHeight(), Math.min(w, h) * 0.88f);
         }
     }
 
-    /** 上折角箭头（筛选摘要条展开提示）。 */
+    /** 上折角箭头（筛选摘要条展开提示，统一 vector）。 */
     static final class ChevronUpGlyph extends View {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private int color;
+        private final android.graphics.drawable.Drawable glyph;
 
         ChevronUpGlyph(Context c, int color) {
             super(c);
-            this.color = color;
-            float density = c.getResources().getDisplayMetrics().density;
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(1.8f * density);
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setColor(color);
+            glyph = UiIcon.drawable(c, UiIcon.CHEVRON_UP);
+            UiIcon.tintDrawable(glyph, color);
         }
 
         void setColor(int color) {
-            this.color = color;
-            paint.setColor(color);
+            UiIcon.tintDrawable(glyph, color);
             invalidate();
         }
 
@@ -327,24 +296,18 @@ final class TvUiKit {
             float w = getWidth();
             float h = getHeight();
             if (w <= 0 || h <= 0) return;
-            paint.setColor(color);
-            canvas.drawLine(w * 0.18f, h * 0.66f, w * 0.5f, h * 0.34f, paint);
-            canvas.drawLine(w * 0.5f, h * 0.34f, w * 0.82f, h * 0.66f, paint);
+            UiIcon.drawCentered(canvas, glyph, getWidth(), getHeight(), Math.min(w, h) * 0.9f);
         }
     }
 
-    /** 放大镜图标：纯 Canvas 画，避免 emoji 与系统字体差异。 */
+    /** 放大镜图标（统一 vector）。 */
     static final class SearchGlyph extends View {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final int color;
+        private final android.graphics.drawable.Drawable glyph;
 
         SearchGlyph(Context c, int color) {
             super(c);
-            this.color = color;
-            float density = c.getResources().getDisplayMetrics().density;
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(1.9f * density);
-            paint.setStrokeCap(Paint.Cap.ROUND);
+            glyph = UiIcon.drawable(c, UiIcon.SEARCH);
+            UiIcon.tintDrawable(glyph, color);
         }
 
         @Override
@@ -352,12 +315,7 @@ final class TvUiKit {
             float w = getWidth();
             float h = getHeight();
             if (w <= 0 || h <= 0) return;
-            float r = Math.min(w, h) * 0.29f;
-            float cx = w * 0.42f;
-            float cy = h * 0.42f;
-            paint.setColor(color);
-            canvas.drawCircle(cx, cy, r, paint);
-            canvas.drawLine(cx + r * 0.74f, cy + r * 0.74f, w * 0.86f, h * 0.86f, paint);
+            UiIcon.drawCentered(canvas, glyph, getWidth(), getHeight(), Math.min(w, h) * 0.9f);
         }
     }
 

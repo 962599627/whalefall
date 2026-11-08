@@ -1,6 +1,9 @@
 package com.whalefall.movie;
 
+import android.graphics.Canvas;
 import android.graphics.PorterDuff;
+import android.graphics.drawable.Drawable;
+import android.content.Context;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
@@ -45,6 +48,21 @@ final class UiIcon {
     static final int CHEVRON_LEFT = 24;
     static final int CHEVRON_RIGHT = 25;
     static final int REFRESH = 26;
+    // 全局导航 / 通用图标（Dock、Tab、筛选条、设置卡片、电视台）
+    static final int HOME = 27;
+    static final int SEARCH = 28;
+    static final int LIVE = 29;
+    static final int FAVORITE = 30;
+    static final int CLOUD = 31;
+    static final int LIBRARY = 32;
+    static final int PLUS = 33;
+    static final int IMPORT = 34;
+    static final int FILTER = 35;
+    static final int CHEVRON_UP = 36;
+    static final int CHEVRON_DOWN = 37;
+    static final int TV = 38;
+    static final int LAYERS = 39;
+    static final int PLAY_CIRCLE = 40;
 
     /** 图标资源：官方 media3 Material 图标 + 本项目 res/drawable/ic_whale_*。 */
     static int res(int kind) {
@@ -101,6 +119,34 @@ final class UiIcon {
                 return androidx.media3.ui.R.drawable.exo_ic_chevron_right;
             case REFRESH:
                 return R.drawable.ic_whale_refresh;
+            case HOME:
+                return R.drawable.ic_whale_home;
+            case SEARCH:
+                return R.drawable.ic_whale_search;
+            case LIVE:
+                return R.drawable.ic_whale_live;
+            case FAVORITE:
+                return R.drawable.ic_whale_favorite;
+            case CLOUD:
+                return R.drawable.ic_whale_cloud;
+            case LIBRARY:
+                return R.drawable.ic_whale_library;
+            case PLUS:
+                return R.drawable.ic_whale_plus;
+            case IMPORT:
+                return R.drawable.ic_whale_import;
+            case FILTER:
+                return R.drawable.ic_whale_filter;
+            case CHEVRON_UP:
+                return R.drawable.ic_whale_chevron_up;
+            case CHEVRON_DOWN:
+                return R.drawable.ic_whale_chevron_down;
+            case TV:
+                return R.drawable.ic_whale_tv;
+            case LAYERS:
+                return R.drawable.ic_whale_layers;
+            case PLAY_CIRCLE:
+                return androidx.media3.ui.R.drawable.exo_ic_play_circle_filled;
             default:
                 return R.drawable.ic_whale_more;
         }
@@ -352,5 +398,27 @@ final class UiIcon {
 
     static void setContentDescription(View v, String desc) {
         if (v != null) v.setContentDescription(desc);
+    }
+
+    // ---------------- 直接画在 Canvas 上的矢量图标（Dock / Tab / 筛选条 / 设置卡片） ----------------
+
+    /** 取一份可着色的 vector drawable（供自绘 View 使用，替代 Canvas 手绘路径）。 */
+    static Drawable drawable(Context context, int kind) {
+        Drawable d = context.getDrawable(res(kind));
+        return d == null ? null : d.mutate();
+    }
+
+    static void tintDrawable(Drawable d, int color) {
+        if (d != null) d.setColorFilter(color, PorterDuff.Mode.SRC_IN);
+    }
+
+    /** 把 24×24 的 vector 等比缩放到 sizePx 并居中画到 viewW×viewH 上。 */
+    static void drawCentered(Canvas canvas, Drawable d, int viewW, int viewH, float sizePx) {
+        if (d == null || viewW <= 0 || viewH <= 0) return;
+        int size = Math.max(1, Math.round(sizePx));
+        int left = (viewW - size) / 2;
+        int top = (viewH - size) / 2;
+        d.setBounds(left, top, left + size, top + size);
+        d.draw(canvas);
     }
 }
