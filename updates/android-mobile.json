@@ -5,9 +5,9 @@
   "versionCode": 12000,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.2.0（手机 / 平板 / 电视）\n\n- 新增：文件管理（上传/新建文件夹/重命名/删除）、Markdown 阅读器（图片/表格）、图片预览、APK 直接安装\n- 新增：局域网管理员后台（一次性令牌、10 分钟有效、Host/Origin/局域网校验）与 FTP 口令上传\n- 新增：屏幕保护（时长/时钟样式）、观影统计、播放队列、继续观看批量清理\n- 优化：片库历史/收藏与搜索结果改用 RecyclerView；配置变更后恢复当前页面\n- 优化：电视直播页「观看直播」按钮不再被面板裁切；图片预览黑屏修复\n- 安全：管理后台与 FTP 仅局域网、临时令牌；崩溃守卫改为可诊断兜底\n- 构建：Gradle(AGP) 迁移验证通过；ABI 拆分 arm64 包体积约 -43%",
-  "size": 61803586,
-  "sha256": "8d22619451327f93c9a83f1967a1ed31f925c96b76025da74b4f1e4021923201",
+  "notes": "# 鲸落 1.2.0（手机 / 平板 / 电视）\n\n- 默认静态壁纸改为内置「深海鲸落」主题图，可在设置中更换或恢复默认\n- 新增：文件管理（上传/新建文件夹/重命名/删除）、Markdown 阅读（图片/表格）、图片预览、APK 安装\n- 新增：局域网管理员后台（令牌/10 分钟 TTL/Host/Origin 校验）与 FTP 口令上传\n- 新增：屏幕保护（时长/时钟样式）、观影统计、播放队列、继续观看清理\n- 优化：片库历史/收藏与搜索结果 RecyclerView 化；配置变更后恢复当前页面\n- 修复：电视直播页按钮裁切、图片预览黑屏、网页上传 APK 选择器问题\n- 构建：Gradle(AGP)+R8 打通（keep 规则已覆盖 CSP 插件依赖），arm64 R8 包约 33MB",
+  "size": 61971605,
+  "sha256": "d670c0890981e3b6bd2560acb4e6aed0ad73391b7b727c7f14f9ae1e48edd1d5",
   "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.2.0/WhaleFall-1.2.0-android-mobile.apk",
   "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.2.0/WhaleFall-1.2.0-android-mobile.apk",
   "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.2.0"
