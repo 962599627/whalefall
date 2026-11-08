@@ -30,7 +30,7 @@ def main():
         if not match: raise RuntimeError('Missing instrumentation report: ' + edition)
         report = json.loads(match[1]); reports[edition] = report
         (OUT / 'results.json').write_text(json.dumps(reports, indent=2) + '\n', encoding='utf-8')
-        if report.get('passed') is not True or report.get('checks') != 14 or report.get('edition') != edition:
+        if report.get('passed') is not True or report.get('checks') != 18 or report.get('edition') != edition:
             raise RuntimeError('Update isolation check failed: ' + json.dumps(report))
     print(json.dumps(reports, indent=2))
 

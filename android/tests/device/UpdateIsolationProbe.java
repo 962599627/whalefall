@@ -109,7 +109,10 @@ public final class UpdateIsolationProbe extends Instrumentation {
     }
 
     static HttpURLConnection response(String address, JSONObject data) throws Exception {
-        final byte[] body = data.toString().getBytes("UTF-8");
+        return response(address, data.toString().getBytes("UTF-8"));
+    }
+
+    static HttpURLConnection response(String address, final byte[] body) throws Exception {
         return new HttpURLConnection(new URL(address)) {
             public void connect() {}
 
@@ -210,6 +213,37 @@ public final class UpdateIsolationProbe extends Instrumentation {
             check(
                     "all_foreign_feeds_never_offer_install",
                     foreign.available == null && !foreign.ready());
+            byte[] payload;
+            try (InputStream in = new java.io.FileInputStream(own);
+                    java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+                byte[] buffer = new byte[8192];
+                for (int n; (n = in.read(buffer)) != -1; ) out.write(buffer, 0, n);
+                payload = out.toByteArray();
+            }
+            final byte[] apkBytes = payload;
+            List<String> downloads = new ArrayList<>();
+            UpdateManager downloader =
+                    manager(
+                            "download",
+                            ownFeed,
+                            (url, offset) -> {
+                                downloads.add(url);
+                                if (url.startsWith(UpdatePolicy.MIRROR))
+                                    throw new java.io.IOException("Owned mirror failure fixture");
+                                return response(url, apkBytes);
+                            });
+            downloader.download();
+            idle(downloader);
+            check("downloaded_own_apk_ready", downloader.ready());
+            check(
+                    "download_retry_stays_on_own_release",
+                    downloads.size() == 3
+                            && downloads.get(0).equals(ownFeed.getString("url"))
+                            && downloads.get(1).equals(ownFeed.getString("url"))
+                            && downloads.get(2).equals(ownFeed.getString("githubUrl")));
+            check(
+                    "downloaded_apk_exact_hash",
+                    UpdateManager.sha(downloader.apk()).equals(ownFeed.getString("sha256")));
             report.put("edition", actual).put("checks", checks).put("passed", true);
         } catch (Throwable error) {
             try {

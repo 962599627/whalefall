@@ -3,7 +3,12 @@ on:
   workflow_dispatch:
   push:
     branches: ['fix/plugin-ports-16kb-20261107']
-    paths: ['.github/workflows/android-update-isolation.yml']
+    paths:
+      - '.github/workflows/android-update-isolation.yml'
+      - 'android/src/main/java/com/pilipala/marcomovie/Update*.java'
+      - 'android/tests/device/UpdateIsolationProbe.java'
+      - 'scripts/build_update_isolation_probe.py'
+      - 'scripts/run_update_isolation_probe.py'
 permissions:
   contents: read
 jobs:
