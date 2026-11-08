@@ -18,7 +18,7 @@ class AndroidUpdates(unittest.TestCase):
         self.out = Path(self.temp.name)
         self.release = dict(tag_name='android-mobile-v0.5.2', published_at='2026-11-08',
                             draft=False, prerelease=False, body='Phone fixes')
-        self.identity = dict(package='com.pilipala.marcomovie', edition='mobile',
+        self.identity = dict(package='com.whalefall.movie', edition='mobile',
                              versionName='0.5.2', versionCode=52, minSdk=23)
     def plan(self, releases=None):
         with patch.object(m, 'asset', return_value=(b'owned-apk', 'a' * 64)), \

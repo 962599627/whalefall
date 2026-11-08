@@ -30,12 +30,12 @@ def main():
     (OUT/'device.txt').write_text(adb('shell', 'getprop'), encoding='utf-8')
     adb('install', '--no-incremental', '-r', str(OUT/'fixture.apk'))
     adb('install', '--no-incremental', '-r', str(OUT/'probe.apk'))
-    adb('shell', 'pm', 'clear', 'com.pilipala.marcomovie')
+    adb('shell', 'pm', 'clear', 'com.whalefall.movie')
     adb('logcat', '-c')
     log = ''
     try:
         log = adb('shell', 'am', 'instrument', '-w',
-                  'com.pilipala.marcomovie.test/com.pilipala.marcomovie.SourceHostProbe')
+                  'com.whalefall.movie.test/com.whalefall.movie.SourceHostProbe')
         match = re.search(r'INSTRUMENTATION_STATUS: result=(\{[^\r\n]+\})', log)
         result = json.loads(match[1]) if match else {'passed': False}
         (OUT/'results.json').write_text(json.dumps(result, indent=2)+'\n', encoding='utf-8')

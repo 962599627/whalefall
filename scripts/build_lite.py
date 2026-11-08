@@ -85,6 +85,6 @@ def build():
   shutil.copy2(apk,release_apk)
   release_apk.with_suffix('.apk.sha256').write_text(sha+'  '+release_apk.name+'\n',encoding='utf8')
   compatibility_alias(release_apk, version, 'lite')
- result=dict(package='com.pilipala.marcomovie.lite',experimental_candidate=candidate,compile_api=14,min_api=14,bytes=apk.stat().st_size,sha256=sha,signature=signature,signer_sha256=signer,release_signer_verified=bool(expected),physical_tv_tested=False)
+ result=dict(package='com.whalefall.movie.lite',experimental_candidate=candidate,compile_api=14,min_api=14,bytes=apk.stat().st_size,sha256=sha,signature=signature,signer_sha256=signer,release_signer_verified=bool(expected),physical_tv_tested=False)
  (BUILD/'build-report.json').write_text(json.dumps(result,indent=2),encoding='utf8');print(json.dumps(result,indent=2))
 if __name__=='__main__':build()

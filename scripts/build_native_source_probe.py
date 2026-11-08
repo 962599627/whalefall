@@ -73,10 +73,10 @@ def main(runtime):
                     raise ValueError('Probe cleanup path escapes output')
                 old.unlink()
     manifest = OUT / 'AndroidManifest.xml'
-    manifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.pilipala.marcomovie.test">'
+    manifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.whalefall.movie.test">'
                         '<uses-sdk android:minSdkVersion="23" android:targetSdkVersion="28"/>'
                         '<application android:label="Native source regression"/>'
-                        '<instrumentation android:name="com.pilipala.marcomovie.NativeSourceProbe" android:targetPackage="com.pilipala.marcomovie"/>'
+                        '<instrumentation android:name="com.whalefall.movie.NativeSourceProbe" android:targetPackage="com.whalefall.movie"/>'
                         '</manifest>', encoding='utf-8')
     run(exe(SDK, 'aapt2'), 'link', '-o', OUT / 'resources.apk', '--manifest', manifest, '-I', ANDROID)
     run(exe(JDK / 'bin', 'javac'), '-encoding', 'UTF-8', '-source', '8', '-target', '8', '-Xlint:-options',

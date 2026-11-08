@@ -53,4 +53,4 @@ public final class NodeRuntime { public static void start(android.content.Contex
                                                'DrpyEngine.java', 'MediaOptions.java', 'ProxyAddress.java')),
                     ROOT / 'android/tests/DrpyChecks.java'], check=True)
     subprocess.run([JDK / 'bin/java', '-Dfile.encoding=UTF-8', '-cp', str(classes) + os.pathsep + str(PARSER),
-                    'com.pilipala.marcomovie.DrpyChecks', work], check=True)
+                    'com.whalefall.movie.DrpyChecks', work], check=True)

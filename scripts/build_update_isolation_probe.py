@@ -32,9 +32,9 @@ def main():
     version = '.'.join(parts[:2] + [str(int(parts[2]) + 1)])
     code = int(attrs[ns + 'versionCode']) + 1
     for name, edition in [('tv', 'tv'), ('mobile', 'mobile'), ('missing', None), ('unknown', 'unknown')]:
-        metadata = '' if edition is None else f'<meta-data android:name="com.pilipala.marcomovie.EDITION" android:value="{edition}"/>'
+        metadata = '' if edition is None else f'<meta-data android:name="com.whalefall.movie.EDITION" android:value="{edition}"/>'
         manifest = OUT / (name + '.xml')
-        manifest.write_text(f'<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.pilipala.marcomovie" android:versionCode="{code}" android:versionName="{version}"><uses-sdk android:minSdkVersion="23" android:targetSdkVersion="28"/><application android:label="Never install">{metadata}</application></manifest>', encoding='utf-8')
+        manifest.write_text(f'<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.whalefall.movie" android:versionCode="{code}" android:versionName="{version}"><uses-sdk android:minSdkVersion="23" android:targetSdkVersion="28"/><application android:label="Never install">{metadata}</application></manifest>', encoding='utf-8')
         unsigned = OUT / (name + '-unsigned.apk')
         run(exe(SDK, 'aapt2'), 'link', '-o', unsigned, '--manifest', manifest, '-I', ANDROID)
         sign(unsigned, OUT / 'assets' / (name + '.apk'))
@@ -45,7 +45,7 @@ def main():
         identity = apk_identity((OUT / 'assets' / (edition + '.apk')).read_bytes())
         assert identity['edition'] == edition and identity['versionCode'] == code and identity['versionName'] == version
     manifest = OUT / 'AndroidManifest.xml'
-    manifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.pilipala.marcomovie.test"><uses-sdk android:minSdkVersion="23" android:targetSdkVersion="28"/><application/><instrumentation android:name="com.pilipala.marcomovie.UpdateIsolationProbe" android:targetPackage="com.pilipala.marcomovie"/></manifest>', encoding='utf-8')
+    manifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.whalefall.movie.test"><uses-sdk android:minSdkVersion="23" android:targetSdkVersion="28"/><application/><instrumentation android:name="com.whalefall.movie.UpdateIsolationProbe" android:targetPackage="com.whalefall.movie"/></manifest>', encoding='utf-8')
     run(exe(SDK, 'aapt2'), 'link', '-o', OUT / 'probe-resources.apk', '--manifest', manifest, '-I', ANDROID, '-A', OUT / 'assets')
     run(exe(JDK / 'bin', 'javac'), '-encoding', 'UTF-8', '-source', '8', '-target', '8', '-Xlint:-options',
         '-classpath', str(ANDROID) + os.pathsep + str(BUILD / 'classes.jar'), '-d', OUT / 'classes', ROOT / 'android/tests/device/UpdateIsolationProbe.java')

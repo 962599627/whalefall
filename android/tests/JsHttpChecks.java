@@ -1,4 +1,4 @@
-package com.pilipala.marcomovie;
+package com.whalefall.movie;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;

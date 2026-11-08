@@ -101,10 +101,10 @@ def main():
             log = ""
             try:
                 wait_for_full_boot(timeout_seconds=120, stable_seconds=4)
-                adb("shell", "pm", "clear", "com.pilipala.marcomovie")
+                adb("shell", "pm", "clear", "com.whalefall.movie")
                 adb("logcat", "-c")
                 log = adb("shell", "am", "instrument", "-w",
-                          "com.pilipala.marcomovie.test/com.pilipala.marcomovie." + probe)
+                          "com.whalefall.movie.test/com.whalefall.movie." + probe)
                 print(log)
                 match = re.search(r"INSTRUMENTATION_STATUS: result=(\{[^\r\n]+\})", log)
                 result = json.loads(match[1]) if match else {}
@@ -123,7 +123,7 @@ def main():
                 try:
                     (OUT / (probe + "-logcat.txt")).write_text(adb("logcat", "-d", check=False), encoding="utf-8")
                     (OUT / "screenshots" / probe).mkdir(parents=True, exist_ok=True)
-                    adb("pull", "/sdcard/Android/data/com.pilipala.marcomovie/files/",
+                    adb("pull", "/sdcard/Android/data/com.whalefall.movie/files/",
                         str(OUT / "screenshots" / probe), check=False)
                 except Exception as error:
                     results.setdefault(probe, {})["evidence_error"] = str(error)

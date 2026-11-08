@@ -8,4 +8,4 @@ with tempfile.TemporaryDirectory() as output:
              *[root / 'android/src/main/java/com/pilipala/marcomovie' / n for n in ('Cms.java', 'RequestScope.java')],
              root / 'android/tests/WarehouseChecks.java']
     subprocess.run([jdk / 'javac', '-encoding', 'UTF-8', '-cp', jar, '-d', output, *files], check=True)
-    subprocess.run([jdk / 'java', '-cp', output + os.pathsep + str(jar), 'com.pilipala.marcomovie.WarehouseChecks'], check=True)
+    subprocess.run([jdk / 'java', '-cp', output + os.pathsep + str(jar), 'com.whalefall.movie.WarehouseChecks'], check=True)

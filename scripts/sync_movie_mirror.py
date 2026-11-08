@@ -89,7 +89,7 @@ def apk_identity(apk):
                     _, key, raw, _, _, value_type, value = struct.unpack_from('<IIIHBBI', data, pos)
                     attributes[strings[key]] = strings[raw] if raw != 0xffffffff else strings[value] if value_type == 3 else value
                     values[(name, strings[key])] = attributes[strings[key]]
-                if name == 'meta-data' and elements == ['manifest', 'application'] and attributes.get('name') == 'com.pilipala.marcomovie.EDITION':
+                if name == 'meta-data' and elements == ['manifest', 'application'] and attributes.get('name') == 'com.whalefall.movie.EDITION':
                     editions.append(attributes.get('value'))
             elements.append(name)
         elif kind == 0x103:
@@ -99,7 +99,7 @@ def apk_identity(apk):
         offset += size
     result = {'package': values[('manifest', 'package')], 'versionName': values[('manifest', 'versionName')],
               'versionCode': int(values[('manifest', 'versionCode')]), 'minSdk': int(values[('uses-sdk', 'minSdkVersion')])}
-    if result['package'] != 'com.pilipala.marcomovie' or result['minSdk'] < 23 or result['versionCode'] <= 0:
+    if result['package'] != 'com.whalefall.movie' or result['minSdk'] < 23 or result['versionCode'] <= 0:
         raise ValueError('Wrong application identity')
     if editions:
         if len(editions) != 1 or editions[0] not in ('tv', 'mobile'):

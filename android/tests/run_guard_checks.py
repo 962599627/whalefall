@@ -50,4 +50,4 @@ public static void start(android.content.Context c,String a,String b,String d)th
                                                'GuardEngine.java', 'DrpyEngine.java', 'MediaOptions.java', 'ProxyAddress.java')),
                     ROOT / 'android/tests/GuardChecks.java'], check=True)
     subprocess.run([JDK / 'bin/java', '-Dfile.encoding=UTF-8', '-cp', str(classes) + os.pathsep + dependencies,
-                    'com.pilipala.marcomovie.GuardChecks', work], check=True)
+                    'com.whalefall.movie.GuardChecks', work], check=True)

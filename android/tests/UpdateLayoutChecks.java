@@ -1,4 +1,4 @@
-package com.pilipala.marcomovie;
+package com.whalefall.movie;
 
 public final class UpdateLayoutChecks {
     static int count;

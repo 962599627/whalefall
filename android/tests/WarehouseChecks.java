@@ -1,4 +1,4 @@
-package com.pilipala.marcomovie;
+package com.whalefall.movie;
 
 import com.pilipala.source.Warehouse;
 import java.util.*;

@@ -19,12 +19,12 @@ def main():
     (OUT / 'device.txt').write_text(adb('shell', 'getprop'), encoding='utf-8')
     reports = {}
     for edition in ('mobile', 'tv'):
-        adb('uninstall', 'com.pilipala.marcomovie.test', check=False)
-        adb('uninstall', 'com.pilipala.marcomovie', check=False)
+        adb('uninstall', 'com.whalefall.movie.test', check=False)
+        adb('uninstall', 'com.whalefall.movie', check=False)
         adb('install', '--no-incremental', str(OUT / (edition + '.apk')))
         adb('install', '--no-incremental', str(OUT / 'probe.apk'))
         raw = adb('shell', 'am', 'instrument', '-w', '-e', 'edition', edition,
-                  'com.pilipala.marcomovie.test/com.pilipala.marcomovie.UpdateIsolationProbe')
+                  'com.whalefall.movie.test/com.whalefall.movie.UpdateIsolationProbe')
         (OUT / (edition + '.log')).write_text(raw, encoding='utf-8')
         match = re.search(r'INSTRUMENTATION_STATUS: result=(\{[^\r\n]+\})', raw)
         if not match: raise RuntimeError('Missing instrumentation report: ' + edition)

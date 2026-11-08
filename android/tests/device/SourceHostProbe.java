@@ -1,4 +1,4 @@
-package com.pilipala.marcomovie;
+package com.whalefall.movie;
 
 import android.app.Application;
 import android.app.Instrumentation;

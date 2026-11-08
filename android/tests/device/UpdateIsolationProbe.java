@@ -1,4 +1,4 @@
-package com.pilipala.marcomovie;
+package com.whalefall.movie;
 
 import android.app.Instrumentation;
 import android.content.Context;
@@ -144,7 +144,7 @@ public final class UpdateIsolationProbe extends Instrumentation {
                     c.getPackageManager()
                             .getApplicationInfo(c.getPackageName(), PackageManager.GET_META_DATA)
                             .metaData
-                            .getString("com.pilipala.marcomovie.EDITION");
+                            .getString("com.whalefall.movie.EDITION");
             check("installed_edition_matches", actual.equals(expectedEdition));
             boolean mobile = UpdatePolicy.mobileEdition(actual);
             File own = fixture(mobile ? "mobile" : "tv");

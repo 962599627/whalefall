@@ -4,7 +4,7 @@ import hashlib, json, os, re, subprocess, zipfile, urllib.request
 import xml.etree.ElementTree as ET
 from build_catpaw_android import build as build_catpaw, assets_for_package
 from build_quickjs_deadline import build as build_quickjs_deadline
-from android_package_names import package_name, compatibility_alias
+from android_package_names import package_name
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'android/src/main'
@@ -115,7 +115,7 @@ def main():
     if not key.exists():
         if release_mode:
             raise RuntimeError(f'Release/explicit signing key missing; refusing to auto-generate: {key}')
-        run(exe(JDK/'bin','keytool'),'-genkeypair','-keystore',key,'-storetype','PKCS12','-alias','marcomovie','-storepass:env','MARCOMOVIE_KEY_PASSWORD','-keypass:env','MARCOMOVIE_KEY_PASSWORD','-keyalg','RSA','-keysize','2048','-validity','10000','-dname','CN=Pilipala, OU=Marco Movie Preview')
+        run(exe(JDK/'bin','keytool'),'-genkeypair','-keystore',key,'-storetype','PKCS12','-alias','marcomovie','-storepass:env','MARCOMOVIE_KEY_PASSWORD','-keypass:env','MARCOMOVIE_KEY_PASSWORD','-keyalg','RSA','-keysize','2048','-validity','10000','-dname','CN=WhaleFall, OU=WhaleFall Preview')
     manifest_root=ET.parse(SRC/'AndroidManifest.xml').getroot()
     version=manifest_root.get('{http://schemas.android.com/apk/res/android}versionName')
     version_code=int(manifest_root.get('{http://schemas.android.com/apk/res/android}versionCode','0'))
@@ -138,7 +138,6 @@ def main():
         except Exception:
             pass
     (DIST/(apk.name+'.sha256')).write_text(digest+'  '+apk.name+'\n',encoding='ascii')
-    compatibility_alias(apk, version, 'tv')
     mobile_manifest=BUILD/'AndroidManifest.mobile.xml'
     mobile_xml=(SRC/'AndroidManifest.xml').read_text(encoding='utf-8').replace('android:value="tv"','android:value="mobile"').replace('<category android:name="android.intent.category.LEANBACK_LAUNCHER" />','')
     mobile_manifest.write_text(mobile_xml,encoding='utf-8')
@@ -154,10 +153,9 @@ def main():
     run(exe(SDK,'zipalign'),'-c','4',mobile_apk,capture=True)
     mobile_digest=hashlib.sha256(mobile_apk.read_bytes()).hexdigest()
     (DIST/(mobile_apk.name+'.sha256')).write_text(mobile_digest+'  '+mobile_apk.name+'\n',encoding='ascii')
-    compatibility_alias(mobile_apk, version, 'mobile')
     (BUILD/'apk-signature.txt').write_text(signature,encoding='utf-8')
     (BUILD/'apk-badging.txt').write_text(badging,encoding='utf-8')
-    result={'apk':apk.name,'sha256':digest,'bytes':apk.stat().st_size,'mobile_apk':mobile_apk.name,'mobile_sha256':mobile_digest,'mobile_bytes':mobile_apk.stat().st_size,'signature_verified':True,'signer_sha256':signer_sha256,'zipalign_verified':True,'package':'com.pilipala.marcomovie','version':version,'version_code':version_code,'git_commit':git_commit,'git_dirty':git_dirty,'min_sdk':23,'target_sdk':28,'device_install_tested':False,'device_playback_tested':False,'signing':'release-verified signing key' if expected_signer else 'independent local development key; not a store release'}
+    result={'apk':apk.name,'sha256':digest,'bytes':apk.stat().st_size,'mobile_apk':mobile_apk.name,'mobile_sha256':mobile_digest,'mobile_bytes':mobile_apk.stat().st_size,'signature_verified':True,'signer_sha256':signer_sha256,'zipalign_verified':True,'package':'com.whalefall.movie','version':version,'version_code':version_code,'git_commit':git_commit,'git_dirty':git_dirty,'min_sdk':23,'target_sdk':28,'device_install_tested':False,'device_playback_tested':False,'signing':'release-verified signing key' if expected_signer else 'independent local development key; not a store release'}
     (BUILD/'build-validation.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
     print(json.dumps(result,indent=2))
 

@@ -32,10 +32,10 @@ if __name__ == '__main__':
     (OUT/'device.txt').write_text(adb('shell', 'getprop'), encoding='utf-8')
     adb('install', '-r', str(OUT/'layout-only.apk'))
     adb('install', '-r', str(OUT/'probe.apk'))
-    adb('shell', 'pm', 'clear', 'com.pilipala.marcomovie')
+    adb('shell', 'pm', 'clear', 'com.whalefall.movie')
     log = ''
     try:
-        log = adb('shell', 'am', 'instrument', '-w', 'com.pilipala.marcomovie.test/com.pilipala.marcomovie.MobilePlayerProbe')
+        log = adb('shell', 'am', 'instrument', '-w', 'com.whalefall.movie.test/com.whalefall.movie.MobilePlayerProbe')
         print(log)
         match = re.search(r'INSTRUMENTATION_STATUS: result=(\{[^\r\n]+\})', log)
         result = json.loads(match[1]) if match else {'passed': False}
@@ -47,4 +47,4 @@ if __name__ == '__main__':
     finally:
         (OUT/'instrumentation.log').write_text(log, encoding='utf-8')
         (OUT/'logcat.txt').write_text(adb('logcat', '-d', check=False), encoding='utf-8')
-        adb('pull', '/sdcard/Android/data/com.pilipala.marcomovie/files/', str(OUT/'screenshots'), check=False)
+        adb('pull', '/sdcard/Android/data/com.whalefall.movie/files/', str(OUT/'screenshots'), check=False)

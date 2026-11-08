@@ -3,8 +3,14 @@ package com.pilipala.marcomovie;
 import com.whl.quickjs.wrapper.QuickJSContext;
 import java.io.IOException;
 
-/** Native instruction-loop cancellation for the build-pinned wrapper 3.2.3. */
-final class QuickJsDeadline {
+/**
+ * Native instruction-loop cancellation for the build-pinned wrapper 3.2.3.
+ *
+ * <p>Kept in the upstream package on purpose: the pinned release ships
+ * libmovie-quickjs-deadline.so with Java_com_pilipala_marcomovie_QuickJsDeadline_* symbols,
+ * so the JNI class must stay here while the rest of the app is rebranded.
+ */
+public final class QuickJsDeadline {
     private static boolean loaded;
     private final long owner = Thread.currentThread().getId();
     private long handle;
@@ -20,7 +26,7 @@ final class QuickJsDeadline {
         }
     }
 
-    QuickJsDeadline(QuickJSContext context) throws IOException {
+    public QuickJsDeadline(QuickJSContext context) throws IOException {
         load();
         try {
             handle = attach0(context);
@@ -30,7 +36,7 @@ final class QuickJsDeadline {
         }
     }
 
-    static final class Operation {
+    public static final class Operation {
         private final long handle, generation;
 
         Operation(long handle, long generation) {
@@ -38,11 +44,11 @@ final class QuickJsDeadline {
             this.generation = generation;
         }
 
-        void cancel() {
+        public void cancel() {
             cancel0(handle, generation);
         }
 
-        int finish() {
+        public int finish() {
             return finish0(handle, generation);
         }
     }
@@ -52,7 +58,7 @@ final class QuickJsDeadline {
             throw new IllegalStateException("QuickJS deadline must be managed on its owner thread");
     }
 
-    Operation begin(long timeoutMillis) {
+    public Operation begin(long timeoutMillis) {
         checkOwner();
         if (handle == 0 || generation == Long.MAX_VALUE)
             throw new IllegalStateException("QuickJS deadline is closed");
@@ -61,7 +67,7 @@ final class QuickJsDeadline {
         return new Operation(handle, ticket);
     }
 
-    void close() {
+    public void close() {
         checkOwner();
         if (handle == 0) return;
         detach0(handle);

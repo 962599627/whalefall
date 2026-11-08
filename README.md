@@ -1,3 +1,7 @@
+> **鲸落 / WhaleFall 分支**：本仓库是 Marco Movie 的二次开发分支（品牌「鲸落」，包名 `com.whalefall.movie`）。
+> 改动清单、构建方式、更新源配置与 GPL-3.0 署名要求见 [docs/WHALEFALL.md](docs/WHALEFALL.md)。
+> 上游项目与作者：Pilipala / Marco Movie（GPL-3.0-only）。
+
 <div align="center">
   <img src="docs/images/tv-banner-960x540.png" width="480" alt="Marco Movie — 银色场记板与播放标志" />
   <h1>Marco Movie</h1>

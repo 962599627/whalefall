@@ -10,7 +10,7 @@ def package_name(version, edition):
         raise ValueError('Invalid package version')
     if edition not in ('tv', 'mobile', 'lite'):
         raise ValueError('Unknown Android edition')
-    return f'MarcoMovie-{version}-android-{edition}.apk'
+    return f'WhaleFall-{version}-android-{edition}.apk'
 
 
 def compatibility_alias(package, version, edition):
@@ -18,7 +18,7 @@ def compatibility_alias(package, version, edition):
     if package.name != package_name(version, edition):
         raise ValueError('Package name does not match edition')
     suffix = 'preview' if edition == 'tv' else edition
-    alias = package.with_name(f'MarcoMovie-{version}-{suffix}.apk')
+    alias = package.with_name(f'WhaleFall-{version}-{suffix}.apk')
     shutil.copyfile(package, alias)
     digest = hashlib.sha256(package.read_bytes()).hexdigest()
     if hashlib.sha256(alias.read_bytes()).hexdigest() != digest:

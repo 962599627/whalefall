@@ -38,7 +38,7 @@ def main():
  if not fixture.with_name('stream.m3u8').exists():subprocess.run(['ffmpeg','-v','error','-i',str(fixture),'-c:v','libx264','-profile:v','baseline','-g','48','-c:a','copy','-hls_time','2','-hls_list_size','0','-hls_segment_filename',str(fixture.with_name('segment%d.ts')),str(fixture.with_name('stream.m3u8'))],check=True)
  out=BUILD/'probe'
  for d in ('classes','dex'):(out/d).mkdir(parents=True,exist_ok=True)
- manifest=out/'manifest.xml';manifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.pilipala.marcomovie.lite.test"><uses-sdk android:minSdkVersion="14" android:targetSdkVersion="28"/><application/><instrumentation android:name="com.pilipala.marcomovie.lite.LiteProbe" android:targetPackage="com.pilipala.marcomovie.lite"/></manifest>')
+ manifest=out/'manifest.xml';manifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.whalefall.movie.lite.test"><uses-sdk android:minSdkVersion="14" android:targetSdkVersion="28"/><application/><instrumentation android:name="com.whalefall.movie.lite.LiteProbe" android:targetPackage="com.whalefall.movie.lite"/></manifest>')
  assets=out/'assets';assets.mkdir(exist_ok=True)
  if candidate:
   from cryptography import x509
@@ -66,9 +66,9 @@ def main():
  if candidate:
   secure=ThreadingHTTPServer(('127.0.0.1',8774),Fixture);ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);ctx.minimum_version=ctx.maximum_version=ssl.TLSVersion.TLSv1_2;ctx.load_cert_chain(assets/'test-ca.pem',out/'test-key.pem');secure.socket=ctx.wrap_socket(secure.socket,server_side=True);threading.Thread(target=secure.serve_forever,daemon=True).start()
  try:
-  result=adb('shell','-x','am','instrument','-w','-e','candidate',str(candidate).lower(),'com.pilipala.marcomovie.lite.test/com.pilipala.marcomovie.lite.LiteProbe');(out/'result.txt').write_text(result,encoding='utf8');print(result);assert ('PASS 33 API14 checks' if candidate else 'PASS 28 API14 checks') in result
+  result=adb('shell','-x','am','instrument','-w','-e','candidate',str(candidate).lower(),'com.whalefall.movie.lite.test/com.whalefall.movie.lite.LiteProbe');(out/'result.txt').write_text(result,encoding='utf8');print(result);assert ('PASS 33 API14 checks' if candidate else 'PASS 28 API14 checks') in result
  finally:
   server.shutdown();server.server_close()
   if secure:secure.shutdown();secure.server_close()
-  adb('uninstall','com.pilipala.marcomovie.lite.test')
+  adb('uninstall','com.whalefall.movie.lite.test')
 if __name__=='__main__':main()

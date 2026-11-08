@@ -1,4 +1,4 @@
-package com.pilipala.marcomovie;
+package com.whalefall.movie;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;

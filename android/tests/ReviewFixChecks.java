@@ -1,4 +1,4 @@
-package com.pilipala.marcomovie;
+package com.whalefall.movie;
 
 import java.io.IOException;
 import java.util.*;
@@ -309,7 +309,7 @@ public final class ReviewFixChecks {
         RuntimeException appError = new IllegalStateException("app");
         appError.setStackTrace(
                 new StackTraceElement[] {
-                    new StackTraceElement("com.pilipala.marcomovie.HomeScreen", "show", null, 1)
+                    new StackTraceElement("com.whalefall.movie.HomeScreen", "show", null, 1)
                 });
         check(
                 ListingRoute.isPluginBackgroundCrash(worker, pluginError, main)

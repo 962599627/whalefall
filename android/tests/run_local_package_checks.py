@@ -19,5 +19,5 @@ with tempfile.TemporaryDirectory() as output, tempfile.TemporaryDirectory() as i
                     root / 'lite/src/main/java/com/pilipala/marcomovie/lite/NetworkTls.java',
                     root / 'android/tests/LiteFormatChecks.java'], check=True)
     subprocess.run([jdk / "java", "-cp", output + os.pathsep + str(parser),
-                    "com.pilipala.marcomovie.LocalPackageChecks", imports], check=True)
+                    "com.whalefall.movie.LocalPackageChecks", imports], check=True)
     subprocess.run([jdk / "java", "-cp", output + os.pathsep + str(parser), "LiteFormatChecks"], check=True)

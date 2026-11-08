@@ -13,4 +13,4 @@ FILES = [APP / name for name in ('Cms.java', 'RequestScope.java', 'SourceEngine.
 FILES += [ROOT / 'shared/java/com/pilipala/source/Warehouse.java', ROOT / 'android/tests/device/HttpT4Checks.java']
 SUFFIX = '.exe' if os.name == 'nt' else ''
 subprocess.run([str(JDK / 'bin' / ('javac' + SUFFIX)), '-encoding', 'UTF-8', '-cp', str(JSON), '-d', str(OUT), *map(str, FILES)], check=True)
-subprocess.run([str(JDK / 'bin' / ('java' + SUFFIX)), '-cp', str(OUT) + os.pathsep + str(JSON), 'com.pilipala.marcomovie.HttpT4Checks'], check=True)
+subprocess.run([str(JDK / 'bin' / ('java' + SUFFIX)), '-cp', str(OUT) + os.pathsep + str(JSON), 'com.whalefall.movie.HttpT4Checks'], check=True)

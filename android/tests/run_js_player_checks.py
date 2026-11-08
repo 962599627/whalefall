@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix='js-http-shims-') as tmp:
     subprocess.run([str(JDK/'bin'/('javac.exe' if os.name=='nt' else 'javac')),'-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-cp',classpath,'-d',str(out),str(base64),str(text),str(ROOT/'shared/java/com/pilipala/source/Warehouse.java'),*map(str,sources),str(test/'JsPlayerChecks.java'),str(test/'JsHttpChecks.java')],check=True)
 results=[]
 for check in ('JsPlayerChecks','JsHttpChecks'):
-    result=subprocess.run([str(JDK/'bin'/('java.exe' if os.name=='nt' else 'java')),'-Dfile.encoding=UTF-8','-cp',str(out)+os.pathsep+classpath,'com.pilipala.marcomovie.'+check,str(ROOT)],capture_output=True,text=True,encoding='utf-8')
+    result=subprocess.run([str(JDK/'bin'/('java.exe' if os.name=='nt' else 'java')),'-Dfile.encoding=UTF-8','-cp',str(out)+os.pathsep+classpath,'com.whalefall.movie.'+check,str(ROOT)],capture_output=True,text=True,encoding='utf-8')
     print(result.stdout);results.append(result.stdout)
     if result.returncode:
         print(result.stderr)

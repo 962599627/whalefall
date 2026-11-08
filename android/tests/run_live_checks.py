@@ -23,5 +23,5 @@ try:
     print(result.stdout);(ROOT/'android/tests/live-results.txt').write_text(result.stdout,encoding='utf-8')
     subprocess.run([str(JDK/'bin'/('javac.exe' if os.name=='nt' else 'javac')),'-encoding','UTF-8','-cp',str(out)+os.pathsep+str(jar),'-d',str(out),str(ROOT/'android/tests/LiveNetworkChecks.java'),str(ROOT/'android/tests/PrivacyPinChecks.java'),str(ROOT/'android/src/main/java/com/pilipala/marcomovie/PrivacyPin.java')],check=True)
     for name,extra in [('LiveNetworkChecks',[f'http://127.0.0.1:{server.server_port}/']),('PrivacyPinChecks',[])]:
-        subprocess.run([str(JDK/'bin'/('java.exe' if os.name=='nt' else 'java')),'-cp',str(out)+os.pathsep+str(jar),'com.pilipala.marcomovie.'+name,*extra],check=True)
+        subprocess.run([str(JDK/'bin'/('java.exe' if os.name=='nt' else 'java')),'-cp',str(out)+os.pathsep+str(jar),'com.whalefall.movie.'+name,*extra],check=True)
 finally:server.shutdown()

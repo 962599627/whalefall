@@ -7,4 +7,4 @@ def tool(name):
     return shutil.which(name) or name
 out=ROOT/'android/build/seek-check';out.mkdir(parents=True,exist_ok=True)
 subprocess.run([tool('javac'),'-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-d',str(out),str(ROOT/'android/src/main/java/com/pilipala/marcomovie/SeekGesture.java'),str(ROOT/'android/tests/SeekGestureChecks.java')],check=True)
-subprocess.run([tool('java'),'-cp',str(out),'com.pilipala.marcomovie.SeekGestureChecks'],check=True)
+subprocess.run([tool('java'),'-cp',str(out),'com.whalefall.movie.SeekGestureChecks'],check=True)

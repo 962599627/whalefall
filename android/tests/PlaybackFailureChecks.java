@@ -1,4 +1,4 @@
-package com.pilipala.marcomovie;
+package com.whalefall.movie;
 
 public final class PlaybackFailureChecks {
     public static void main(String[] args) {

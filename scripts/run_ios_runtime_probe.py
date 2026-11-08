@@ -17,7 +17,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'verification/ios-runtime'
 APP = OUT / 'RuntimeProbe.app'
-IDENTIFIER = 'com.pilipala.marcomovie.runtimeprobe'
+IDENTIFIER = 'com.whalefall.movie.runtimeprobe'
 PROGRESS = {}
 
 

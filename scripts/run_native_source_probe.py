@@ -49,14 +49,14 @@ def main(page_size):
     # adds a separate filesystem/mapping path to the experimental 16 KB image.
     adb('install', '--no-incremental', '-r', str(OUT / 'fixture.apk'))
     adb('install', '--no-incremental', '-r', str(OUT / 'probe.apk'))
-    adb('shell', 'pm', 'clear', 'com.pilipala.marcomovie')
+    adb('shell', 'pm', 'clear', 'com.whalefall.movie')
     adb('shell', 'svc', 'wifi', 'disable')
     adb('shell', 'svc', 'data', 'disable')
     adb('logcat', '-c')
     log = ''
     try:
         log = adb('shell', 'am', 'instrument', '-w', '-e', 'page_size', str(page_size),
-                  'com.pilipala.marcomovie.test/com.pilipala.marcomovie.NativeSourceProbe')
+                  'com.whalefall.movie.test/com.whalefall.movie.NativeSourceProbe')
         print(log)
         match = re.search(r'INSTRUMENTATION_STATUS: result=(\{[^\r\n]+\})', log)
         result = json.loads(match[1]) if match else {'passed': False, 'error': 'No instrumentation result'}

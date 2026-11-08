@@ -72,11 +72,11 @@ def main(phone=False):
             old.unlink()
     manifest = OUT / "AndroidManifest.xml"
     entries = "".join(
-        '<instrumentation android:name="com.pilipala.marcomovie.' + name
-        + '" android:targetPackage="com.pilipala.marcomovie"/>' for name in PROBES
+        '<instrumentation android:name="com.whalefall.movie.' + name
+        + '" android:targetPackage="com.whalefall.movie"/>' for name in PROBES
     )
     manifest.write_text(
-        '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.pilipala.marcomovie.test">'
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.whalefall.movie.test">'
         '<uses-sdk android:minSdkVersion="23" android:targetSdkVersion="28"/>'
         '<application android:label="Local source regression"/>' + entries + '</manifest>', encoding="utf-8",
     )

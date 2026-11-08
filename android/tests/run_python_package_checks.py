@@ -26,5 +26,5 @@ with tempfile.TemporaryDirectory(prefix='python-package-native-') as temporary:
                     root / 'android/tests/PythonPackageChecks.java', shim], check=True)
     extracted = work / 'extracted.json'
     subprocess.run([jdk / 'java', '-Dfile.encoding=UTF-8', '-cp', str(classes) + os.pathsep + str(parser),
-                    'com.pilipala.marcomovie.PythonPackageChecks', imports, fixtures / 'python_package_fixture.json', extracted], check=True)
+                    'com.whalefall.movie.PythonPackageChecks', imports, fixtures / 'python_package_fixture.json', extracted], check=True)
     subprocess.run([node, '--jitless', root / 'android/tests/python_package_bridge.cjs', extracted, fixtures / 'python_package_expected.json'], check=True)

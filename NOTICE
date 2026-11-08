@@ -23,3 +23,11 @@ to H.264 for TV compatibility. It is a project brand asset, not media content.
 Since 0.4.7, launch motion is composed by StartupIntro using the owner-provided
 high-resolution logo and native text. The earlier startup.mp4 brand asset
 is retained for provenance and is not used by the launch overlay.
+
+## Derivative work notice (鲸落 / WhaleFall)
+
+This repository is a derivative work of Marco Movie (https://github.com/Pilipala9919/MarcoMovie),
+Copyright (C) 2026 Pilipala, licensed under GPL-3.0-only. The derivative build renames the
+application (鲸落 / WhaleFall), replaces brand artwork with original artwork, and changes the
+application package name to com.whalefall.movie. All upstream copyright notices, the GPL-3.0
+licence text and third-party notices are preserved.

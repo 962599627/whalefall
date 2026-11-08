@@ -29,7 +29,7 @@ class MirrorTests(unittest.TestCase):
                 self.release['assets'].append(dict(name=name+suffix, state='uploaded', browser_download_url=url+suffix,
                                                    size=len(payload), digest='sha256:'+hashlib.sha256(payload).hexdigest()))
                 self.data[url+suffix] = payload
-        self.identity = dict(package='com.pilipala.marcomovie', versionName='0.4.12', versionCode=25, minSdk=23)
+        self.identity = dict(package='com.whalefall.movie', versionName='0.4.12', versionCode=25, minSdk=23)
 
     def fetch(self, url, limit=m.LIMIT):
         if url.startswith('https://api.github.com/'):

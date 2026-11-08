@@ -1,4 +1,4 @@
-package com.pilipala.marcomovie;
+package com.whalefall.movie;
 
 import android.content.Context;
 import com.pilipala.catpaw.CatPawHost;

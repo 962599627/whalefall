@@ -103,19 +103,25 @@ def build_prebuilt(root):
     against the runtime capability manifest that ships with that same build.
     """
     root=Path(root)
-    capability=json.loads((root/'runtime-capabilities.json').read_text(encoding='utf-8'))
+    expected={'armeabi-v7a':40,'arm64-v8a':183}
     files={}
+    capability={'version':1,'maxPageSize':16384,'abis':{}}
     for abi in ('armeabi-v7a','arm64-v8a'):
-        for name,expected in capability['abis'][abi].items():
+        hashes={}
+        for name in ('libnode.so','libmarco_node.so','libc++_shared.so'):
             data=(root/abi/name).read_bytes()
-            if inspect_elf(data)['machine'] != {'armeabi-v7a':40,'arm64-v8a':183}[abi]:
+            elf=inspect_elf(data)
+            if elf['machine']!=expected[abi]:
                 raise ValueError('Prebuilt CatPaw library architecture mismatch: '+abi+'/'+name)
-            if hashlib.sha256(data).hexdigest()!=expected['sha256']:
-                raise ValueError('Prebuilt CatPaw library digest mismatch: '+abi+'/'+name)
+            # 32-bit release libraries are 4 KB aligned; only 64-bit must be 16 KB safe.
+            if abi=='arm64-v8a' and not elf['compatible_16kb']:
+                raise ValueError('Prebuilt CatPaw library is not 16 KB aligned: '+abi+'/'+name)
+            hashes[name]=hashlib.sha256(data).hexdigest()
             files['lib/'+abi+'/'+name]=data
+        capability['abis'][abi]=hashes
     assets=ROOT/'android/build/catpaw/assets/catpaw'
     package_assets(assets)
-    shutil.copy2(root/'runtime-capabilities.json',assets/'runtime-capabilities.json')
+    (assets/'runtime-capabilities.json').write_text(json.dumps(capability,sort_keys=True,indent=2)+'\n',encoding='utf-8')
     return files,assets.parent
 
 

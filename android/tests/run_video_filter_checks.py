@@ -12,4 +12,4 @@ with tempfile.TemporaryDirectory() as output:
              root / 'android/tests/VideoFilterChecks.java']
     subprocess.run([jdk / 'javac', '-encoding', 'UTF-8', '-cp', jar, '-d', output, *files], check=True)
     subprocess.run([jdk / 'java', '-cp', output + os.pathsep + str(jar),
-                    'com.pilipala.marcomovie.VideoFilterChecks'], check=True)
+                    'com.whalefall.movie.VideoFilterChecks'], check=True)

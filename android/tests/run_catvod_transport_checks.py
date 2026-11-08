@@ -24,4 +24,4 @@ with tempfile.TemporaryDirectory(prefix='catvod-http-checks-') as tmp:
     out = folder / 'classes'
     out.mkdir()
     subprocess.run([str(JDK / 'bin' / ('javac.exe' if os.name == 'nt' else 'javac')), '-encoding', 'UTF-8', '-source', '8', '-target', '8', '-Xlint:-options', '-cp', classpath, '-d', str(out), str(base64), str(text), str(ROOT / 'shared/java/com/pilipala/source/Warehouse.java'), *map(str, sources), str(test / 'JsHttpChecks.java'), str(test / 'CatvodTransportChecks.java')], check=True)
-    subprocess.run([str(JDK / 'bin' / ('java.exe' if os.name == 'nt' else 'java')), '-Dfile.encoding=UTF-8', '-cp', str(out) + os.pathsep + classpath, 'com.pilipala.marcomovie.CatvodTransportChecks'], check=True)
+    subprocess.run([str(JDK / 'bin' / ('java.exe' if os.name == 'nt' else 'java')), '-Dfile.encoding=UTF-8', '-cp', str(out) + os.pathsep + classpath, 'com.whalefall.movie.CatvodTransportChecks'], check=True)
