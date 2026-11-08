@@ -77,11 +77,11 @@ final class MobileShell {
 
     private final MainActivity a;
     private FrameLayout contentContainer;
-    private final View[] navTabs = new View[5];
-    private final TextView[] navLabels = new TextView[5];
-    private final NavGlyph[] navIcons = new NavGlyph[5];
-    private static final String[] TAB_NAMES = {"主页", "搜索", "直播", "片库", "设置"};
-    private static final int[] DOCK_TAB_INDICES = {0, 2, 3, 4};
+    private final View[] navTabs = new View[6];
+    private final TextView[] navLabels = new TextView[6];
+    private final NavGlyph[] navIcons = new NavGlyph[6];
+    private static final String[] TAB_NAMES = {"主页", "搜索", "直播", "片库", "设置", "电视"};
+    private static final int[] DOCK_TAB_INDICES = {0, 2, 5, 3, 4};
 
     // Home tab state
     private Cms.Site currentSite;
@@ -656,7 +656,7 @@ final class MobileShell {
         a.glass(bar, 26);
         bar.setElevation(a.dp(18));
 
-        String[] navKeys = {"nav-home", "nav-search", "nav-live", "nav-favorites", "nav-settings"};
+        String[] navKeys = {"nav-home", "nav-search", "nav-live", "nav-favorites", "nav-settings", "nav-tv"};
         float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
 
         for (int pos = 0; pos < DOCK_TAB_INDICES.length; pos++) {
@@ -699,7 +699,7 @@ final class MobileShell {
         homeReady = false;
         ++a.generation;
         if (activeTab == 0 && homeScroll != null) homeScrollY = homeScroll.getScrollY();
-        activeTab = Math.max(0, Math.min(4, index));
+        activeTab = Math.max(0, Math.min(5, index));
         a.cancelPageRequests();
         // When on Search tab (1), highlight Home (0) in the 4-tab dock
         int highlightedDockTab = activeTab == 1 ? 0 : activeTab;
@@ -739,7 +739,15 @@ final class MobileShell {
             case 4:
                 renderSettingsTab();
                 break;
+            case 5:
+                renderTvTab();
+                break;
         }
+    }
+
+    /** TAB 5：电视台直播（官方网页直播，内置央视 + 自定义频道）。 */
+    private void renderTvTab() {
+        contentContainer.addView(TvLive.screen(a), new FrameLayout.LayoutParams(-1, -1));
     }
 
     // =========================================================================
@@ -3158,6 +3166,14 @@ final class MobileShell {
                 tri.lineTo(cx - a.dp(2.2f), cy + a.dp(3.4f));
                 tri.close();
                 c.drawPath(tri, paint);
+            } else if (kind == 5) {
+                // 电视台：带天线的电视
+                paint.setStyle(Paint.Style.STROKE);
+                RectF tv = new RectF(a.dp(2.5f), a.dp(7f), w - a.dp(2.5f), h - a.dp(3f));
+                c.drawRoundRect(tv, a.dp(3f), a.dp(3f), paint);
+                c.drawLine(cx - a.dp(5f), a.dp(3f), cx, a.dp(7f), paint);
+                c.drawLine(cx + a.dp(5f), a.dp(3f), cx, a.dp(7f), paint);
+                paint.setStyle(Paint.Style.FILL);
             } else if (kind == 4) {
                 // Sliders / tuning icon
                 float x1 = a.dp(9.5f), x2 = w - a.dp(9.5f);

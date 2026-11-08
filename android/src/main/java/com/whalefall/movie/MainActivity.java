@@ -65,6 +65,7 @@ public final class MainActivity extends Activity {
     final Runnable tuneLiveNumber = this::commitLiveNumber;
     LocalProxy localProxy;
     WebResolver webResolver;
+    TvLive.Player tvPlayer;
     PlaybackControls playbackControls;
     Cms.Line activeLine;
     Cms.Episode activeEpisode;
@@ -1009,6 +1010,7 @@ public final class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (tvPlayer != null && tvPlayer.back()) return;
         if (playbackLoading != null) {
             changingMiniEpisode = false;
             clearPlaybackLoading();

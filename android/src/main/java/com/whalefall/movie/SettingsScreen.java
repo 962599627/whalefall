@@ -408,7 +408,7 @@ final class SettingsScreen {
                                     a.recreate();
                                 }));
         a.paragraph(
-                "鲸落 1.1.0 · 基于 Marco Movie 0.5.3（作者 Pilipala，GPL-3.0-only）二次开发 · 本产品仅为工具，不含任何影视资源；内容与配置请自行合法获取。播放能力取决于服务授权和设备支持。");
+                "鲸落 1.2.0 · 基于 Marco Movie 0.5.3（作者 Pilipala，GPL-3.0-only）二次开发 · 本产品仅为工具，不含任何影视资源；内容与配置请自行合法获取。播放能力取决于服务授权和设备支持。");
     }
 
     void confirm(String title, Runnable action) {
