@@ -11,6 +11,11 @@ Android phone/tablet and TV editions now have separate update feeds and explicit
 for the release tags, old-client migration aliases and runtime verification scope.
 This is implementation work, not an announcement of a new Android release.
 
+See [installation package names](installation-package-names.md) for explicit
+system/device and installer/portable labels across all platforms. Old-name assets
+remain byte-identical compatibility aliases; mirror sync prefers the clear name
+when that release actually supplies it, without changing the page layout.
+
 Clients from 0.5.1 first read their own `movie/updates/{platform}.json` feed, then select the newest matching official GitHub release containing that platform's package. Other platform versions, drafts and prereleases are ignored. Clients at 0.5.0 still use the legacy shared feed; install the first independent platform update from the download page, then subsequent updates use the new platform feed.
 
 The mirror runs `scripts/sync_platform_packages.py`. It patches existing download-card package URLs, byte sizes and hashes, writes the relevant platform feed, and updates only the existing changelog section with version-specific notes. It does not render a new HTML page or alter CSS, layout, images, unrelated prose/packages or legacy Android update channels. Large files retain the site's existing verified GitHub download behavior. Corresponding source remains attached to each platform's release.

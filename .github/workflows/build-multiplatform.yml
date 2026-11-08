@@ -228,6 +228,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $setupHash = (Get-FileHash "dist/$setupName" -Algorithm SHA256).Hash.ToLower()
           [System.IO.File]::WriteAllText("$PWD/dist/$setupName.sha256", "$setupHash  $setupName`n", [System.Text.Encoding]::ASCII)
+          python ../scripts/platform_package_names.py --folder dist --platform windows --version "$version"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
       - uses: actions/upload-artifact@v4
         with:
           name: MarcoMovie-Windows-x64
@@ -271,6 +273,7 @@ jobs:
           ZIP_NAME="MarcoMovie-$VERSION-macos.zip"
           (cd build/macos/Build/Products/Release && ditto -c -k --sequesterRsrc --keepParent *.app "$GITHUB_WORKSPACE/flutter/dist/$ZIP_NAME")
           (cd dist && shasum -a 256 "$ZIP_NAME" > "$ZIP_NAME.sha256")
+          python3 ../scripts/platform_package_names.py --folder dist --platform macos --version "$VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: MarcoMovie-macOS-App
@@ -315,6 +318,7 @@ jobs:
           cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
           (cd build/ios/ipa && zip -qry "$GITHUB_WORKSPACE/flutter/dist/$IPA_NAME" Payload)
           (cd dist && shasum -a 256 "$IPA_NAME" > "$IPA_NAME.sha256")
+          python3 ../scripts/platform_package_names.py --folder dist --platform ios --version "$VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: MarcoMovie-iOS-iPadOS-IPA
@@ -353,7 +357,7 @@ jobs:
           VERSION="${TAG#v}"
           VERSION="${VERSION%-preview}"
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release upload "$TAG" --repo "${{ github.repository }}" release-artifacts/MarcoMovie-*-windows-setup.exe* release-artifacts/MarcoMovie-*-windows-x64.zip* release-artifacts/MarcoMovie-*-macos.zip* release-artifacts/MarcoMovie-*-ios-unsigned.ipa* --clobber
+            gh release upload "$TAG" --repo "${{ github.repository }}" release-artifacts/MarcoMovie-*-windows-*.exe* release-artifacts/MarcoMovie-*-windows-*.zip* release-artifacts/MarcoMovie-*-macos*.zip* release-artifacts/MarcoMovie-*-ios-*.ipa* --clobber
             # Keep draft releases private until all official-signed APKs, source,
             # platform packages and checksums have been verified together.
             if [ "$(gh release view "$TAG" --repo "${{ github.repository }}" --json isDraft --jq .isDraft)" = "false" ]; then

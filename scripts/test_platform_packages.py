@@ -2,12 +2,38 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import hashlib
 from unittest.mock import patch
 
 import sync_platform_packages as m
+from platform_package_names import clear_names, PLATFORMS, ALIASES
 
 
 class PackageTests(unittest.TestCase):
+    def test_clear_names_retain_exact_installers_and_matching_checksums(self):
+        for platform, suffixes in PLATFORMS.items():
+            for suffix in suffixes:
+                source = self.out/('MarcoMovie-0.5.1-'+suffix)
+                source.write_bytes(b'package fixture '+suffix.encode())
+                source.with_name(source.name+'.sha256').write_text(hashlib.sha256(source.read_bytes()).hexdigest()+'  '+source.name+'\n')
+            for target in clear_names(self.out, '0.5.1', platform):
+                old = next(old for old, new in ALIASES.items() if target.name.endswith('-'+new))
+                self.assertEqual(target.read_bytes(), (self.out/('MarcoMovie-0.5.1-'+old)).read_bytes())
+                self.assertEqual(target.with_name(target.name+'.sha256').read_text().split(),
+                                 [hashlib.sha256(target.read_bytes()).hexdigest(), target.name])
+            clear_names(self.out, '0.5.1', platform)
+
+    def test_named_package_validation_happens_before_any_copy(self):
+        suffix = 'windows-setup.exe'
+        source = self.out/('MarcoMovie-0.5.1-'+suffix)
+        source.write_bytes(b'first package')
+        source.with_name(source.name+'.sha256').write_text(hashlib.sha256(source.read_bytes()).hexdigest()+'  '+source.name+'\n')
+        with self.assertRaises(FileNotFoundError): clear_names(self.out, '0.5.1', 'windows')
+        self.assertFalse((self.out/'MarcoMovie-0.5.1-windows-x64-setup.exe').exists())
+        source.with_name(source.name+'.sha256').write_text('a'*64+'  '+source.name+'\n')
+        with self.assertRaises(ValueError): clear_names(self.out, '0.5.1', 'windows')
+        with self.assertRaises(ValueError): clear_names(self.out, '../escape', 'ios')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -40,6 +66,30 @@ class PackageTests(unittest.TestCase):
         self.assertFalse((self.out / 'updates/windows.json').exists())
         self.sync()
         self.assertEqual(result, (self.out / 'index.html').read_text(encoding='utf-8'))
+
+    def test_clear_iphone_name_is_preferred_without_changing_card_layout(self):
+        name = 'MarcoMovie-0.5.1-ios-iphone-ipad-unsigned.ipa'
+        release = dict(self.release, assets=[{'name': name}, {'name': 'MarcoMovie-0.5.1-ios-unsigned.ipa'}])
+        with patch.object(m, 'platform_asset', return_value=('https://fixture.invalid/' + name, 123456, 'b'*64, None)) as download:
+            m.sync(self.out, [release])
+            self.assertEqual(download.call_args.args[1], name)
+        page = (self.out/'index.html').read_text(encoding='utf-8')
+        self.assertIn('<style>existing CSS</style>', page)
+        self.assertIn('<h3>ios-unsigned.ipa</h3>', page)
+        self.assertIn('https://fixture.invalid/' + name, page)
+        feed = json.loads((self.out/'updates/ios.json').read_text())
+        self.assertEqual(set(feed['packages']), {name})
+        # A later legacy-only release can still match the newly named card links.
+        self.assertIn('legacy.ipa', m.patch_card(page, 'ios-unsigned.ipa',
+                      dict(url='https://fixture.invalid/legacy.ipa', size=123, sha256='c'*64)))
+
+    def test_named_windows_setup_remains_the_updater_package(self):
+        names = ['MarcoMovie-0.5.1-windows-x64-setup.exe', 'MarcoMovie-0.5.1-windows-x64-portable.zip']
+        release = dict(self.release, tag_name='windows-v0.5.1', assets=[{'name': name} for name in names])
+        with patch.object(m, 'platform_asset', side_effect=lambda rel, name, output: ('https://fixture.invalid/'+name, 123, 'b'*64, None)):
+            m.sync(self.out, [release])
+        feed = json.loads((self.out/'updates/windows.json').read_text())
+        self.assertEqual(feed['windows']['url'], 'https://fixture.invalid/' + names[0])
 
     def test_drafts_unrecognized_and_no_release_leave_page_unchanged(self):
         self.sync([dict(self.release, draft=True), dict(self.release, tag_name='unrelated'), dict(self.release, tag_name='v0.5.0-preview')])

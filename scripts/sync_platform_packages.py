@@ -12,6 +12,7 @@ import re
 from urllib.parse import urlsplit
 
 from sync_movie_mirror import BASE, REPO, fetch, platform_asset
+from platform_package_names import ALIASES as CLEAR_NAMES
 
 SUFFIXES = {
     'ios': ('ios-unsigned.ipa',),
@@ -31,6 +32,7 @@ NOTE_SUFFIXES = {
     'windows-setup.exe': 'windows', 'windows-x64.zip': 'windows',
     'macos.zip': 'macos',
 }
+NOTE_SUFFIXES.update({new: NOTE_SUFFIXES[old] for old, new in CLEAR_NAMES.items()})
 
 
 def note_record(release):
@@ -191,6 +193,8 @@ def choose_platform(releases, platform):
 def patch_card(page, suffix, package):
     aliases = {'android-tv.apk': 'preview.apk', 'android-mobile.apk': 'mobile.apk',
                'android-lite.apk': 'lite.apk'}
+    aliases.update(CLEAR_NAMES)
+    aliases.update({new: old for old, new in CLEAR_NAMES.items()})
     endings = [suffix] + ([aliases[suffix]] if suffix in aliases else [])
     name_pattern = r'MarcoMovie-\d+\.\d+\.\d+-(?:' + '|'.join(map(re.escape, endings)) + ')'
     cards = list(re.finditer(r'<div class="dl"(?:\s+[^>]*)?>.*?</div>', page, re.S))
@@ -235,8 +239,12 @@ def sync(output, releases=None):
             raise ValueError('Published platform release is missing update notes: ' + platform)
         version = release['tag_name'].split('-v', 1)[1]
         packages = {}
+        names = {asset.get('name') for asset in release.get('assets', [])}
         for suffix in suffixes:
-            name = f'MarcoMovie-{version}-{suffix}'
+            preferred = CLEAR_NAMES.get(suffix, suffix)
+            name = f'MarcoMovie-{version}-{preferred}'
+            if name not in names:
+                name = f'MarcoMovie-{version}-{suffix}'
             href, size, digest, body = platform_asset(release, name, output)
             package = dict(size=size, sha256=digest, url=href if href.startswith('https://') else BASE + name)
             packages[name] = package
@@ -248,7 +256,8 @@ def sync(output, releases=None):
                     notes=release.get('body') or '', packages=packages,
                     release_url=f'https://github.com/{REPO}/releases/tag/{release["tag_name"]}')
         if platform == 'windows':
-            feed['windows'] = packages[f'MarcoMovie-{version}-windows-setup.exe']
+            feed['windows'] = next(package for name, package in packages.items()
+                                   if name.endswith(('-windows-x64-setup.exe', '-windows-setup.exe')))
         path = f'updates/{platform}.json'
         previous_path = output / path
         if previous_path.exists():
