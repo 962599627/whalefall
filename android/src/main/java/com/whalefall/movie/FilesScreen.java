@@ -67,6 +67,15 @@ final class FilesScreen {
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, -2, 1f);
         titleLp.leftMargin = a.dp(12);
         nav.addView(title, titleLp);
+        TextView uploadBtn = a.text("上传文件", 12, 0xffffb3c8);
+        uploadBtn.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+        uploadBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+        MobileDetailScreen.bindTouchFeedback(uploadBtn);
+        uploadBtn.setOnClickListener(v -> a.pickAndUploadFile());
+        LinearLayout.LayoutParams uploadLp = new LinearLayout.LayoutParams(-2, -2);
+        uploadLp.rightMargin = a.dp(8);
+        nav.addView(uploadBtn, uploadLp);
+
         TextView adminBtn = a.text("管理员后台", 12, 0xffffb3c8);
         adminBtn.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
         adminBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));

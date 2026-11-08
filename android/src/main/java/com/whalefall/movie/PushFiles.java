@@ -65,6 +65,26 @@ final class PushFiles {
     }
 
     /** 兼容旧调用（根目录下文件）。 */
+    /** 从系统文件选择器流式保存，避免大文件整块进内存。 */
+    static String saveStream(MainActivity a, String rel, InputStream in) throws Exception {
+        if (!allowedUpload(rel)) throw new IllegalArgumentException("仅支持视频 / 文本 / 图片 / APK");
+        File target = file(a, rel);
+        File parent = target.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs())
+            throw new java.io.IOException("无法创建目录");
+        long total = 0;
+        try (InputStream source = in; OutputStream out = new FileOutputStream(target)) {
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = source.read(buf)) > 0) {
+                total += n;
+                if (total > MAX_BYTES) throw new java.io.IOException("文件超过 200MB 上限");
+                out.write(buf, 0, n);
+            }
+        }
+        return rel;
+    }
+
     static File file(MainActivity a, String name) {
         return resolve(a, name);
     }

@@ -340,7 +340,7 @@ createApp({
       tabs:[{k:'home',n:'概览'},{k:'sites',n:'片源'},{k:'fav',n:'收藏'},{k:'tv',n:'电视台'},{k:'files',n:'文件'},{k:'push',n:'推送'},{k:'settings',n:'设置'},{k:'about',n:'关于'}],
       uploadName:'', uploadBusy:false, pushUrl:'', pushTitle:'', mdText:'', mdName:'',
       state:{version:'',package:'',device:'',ip:'',port:'',sites:[],selectedSite:'',favorites:[],history:[],tv:{total:0,builtinSat:0,custom:[]},prefs:{}},
-      files:[], ftp:'', queue:[],
+      files:[], ftp:'', queue:[], offline:false,
       configText:'', newChannel:{name:'',url:''}, toastText:'', toastTimer:null
     };
   },
@@ -348,7 +348,7 @@ createApp({
     aspectLabel(){const v=this.state.prefs.tv_aspect|0;return ['自适应','16:9','4:3'][v]||'自适应';},
     fillLabel(){const v=this.state.prefs.tv_fill|0;return ['适应','裁剪','拉伸'][v]||'适应';}
   },
-  mounted(){this.load();this.loadFiles();this.loadQueue();},
+  mounted(){this.load();this.loadFiles();this.loadQueue();setInterval(()=>this.ping(),10000);},
   methods:{
     async load(){
       try{
@@ -424,6 +424,12 @@ createApp({
         this.mdText=await r.text();
         this.mdName=f.name;
       }catch(e){this.say('预览失败');}
+    },
+    async ping(){
+      try{
+        const r=await fetch(apiUrl('/api/state'),{cache:'no-store'});
+        this.offline = !r.ok;
+      }catch(e){ this.offline = true; }
     },
     async loadQueue(){
       try{

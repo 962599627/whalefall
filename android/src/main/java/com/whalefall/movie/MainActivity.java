@@ -702,6 +702,58 @@ public final class MainActivity extends Activity {
                 });
     }
 
+    private static final int REQ_PICK_FILE = 7101;
+
+    /** 系统文件管理器选文件，写入内置文件管理（视频/文本/图片/APK）。 */
+    void pickAndUploadFile() {
+        try {
+            android.content.Intent intent =
+                    new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+            startActivityForResult(intent, REQ_PICK_FILE);
+        } catch (Exception e) {
+            toast("无法打开文件管理器：" + e.getMessage());
+        }
+    }
+
+    private void handlePickedFile(int resultCode, android.content.Intent data) {
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        final android.net.Uri uri = data.getData();
+        new Thread(
+                        () -> {
+                            String name = "";
+                            try (android.database.Cursor cursor =
+                                    getContentResolver()
+                                            .query(
+                                                    uri,
+                                                    new String[] {
+                                                        android.provider.OpenableColumns.DISPLAY_NAME
+                                                    },
+                                                    null,
+                                                    null,
+                                                    null)) {
+                                if (cursor != null && cursor.moveToFirst()) name = cursor.getString(0);
+                            } catch (Exception ignored) {
+                            }
+                            if (name == null || name.trim().isEmpty()) name = "upload.bin";
+                            final String finalName = PushFiles.sanitize(name);
+                            try {
+                                java.io.InputStream in = getContentResolver().openInputStream(uri);
+                                if (in == null) throw new java.io.IOException("无法读取文件");
+                                PushFiles.saveStream(this, finalName, in);
+                                ui.post(
+                                        () -> {
+                                            toast("已上传：" + finalName);
+                                            FilesScreen.show(this);
+                                        });
+                            } catch (Exception e) {
+                                ui.post(() -> toast("上传失败：" + e.getMessage()));
+                            }
+                        })
+                .start();
+    }
+
     @Override
     protected void onSaveInstanceState(Bundle out) {
         out.putBoolean("layout_initial_launch", !layoutReady && layoutIntro);
@@ -1372,6 +1424,10 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == REQ_PICK_FILE) {
+            handlePickedFile(result, data);
+            return;
+        }
         SourceController.onActivityResult(this, request, result, data);
     }
 
