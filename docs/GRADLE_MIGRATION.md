@@ -60,3 +60,10 @@ Gradle 化路径已经跑通「源码 + 资源 + 运行时 assets + jniLibs + �
 - 产物：`app-release.apk` arm64 + useLegacyPackaging → **32.6MB**（-47%），可正常启动、手机 UI 正常
 - **问题**：该包能运行但片源扩展引擎初始化失败（`扩展引擎初始化失败：IOException`），首页内容加载不了；判定为 R8 对 CSP/CatPaw 运行时反射加载路径的裁剪或 native 资源定位差异，暂不发布
 - 已回退安装稳定自定义构建（61.8MB）。后续需：给 CatPaw/CSP 引擎补 keep（含 assets 读取相关类）、对比 native 库加载路径，再验证
+
+## 第四轮：运行时资源自动生成（Gradle 自包含构建）
+- `scripts/build_android.py` 新增 `--assets-only`：只生成 catpaw 运行时 assets（mobile / tv），不做 aapt2/javac/d8/签名
+- `gradle/app/build.gradle` 新增 `prepareRuntimeAssets`（Exec 调上面的脚本），并让 `preBuild` 依赖它
+- 验证：删除 `android/build/catpaw` 后直接 `gradle :app:assembleRelease`
+  → 自动生成 assets → **BUILD SUCCESSFUL in 1m14s**，R8 arm64 release APK 33.05MB
+- 至此 Gradle 构建不再需要先手动跑一次完整 Python 构建，只剩 tv flavor / 版本注入 / Baseline Profile 未接

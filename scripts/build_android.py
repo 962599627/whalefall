@@ -1,6 +1,6 @@
 """Build the independent Marco Movie native preview using an existing Android SDK."""
 from pathlib import Path
-import hashlib, json, os, re, subprocess, zipfile, urllib.request
+import hashlib, json, os, re, subprocess, sys, zipfile, urllib.request
 import xml.etree.ElementTree as ET
 from build_catpaw_android import build as build_catpaw, assets_for_package
 from build_quickjs_deadline import build as build_quickjs_deadline
@@ -92,6 +92,13 @@ def main():
             print('mobile ABI filter:', abi_filter, 'libs:', len(native_files_mobile))
     catpaw_tv_assets = assets_for_package(catpaw_assets, native_files, BUILD/'catpaw/assets-tv')
     catpaw_mobile_assets = assets_for_package(catpaw_assets, native_files_mobile, BUILD/'catpaw/assets-mobile')
+
+    # Gradle 构建只需要这一步产物（catpaw 运行时 assets），可单独执行：
+    #   python3 scripts/build_android.py --assets-only
+    if '--assets-only' in sys.argv:
+        print(json.dumps({'assets_only': True, 'mobile': str(catpaw_mobile_assets),
+                          'tv': str(catpaw_tv_assets)}, indent=2))
+        return
     for p in (exe(JDK/'bin','java'), exe(SDK,'aapt2'), ANDROID):
         if not p.exists(): raise RuntimeError(f'Required existing tool missing: {p}')
     for folder in (BUILD, BUILD/'classes', BUILD/'dex', DIST): folder.mkdir(parents=True, exist_ok=True)

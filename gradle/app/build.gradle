@@ -68,3 +68,13 @@ android {
         }
     }
 }
+
+
+// ---- 运行时 assets 生成：直接复用 Python 构建脚本（catpaw 打包） ----
+def repoRoot = rootProject.projectDir.parentFile
+tasks.register('prepareRuntimeAssets', Exec) {
+    workingDir repoRoot
+    commandLine 'bash', '-lc', 'python3 scripts/build_android.py --assets-only'
+    doFirst { println "preparing catpaw runtime assets via scripts/build_android.py --assets-only" }
+}
+tasks.named('preBuild').configure { dependsOn tasks.named('prepareRuntimeAssets') }
