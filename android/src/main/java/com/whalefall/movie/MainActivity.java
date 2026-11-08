@@ -262,6 +262,30 @@ public final class MainActivity extends Activity {
      * 主线程崩溃前把堆栈 + 最近 AppLog 落盘（files/crash-last.txt），
      * 下次启动仍可读，便于真机排查「点播放闪退」这类没有 logcat 的问题。
      */
+    /** 用内置 Markdown 阅读器打开「片源与直播配置教程」。 */
+    void openSourceGuide() {
+        try {
+            String rel = PushFiles.installAsset(this, "guide/source-and-live.md", "教程/片源与直播配置教程.md");
+            MarkdownScreen.show(this, rel);
+        } catch (Throwable e) {
+            toast("教程打开失败：" + e.getMessage());
+        }
+    }
+
+    /** 预览当前片源配置：把原始 JSON/脚本写到文件后用 Markdown 阅读器打开。 */
+    void previewCurrentConfig() {
+        try {
+            if (config == null || config.raw == null || config.raw.trim().isEmpty()) {
+                toast("当前还没有片源配置，先导入一个配置");
+                return;
+            }
+            String rel = PushFiles.writeText(this, "配置/当前片源配置.txt", config.raw);
+            MarkdownScreen.show(this, rel);
+        } catch (Throwable e) {
+            toast("预览失败：" + e.getMessage());
+        }
+    }
+
     /** 恢复为内置默认壁纸（鲸落主题图）：写回 wallpaper.jpg 并启用静态壁纸。 */
     void restoreDefaultWallpaper() {
         try {

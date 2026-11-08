@@ -65,6 +65,34 @@ final class PushFiles {
     }
 
     /** 兼容旧调用（根目录下文件）。 */
+    /** 把内置 assets 文本复制到内置文件目录（用于教程/示例预览）。 */
+    static String installAsset(MainActivity a, String assetName, String target) throws Exception {
+        File f = file(a, target);
+        File parent = f.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs())
+            throw new java.io.IOException("无法创建目录");
+        try (InputStream in = a.getAssets().open(assetName);
+                OutputStream out = new FileOutputStream(f)) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        }
+        return target;
+    }
+
+    /** 写入一段文本到内置文件目录。 */
+    static String writeText(MainActivity a, String target, String text) throws Exception {
+        File f = file(a, target);
+        File parent = f.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs())
+            throw new java.io.IOException("无法创建目录");
+        try (java.io.Writer writer =
+                new java.io.OutputStreamWriter(new FileOutputStream(f), "UTF-8")) {
+            writer.write(text);
+        }
+        return target;
+    }
+
     /** 从系统文件选择器流式保存，避免大文件整块进内存。 */
     static String saveStream(MainActivity a, String rel, InputStream in) throws Exception {
         if (!allowedUpload(rel)) throw new IllegalArgumentException("仅支持视频 / 文本 / 图片 / APK");

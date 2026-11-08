@@ -3285,11 +3285,14 @@ final class MobileShell {
                         body,
                         1,
                         "片源与直播配置：傻瓜式教程",
-                        "从零开始：配置 JSON 怎么写、直播源格式、导入方式与常见问题",
-                        () -> {
-                            settingsSubPage = 9;
-                            refreshInPlace.run();
-                        });
+                        "用内置 Markdown 阅读器打开完整教程（配置示例 / 直播源 / 导入步骤 / 常见问题）",
+                        a::openSourceGuide);
+                addSettingCard(
+                        body,
+                        1,
+                        "预览当前片源配置",
+                        "把当前配置原文用 Markdown 阅读器打开，方便核对字段",
+                        a::previewCurrentConfig);
             } else if (settingsSubPage == 2) {
                 addSectionHeader(body, "播放器与解码器");
                 final int engine = a.prefs.getInt(Prefs.PLAYER_ENGINE, 0);
