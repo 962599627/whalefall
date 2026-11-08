@@ -204,15 +204,9 @@ final class SettingsScreen {
                 60);
         link(
                 "恢复默认背景",
-                "保留图片文件，随时可以重新启用",
+                "恢复为鲸落内置壁纸（会覆盖当前自定义图片）",
                 "wallpaper-reset",
-                () -> {
-                    a.prefs.edit()
-                            .putBoolean(Prefs.WALLPAPER_ENABLED, false)
-                            .putBoolean(Prefs.WALLPAPER_VIDEO, false)
-                            .apply();
-                    a.refresh();
-                });
+                () -> a.restoreDefaultWallpaper());
         if (new File(a.getFilesDir(), "wallpaper.jpg").exists())
             link(
                     "启用已保存的壁纸",

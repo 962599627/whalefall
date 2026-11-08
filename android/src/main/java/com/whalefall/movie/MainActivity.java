@@ -262,6 +262,28 @@ public final class MainActivity extends Activity {
      * 主线程崩溃前把堆栈 + 最近 AppLog 落盘（files/crash-last.txt），
      * 下次启动仍可读，便于真机排查「点播放闪退」这类没有 logcat 的问题。
      */
+    /** 恢复为内置默认壁纸（鲸落主题图）：写回 wallpaper.jpg 并启用静态壁纸。 */
+    void restoreDefaultWallpaper() {
+        try {
+            java.io.File target = new java.io.File(getFilesDir(), "wallpaper.jpg");
+            java.io.InputStream in = getAssets().open("branding/wallpaper-default.jpg");
+            java.io.FileOutputStream out = new java.io.FileOutputStream(target);
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            in.close();
+            out.close();
+            prefs.edit()
+                    .putBoolean(Prefs.WALLPAPER_ENABLED, true)
+                    .putBoolean(Prefs.WALLPAPER_VIDEO, false)
+                    .apply();
+            toast("已恢复默认背景");
+            refresh();
+        } catch (Throwable e) {
+            toast("恢复默认背景失败：" + e.getMessage());
+        }
+    }
+
     /** 首次启动安装内置默认静态壁纸（鲸落主题图），之后用户可自行更换。 */
     private void installDefaultWallpaper() {
         try {
