@@ -8,9 +8,9 @@ import android.widget.*;
 /**
  * 播放器悬浮 UI：顶部标题/返回、右上角图标组、右侧工具 Dock 外层、中央播放区、底部进度与时间。
  *
- * <p>视觉延续鲸落主题：深海蓝渐变遮罩 + 蓝白玻璃胶囊 + 樱花粉强调；所有图标由
- * {@link PlayerUiKit} 纯 Canvas 绘制。本类只负责「长什么样、摆在哪」，播放逻辑仍由
- * {@link PlaybackControls} 与 {@link PlaybackController} 驱动。
+ * <p>播放器是内容优先场景，走克制的深色方案：顶部/底部只用**纯黑渐变**，右侧 Dock 用接近
+ * 不透明的深色卡片，所有按钮都是「深色底 + 白色图标」，只有激活态用樱花粉。不使用大面积
+ * 液态玻璃，避免和暖色画面混成脏色。图标全部由 {@link PlayerUiKit} 纯 Canvas 绘制。
  */
 final class PlayerChrome {
     final MainActivity a;
@@ -25,6 +25,9 @@ final class PlayerChrome {
     final PlayerUiKit.PlayPauseButton state;
     final TextView resolution;
     final TextView seekBubble;
+    final PlayerUiKit.IconView dockFold;
+    /** 弹层锚点：Dock 左侧 12dp、屏幕 72% 高处，避免弹层被视频/Dock 遮挡。 */
+    View menuAnchor;
     boolean loading = true;
     boolean progressOnlyMode = false;
     final Rect windowInsets = new Rect();
@@ -41,19 +44,19 @@ final class PlayerChrome {
                     if (l != ol || t != ot || r != or || b != ob) scheduleLayout();
                 });
 
-        // ---------------- 深海蓝渐变遮罩（不再用纯黑） ----------------
+        // ---------------- 纯黑渐变遮罩（不掺蓝，避免和暖色画面混色） ----------------
         topShade = new View(a);
         topShade.setBackground(
                 new GradientDrawable(
                         GradientDrawable.Orientation.TOP_BOTTOM,
-                        new int[] {0xd90b1220, 0x000b1220}));
-        overlay.addView(topShade, new FrameLayout.LayoutParams(-1, a.dp(210), Gravity.TOP));
+                        new int[] {0xd9000000, 0xa6000000, 0x00000000}));
+        overlay.addView(topShade, new FrameLayout.LayoutParams(-1, a.dp(150), Gravity.TOP));
         bottomShade = new View(a);
         bottomShade.setBackground(
                 new GradientDrawable(
-                        GradientDrawable.Orientation.BOTTOM_TOP,
-                        new int[] {0xe00b1220, 0x000b1220}));
-        overlay.addView(bottomShade, new FrameLayout.LayoutParams(-1, a.dp(270), Gravity.BOTTOM));
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[] {0x00000000, 0x8c000000, 0xd1000000}));
+        overlay.addView(bottomShade, new FrameLayout.LayoutParams(-1, a.dp(160), Gravity.BOTTOM));
 
         // ---------------- 顶部：返回圆钮 + 两行标题 + 编码胶囊 ----------------
         heading = a.vertical();
@@ -65,7 +68,7 @@ final class PlayerChrome {
                 new PlayerUiKit.IconView(a, PlayerUiKit.ICON_BACK, 0xfff2f6ff, a.dp(20));
         back.setTag("player-back");
         back.setBackground(
-                PlayerUiKit.circleBg(0x33ffffff, 0x4dffffff, Math.max(1, a.dp(1))));
+                PlayerUiKit.circleBg(0x66000000, 0x4dffffff, Math.max(1, a.dp(1))));
         back.setOnClickListener(v -> a.leavePlayback());
         MobileDetailScreen.bindTouchFeedback(back);
         titleRow.addView(back, new LinearLayout.LayoutParams(a.dp(42), a.dp(42)));
@@ -77,7 +80,7 @@ final class PlayerChrome {
         titleView.getPaint().setFakeBoldText(true);
         titleView.setSingleLine(true);
         titleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        titleView.setShadowLayer(a.dp(8), 0, a.dp(2), 0xcc000000);
+        titleView.setShadowLayer(a.dp(10), 0, a.dp(2), 0xe6000000);
         titleView.setIncludeFontPadding(false);
         titleCol.addView(titleView, new LinearLayout.LayoutParams(-1, -2));
 
@@ -86,20 +89,21 @@ final class PlayerChrome {
         subRow.setPadding(0, a.dp(4), 0, 0);
         String line = a.activeLine == null ? "" : a.activeLine.name;
         String epName = episode == null || episode.name == null ? "" : episode.name;
-        episodeLabel = a.text(epName + (line.isEmpty() ? "" : "  ·  " + line), 11, 0xffb9c7dd);
+        episodeLabel = a.text(epName + (line.isEmpty() ? "" : "  ·  " + line), 11, 0xffd6dfec);
         episodeLabel.setTag("player-episode");
         episodeLabel.setSingleLine(true);
         episodeLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        episodeLabel.setShadowLayer(a.dp(6), 0, a.dp(1), 0xcc000000);
         subRow.addView(episodeLabel, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        resolution = a.text("分辨率读取中", 10, 0xffdbe6f6);
+        resolution = a.text("分辨率读取中", 10, 0xffe2ebf8);
         resolution.setTag("player-resolution");
         resolution.setSingleLine(true);
         resolution.setEllipsize(android.text.TextUtils.TruncateAt.END);
         resolution.setPadding(a.dp(8), a.dp(3), a.dp(8), a.dp(3));
         resolution.setBackground(
                 PlayerUiKit.capsuleBg(
-                        0x330b1220,
+                        0x99000000,
                         0x33ffffff,
                         Math.max(1, a.dp(0.7f)),
                         a.dp(999)));
@@ -108,10 +112,11 @@ final class PlayerChrome {
         subRow.addView(resolution, resLp);
         titleCol.addView(subRow, new LinearLayout.LayoutParams(-1, -2));
 
-        a.playStatus = a.text("正在加载所选剧集…", 11, 0xff8fa2bd);
+        a.playStatus = a.text("正在加载所选剧集…", 11, 0xffa9b7d0);
         a.playStatus.setSingleLine(true);
         a.playStatus.setEllipsize(android.text.TextUtils.TruncateAt.END);
         a.playStatus.setPadding(0, a.dp(4), 0, 0);
+        a.playStatus.setShadowLayer(a.dp(6), 0, a.dp(1), 0xcc000000);
         titleCol.addView(a.playStatus, new LinearLayout.LayoutParams(-1, -2));
         titleRow.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1f));
         heading.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
@@ -123,19 +128,18 @@ final class PlayerChrome {
         PlayerUiKit.IconView fsIcon =
                 new PlayerUiKit.IconView(a, PlayerUiKit.ICON_FULLSCREEN, 0xfff2f6ff, a.dp(19));
         fsIcon.setBackground(
-                PlayerUiKit.circleBg(0x330b1220, 0x40ffffff, Math.max(1, a.dp(1))));
+                PlayerUiKit.circleBg(0x66000000, 0x40ffffff, Math.max(1, a.dp(1))));
         fsIcon.setOnClickListener(v -> a.togglePlayerOrientation());
         MobileDetailScreen.bindTouchFeedback(fsIcon);
         topActions.addView(fsIcon, new LinearLayout.LayoutParams(a.dp(38), a.dp(38)));
         PlayerUiKit.IconView moreIcon =
                 new PlayerUiKit.IconView(a, PlayerUiKit.ICON_MORE, 0xfff2f6ff, a.dp(19));
         moreIcon.setBackground(
-                PlayerUiKit.circleBg(0x330b1220, 0x40ffffff, Math.max(1, a.dp(1))));
+                PlayerUiKit.circleBg(0x66000000, 0x40ffffff, Math.max(1, a.dp(1))));
         moreIcon.setOnClickListener(
                 v -> {
                     if (a.playbackControls != null) {
-                        // 锚到进度条，弹层才有足够高度展示完整「更多」菜单
-                        a.playbackControls.menuAnchor = progress;
+                        a.playbackControls.menuAnchor = menuAnchor;
                         a.playbackControls.more();
                     }
                 });
@@ -155,6 +159,7 @@ final class PlayerChrome {
         a.playClock.setTypeface(null, Typeface.BOLD);
         a.playClock.setIncludeFontPadding(false);
         a.playClock.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        a.playClock.setShadowLayer(a.dp(6), 0, a.dp(1), 0xcc000000);
         clockRow.addView(a.playClock, new LinearLayout.LayoutParams(0, -2, 1f));
 
         seekHint = a.text("", 11.5f, 0xffffb3c8);
@@ -164,7 +169,7 @@ final class PlayerChrome {
         seekHint.setPadding(a.dp(10), a.dp(4), a.dp(10), a.dp(4));
         seekHint.setBackground(
                 PlayerUiKit.capsuleBg(
-                        0x33ff8fb1, 0x4dffb3c8, Math.max(1, a.dp(0.7f)), a.dp(999)));
+                        0x33000000, 0x4dffb3c8, Math.max(1, a.dp(0.7f)), a.dp(999)));
         seekHint.setVisibility(View.GONE);
         clockRow.addView(seekHint, new LinearLayout.LayoutParams(-2, -2));
 
@@ -181,7 +186,7 @@ final class PlayerChrome {
             fsBtn.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
             fsBtn.setBackground(
                     PlayerUiKit.capsuleBg(
-                            0x730b1220, 0x40ffffff, Math.max(1, a.dp(0.8f)), a.dp(999)));
+                            0x99000000, 0x40ffffff, Math.max(1, a.dp(0.8f)), a.dp(999)));
             PlayerUiKit.setLeftIcon(fsBtn, PlayerUiKit.ICON_ORIENTATION, 0xffe8eff9, a.dp(15));
             fsBtn.setCompoundDrawablePadding(a.dp(5));
             LinearLayout.LayoutParams fsLp = new LinearLayout.LayoutParams(-2, a.dp(32));
@@ -194,8 +199,8 @@ final class PlayerChrome {
         progress.setVisibility(live ? View.GONE : View.VISIBLE);
         overlay.addView(progress, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
 
-        // 拖拽时间气泡
-        seekBubble = a.text("", 12, MainActivity.WHITE);
+        // 拖拽时间气泡：白底黑字（亮画面/暗画面都清楚）
+        seekBubble = a.text("", 12, 0xff1a1a1a);
         seekBubble.setTypeface(null, Typeface.BOLD);
         seekBubble.setSingleLine(true);
         seekBubble.setIncludeFontPadding(false);
@@ -203,25 +208,48 @@ final class PlayerChrome {
         seekBubble.setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5));
         seekBubble.setBackground(
                 PlayerUiKit.capsuleBg(
-                        0xe60b1220, 0x66ffb3c8, Math.max(1, a.dp(0.8f)), a.dp(12)));
+                        0xf2ffffff, 0x33000000, Math.max(1, a.dp(0.7f)), a.dp(10)));
         seekBubble.setVisibility(View.GONE);
         overlay.addView(
                 seekBubble,
                 new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.LEFT));
 
-        // ---------------- 右侧工具 Dock（内容由 PlaybackControls 填充） ----------------
+        // ---------------- 右侧工具 Dock（接近不透明的深色卡片） ----------------
         dock = a.vertical();
         dock.setTag("player-dock");
         dock.setClipChildren(true);
         dock.setClipToPadding(true);
         dock.setBackground(
                 PlayerUiKit.capsuleBg(
-                        0x8c0b1220, 0x33ffffff, Math.max(1, a.dp(0.8f)), a.dp(22)));
+                        0xe60b1220, 0x26ffffff, Math.max(1, a.dp(1)), a.dp(18)));
         UiCompat.setElevation(dock, a.dp(10));
         overlay.addView(
-                dock, new FrameLayout.LayoutParams(-2, -2, Gravity.RIGHT | Gravity.CENTER_VERTICAL));
+                dock, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT));
 
-        // ---------------- 中央播放区：64dp 粉圆 + 15s 玻璃圆钮 ----------------
+        // Dock 折叠钮：放在 Dock 卡片头部右上角（28dp 圆钮）
+        dockFold =
+                new PlayerUiKit.IconView(
+                        a, PlayerUiKit.ICON_CHEVRON_RIGHT, 0xfff2f6ff, a.dp(14));
+        dockFold.setBackground(
+                PlayerUiKit.circleBg(0x66000000, 0x40ffffff, Math.max(1, a.dp(0.8f))));
+        dockFold.setOnClickListener(
+                v -> {
+                    if (a.playbackControls != null) a.playbackControls.toggleDockCollapsed();
+                });
+        MobileDetailScreen.bindTouchFeedback(dockFold);
+        dockFold.setVisibility(View.GONE);
+        overlay.addView(
+                dockFold,
+                new FrameLayout.LayoutParams(a.dp(28), a.dp(28), Gravity.TOP | Gravity.LEFT));
+
+        // 弹层锚点：Dock 左侧 12dp、72% 高度处（不可见，只用于 PlayerBubble 定位）
+        menuAnchor = new View(a);
+        menuAnchor.setVisibility(View.INVISIBLE);
+        menuAnchor.setFocusable(false);
+        overlay.addView(
+                menuAnchor, new FrameLayout.LayoutParams(1, 1, Gravity.TOP | Gravity.LEFT));
+
+        // ---------------- 中央播放区：64dp 深色圆 + 15s 深色圆钮 ----------------
         state = new PlayerUiKit.PlayPauseButton(a);
         state.setTag("player-state");
         state.setFocusable(false);
@@ -258,7 +286,7 @@ final class PlayerChrome {
         loadingPill.setPadding(a.dp(20), a.dp(13), a.dp(20), a.dp(13));
         loadingPill.setBackground(
                 PlayerUiKit.capsuleBg(
-                        0xe60b1220, 0x33ffffff, Math.max(1, a.dp(0.8f)), a.dp(22)));
+                        0xe60b1220, 0x26ffffff, Math.max(1, a.dp(0.8f)), a.dp(20)));
         UiCompat.setElevation(loadingPill, a.dp(10));
         loadingPill.addView(
                 new PlaybackLoading.Ring(a), new LinearLayout.LayoutParams(a.dp(24), a.dp(24)));
@@ -357,6 +385,18 @@ final class PlayerChrome {
         if (seekBubble != null) seekBubble.setVisibility(View.GONE);
     }
 
+    /** Dock 折叠状态变化后刷新折叠钮方向并重新布局。 */
+    void onDockToggled() {
+        boolean collapsed = a.playbackControls != null && a.playbackControls.dockCollapsed;
+        if (dockFold != null) {
+            dockFold.setIcon(
+                    collapsed
+                            ? PlayerUiKit.ICON_CHEVRON_LEFT
+                            : PlayerUiKit.ICON_CHEVRON_RIGHT);
+        }
+        scheduleLayout();
+    }
+
     // ---------------- 布局 ----------------
 
     void scheduleLayout() {
@@ -416,26 +456,31 @@ final class PlayerChrome {
 
         int side = Math.max(0, Math.min(a.dp(portrait ? 18 : 24), width / 8));
         int topMargin = Math.max(0, Math.min(a.dp(compact ? 12 : 20), height / 8));
+        int dockRight = Math.min(a.dp(10), side);
+        int dockTop = topMargin + a.dp(52);
 
         int dockWidth = 0;
+        int dockHeight = 0;
         if (!a.isTvDevice()) {
             if (mobileLandscape) {
-                int wanted = a.playbackControls == null ? a.dp(152) : a.playbackControls.dockWidth();
+                int wanted = a.playbackControls == null ? a.dp(150) : a.playbackControls.dockWidth();
                 dockWidth = Math.max(0, Math.min(wanted, width - side * 2));
-                dock.setPadding(a.dp(6), a.dp(6), a.dp(6), a.dp(6));
+                dockHeight = Math.max(0, Math.min(a.dp(340), height - dockTop - a.dp(96)));
+                dock.setPadding(a.dp(8), a.dp(8), a.dp(8), a.dp(8));
                 place(
                         dock,
                         dockWidth,
-                        Math.max(0, Math.min(a.dp(370), height - a.dp(12))),
-                        Gravity.RIGHT | Gravity.CENTER_VERTICAL,
+                        dockHeight,
+                        Gravity.TOP | Gravity.RIGHT,
                         0,
-                        0,
-                        Math.min(a.dp(10), side),
+                        dockTop,
+                        dockRight,
                         0);
             } else {
-                int maxDock = a.isTvDevice() ? a.dp(612) : a.dp(560);
+                int maxDock = a.dp(560);
                 dockWidth = Math.max(0, Math.min(maxDock, width - side * 2));
-                dock.setPadding(a.dp(6), a.dp(5), a.dp(6), a.dp(5));
+                dockHeight = -2;
+                dock.setPadding(a.dp(8), a.dp(6), a.dp(8), a.dp(6));
                 place(
                         dock,
                         dockWidth,
@@ -460,15 +505,14 @@ final class PlayerChrome {
                     a.dp(14));
         }
 
+        // 进度条：铺在底部纯黑遮罩内，左右 24dp、距底 18dp
         int progressLeft = Math.max(0, Math.min(a.dp(portrait ? 18 : 24), width / 8));
-        int progressRight =
-                mobileLandscape ? dockWidth + Math.min(a.dp(10), side) + a.dp(16) : progressLeft;
-        int trackWidth = Math.max(0, Math.min(a.dp(760), width - progressLeft - progressRight));
-        progressLeft += Math.max(0, (width - progressLeft - progressRight - trackWidth) / 2);
-        int progressHeight = Math.max(progress.getMeasuredHeight(), a.dp(74));
+        int progressRight = progressLeft;
+        int trackWidth = Math.max(0, Math.min(a.dp(960), width - progressLeft - progressRight));
+        int progressHeight = Math.max(progress.getMeasuredHeight(), a.dp(72));
         int progressBottom =
                 mobileLandscape
-                        ? a.dp(16)
+                        ? a.dp(18)
                         : Math.max(a.dp(88), dock.getMeasuredHeight() + a.dp(26));
         progressBottom = Math.max(0, Math.min(progressBottom, height - progressHeight));
         place(
@@ -500,6 +544,33 @@ final class PlayerChrome {
                 Math.max(a.dp(6), topMargin - a.dp(4)),
                 side,
                 0);
+
+        // Dock 折叠钮：Dock 卡片头部右上角
+        boolean showFold = mobileLandscape;
+        dockFold.setVisibility(showFold ? View.VISIBLE : View.GONE);
+        if (showFold) {
+            boolean collapsed = a.playbackControls != null && a.playbackControls.dockCollapsed;
+            dockFold.setIcon(
+                    collapsed
+                            ? PlayerUiKit.ICON_CHEVRON_LEFT
+                            : PlayerUiKit.ICON_CHEVRON_RIGHT);
+            int foldSize = a.dp(28);
+            place(
+                    dockFold,
+                    foldSize,
+                    foldSize,
+                    Gravity.TOP | Gravity.LEFT,
+                    Math.max(0, width - dockRight - a.dp(6) - foldSize),
+                    dockTop + a.dp(6),
+                    0,
+                    0);
+        }
+
+        // 弹层锚点：Dock 左侧 12dp、72% 高度
+        int anchorX = Math.max(0, width - dockRight - dockWidth - a.dp(12));
+        int anchorY = Math.max(0, Math.round(height * 0.72f));
+        place(menuAnchor, 1, 1, Gravity.TOP | Gravity.LEFT, anchorX, anchorY, 0, 0);
+
         if (seekBubbleVisible()) hideSeekBubble();
 
         if (a.playbackControls != null) {
@@ -568,6 +639,7 @@ final class PlayerChrome {
         heading.setVisibility(otherVis);
         topActions.setVisibility(otherVis);
         dock.setVisibility(otherVis);
+        dockFold.setVisibility(otherVis);
         seekHint.setVisibility(progressOnly ? View.VISIBLE : View.GONE);
         hideSeekBubble();
         update();

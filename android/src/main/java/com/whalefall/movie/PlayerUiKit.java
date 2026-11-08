@@ -20,9 +20,9 @@ import android.view.View;
 import android.widget.TextView;
 
 /**
- * 原生播放器 UI 的纯 Canvas 绘制资源：图标、播放/暂停圆钮、15s 圆钮、进度条轨道、拖拽时间气泡等。
+ * 原生播放器 UI 的纯 Canvas 绘制资源：图标、播放/暂停圆钮、15s 圆钮、进度条轨道、拖拽圆点等。
  *
- * <p>配色沿用鲸落主题：玻璃白 20%–33%、樱花粉 {@code #FF8FB1}、深海蓝 {@code #0B1220}；
+ * <p>配色沿用鲸落主题：玻璃白 12%–33%、樱花粉 {@code #FFA9C4}、深海蓝 {@code #0B1220}；
  * 所有图标画在 24×24 的逻辑网格里再按 View 尺寸缩放，避免引入图片资源。
  */
 final class PlayerUiKit {
@@ -54,6 +54,7 @@ final class PlayerUiKit {
 
     static final int INK = 0xffe8eff9;
     static final int PINK = 0xffff8fb1;
+    static final int PINK_BRIGHT = 0xffffa9c4;
     static final int GLASS_FILL = 0x730b1220;
     static final int GLASS_STROKE = 0x33ffffff;
 
@@ -139,17 +140,18 @@ final class PlayerUiKit {
 
     // ===================== 进度条 =====================
 
-    /** 6dp 三段式进度轨道：底轨 20% 白、缓冲 35% 白、已播樱花粉。 */
+    /** 4dp 三段式进度轨道：底轨 30% 白、缓冲 50% 白、已播樱花粉（纯黑遮罩上清晰）。 */
     static Drawable seekProgress(MainActivity a) {
-        int radius = Math.max(1, a.dp(3));
-        GradientDrawable bg = capsuleBg(0x33ffffff, 0, 0, radius);
-        GradientDrawable secondary = capsuleBg(0x5cffffff, 0, 0, radius);
-        GradientDrawable played = capsuleBg(PINK, 0, 0, radius);
-        ClipDrawable secondaryClip = new ClipDrawable(secondary, Gravity.LEFT, ClipDrawable.HORIZONTAL);
+        int radius = Math.max(1, a.dp(2));
+        GradientDrawable bg = capsuleBg(0x4dffffff, 0, 0, radius);
+        GradientDrawable secondary = capsuleBg(0x80ffffff, 0, 0, radius);
+        GradientDrawable played = capsuleBg(0xffff8fb1, 0, 0, radius);
+        ClipDrawable secondaryClip =
+                new ClipDrawable(secondary, Gravity.LEFT, ClipDrawable.HORIZONTAL);
         ClipDrawable playedClip = new ClipDrawable(played, Gravity.LEFT, ClipDrawable.HORIZONTAL);
         LayerDrawable layers =
                 new LayerDrawable(new Drawable[] {bg, secondaryClip, playedClip});
-        int inset = Math.max(0, a.dp(13)); // SeekBar 高 32dp → 轨道居中 6dp
+        int inset = Math.max(0, a.dp(14)); // SeekBar 高 32dp → 轨道居中 4dp
         layers.setLayerInset(0, 0, inset, 0, inset);
         layers.setLayerInset(1, 0, inset, 0, inset);
         layers.setLayerInset(2, 0, inset, 0, inset);
@@ -159,13 +161,13 @@ final class PlayerUiKit {
         return layers;
     }
 
-    /** 进度拖拽圆点：白色圆 + 樱花粉描边；拖拽时放大。 */
+    /** 进度拖拽圆点：白色圆 + 深色描边；拖拽时放大。 */
     static Drawable seekThumb(MainActivity a, boolean dragging) {
-        int size = a.dp(dragging ? 22 : 15);
+        int size = a.dp(dragging ? 18 : 12);
         GradientDrawable d = new GradientDrawable();
         d.setShape(GradientDrawable.OVAL);
-        d.setColor(0xfffffbfc);
-        d.setStroke(Math.max(1, a.dp(dragging ? 3f : 2.5f)), PINK);
+        d.setColor(0xffffffff);
+        d.setStroke(Math.max(1, a.dp(1f)), 0x66000000);
         d.setSize(size, size);
         return d;
     }
@@ -223,47 +225,28 @@ final class PlayerUiKit {
             float cy = h / 2f;
             float radius = Math.min(w, h) / 2f;
 
-            // 外圈玻璃描边
+            // 实心深色圆 + 细白描边：亮画面上不脏
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0xcc0b1220);
+            canvas.drawCircle(cx, cy, radius, paint);
             paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(Math.max(1, a.dp(1.2f)));
-            paint.setColor(0x59ffffff);
-            canvas.drawCircle(cx, cy, radius - a.dp(1f), paint);
+            paint.setStrokeWidth(Math.max(1, a.dp(1f)));
+            paint.setColor(0x33ffffff);
+            canvas.drawCircle(cx, cy, radius - a.dp(0.8f), paint);
 
-            // 内圆：樱花粉渐变
-            float inner = radius * 0.62f;
             paint.setStyle(Paint.Style.FILL);
-            paint.setShader(
-                    new LinearGradient(
-                            cx - inner,
-                            cy - inner,
-                            cx + inner,
-                            cy + inner,
-                            new int[] {0xffffc7d6, 0xfff17fa4},
-                            null,
-                            Shader.TileMode.CLAMP));
-            canvas.drawCircle(cx, cy, inner, paint);
-            paint.setShader(null);
-
-            // 高光
-            paint.setColor(0x1fffffff);
-            oval.set(cx - inner, cy - inner, cx + inner, cy + inner * 0.2f);
-            canvas.drawOval(oval, paint);
-
-            // 字形（深海蓝）
-            paint.setColor(0xff31141f);
-            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0xfff2f6ff);
             if (!a.prepared) {
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(a.dp(2.4f));
-                paint.setColor(0xb3ffffff);
-                canvas.drawCircle(cx, cy, inner * 0.42f, paint);
+                canvas.drawCircle(cx, cy, radius * 0.26f, paint);
                 paint.setStyle(Paint.Style.FILL);
                 return;
             }
             if (a.playing) {
-                float barW = inner * 0.20f;
-                float barH = inner * 0.66f;
-                float gap = inner * 0.16f;
+                float barW = radius * 0.14f;
+                float barH = radius * 0.44f;
+                float gap = radius * 0.12f;
                 canvas.drawRoundRect(
                         new RectF(cx - gap - barW, cy - barH / 2f, cx - gap, cy + barH / 2f),
                         barW / 2f,
@@ -276,16 +259,16 @@ final class PlayerUiKit {
                         paint);
             } else {
                 path.reset();
-                path.moveTo(cx - inner * 0.26f, cy - inner * 0.40f);
-                path.lineTo(cx + inner * 0.42f, cy);
-                path.lineTo(cx - inner * 0.26f, cy + inner * 0.40f);
+                path.moveTo(cx - radius * 0.18f, cy - radius * 0.28f);
+                path.lineTo(cx + radius * 0.30f, cy);
+                path.lineTo(cx - radius * 0.18f, cy + radius * 0.28f);
                 path.close();
                 canvas.drawPath(path, paint);
             }
         }
     }
 
-    /** 左右 15 秒玻璃圆钮：弧形箭头 + 「15s」。 */
+    /** 左右 15 秒玻璃圆钮：弧形箭头 + 「15」文字。 */
     static final class SkipCircle extends View {
         private final MainActivity a;
         private final boolean forward;
@@ -308,13 +291,15 @@ final class PlayerUiKit {
             float cx = w / 2f;
             float cy = h / 2f;
             float radius = Math.min(w, h) / 2f;
+
+            // 深色实心圆 + 细白描边：亮画面上不脏
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(0x4d0b1220);
+            paint.setColor(0xb30b1220);
             canvas.drawCircle(cx, cy, radius, paint);
             paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(Math.max(1, a.dp(1)));
-            paint.setColor(0x40ffffff);
-            canvas.drawCircle(cx, cy, radius - a.dp(0.8f), paint);
+            paint.setStrokeWidth(Math.max(1, a.dp(1f)));
+            paint.setColor(0x2effffff);
+            canvas.drawCircle(cx, cy, radius - a.dp(0.6f), paint);
 
             // 弧形箭头
             float rr = radius * 0.46f;
@@ -338,13 +323,15 @@ final class PlayerUiKit {
             paint.setStyle(Paint.Style.FILL);
             canvas.drawPath(path, paint);
 
-            // 15s 文字
+            // 15 文字
             paint.setColor(0xffffffff);
             paint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
             paint.setTextAlign(Paint.Align.CENTER);
             paint.setTextSize(radius * 0.42f);
+            paint.setShadowLayer(a.dp(3), 0, a.dp(1), 0x99000000);
             Paint.FontMetrics fm = paint.getFontMetrics();
             canvas.drawText("15", cx, cy + radius * 0.16f - (fm.ascent + fm.descent) / 2f, paint);
+            paint.clearShadowLayer();
         }
     }
 
@@ -401,7 +388,6 @@ final class PlayerUiKit {
                     c.drawPath(path, paint);
                     break;
                 case ICON_PREV:
-                    paint.setStyle(Paint.Style.STROKE);
                     c.drawLine(6f, 5f, 6f, 19f, paint);
                     path.reset();
                     path.moveTo(19f, 5f);
@@ -420,14 +406,12 @@ final class PlayerUiKit {
                     c.drawPath(path, fill());
                     break;
                 case ICON_EPISODES:
-                    paint.setStyle(Paint.Style.STROKE);
                     c.drawRoundRect(new RectF(4f, 4f, 11f, 11f), 1.6f, 1.6f, paint);
                     c.drawRoundRect(new RectF(13f, 4f, 20f, 11f), 1.6f, 1.6f, paint);
                     c.drawRoundRect(new RectF(4f, 13f, 11f, 20f), 1.6f, 1.6f, paint);
                     c.drawRoundRect(new RectF(13f, 13f, 20f, 20f), 1.6f, 1.6f, paint);
                     break;
                 case ICON_LINES:
-                    paint.setStyle(Paint.Style.STROKE);
                     c.drawLine(5f, 9f, 17f, 9f, paint);
                     path.reset();
                     path.moveTo(17f, 9f);
@@ -444,7 +428,6 @@ final class PlayerUiKit {
                     c.drawPath(path, paint);
                     break;
                 case ICON_SPEED:
-                    paint.setStyle(Paint.Style.STROKE);
                     oval.set(4f, 5f, 20f, 21f);
                     c.drawArc(oval, 200f, 140f, false, paint);
                     c.drawLine(12f, 13f, 17f, 8f, paint);
@@ -452,20 +435,17 @@ final class PlayerUiKit {
                     c.drawCircle(12f, 13f, 1.6f, paint);
                     break;
                 case ICON_ASPECT:
-                    paint.setStyle(Paint.Style.STROKE);
                     c.drawRect(new RectF(4f, 6f, 20f, 18f), paint);
                     c.drawLine(8f, 10f, 8f, 14f, paint);
                     c.drawLine(16f, 10f, 16f, 14f, paint);
                     break;
                 case ICON_SUBTITLE:
-                    paint.setStyle(Paint.Style.STROKE);
                     c.drawRoundRect(new RectF(3f, 5f, 21f, 17f), 3f, 3f, paint);
                     paint.setStyle(Paint.Style.FILL);
                     c.drawRoundRect(new RectF(7f, 12f, 11f, 14f), 1f, 1f, paint);
                     c.drawRoundRect(new RectF(13f, 12f, 17f, 14f), 1f, 1f, paint);
                     break;
                 case ICON_ORIENTATION:
-                    paint.setStyle(Paint.Style.STROKE);
                     c.drawRoundRect(new RectF(9f, 3f, 15f, 17f), 2.2f, 2.2f, paint);
                     path.reset();
                     path.moveTo(4f, 20f);
@@ -487,14 +467,12 @@ final class PlayerUiKit {
                     c.drawCircle(18f, 12f, 1.7f, paint);
                     break;
                 case ICON_AUDIO:
-                    paint.setStyle(Paint.Style.STROKE);
                     paint.setStrokeWidth(2.4f);
                     c.drawLine(6f, 10f, 6f, 14f, paint);
                     c.drawLine(12f, 6f, 12f, 18f, paint);
                     c.drawLine(18f, 9f, 18f, 15f, paint);
                     break;
                 case ICON_DECODER:
-                    paint.setStyle(Paint.Style.STROKE);
                     c.drawRoundRect(new RectF(6f, 6f, 18f, 18f), 2f, 2f, paint);
                     paint.setStrokeWidth(1.5f);
                     c.drawLine(9f, 3f, 9f, 6f, paint);
@@ -507,7 +485,6 @@ final class PlayerUiKit {
                     c.drawLine(18f, 15f, 21f, 15f, paint);
                     break;
                 case ICON_DANMAKU:
-                    paint.setStyle(Paint.Style.STROKE);
                     c.drawRoundRect(new RectF(3f, 5f, 21f, 16f), 3f, 3f, paint);
                     path.reset();
                     path.moveTo(8f, 16f);
@@ -531,7 +508,6 @@ final class PlayerUiKit {
                     c.drawLine(18f, 6f, 18f, 18f, paint);
                     break;
                 case ICON_SKIP_OUTRO:
-                    paint.setStyle(Paint.Style.STROKE);
                     path.reset();
                     path.moveTo(5f, 7f);
                     path.lineTo(11f, 12f);
@@ -542,7 +518,6 @@ final class PlayerUiKit {
                     c.drawPath(path, paint);
                     break;
                 case ICON_REPEAT:
-                    paint.setStyle(Paint.Style.STROKE);
                     path.reset();
                     path.addRoundRect(new RectF(4f, 6f, 20f, 18f), 4f, 4f, Path.Direction.CW);
                     c.drawPath(path, paint);
@@ -555,7 +530,6 @@ final class PlayerUiKit {
                     c.drawPath(path, paint);
                     break;
                 case ICON_RESTART:
-                    paint.setStyle(Paint.Style.STROKE);
                     oval.set(4f, 4f, 20f, 20f);
                     c.drawArc(oval, 40f, 280f, false, paint);
                     paint.setStyle(Paint.Style.FILL);
@@ -567,7 +541,6 @@ final class PlayerUiKit {
                     c.drawPath(path, paint);
                     break;
                 case ICON_FULLSCREEN:
-                    paint.setStyle(Paint.Style.STROKE);
                     paint.setStrokeWidth(2f);
                     c.drawLine(4f, 9f, 4f, 4f, paint);
                     c.drawLine(4f, 4f, 9f, 4f, paint);

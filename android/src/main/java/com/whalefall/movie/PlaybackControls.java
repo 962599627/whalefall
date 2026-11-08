@@ -22,7 +22,7 @@ final class PlaybackControls {
     final DanmakuView danmaku;
     boolean danmakuLoaded;
     boolean currentMobileLandscape;
-    /** 右侧工具 Dock 是否折叠成 44dp 图标栏。 */
+    /** 右侧工具 Dock 是否折叠成 56dp 图标栏。 */
     boolean dockCollapsed;
     /** 当前是否是直播会话（决定 Dock 文案：下台/频道/线路）。 */
     private boolean liveSession;
@@ -71,6 +71,7 @@ final class PlaybackControls {
         dockOverlay = overlay;
         surface = texture;
         liveSession = "live".equals(s.key);
+        menuAnchor = a.playerChrome == null ? null : a.playerChrome.menuAnchor;
         danmaku =
                 new DanmakuView(
                         a,
@@ -109,7 +110,7 @@ final class PlaybackControls {
                                 MainActivity.WHITE,
                                 false,
                                 1));
-        // 三段式胶囊进度条：底轨/缓冲/已播，樱花粉已播段 + 圆点拖动放大
+        // 4dp 胶囊进度条：底轨/缓冲/已播三段，纯黑遮罩上清晰
         timeline.setProgressDrawable(PlayerUiKit.seekProgress(a));
         timeline.setThumb(PlayerUiKit.seekThumb(a, false));
         timeline.setSplitTrack(false);
@@ -269,7 +270,7 @@ final class PlaybackControls {
             add(row, "更多", "more", this::more);
         }
         if (!a.isTvDevice()) {
-            // 手机主 Dock 只留 8 个常用工具；低频项收进「更多」菜单，功能一个不少
+            // 手机主 Dock 只留 8 个常用工具 + 更多；低频项收进「更多」菜单
             hideTool("audio-tracks");
             hideTool("decoder");
             hideTool("danmaku-tool");
@@ -315,28 +316,28 @@ final class PlaybackControls {
             rebuildToolDock(mobileLandscape);
         }
         Button fsTool = buttons.get("fullscreen-tool");
-        if (fsTool != null) {
+        if (fsTool != null && !dockCollapsed) {
             fsTool.setText(mobileLandscape ? "竖屏" : "全屏");
         }
         updateLabels();
     }
 
-    /** 主 Dock 的 8 个常用工具（2×4 网格）；低频功能收进「更多」。 */
+    /** 主 Dock 的 8 个常用工具（2×4）；「更多」固定为第 9 格。 */
     private static final String[] PRIMARY_TOOLS = {
         "prev-episode", "next-episode", "episodes", "lines",
         "speed", "aspect", "subtitles", "fullscreen-tool"
     };
 
-    /** PlayerChrome 用它给右侧 Dock 定宽：展开 152dp、折叠 52dp 图标栏。 */
+    /** PlayerChrome 用它给右侧 Dock 定宽：展开 150dp、折叠 56dp 图标栏。 */
     int dockWidth() {
         if (a.isTvDevice()) return a.dp(560);
-        return a.dp(dockCollapsed ? 52 : 152);
+        return a.dp(dockCollapsed ? 56 : 150);
     }
 
     void toggleDockCollapsed() {
         dockCollapsed = !dockCollapsed;
         rebuildToolDock(currentMobileLandscape);
-        if (a.playerChrome != null) a.playerChrome.scheduleLayout();
+        if (a.playerChrome != null) a.playerChrome.onDockToggled();
     }
 
     void hideTool(String key) {
@@ -361,7 +362,129 @@ final class PlaybackControls {
         }
     }
 
-    /** TV 端沿用文字胶囊（遥控器焦点场景文字比图标好认）。 */
+    /** 深色卡片内的小工具格：图标 20dp 白色 + 10.5sp #DCE5F2 文字。 */
+    private void configureToolButton(Button b, String key, boolean iconOnly) {
+        b.setAllCaps(false);
+        b.setSingleLine(true);
+        b.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        b.setIncludeFontPadding(false);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        b.setTextSize(iconOnly ? 1f : 10.5f);
+        b.setTextColor(0xffdce5f2);
+        b.setBackground(PlayerUiKit.capsuleBg(0x1affffff, 0, 0, a.dp(iconOnly ? 6 : 10)));
+        b.setPadding(a.dp(3), a.dp(3), a.dp(3), a.dp(3));
+        if (iconOnly) {
+            b.setText("");
+            b.setCompoundDrawables(
+                    null,
+                    new PlayerUiKit.IconDrawable(
+                            PlayerUiKit.iconFor(key), 0xffffffff, a.dp(20)),
+                    null,
+                    null);
+            b.setCompoundDrawablePadding(0);
+        } else {
+            b.setText(toolLabel(key));
+            PlayerUiKit.setToolIcon(b, key, 0xffffffff, a.dp(20));
+            b.setCompoundDrawablePadding(a.dp(2));
+        }
+    }
+
+    private String toolLabel(String key) {
+        if ("speed".equals(key)) return a.prefs.getFloat(Prefs.PLAY_SPEED, 1f) + "×";
+        if ("fullscreen-tool".equals(key)) return currentMobileLandscape ? "竖屏" : "全屏";
+        if ("prev-episode".equals(key)) return "上集";
+        if ("next-episode".equals(key)) return liveSession ? "下台" : "下集";
+        if ("episodes".equals(key)) return liveSession ? "频道" : "选集";
+        if ("lines".equals(key)) return liveSession ? "线路" : "换源";
+        if ("aspect".equals(key)) return "画面";
+        if ("subtitles".equals(key)) return "字幕";
+        if ("more".equals(key)) return "更多";
+        return key;
+    }
+
+    /** 横屏：右侧近不透明深色卡片，2 列 × 4 行 + 第 9 格「更多」，可折叠成图标栏。 */
+    private void buildSideDock() {
+        LinearLayout column = a.vertical();
+        column.setGravity(Gravity.CENTER_HORIZONTAL);
+        column.setClipChildren(false);
+        column.setClipToPadding(false);
+
+        // 头部预留折叠钮位置（PlayerChrome 的 28dp 圆钮画在卡片右上角）
+        LinearLayout header = a.row();
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = a.text("工具", 10, 0xff8fa2bd);
+        title.setIncludeFontPadding(false);
+        title.setPadding(a.dp(4), 0, 0, 0);
+        header.addView(title, new LinearLayout.LayoutParams(0, a.dp(30), 1f));
+        column.addView(header, new LinearLayout.LayoutParams(-1, a.dp(30)));
+
+        LinearLayout grid = a.vertical();
+        grid.setGravity(Gravity.CENTER_HORIZONTAL);
+        int columns = dockCollapsed ? 1 : 2;
+        LinearLayout currentRow = null;
+        int cells = 0;
+        for (int i = 0; i <= PRIMARY_TOOLS.length; i++) {
+            final String key = i < PRIMARY_TOOLS.length ? PRIMARY_TOOLS[i] : "more";
+            Button b = buttons.get(key);
+            if (b == null || b.getVisibility() == View.GONE) continue;
+            if (cells % columns == 0) {
+                currentRow = a.row();
+                currentRow.setGravity(Gravity.CENTER);
+                grid.addView(currentRow, new LinearLayout.LayoutParams(-1, -2));
+            }
+            cells++;
+            detach(b);
+            configureToolButton(b, key, dockCollapsed);
+            LinearLayout.LayoutParams size =
+                    dockCollapsed
+                            ? new LinearLayout.LayoutParams(a.dp(38), a.dp(38))
+                            : new LinearLayout.LayoutParams(a.dp(62), a.dp(50));
+            size.setMargins(a.dp(2), a.dp(2), a.dp(2), a.dp(2));
+            currentRow.addView(b, size);
+        }
+        ScrollView scroller = new ScrollView(a);
+        scroller.setVerticalScrollBarEnabled(false);
+        scroller.setFillViewport(false);
+        scroller.setClipChildren(true);
+        scroller.setClipToPadding(true);
+        scroller.addView(grid);
+        LinearLayout.LayoutParams gridLp = new LinearLayout.LayoutParams(-1, 0, 1f);
+        gridLp.topMargin = a.dp(2);
+        column.addView(scroller, gridLp);
+        dockOverlay.addView(column, new LinearLayout.LayoutParams(-1, -1));
+    }
+
+    /** 竖屏 / 手机底部一行：同样深色按钮，横向滚动，含「更多」。 */
+    private void buildBottomDock() {
+        LinearLayout row = a.row();
+        row.setGravity(Gravity.CENTER);
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
+        String[] order = new String[PRIMARY_TOOLS.length + 1];
+        System.arraycopy(PRIMARY_TOOLS, 0, order, 0, PRIMARY_TOOLS.length);
+        order[PRIMARY_TOOLS.length] = "more";
+        for (String key : order) {
+            Button b = buttons.get(key);
+            if (b == null || b.getVisibility() == View.GONE) continue;
+            detach(b);
+            configureToolButton(b, key, false);
+            LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(a.dp(60), a.dp(50));
+            size.setMargins(a.dp(3), a.dp(2), a.dp(3), a.dp(2));
+            row.addView(b, size);
+        }
+        HorizontalScrollView scroller = new HorizontalScrollView(a);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setFillViewport(true);
+        scroller.setClipChildren(true);
+        scroller.setClipToPadding(true);
+        scroller.addView(row);
+        dockOverlay.addView(scroller, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    /** TV 端：深色文字胶囊（遥控器焦点场景文字更好认）。 */
     private void buildTvDock() {
         LinearLayout row = a.row();
         row.setGravity(Gravity.CENTER);
@@ -382,184 +505,17 @@ final class PlaybackControls {
             b.setMinimumHeight(0);
             b.setPadding(a.dp(4), 0, a.dp(4), 0);
             b.setCompoundDrawables(null, null, null, null);
-            b.setBackground(
-                    PlayerUiKit.capsuleBg(
-                            0x8c0b1220, 0x33ffffff, Math.max(1, a.dp(0.8f)), a.dp(14)));
-            b.setTextColor(0xffe8eff9);
+            b.setBackground(PlayerUiKit.capsuleBg(0x1affffff, 0, 0, a.dp(10)));
+            b.setTextColor(0xffdce5f2);
             LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(a.dp(58), a.dp(42));
             size.setMargins(a.dp(3), a.dp(3), a.dp(3), a.dp(3));
             row.addView(b, size);
         }
-        dockOverlay.addView(wrapHorizontal(row), new LinearLayout.LayoutParams(-1, -2));
-    }
-
-    /** 竖屏 / 手机底部一行：图标 + 11sp 文字，横向滚动。 */
-    private void buildBottomDock() {
-        LinearLayout row = a.row();
-        row.setGravity(Gravity.CENTER);
-        row.setClipChildren(false);
-        row.setClipToPadding(false);
-        row.setPadding(a.dp(3), a.dp(2), a.dp(3), a.dp(2));
-        for (String key : toolOrderForBottom()) {
-            Button b = buttons.get(key);
-            if (b == null || b.getVisibility() == View.GONE) continue;
-            detach(b);
-            configureToolButton(b, key, false);
-            LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(a.dp(64), a.dp(54));
-            size.setMargins(a.dp(4), a.dp(2), a.dp(4), a.dp(2));
-            row.addView(b, size);
-        }
-        dockOverlay.addView(wrapHorizontal(row), new LinearLayout.LayoutParams(-1, -2));
-    }
-
-    /** 横屏：右侧 2×4 工具 Dock，可折叠成 44dp 图标栏。 */
-    private void buildSideDock() {
-        LinearLayout column = a.vertical();
-        column.setGravity(Gravity.CENTER_HORIZONTAL);
-        column.setClipChildren(false);
-        column.setClipToPadding(false);
-
-        LinearLayout header = a.row();
-        header.setGravity(Gravity.CENTER);
-        Button more = buttons.get("more");
-        if (more != null) {
-            detach(more);
-            more.setText("更多");
-            more.setTextSize(10);
-            more.setIncludeFontPadding(false);
-            more.setSingleLine(true);
-            more.setMinWidth(0);
-            more.setMinimumWidth(0);
-            more.setMinHeight(0);
-            more.setMinimumHeight(0);
-            more.setPadding(a.dp(6), 0, a.dp(6), 0);
-            more.setTextColor(0xffe8eff9);
-            more.setBackground(
-                    PlayerUiKit.capsuleBg(
-                            0x1affffff, 0x33ffffff, Math.max(1, a.dp(0.7f)), a.dp(999)));
-            PlayerUiKit.setLeftIcon(more, PlayerUiKit.ICON_MORE, 0xffe8eff9, a.dp(13));
-            more.setCompoundDrawablePadding(a.dp(4));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(26));
-            lp.rightMargin = a.dp(4);
-            header.addView(more, lp);
-        }
-        PlayerUiKit.IconView fold =
-                new PlayerUiKit.IconView(
-                        a,
-                        dockCollapsed
-                                ? PlayerUiKit.ICON_CHEVRON_LEFT
-                                : PlayerUiKit.ICON_CHEVRON_RIGHT,
-                        0xffe8eff9,
-                        a.dp(15));
-        fold.setBackground(
-                PlayerUiKit.circleBg(0x1affffff, 0x33ffffff, Math.max(1, a.dp(0.7f))));
-        fold.setOnClickListener(v -> toggleDockCollapsed());
-        MobileDetailScreen.bindTouchFeedback(fold);
-        header.addView(fold, new LinearLayout.LayoutParams(a.dp(26), a.dp(26)));
-        column.addView(header, new LinearLayout.LayoutParams(-1, -2));
-
-        LinearLayout grid = a.vertical();
-        grid.setGravity(Gravity.CENTER_HORIZONTAL);
-        grid.setPadding(0, a.dp(4), 0, 0);
-        int columns = dockCollapsed ? 1 : 2;
-        LinearLayout currentRow = null;
-        int cells = 0;
-        for (int i = 0; i < PRIMARY_TOOLS.length; i++) {
-            final String key = PRIMARY_TOOLS[i];
-            Button b = buttons.get(key);
-            if (b == null || b.getVisibility() == View.GONE) continue;
-            if (cells % columns == 0) {
-                currentRow = a.row();
-                currentRow.setGravity(Gravity.CENTER);
-                grid.addView(currentRow, new LinearLayout.LayoutParams(-1, -2));
-            }
-            cells++;
-            detach(b);
-            configureToolButton(b, key, dockCollapsed);
-            LinearLayout.LayoutParams size =
-                    dockCollapsed
-                            ? new LinearLayout.LayoutParams(a.dp(38), a.dp(38))
-                            : new LinearLayout.LayoutParams(a.dp(62), a.dp(50));
-            size.setMargins(a.dp(3), a.dp(3), a.dp(3), a.dp(3));
-            currentRow.addView(b, size);
-        }
-        column.addView(wrapVertical(grid), new LinearLayout.LayoutParams(-1, 0, 1f));
-        dockOverlay.addView(column, new LinearLayout.LayoutParams(-1, -1));
-    }
-
-    private String[] toolOrderForBottom() {
-        String[] list = new String[PRIMARY_TOOLS.length + 1];
-        System.arraycopy(PRIMARY_TOOLS, 0, list, 0, PRIMARY_TOOLS.length);
-        list[PRIMARY_TOOLS.length] = "more";
-        return list;
-    }
-
-    /** 工具按钮统一样式：玻璃胶囊 + Canvas 图标 + 10.5sp 文字；折叠时只留图标。 */
-    private void configureToolButton(Button b, String key, boolean iconOnly) {
-        b.setAllCaps(false);
-        b.setSingleLine(true);
-        b.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        b.setIncludeFontPadding(false);
-        b.setMinWidth(0);
-        b.setMinimumWidth(0);
-        b.setMinHeight(0);
-        b.setMinimumHeight(0);
-        b.setTextSize(iconOnly ? 1f : 10.5f);
-        b.setTextColor(0xffe8eff9);
-        b.setBackground(
-                PlayerUiKit.capsuleBg(
-                        0x8c0b1220,
-                        0x33ffffff,
-                        Math.max(1, a.dp(0.8f)),
-                        a.dp(iconOnly ? 14 : 16)));
-        b.setPadding(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
-        if (iconOnly) {
-            b.setText("");
-            b.setCompoundDrawables(
-                    null,
-                    new PlayerUiKit.IconDrawable(
-                            PlayerUiKit.iconFor(key), 0xffe8eff9, a.dp(17)),
-                    null,
-                    null);
-            b.setCompoundDrawablePadding(0);
-        } else {
-            b.setText(toolLabel(key));
-            PlayerUiKit.setToolIcon(b, key, 0xffe8eff9, a.dp(18));
-            b.setCompoundDrawablePadding(a.dp(3));
-        }
-    }
-
-    private String toolLabel(String key) {
-        if ("speed".equals(key)) return a.prefs.getFloat(Prefs.PLAY_SPEED, 1f) + "×";
-        if ("fullscreen-tool".equals(key)) return currentMobileLandscape ? "竖屏" : "全屏";
-        if ("prev-episode".equals(key)) return "上集";
-        if ("next-episode".equals(key)) return liveSession ? "下台" : "下集";
-        if ("episodes".equals(key)) return liveSession ? "频道" : "选集";
-        if ("lines".equals(key)) return liveSession ? "线路" : "换源";
-        if ("aspect".equals(key)) return "画面";
-        if ("subtitles".equals(key)) return "字幕";
-        if ("more".equals(key)) return "更多";
-        return key;
-    }
-
-    private HorizontalScrollView wrapHorizontal(LinearLayout row) {
         HorizontalScrollView scroller = new HorizontalScrollView(a);
         scroller.setHorizontalScrollBarEnabled(false);
         scroller.setFillViewport(true);
-        scroller.setClipChildren(true);
-        scroller.setClipToPadding(true);
         scroller.addView(row);
-        return scroller;
-    }
-
-    private ScrollView wrapVertical(LinearLayout grid) {
-        ScrollView scroller = new ScrollView(a);
-        scroller.setVerticalScrollBarEnabled(false);
-        scroller.setFillViewport(false);
-        scroller.setClipChildren(true);
-        scroller.setClipToPadding(true);
-        scroller.addView(grid);
-        return scroller;
+        dockOverlay.addView(scroller, new LinearLayout.LayoutParams(-1, -2));
     }
 
     void registerHiddenAction(String key, Runnable action) {
@@ -568,7 +524,10 @@ final class PlaybackControls {
                         key,
                         key,
                         () -> {
-                            menuAnchor = buttons.get("more");
+                            menuAnchor =
+                                    a.playerChrome == null
+                                            ? buttons.get("more")
+                                            : a.playerChrome.menuAnchor;
                             action.run();
                         });
         b.setVisibility(View.GONE);
@@ -581,11 +540,10 @@ final class PlaybackControls {
                         title,
                         key,
                         () -> {
-                            // 「更多」菜单项目多，锚到更靠下的进度条，弹层才有足够高度
                             menuAnchor =
-                                    "more".equals(key) && a.playerChrome != null
-                                            ? a.playerChrome.progress
-                                            : buttons.get(key);
+                                    a.playerChrome == null
+                                            ? buttons.get(key)
+                                            : a.playerChrome.menuAnchor;
                             action.run();
                         });
         b.setSingleLine(true);
@@ -595,30 +553,29 @@ final class PlaybackControls {
         b.setMinimumWidth(0);
         b.setMinHeight(0);
         b.setMinimumHeight(0);
-        b.setPadding(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
-        b.setBackground(
-                PlayerUiKit.capsuleBg(
-                        0x8c0b1220, 0x33ffffff, Math.max(1, a.dp(0.8f)), a.dp(16)));
+        b.setPadding(a.dp(3), a.dp(3), a.dp(3), a.dp(3));
+        b.setBackground(PlayerUiKit.capsuleBg(0x1affffff, 0, 0, a.dp(10)));
         b.setOnFocusChangeListener(
                 (view, focused) -> {
                     FocusMotion.style(
                             a,
                             b,
                             focused,
-                            0x8c0b1220,
+                            0x1affffff,
                             MainActivity.WHITE,
-                            16,
+                            10,
                             MainActivity.WHITE,
                             MainActivity.DARK,
                             false,
                             1.025f);
                 });
-        b.setCompoundDrawablePadding(a.dp(3));
+        b.setCompoundDrawablePadding(a.dp(2));
         if (!a.isTvDevice()) {
-            PlayerUiKit.setToolIcon(b, key, 0xffe8eff9, a.dp(18));
+            b.setTextColor(0xffdce5f2);
+            PlayerUiKit.setToolIcon(b, key, 0xffffffff, a.dp(20));
         }
-        LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(a.dp(68), a.dp(54));
-        size.setMargins(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
+        LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(a.dp(62), a.dp(50));
+        size.setMargins(a.dp(2), a.dp(2), a.dp(2), a.dp(2));
         row.addView(b, size);
         buttons.put(key, b);
         return b;
@@ -1622,7 +1579,7 @@ final class PlaybackControls {
     void updateLabels() {
         float rate = a.prefs.getFloat(Prefs.PLAY_SPEED, 1f);
         Button speedBtn = buttons.get("speed");
-        if (speedBtn != null) {
+        if (speedBtn != null && (a.isTvDevice() || !dockCollapsed)) {
             if (a.isTvDevice()) {
                 speedBtn.setText(Math.abs(rate - 1f) < 0.01f ? "倍速" : rate + "×");
             } else {
@@ -1640,6 +1597,7 @@ final class PlaybackControls {
             outroBtn.setText(s > 0 ? "片尾" + s + "s" : (a.isTvDevice() ? "片尾" : "跳片尾"));
         }
         if (!a.isTvDevice()) {
+            // 只有「激活态」用樱花粉；其余保持白色图标 + #DCE5F2 文字
             tintTool("speed", Math.abs(rate - 1f) >= 0.01f);
             tintTool("aspect", a.prefs.getInt(Prefs.ASPECT, 0) != 0);
         }
@@ -1647,7 +1605,7 @@ final class PlaybackControls {
 
     private void tintTool(String key, boolean active) {
         Button b = buttons.get(key);
-        if (b != null) PlayerUiKit.tintTool(b, active ? 0xffff8fb1 : 0xffe8eff9);
+        if (b != null) PlayerUiKit.tintTool(b, active ? 0xffff8fb1 : 0xffdce5f2);
     }
 
     String skipLabel(int seconds) {

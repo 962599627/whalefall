@@ -913,6 +913,87 @@ final class MobileShell {
         heroContainer.setVisibility(View.GONE);
         body.addView(heroContainer, new LinearLayout.LayoutParams(-1, -2));
 
+        // 3.5 「今晚看什么」：随机三部，换一批
+        final LinearLayout tonightCard = a.vertical();
+        tonightCard.setPadding(a.dp(16), a.dp(14), a.dp(16), a.dp(12));
+        tonightCard.setBackground(
+                glassBg(0xcc16283f, 0xb3121d2e, a.dp(20), a.dp(0.8f), 0x33ffffff));
+        tonightCard.setVisibility(View.GONE);
+        LinearLayout tonightHeader = a.row();
+        tonightHeader.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout tonightTitles = a.vertical();
+        TextView tonightTitle = a.text("今晚看什么", 17, MainActivity.WHITE);
+        tonightTitle.setTypeface(null, Typeface.BOLD);
+        tonightTitles.addView(tonightTitle);
+        TextView tonightSub = a.text("随机三部 · 点一下直达详情", 11.5f, 0xff9fb0c9);
+        tonightSub.setPadding(0, a.dp(3), 0, 0);
+        tonightTitles.addView(tonightSub);
+        tonightHeader.addView(tonightTitles, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView tonightShuffle = a.text("换一批", 12, MainActivity.WHITE);
+        tonightShuffle.setGravity(Gravity.CENTER);
+        tonightShuffle.setPadding(a.dp(16), a.dp(8), a.dp(16), a.dp(8));
+        tonightShuffle.setBackground(glassBg(0x33ffffff, 0x2effffff, a.dp(999), a.dp(0.8f), 0x44ffffff));
+        MobileDetailScreen.bindTouchFeedback(tonightShuffle);
+        tonightHeader.addView(tonightShuffle);
+        tonightCard.addView(tonightHeader, new LinearLayout.LayoutParams(-1, -2));
+        final LinearLayout tonightRow = a.row();
+        LinearLayout.LayoutParams tonightRowLp = new LinearLayout.LayoutParams(-1, -2);
+        tonightRowLp.topMargin = a.dp(12);
+        tonightCard.addView(tonightRow, tonightRowLp);
+        LinearLayout.LayoutParams tonightCardLp =
+                new LinearLayout.LayoutParams(-1, -2);
+        tonightCardLp.leftMargin = a.dp(16);
+        tonightCardLp.rightMargin = a.dp(16);
+        tonightCardLp.topMargin = a.dp(12);
+        body.addView(tonightCard, tonightCardLp);
+        final Runnable[] refreshTonight = new Runnable[1];
+        refreshTonight[0] =
+                () -> {
+                    if (currentVideos.size() < 3) {
+                        tonightCard.setVisibility(View.GONE);
+                        return;
+                    }
+                    tonightRow.removeAllViews();
+                    java.util.List<Cms.Video> pool =
+                            new java.util.ArrayList<>(currentVideos);
+                    java.util.Collections.shuffle(pool, new java.util.Random(System.nanoTime()));
+                    int picks = Math.min(3, pool.size());
+                    float d = a.getResources().getDisplayMetrics().density;
+                    int cardW = Math.max(96, Math.round((a.windowWidth() / d - 64) / 3f) - 8);
+                    for (int i = 0; i < picks; i++) {
+                        final Cms.Video v = pool.get(i);
+                        LinearLayout pick = a.vertical();
+                        MobileDetailScreen.bindTouchFeedback(pick);
+                        pick.setOnClickListener(x -> a.openListing(currentSite, v));
+                        FrameLayout art = new FrameLayout(a);
+                        art.setBackground(glassBg(0xff1a2c45, 0xff13233a, a.dp(12), a.dp(0.6f), 0x33ffffff));
+                        art.setClipToOutline(true);
+                        TextView ph = a.text(v.title == null || v.title.isEmpty() ? "鲸" : v.title.substring(0, 1), 26, 0x40ffffff);
+                        ph.setTypeface(null, Typeface.BOLD);
+                        ph.setGravity(Gravity.CENTER);
+                        art.addView(ph, new FrameLayout.LayoutParams(-1, -1));
+                        ImageView poster = new ImageView(a);
+                        poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                        art.addView(poster, new FrameLayout.LayoutParams(-1, -1));
+                        if (v.poster != null && !v.poster.isEmpty()) a.poster(v.poster, poster);
+                        pick.addView(
+                                art,
+                                new LinearLayout.LayoutParams(-1, a.dp(Math.round(cardW * 1.42f))));
+                        TextView tt = a.text(v.title, 11.5f, 0xffeaf1fb);
+                        tt.setSingleLine(true);
+                        tt.setEllipsize(TextUtils.TruncateAt.END);
+                        tt.setPadding(a.dp(1), a.dp(6), a.dp(1), 0);
+                        pick.addView(tt);
+                        LinearLayout.LayoutParams pickLp =
+                                new LinearLayout.LayoutParams(
+                                        a.dp(cardW), -2);
+                        pickLp.rightMargin = a.dp(8);
+                        tonightRow.addView(pick, pickLp);
+                    }
+                    tonightCard.setVisibility(View.VISIBLE);
+                };
+        tonightShuffle.setOnClickListener(v -> refreshTonight[0].run());
+
         // 4. Horizontal Scrollable Category Pill Bar
         HorizontalScrollView catScroll =
                 new HorizontalScrollView(a) {
@@ -1175,6 +1256,7 @@ final class MobileShell {
                                                 }
                                                 renderVideoGrid(
                                                         gridContainer, siteSnapshot, currentVideos);
+                                                refreshTonight[0].run();
                                                 if (currentPage < totalPages) {
                                                     loadMoreBtn.setVisibility(View.VISIBLE);
                                                     loadMoreBtn.setText(

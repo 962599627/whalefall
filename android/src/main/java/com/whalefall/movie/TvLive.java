@@ -51,6 +51,7 @@ final class TvLive {
 
     static final String CUSTOM_FILE = "tv_channels.json";
     static final String FAVORITES = "tv_favorites";
+    static final String LAST = "tv_last";
 
     /** 一个频道：名称、官方直播页地址、分组。 */
     static final class Channel {
@@ -699,7 +700,20 @@ final class TvLive {
             rows.addView(row, lp);
         }
         final int savedY = page.listScrollY;
-        if (savedY > 0) scroll.post(() -> scroll.scrollTo(0, savedY));
+        if (savedY > 0) {
+            scroll.post(() -> scroll.scrollTo(0, savedY));
+        } else if (page.query.isEmpty()) {
+            String lastWatched = a.prefs.getString(LAST, "");
+            if (!lastWatched.isEmpty()) {
+                String lastName = lastWatched.split("\n", 2)[0];
+                for (int i = 0; i < list.size(); i++)
+                    if (list.get(i).name.equals(lastName)) {
+                        final int target = i * (rowH + a.dp(1));
+                        scroll.post(() -> scroll.scrollTo(0, Math.max(0, target - a.dp(60))));
+                        break;
+                    }
+            }
+        }
         return mid;
     }
 
@@ -750,6 +764,16 @@ final class TvLive {
         tile.addView(mk, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         row.addView(tile, new LinearLayout.LayoutParams(tileSize, tileSize));
 
+        String lastWatched = a.prefs.getString(LAST, "");
+        if (lastWatched.startsWith(ch.name + "\n")) {
+            TextView last = a.text("上次", 9, 0xff31141f);
+            last.setGravity(Gravity.CENTER);
+            last.setPadding(a.dp(7), 0, a.dp(7), 0);
+            last.setBackground(a.bg(0xffffc7d6, 999));
+            LinearLayout.LayoutParams lastLp = new LinearLayout.LayoutParams(-2, a.dp(18));
+            lastLp.rightMargin = a.dp(6);
+            row.addView(last, lastLp);
+        }
         TextView name = a.text(ch.name, wide ? 15.5f : 15, active ? 0xffffe3ea : 0xffe8eff9);
         name.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
         name.setSingleLine(true);
@@ -1280,6 +1304,7 @@ final class TvLive {
 
     static void open(
             MainActivity a, Store store, String group, Channel channel, Runnable onClosed) {
+        a.prefs.edit().putString(LAST, channel.name + "\n" + channel.url).apply();
         Player player = new Player(a, store, group, channel);
         player.onClosed = onClosed;
         player.show();
