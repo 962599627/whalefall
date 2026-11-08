@@ -51,6 +51,9 @@ import org.json.JSONObject;
  */
 final class MobileShell {
     static int activeTab = 0;
+    /** 配置变更/进程重建后要恢复到的 tab；-1 表示不恢复。 */
+    static int pendingRestoreTab = -1;
+    static String pendingRestoreKeyword = "";
     static String pendingSearchKeyword = "";
 
     /** Persistent search session state so returning from Detail keeps search results resident. */
@@ -137,7 +140,16 @@ final class MobileShell {
     }
 
     static void show(MainActivity a) {
-        new MobileShell(a).render();
+        final int restoreTab = pendingRestoreTab;
+        final String restoreKeyword = pendingRestoreKeyword;
+        pendingRestoreTab = -1;
+        pendingRestoreKeyword = "";
+        MobileShell shell = new MobileShell(a);
+        shell.render();
+        if (restoreTab > 0 && restoreTab < 6) {
+            if (!restoreKeyword.isEmpty()) shell.pendingSearchKeyword = restoreKeyword;
+            shell.switchTab(restoreTab);
+        }
     }
 
     static void openSearchTab(MainActivity a, String initialKeyword) {

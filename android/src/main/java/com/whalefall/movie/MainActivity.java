@@ -592,6 +592,11 @@ public final class MainActivity extends Activity {
                     });
         }
         layoutIntro = b == null || b.getBoolean("layout_initial_launch", false);
+        if (b != null) {
+            MobileShell.pendingRestoreTab = b.getInt("whale_tab", -1);
+            String keyword = b.getString("whale_search", "");
+            MobileShell.pendingRestoreKeyword = keyword == null ? "" : keyword;
+        }
         root = new FrameLayout(this);
         root.setBackground(Skin.backdrop(this));
         setContentView(root);
@@ -679,6 +684,10 @@ public final class MainActivity extends Activity {
     @Override
     protected void onSaveInstanceState(Bundle out) {
         out.putBoolean("layout_initial_launch", !layoutReady && layoutIntro);
+        if (!isTvDevice()) {
+            out.putInt("whale_tab", MobileShell.activeTab);
+            out.putString("whale_search", MobileShell.cachedSearchKeyword);
+        }
         super.onSaveInstanceState(out);
     }
 
