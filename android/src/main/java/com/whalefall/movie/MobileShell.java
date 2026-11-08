@@ -17,6 +17,7 @@ import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -26,6 +27,8 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -2845,16 +2848,11 @@ final class MobileShell {
         page.addView(headerRow, new LinearLayout.LayoutParams(-1, -2));
         a.gap(page, 12);
 
-        ScrollView sv = new ScrollView(a);
-        sv.setFillViewport(true);
-        sv.setVerticalScrollBarEnabled(false);
-        sv.setClipToPadding(false);
-        page.addView(sv, new LinearLayout.LayoutParams(-1, 0, 1));
+        // RecyclerView：长列表虚拟化（观看历史 / 我的收藏）
+        final FrameLayout listHost = new FrameLayout(a);
+        page.addView(listHost, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        final LinearLayout listBody = a.vertical();
-        listBody.setPadding(0, 0, 0, a.dp(106));
-        sv.addView(listBody, new ScrollView.LayoutParams(-1, -2));
-
+        final MyListAdapter[] adapterRef = {null};
         final Runnable renderSubTab =
                 new Runnable() {
                     @Override
@@ -2866,151 +2864,31 @@ final class MobileShell {
                         styleLibraryPill(tabHist, histMode);
                         styleLibraryPill(tabFav, favMode);
                         styleLibraryPill(tabDown, downMode);
-
                         clearBtn.setVisibility(histMode ? View.VISIBLE : View.GONE);
-                        listBody.removeAllViews();
+                        listHost.removeAllViews();
 
                         if (downMode) {
-                            MobileDownloads.render(a, listBody);
+                            ScrollView sv = new ScrollView(a);
+                            sv.setFillViewport(true);
+                            sv.setVerticalScrollBarEnabled(false);
+                            sv.setClipToPadding(false);
+                            LinearLayout body = a.vertical();
+                            body.setPadding(0, 0, 0, a.dp(106));
+                            sv.addView(body, new ScrollView.LayoutParams(-1, -2));
+                            MobileDownloads.render(a, body);
+                            listHost.addView(sv, new FrameLayout.LayoutParams(-1, -1));
                             return;
                         }
-                        if (!favMode) {
-                            List<WatchHistory.Entry> items = a.watchHistory();
-                            if (items.isEmpty()) {
-                                renderCenteredHint(listBody, "暂无观看历史记录");
-                                return;
-                            }
-                            for (final WatchHistory.Entry e : items) {
-                                LinearLayout row = a.row();
-                                row.setGravity(Gravity.CENTER_VERTICAL);
-                                row.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
-                                row.setBackground(
-                                        glassBg(
-                                                0xcc1e3557,
-                                                0xcc17294a,
-                                                a.dp(16),
-                                                a.dp(0.7f),
-                                                0x33ffffff));
-                                MobileDetailScreen.bindTouchFeedback(row);
-                                row.setOnClickListener(v -> a.resumeHistory(e));
 
-                                ImageView thumb = new ImageView(a);
-                                thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                                thumb.setBackground(a.bg(0xff1b2e48, 10));
-                                thumb.setClipToOutline(true);
-                                LinearLayout.LayoutParams thumbLp =
-                                        new LinearLayout.LayoutParams(a.dp(52), a.dp(74));
-                                thumbLp.rightMargin = a.dp(12);
-                                row.addView(thumb, thumbLp);
-                                if (e.poster != null && !e.poster.isEmpty())
-                                    a.poster(e.poster, thumb);
-
-                                LinearLayout info = a.vertical();
-                                TextView t = a.text(e.title, 15, MainActivity.WHITE);
-                                t.setTypeface(null, Typeface.BOLD);
-                                t.setSingleLine(true);
-                                t.setEllipsize(TextUtils.TruncateAt.END);
-                                info.addView(t);
-
-                                TextView sub = a.text(a.historyLabel(e), 12, MainActivity.MUTED);
-                                sub.setPadding(0, a.dp(5), 0, 0);
-                                info.addView(sub);
-                                row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
-
-                                TextView del = a.text("删除", 12, 0xffef4444);
-                                del.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
-                                MobileDetailScreen.bindTouchFeedback(del);
-                                del.setOnClickListener(
-                                        v -> {
-                                            a.prefs
-                                                    .edit()
-                                                    .putString(
-                                                            Prefs.WATCH_HISTORY,
-                                                            WatchHistory.remove(
-                                                                    a.prefs.getString(
-                                                                            Prefs.WATCH_HISTORY,
-                                                                            "[]"),
-                                                                    e.key()))
-                                                    .apply();
-                                            run();
-                                        });
-                                row.addView(del);
-
-                                LinearLayout.LayoutParams lp =
-                                        new LinearLayout.LayoutParams(-1, -2);
-                                lp.bottomMargin = a.dp(8);
-                                listBody.addView(row, lp);
-                            }
-                        } else {
-                            List<Favorites.Entry> favs =
-                                    Favorites.read(a.prefs.getString(Prefs.FAVORITES, "[]"));
-                            if (favs.isEmpty()) {
-                                renderCenteredHint(listBody, "还没有收藏任何影片");
-                                return;
-                            }
-                            for (final Favorites.Entry f : favs) {
-                                LinearLayout row = a.row();
-                                row.setGravity(Gravity.CENTER_VERTICAL);
-                                row.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
-                                row.setBackground(
-                                        glassBg(
-                                                0xcc1e3557,
-                                                0xcc17294a,
-                                                a.dp(16),
-                                                a.dp(0.7f),
-                                                0x33ffffff));
-                                MobileDetailScreen.bindTouchFeedback(row);
-
-                                ImageView thumb = new ImageView(a);
-                                thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                                thumb.setBackground(a.bg(0xff1b2e48, 10));
-                                thumb.setClipToOutline(true);
-                                LinearLayout.LayoutParams thumbLp =
-                                        new LinearLayout.LayoutParams(a.dp(52), a.dp(74));
-                                thumbLp.rightMargin = a.dp(12);
-                                row.addView(thumb, thumbLp);
-                                if (f.poster != null && !f.poster.isEmpty())
-                                    a.poster(f.poster, thumb);
-
-                                LinearLayout info = a.vertical();
-                                TextView t = a.text(f.title, 15, MainActivity.WHITE);
-                                t.setTypeface(null, Typeface.BOLD);
-                                t.setSingleLine(true);
-                                t.setEllipsize(TextUtils.TruncateAt.END);
-                                info.addView(t);
-
-                                TextView sub = a.text("已收藏 · 点击查看详情", 12, MainActivity.MUTED);
-                                sub.setPadding(0, a.dp(5), 0, 0);
-                                info.addView(sub);
-                                row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
-
-                                row.setOnClickListener(
-                                        v -> {
-                                            Cms.Site targetSite = null;
-                                            if (a.config != null) {
-                                                for (Cms.Site s : a.config.sites) {
-                                                    if (s.key.equals(f.site)) {
-                                                        targetSite = s;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                            if (targetSite == null) targetSite = currentSite;
-                                            if (targetSite == null) {
-                                                a.toast("该收藏所属的片源不可用");
-                                                return;
-                                            }
-                                            final Cms.Site resolvedSite = targetSite;
-                                            Cms.Video video = f.video();
-                                            a.openListing(resolvedSite, video);
-                                        });
-
-                                LinearLayout.LayoutParams lp =
-                                        new LinearLayout.LayoutParams(-1, -2);
-                                lp.bottomMargin = a.dp(8);
-                                listBody.addView(row, lp);
-                            }
-                        }
+                        RecyclerView rv = new RecyclerView(a);
+                        rv.setLayoutManager(new LinearLayoutManager(a));
+                        rv.setClipToPadding(false);
+                        rv.setPadding(0, 0, 0, a.dp(106));
+                        final MyListAdapter adapter = new MyListAdapter(favMode);
+                        rv.setAdapter(adapter);
+                        adapterRef[0] = adapter;
+                        listHost.addView(rv, new FrameLayout.LayoutParams(-1, -1));
+                        adapter.reload();
                     }
                 };
 
@@ -3043,6 +2921,154 @@ final class MobileShell {
                 });
 
         renderSubTab.run();
+    }
+
+    /** 片库列表适配器：观看历史 / 我的收藏，使用 RecyclerView 做虚拟化。 */
+    private final class MyListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+        private final boolean favoritesMode;
+        private List<WatchHistory.Entry> history = new ArrayList<>();
+        private List<Favorites.Entry> favorites = new ArrayList<>();
+        private boolean empty;
+
+        MyListAdapter(boolean favoritesMode) {
+            this.favoritesMode = favoritesMode;
+        }
+
+        void reload() {
+            if (favoritesMode) {
+                favorites = Favorites.read(a.prefs.getString(Prefs.FAVORITES, "[]"));
+                empty = favorites.isEmpty();
+            } else {
+                history = a.watchHistory();
+                empty = history.isEmpty();
+            }
+            notifyDataSetChanged();
+        }
+
+        @Override
+        public int getItemCount() {
+            if (empty) return 1;
+            return favoritesMode ? favorites.size() : history.size();
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            return empty ? 2 : (favoritesMode ? 1 : 0);
+        }
+
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            if (viewType == 2) {
+                LinearLayout box = a.vertical();
+                box.setGravity(Gravity.CENTER);
+                box.setPadding(a.dp(16), a.dp(48), a.dp(16), a.dp(48));
+                TextView hint =
+                        a.text(
+                                favoritesMode ? "还没有收藏任何影片" : "暂无观看历史记录",
+                                14,
+                                MainActivity.MUTED);
+                hint.setGravity(Gravity.CENTER);
+                box.addView(hint);
+                return new RowHolder(box);
+            }
+            LinearLayout row = a.row();
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
+            row.setBackground(
+                    glassBg(0xcc1e3557, 0xcc17294a, a.dp(16), a.dp(0.7f), 0x33ffffff));
+            MobileDetailScreen.bindTouchFeedback(row);
+
+            ImageView thumb = new ImageView(a);
+            thumb.setTag("row-thumb");
+            thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            thumb.setBackground(a.bg(0xff1b2e48, 10));
+            thumb.setClipToOutline(true);
+            LinearLayout.LayoutParams thumbLp = new LinearLayout.LayoutParams(a.dp(52), a.dp(74));
+            thumbLp.rightMargin = a.dp(12);
+            row.addView(thumb, thumbLp);
+
+            LinearLayout info = a.vertical();
+            TextView title = a.text("", 15, MainActivity.WHITE);
+            title.setTag("row-title");
+            title.setTypeface(null, Typeface.BOLD);
+            title.setSingleLine(true);
+            title.setEllipsize(TextUtils.TruncateAt.END);
+            info.addView(title);
+            TextView sub = a.text("", 12, MainActivity.MUTED);
+            sub.setTag("row-sub");
+            sub.setPadding(0, a.dp(5), 0, 0);
+            info.addView(sub);
+            row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
+
+            TextView action = a.text("", 12, 0xffef4444);
+            action.setTag("row-action");
+            action.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+            MobileDetailScreen.bindTouchFeedback(action);
+            row.addView(action);
+            return new RowHolder(row);
+        }
+
+        @Override
+        public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+            if (empty) return;
+            LinearLayout row = (LinearLayout) holder.itemView;
+            ImageView thumb = row.findViewWithTag("row-thumb");
+            TextView title = row.findViewWithTag("row-title");
+            TextView sub = row.findViewWithTag("row-sub");
+            TextView action = row.findViewWithTag("row-action");
+
+            if (favoritesMode) {
+                final Favorites.Entry f = favorites.get(position);
+                title.setText(f.title);
+                sub.setText("已收藏 · 点击查看详情");
+                action.setText("详情");
+                action.setTextColor(0xffc9d4e6);
+                if (f.poster != null && !f.poster.isEmpty()) a.poster(f.poster, thumb);
+                row.setOnClickListener(
+                        v -> {
+                            Cms.Site target = null;
+                            if (a.config != null)
+                                for (Cms.Site site : a.config.sites)
+                                    if (site.key.equals(f.site)) {
+                                        target = site;
+                                        break;
+                                    }
+                            if (target == null) target = currentSite;
+                            if (target == null) {
+                                a.toast("该收藏所属的片源不可用");
+                                return;
+                            }
+                            a.openListing(target, f.video());
+                        });
+                action.setOnClickListener(v -> row.performClick());
+            } else {
+                final WatchHistory.Entry e = history.get(position);
+                title.setText(e.title);
+                sub.setText(a.historyLabel(e));
+                action.setText("删除");
+                action.setTextColor(0xffef4444);
+                if (e.poster != null && !e.poster.isEmpty()) a.poster(e.poster, thumb);
+                row.setOnClickListener(v -> a.resumeHistory(e));
+                action.setOnClickListener(
+                        v -> {
+                            a.prefs
+                                    .edit()
+                                    .putString(
+                                            Prefs.WATCH_HISTORY,
+                                            WatchHistory.remove(
+                                                    a.prefs.getString(Prefs.WATCH_HISTORY, "[]"),
+                                                    e.key()))
+                                    .apply();
+                            reload();
+                        });
+            }
+        }
+    }
+
+    private static final class RowHolder extends RecyclerView.ViewHolder {
+        RowHolder(View itemView) {
+            super(itemView);
+        }
     }
 
     private void styleLibraryPill(TextView pill, boolean active) {
