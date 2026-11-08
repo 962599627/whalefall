@@ -41,7 +41,7 @@ final class VideoWallpaper extends FrameLayout {
         addView(view, new LayoutParams(-1, -1));
         dim = new View(host);
         addView(dim, new LayoutParams(-1, -1));
-        applyDim(host.prefs.getInt(Prefs.WALLPAPER_DIM, 60));
+        applyDim(host.prefs.getInt(Prefs.WALLPAPER_DIM, 35));
         player = new ExoPlayer.Builder(host).build();
         player.setRepeatMode(Player.REPEAT_MODE_ONE);
         player.setVolume(0f);

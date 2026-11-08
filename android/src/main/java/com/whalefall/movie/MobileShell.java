@@ -1183,7 +1183,7 @@ final class MobileShell {
     private View buildHeroShowcaseCard(final Cms.Site site, final Cms.Video featured) {
         FrameLayout card = new FrameLayout(a);
         card.setTag("hero-watch-now-button");
-        card.setBackground(glassBg(0xff16283f, 0xff101e33, a.dp(24), a.dp(0.8f), 0x38ffffff));
+        card.setBackground(glassBg(0x6616283f, 0x55101e33, a.dp(24), a.dp(0.8f), 0x44ffffff));
         card.setClipToOutline(true);
         MobileDetailScreen.bindTouchFeedback(card);
         card.setOnClickListener(v -> a.openListing(site, featured));
@@ -1191,7 +1191,7 @@ final class MobileShell {
         // Ambient backdrop image
         ImageView bgImg = new ImageView(a);
         bgImg.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        bgImg.setAlpha(0.32f);
+        bgImg.setAlpha(a.videoWallpaperEnabled() ? 0f : 0.18f);
         card.addView(bgImg, new FrameLayout.LayoutParams(-1, -1));
         if (featured.poster != null && !featured.poster.isEmpty()) a.poster(featured.poster, bgImg);
 
@@ -1200,7 +1200,7 @@ final class MobileShell {
         scrim.setBackground(
                 new GradientDrawable(
                         GradientDrawable.Orientation.TL_BR,
-                        new int[] {0x44000000, 0xb8080d0b, 0xeb060908}));
+                        new int[] {0x22000000, 0x6606101f, 0x99060c18}));
         card.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout contentRow = a.row();
