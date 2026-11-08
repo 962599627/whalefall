@@ -1,5 +1,9 @@
 plugins { id 'com.android.application' }
 
+// 版本号单点定义：android/version.properties（与 Python 构建脚本共用）
+def versionProps = new Properties()
+file('../../android/version.properties').withInputStream { versionProps.load(it) }
+
 android {
     namespace 'com.whalefall.movie'
     compileSdk 35
@@ -9,8 +13,8 @@ android {
         ndk { abiFilters 'arm64-v8a' }
         minSdk 23
         targetSdk 28
-        versionCode 12010
-        versionName '1.2.1'
+        versionCode versionProps.getProperty('versionCode').toInteger()
+        versionName versionProps.getProperty('versionName')
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -39,7 +43,7 @@ android {
     sourceSets {
         main {
             jniLibs.srcDirs = ['../../../native-prebuilt/catpaw', '../../../native-prebuilt/deadline']
-            assets.srcDirs += ['../../android/build/catpaw/assets-mobile']
+
         }
     }
     signingConfigs {
@@ -78,3 +82,27 @@ tasks.register('prepareRuntimeAssets', Exec) {
     doFirst { println "preparing catpaw runtime assets via scripts/build_android.py --assets-only" }
 }
 tasks.named('preBuild').configure { dependsOn tasks.named('prepareRuntimeAssets') }
+
+
+// ---- mobile / tv 两个 flavor：manifest 叠加 + 各自的运行时 assets ----
+android {
+    flavorDimensions 'edition'
+    productFlavors {
+        mobile {
+            dimension 'edition'
+            manifestPlaceholders = [whaleEdition: 'mobile']
+        }
+        tv {
+            dimension 'edition'
+            manifestPlaceholders = [whaleEdition: 'tv']
+        }
+    }
+    sourceSets {
+        mobile {
+            assets.srcDirs += ['../../android/build/catpaw/assets-mobile']
+        }
+        tv {
+            assets.srcDirs += ['../../android/build/catpaw/assets-tv']
+        }
+    }
+}

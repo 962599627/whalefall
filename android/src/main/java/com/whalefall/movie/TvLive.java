@@ -91,6 +91,8 @@ final class TvLive {
         {"CCTV-15 音乐", "https://tv.cctv.com/live/cctv15/"},
         {"CCTV-16 奥林匹克", "https://tv.cctv.com/live/cctv16/"},
         {"CCTV-17 农业农村", "https://tv.cctv.com/live/cctv17/"},
+        {"CCTV-4K 超高清", "https://tv.cctv.com/live/cctv4k/"},
+        {"CCTV-8K 超高清", "https://tv.cctv.com/live/cctv8k/"},
     };
 
     static final Object[][] SAT = {
@@ -123,6 +125,24 @@ final class TvLive {
         {"甘肃卫视", "https://www.gstv.com.cn/"},
         {"内蒙古卫视", "https://www.nmtv.cn/"},
         {"TVB 翡翠台", "https://www.tvb.com/"},
+        {"北京卫视", "https://www.brtn.cn/"},
+        {"卡酷少儿", "https://www.brtn.cn/kaku/"},
+        {"浙江卫视", "https://www.zjstv.com/"},
+        {"天津卫视", "https://www.tjyun.com/"},
+        {"辽宁卫视", "https://www.lntv.cn/"},
+        {"吉林卫视", "https://www.jlntv.cn/"},
+        {"河南卫视", "https://www.hntv.tv/"},
+        {"陕西卫视", "https://www.snrtv.com/"},
+        {"青海卫视", "https://www.qhbtv.com/"},
+        {"西藏卫视", "https://www.xzstv.com/"},
+        {"兵团卫视", "https://www.btstv.com/"},
+        {"东南卫视", "https://www.fjtv.net/"},
+        {"厦门卫视", "https://www.xmtv.cn/"},
+        {"金鹰卡通", "https://www.mgtv.com/"},
+        {"优漫卡通", "https://www.jstv.com/"},
+        {"嘉佳卡通", "https://www.gdtv.cn/"},
+        {"南方卫视", "https://www.gdtv.cn/"},
+        {"中国教育1套", "http://www.centv.cn/"},
     };
 
     static final class Store {

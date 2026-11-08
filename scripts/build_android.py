@@ -27,7 +27,23 @@ def run(*args, capture=False):
                        stderr=subprocess.STDOUT if capture else None)
     return r.stdout if capture else None
 
+def verify_version_file():
+    props = {}
+    for line in (ROOT/'android/version.properties').read_text(encoding='utf-8').splitlines():
+        if '=' in line:
+            key, value = line.split('=', 1)
+            props[key.strip()] = value.strip()
+    manifest = ET.parse(SRC/'AndroidManifest.xml').getroot()
+    code = manifest.get('{http://schemas.android.com/apk/res/android}versionCode')
+    name = manifest.get('{http://schemas.android.com/apk/res/android}versionName')
+    if code != props.get('versionCode') or name != props.get('versionName'):
+        raise RuntimeError(
+            'android/version.properties 与 AndroidManifest.xml 版本不一致: '
+            + code + '/' + name + ' != ' + props.get('versionCode', '') + '/' + props.get('versionName', ''))
+
+
 def main():
+    verify_version_file()
     from prepare_python_html import verify as verify_python_html
     verify_python_html()
     from prepare_python_modules import verify as verify_python_modules
