@@ -816,6 +816,7 @@ public final class MainActivity extends Activity {
     }
 
     void renderPage(String title, String eyebrow, boolean navigation) {
+        VideoFilterDialog.dismiss(this);
         preparePage(navigation);
         root = new FrameLayout(this);
         root.setClipChildren(false);

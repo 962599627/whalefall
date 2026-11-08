@@ -92,6 +92,8 @@ final class MobileShell {
     private List<Cms.Category> currentCategories = new ArrayList<>();
     private String filterSchema = "{}";
     private final java.util.Map<String, String> selectedFilters = new java.util.LinkedHashMap<>();
+    private String lastChipTap = "";
+    private long lastChipTapAt;
     private int homeRequest;
     private boolean homeReady;
     private Runnable resumeHome;
@@ -361,6 +363,7 @@ final class MobileShell {
     }
 
     void render() {
+        VideoFilterDialog.dismiss(a);
         a.clearPlaybackLoading();
         a.cancelArtwork();
         a.cancelPageRequests();
@@ -974,20 +977,10 @@ final class MobileShell {
 
         filterButton.setOnClickListener(
                 v ->
-                        VideoFilterDialog.show(
-                                a,
-                                mobileFilterDefinitions(),
-                                selectedFilters,
+                        showHomeFilters(
                                 () -> {
-                                    if (selectedCategoryId.isEmpty()
-                                            && !currentCategories.isEmpty())
-                                        selectedCategoryId = currentCategories.get(0).id;
-                                    currentPage = 1;
-                                    filterButton.setText(
-                                            selectedFilters.isEmpty()
-                                                    ? "筛选"
-                                                    : "筛选 · " + selectedFilters.size());
-                                    fetchCategoryPage[0].run();
+                                    if (fetchCategoryPage[0] != null)
+                                        fetchCategoryPage[0].run();
                                 }));
         fetchCategoryPage[0] =
                 () -> {
@@ -1356,6 +1349,27 @@ final class MobileShell {
         return card;
     }
 
+    /** 打开首页筛选面板：筛选按钮与分类标签双击共用。 */
+    void showHomeFilters(Runnable after) {
+        VideoFilterDialog.show(
+                a,
+                mobileFilterDefinitions(),
+                selectedFilters,
+                () -> {
+                    if (selectedCategoryId.isEmpty() && !currentCategories.isEmpty())
+                        selectedCategoryId = currentCategories.get(0).id;
+                    currentPage = 1;
+                    View fbv = a.root == null ? null : a.root.findViewWithTag("home-filters");
+                    if (fbv instanceof TextView)
+                        ((TextView) fbv)
+                                .setText(
+                                        selectedFilters.isEmpty()
+                                                ? "筛选"
+                                                : "筛选 · " + selectedFilters.size());
+                    if (after != null) after.run();
+                });
+    }
+
     private List<VideoFilters.Definition> mobileFilterDefinitions() {
         String category =
                 selectedCategoryId.isEmpty() && !currentCategories.isEmpty()
@@ -1394,6 +1408,22 @@ final class MobileShell {
         MobileDetailScreen.bindTouchFeedback(chip);
         chip.setOnClickListener(
                 v -> {
+                    long now = android.os.SystemClock.uptimeMillis();
+                    boolean doubleTap =
+                            catId.equals(lastChipTap) && now - lastChipTapAt < 350;
+                    lastChipTap = catId;
+                    lastChipTapAt = now;
+                    if (doubleTap) {
+                        if (!selectedCategoryId.equals(catId)) {
+                            selectedCategoryId = catId;
+                            selectedFilters.clear();
+                            currentPage = 1;
+                            refreshChips.run();
+                            loadPage.run();
+                        }
+                        showHomeFilters(null);
+                        return;
+                    }
                     if (selectedCategoryId.equals(catId)) return;
                     selectedCategoryId = catId;
                     selectedFilters.clear();
