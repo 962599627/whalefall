@@ -41,7 +41,7 @@ if __name__ == '__main__':
         result = json.loads(match[1]) if match else {'passed': False}
         (OUT/'results.json').write_text(json.dumps(result, indent=2)+'\n', encoding='utf-8')
         required = {name + suffix for name in ('landscape','smaller_viewport','restored_viewport','reverse_landscape','portrait')
-                    for suffix in ('_timeline_visible','_inside_safe_area','_touch_seek')}
+                    for suffix in ('_timeline_visible','_inside_safe_area','_heading_clear_of_controls','_touch_seek')}
         if result.get('passed') is not True or any(result.get(name) is not True for name in required):
             raise RuntimeError('Mobile player regression failed; see instrumentation.log and screenshots')
     finally:

@@ -282,9 +282,12 @@ final class PlayerChrome {
         int width = safe.width(), height = safe.height();
         boolean portrait = measuredWidth < measuredHeight;
         boolean mobileLandscape = !a.isTvDevice() && !portrait;
+        boolean compact = mobileLandscape && height < a.dp(420);
         if (titleView != null) {
-            titleView.setTextSize(portrait ? 20 : 26);
+            titleView.setTextSize(portrait || compact ? 20 : 26);
         }
+        episodeLabel.setVisibility(compact && height < a.dp(320) ? View.GONE : View.VISIBLE);
+        if (a.playStatus != null) a.playStatus.setVisibility(compact ? View.GONE : View.VISIBLE);
         if (fsBtn != null) {
             fsBtn.setText(portrait ? "⛶ 全屏横屏" : "⛶ 退出全屏");
         }
@@ -333,7 +336,7 @@ final class PlayerChrome {
                 -2,
                 Gravity.TOP,
                 side,
-                Math.min(a.dp(24), height / 8),
+                Math.min(a.dp(compact ? 12 : 24), height / 8),
                 mobileLandscape ? Math.max(side, right) : side,
                 0);
         if (a.playbackControls != null) {

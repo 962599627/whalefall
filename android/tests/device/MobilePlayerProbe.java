@@ -128,6 +128,14 @@ public final class MobilePlayerProbe extends Instrumentation {
                             && dock.height() == a.playerChrome.dock.getHeight()
                             && !Rect.intersects(timeline, dock);
                 });
+        await(
+                name + "_heading_clear_of_controls",
+                () -> {
+                    Rect heading = new Rect(), center = new Rect();
+                    return a.playerChrome.heading.getGlobalVisibleRect(heading)
+                            && a.playerChrome.centerRow.getGlobalVisibleRect(center)
+                            && !Rect.intersects(heading, center);
+                });
         float[] point = new float[2];
         runOnMainSync(
                 () -> {
