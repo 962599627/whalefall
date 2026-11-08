@@ -9,8 +9,11 @@ final class UpdatePolicy {
     static final long MAX_APK = 128L * 1024 * 1024;
     // 二次开发者的自有更新源；留空即关闭应用内更新检查。
     // FEED 为 JSON 目录前缀（如 https://example.com/updates/），MIRROR 为安装包镜像前缀。
-    static final String FEED = "https://gh-proxy.org/https://raw.githubusercontent.com/962599627/whalefall/main/updates/";
-    static final String MIRROR = "https://gh-proxy.org/https://raw.githubusercontent.com/962599627/whalefall/main/";
+    // 更新检查以 GitHub 最新发布版为准：清单与安装包都放在 Release 资产里，
+    // releases/latest/download/<文件名> 永远指向最新一版，不需要每次改代码。
+    static final String FEED = "https://github.com/962599627/whalefall/releases/latest/download/";
+    static final String MIRROR =
+            "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/latest/download/";
 
     /** 允许的更新源主机；留空表示接受任意 HTTPS 主机（自建源最省事）。 */
     static final String[] ALLOWED_HOSTS = {};
@@ -36,11 +39,11 @@ final class UpdatePolicy {
     }
 
     static String[] feeds(String channel, boolean mobile) {
-        String[] legacy = feeds(channel);
+        if (!"stable".equals(channel) && !"preview".equals(channel))
+            throw new IllegalArgumentException("channel");
+        // Release 资产名不能带 "/"，清单直接命名为 android-mobile.json 等
         String name = platform(mobile) + ("preview".equals(channel) ? "-preview" : "");
-        return new String[] {
-            MIRROR + "updates/" + name + ".json", FEED + name + ".json", legacy[0], legacy[1]
-        };
+        return new String[] {MIRROR + name + ".json", FEED + name + ".json"};
     }
 
     static boolean editionUrl(String url, String version, boolean mobile) {

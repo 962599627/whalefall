@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.0.0",
-  "versionCode": 10000,
+  "versionName": "1.2.0",
+  "versionCode": 12000,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.0.0（手机 / 平板）\n\n基于 Marco Movie 0.5.3（作者 Pilipala，GPL-3.0-only）二次开发。\n\n- 品牌改为「鲸落」：新图标、启动页、应用名、包名 com.whalefall.movie\n- 应用内更新检查指向本仓库\n- 功能与上游 0.5.3 一致：点播 / 直播 / 磁力 / 弹幕 / 脚本源等\n- 安装包分电视版（ARM 32 位）与手机版（arm64 + armv7），请勿混装",
-  "size": 61621268,
-  "sha256": "4a8a0935f5fd3c1c40e40ab2e621038c2cea14329e2ed4f8e1df44adbd75488f",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.0.0/WhaleFall-1.0.0-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.0.0/WhaleFall-1.0.0-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.0.0"
+  "notes": "# 鲸落 1.2.0（手机 / 平板 / 电视）\n\n- 新增：文件管理（上传/新建文件夹/重命名/删除）、Markdown 阅读器（图片/表格）、图片预览、APK 直接安装\n- 新增：局域网管理员后台（一次性令牌、10 分钟有效、Host/Origin/局域网校验）与 FTP 口令上传\n- 新增：屏幕保护（时长/时钟样式）、观影统计、播放队列、继续观看批量清理\n- 优化：片库历史/收藏与搜索结果改用 RecyclerView；配置变更后恢复当前页面\n- 优化：电视直播页「观看直播」按钮不再被面板裁切；图片预览黑屏修复\n- 安全：管理后台与 FTP 仅局域网、临时令牌；崩溃守卫改为可诊断兜底\n- 构建：Gradle(AGP) 迁移验证通过；ABI 拆分 arm64 包体积约 -43%",
+  "size": 61803586,
+  "sha256": "8d22619451327f93c9a83f1967a1ed31f925c96b76025da74b4f1e4021923201",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.2.0/WhaleFall-1.2.0-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.2.0/WhaleFall-1.2.0-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.2.0"
 }
