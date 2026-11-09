@@ -72,21 +72,25 @@ final class ExtraPages {
                             .setNegativeButton("知道了", null)
                             .show();
                 });
-        settingCard(
-                a,
-                body,
-                6,
-                "复制项目源码地址",
-                "GitHub · 962599627/whalefall",
-                () -> {
-                    android.content.ClipboardManager cm =
-                            (android.content.ClipboardManager)
-                                    a.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
-                    cm.setPrimaryClip(
-                            android.content.ClipData.newPlainText(
-                                    "whalefall", "https://github.com/962599627/whalefall"));
-                    a.toast("源码地址已复制");
-                });
+        // TV 无剪贴板（R3）：隐藏「复制源码地址」卡片
+        if (!a.isTvDevice())
+            settingCard(
+                    a,
+                    body,
+                    6,
+                    "复制项目源码地址",
+                    "GitHub · 962599627/whalefall",
+                    () -> {
+                        android.content.ClipboardManager cm =
+                                (android.content.ClipboardManager)
+                                        a.getSystemService(
+                                                android.content.Context.CLIPBOARD_SERVICE);
+                        cm.setPrimaryClip(
+                                android.content.ClipData.newPlainText(
+                                        "whalefall",
+                                        "https://github.com/962599627/whalefall"));
+                        a.toast("源码地址已复制");
+                    });
         settingCard(
                 a,
                 body,
@@ -180,8 +184,7 @@ final class ExtraPages {
             {"手机长按", "2 倍速快进"}
         };
         sectionHeader(a, body, "电视遥控器");
-        int tvRows = a.isTvDevice() ? 8 : rows.length;
-        for (int i = 0; i < tvRows; i++) keymapRow(a, body, rows[i][0], rows[i][1]);
+        for (int i = 0; i < 8; i++) keymapRow(a, body, rows[i][0], rows[i][1]);
         if (!a.isTvDevice()) {
             a.gap(body, 14);
             sectionHeader(a, body, "键盘 / 手机手势");
@@ -369,8 +372,17 @@ final class ExtraPages {
                         if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) dy = a.dp(72);
                         else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) dy = -a.dp(72);
                         else return false;
-                        if (a.scroll instanceof android.widget.ScrollView)
-                            ((android.widget.ScrollView) a.scroll).scrollBy(0, dy);
+                        if (!(a.scroll instanceof android.widget.ScrollView)) return false;
+                        android.widget.ScrollView scroller =
+                                (android.widget.ScrollView) a.scroll;
+                        int max = 0;
+                        if (scroller.getChildCount() > 0)
+                            max = scroller.getChildAt(0).getHeight() - scroller.getHeight();
+                        int y = scroller.getScrollY();
+                        // 到边界放行给焦点系统，才能把焦点移到下方「另存到文件管理 / 清空记录」
+                        if (dy > 0 && y >= max - 1) return false;
+                        if (dy < 0 && y <= 0) return false;
+                        scroller.scrollBy(0, dy);
                         return true;
                     });
         }

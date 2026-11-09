@@ -70,44 +70,46 @@ final class SettingsScreen {
         link("播放与字幕", "", "settings-playback", () -> open(this::playback));
         link("搜索与数据", "", "settings-data", () -> open(this::data));
         link("软件更新", "", "settings-updates", () -> open(() -> new UpdateScreen(a).show()));
-        // 1.4.0：「本机与工具」分组（手机版补齐功能）。放设置页而不是 Dock：
-        // 7 项 Dock 已等分排满，再加会挤爆且打乱遥控焦点顺序；设置页是 TV 既有两级入口。
-        section("本机与工具");
-        link(
-                "文件管理",
-                "浏览 / 重命名 / 预览 / 删除；上传建议用管理员后台或 FTP",
-                "settings-files",
-                () -> a.open(new MainActivity.Screen(() -> FilesScreen.show(a)), true));
-        link(
-                "管理员后台（手机/电脑）",
-                "扫码或用浏览器打开，用手机/电脑管理文件与设置",
-                "settings-admin",
-                () -> AdminPanel.show(a));
-        link(
-                "查看崩溃日志",
-                "上次异常退出堆栈；可另存到文件管理",
-                "settings-crash-log",
-                () -> open(() -> extra(EXTRA_CRASH)));
-        link(
-                "存储空间与缓存清理",
-                "查看占用并清理临时缓存 / 插件缓存 / 日志",
-                "settings-storage",
-                () -> open(() -> extra(EXTRA_STORAGE)));
-        link(
-                "观影统计",
-                "本周观看部数 / 时长 / 最近记录",
-                "settings-stats",
-                () -> open(() -> extra(EXTRA_STATS)));
-        link(
-                "遥控器按键说明",
-                "遥控器 / 键盘 / 手机手势对照",
-                "settings-keymap",
-                () -> open(() -> extra(EXTRA_KEYMAP)));
-        link(
-                "关于鲸落",
-                "版本、开源许可与源码地址",
-                "settings-about",
-                () -> open(() -> extra(EXTRA_ABOUT)));
+        // 1.4.0：「本机与工具」分组只给 TV（R2：手机设置页保持原 4 项，手机零变化）。
+        // 放设置页而不是 Dock：7 项 Dock 已排满，再加会挤爆且打乱遥控焦点顺序。
+        if (a.isTvDevice()) {
+            section("本机与工具");
+            link(
+                    "文件管理",
+                    "浏览 / 重命名 / 预览 / 删除；上传建议用管理员后台或 FTP",
+                    "settings-files",
+                    () -> a.open(new MainActivity.Screen(() -> FilesScreen.show(a)), true));
+            link(
+                    "管理员后台（手机/电脑）",
+                    "扫码或用浏览器打开，用手机/电脑管理文件与设置",
+                    "settings-admin",
+                    () -> AdminPanel.show(a));
+            link(
+                    "查看崩溃日志",
+                    "上次异常退出堆栈；可另存到文件管理",
+                    "settings-crash-log",
+                    () -> open(() -> extra(EXTRA_CRASH)));
+            link(
+                    "存储空间与缓存清理",
+                    "查看占用并清理临时缓存 / 插件缓存 / 日志",
+                    "settings-storage",
+                    () -> open(() -> extra(EXTRA_STORAGE)));
+            link(
+                    "观影统计",
+                    "本周观看部数 / 时长 / 最近记录",
+                    "settings-stats",
+                    () -> open(() -> extra(EXTRA_STATS)));
+            link(
+                    "遥控器按键说明",
+                    "遥控器 / 键盘 / 手机手势对照",
+                    "settings-keymap",
+                    () -> open(() -> extra(EXTRA_KEYMAP)));
+            link(
+                    "关于鲸落",
+                    "版本、开源许可与源码地址",
+                    "settings-about",
+                    () -> open(() -> extra(EXTRA_ABOUT)));
+        }
     }
 
     static final int EXTRA_ABOUT = 0;

@@ -25,8 +25,9 @@ final class HomeDock {
         navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
         cellDp = Math.round(38 * navScale);
         crossDp = Math.round(50 * navScale);
-        // 7 项等分：7×38 + 6×4 + 2×8 = 306dp（140% navScale 时约 428dp，仍小于 960×540 的安全高 504dp）
-        mainDp = Math.round(306 * navScale);
+        // 7 项实占：7×38 + 7×8（上下间距）+ 2×8（padding）= 338dp
+        // 140% navScale 时约 473dp < 960×540 的安全高 504dp
+        mainDp = Math.round(338 * navScale);
         hintHeightDp = Math.round(28 * navScale);
         rail = bottomMode ? a.row() : a.vertical();
         rail.setTag("home-dock");

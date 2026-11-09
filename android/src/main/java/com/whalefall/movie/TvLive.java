@@ -384,12 +384,14 @@ final class TvLive {
                         else importDialog(a, store);
                     });
             actionsRow.addView(importBtn, importLp);
-            TextView manageBtn = TvUiKit.pill(a, "管理", 12, false);
-            ExtraPages.tvFocus(a, manageBtn, 999);
-            LinearLayout.LayoutParams manageLp = new LinearLayout.LayoutParams(-2, a.dp(34));
-            manageLp.leftMargin = a.dp(8);
-            manageBtn.setOnClickListener(v -> ChannelManagerScreen.show(a));
-            actionsRow.addView(manageBtn, manageLp);
+            if (!a.isTvDevice()) {
+                TextView manageBtn = TvUiKit.pill(a, "管理", 12, false);
+                ExtraPages.tvFocus(a, manageBtn, 999);
+                LinearLayout.LayoutParams manageLp = new LinearLayout.LayoutParams(-2, a.dp(34));
+                manageLp.leftMargin = a.dp(8);
+                manageBtn.setOnClickListener(v -> ChannelManagerScreen.show(a));
+                actionsRow.addView(manageBtn, manageLp);
+            }
         }
         header.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
         if (actionsRow != null) {
@@ -638,17 +640,31 @@ final class TvLive {
                         View focused = a.getCurrentFocus();
                         // 用户已经把焦点放在仍在页面上的控件（如搜索框）时不要抢
                         if (focused != null && focused.isAttachedToWindow()) return;
-                        View target =
-                                page.wide
-                                        ? slot.findViewWithTag("tv-focus-cat:" + page.group)
-                                        : slot.findViewWithTag("tv-focus-channel");
-                        if (target == null) target = firstFocusable(slot);
-                        if (target != null) {
-                            target.requestFocus();
-                            a.autoFocus = target;
-                        }
+                        focusSelectedOrFirst(page, slot, true);
                     }
                 });
+    }
+
+    /**
+     * TV 焦点归位：优先回到正在播放的频道行（page.selected，播放返回后仍停留原频道），
+     * 其次当前分组胶囊 / 列表首项；rows 由 RecyclerView 按需绑定，未绑定时补一次重试。
+     */
+    static void focusSelectedOrFirst(final PageState page, final View slot, boolean retry) {
+        final MainActivity a = page.a;
+        if (page.contentSlot != slot) return;
+        View target = null;
+        if (page.selected != null && !page.selected.isEmpty())
+            target = slot.findViewWithTag("tv-focus-channel:" + page.selected);
+        if (target == null && page.wide)
+            target = slot.findViewWithTag("tv-focus-cat:" + page.group);
+        if (target == null) target = slot.findViewWithTag("tv-focus-channel");
+        if (target == null) target = firstFocusable(slot);
+        if (target != null) {
+            target.requestFocus();
+            a.autoFocus = target;
+            return;
+        }
+        if (retry) slot.postDelayed(() -> focusSelectedOrFirst(page, slot, false), 160);
     }
 
     /** 递归找第一个可聚焦且可见的子视图（TV 定首焦点用）。 */
@@ -760,18 +776,22 @@ final class TvLive {
         impPillLp.rightMargin = a.dp(6);
         actions.addView(impPill, impPillLp);
 
-        LinearLayout managePill = a.row();
-        managePill.setGravity(Gravity.CENTER);
-        managePill.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
-        MobileDetailScreen.bindTouchFeedback(managePill);
-        ExtraPages.tvFocus(a, managePill, 999);
-        TextView manageTxt = a.text("管理", 11, 0xffc9d6ea);
-        managePill.addView(manageTxt);
-        managePill.setOnClickListener(
-                v -> {
-                    ChannelManagerScreen.show(a);
-                });
-        actions.addView(managePill, new LinearLayout.LayoutParams(0, a.dp(34), 1f));
+        // M2：TV 暂不提供「管理」（ChannelManagerScreen 尚未做 TV 焦点/输入适配，下轮单独处理）
+        if (!a.isTvDevice()) {
+            LinearLayout managePill = a.row();
+            managePill.setGravity(Gravity.CENTER);
+            managePill.setBackground(
+                    MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
+            MobileDetailScreen.bindTouchFeedback(managePill);
+            ExtraPages.tvFocus(a, managePill, 999);
+            TextView manageTxt = a.text("管理", 11, 0xffc9d6ea);
+            managePill.addView(manageTxt);
+            managePill.setOnClickListener(
+                    v -> {
+                        ChannelManagerScreen.show(a);
+                    });
+            actions.addView(managePill, new LinearLayout.LayoutParams(0, a.dp(34), 1f));
+        }
         rail.addView(actions, new LinearLayout.LayoutParams(-1, a.dp(34)));
 
         TextView tip = a.text("长按频道可收藏", 9.5f, 0xff6f7f99);
@@ -941,7 +961,7 @@ final class TvLive {
         MobileDetailScreen.bindTouchFeedback(row);
         // TV：频道行可遥控聚焦并有焦点态；手机 no-op
         ExtraPages.tvFocus(a, row, 14);
-        if (a.isTvDevice()) row.setTag("tv-focus-channel");
+        if (a.isTvDevice()) row.setTag("tv-focus-channel:" + ch.name);
         row.setClickable(true);
         row.setOnClickListener(v -> onOpen.run());
         row.setOnLongClickListener(

@@ -68,8 +68,12 @@ final class FilesScreen {
         ExtraPages.tvFocus(a, back, 999);
         back.setOnClickListener(
                 v -> {
-                    if (path.isEmpty()) a.onBackPressed();
-                    else show(a, PushFiles.parentOf(path));
+                    // TV：返回箭头统一走 Activity BACK（逐级 pop 已有 Screen 栈），不再重复压栈
+                    if (a.isTvDevice() || path.isEmpty()) {
+                        a.onBackPressed();
+                        return;
+                    }
+                    show(a, PushFiles.parentOf(path));
                 });
         nav.addView(back, new LinearLayout.LayoutParams(a.dp(42), a.dp(42)));
         TextView title = a.text(path.isEmpty() ? "文件管理" : PushFiles.baseName(path), 20, MainActivity.WHITE);
@@ -84,6 +88,7 @@ final class FilesScreen {
         uploadBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(uploadBtn);
         ExtraPages.tvFocus(a, uploadBtn, 999);
+        if (a.isTvDevice()) uploadBtn.setVisibility(View.GONE); // R5：TV 隐藏触屏小按钮
         uploadBtn.setOnClickListener(
                 v -> {
                     if (a.isTvDevice()) {
@@ -112,6 +117,7 @@ final class FilesScreen {
         mkdir.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(mkdir);
         ExtraPages.tvFocus(a, mkdir, 999);
+        if (a.isTvDevice()) mkdir.setVisibility(View.GONE); // R5：TV 隐藏「新建文件夹」（键盘操作，走降级口径）
         mkdir.setOnClickListener(v -> createFolder(a, path));
         nav.addView(mkdir);
         column.addView(nav, new LinearLayout.LayoutParams(-1, -2));
@@ -220,12 +226,15 @@ final class FilesScreen {
             metaLp.leftMargin = a.dp(12);
             row.addView(meta, metaLp);
 
-            TextView more = a.text("⋯", 16, 0xffc9d4e6);
-            more.setGravity(Gravity.CENTER);
-            more.setPadding(a.dp(10), 0, a.dp(10), 0);
-            more.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
-            more.setOnClickListener(v -> fileMenu(a, rel, path));
-            row.addView(more, new LinearLayout.LayoutParams(a.dp(38), a.dp(30)));
+            // R5：TV 隐藏行尾「⋯」触屏小按钮；同功能走长按 OK 菜单
+            if (!a.isTvDevice()) {
+                TextView more = a.text("⋯", 16, 0xffc9d4e6);
+                more.setGravity(Gravity.CENTER);
+                more.setPadding(a.dp(10), 0, a.dp(10), 0);
+                more.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+                more.setOnClickListener(v -> fileMenu(a, rel, path));
+                row.addView(more, new LinearLayout.LayoutParams(a.dp(38), a.dp(30)));
+            }
 
             final String target = rel;
             final File targetFile = f;

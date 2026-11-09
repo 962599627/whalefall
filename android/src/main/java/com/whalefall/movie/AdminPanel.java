@@ -179,8 +179,10 @@ final class AdminPanel {
         return gd;
     }
 
-    /** 面板内容包进 ScrollView，保证令牌 / FTP / 说明在小屏上也能看到。 */
+    /** 面板内容包进 ScrollView（手机）；TV 由 AppDialog 外层 TvScrollView 滚动，避免双层滚动。 */
     private static android.view.View panelScroll(LinearLayout panel) {
+        if (panel.getContext() instanceof MainActivity
+                && ((MainActivity) panel.getContext()).isTvDevice()) return panel;
         android.widget.ScrollView scroll = new android.widget.ScrollView(panel.getContext());
         scroll.setFillViewport(false);
         scroll.setVerticalScrollBarEnabled(true);
