@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.4.9",
-  "versionCode": 14009,
+  "versionName": "1.4.10",
+  "versionCode": 14010,
   "minSdk": 23,
   "prerelease": true,
-  "notes": "# 鲸落 1.4.9（手机 / 平板 / 电视）\n\n- 网盘登录数据诊断 v2：一次点击输出 prefs 清单、files/no_backup/databases/cache/app_webview/external 各目录统计、最近修改 Top15 文件、DB/Cookie 文件、CookieManager 每域名长度、扩大字节搜索命中明细（全部不含 cookie/token 值）\n- 自动检测仍读不到时，状态卡明确写「本机未发现可读取的登录数据（插件可能加密存储/仅内存）」并引导到源面板确认或手动标记，不再让用户反复刷新\n- 上一版 1.4.8 的取证扩大/手动标记/去重缓存继续保留\n- 本版用于定位插件登录数据存储位置（V34），发布说明须保留未验证标注\n- 预览通道：与稳定版同包，仅通道标记不同",
-  "size": 36260678,
-  "sha256": "658b51e004619e12f5a0291be069718eac028b500f9f6061cf550b1ae865345c",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.9/WhaleFall-1.4.9-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.9/WhaleFall-1.4.9-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.9",
+  "notes": "# 鲸落 1.4.10（手机 / 平板 / 电视）\n\n- 网盘登录态精确读取：直接读 WebView Cookies SQLite 库（CookieManager 读不到时）、解析 databases/*.db 表内容、原始字节扫描含 NUL 的数据库文件，命中登录 Cookie/凭据即在面板显示「源已登录（WebView Cookie 库 host=… name=…）」或「源存储凭据（db/文件）」\n- 诊断输出按目录精简（databases/files/cache/app_webview 各 Top5），新增 cookie-db/dbhit/bytescan 日志（不含敏感值）\n- 含 1.4.9/1.4.8 的诊断与手动标记兜底\n- 本版未真机验证（V35），发布说明须保留未验证标注\n- 预览通道：与稳定版同包，仅通道标记不同",
+  "size": 36264774,
+  "sha256": "92a80c3ceb8539a3900b5611f81891ec08d3937c382e409a3b3c9bd766ffcdae",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.10/WhaleFall-1.4.10-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.10/WhaleFall-1.4.10-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.10",
   "variants": [
     {
       "kind": "tv",
       "label": "电视版（TV/盒子）",
-      "size": 36260678,
-      "sha256": "658b51e004619e12f5a0291be069718eac028b500f9f6061cf550b1ae865345c",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.9/WhaleFall-1.4.9-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.9/WhaleFall-1.4.9-android-tv.apk"
+      "size": 36264774,
+      "sha256": "92a80c3ceb8539a3900b5611f81891ec08d3937c382e409a3b3c9bd766ffcdae",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.10/WhaleFall-1.4.10-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.10/WhaleFall-1.4.10-android-tv.apk"
     }
   ]
 }
