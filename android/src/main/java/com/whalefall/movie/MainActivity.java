@@ -846,6 +846,11 @@ public final class MainActivity extends Activity {
                             if (playbackControls != null)
                                 playbackControls.resize(
                                         playbackControls.videoWidth, playbackControls.videoHeight);
+                        } else if (tvPlayer != null) {
+                            // 直播网页播放器是挂在 root 上的全屏 overlay，不属于 current.player：
+                            // 旋转时只 relayout，不能 refresh 整页，否则 overlay 会被新 root 丢掉，
+                            // 且横屏宽度会把底部 shell 重建成「侧栏 + 三段式」的错误布局。
+                            tvPlayer.relayout();
                         } else if (current != null) {
                             refresh();
                         }

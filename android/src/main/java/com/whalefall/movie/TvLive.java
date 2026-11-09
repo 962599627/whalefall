@@ -348,22 +348,31 @@ final class TvLive {
         View titleSpacer = new View(a);
         titleRow.addView(titleSpacer, new LinearLayout.LayoutParams(0, 1, 1f));
 
+        // 手机窄屏：标题行只放标题，三个操作 pill 单独一行，避免被屏幕右缘裁切
+        LinearLayout actionsRow = null;
         if (!wide) {
+            actionsRow = a.row();
+            actionsRow.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
             TextView addBtn = TvUiKit.pill(a, "＋ 自定义", 12, false);
             addBtn.setOnClickListener(v -> addChannelDialog(a, store, () -> page.refresh()));
-            titleRow.addView(addBtn, new LinearLayout.LayoutParams(-2, a.dp(34)));
+            actionsRow.addView(addBtn, new LinearLayout.LayoutParams(-2, a.dp(34)));
             TextView importBtn = TvUiKit.pill(a, "导入列表", 12, false);
             LinearLayout.LayoutParams importLp = new LinearLayout.LayoutParams(-2, a.dp(34));
             importLp.leftMargin = a.dp(8);
             importBtn.setOnClickListener(v -> importDialog(a, store));
-            titleRow.addView(importBtn, importLp);
+            actionsRow.addView(importBtn, importLp);
             TextView manageBtn = TvUiKit.pill(a, "管理", 12, false);
             LinearLayout.LayoutParams manageLp = new LinearLayout.LayoutParams(-2, a.dp(34));
             manageLp.leftMargin = a.dp(8);
             manageBtn.setOnClickListener(v -> ChannelManagerScreen.show(a));
-            titleRow.addView(manageBtn, manageLp);
+            actionsRow.addView(manageBtn, manageLp);
         }
         header.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
+        if (actionsRow != null) {
+            LinearLayout.LayoutParams actionsLp = new LinearLayout.LayoutParams(-1, -2);
+            actionsLp.topMargin = a.dp(8);
+            header.addView(actionsRow, actionsLp);
+        }
 
         LinearLayout subRow = a.row();
         subRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -1687,17 +1696,27 @@ final class TvLive {
 
             a.root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
             MobileShell.setDockVisible(false);
+            // 先登记 tvPlayer 再请求转屏：保证 onConfigurationChanged 按「直播播放中」处理（只 relayout）
+            a.tvPlayer = this;
             if (a.formFactor == TvLayoutPolicy.FORM_PHONE) {
                 previousOrientation = a.getRequestedOrientation();
                 a.setRequestedOrientation(
                         android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
             }
-            a.tvPlayer = this;
             overlay.requestFocus();
             load();
             handler.postDelayed(this::startInject, 2500);
             showChrome();
             handler.post(clockTick);
+        }
+
+        /** 旋转/尺寸变化：直播 overlay 跟随新窗口，不重建页面（由 onConfigurationChanged 调用）。 */
+        void relayout() {
+            if (overlay != null) overlay.requestLayout();
+            if (web != null) {
+                web.requestLayout();
+                if (infoSize != null) infoSize.setText(web.getWidth() + " × " + web.getHeight());
+            }
         }
 
         void tune(int idx) {
@@ -2232,6 +2251,9 @@ final class TvLive {
                 web = null;
             }
             overlay = null;
+            // 先摘掉 tvPlayer 再恢复方向：横屏→竖屏的 onConfigurationChanged 会走 refresh()，
+            // 在最终方向/尺寸上重新构建一次 shell（避免残留横屏的侧栏 + 三段式布局）。
+            if (a.tvPlayer == this) a.tvPlayer = null;
             try {
                 a.setRequestedOrientation(
                         a.formFactor == TvLayoutPolicy.FORM_PHONE
@@ -2240,7 +2262,6 @@ final class TvLive {
             } catch (Throwable ignored) {
             }
             MobileShell.setDockVisible(true);
-            if (a.tvPlayer == this) a.tvPlayer = null;
             // 关闭后通知列表页刷新高亮（page::refresh）
             Runnable callback = onClosed;
             onClosed = null;

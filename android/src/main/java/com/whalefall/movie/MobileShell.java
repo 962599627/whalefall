@@ -413,7 +413,9 @@ final class MobileShell {
 
 
         float widthDp = a.windowWidth() / a.getResources().getDisplayMetrics().density;
-        boolean tabletSideRail = widthDp >= 640;
+        // 手机上竖屏一律用底部 Dock；侧栏只用于横屏/平板（与首页 sideRailLayout 的守卫一致），
+        // 否则横屏重建后转回竖屏会残留「左侧栏 + 三段式」的错乱布局。
+        boolean tabletSideRail = widthDp >= 640 && !a.isPortrait();
         float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
 
         if (tabletSideRail) {
