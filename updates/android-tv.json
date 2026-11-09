@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.4.1",
-  "versionCode": 14001,
+  "versionName": "1.4.2",
+  "versionCode": 14002,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.4.1（手机 / 平板 / 电视）\n\n- 修复 TV 文件管理「返回不了」（双重压栈）\n- TV 详情页重做为平板风格：52/48 两栏（左海报+线路、右信息+操作+选集 2 列），遥控焦点链/返回恢复\n- 修复电视台直播页看不到用户壁纸（壁纸透出，播放器仍不透明）\n- 含 1.4.0 全部内容：直播浮层/按钮裁切/点频道错乱/按钮靠左/横屏面板裁切/切 tab 宽屏错乱/R8 闪退修复；TV 版电视台直播入口与「本机与工具」7 项；首页虚拟化等\n- 本版 TV 详情页/壁纸修复未真机验证；手机 1.4.0 仅口头确认、无证据文件",
+  "notes": "# 鲸落 1.4.2（手机 / 平板 / 电视）\n\n- 修复手机播放页控件整体内缩/不贴边（全屏 chrome 不再避让状态栏/导航栏/手势区，只避让屏幕切孔）\n- 修复视频 surface 可能停在旧尺寸/小卡：窗口布局后重铺，未测量时下一帧重试\n- 新增一次性运行日志「Player layout …」（若仍异常，设置→运行日志截图给开发者）\n- 含 1.4.1 全部内容：TV 文件管理返回修复、TV 详情页平板式两栏、直播页壁纸透出、1.4.0 修复与 TV 功能对齐\n- 本版播放页修复未真机验证（V24），发布说明须保留未验证标注",
   "size": 36240198,
-  "sha256": "600de5ce1fb1e77c670079df8e86633e500772135f9087acc86c406420d01d7c",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.1/WhaleFall-1.4.1-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.1/WhaleFall-1.4.1-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.1"
+  "sha256": "e76081697e5c243db245a502cf6610548b39682197128106f883c951c279d2a4",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.2/WhaleFall-1.4.2-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.2/WhaleFall-1.4.2-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.2"
 }
