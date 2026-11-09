@@ -276,6 +276,13 @@ final class TvLive {
     }
 
     static View screen(MainActivity a) {
+        if (!a.isTvDevice()) {
+            try {
+                a.setRequestedOrientation(
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+            } catch (Throwable ignored) {
+            }
+        }
         final Store store = new Store(a);
         final float density = a.getResources().getDisplayMetrics().density;
         final int windowDp = Math.round(a.windowWidth() / density);
@@ -1533,6 +1540,28 @@ final class TvLive {
             overlay.setFocusableInTouchMode(true);
 
             web = new TvWebView(a);
+            // 轻点网页区域：切换我们自己的控制条显隐；不消费事件，网页播放器照常响应
+            web.setOnTouchListener(
+                    new View.OnTouchListener() {
+                        float downX, downY;
+
+                        @Override
+                        public boolean onTouch(View v, android.view.MotionEvent event) {
+                            if (event.getActionMasked()
+                                    == android.view.MotionEvent.ACTION_DOWN) {
+                                downX = event.getX();
+                                downY = event.getY();
+                            } else if (event.getActionMasked()
+                                    == android.view.MotionEvent.ACTION_UP) {
+                                if (Math.abs(event.getX() - downX) < 20
+                                        && Math.abs(event.getY() - downY) < 20) {
+                                    if (chromeShown) fadeOutChrome();
+                                    else showChrome();
+                                }
+                            }
+                            return false;
+                        }
+                    });
             WebSettings s = web.getSettings();
             s.setJavaScriptEnabled(true);
             s.setDomStorageEnabled(true);
