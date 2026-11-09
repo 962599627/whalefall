@@ -417,6 +417,32 @@ final class PanLoginGuide {
                             "接下来若打开源登录界面，将显示配置源自带的页面（白底/红色按钮等样式由源决定），"
                                     + "完成登录后回到本面板即可。"),
                     bannerLp());
+            if (pan == null || pan.state == PanLoginState.STATE_UNKNOWN) {
+                // 兜底（非自动检测）：用户明确知道自己已在源里登录时的手动确认
+                body.addView(
+                        glassButton(
+                                a,
+                                "我已在源里登录（手动标记）",
+                                () -> {
+                                    PanLoginState.markManual(a, drive.key, true);
+                                    render(true);
+                                    if (onChanged != null) onChanged.run();
+                                    a.toast("已标记为「已登录（用户确认）」");
+                                }),
+                        actionLp());
+            } else if (pan.state == PanLoginState.STATE_MANUAL) {
+                body.addView(
+                        glassButton(
+                                a,
+                                "取消手动标记",
+                                () -> {
+                                    PanLoginState.markManual(a, drive.key, false);
+                                    render(true);
+                                    if (onChanged != null) onChanged.run();
+                                    a.toast("已取消手动标记");
+                                }),
+                        actionLp());
+            }
             if (logged) {
                 Button refresh =
                         accentButton(
