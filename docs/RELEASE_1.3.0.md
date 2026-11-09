@@ -14,7 +14,19 @@
 | 交付路径 | `/sdcard/Download/DSH-Go/鲸落/` |
 | 发布动作 | 由用户执行：更新 `updates/android-*.json` → `gh release upload`（62MB 约 10 分钟） |
 
-> **最终 sha256 / git commit / git_dirty 以 clean 构建后的 `android/build/build-validation.json` 为准**；发布前请交叉核对五处版本一致（manifest / version.properties / 产物名 / feed / Release notes）。
+## 最终构建记录（2026-11-09 21:37，clean 树构建）
+
+| 项 | mobile | tv |
+|---|---|---|
+| 文件 | `WhaleFall-1.3.0-android-mobile.apk` | `WhaleFall-1.3.0-android-tv.apk` |
+| 大小 | 61,996,331 B | 36,223,814 B |
+| sha256 | `ae287617267585022d05da6baef0638741d5163892a1a63966243420dc6e60e1` | `5cae8a0711b75fa75b3484bbfa349d0aef0048fec3a27777709c734967d0b450` |
+
+- `git_commit` = `2bc0a31e3e96a157944dcb8af42b4f55930e147c`，**`git_dirty=false`**（先 commit 再构建）。
+- `build-validation.json`：签名 + zipalign 校验通过；`device_install_tested=false`、`device_playback_tested=false`。
+- 已拷到 `/sdcard/Download/DSH-Go/鲸落/`，`sha256sum -c` 校验 OK。
+- 更新 feed 草稿已填：`updates/android-mobile.json` / `updates/android-tv.json`（发布时随 Release 一起上传；未发布前 App 内检查更新可能 404，属预期）。
+
 
 ## 本包内容
 
