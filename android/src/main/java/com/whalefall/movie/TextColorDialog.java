@@ -71,10 +71,17 @@ final class TextColorDialog {
     }
 
     static void show(final MainActivity a) {
+        show(a, -1);
+    }
+
+    /** {@code initialArgb >= 0} 用于对比度二次确认「返回修改」时带回用户刚选的颜色。 */
+    static void show(final MainActivity a, final int initialArgb) {
         final int initial =
-                a.prefs.getBoolean(Prefs.TEXT_COLOR_CUSTOM, false)
-                        ? a.prefs.getInt(Prefs.TEXT_COLOR, 0xfff5f7fc)
-                        : 0xfff5f7fc;
+                initialArgb >= 0
+                        ? opaque(initialArgb)
+                        : (a.prefs.getBoolean(Prefs.TEXT_COLOR_CUSTOM, false)
+                                ? a.prefs.getInt(Prefs.TEXT_COLOR, 0xfff5f7fc)
+                                : 0xfff5f7fc);
         final int[] rgb = {(initial >> 16) & 0xff, (initial >> 8) & 0xff, initial & 0xff};
         final SeekBar[] bars = new SeekBar[3];
         final TextView[] values = new TextView[3];
@@ -92,7 +99,10 @@ final class TextColorDialog {
         preview.setTag("textcolor-preview");
         box.addView(preview, new LinearLayout.LayoutParams(-1, -2));
         TextView hint =
-                a.text("亮色在浅色壁纸下可能不易看清 · 可随时恢复默认", 12, MainActivity.MUTED);
+                a.text(
+                        "亮色在浅色壁纸下可能不易看清 · 近黑字在深色界面对比度不足时会二次确认",
+                        12,
+                        MainActivity.MUTED);
         hint.setPadding(0, a.dp(4), 0, 0);
         box.addView(hint);
         a.gap(box, 10);
@@ -257,13 +267,13 @@ final class TextColorDialog {
                         "恢复默认（#F5F7FC）",
                         "textcolor-reset",
                         () -> {
-                            a.prefs.edit()
-                                    .putBoolean(Prefs.TEXT_COLOR_CUSTOM, false)
-                                    .remove(Prefs.TEXT_COLOR)
-                                    .apply();
-                            if (a.appDialog != null) a.appDialog.dismiss();
-                            a.toast("字体颜色已恢复默认");
-                            a.recreate();
+                            // §2.1：只重置预览/滑条/HEX，不写 prefs；点「确定」才保存
+                            int defaultColor = 0xfff5f7fc;
+                            rgb[0] = (defaultColor >> 16) & 0xff;
+                            rgb[1] = (defaultColor >> 8) & 0xff;
+                            rgb[2] = defaultColor & 0xff;
+                            refreshAll[0].run();
+                            a.toast("已恢复默认色预览 · 点「确定」保存");
                         });
         reset.setTextColor(MainActivity.MUTED);
         box.addView(reset, new LinearLayout.LayoutParams(-1, a.dp(42)));
@@ -282,15 +292,8 @@ final class TextColorDialog {
                         .setView(box)
                         .setNegativeButton("取消", null)
                         .setPositiveButton(
-                                "保存",
-                                (d, i) -> {
-                                    a.prefs.edit()
-                                            .putBoolean(Prefs.TEXT_COLOR_CUSTOM, true)
-                                            .putInt(Prefs.TEXT_COLOR, opaque(toRgb(rgb)))
-                                            .apply();
-                                    a.toast("字体颜色已保存");
-                                    a.recreate();
-                                })
+                                "确定",
+                                (d, i) -> saveOrConfirm(a, rgb))
                         .show();
         // 手机/电视默认焦点放到第一个色块（AppDialog 只会找直接子 View）
         dialog.getWindow()
@@ -309,5 +312,54 @@ final class TextColorDialog {
         for (int i = 0; i < values.length; i++)
             if (values[i] != null) values[i].setText(String.valueOf(rgb[i]));
         if (hexField[0] != null) hexField[0].setText(hexOf(rgb));
+    }
+
+    /** §4 对比度保护：以 App 深色底为基准，<4.5:1 时二次确认；取消则带当前颜色回到弹窗。 */
+    static void saveOrConfirm(final MainActivity a, final int[] rgb) {
+        final int color = opaque(toRgb(rgb));
+        double ratio = contrastRatio(color, Skin.BG);
+        if (ratio >= 4.5) {
+            save(a, color);
+            return;
+        }
+        if (a.appDialog != null) a.appDialog.dismiss();
+        new AppDialog.Builder(a)
+                .setTitle("该颜色可能看不清")
+                .setMessage(
+                        String.format(
+                                java.util.Locale.ROOT,
+                                "该颜色与深色界面的对比度约 %.1f:1，低于 4.5:1，主要文字可能不易看清。仍要保存吗？",
+                                ratio))
+                .setPositiveButton("仍然保存", (d, i) -> save(a, color))
+                .setNegativeButton("返回修改", (d, i) -> show(a, color))
+                .show();
+    }
+
+    static void save(MainActivity a, int color) {
+        a.prefs.edit()
+                .putBoolean(Prefs.TEXT_COLOR_CUSTOM, true)
+                .putInt(Prefs.TEXT_COLOR, color)
+                .apply();
+        a.toast("字体颜色已保存");
+        a.recreate();
+    }
+
+    static double contrastRatio(int foreground, int background) {
+        double first = luminance(foreground);
+        double second = luminance(background);
+        double light = Math.max(first, second);
+        double dark = Math.min(first, second);
+        return (light + 0.05) / (dark + 0.05);
+    }
+
+    private static double luminance(int rgb) {
+        return 0.2126 * linear((rgb >> 16) & 0xff)
+                + 0.7152 * linear((rgb >> 8) & 0xff)
+                + 0.0722 * linear(rgb & 0xff);
+    }
+
+    private static double linear(int channel) {
+        double s = channel / 255.0;
+        return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
     }
 }

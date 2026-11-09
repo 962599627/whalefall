@@ -359,7 +359,7 @@ final class AccountPanel {
                 row.addView(action, new LinearLayout.LayoutParams(-2, a.dp(32)));
                 MobileDetailScreen.bindTouchFeedback(row);
                 row.setOnClickListener(
-                        v -> PanLoginGuide.show(a, site, drive.key, this::refresh));
+                        v -> PanLoginGuide.show(a, site, drive.key, () -> refresh(true)));
                 row.setOnFocusChangeListener(
                         (v, focused) ->
                                 FocusMotion.style(
@@ -546,11 +546,39 @@ final class AccountPanel {
 
         // ---------------- 状态刷新 ----------------
 
+        int refreshVersion;
+
         void refresh() {
+            refresh(false);
+        }
+
+        /**
+         * 异步刷新：检测在 worker 线程（扫描 prefs + Cookie），结果回 UI；60s 缓存由
+         * {@link PanLoginState} 维护，{@code force=true}（显式刷新/从源面板返回）跳过缓存。
+         */
+        void refresh(boolean force) {
             if (site == null || statusLabel == null) return;
-            credentials = scanCredentials(a, site);
-            accountName = findAccountName(credentials);
-            panStates = PanLoginState.detectAll(a, site);
+            final int version = ++refreshVersion;
+            if (force) PanLoginState.invalidate();
+            if (credentials.isEmpty()) {
+                statusLabel.setText("正在检测登录状态…");
+                detailLabel.setText("读取本地凭据 / WebView Cookie / 源存储…");
+            }
+            PanLoginState.detectAsync(
+                    a,
+                    site,
+                    force,
+                    snapshot -> {
+                        if (version != refreshVersion) return;
+                        if (dialog == null || !dialog.isShowing()) return;
+                        applySnapshot(snapshot);
+                    });
+        }
+
+        void applySnapshot(PanLoginState.Snapshot snapshot) {
+            credentials = snapshot.credentials;
+            accountName = snapshot.accountName;
+            panStates = snapshot.states;
             int sourceKnown = 0, unknownDrives = 0;
             for (PanLoginState pan : panStates.values()) {
                 if (pan.state == PanLoginState.STATE_SOURCE) sourceKnown++;
@@ -639,7 +667,7 @@ final class AccountPanel {
                         accentButton(
                                 actionLabel,
                                 "account-login",
-                                () -> PanLoginGuide.show(a, site, "", this::refresh));
+                                () -> PanLoginGuide.show(a, site, "", () -> refresh(true)));
                 actionSlot.addView(login, new FrameLayout.LayoutParams(-2, a.dp(44)));
             }
             rebuildPanRows();
@@ -659,11 +687,12 @@ final class AccountPanel {
         void runAction(String action) {
             if (site == null) return;
             if ("accountRefresh".equals(action)) {
-                refresh();
+                PanLoginState.invalidate();
+                refresh(true);
                 a.toast("已重新检测：本地凭据 / WebView Cookie / 源存储");
                 return;
             }
-            new SettingsScreen(a).accountAction(action, this::refresh);
+            new SettingsScreen(a).accountAction(action, () -> refresh(true));
         }
 
         void confirmClear() {
@@ -1073,44 +1102,81 @@ final class AccountPanel {
         }
     }
 
-    /** 从已扫描的凭据里判断某个网盘是否在本机留下登录数据（不猜测源内启用状态）。 */
+    /** 凭据型键名：cookie/token/credential/auth/login/session；排除配置字段（alias/quality/name/title/desc）。 */
+    static boolean credentialConfigKey(String key) {
+        if (key == null) return false;
+        String k = key.toLowerCase(Locale.ROOT);
+        if (k.contains("alias")
+                || k.contains("quality")
+                || k.contains("original")
+                || k.contains("name")
+                || k.contains("title")
+                || k.contains("desc")) return false;
+        return k.contains("cookie")
+                || k.contains("token")
+                || k.contains("credential")
+                || k.contains("auth")
+                || k.contains("login")
+                || k.contains("session");
+    }
+
+    /**
+     * 值是否像凭据（避免配置字面量误判）：
+     * ① 形如 {@code name=value; ...} 的 cookie 串（含 = 与 ;）；或
+     * ② 长度 ≥16、不含 {@code <} / {@code http} / 空白的 token。
+     */
+    static boolean credentialValue(String value) {
+        if (value == null) return false;
+        String v = value.trim();
+        if (v.isEmpty() || v.length() > 8192) return false;
+        if (v.contains("<")) return false;
+        if (v.contains("=") && v.contains(";")) return true; // cookie 串
+        if (v.length() < 16) return false;
+        String lower = v.toLowerCase(Locale.ROOT);
+        if (lower.contains("http")) return false;
+        for (int i = 0; i < v.length(); i++)
+            if (Character.isWhitespace(v.charAt(i))) return false;
+        return v.matches("[A-Za-z0-9._~+/=%-]+");
+    }
+
+    /** 从已扫描的凭据里判断某个网盘是否在本机留下登录数据（以值形态为准，不猜测源内启用状态）。 */
     static boolean driveHasLocalCredential(List<Credential> credentials, String driveKey) {
         if (credentials == null || driveKey == null) return false;
         for (Credential credential : credentials) {
-            String text =
-                    ((credential.file == null ? "" : credential.file)
-                                    + " "
-                                    + (credential.key == null ? "" : credential.key))
-                            .toLowerCase(Locale.ROOT);
-            String value =
-                    credential.value == null
-                            ? ""
-                            : credential.value.toLowerCase(Locale.ROOT);
+            String key = credential.key == null ? "" : credential.key;
+            String lowerKey = key.toLowerCase(Locale.ROOT);
+            String file = credential.file == null ? "" : credential.file;
+            String value = credential.value == null ? "" : credential.value;
+            // ① 值必须像凭据；② 键名必须是凭据键，或 prefs 文件本身属于来源存储
+            if (!credentialValue(value)) continue;
+            if (!credentialConfigKey(key) && !PanLoginState.sourcePrefsFile(file)) continue;
+            String lower = value.toLowerCase(Locale.ROOT);
             switch (driveKey) {
                 case "quark":
-                    if (text.contains("quark") || text.contains("夸克") || text.contains("夸父"))
-                        return true;
-                    if (value.contains("quark") || value.contains("kps=")) return true;
+                    if (lower.contains("kps=")
+                            || lower.contains("pan.quark.cn")
+                            || lowerKey.contains("quark")) return true;
                     break;
                 case "uc":
-                    if (text.contains("uc.cn")
-                            || text.contains("drive.uc")
-                            || text.contains("uc_st")
-                            || text.contains("优汐")) return true;
-                    if (value.contains("uc_st")) return true;
+                    if (lower.contains("uc_st")
+                            || lower.contains("drive.uc.cn")
+                            || lowerKey.contains("uc_")
+                            || lowerKey.contains("ucst")) return true;
                     break;
                 case "baidu":
-                    if (text.contains("baidu")
-                            || text.contains("bduss")
-                            || text.contains("嘟嘟")) return true;
-                    if (value.contains("bduss") || value.contains("stoken=")) return true;
+                    if (lower.contains("bduss")
+                            || lower.contains("stoken=")
+                            || lowerKey.contains("bduss")
+                            || lowerKey.contains("baidu")) return true;
                     break;
                 case "ali":
-                    if (text.contains("aliyun")
-                            || text.contains("alipan")
-                            || text.contains("ali")
-                            || text.contains("阿狸")) return true;
-                    if (value.contains("refresh_token") || value.contains("ali_")) return true;
+                    // 不再用裸 ali（会命中 alias/quality/original）；只认明确的网盘/令牌特征
+                    if (lower.contains("refresh_token")
+                            || lower.contains("aliyundrive")
+                            || lower.contains("alipan")
+                            || lowerKey.contains("aliyun")
+                            || lowerKey.contains("alipan")
+                            || lowerKey.contains("refresh_token")) return true;
                     break;
                 default:
                     break;

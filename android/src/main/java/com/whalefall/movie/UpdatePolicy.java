@@ -78,15 +78,18 @@ final class UpdatePolicy {
         return mobile ? "标准版（双 ABI）" : "TV 版";
     }
 
-    /** 校验变体 APK 文件名（不允许跨 edition / 跨 ABI 混淆）。 */
+    /** 校验变体 APK 文件名（固定 edition 前缀，避免错版 feed 绕过 edition / 跨 ABI 混淆）。 */
     static boolean variantUrl(String url, String version, String kind, boolean mobile) {
         if (!apkUrl(url) || !variantKindAllowed(kind, mobile)) return false;
         String file = url.substring(url.lastIndexOf('/') + 1);
-        if (!file.startsWith("WhaleFall-" + version + "-")) return false;
         if ("mobile".equals(kind)) return editionUrl(url, version, true);
         if ("tv".equals(kind)) return editionUrl(url, version, false);
+        // 手机精简包必须是 WhaleFall-<version>-android-mobile-... 开头
+        String mobilePrefix = "WhaleFall-" + version + "-android-mobile-";
+        if (!file.startsWith(mobilePrefix) || !file.endsWith(".apk")) return false;
         if ("arm64".equals(kind)) return file.contains("-arm64") && !file.contains("-r8");
-        return file.contains("-r8");
+        if ("r8".equals(kind)) return file.contains("-r8") && file.contains("-arm64");
+        return false;
     }
 
     static void validateVariant(

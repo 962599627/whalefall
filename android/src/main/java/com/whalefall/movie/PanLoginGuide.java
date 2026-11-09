@@ -238,24 +238,43 @@ final class PanLoginGuide {
             if (a.isTvDevice()) close.requestFocus();
         }
 
+        int renderVersion;
+
         void render() {
-            body.removeAllViews();
-            List<AccountPanel.Credential> credentials =
-                    site == null
-                            ? new java.util.ArrayList<>()
-                            : AccountPanel.scanCredentials(a, site);
-            states = PanLoginState.detectAll(a, site);
-            if (activeDrive.isEmpty()) {
-                renderChooser(credentials);
-            } else {
-                renderSteps(credentials, activeDrive);
-            }
+            render(false);
         }
 
-        /** 从源面板返回后：若引导还开着就地刷新，同时通知账号面板刷新。 */
+        /** 异步检测（worker 线程扫描），结果回 UI；force 用于显式刷新/从源面板返回。 */
+        void render(boolean force) {
+            body.removeAllViews();
+            body.addView(
+                    a.text(
+                            "正在检测登录状态…（本地凭据 / WebView Cookie / 源存储）",
+                            UiTokens.TYPE_BODY_SM,
+                            UiTokens.TEXT_SECONDARY));
+            final int version = ++renderVersion;
+            if (force) PanLoginState.invalidate();
+            PanLoginState.detectAsync(
+                    a,
+                    site,
+                    force,
+                    snapshot -> {
+                        if (version != renderVersion) return;
+                        if (dialog == null || !dialog.isShowing()) return;
+                        states = snapshot.states;
+                        body.removeAllViews();
+                        if (activeDrive.isEmpty()) {
+                            renderChooser(snapshot.credentials);
+                        } else {
+                            renderSteps(snapshot.credentials, activeDrive);
+                        }
+                    });
+        }
+
+        /** 从源面板返回后：强制重检并就地刷新，同时通知账号面板刷新。 */
         void refreshAfterSource() {
             if (onChanged != null) onChanged.run();
-            if (dialog != null && dialog.isShowing() && body != null) render();
+            if (dialog != null && dialog.isShowing() && body != null) render(true);
         }
 
         void renderChooser(List<AccountPanel.Credential> credentials) {
@@ -404,7 +423,7 @@ final class PanLoginGuide {
                                 a,
                                 "我已登录，刷新状态",
                                 () -> {
-                                    render();
+                                    render(true);
                                     if (onChanged != null) onChanged.run();
                                     a.toast("已重新检测登录状态");
                                 });
@@ -432,7 +451,7 @@ final class PanLoginGuide {
                 body.addView(open, actionLp());
                 Button other =
                         glassButton(a, "我已在其他设备登录", () -> {
-                            render();
+                            render(true);
                             if (onChanged != null) onChanged.run();
                             a.toast("已重新检测：如果源内已登录，会显示可确认的源登录信号");
                         });
@@ -443,7 +462,8 @@ final class PanLoginGuide {
                             a,
                             "刷新源状态",
                             () -> {
-                                render();
+                                PanLoginState.invalidate();
+                                render(true);
                                 if (onChanged != null) onChanged.run();
                                 a.toast("已重新检测本地凭据 / WebView Cookie / 源存储");
                             }),
