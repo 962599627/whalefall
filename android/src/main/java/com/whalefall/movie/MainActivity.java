@@ -971,10 +971,20 @@ public final class MainActivity extends Activity {
         return d;
     }
 
+    /** 用户自定义字体颜色：主文字用用户色、次要文字用同色降透明度；强调色（ACCENT 等）保持原样。 */
+    int userTextColor(int color) {
+        if (!prefs.getBoolean(Prefs.TEXT_COLOR_CUSTOM, false)) return color;
+        int rgb = prefs.getInt(Prefs.TEXT_COLOR, 0xffffffff) & 0xffffff;
+        if (color == WHITE) return 0xff000000 | rgb;
+        if (color == MUTED) return 0xb3000000 | rgb;
+        if (color == UiTokens.TEXT_TERTIARY) return 0x8f000000 | rgb;
+        return color;
+    }
+
     TextView text(String s, float size, int color) {
         TextView t = new TextView(this);
         t.setText(s);
-        t.setTextColor(color);
+        t.setTextColor(userTextColor(color));
         t.setTextSize(size);
         t.setFontFeatureSettings("kern");
         return t;
@@ -1009,7 +1019,7 @@ public final class MainActivity extends Activity {
         Button b = new Button(this);
         b.setText(label);
         b.setTextSize(15);
-        b.setTextColor(WHITE);
+        b.setTextColor(userTextColor(WHITE));
         b.setAllCaps(false);
         b.setGravity(Gravity.CENTER);
         b.setIncludeFontPadding(false);
@@ -1121,6 +1131,9 @@ public final class MainActivity extends Activity {
     /** 幂等：确保 base 渐变 + 用户壁纸层（静态图或动态视频）都存在且唯一；缺则补、多则删。 */
     void applyWallpaper(android.widget.FrameLayout target) {
         if (target == null) return;
+        // 播放页是纯黑视频页（root 由 PlaybackController 创建并打 player-surface tag）：
+        // 绝不铺壁纸，否则壁纸层会插到 playbackLayer 之上盖住视频。
+        if ("player-surface".equals(target.getTag())) return;
         final boolean staticEnabled = prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false);
         final boolean videoEnabled = videoWallpaperEnabled();
 
@@ -1353,7 +1366,7 @@ public final class MainActivity extends Activity {
         if (history && current != null) back.push(current);
         current = s;
         s.render.run();
-        if (root != null) ensureBackdrop(root);
+        if (root != null && !"player-surface".equals(root.getTag())) ensureBackdrop(root);
         restore(s);
     }
 
@@ -1412,7 +1425,7 @@ public final class MainActivity extends Activity {
         capture();
         Screen s = current;
         s.render.run();
-        if (root != null) ensureBackdrop(root);
+        if (root != null && !"player-surface".equals(root.getTag())) ensureBackdrop(root);
         restore(s);
     }
 
@@ -1420,7 +1433,7 @@ public final class MainActivity extends Activity {
         if (!isTvDevice() && screen.mobileHome != null && screen.mobileHome.resume()) return;
         if (isTvDevice() && screen.retainedHome != null && screen.retainedHome.resume()) return;
         screen.render.run();
-        if (root != null) ensureBackdrop(root);
+        if (root != null && !"player-surface".equals(root.getTag())) ensureBackdrop(root);
     }
 
     @Override

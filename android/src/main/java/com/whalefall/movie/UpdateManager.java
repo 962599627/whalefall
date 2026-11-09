@@ -32,6 +32,8 @@ final class UpdateManager {
     final ExecutorService worker = Executors.newSingleThreadExecutor();
     final Handler main = new Handler(Looper.getMainLooper());
     volatile Release available;
+    /** available.variants 里当前选中的包体下标；无 variants 或自动模式时为 0。 */
+    volatile int variantIndex;
     volatile String message = "尚未检查更新";
     volatile boolean busy;
     volatile int percent = -1;
@@ -87,6 +89,15 @@ final class UpdateManager {
         if (available != null
                 && (available.code <= code || available.minSdk > Build.VERSION.SDK_INT))
             available = null;
+        // 恢复上次选择的包体，保证「安装已下载版本」在重启后仍指向同一文件
+        if (available != null && available.variants.length > 0) {
+            String kind = prefs.getString("download_kind", "");
+            for (int i = 0; i < available.variants.length; i++)
+                if (available.variants[i].kind.equals(kind)) {
+                    variantIndex = i;
+                    break;
+                }
+        }
         message = prefs.getString("result", "尚未检查更新");
     }
 
@@ -162,13 +173,35 @@ final class UpdateManager {
         return new File(folder(), "release.apk");
     }
 
+    /** 当前选中的包体下标（无 variants 时恒为 0，等同旧单包行为）。 */
+    int selectedVariant() {
+        Release r = available;
+        if (r == null || r.variants.length == 0) return 0;
+        int index = variantIndex;
+        if (index < 0) return 0;
+        return Math.min(index, r.variants.length - 1);
+    }
+
+    /** 手动选择包体；下载/检查进行中不允许切换。 */
+    synchronized boolean selectVariant(int index) {
+        if (busy) return false;
+        Release r = available;
+        if (r == null || index < 0 || index >= r.variants.length) return false;
+        variantIndex = index;
+        changed();
+        return true;
+    }
+
     boolean ready() {
         Release r = available;
-        return r != null
-                && r.code > installedCode(context)
-                && apk().isFile()
-                && apk().length() == r.size
-                && r.sha.equals(prefs.getString("download_sha", ""));
+        if (r == null || r.code <= installedCode(context)) return false;
+        int index = selectedVariant();
+        long size = r.targetSize(index);
+        String sha = r.targetSha(index);
+        return apk().isFile()
+                && apk().length() == size
+                && sha != null
+                && sha.equals(prefs.getString("download_sha", ""));
     }
 
     boolean consumeNotice() {
@@ -194,9 +227,11 @@ final class UpdateManager {
                 .putString("channel", value)
                 .remove("metadata")
                 .remove("download_sha")
+                .remove("download_kind")
                 .remove("last_attempt")
                 .apply();
         available = null;
+        variantIndex = 0;
         apk().delete();
         new File(folder(), "release.part").delete();
         prefs.edit().remove("partial_sha").apply();
@@ -239,6 +274,7 @@ final class UpdateManager {
                             message = "发现新版，但其系统版本要求不适合本机，已停止下载";
                         } else {
                             available = r;
+                            variantIndex = 0;
                             message = "发现新版 " + r.version;
                             prefs.edit().putString("metadata", data.toString()).apply();
                             if ("download".equals(mode()) && !ready()) downloadFile(r);
@@ -288,7 +324,8 @@ final class UpdateManager {
 
     private void clearOffer() {
         available = null;
-        prefs.edit().remove("metadata").remove("download_sha").apply();
+        variantIndex = 0;
+        prefs.edit().remove("metadata").remove("download_sha").remove("download_kind").apply();
         apk().delete();
     }
 
@@ -305,20 +342,23 @@ final class UpdateManager {
     }
 
     private void downloadFile(Release r) throws Exception {
-        if (folder().getUsableSpace() < r.size + 16 * 1024 * 1024L) throw new IOException("space");
+        final int selected = selectedVariant();
+        final long size = r.targetSize(selected);
+        final String sha = r.targetSha(selected);
+        final String[] sources = r.targetDownloads(selected);
+        if (folder().getUsableSpace() < size + 16 * 1024 * 1024L) throw new IOException("space");
         File part = new File(folder(), "release.part");
-        if (!r.sha.equals(prefs.getString("partial_sha", "")) || part.length() > r.size) {
+        if (!sha.equals(prefs.getString("partial_sha", "")) || part.length() > size) {
             part.delete();
-            prefs.edit().putString("partial_sha", r.sha).commit();
+            prefs.edit().putString("partial_sha", sha).commit();
         }
-        percent = (int) (part.length() * 100 / r.size);
+        percent = (int) (part.length() * 100 / size);
         boolean verified = false;
         try {
             Exception failure = null;
             boolean valid = false;
-            String[] sources = r.downloads;
             for (int source = 0; source < sources.length && !valid; source++) {
-                for (int attempt = 0; attempt < 2 && part.length() < r.size; attempt++) {
+                for (int attempt = 0; attempt < 2 && part.length() < size; attempt++) {
                     if (cancel) throw new InterruptedIOException();
                     message =
                             (sources[source].startsWith(UpdatePolicy.MIRROR)
@@ -327,16 +367,16 @@ final class UpdateManager {
                                     + r.version;
                     changed();
                     try {
-                        transfer(r, part, sources[source]);
+                        transfer(part, sources[source], size);
                         failure = null;
                     } catch (IOException e) {
                         failure = e;
                         if (cancel) throw new InterruptedIOException();
                     }
                 }
-                if (part.length() == r.size) {
+                if (part.length() == size) {
                     try {
-                        verifyApk(context, part, r);
+                        verifyApk(context, part, r, selected);
                         valid = true;
                     } catch (Exception e) {
                         failure = e;
@@ -351,7 +391,11 @@ final class UpdateManager {
             if (cancel) throw new InterruptedIOException();
             if (apk().exists() && !apk().delete()) throw new IOException("replace");
             if (!part.renameTo(apk())) throw new IOException("rename");
-            prefs.edit().putString("download_sha", r.sha).remove("partial_sha").apply();
+            prefs.edit()
+                    .putString("download_sha", sha)
+                    .putString("download_kind", r.targetKind(selected))
+                    .remove("partial_sha")
+                    .apply();
             message = "新版已下载并校验，选择“安装已下载版本”继续";
             verified = true;
         } finally {
@@ -363,7 +407,7 @@ final class UpdateManager {
         }
     }
 
-    private void transfer(Release r, File part, String address) throws Exception {
+    private void transfer(File part, String address, long size) throws Exception {
         long offset = part.length();
         HttpURLConnection conn = connector.open(address, offset);
         activeConnection = conn;
@@ -373,9 +417,9 @@ final class UpdateManager {
                             offset,
                             conn.getResponseCode(),
                             conn.getHeaderField("Content-Range"),
-                            r.size);
+                            size);
             long declared = conn.getContentLength();
-            if (declared > 0 && declared != r.size - start) throw new IOException("size");
+            if (declared > 0 && declared != size - start) throw new IOException("size");
             try (InputStream in = conn.getInputStream();
                     OutputStream out = new FileOutputStream(part, start > 0)) {
                 byte[] bytes = new byte[32768];
@@ -384,16 +428,16 @@ final class UpdateManager {
                 while ((n = in.read(bytes)) != -1) {
                     if (cancel) throw new InterruptedIOException();
                     total += n;
-                    if (total > r.size) throw new IOException("limit");
+                    if (total > size) throw new IOException("limit");
                     out.write(bytes, 0, n);
-                    int now = (int) (total * 100 / r.size);
+                    int now = (int) (total * 100 / size);
                     if (now != last) {
                         last = now;
                         percent = now;
                         changed();
                     }
                 }
-                if (total != r.size) throw new IOException("short download");
+                if (total != size) throw new IOException("short download");
             }
         } finally {
             activeConnection = null;
@@ -402,7 +446,12 @@ final class UpdateManager {
     }
 
     static void verifyApk(Context c, File file, Release r) throws Exception {
-        if (file.length() != r.size || !sha(file).equals(r.sha)) throw new IOException("digest");
+        verifyApk(c, file, r, 0);
+    }
+
+    static void verifyApk(Context c, File file, Release r, int variantIndex) throws Exception {
+        if (file.length() != r.targetSize(variantIndex)
+                || !sha(file).equals(r.targetSha(variantIndex))) throw new IOException("digest");
         PackageManager pm = c.getPackageManager();
         int flags =
                 Build.VERSION.SDK_INT >= 28

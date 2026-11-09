@@ -6,6 +6,8 @@ import android.content.*;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.view.View;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /** Uses the app's TV controls; only installation and its permission belong to Android. */
@@ -14,6 +16,8 @@ final class UpdateScreen {
     final MainActivity a;
     final UpdateManager updates;
     TextView status;
+    LinearLayout variantBox;
+    TextView variantTitle;
 
     UpdateScreen(MainActivity host) {
         a = host;
@@ -29,6 +33,11 @@ final class UpdateScreen {
         status.setLineSpacing(a.dp(4), 1);
         a.body.addView(status);
         a.gap(a.body, 18);
+        variantTitle = a.text("选择下载包体", 13, MainActivity.MUTED);
+        variantTitle.setVisibility(View.GONE);
+        a.body.addView(variantTitle);
+        variantBox = a.vertical();
+        a.body.addView(variantBox);
         settings.link("检查更新", "当前使用正式版更新渠道", "update-check", () -> updates.check(true));
         settings.link(
                 "下载新版",
@@ -72,6 +81,78 @@ final class UpdateScreen {
                             + (updates.percent >= 0 ? " · " + updates.percent + "%" : "")
                             + "\n"
                             + modeName(updates.mode()));
+        rebuildVariants();
+    }
+
+    /** 检查结果里有多包体时显示单选列表；自动模式仍用第一项（默认选中）。 */
+    void rebuildVariants() {
+        if (variantBox == null || variantTitle == null) return;
+        variantBox.removeAllViews();
+        UpdateManager.Release r = updates.available;
+        boolean show = r != null && r.variants.length > 0;
+        variantTitle.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (!show) return;
+        final int selected = updates.selectedVariant();
+        for (int i = 0; i < r.variants.length; i++) {
+            final UpdateRelease.Variant variant = r.variants[i];
+            final int index = i;
+            LinearLayout row = a.row();
+            row.setPadding(a.dp(16), a.dp(10), a.dp(16), a.dp(10));
+            LinearLayout copy = a.vertical();
+            TextView name =
+                    a.text(
+                            (i == selected ? "◉ " : "○ ") + variant.label,
+                            15,
+                            i == selected ? 0xff8ef0c0 : MainActivity.WHITE);
+            copy.addView(name);
+            TextView meta =
+                    a.text(formatSize(variant.size) + " · " + kindNote(variant.kind), 12,
+                            MainActivity.MUTED);
+            meta.setPadding(0, a.dp(3), 0, 0);
+            copy.addView(meta);
+            row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+            row.setTag("update-variant:" + i);
+            row.setId(View.generateViewId());
+            row.setFocusable(true);
+            row.setFocusableInTouchMode(true);
+            row.setClickable(true);
+            row.setBackground(a.bg(i == selected ? 0xff1c3a2e : 0xff16243c, 12));
+            row.setOnFocusChangeListener(
+                    (v, focused) ->
+                            FocusMotion.style(
+                                    a,
+                                    row,
+                                    focused,
+                                    0xff16243c,
+                                    0xff334564,
+                                    12,
+                                    MainActivity.WHITE,
+                                    MainActivity.WHITE,
+                                    true,
+                                    1.008f));
+            a.pressFeedback(row);
+            row.setOnClickListener(
+                    v -> {
+                        if (updates.selectVariant(index)) refresh();
+                        else a.toast("请等待当前任务完成");
+                    });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = a.dp(6);
+            variantBox.addView(row, lp);
+        }
+    }
+
+    static String formatSize(long size) {
+        if (size <= 0) return "大小未知";
+        if (size >= 1024L * 1024 * 1024) return String.format(java.util.Locale.ROOT, "%.1f GB", size / 1073741824f);
+        return String.format(java.util.Locale.ROOT, "%.1f MB", size / 1048576f);
+    }
+
+    static String kindNote(String kind) {
+        if ("arm64".equals(kind)) return "单 ABI · 精简包";
+        if ("r8".equals(kind)) return "R8 · 精简包";
+        if ("tv".equals(kind)) return "电视版";
+        return "双 ABI · 推荐";
     }
 
     static String modeName(String mode) {
@@ -153,7 +234,8 @@ final class UpdateScreen {
         updates.worker.execute(
                 () -> {
                     try {
-                        UpdateManager.verifyApk(a, updates.apk(), release);
+                        UpdateManager.verifyApk(
+                                a, updates.apk(), release, updates.selectedVariant());
                         a.ui.post(
                                 () -> {
                                     updates.busy = false;

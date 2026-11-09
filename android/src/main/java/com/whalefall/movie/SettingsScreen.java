@@ -222,6 +222,11 @@ final class SettingsScreen {
                 new int[] {5, 6, 7, 8},
                 5);
         link(
+                "字体颜色",
+                TextColorDialog.summary(a),
+                "settings-text-color",
+                () -> TextColorDialog.show(a));
+        link(
                 "首页壁纸",
                 a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
                         ? "视频动态壁纸"

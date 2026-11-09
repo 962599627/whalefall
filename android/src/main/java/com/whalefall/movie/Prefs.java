@@ -76,6 +76,9 @@ final class Prefs {
     static final String WATCH_HISTORY = "watch_history";
     static final String GLOBAL_SEARCH_HISTORY = "global_search_history";
     static final String PHONETIC_TITLES = "phonetic_titles";
+    /** 字体颜色自定义：TEXT_COLOR_CUSTOM 开启时 TEXT_COLOR（ARGB）生效。 */
+    static final String TEXT_COLOR_CUSTOM = "text_color_custom";
+    static final String TEXT_COLOR = "text_color";
 
     static final String[] KEYS = {
         UI_SCALE_PERCENT,
@@ -118,7 +121,9 @@ final class Prefs {
         AUDIO_EFFECT,
         SEARCH_THREADS,
         SEARCH_TIMEOUT,
-        EPISODES_DESCENDING
+        EPISODES_DESCENDING,
+        TEXT_COLOR_CUSTOM,
+        TEXT_COLOR
     };
 
     private static final Set<String> BOOLEAN_KEYS =
@@ -144,7 +149,8 @@ final class Prefs {
                                     DANMAKU_DEFAULT,
                                     SOFTWARE_AUDIO,
                                     PREFER_AAC,
-                                    EPISODES_DESCENDING)));
+                                    EPISODES_DESCENDING,
+                                    TEXT_COLOR_CUSTOM)));
 
     private static final Map<String, int[]> INT_RANGES;
 
@@ -200,6 +206,10 @@ final class Prefs {
         }
         if (BOOLEAN_KEYS.contains(key)) {
             return value instanceof Boolean ? value : null;
+        }
+        if (TEXT_COLOR.equals(key)) {
+            // 仅保留 RGB，alpha 统一按用户选择处理（0xffffffff 默认白）
+            return value instanceof Number ? (0xff000000 | (((Number) value).intValue() & 0xffffff)) : null;
         }
         int[] range = INT_RANGES.get(key);
         if (range == null || !(value instanceof Number)) return null;

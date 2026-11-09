@@ -3899,6 +3899,12 @@ final class MobileShell {
                 addSettingCard(
                         body,
                         3,
+                        "字体颜色",
+                        TextColorDialog.summary(a),
+                        () -> TextColorDialog.show(a));
+                addSettingCard(
+                        body,
+                        3,
                         "首页壁纸与动态壁纸",
                         a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
                                 ? "视频动态壁纸（循环静音）"

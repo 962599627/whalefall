@@ -64,6 +64,75 @@ final class UpdatePolicy {
         return file.equals(named) || file.equals(tightened) || file.equals(legacy);
     }
 
+    /** 同一 release 的可选包体种类：手机显示 mobile/arm64/r8，电视只显示 tv。 */
+    static boolean variantKindAllowed(String kind, boolean mobile) {
+        if (kind == null) return false;
+        if (mobile) return "mobile".equals(kind) || "arm64".equals(kind) || "r8".equals(kind);
+        return "tv".equals(kind);
+    }
+
+    static String variantLabel(String kind, boolean mobile) {
+        if ("arm64".equals(kind)) return "arm64 精简版";
+        if ("r8".equals(kind)) return "R8 精简版";
+        if ("tv".equals(kind)) return "TV 版";
+        return mobile ? "标准版（双 ABI）" : "TV 版";
+    }
+
+    /** 校验变体 APK 文件名（不允许跨 edition / 跨 ABI 混淆）。 */
+    static boolean variantUrl(String url, String version, String kind, boolean mobile) {
+        if (!apkUrl(url) || !variantKindAllowed(kind, mobile)) return false;
+        String file = url.substring(url.lastIndexOf('/') + 1);
+        if (!file.startsWith("WhaleFall-" + version + "-")) return false;
+        if ("mobile".equals(kind)) return editionUrl(url, version, true);
+        if ("tv".equals(kind)) return editionUrl(url, version, false);
+        if ("arm64".equals(kind)) return file.contains("-arm64") && !file.contains("-r8");
+        return file.contains("-r8");
+    }
+
+    static void validateVariant(
+            int code,
+            String version,
+            int minSdk,
+            long size,
+            String sha,
+            String url,
+            String channel,
+            boolean mobile,
+            String kind) {
+        if (code <= 0
+                || version == null
+                || !version.matches("[0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z0-9.]+)?")
+                || version.length() > 48
+                || minSdk < 23
+                || minSdk > 100
+                || size < 1
+                || size > MAX_APK
+                || sha == null
+                || !sha.matches("[a-f0-9]{64}")
+                || !variantUrl(url, version, kind, mobile)
+                || (!"stable".equals(channel) && !"preview".equals(channel)))
+            throw new IllegalArgumentException("Invalid update variant");
+    }
+
+    static String[] variantDownloads(
+            String version, boolean mobile, String primary, String github, String kind) {
+        if (!variantUrl(primary, version, kind, mobile))
+            throw new IllegalArgumentException("APK variant");
+        String file = primary.substring(primary.lastIndexOf('/') + 1);
+        java.util.List<String> urls = new java.util.ArrayList<>();
+        urls.add(primary);
+        for (String mirror : MIRRORS) {
+            String candidate = mirror + file;
+            if (!urls.contains(candidate)) urls.add(candidate);
+        }
+        if (github != null && !github.isEmpty()) {
+            if (!variantUrl(github, version, kind, mobile) || !github.endsWith("/" + file))
+                throw new IllegalArgumentException("Invalid release download URL");
+            if (!urls.contains(github)) urls.add(github);
+        }
+        return urls.toArray(new String[0]);
+    }
+
     /** Keep the release's actual tag; never switch editions when retrying a download. */
     static String[] downloads(String version, boolean mobile, String primary, String github) {
         if (!editionUrl(primary, version, mobile))
