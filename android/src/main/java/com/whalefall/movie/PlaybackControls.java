@@ -686,7 +686,7 @@ final class PlaybackControls {
         choose(
                 "画面比例",
                 labels,
-                a.prefs.getInt(Prefs.ASPECT, 0),
+                a.prefs.getInt(Prefs.ASPECT, 4),
                 i -> {
                     a.prefs.edit().putInt(Prefs.ASPECT, i).apply();
                     resize(videoWidth, videoHeight);
@@ -1469,7 +1469,7 @@ final class PlaybackControls {
     void updateLabels() {
         float rate = a.prefs.getFloat(Prefs.PLAY_SPEED, 1f);
         tintIcon("speed", Math.abs(rate - 1f) >= 0.01f);
-        tintIcon("aspect", a.prefs.getInt(Prefs.ASPECT, 0) != 0);
+        tintIcon("aspect", a.prefs.getInt(Prefs.ASPECT, 4) != 0);
         tintIcon("repeat-tool", a.prefs.getInt(Prefs.REPEAT_MODE, 0) != 0);
     }
 
@@ -1612,7 +1612,7 @@ final class PlaybackControls {
         if (width <= 0 || height <= 0 || a.playbackLayer.getWidth() == 0) return;
         int w = a.playbackLayer.getWidth(),
                 h = a.playbackLayer.getHeight(),
-                mode = a.prefs.getInt(Prefs.ASPECT, 0);
+                mode = a.prefs.getInt(Prefs.ASPECT, 4);
         float ratio = mode == 2 ? 16f / 9 : mode == 3 ? 4f / 3 : (float) width / height;
         if (mode != 1) {
             if (mode == 4) {

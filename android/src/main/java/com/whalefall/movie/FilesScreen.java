@@ -27,6 +27,10 @@ final class FilesScreen {
     }
 
     static void show(MainActivity a, String relDir) {
+        a.open(new MainActivity.Screen(() -> render(a, relDir)), true);
+    }
+
+    private static void render(MainActivity a, String relDir) {
         a.clearPlaybackLoading();
         a.cancelPageRequests();
         a.generation++;

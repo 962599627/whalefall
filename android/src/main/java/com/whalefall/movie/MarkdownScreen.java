@@ -21,6 +21,10 @@ final class MarkdownScreen {
     private MarkdownScreen() {}
 
     static void show(MainActivity a, String fileName) {
+        a.open(new MainActivity.Screen(() -> render(a, fileName)), true);
+    }
+
+    private static void render(MainActivity a, String fileName) {
         String text;
         try {
             text = PushFiles.readText(a, fileName);

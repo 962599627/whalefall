@@ -44,6 +44,10 @@ final class ChannelManagerScreen {
     }
 
     static void show(MainActivity a) {
+        a.open(new MainActivity.Screen(() -> render(a)), true);
+    }
+
+    private static void render(MainActivity a) {
         a.clearPlaybackLoading();
         a.cancelPageRequests();
         a.generation++;
@@ -73,7 +77,18 @@ final class ChannelManagerScreen {
         config.setPadding(a.dp(14), a.dp(8), a.dp(14), a.dp(8));
         config.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(config);
-        config.setOnClickListener(v -> editConfig(a));
+        config.setOnClickListener(
+                v ->
+                        new AppDialog.Builder(a)
+                                .setTitle("频道配置")
+                                .setItems(
+                                        new String[] {"编辑自定义频道配置", "查看全部频道配置（含内置/隐藏）"},
+                                        (d, index) -> {
+                                            if (index == 0) editConfig(a);
+                                            else exportAllConfig(a);
+                                        })
+                                .setNegativeButton("关闭", null)
+                                .show());
         bar.addView(config);
         page.addView(bar, new LinearLayout.LayoutParams(-1, -2));
         a.gap(page, 10);
@@ -514,6 +529,34 @@ final class ChannelManagerScreen {
                 .show();
     }
 
+    /** 导出全部频道（内置 + 自定义 + 隐藏状态）为 JSON，写入文件管理并用阅读器打开。 */
+    static void exportAllConfig(MainActivity a) {
+        try {
+            JSONArray all = new JSONArray();
+            for (Row row : collect(a)) {
+                all.put(
+                        new JSONObject()
+                                .put("name", row.name)
+                                .put("url", row.url)
+                                .put("group", row.group)
+                                .put("builtin", row.builtin)
+                                .put("hidden", row.hidden)
+                                .put("edited", row.edited));
+            }
+            JSONObject root = new JSONObject();
+            root.put("channels", all);
+            String rel =
+                    PushFiles.writeText(
+                            a,
+                            "频道配置/全部频道配置.json",
+                            root.toString(2));
+            a.toast("已生成：文件管理/频道配置/全部频道配置.json");
+            MarkdownScreen.show(a, rel);
+        } catch (Exception e) {
+            a.toast("导出失败：" + e.getMessage());
+        }
+    }
+
     private static void editChannel(MainActivity a, Row row, Runnable refresh) {
         LinearLayout box = a.vertical();
         EditText name = new EditText(a);
@@ -526,6 +569,35 @@ final class ChannelManagerScreen {
         style(a, url);
         box.addView(name, new LinearLayout.LayoutParams(-1, -2));
         box.addView(url, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout tools = a.row();
+        tools.setGravity(Gravity.CENTER_VERTICAL);
+        TextView paste = a.text("粘贴", 12, 0xffffb3c8);
+        paste.setPadding(a.dp(14), a.dp(7), a.dp(14), a.dp(7));
+        paste.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+        MobileDetailScreen.bindTouchFeedback(paste);
+        paste.setOnClickListener(
+                v -> {
+                    android.content.ClipboardManager cm =
+                            (android.content.ClipboardManager)
+                                    a.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                    if (cm.hasPrimaryClip() && cm.getPrimaryClip().getItemCount() > 0) {
+                        CharSequence text = cm.getPrimaryClip().getItemAt(0).coerceToText(a);
+                        if (text != null) url.setText(text.toString().trim());
+                        a.toast("已粘贴地址");
+                    } else a.toast("剪贴板没有内容");
+                });
+        TextView copy = a.text("复制", 12, 0xffc9d6ea);
+        copy.setPadding(a.dp(14), a.dp(7), a.dp(14), a.dp(7));
+        copy.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+        MobileDetailScreen.bindTouchFeedback(copy);
+        copy.setOnClickListener(v -> copy(a, url.getText().toString()));
+        tools.addView(paste);
+        LinearLayout.LayoutParams copyLp = new LinearLayout.LayoutParams(-2, -2);
+        copyLp.leftMargin = a.dp(8);
+        tools.addView(copy, copyLp);
+        LinearLayout.LayoutParams toolsLp = new LinearLayout.LayoutParams(-2, -2);
+        toolsLp.topMargin = a.dp(8);
+        box.addView(tools, toolsLp);
         new AppDialog.Builder(a)
                 .setTitle(row == null ? "新增频道" : "修改频道")
                 .setView(box)
