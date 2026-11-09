@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.3.0",
-  "versionCode": 13000,
+  "versionName": "1.3.1",
+  "versionCode": 13001,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.3.0（手机 / 平板 / 电视）\n\n- 首页海报网格改为 RecyclerView 虚拟化：卡片只为「可见区 + 预取」创建，长列表更省内存（滚动流畅度未真机验证，欢迎反馈）\n- 陕西卫视改为官方直播页地址（可能先弹「确定前往」，点一次确定即可）\n- 设置页关于版本号改为读取安装包版本，不再硬编码 1.2.0\n- 已知（既有问题，非本版引入）：首页列数断点与片库规范不一致；切 tab 回首页会重复追加当前页；15 条卫视仍为官网首页，待补官方直播页\n- 本版首页虚拟化未真机验证性能数据，不宣称「已优化启动/帧率」",
+  "notes": "# 鲸落 1.3.1（手机 / 平板 / 电视）\n\n- 修复电视台直播：画面已出但「正在连接/正在加载官方页面」浮层不消失；现在播放即收起（DEF-2010）\n- 修复手机电视 tab 顶部「管理」按钮被右侧裁切（DEF-2011）\n- 修复点频道后布局错乱、播放器不出现：直播播放中旋转不再整页重建，退出后按竖屏重建，手机竖屏不再出侧栏（DEF-2012）\n- 首页海报网格 RecyclerView 虚拟化（E3-S1，滚动流畅度未真机验证）\n- 陕西卫视改为官方直播页地址；设置页版本号改为运行时读取\n- 本版直播/转屏/首页均未真机验证性能数据，不宣称已优化；TV 版未接手机版电视台直播/文件管理/离线下载等功能",
   "size": 36223814,
-  "sha256": "5cae8a0711b75fa75b3484bbfa349d0aef0048fec3a27777709c734967d0b450",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.3.0/WhaleFall-1.3.0-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.3.0/WhaleFall-1.3.0-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.3.0"
+  "sha256": "5ae3073b5ef24f5a0be25581fd31743a625aa5bb77ac58c3244cc2f847881fdb",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.3.1/WhaleFall-1.3.1-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.3.1/WhaleFall-1.3.1-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.3.1"
 }
