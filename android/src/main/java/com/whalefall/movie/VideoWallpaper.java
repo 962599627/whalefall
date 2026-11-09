@@ -89,7 +89,11 @@ final class VideoWallpaper extends FrameLayout {
         moving = true;
         if (getParent() instanceof android.view.ViewGroup)
             ((android.view.ViewGroup) getParent()).removeView(this);
-        root.addView(this, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        // 始终垫在 base 渐变之上、页面内容之下（index 0 = base）
+        root.addView(
+                this,
+                Math.min(1, root.getChildCount()),
+                new android.widget.FrameLayout.LayoutParams(-1, -1));
         moving = false;
         player.setPlayWhenReady(true);
     }

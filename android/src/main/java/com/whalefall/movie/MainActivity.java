@@ -1113,73 +1113,112 @@ public final class MainActivity extends Activity {
     }
 
     static final String BACKDROP_TAG = "whale-backdrop";
+    /** 用户壁纸层（静态 Images/Atmosphere）专用 tag：与 base 渐变分开，便于幂等维护。 */
+    static final String WALLPAPER_TAG = "whale-wallpaper-image";
+    /** applyWallpaper 的日志签名：只在状态变化时写一条，避免刷屏。 */
+    private String lastWallpaperLog;
 
-    /** 统一给页面根容器铺背景：主题渐变 + 静态/视频壁纸（详情页等也复用）。 */
-    void installBackdrop(android.widget.FrameLayout target) {
+    /** 幂等：确保 base 渐变 + 用户壁纸层（静态图或动态视频）都存在且唯一；缺则补、多则删。 */
+    void applyWallpaper(android.widget.FrameLayout target) {
         if (target == null) return;
-        // 同一 root 重复铺背景时先清掉旧层：避免叠加成黑屏 / 多层壁纸闪烁
-        for (int i = target.getChildCount() - 1; i >= 0; i--) {
-            View child = target.getChildAt(i);
-            if (BACKDROP_TAG.equals(child.getTag())) target.removeViewAt(i);
-        }
-        View base = new View(this);
-        base.setTag(BACKDROP_TAG);
-        base.setBackground(Skin.backdrop(this));
-        base.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        // 保证背景永远在最底层
-        target.addView(base, 0, new FrameLayout.LayoutParams(-1, -1));
-        if (videoWallpaperEnabled()) {
-            if (videoWallpaper == null || videoWallpaper.isReleased()) {
-                releaseWallpaper();
-                videoWallpaper = new VideoWallpaper(this);
-                target.addView(videoWallpaper, Math.min(1, target.getChildCount()),
-                        new FrameLayout.LayoutParams(-1, -1));
-            } else {
-                videoWallpaper.attachTo(target);
-            }
-        } else {
-            releaseWallpaper();
-            if (prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) {
-                View atmosphere = ImageLoader.createAtmosphere(this);
-                atmosphere.setTag(BACKDROP_TAG);
-                target.addView(atmosphere, Math.min(1, target.getChildCount()),
-                        new FrameLayout.LayoutParams(-1, -1));
-            }
-        }
-    }
+        final boolean staticEnabled = prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false);
+        final boolean videoEnabled = videoWallpaperEnabled();
 
-    /**
-     * 返回已有页面（MobileShell.resume 复用 root）时只补背景层，不重建内容：
-     * 保证渐变底 + 壁纸仍存在且在最底层，修「返回后静态壁纸黑屏」。
-     */
-    void ensureBackdrop(android.widget.FrameLayout target) {
-        if (target == null) return;
+        // 1. base 渐变：没有就补
         boolean hasBase = false;
-        for (int i = 0; i < target.getChildCount(); i++) {
+        for (int i = 0; i < target.getChildCount(); i++)
             if (BACKDROP_TAG.equals(target.getChildAt(i).getTag())) {
                 hasBase = true;
                 break;
             }
-        }
         if (!hasBase) {
             View base = new View(this);
             base.setTag(BACKDROP_TAG);
             base.setBackground(Skin.backdrop(this));
             base.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             target.addView(base, 0, new FrameLayout.LayoutParams(-1, -1));
-            if (!videoWallpaperEnabled() && prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) {
-                View atmosphere = ImageLoader.createAtmosphere(this);
-                atmosphere.setTag(BACKDROP_TAG);
-                target.addView(atmosphere, Math.min(1, target.getChildCount()),
-                        new FrameLayout.LayoutParams(-1, -1));
+        }
+
+        // 2. 静态壁纸层：动态壁纸优先时全部移除；静态模式保留且唯一
+        int staticCount = 0;
+        for (int i = target.getChildCount() - 1; i >= 0; i--) {
+            View child = target.getChildAt(i);
+            if (!WALLPAPER_TAG.equals(child.getTag())) continue;
+            if (videoEnabled) {
+                target.removeViewAt(i);
+                continue;
             }
+            staticCount++;
+            if (staticCount > 1) target.removeViewAt(i);
         }
-        if (videoWallpaperEnabled()
-                && (videoWallpaper == null || videoWallpaper.isReleased())) {
-            videoWallpaper = new VideoWallpaper(this);
-            target.addView(videoWallpaper, Math.min(1, target.getChildCount()),
+        if (staticEnabled && !videoEnabled && staticCount == 0) {
+            java.io.File staticFile = new java.io.File(getFilesDir(), "wallpaper.jpg");
+            if (!staticFile.isFile())
+                AppLog.w("Wallpaper", "static wallpaper file missing: " + staticFile, null);
+            View atmosphere = ImageLoader.createAtmosphere(this);
+            atmosphere.setTag(WALLPAPER_TAG);
+            target.addView(
+                    atmosphere,
+                    Math.min(1, target.getChildCount()),
                     new FrameLayout.LayoutParams(-1, -1));
+            staticCount = 1;
         }
+
+        // 3. 动态壁纸：存在但挂在旧 root 时搬过来；否则释放并新建
+        if (videoEnabled) {
+            if (videoWallpaper == null || videoWallpaper.isReleased()) {
+                releaseWallpaper();
+                videoWallpaper = new VideoWallpaper(this);
+                target.addView(
+                        videoWallpaper,
+                        Math.min(1, target.getChildCount()),
+                        new FrameLayout.LayoutParams(-1, -1));
+            } else if (videoWallpaper.getParent() != target) {
+                videoWallpaper.attachTo(target);
+            }
+        } else {
+            if (videoWallpaper != null
+                    && videoWallpaper.getParent() instanceof android.view.ViewGroup)
+                ((android.view.ViewGroup) videoWallpaper.getParent()).removeView(videoWallpaper);
+            releaseWallpaper();
+        }
+
+        // 4. 一次性诊断（仅状态变化时）
+        final String signature =
+                System.identityHashCode(target)
+                        + "/"
+                        + staticEnabled
+                        + "/"
+                        + videoEnabled
+                        + "/"
+                        + (videoWallpaper != null && videoWallpaper.getParent() == target)
+                        + "/"
+                        + staticCount;
+        if (!signature.equals(lastWallpaperLog)) {
+            lastWallpaperLog = signature;
+            AppLog.i(
+                    "Wallpaper",
+                    "apply root="
+                            + System.identityHashCode(target)
+                            + " staticEnabled="
+                            + staticEnabled
+                            + " videoEnabled="
+                            + videoEnabled
+                            + " videoAttached="
+                            + (videoWallpaper != null && videoWallpaper.getParent() == target)
+                            + " atmosphere="
+                            + staticCount);
+        }
+    }
+
+    /** 统一给页面根容器铺背景：base 渐变 + 用户壁纸（静态/动态）都交给幂等的 applyWallpaper。 */
+    void installBackdrop(android.widget.FrameLayout target) {
+        applyWallpaper(target);
+    }
+
+    /** 返回已有页面（MobileShell.resume 复用 root）时同样幂等补齐壁纸层。 */
+    void ensureBackdrop(android.widget.FrameLayout target) {
+        applyWallpaper(target);
     }
 
     void renderPage(String title, String eyebrow, boolean navigation) {
@@ -1314,6 +1353,7 @@ public final class MainActivity extends Activity {
         if (history && current != null) back.push(current);
         current = s;
         s.render.run();
+        if (root != null) ensureBackdrop(root);
         restore(s);
     }
 
@@ -1372,6 +1412,7 @@ public final class MainActivity extends Activity {
         capture();
         Screen s = current;
         s.render.run();
+        if (root != null) ensureBackdrop(root);
         restore(s);
     }
 
@@ -1379,6 +1420,7 @@ public final class MainActivity extends Activity {
         if (!isTvDevice() && screen.mobileHome != null && screen.mobileHome.resume()) return;
         if (isTvDevice() && screen.retainedHome != null && screen.retainedHome.resume()) return;
         screen.render.run();
+        if (root != null) ensureBackdrop(root);
     }
 
     @Override
@@ -1405,7 +1447,7 @@ public final class MainActivity extends Activity {
             }
             if (miniMode) {
                 releasePlayer();
-        releaseWallpaper();
+                // 页面切换不释放壁纸：由 applyWallpaper 在返回的页面 root 上幂等迁移/补齐
                 if (!back.isEmpty()) back.pop();
                 if (!back.isEmpty()) {
                     current = back.pop();

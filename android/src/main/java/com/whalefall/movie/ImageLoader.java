@@ -397,23 +397,37 @@ final class ImageLoader {
         final MainActivity a;
         final Paint paint = new Paint(3);
         Bitmap wallpaper;
+        boolean decodeLogged;
 
         Atmosphere(Context c) {
             super(c);
             a = (MainActivity) c;
-            if (a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false))
-                wallpaper =
-                        BitmapFactory.decodeFile(
-                                new File(a.getFilesDir(), "wallpaper.jpg").getAbsolutePath());
+            if (a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) wallpaper = loadWallpaper();
+        }
+
+        /** 读取用户静态壁纸；文件缺失/解码失败写一条日志，不静默退纯色。 */
+        private Bitmap loadWallpaper() {
+            File file = new File(a.getFilesDir(), "wallpaper.jpg");
+            if (!file.isFile()) {
+                if (!decodeLogged) {
+                    decodeLogged = true;
+                    AppLog.w("Wallpaper", "static wallpaper file missing: " + file, null);
+                }
+                return null;
+            }
+            Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
+            if (bitmap == null && !decodeLogged) {
+                decodeLogged = true;
+                AppLog.w("Wallpaper", "static wallpaper decode failed: " + file, null);
+            }
+            return bitmap;
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
             canvas.drawColor(MainActivity.DARK);
             if (wallpaper == null && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false))
-                wallpaper =
-                        BitmapFactory.decodeFile(
-                                new File(a.getFilesDir(), "wallpaper.jpg").getAbsolutePath());
+                wallpaper = loadWallpaper();
             if (wallpaper != null) {
                 float scale =
                         Math.max(
@@ -437,11 +451,8 @@ final class ImageLoader {
         @Override
         protected void onAttachedToWindow() {
             super.onAttachedToWindow();
-            if (wallpaper == null
-                    && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false))
-                wallpaper =
-                        BitmapFactory.decodeFile(
-                                new File(a.getFilesDir(), "wallpaper.jpg").getAbsolutePath());
+            if (wallpaper == null && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false))
+                wallpaper = loadWallpaper();
         }
     }
 }
