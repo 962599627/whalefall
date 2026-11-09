@@ -82,10 +82,15 @@ final class ChannelManagerScreen {
                         new AppDialog.Builder(a)
                                 .setTitle("频道配置")
                                 .setItems(
-                                        new String[] {"编辑自定义频道配置", "查看全部频道配置（含内置/隐藏）"},
+                                        new String[] {
+                                            "编辑自定义频道配置",
+                                            "导出全部频道配置（含内置）",
+                                            "导入全部频道配置"
+                                        },
                                         (d, index) -> {
                                             if (index == 0) editConfig(a);
-                                            else exportAllConfig(a);
+                                            else if (index == 1) exportAllConfig(a);
+                                            else importAllConfig(a);
                                         })
                                 .setNegativeButton("关闭", null)
                                 .show());
@@ -529,32 +534,100 @@ final class ChannelManagerScreen {
                 .show();
     }
 
-    /** 导出全部频道（内置 + 自定义 + 隐藏状态）为 JSON，写入文件管理并用阅读器打开。 */
+    /** 导出全部频道配置（内置 + 自定义 + 隐藏/改址状态），写入文件管理并打开预览。 */
     static void exportAllConfig(MainActivity a) {
         try {
-            JSONArray all = new JSONArray();
-            for (Row row : collect(a)) {
-                all.put(
-                        new JSONObject()
-                                .put("name", row.name)
-                                .put("url", row.url)
-                                .put("group", row.group)
-                                .put("builtin", row.builtin)
-                                .put("hidden", row.hidden)
-                                .put("edited", row.edited));
-            }
             JSONObject root = new JSONObject();
-            root.put("channels", all);
-            String rel =
-                    PushFiles.writeText(
-                            a,
-                            "频道配置/全部频道配置.json",
-                            root.toString(2));
-            a.toast("已生成：文件管理/频道配置/全部频道配置.json");
+            root.put("version", 1);
+            root.put(
+                    "exportedAt",
+                    new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.CHINA)
+                            .format(new java.util.Date()));
+            JSONArray builtin = new JSONArray();
+            for (Row row : collect(a))
+                if (row.builtin)
+                    builtin.put(
+                            new JSONObject()
+                                    .put("name", row.name)
+                                    .put("url", row.url)
+                                    .put("group", row.group)
+                                    .put("hidden", row.hidden)
+                                    .put("edited", row.edited));
+            JSONArray custom = new JSONArray();
+            for (TvLive.Channel c : TvLive.readCustom(a))
+                custom.put(
+                        new JSONObject()
+                                .put("name", c.name)
+                                .put("url", c.url)
+                                .put("group", c.group));
+            root.put("builtin", builtin);
+            root.put("custom", custom);
+            String rel = PushFiles.writeText(a, "频道配置/全部频道配置.json", root.toString(2));
+            a.toast("已导出：文件管理/频道配置/全部频道配置.json");
             MarkdownScreen.show(a, rel);
         } catch (Exception e) {
             a.toast("导出失败：" + e.getMessage());
         }
+    }
+
+    /** 导入全部频道配置：内置改址/隐藏 + 自定义频道覆盖。 */
+    static void importAllConfig(MainActivity a) {
+        EditText input = new EditText(a);
+        input.setHint("粘贴导出的全部频道配置 JSON…");
+        input.setTextSize(11.5f);
+        input.setTextColor(Color.WHITE);
+        input.setHintTextColor(0xff8d9cb6);
+        input.setBackground(MobileDetailScreen.glassBg(a, 0x33ffffff, 0x33ffffff, 12));
+        input.setPadding(a.dp(10), a.dp(10), a.dp(10), a.dp(10));
+        input.setMinLines(10);
+        input.setGravity(Gravity.TOP | Gravity.START);
+        new AppDialog.Builder(a)
+                .setTitle("导入全部频道配置")
+                .setMessage("支持本功能导出的 JSON：内置频道会按 url/hidden 更新，自定义频道会被覆盖。")
+                .setView(input)
+                .setPositiveButton(
+                        "导入",
+                        (d, w) -> {
+                            try {
+                                JSONObject root = new JSONObject(input.getText().toString());
+                                Set<String> hidden = TvLive.readHidden(a);
+                                java.util.Map<String, String> overrides =
+                                        TvLive.readUrlOverrides(a);
+                                JSONArray builtin = root.optJSONArray("builtin");
+                                if (builtin != null)
+                                    for (int i = 0; i < builtin.length(); i++) {
+                                        JSONObject o = builtin.getJSONObject(i);
+                                        String name = o.optString("name");
+                                        String url = o.optString("url");
+                                        if (o.optBoolean("hidden", false)) hidden.add(name);
+                                        else hidden.remove(name);
+                                        if (!url.isEmpty()
+                                                && !url.equals(TvLive.defaultUrl(name)))
+                                            overrides.put(name, url);
+                                        else overrides.remove(name);
+                                    }
+                                JSONArray custom = root.optJSONArray("custom");
+                                if (custom != null) {
+                                    List<TvLive.Channel> list = new ArrayList<>();
+                                    for (int i = 0; i < custom.length(); i++) {
+                                        JSONObject o = custom.getJSONObject(i);
+                                        String name = o.optString("name");
+                                        String url = o.optString("url");
+                                        if (!name.isEmpty() && !url.isEmpty())
+                                            list.add(new TvLive.Channel(name, url, TvLive.GROUP_SAT));
+                                    }
+                                    TvLive.saveCustom(a, list);
+                                }
+                                TvLive.saveHidden(a, hidden);
+                                TvLive.saveUrlOverrides(a, overrides);
+                                a.toast("已导入频道配置");
+                                show(a);
+                            } catch (Exception e) {
+                                a.toast("导入失败：" + e.getMessage());
+                            }
+                        })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     private static void editChannel(MainActivity a, Row row, Runnable refresh) {
