@@ -3601,6 +3601,12 @@ final class MobileShell {
                 addSettingCard(
                         body,
                         5,
+                        "查看崩溃日志",
+                        "读取上次异常退出保存的堆栈，可复制或另存到文件管理",
+                        a::showCrashLog);
+                addSettingCard(
+                        body,
+                        5,
                         "存储空间与缓存清理",
                         "查看播放/插件/日志/上传占用，一键清理临时缓存",
                         () -> {

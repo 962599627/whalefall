@@ -332,7 +332,7 @@ public final class MainActivity extends Activity {
     }
 
     /** 启动时展示上次崩溃栈，并另存一份到内置文件管理，方便截图/查看。 */
-    private void showLastCrashIfAny() {
+    void showCrashLog() {
         try {
             java.io.File src = new java.io.File(getFilesDir(), "crash-last.txt");
             if (!src.isFile()) return;
@@ -1462,7 +1462,6 @@ public final class MainActivity extends Activity {
         if (current != null) current.home = true;
         if (!isTvDevice()) {
             MobileShell.show(this);
-            ui.post(this::showLastCrashIfAny);
             return;
         }
         Cms.Site selected = null;
