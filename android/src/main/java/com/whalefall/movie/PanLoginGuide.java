@@ -492,7 +492,7 @@ final class PanLoginGuide {
             subLp.topMargin = a.dp(2);
             col.addView(sub, subLp);
             row.addView(col, new LinearLayout.LayoutParams(0, -2, 1f));
-            TextView manage = a.text(logged ? "管理" : "登录", 11.5f, UiTokens.ACCENT_SOFT);
+            TextView manage = a.text(known ? "管理" : "登录", 11.5f, UiTokens.ACCENT_SOFT);
             manage.setTypeface(null, Typeface.BOLD);
             manage.setGravity(Gravity.CENTER);
             manage.setPadding(a.dp(12), 0, a.dp(12), 0);
