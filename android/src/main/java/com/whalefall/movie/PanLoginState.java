@@ -295,6 +295,18 @@ final class PanLoginState {
         return out.toString();
     }
 
+    /** 诊断日志用：完整拼接（最多 80 项，避免超长日志）。 */
+    private static String joinAll(List<String> values) {
+        StringBuilder out = new StringBuilder();
+        int limit = Math.min(values.size(), 80);
+        for (int i = 0; i < limit; i++) {
+            if (out.length() > 0) out.append(',');
+            out.append(values.get(i));
+        }
+        if (values.size() > limit) out.append(",…");
+        return out.toString();
+    }
+
     private static List<String> evidenceFor(List<Hit> hits, String drive) {
         List<String> out = new ArrayList<>();
         if (hits == null) return out;
@@ -579,47 +591,321 @@ final class PanLoginState {
         return "";
     }
 
-    /** C：诊断入口——跑一次完整扫描并把命中位置写日志（不含值），用户截运行日志即可。 */
-    static void diagnose(MainActivity a, Runnable done) {
-        a.worker.execute(
+    // ---------------- 诊断 v2 ----------------
+
+    private static final int DIAG_MAX_FILES = 800;
+    private static final long DIAG_MAX_FILE_BYTES = 8L * 1024 * 1024;
+    private static final long DIAG_MAX_TOTAL_BYTES = 64L * 1024 * 1024;
+    private static final String[] COOKIE_BLOB_KEYWORDS = {
+        "quark", "kps", "puus", "bduss", "baidu", "uc_st", "_uc_s", "alipan", "aliyundrive",
+        "refresh_token"
+    };
+
+    private static final class FileInfo {
+        final File file;
+        final String rel;
+        final long size;
+        final long mtime;
+
+        FileInfo(File file, String rel, long size, long mtime) {
+            this.file = file;
+            this.rel = rel;
+            this.size = size;
+            this.mtime = mtime;
+        }
+    }
+
+    private static final class DirRoot {
+        final String label;
+        final File root;
+
+        DirRoot(String label, File root) {
+            this.label = label;
+            this.root = root;
+        }
+    }
+
+    private static List<DirRoot> diagnosticRoots(MainActivity a) {
+        List<DirRoot> roots = new ArrayList<>();
+        try {
+            File dataDir = new File(a.getApplicationInfo().dataDir);
+            addRoot(roots, "files", a.getFilesDir());
+            try {
+                addRoot(roots, "no_backup", a.getNoBackupFilesDir());
+            } catch (Throwable ignored) {
+            }
+            addRoot(roots, "databases", new File(dataDir, "databases"));
+            addRoot(roots, "cache", a.getCacheDir());
+            try {
+                addRoot(roots, "external_files", a.getExternalFilesDir(null));
+            } catch (Throwable ignored) {
+            }
+            addRoot(roots, "app_webview", new File(dataDir, "app_webview"));
+        } catch (Throwable error) {
+            AppLog.w("PanLogin", "diagnose roots failed", error);
+        }
+        return roots;
+    }
+
+    private static void addRoot(List<DirRoot> roots, String label, File root) {
+        if (root != null && root.isDirectory()) roots.add(new DirRoot(label, root));
+    }
+
+    private static void collect(File dir, String prefix, List<FileInfo> out, int[] budget) {
+        if (dir == null || budget[0] <= 0) return;
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (budget[0] <= 0) return;
+            if (file.isDirectory()) {
+                if (SKIP_DIRS.contains(file.getName().toLowerCase(Locale.ROOT))) continue;
+                collect(file, prefix + file.getName() + "/", out, budget);
+                continue;
+            }
+            budget[0]--;
+            out.add(new FileInfo(file, prefix + file.getName(), file.length(), file.lastModified()));
+        }
+    }
+
+    private static boolean binaryExtension(String name) {
+        String lower = name.toLowerCase(Locale.ROOT);
+        for (String ext : BINARY_EXTENSIONS) if (lower.endsWith(ext)) return true;
+        return false;
+    }
+
+    private static boolean looksBinary(byte[] data, int length) {
+        int limit = Math.min(length, 1024);
+        for (int i = 0; i < limit; i++) if (data[i] == 0) return true;
+        return false;
+    }
+
+    private static String timeText(long millis) {
+        try {
+            return new java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.ROOT)
+                    .format(new java.util.Date(millis));
+        } catch (Throwable ignored) {
+            return String.valueOf(millis);
+        }
+    }
+
+    private static List<String> drivesForCookieBlob(String lower) {
+        List<String> out = new ArrayList<>();
+        if (lower.contains("quark") || lower.contains("kps") || lower.contains("puus"))
+            out.add("quark");
+        if (lower.contains("uc_st")
+                || lower.contains("_uc_s")
+                || lower.contains("uc.cn")
+                || lower.contains("puus")) out.add("uc");
+        if (lower.contains("baidu") || lower.contains("bduss")) out.add("baidu");
+        if (lower.contains("alipan")
+                || lower.contains("aliyundrive")
+                || lower.contains("refresh_token")) out.add("ali");
+        return out;
+    }
+
+    /** C：诊断 v2——目录清单/最近文件/Cookie 长度/扩大字节搜索，全部写日志（不含值）。 */
+    static void diagnose(final MainActivity a, final Runnable done) {
+        // 先在 UI 线程初始化 WebView，确保 CookieManager 提供者就绪后再读 Cookie
+        a.ui.post(
                 () -> {
                     try {
-                        List<Hit> prefHits = prefsHits(a);
-                        List<Hit> fileHits = fileHits(a);
-                        Map<String, String> cookies = cookieSnapshot();
-                        File prefsDir = new File(a.getApplicationInfo().dataDir, "shared_prefs");
-                        File[] prefFiles = prefsDir.listFiles();
-                        AppLog.i(
-                                "PanLogin",
-                                "diagnose prefs="
-                                        + (prefFiles == null ? 0 : prefFiles.length)
-                                        + " prefHits="
-                                        + prefHits.size()
-                                        + " files="
-                                        + fileCountForLog
-                                        + " fileHits="
-                                        + fileHits.size()
-                                        + " cookies=["
-                                        + join(cookies.keySet())
-                                        + "]");
-                        int shown = 0;
-                        for (Hit hit : prefHits) {
-                            if (shown++ >= 10) break;
-                            AppLog.i("PanLogin", "diagnose hit " + hit.drive + " " + hit.where);
-                        }
-                        for (Hit hit : fileHits) {
-                            if (shown++ >= 20) break;
-                            AppLog.i("PanLogin", "diagnose hit " + hit.drive + " " + hit.where);
-                        }
-                        int manual = 0;
-                        for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES)
-                            if (manualLogin(a, drive.key)) manual++;
-                        AppLog.i("PanLogin", "diagnose manual=" + manual);
+                        android.webkit.WebView web = new android.webkit.WebView(a);
+                        web.destroy();
                     } catch (Throwable error) {
-                        AppLog.w("PanLogin", "diagnose failed", error);
-                    } finally {
-                        if (done != null) a.ui.post(done);
+                        AppLog.w("PanLogin", "diagnose webview init failed", error);
                     }
+                    Map<String, String> cookies = new LinkedHashMap<>();
+                    Set<String> seenDomains = new LinkedHashSet<>();
+                    for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES)
+                        for (String domain : domains(drive.key)) seenDomains.add(domain);
+                    try {
+                        CookieManager manager = CookieManager.getInstance();
+                        for (String domain : seenDomains) {
+                            String cookie = manager.getCookie("https://" + domain);
+                            int length = cookie == null ? 0 : cookie.length();
+                            AppLog.i("PanLogin", "diagnose cookie dom=" + domain + " len=" + length);
+                            if (cookie != null && !cookie.isEmpty()) cookies.put(domain, cookie);
+                        }
+                    } catch (Throwable error) {
+                        AppLog.w("PanLogin", "diagnose cookie read failed", error);
+                    }
+                    a.worker.execute(() -> diagnoseScan(a, cookies, done));
                 });
+    }
+
+    private static void diagnoseScan(MainActivity a, Map<String, String> cookies, Runnable done) {
+        try {
+            File dataDir = new File(a.getApplicationInfo().dataDir);
+            // 1) prefs 文件名清单（不含 movie 系列）
+            File[] prefFiles = new File(dataDir, "shared_prefs").listFiles();
+            List<String> prefNames = new ArrayList<>();
+            if (prefFiles != null)
+                for (File file : prefFiles) {
+                    String name = file.getName();
+                    if (!name.endsWith(".xml")) continue;
+                    name = name.substring(0, name.length() - 4);
+                    if ("movie".equals(name) || "movie-private".equals(name)) continue;
+                    prefNames.add(name);
+                }
+            AppLog.i("PanLogin", "diagnose prefs files=[" + joinAll(prefNames) + "] count=" + prefNames.size());
+
+            // 2) 目录统计 + 最近文件
+            List<DirRoot> roots = diagnosticRoots(a);
+            List<FileInfo> all = new ArrayList<>();
+            int[] budget = {20000};
+            for (DirRoot root : roots) {
+                int[] before = {budget[0]};
+                List<FileInfo> dirFiles = new ArrayList<>();
+                collect(root.root, root.label + "/", dirFiles, new int[] {Math.min(20000, before[0])});
+                long bytes = 0;
+                for (FileInfo info : dirFiles) bytes += Math.max(0, info.size);
+                AppLog.i(
+                        "PanLogin",
+                        "diagnose dir "
+                                + root.label
+                                + " files="
+                                + dirFiles.size()
+                                + " bytes="
+                                + bytes);
+                all.addAll(dirFiles);
+                budget[0] -= dirFiles.size();
+                if (budget[0] <= 0) break;
+            }
+            List<FileInfo> recent = new ArrayList<>(all);
+            java.util.Collections.sort(
+                    recent,
+                    (left, right) -> Long.compare(right.mtime, left.mtime));
+            int shown = 0;
+            for (FileInfo info : recent) {
+                if (shown >= 15) break;
+                shown++;
+                AppLog.i(
+                        "PanLogin",
+                        "diagnose recent #"
+                                + shown
+                                + " "
+                                + info.rel
+                                + " size="
+                                + info.size
+                                + " mtime="
+                                + timeText(info.mtime));
+            }
+
+            // 3) databases 与 app_webview/Cookies
+            try {
+                File dbDir = new File(dataDir, "databases");
+                File[] dbs = dbDir.listFiles();
+                if (dbs != null)
+                    for (File db : dbs) {
+                        String lower = db.getName().toLowerCase(Locale.ROOT);
+                        if (lower.endsWith(".db") || lower.endsWith(".sqlite") || lower.contains("cookie"))
+                            AppLog.i(
+                                    "PanLogin",
+                                    "diagnose db file="
+                                            + db.getName()
+                                            + " size="
+                                            + db.length());
+                    }
+            } catch (Throwable ignored) {
+            }
+            findCookieDb(new File(dataDir, "app_webview"), 0);
+
+            // 4) 扩大字节搜索：最多 800 文件 / 单文件 ≤8MB / 总读 ≤64MB，mtime 新→旧
+            int scanned = 0, hits = 0;
+            long readBytes = 0;
+            for (FileInfo info : recent) {
+                if (scanned >= DIAG_MAX_FILES || readBytes >= DIAG_MAX_TOTAL_BYTES) break;
+                if (info.size <= 0 || info.size > DIAG_MAX_FILE_BYTES) continue;
+                if (binaryExtension(info.file.getName())) continue;
+                scanned++;
+                byte[] data;
+                try {
+                    try (java.io.InputStream in = new java.io.FileInputStream(info.file)) {
+                        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                        byte[] buffer = new byte[65536];
+                        int n;
+                        while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+                        data = out.toByteArray();
+                    }
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                readBytes += data.length;
+                if (looksBinary(data, data.length)) continue;
+                String text;
+                try {
+                    text = new String(data, "UTF-8");
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                String lower = text.toLowerCase(Locale.ROOT);
+                List<String> drives = drivesForToken(lower);
+                boolean cookieBlob =
+                        lower.indexOf('=') >= 0 && lower.indexOf(';') >= 0;
+                if (cookieBlob) {
+                    for (String drive : drivesForCookieBlob(lower))
+                        if (!drives.contains(drive)) drives.add(drive);
+                }
+                if (drives.isEmpty()) continue;
+                for (String drive : drives) {
+                    hits++;
+                    AppLog.i(
+                            "PanLogin",
+                            "diagnose hit "
+                                    + drive
+                                    + " files:"
+                                    + info.rel
+                                    + " size="
+                                    + info.size
+                                    + " mtime="
+                                    + timeText(info.mtime));
+                    if (hits >= 40) break;
+                }
+                if (hits >= 40) break;
+            }
+            AppLog.i(
+                    "PanLogin",
+                    "diagnose bytescan files="
+                            + scanned
+                            + " read="
+                            + readBytes
+                            + " hits="
+                            + hits);
+
+            int manual = 0;
+            for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES)
+                if (manualLogin(a, drive.key)) manual++;
+            AppLog.i(
+                    "PanLogin",
+                    "diagnose done cookieDomains=["
+                            + join(cookies.keySet())
+                            + "] manual="
+                            + manual);
+        } catch (Throwable error) {
+            AppLog.w("PanLogin", "diagnose failed", error);
+        } finally {
+            if (done != null) a.ui.post(done);
+        }
+    }
+
+    /** app_webview 下的 Cookies DB（深度 ≤4），只记录路径与大小。 */
+    private static void findCookieDb(File dir, int depth) {
+        if (dir == null || depth > 4) return;
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (file.isDirectory()) {
+                findCookieDb(file, depth + 1);
+                continue;
+            }
+            String name = file.getName().toLowerCase(Locale.ROOT);
+            if (name.startsWith("cookies"))
+                AppLog.i(
+                        "PanLogin",
+                        "diagnose appwebview cookie-db="
+                                + file.getAbsolutePath().replace("/data/user/0/", "")
+                                + " size="
+                                + file.length());
+        }
     }
 }

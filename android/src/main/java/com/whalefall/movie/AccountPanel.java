@@ -647,13 +647,16 @@ final class AccountPanel {
                     dotColor = DOT_ORANGE;
                     label = "由源管理 · 无法读取";
                     detail =
-                            "本机没有可确认的本地凭据或 Cookie；登录状态由配置源内部管理，"
-                                    + "请用登录引导打开源面板确认。";
+                            "本机未发现可读取的登录数据（插件可能加密存储/仅内存）→ "
+                                    + "可到源面板确认，或在网盘登录引导里「手动标记为已登录」；"
+                                    + "也可先点「诊断登录数据」把日志发我们定位。";
                     break;
                 default:
                     dotColor = DOT_GRAY;
                     label = "无法确认 · 由源管理";
-                    detail = "本机未检测到可确认信号（不等于未登录）；请用登录引导打开源面板查看真实状态。";
+                    detail =
+                            "本机未发现可读取的登录数据（不等于未登录）→ 可到源面板确认，"
+                                    + "或在网盘登录引导里手动标记；也可先点「诊断登录数据」。";
                     break;
             }
             statusDot.setBackground(UiTokens.circle(dotColor));
