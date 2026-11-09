@@ -3052,7 +3052,9 @@ final class MobileShell {
                                 MainActivity.MUTED);
                 hint.setGravity(Gravity.CENTER);
                 box.addView(hint);
-                return new RowHolder(box);
+                RowHolder holder = new RowHolder(box);
+                holder.emptyRow = true;
+                return holder;
             }
             LinearLayout row = a.row();
             row.setGravity(Gravity.CENTER_VERTICAL);
@@ -3061,8 +3063,9 @@ final class MobileShell {
                     glassBg(0xcc1e3557, 0xcc17294a, a.dp(16), a.dp(0.7f), 0x33ffffff));
             MobileDetailScreen.bindTouchFeedback(row);
 
+            RowHolder holder = new RowHolder(row);
             ImageView thumb = new ImageView(a);
-            thumb.setTag("row-thumb");
+            holder.thumb = thumb;
             thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
             thumb.setBackground(a.bg(0xff1b2e48, 10));
             thumb.setClipToOutline(true);
@@ -3072,33 +3075,34 @@ final class MobileShell {
 
             LinearLayout info = a.vertical();
             TextView title = a.text("", 15, MainActivity.WHITE);
-            title.setTag("row-title");
+            holder.title = title;
             title.setTypeface(null, Typeface.BOLD);
             title.setSingleLine(true);
             title.setEllipsize(TextUtils.TruncateAt.END);
             info.addView(title);
             TextView sub = a.text("", 12, MainActivity.MUTED);
-            sub.setTag("row-sub");
+            holder.sub = sub;
             sub.setPadding(0, a.dp(5), 0, 0);
             info.addView(sub);
             row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
 
             TextView action = a.text("", 12, 0xffef4444);
-            action.setTag("row-action");
+            holder.action = action;
             action.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
             MobileDetailScreen.bindTouchFeedback(action);
             row.addView(action);
-            return new RowHolder(row);
+            return holder;
         }
 
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
-            if (empty) return;
-            LinearLayout row = (LinearLayout) holder.itemView;
-            ImageView thumb = row.findViewWithTag("row-thumb");
-            TextView title = row.findViewWithTag("row-title");
-            TextView sub = row.findViewWithTag("row-sub");
-            TextView action = row.findViewWithTag("row-action");
+            RowHolder h = (RowHolder) holder;
+            if (h.emptyRow) return;
+            LinearLayout row = (LinearLayout) h.itemView;
+            ImageView thumb = h.thumb;
+            TextView title = h.title;
+            TextView sub = h.sub;
+            TextView action = h.action;
 
             if (favoritesMode) {
                 final Favorites.Entry f = favorites.get(position);
@@ -3149,6 +3153,10 @@ final class MobileShell {
     }
 
     private static final class RowHolder extends RecyclerView.ViewHolder {
+        ImageView thumb;
+        TextView title, sub, action;
+        boolean emptyRow;
+
         RowHolder(View itemView) {
             super(itemView);
         }
