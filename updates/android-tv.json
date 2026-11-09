@@ -1,14 +1,24 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.4.4",
-  "versionCode": 14004,
+  "versionName": "1.4.5",
+  "versionCode": 14005,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.4.4（手机 / 平板 / 电视）\n\n- 修复页面切换/返回/旋转后壁纸丢失或退成纯色：统一幂等壁纸层（base 渐变 + 静态壁纸层唯一 / 动态壁纸单例迁移），所有页面入口与返回栈重建点都会补齐壁纸\n- 动态壁纸迁移先摘旧父、插到内容之下；页面切换不再释放壁纸（只在退出/关闭视频壁纸时释放）\n- 静态壁纸文件缺失/解码失败会写运行日志（W/Wallpaper），不再静默显示纯色\n- 新增 I/Wallpaper 状态日志（状态变化才打），方便排查\n- 含 1.4.3 全部内容（播放页点按/铺满、运行日志复制、TV 功能对齐与详情页重排等）\n- 本版壁纸修复未真机验证（V27），发布说明须保留未验证标注",
-  "size": 36240198,
-  "sha256": "f972d529df2f0c649cb6655b608f576d3672449ba635509d2acf136304b02751",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.4/WhaleFall-1.4.4-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.4/WhaleFall-1.4.4-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.4"
+  "notes": "# 鲸落 1.4.5（手机 / 平板 / 电视）\n\n- 修复动态壁纸盖住播放器视频（播放页纯黑不铺壁纸，退出后壁纸立即恢复）\n- 检查更新支持选择下载不同包体：标准 / arm64 精简 / R8 精简 / TV（feed 新增可选 variants，旧 feed 兼容）\n- 新增字体颜色自定义：预设色板 + RGB 滑条（手机可输 HEX）+ 3 组推荐 + 恢复默认；次要文字自动降透明度，强调色不跟随\n- 含 1.4.4 全部内容（壁纸生命周期统一修复）与 1.4.3/1.4.2 全部修复\n- 本版未真机验证（V27/V28/V29/V30），发布说明须保留未验证标注",
+  "size": 36248390,
+  "sha256": "d1e9b1d31d151659f8a08dac779042400589f7a2165c1393e40b919d383523ec",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.5/WhaleFall-1.4.5-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.5/WhaleFall-1.4.5-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.5",
+  "variants": [
+    {
+      "kind": "tv",
+      "label": "电视版（TV/盒子）",
+      "size": 36248390,
+      "sha256": "d1e9b1d31d151659f8a08dac779042400589f7a2165c1393e40b919d383523ec",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.5/WhaleFall-1.4.5-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.5/WhaleFall-1.4.5-android-tv.apk"
+    }
+  ]
 }
