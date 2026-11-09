@@ -27,6 +27,9 @@ import org.json.JSONObject;
 final class PlaybackController {
     private PlaybackController() {}
 
+    /** 播放页布局诊断日志只打一次（用户反馈「播放页卡片化」时看 设置→运行日志）。 */
+    private static boolean layoutLogged;
+
     static String formatTime(int ms) {
         int sec = Math.max(0, ms / 1000);
         return sec >= 3600
@@ -977,54 +980,7 @@ final class PlaybackController {
         a.setContentView(a.root);
         if (!a.isTvDevice()) a.root.requestApplyInsets();
         // 一次性诊断：首帧布局后记录 layer/surface/chrome 尺寸与安全区（播放页「卡片化」排查用）
-        a.root.post(
-                () -> {
-                    if (ticket != a.generation || a.isFinishing()) return;
-                    View video =
-                            a.playbackLayer == null
-                                    ? null
-                                    : a.playbackLayer.findViewWithTag("video-output");
-                    ViewGroup.LayoutParams vlp = video == null ? null : video.getLayoutParams();
-                    int sw =
-                            vlp instanceof FrameLayout.LayoutParams
-                                    ? ((FrameLayout.LayoutParams) vlp).width
-                                    : -1;
-                    int sh =
-                            vlp instanceof FrameLayout.LayoutParams
-                                    ? ((FrameLayout.LayoutParams) vlp).height
-                                    : -1;
-                    int ow = 0, oh = 0;
-                    String safe = "?";
-                    if (a.playerChrome != null && a.playerChrome.overlay != null) {
-                        ow = a.playerChrome.overlay.getWidth();
-                        oh = a.playerChrome.overlay.getHeight();
-                        android.graphics.Rect r = a.playerChrome.windowInsets;
-                        safe = r.left + "," + r.top + "," + r.right + "," + r.bottom;
-                    }
-                    AppLog.i(
-                            "Player",
-                            "layout layer="
-                                    + (a.playbackLayer == null
-                                            ? "?"
-                                            : a.playbackLayer.getWidth()
-                                                    + "x"
-                                                    + a.playbackLayer.getHeight())
-                                    + " surface="
-                                    + sw
-                                    + "x"
-                                    + sh
-                                    + " actual="
-                                    + (video == null ? "?" : video.getWidth() + "x" + video.getHeight())
-                                    + " overlay="
-                                    + ow
-                                    + "x"
-                                    + oh
-                                    + " safe=["
-                                    + safe
-                                    + "]"
-                                    + " fill="
-                                    + a.prefs.getInt(Prefs.ASPECT, 4));
-                });
+        logPlaybackLayout(a, ticket, 0);
         surface.listen(
                 new VideoOutput.Listener() {
                     Surface renderSurface;
@@ -1571,6 +1527,59 @@ final class PlaybackController {
         }
         a.embyReporter.stop(position);
         a.embyReporter = null;
+    }
+
+    /** 播放页首帧布局诊断：layer/surface/overlay 尺寸与 chrome 安全区，只写一次运行日志。 */
+    private static void logPlaybackLayout(
+            final MainActivity a, final int ticket, final int attempt) {
+        if (layoutLogged || ticket != a.generation || a.isFinishing()) return;
+        if (a.playbackLayer == null
+                || a.playbackLayer.getWidth() <= 0
+                || a.playbackLayer.getHeight() <= 0) {
+            if (attempt < 10)
+                a.ui.postDelayed(() -> logPlaybackLayout(a, ticket, attempt + 1), 50);
+            return;
+        }
+        layoutLogged = true;
+        View video = a.playbackLayer.findViewWithTag("video-output");
+        ViewGroup.LayoutParams vlp = video == null ? null : video.getLayoutParams();
+        int sw =
+                vlp instanceof FrameLayout.LayoutParams
+                        ? ((FrameLayout.LayoutParams) vlp).width
+                        : -1;
+        int sh =
+                vlp instanceof FrameLayout.LayoutParams
+                        ? ((FrameLayout.LayoutParams) vlp).height
+                        : -1;
+        int ow = 0, oh = 0;
+        String safe = "?";
+        if (a.playerChrome != null && a.playerChrome.overlay != null) {
+            ow = a.playerChrome.overlay.getWidth();
+            oh = a.playerChrome.overlay.getHeight();
+            android.graphics.Rect r = a.playerChrome.windowInsets;
+            safe = r.left + "," + r.top + "," + r.right + "," + r.bottom;
+        }
+        AppLog.i(
+                "Player",
+                "layout layer="
+                        + a.playbackLayer.getWidth()
+                        + "x"
+                        + a.playbackLayer.getHeight()
+                        + " surface="
+                        + sw
+                        + "x"
+                        + sh
+                        + " actual="
+                        + (video == null ? "?" : video.getWidth() + "x" + video.getHeight())
+                        + " overlay="
+                        + ow
+                        + "x"
+                        + oh
+                        + " safe=["
+                        + safe
+                        + "]"
+                        + " fill="
+                        + a.prefs.getInt(Prefs.ASPECT, 4));
     }
 
     static void releasePlayer(MainActivity a) {
