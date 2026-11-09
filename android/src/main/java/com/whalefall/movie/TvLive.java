@@ -277,9 +277,16 @@ final class TvLive {
 
     static View screen(MainActivity a) {
         if (!a.isTvDevice()) {
+            // 响应式：手机（最小宽度 < 600dp）列表竖屏；平板保持横屏三栏布局
+            int smallestWidth =
+                    a.getResources().getConfiguration().smallestScreenWidthDp;
             try {
                 a.setRequestedOrientation(
-                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+                        smallestWidth >= 600
+                                ? android.content.pm.ActivityInfo
+                                        .SCREEN_ORIENTATION_UNSPECIFIED
+                                : android.content.pm.ActivityInfo
+                                        .SCREEN_ORIENTATION_PORTRAIT);
             } catch (Throwable ignored) {
             }
         }
