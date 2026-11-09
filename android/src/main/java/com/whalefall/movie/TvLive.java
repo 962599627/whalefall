@@ -318,7 +318,8 @@ final class TvLive {
                         a.dp(tv ? 300 : (wide ? 252 : 0)));
 
         FrameLayout root = new FrameLayout(a);
-        root.setBackground(Skin.backdrop(a));
+        // 不铺不透明 backdrop：让 MainActivity 安装的应用壁纸透出来（与文件管理/详情页一致）。
+        // 子面板自带 glass 底，文字对比度沿用现有 token。
 
         LinearLayout shell = a.vertical();
         root.addView(shell, new FrameLayout.LayoutParams(-1, -1));

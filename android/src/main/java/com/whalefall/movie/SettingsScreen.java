@@ -78,7 +78,7 @@ final class SettingsScreen {
                     "文件管理",
                     "浏览 / 重命名 / 预览 / 删除；上传建议用管理员后台或 FTP",
                     "settings-files",
-                    () -> a.open(new MainActivity.Screen(() -> FilesScreen.show(a)), true));
+                    () -> FilesScreen.show(a));
             link(
                     "管理员后台（手机/电脑）",
                     "扫码或用浏览器打开，用手机/电脑管理文件与设置",

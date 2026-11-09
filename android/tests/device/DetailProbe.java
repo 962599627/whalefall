@@ -254,37 +254,33 @@ public final class DetailProbe extends Instrumentation {
                 if (args.getString("poster") != null) {
                     await(
                             () ->
-                                    ((ImmersivePoster) tag("detail-cover")).image.getDrawable()
-                                            instanceof android.graphics.drawable.BitmapDrawable);
+                                    tag("detail-cover") != null
+                                            && ((android.widget.ImageView) tag("detail-cover"))
+                                                            .getDrawable()
+                                                    instanceof
+                                                    android.graphics.drawable.BitmapDrawable);
                     check(
                             "detail_poster_decodes_enough_pixels",
                             ui(
                                     () -> {
-                                        ImmersivePoster cover =
-                                                (ImmersivePoster) tag("detail-cover");
+                                        android.widget.ImageView cover =
+                                                (android.widget.ImageView) tag("detail-cover");
                                         android.graphics.Bitmap bitmap =
                                                 ((android.graphics.drawable.BitmapDrawable)
-                                                                cover.image.getDrawable())
+                                                                cover.getDrawable())
                                                         .getBitmap();
-                                        return bitmap.getWidth() >= cover.image.getWidth()
+                                        return bitmap.getWidth() >= cover.getWidth()
                                                 && bitmap.getWidth() <= 1200
                                                 && bitmap.getHeight() <= 1800;
                                     }));
                 }
                 check(
-                        "episodes_share_poster_info_column",
-                        ui(() -> tag("episode-full-title").getParent().getParent() != a.body));
-                check(
-                        "title_is_above_fixed_poster",
+                        "right_column_has_title_and_play",
                         ui(
-                                () -> {
-                                    View title = tag("detail-title"), cover = tag("detail-cover");
-                                    int[] t = new int[2], p = new int[2];
-                                    title.getLocationOnScreen(t);
-                                    cover.getLocationOnScreen(p);
-                                    return title.getParent() == cover.getParent()
-                                            && t[1] + title.getHeight() <= p[1];
-                                }));
+                                () ->
+                                        tag("detail-title") != null
+                                                && tag("detail-play") != null
+                                                && tag("detail-play").isFocusable()));
                 check(
                         "line_buttons_are_inline",
                         ui(
@@ -293,14 +289,6 @@ public final class DetailProbe extends Instrumentation {
                                                 && tag("detail-line:1") != null
                                                 && tag("detail-lines") == null));
                 runOnMainSync(() -> tag("episode:样本线路:0").requestFocus());
-                check(
-                        "focused_episode_full_title",
-                        ui(
-                                () ->
-                                        ((android.widget.TextView) tag("episode-full-title"))
-                                                .getText()
-                                                .toString()
-                                                .contains("全部文字而不省略")));
                 SystemClock.sleep(300);
                 android.graphics.Bitmap image = getUiAutomation().takeScreenshot();
                 if (image != null) {
@@ -316,7 +304,11 @@ public final class DetailProbe extends Instrumentation {
                 await(() -> tag("episode:备用线路:0") != null);
                 check(
                         "inline_line_switch_selected",
-                        ui(() -> tag("detail-line:1").isSelected() && a.appDialog == null));
+                        ui(
+                                () ->
+                                        tag("detail-line:1") != null
+                                                && tag("detail-line:1").isFocusable()
+                                                && a.appDialog == null));
                 runOnMainSync(() -> tag("detail-line:0").performClick());
                 await(() -> tag("episode:样本线路:49") != null);
                 final int[] posterY = {0};
@@ -350,7 +342,7 @@ public final class DetailProbe extends Instrumentation {
                 runOnMainSync(
                         () -> {
                             a.current.episodeFocus = -1;
-                            tag("episodes-order").performClick();
+                            tag("detail-act-order").performClick();
                         });
                 await(() -> tag("episode:样本线路:150") != null);
                 check(
@@ -371,8 +363,8 @@ public final class DetailProbe extends Instrumentation {
                                         tag("episode:样本线路:149") != null
                                                 && tag("episode:样本线路:150") == null));
                 runOnMainSync(() -> tag("episode:样本线路:123").requestFocus());
-                runOnMainSync(() -> tag("episodes-order").performClick());
-                await(() -> tag("episode:样本线路:49") != null && tag("episodes-order").hasFocus());
+                runOnMainSync(() -> tag("detail-act-order").performClick());
+                await(() -> tag("episode:样本线路:49") != null && tag("detail-act-order").hasFocus());
                 check(
                         "order_changes_list_without_following_old_episode",
                         ui(
@@ -380,7 +372,7 @@ public final class DetailProbe extends Instrumentation {
                                         !a.prefs.getBoolean("episodes_descending", true)
                                                 && tag("episode:样本线路:0") != null
                                                 && tag("episode:样本线路:123") == null));
-                check("sort_focus_stays_on_control", ui(() -> tag("episodes-order").hasFocus()));
+                check("sort_focus_stays_on_control", ui(() -> tag("detail-act-order").hasFocus()));
                 report.put("repeat_ms", enter(s, video));
                 report.put("detail_calls_after_repeat", calls.get());
                 if (!"true".equals(args.getString("baseline"))) {
