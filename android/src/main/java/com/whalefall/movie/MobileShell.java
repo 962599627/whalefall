@@ -3074,7 +3074,11 @@ final class MobileShell {
 
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
-            if (viewType == 2) return new RowHolder(buildEmpty());
+            if (viewType == 2) {
+                RowHolder emptyHolder = new RowHolder(buildEmpty());
+                emptyHolder.emptyRow = true;
+                return emptyHolder;
+            }
             RowHolder holder;
             if (viewType == 0) {
                 holder = new RowHolder(buildRow());
@@ -3238,7 +3242,7 @@ final class MobileShell {
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
             RowHolder h = (RowHolder) holder;
-            if (h.emptyRow) return;
+            if (h.emptyRow || empty) return;
             if (favoritesMode) {
                 final Favorites.Entry f = favorites.get(position);
                 h.title.setText(f.title);

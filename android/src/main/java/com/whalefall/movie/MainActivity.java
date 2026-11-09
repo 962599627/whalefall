@@ -331,37 +331,77 @@ public final class MainActivity extends Activity {
         }
     }
 
-    /** 启动时展示上次崩溃栈，并另存一份到内置文件管理，方便截图/查看。 */
+    /** 设置内查看上次崩溃栈：可复制、可清空，并另存一份到内置文件管理。 */
     void showCrashLog() {
+        String text = null;
         try {
             java.io.File src = new java.io.File(getFilesDir(), "crash-last.txt");
-            if (!src.isFile()) return;
-            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-            try (java.io.InputStream in = new java.io.FileInputStream(src)) {
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            if (src.isFile()) {
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                try (java.io.InputStream in = new java.io.FileInputStream(src)) {
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                }
+                text = new String(out.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
             }
-            String text = new String(out.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
-            if (text.trim().isEmpty()) return;
-            PushFiles.writeText(this, "崩溃日志/上次崩溃.txt", text);
-            final String preview =
-                    text.length() > 1800 ? text.substring(0, 1800) + "\n…（完整内容见 文件管理/崩溃日志/上次崩溃.txt）" : text;
-            new AppDialog.Builder(this)
-                    .setTitle("上次崩溃日志")
-                    .setMessage(preview)
-                    .setPositiveButton("复制", (d, w) -> {
+        } catch (Throwable ignored) {
+        }
+        final String content = text;
+        TextView view = new TextView(this);
+        view.setTextSize(11f);
+        view.setTypeface(android.graphics.Typeface.MONOSPACE);
+        view.setTextColor(0xffd5e1f2);
+        view.setLineSpacing(0f, 1.15f);
+        view.setPadding(dp(12), dp(12), dp(12), dp(12));
+        view.setBackground(MobileDetailScreen.glassBg(this, 0x66000000, 0x33ffffff, 14));
+        view.setText(
+                content == null || content.trim().isEmpty()
+                        ? "暂无崩溃记录。\n\nApp 正常运行时不会产生此文件；发生崩溃后会自动保存最近一次堆栈。"
+                        : content);
+        view.setMaxLines(24);
+        view.setVerticalScrollBarEnabled(true);
+        view.setMovementMethod(android.text.method.ScrollingMovementMethod.getInstance());
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.addView(view, new android.widget.FrameLayout.LayoutParams(-1, -2));
+        android.widget.FrameLayout host = new android.widget.FrameLayout(this);
+        int pad = dp(4);
+        host.setPadding(pad, pad, pad, 0);
+        host.addView(scroll, new android.widget.FrameLayout.LayoutParams(-1, dp(320)));
+
+        AppDialog.Builder builder =
+                new AppDialog.Builder(this)
+                        .setTitle("崩溃记录")
+                        .setView(host)
+                        .setNegativeButton("关闭", null);
+        if (content != null && !content.trim().isEmpty()) {
+            builder.setNeutralButton(
+                    "复制",
+                    (d, w) -> {
                         android.content.ClipboardManager cm =
                                 (android.content.ClipboardManager)
                                         getSystemService(CLIPBOARD_SERVICE);
-                        cm.setPrimaryClip(
-                                android.content.ClipData.newPlainText("崩溃日志", text));
-                        toast("崩溃日志已复制");
-                    })
-                    .setNegativeButton("关闭", null)
-                    .show();
-        } catch (Throwable ignored) {
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("崩溃记录", content));
+                        toast("崩溃记录已复制");
+                    });
+            builder.setPositiveButton(
+                    "清空记录",
+                    (d, w) -> {
+                        try {
+                            java.io.File src = new java.io.File(getFilesDir(), "crash-last.txt");
+                            if (src.exists()) //noinspection ResultOfMethodCallIgnored
+                                src.delete();
+                            java.io.File pushed =
+                                    new java.io.File(getFilesDir(), "pushed/崩溃日志/上次崩溃.txt");
+                            if (pushed.exists()) //noinspection ResultOfMethodCallIgnored
+                                pushed.delete();
+                        } catch (Throwable ignored) {
+                        }
+                        toast("崩溃记录已清空");
+                    });
         }
+        builder.show();
     }
 
     /** 把上次崩溃栈复制到应用外部目录，便于直接取出排查。 */
@@ -1365,45 +1405,10 @@ public final class MainActivity extends Activity {
     }
 
     void toast(String message) {
-        final FrameLayout parent = root;
-        if (parent == null) return;
-        View previous = parent.findViewWithTag("app-toast");
-        if (previous != null && previous.getParent() == parent) parent.removeView(previous);
-        TextView tip = text(message, 14, WHITE);
-        tip.setGravity(Gravity.CENTER);
-        tip.setPadding(dp(22), dp(12), dp(22), dp(12));
-        glass(tip, 22);
-        tip.setTag("app-toast");
-        FrameLayout.LayoutParams size =
-                new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        size.bottomMargin = dp(24);
-        View dock = parent.findViewWithTag("home-dock");
-        if (dock != null
-                && dock.getVisibility() == View.VISIBLE
-                && dock.getLayoutParams() instanceof FrameLayout.LayoutParams) {
-            FrameLayout.LayoutParams rail = (FrameLayout.LayoutParams) dock.getLayoutParams();
-            if ((rail.gravity & Gravity.VERTICAL_GRAVITY_MASK) == Gravity.BOTTOM) {
-                size.bottomMargin =
-                        Math.max(
-                                size.bottomMargin,
-                                Math.max(dock.getHeight(), rail.height)
-                                        + rail.bottomMargin
-                                        + dp(10));
-            } else {
-                size.rightMargin =
-                        Math.max(dock.getWidth(), rail.width) + rail.rightMargin + dp(10);
-            }
-            tip.setElevation(dock.getElevation() + dp(1));
+        try {
+            android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show();
+        } catch (Throwable ignored) {
         }
-        android.graphics.Rect visible = new android.graphics.Rect();
-        parent.getWindowVisibleDisplayFrame(visible);
-        int[] xy = new int[2];
-        parent.getLocationOnScreen(xy);
-        size.bottomMargin =
-                Math.max(size.bottomMargin, xy[1] + parent.getHeight() - visible.bottom + dp(10));
-        tip.setMaxWidth(Math.max(dp(80), parent.getWidth() - size.rightMargin - dp(32)));
-        parent.addView(tip, size);
-        ui.postDelayed(() -> parent.removeView(tip), 2600);
     }
 
     void cancelPageRequests() {
