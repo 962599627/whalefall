@@ -927,33 +927,24 @@ final class PlaybackController {
             final PlayerChrome chrome = a.playerChrome;
             a.root.setOnApplyWindowInsetsListener(
                     (view, insets) -> {
-                        int left = insets.getSystemWindowInsetLeft();
-                        int top = insets.getSystemWindowInsetTop();
-                        int right = insets.getSystemWindowInsetRight();
-                        int bottom = insets.getSystemWindowInsetBottom();
+                        // 全屏播放页：chrome 只避让屏幕切孔，不再避让状态栏/导航栏/手势区。
+                        // 内缩由 PlayerChrome 自身的 16/24dp 设计边距负责，保证控件贴住屏幕边缘。
+                        int left = 0, top = 0, right = 0, bottom = 0;
                         if (android.os.Build.VERSION.SDK_INT >= 30) {
-                            android.graphics.Insets safe =
+                            android.graphics.Insets cutout =
                                     insets.getInsets(
-                                            android.view.WindowInsets.Type.systemBars()
-                                                    | android.view.WindowInsets.Type.displayCutout()
-                                                    | android.view.WindowInsets.Type
-                                                            .systemGestures());
-                            left = safe.left;
-                            top = safe.top;
-                            right = safe.right;
-                            android.graphics.Insets navigation =
-                                    insets.getInsetsIgnoringVisibility(
-                                            android.view.WindowInsets.Type.navigationBars());
-                            left = Math.max(left, navigation.left);
-                            right = Math.max(right, navigation.right);
-                            bottom = Math.max(safe.bottom, navigation.bottom);
+                                            android.view.WindowInsets.Type.displayCutout());
+                            left = cutout.left;
+                            top = cutout.top;
+                            right = cutout.right;
+                            bottom = cutout.bottom;
                         } else if (android.os.Build.VERSION.SDK_INT >= 28
                                 && insets.getDisplayCutout() != null) {
                             android.view.DisplayCutout cutout = insets.getDisplayCutout();
-                            left = Math.max(left, cutout.getSafeInsetLeft());
-                            top = Math.max(top, cutout.getSafeInsetTop());
-                            right = Math.max(right, cutout.getSafeInsetRight());
-                            bottom = Math.max(bottom, cutout.getSafeInsetBottom());
+                            left = cutout.getSafeInsetLeft();
+                            top = cutout.getSafeInsetTop();
+                            right = cutout.getSafeInsetRight();
+                            bottom = cutout.getSafeInsetBottom();
                         }
                         chrome.safeInsets(left, top, right, bottom);
                         return insets;
@@ -968,25 +959,72 @@ final class PlaybackController {
         a.root.addOnLayoutChangeListener(
                 (view, l, t, r, b, ol, ot, or, ob) -> {
                     int w = r - l, h = b - t;
-                    if (w > 0 && h > 0) {
-                        if (w != a.usableWidth || h != a.usableHeight) {
-                            a.usableWidth = w;
-                            a.usableHeight = h;
-                            view.post(
-                                    () -> {
-                                        if (ticket != a.generation || a.isFinishing()) return;
-                                        if (a.playerChrome != null) a.playerChrome.relayout();
-                                        if (a.playbackControls != null) {
-                                            a.playbackControls.resize(
-                                                    a.playbackControls.videoWidth,
-                                                    a.playbackControls.videoHeight);
-                                        }
-                                    });
-                        }
-                    }
+                    if (w <= 0 || h <= 0) return;
+                    a.usableWidth = w;
+                    a.usableHeight = h;
+                    // 每次窗口布局完成都重排 chrome + 重算 surface（旧尺寸只算一次会长期停在小卡）
+                    view.post(
+                            () -> {
+                                if (ticket != a.generation || a.isFinishing()) return;
+                                if (a.playerChrome != null) a.playerChrome.relayout();
+                                if (a.playbackControls != null) {
+                                    a.playbackControls.resize(
+                                            a.playbackControls.videoWidth,
+                                            a.playbackControls.videoHeight);
+                                }
+                            });
                 });
         a.setContentView(a.root);
         if (!a.isTvDevice()) a.root.requestApplyInsets();
+        // 一次性诊断：首帧布局后记录 layer/surface/chrome 尺寸与安全区（播放页「卡片化」排查用）
+        a.root.post(
+                () -> {
+                    if (ticket != a.generation || a.isFinishing()) return;
+                    View video =
+                            a.playbackLayer == null
+                                    ? null
+                                    : a.playbackLayer.findViewWithTag("video-output");
+                    ViewGroup.LayoutParams vlp = video == null ? null : video.getLayoutParams();
+                    int sw =
+                            vlp instanceof FrameLayout.LayoutParams
+                                    ? ((FrameLayout.LayoutParams) vlp).width
+                                    : -1;
+                    int sh =
+                            vlp instanceof FrameLayout.LayoutParams
+                                    ? ((FrameLayout.LayoutParams) vlp).height
+                                    : -1;
+                    int ow = 0, oh = 0;
+                    String safe = "?";
+                    if (a.playerChrome != null && a.playerChrome.overlay != null) {
+                        ow = a.playerChrome.overlay.getWidth();
+                        oh = a.playerChrome.overlay.getHeight();
+                        android.graphics.Rect r = a.playerChrome.windowInsets;
+                        safe = r.left + "," + r.top + "," + r.right + "," + r.bottom;
+                    }
+                    AppLog.i(
+                            "Player",
+                            "layout layer="
+                                    + (a.playbackLayer == null
+                                            ? "?"
+                                            : a.playbackLayer.getWidth()
+                                                    + "x"
+                                                    + a.playbackLayer.getHeight())
+                                    + " surface="
+                                    + sw
+                                    + "x"
+                                    + sh
+                                    + " actual="
+                                    + (video == null ? "?" : video.getWidth() + "x" + video.getHeight())
+                                    + " overlay="
+                                    + ow
+                                    + "x"
+                                    + oh
+                                    + " safe=["
+                                    + safe
+                                    + "]"
+                                    + " fill="
+                                    + a.prefs.getInt(Prefs.ASPECT, 4));
+                });
         surface.listen(
                 new VideoOutput.Listener() {
                     Surface renderSurface;

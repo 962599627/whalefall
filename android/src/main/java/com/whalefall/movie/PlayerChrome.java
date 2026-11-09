@@ -559,6 +559,9 @@ final class PlayerChrome {
 
         if (a.playbackControls != null) {
             a.playbackControls.relayout(wideLayout);
+            // 安全区/尺寸变化后同步重算视频 surface：避免用旧窗口尺寸固定住一张「小卡」
+            a.playbackControls.resize(
+                    a.playbackControls.videoWidth, a.playbackControls.videoHeight);
         }
     }
 

@@ -35,6 +35,9 @@ final class PlaybackControls {
     int lastSeekTargetMs = -1;
     int pendingResumeMs;
     int videoWidth, videoHeight;
+    /** resize 时若 playbackLayer 还没测量完成，下一帧补一次（避免用旧尺寸固定 surface）。 */
+    boolean resizeRetryPending;
+    int resizeRetry;
 
     boolean isUserSeeking() {
         return touchSeeking || sliderSeeking;
@@ -1609,9 +1612,25 @@ final class PlaybackControls {
         videoWidth = width;
         videoHeight = height;
         if (a.playerChrome != null) a.playerChrome.resolution(width, height);
-        if (width <= 0 || height <= 0 || a.playbackLayer.getWidth() == 0) return;
-        int w = a.playbackLayer.getWidth(),
-                h = a.playbackLayer.getHeight(),
+        if (width <= 0 || height <= 0) return;
+        final FrameLayout layer = a.playbackLayer;
+        if (layer == null) return;
+        if (layer.getWidth() <= 0 || layer.getHeight() <= 0) {
+            // 首帧尚未测量：下一帧再算，避免把 surface 固定成 0/旧尺寸（最多重试 3 次防死循环）
+            if (!resizeRetryPending && resizeRetry < 3) {
+                resizeRetryPending = true;
+                resizeRetry++;
+                layer.post(
+                        () -> {
+                            resizeRetryPending = false;
+                            resize(videoWidth, videoHeight);
+                        });
+            }
+            return;
+        }
+        resizeRetry = 0;
+        int w = layer.getWidth(),
+                h = layer.getHeight(),
                 mode = a.prefs.getInt(Prefs.ASPECT, 4);
         float ratio = mode == 2 ? 16f / 9 : mode == 3 ? 4f / 3 : (float) width / height;
         if (mode != 1) {
@@ -1621,7 +1640,31 @@ final class PlaybackControls {
             } else if ((float) w / h > ratio) w = Math.round(h * ratio);
             else h = Math.round(w / ratio);
         }
+        FrameLayout.LayoutParams current =
+                surface.getLayoutParams() instanceof FrameLayout.LayoutParams
+                        ? (FrameLayout.LayoutParams) surface.getLayoutParams()
+                        : null;
+        if (current != null
+                && current.width == w
+                && current.height == h
+                && current.gravity == Gravity.CENTER) return;
         surface.setLayoutParams(new FrameLayout.LayoutParams(w, h, Gravity.CENTER));
+        AppLog.i(
+                "Player",
+                "resize layer="
+                        + layer.getWidth()
+                        + "x"
+                        + layer.getHeight()
+                        + " video="
+                        + width
+                        + "x"
+                        + height
+                        + " surface="
+                        + w
+                        + "x"
+                        + h
+                        + " mode="
+                        + mode);
     }
 
     void visible(boolean visible) {
