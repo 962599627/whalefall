@@ -28,3 +28,14 @@
 ## 出证后回我一句
 
 「1.4.9 V34：诊断日志是否包含 prefs 列表 / 目录统计 / Top15 / cookie 行，整段已回传。」
+
+---
+
+**实测结果（2026-11-10 01:57，1.4.9 包）**：用户回传 diagnostic，确认——
+
+- **prefs 无 token**；
+- **files 6 个 / 约 70MB**；**databases 2 个 / 12.8KB**（字节扫描跳过含 NUL 的文件）；
+- **`app_webview/Default/Cookies` 24KB，但 `CookieManager` `len=0`**；
+- **bytescan 498 文件 / 29MB，hits=0**。
+
+**结论：V34 已通过**——成功定位到候选存储位置（WebView Cookie 库 / databases 是重点），但当前读取逻辑还读不出。**DEF-2029 转 1.4.10 精确读取**（见 `docs/VERIFY_1.4.10.md` **V35**）；手动标记继续兜底。

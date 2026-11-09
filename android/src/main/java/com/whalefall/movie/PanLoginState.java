@@ -173,10 +173,22 @@ final class PanLoginState {
         List<Hit> prefHits = prefsHits(a);
         List<Hit> fileHits = fileHits(a);
         Map<String, String> cookies = cookieSnapshot();
+        CookieDb cookieDb = cookieDbSnapshot(a);
+        List<Hit> dbHits = databaseHits(a);
         Map<String, PanLoginState> states = new LinkedHashMap<>();
         int local = 0, source = 0, unknown = 0, manual = 0;
         for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES) {
-            PanLoginState state = detect(a, credentials, drive.key, accountName, prefHits, fileHits, cookies);
+            PanLoginState state =
+                    detect(
+                            a,
+                            credentials,
+                            drive.key,
+                            accountName,
+                            prefHits,
+                            fileHits,
+                            cookies,
+                            cookieDb,
+                            dbHits);
             states.put(drive.key, state);
             if (state.state == STATE_LOCAL) local++;
             else if (state.state == STATE_SOURCE) source++;
@@ -199,8 +211,14 @@ final class PanLoginState {
                         + prefHits.size()
                         + " files="
                         + fileCountForLog
+                        + " sampled="
+                        + filesSampleForLog
                         + " fileHits="
                         + fileHits.size()
+                        + " dbHits="
+                        + dbHits.size()
+                        + " cookieDbRows="
+                        + cookieDb.rows
                         + " cookies=["
                         + join(cookies.keySet())
                         + "]");
@@ -242,7 +260,9 @@ final class PanLoginState {
             String accountName,
             List<Hit> prefHits,
             List<Hit> fileHits,
-            Map<String, String> cookies) {
+            Map<String, String> cookies,
+            CookieDb cookieDb,
+            List<Hit> dbHits) {
         if (AccountPanel.driveHasLocalCredential(credentials, drive)) {
             return new PanLoginState(
                     drive, STATE_LOCAL, "已登录（本地凭据）", accountName, "local credentials");
@@ -251,17 +271,30 @@ final class PanLoginState {
         if (!loginCookie.isEmpty()) {
             return new PanLoginState(drive, STATE_SOURCE, loginCookie, "", loginCookie);
         }
+        // WebView Cookies SQLite 库（CookieManager 读空时兜底）
+        List<String> dbCookieEvidence = evidenceFor(cookieDb.loginHits, drive);
+        if (!dbCookieEvidence.isEmpty()) {
+            String where = dbCookieEvidence.get(0);
+            return new PanLoginState(
+                    drive,
+                    STATE_SOURCE,
+                    "源已登录（WebView Cookie 库 " + where.replace("cookie-db ", "") + "）",
+                    "",
+                    where);
+        }
         List<String> prefs = evidenceFor(prefHits, drive);
         List<String> files = evidenceFor(fileHits, drive);
+        List<String> sqlite = evidenceFor(dbHits, drive);
         List<String> all = new ArrayList<>();
         all.addAll(prefs);
         all.addAll(files);
+        all.addAll(sqlite);
         if (!all.isEmpty()) {
             String joined = joinList(all);
             return new PanLoginState(
                     drive,
                     STATE_SOURCE,
-                    all.size() > 1 ? "源存储/私有文件命中多条凭据" : "源存储/私有文件有登录凭据（账号名不可读）",
+                    all.size() > 1 ? "源存储/私有文件/数据库命中多条凭据" : "源存储/私有文件/数据库有登录凭据（账号名不可读）",
                     "",
                     joined);
         }
@@ -270,6 +303,15 @@ final class PanLoginState {
                     drive, STATE_MANUAL, "已登录（用户确认，非自动检测）", "", "manual confirm");
         }
         String siteCookie = cookieSiteEvidence(cookies, drive);
+        List<String> anyDb = evidenceFor(cookieDb.anyHits, drive);
+        if (!anyDb.isEmpty()) {
+            return new PanLoginState(
+                    drive,
+                    STATE_UNKNOWN,
+                    "Cookie 库有该网盘 Cookie，但无已知登录 Cookie（由源管理）",
+                    "",
+                    "unknown: cookie-db non-login cookie " + anyDb.get(0));
+        }
         if (!siteCookie.isEmpty()) {
             return new PanLoginState(
                     drive,
@@ -417,33 +459,60 @@ final class PanLoginState {
         return hits;
     }
 
-    // ---------------- 私有目录小文件扫描 ----------------
+    // ---------------- 私有目录原始字节扫描（不跳过含 NUL 文件，DB 优先） ----------------
 
     private static int fileCountForLog;
     private static int prefsFileCountForLog;
+    private static int filesSampleForLog;
+    private static final long MAX_TOTAL_BYTES = 64L * 1024 * 1024;
+    private static final long SAMPLE_BYTES = 2L * 1024 * 1024;
 
     static List<Hit> fileHits(MainActivity a) {
         List<Hit> hits = new ArrayList<>();
         fileCountForLog = 0;
+        filesSampleForLog = 0;
         try {
-            List<File> roots = new ArrayList<>();
-            roots.add(a.getFilesDir());
+            List<DirRoot> roots = new ArrayList<>();
+            File dataDir = new File(a.getApplicationInfo().dataDir);
+            addRoot(roots, "databases", new File(dataDir, "databases")); // DB 优先
+            addRoot(roots, "files", a.getFilesDir());
             try {
-                File noBackup = a.getNoBackupFilesDir();
-                if (noBackup != null) roots.add(noBackup);
+                addRoot(roots, "no_backup", a.getNoBackupFilesDir());
             } catch (Throwable ignored) {
             }
+            addRoot(roots, "cache", a.getCacheDir());
             try {
-                File db = a.getDatabasePath("noop");
-                if (db != null && db.getParentFile() != null) roots.add(db.getParentFile());
+                addRoot(roots, "external_files", a.getExternalFilesDir(null));
             } catch (Throwable ignored) {
             }
-            roots.add(a.getCacheDir());
-            int[] budget = {MAX_FILES};
-            for (File root : roots) {
-                if (root == null || !root.isDirectory()) continue;
-                walk(root, root, hits, budget);
-                if (budget[0] <= 0 || hits.size() >= MAX_FILE_HITS) break;
+            addRoot(roots, "app_webview", new File(dataDir, "app_webview"));
+            List<FileInfo> all = new ArrayList<>();
+            for (DirRoot root : roots) collect(root.root, root.label + "/", all, new int[] {4000});
+            java.util.Collections.sort(
+                    all, (left, right) -> Long.compare(right.mtime, left.mtime));
+            long readTotal = 0;
+            int scanned = 0;
+            for (FileInfo info : all) {
+                if (scanned >= MAX_FILES || readTotal >= MAX_TOTAL_BYTES) break;
+                if (info.size <= 0 || info.size > 8L * 1024 * 1024) continue;
+                if (binaryExtension(info.file.getName())) continue;
+                if (lowValue(info.rel)) continue;
+                byte[] data;
+                boolean sampled = info.size > SAMPLE_BYTES;
+                try {
+                    data = readSample(info.file, info.size, SAMPLE_BYTES);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                if (data.length == 0) continue;
+                scanned++;
+                fileCountForLog++;
+                if (sampled) filesSampleForLog++;
+                readTotal += data.length;
+                List<String> drives = rawTokenDrives(data);
+                if (drives.isEmpty()) continue;
+                for (String drive : drives) hits.add(new Hit(drive, "files:" + info.rel));
+                if (hits.size() >= MAX_FILE_HITS) break;
             }
         } catch (Throwable error) {
             AppLog.w("PanLogin", "private file scan failed", error);
@@ -451,57 +520,274 @@ final class PanLoginState {
         return hits;
     }
 
-    private static void walk(File dir, File base, List<Hit> hits, int[] budget) {
-        if (dir == null || budget[0] <= 0 || hits.size() >= MAX_FILE_HITS) return;
-        File[] files = dir.listFiles();
-        if (files == null) return;
-        for (File file : files) {
-            if (budget[0] <= 0 || hits.size() >= MAX_FILE_HITS) return;
-            if (file.isDirectory()) {
-                if (SKIP_DIRS.contains(file.getName().toLowerCase(Locale.ROOT))) continue;
-                walk(file, base, hits, budget);
-                continue;
-            }
-            if (file.length() <= 0 || file.length() > MAX_FILE_BYTES) continue;
-            String lower = file.getName().toLowerCase(Locale.ROOT);
-            boolean binary = false;
-            for (String ext : BINARY_EXTENSIONS) if (lower.endsWith(ext)) binary = true;
-            if (binary) continue;
-            budget[0]--;
-            fileCountForLog++;
-            try (java.io.InputStream in = new java.io.FileInputStream(file)) {
-                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-                byte[] buffer = new byte[16384];
-                int n;
-                while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
-                String text = out.toString("UTF-8");
-                Matcher matcher = FILE_TOKEN.matcher(text);
-                while (matcher.find()) {
-                    for (String drive : drivesForToken(matcher.group()))
-                        hits.add(new Hit(drive, "files:" + relative(base, file)));
-                    if (hits.size() >= MAX_FILE_HITS) break;
+    /** 大文件只读前/后各 2MB，避免 70MB 资源全读。 */
+    private static byte[] readSample(File file, long size, long sample) throws java.io.IOException {
+        if (size <= sample * 2) {
+            byte[] out = new byte[(int) size];
+            try (java.io.FileInputStream in = new java.io.FileInputStream(file)) {
+                int read = 0;
+                while (read < out.length) {
+                    int n = in.read(out, read, out.length - read);
+                    if (n <= 0) break;
+                    read += n;
                 }
+                return out;
+            }
+        }
+        byte[] out = new byte[(int) (sample * 2)];
+        try (java.io.FileInputStream in = new java.io.FileInputStream(file)) {
+            int read = 0;
+            while (read < sample) {
+                int n = in.read(out, read, (int) sample - read);
+                if (n <= 0) break;
+                read += n;
+            }
+        }
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "r")) {
+            raf.seek(size - sample);
+            int read = 0;
+            while (read < sample) {
+                int n = raf.read(out, (int) sample + read, (int) sample - read);
+                if (n <= 0) break;
+                read += n;
+            }
+        }
+        return out;
+    }
+
+    /** 原始字节里找强 token（大小写不敏感）；含 NUL 的 SQLite/DB 同样可命中。 */
+    static List<String> rawTokenDrives(byte[] data) {
+        List<String> drives = new ArrayList<>();
+        if (containsToken(data, "kps=")
+                || containsToken(data, "__puus")
+                || containsToken(data, "__pus")) drives.add("quark");
+        if (containsToken(data, "uc_st") || containsToken(data, "_uc_s")) drives.add("uc");
+        if (containsToken(data, "bduss") || containsToken(data, "stoken=")) drives.add("baidu");
+        if (containsToken(data, "refresh_token") || containsToken(data, "aliyundrive"))
+            drives.add("ali");
+        return drives;
+    }
+
+    private static boolean containsToken(byte[] data, String token) {
+        byte[] needle = token.toLowerCase(Locale.ROOT).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        int limit = data.length - needle.length;
+        for (int i = 0; i <= limit; i++) {
+            boolean matched = true;
+            for (int j = 0; j < needle.length; j++) {
+                byte value = data[i + j];
+                if (value >= 'A' && value <= 'Z') value += 32;
+                if (value != needle[j]) {
+                    matched = false;
+                    break;
+                }
+            }
+            if (matched) return true;
+        }
+        return false;
+    }
+
+    /** 诊断用低价值文件过滤：崩溃报告/日志/锁/.webview。 */
+    private static boolean lowValue(String rel) {
+        if (rel == null) return true;
+        String lower = rel.toLowerCase(Locale.ROOT);
+        return lower.contains("crash reports")
+                || lower.contains("crashpad")
+                || lower.endsWith(".log")
+                || lower.endsWith(".lock")
+                || lower.contains(".webview")
+                || lower.contains("/tmp/");
+    }
+
+    // ---------------- WebView Cookies SQLite 库 ----------------
+
+    static final class CookieDb {
+        final List<Hit> loginHits = new ArrayList<>();
+        final List<Hit> anyHits = new ArrayList<>();
+        int rows;
+        boolean opened;
+    }
+
+    /** CookieManager 读空时，直接只读查询 app_webview/Default/Cookies。 */
+    static CookieDb cookieDbSnapshot(MainActivity a) {
+        CookieDb out = new CookieDb();
+        File copy = null;
+        android.database.sqlite.SQLiteDatabase sqlite = null;
+        android.database.Cursor cursor = null;
+        try {
+            File dataDir = new File(a.getApplicationInfo().dataDir);
+            File source = new File(dataDir, "app_webview/Default/Cookies");
+            if (!source.isFile()) {
+                AppLog.i("PanLogin", "cookie-db absent");
+                return out;
+            }
+            copy = new File(a.getCacheDir(), "pan-cookie-probe.db");
+            copyFile(source, copy);
+            sqlite =
+                    android.database.sqlite.SQLiteDatabase.openDatabase(
+                            copy.getAbsolutePath(),
+                            null,
+                            android.database.sqlite.SQLiteDatabase.OPEN_READONLY);
+            cursor = sqlite.rawQuery("SELECT host_key,name FROM cookies", null);
+            while (cursor.moveToNext()) {
+                String host = cursor.getString(0);
+                String name = cursor.getString(1);
+                if (host == null || name == null) continue;
+                host = host.toLowerCase(Locale.ROOT);
+                name = name.toLowerCase(Locale.ROOT);
+                out.rows++;
+                for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES) {
+                    if (!hostMatchesDrive(host, drive.key)) continue;
+                    Hit hit = new Hit(drive.key, "cookie-db host=" + host + " name=" + name);
+                    if (isLoginCookieName(drive.key, name)) out.loginHits.add(hit);
+                    else out.anyHits.add(hit);
+                }
+            }
+            out.opened = true;
+        } catch (Throwable error) {
+            AppLog.w("PanLogin", "cookie-db read failed", error);
+        } finally {
+            if (cursor != null) try {
+                cursor.close();
             } catch (Throwable ignored) {
             }
+            if (sqlite != null) try {
+                sqlite.close();
+            } catch (Throwable ignored) {
+            }
+            if (copy != null) copy.delete();
+        }
+        return out;
+    }
+
+    private static void copyFile(File source, File target) throws java.io.IOException {
+        try (java.io.FileInputStream in = new java.io.FileInputStream(source);
+                java.io.FileOutputStream out = new java.io.FileOutputStream(target)) {
+            byte[] buffer = new byte[16384];
+            int n;
+            while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
         }
     }
 
-    /** 相对私有目录的展示路径（files/…、cache/…、databases/…）。 */
-    private static String relative(File base, File file) {
+    static boolean hostMatchesDrive(String host, String drive) {
+        String lower = host == null ? "" : host.toLowerCase(Locale.ROOT);
+        switch (drive) {
+            case "quark":
+                return lower.endsWith("quark.cn");
+            case "uc":
+                return lower.endsWith("uc.cn");
+            case "baidu":
+                return lower.endsWith("baidu.com");
+            case "ali":
+                return lower.endsWith("alipan.com") || lower.endsWith("aliyundrive.com");
+            default:
+                return false;
+        }
+    }
+
+    static boolean isLoginCookieName(String drive, String name) {
+        if (name == null) return false;
+        for (String login : loginCookieNames(drive)) if (login.equals(name)) return true;
+        return false;
+    }
+
+    // ---------------- databases/*.db 文本列扫描 ----------------
+
+    static List<Hit> databaseHits(MainActivity a) {
+        List<Hit> hits = new ArrayList<>();
+        File copy = null;
+        android.database.sqlite.SQLiteDatabase sqlite = null;
         try {
-            String path = file.getAbsolutePath();
-            String basePath = base == null ? "" : base.getAbsolutePath();
-            String label = base == null || base.getName().isEmpty() ? "files" : base.getName();
-            if (!basePath.isEmpty() && path.startsWith(basePath + "/"))
-                return label + "/" + path.substring(basePath.length() + 1);
-            int index = path.lastIndexOf("/");
-            return label + "/" + (index > 0 ? path.substring(index + 1) : file.getName());
-        } catch (Throwable ignored) {
-            return "files/…";
+            File dir = new File(a.getApplicationInfo().dataDir, "databases");
+            File[] dbs = dir.listFiles();
+            if (dbs == null) return hits;
+            int dbCount = 0;
+            for (File db : dbs) {
+                if (dbCount >= 8 || hits.size() >= MAX_FILE_HITS) break;
+                String lower = db.getName().toLowerCase(Locale.ROOT);
+                if (!(lower.endsWith(".db") || lower.endsWith(".sqlite"))) continue;
+                if (db.length() <= 0 || db.length() > 2L * 1024 * 1024) continue;
+                dbCount++;
+                copy = new File(a.getCacheDir(), "pan-db-probe-" + dbCount + ".db");
+                try {
+                    copyFile(db, copy);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                android.database.Cursor tables = null;
+                try {
+                    sqlite =
+                            android.database.sqlite.SQLiteDatabase.openDatabase(
+                                    copy.getAbsolutePath(),
+                                    null,
+                                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY);
+                    tables =
+                            sqlite.rawQuery(
+                                    "SELECT name FROM sqlite_master WHERE type='table'", null);
+                    int tableCount = 0;
+                    while (tables.moveToNext() && tableCount < 12 && hits.size() < MAX_FILE_HITS) {
+                        String table = tables.getString(0);
+                        if (table == null
+                                || table.startsWith("sqlite_")
+                                || table.startsWith("android_")) continue;
+                        tableCount++;
+                        android.database.Cursor rows = null;
+                        try {
+                            String escaped = table.replace("\"", "\"\"");
+                            rows = sqlite.rawQuery("SELECT * FROM \"" + escaped + "\" LIMIT 20", null);
+                            int columns = rows.getColumnCount();
+                            while (rows.moveToNext() && hits.size() < MAX_FILE_HITS) {
+                                for (int c = 0; c < columns; c++) {
+                                    String value;
+                                    try {
+                                        value = rows.getString(c);
+                                    } catch (Throwable ignored) {
+                                        continue;
+                                    }
+                                    if (value == null || value.length() < 6) continue;
+                                    String text = value.toLowerCase(Locale.ROOT);
+                                    for (String drive : drivesForToken(text))
+                                        hits.add(
+                                                new Hit(
+                                                        drive,
+                                                        "db:"
+                                                                + db.getName()
+                                                                + "."
+                                                                + table));
+                                }
+                            }
+                        } catch (Throwable ignored) {
+                        } finally {
+                            if (rows != null) try {
+                                rows.close();
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+                } catch (Throwable error) {
+                    AppLog.w("PanLogin", "db read failed: " + db.getName(), error);
+                } finally {
+                    if (tables != null) try {
+                        tables.close();
+                    } catch (Throwable ignored) {
+                    }
+                    if (sqlite != null) try {
+                        sqlite.close();
+                    } catch (Throwable ignored) {
+                    }
+                    sqlite = null;
+                    copy.delete();
+                    copy = null;
+                }
+            }
+        } catch (Throwable error) {
+            AppLog.w("PanLogin", "database scan failed", error);
+        } finally {
+            if (copy != null) copy.delete();
         }
+        return hits;
     }
 
-    // ---------------- Cookie ----------------
+    // ---------------- Cookie（CookieManager） ----------------
 
     private static String[] loginCookieNames(String drive) {
         switch (drive) {
@@ -748,15 +1034,41 @@ final class PanLoginState {
                     prefNames.add(name);
                 }
             AppLog.i("PanLogin", "diagnose prefs files=[" + joinAll(prefNames) + "] count=" + prefNames.size());
+            // 预置/加密存储：值像 base64/长串但判不出网盘的记 opaque，不硬解
+            try {
+                int opaque = 0;
+                for (String prefName : prefNames) {
+                    if (opaque >= 8) break;
+                    android.content.SharedPreferences prefs =
+                            a.getSharedPreferences(prefName, android.content.Context.MODE_PRIVATE);
+                    for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+                        Object value = entry.getValue();
+                        if (!(value instanceof String)) continue;
+                        String text = ((String) value).trim();
+                        if (text.length() < 24) continue;
+                        if (!text.matches("[A-Za-z0-9+/=_-]+")) continue;
+                        if (!drivesForToken(text.toLowerCase(Locale.ROOT)).isEmpty()) continue;
+                        AppLog.i(
+                                "PanLogin",
+                                "diagnose prefs opaque "
+                                        + prefName
+                                        + " key="
+                                        + entry.getKey()
+                                        + " len="
+                                        + text.length());
+                        if (++opaque >= 8) break;
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
 
-            // 2) 目录统计 + 最近文件
+            // 2) 目录统计 + 每目录最近 5 个文件（跳过崩溃日志等噪音）
             List<DirRoot> roots = diagnosticRoots(a);
             List<FileInfo> all = new ArrayList<>();
             int[] budget = {20000};
             for (DirRoot root : roots) {
-                int[] before = {budget[0]};
                 List<FileInfo> dirFiles = new ArrayList<>();
-                collect(root.root, root.label + "/", dirFiles, new int[] {Math.min(20000, before[0])});
+                collect(root.root, root.label + "/", dirFiles, new int[] {Math.min(20000, budget[0])});
                 long bytes = 0;
                 for (FileInfo info : dirFiles) bytes += Math.max(0, info.size);
                 AppLog.i(
@@ -767,28 +1079,30 @@ final class PanLoginState {
                                 + dirFiles.size()
                                 + " bytes="
                                 + bytes);
+                List<FileInfo> dirRecent = new ArrayList<>();
+                for (FileInfo info : dirFiles) if (!lowValue(info.rel)) dirRecent.add(info);
+                java.util.Collections.sort(
+                        dirRecent, (left, right) -> Long.compare(right.mtime, left.mtime));
+                int dirShown = 0;
+                for (FileInfo info : dirRecent) {
+                    if (dirShown >= 5) break;
+                    dirShown++;
+                    AppLog.i(
+                            "PanLogin",
+                            "diagnose recent "
+                                    + root.label
+                                    + "#"
+                                    + dirShown
+                                    + " "
+                                    + info.rel
+                                    + " size="
+                                    + info.size
+                                    + " mtime="
+                                    + timeText(info.mtime));
+                }
                 all.addAll(dirFiles);
                 budget[0] -= dirFiles.size();
                 if (budget[0] <= 0) break;
-            }
-            List<FileInfo> recent = new ArrayList<>(all);
-            java.util.Collections.sort(
-                    recent,
-                    (left, right) -> Long.compare(right.mtime, left.mtime));
-            int shown = 0;
-            for (FileInfo info : recent) {
-                if (shown >= 15) break;
-                shown++;
-                AppLog.i(
-                        "PanLogin",
-                        "diagnose recent #"
-                                + shown
-                                + " "
-                                + info.rel
-                                + " size="
-                                + info.size
-                                + " mtime="
-                                + timeText(info.mtime));
             }
 
             // 3) databases 与 app_webview/Cookies
@@ -810,67 +1124,45 @@ final class PanLoginState {
             }
             findCookieDb(new File(dataDir, "app_webview"), 0);
 
-            // 4) 扩大字节搜索：最多 800 文件 / 单文件 ≤8MB / 总读 ≤64MB，mtime 新→旧
-            int scanned = 0, hits = 0;
-            long readBytes = 0;
-            for (FileInfo info : recent) {
-                if (scanned >= DIAG_MAX_FILES || readBytes >= DIAG_MAX_TOTAL_BYTES) break;
-                if (info.size <= 0 || info.size > DIAG_MAX_FILE_BYTES) continue;
-                if (binaryExtension(info.file.getName())) continue;
-                scanned++;
-                byte[] data;
-                try {
-                    try (java.io.InputStream in = new java.io.FileInputStream(info.file)) {
-                        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-                        byte[] buffer = new byte[65536];
-                        int n;
-                        while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
-                        data = out.toByteArray();
-                    }
-                } catch (Throwable ignored) {
-                    continue;
-                }
-                readBytes += data.length;
-                if (looksBinary(data, data.length)) continue;
-                String text;
-                try {
-                    text = new String(data, "UTF-8");
-                } catch (Throwable ignored) {
-                    continue;
-                }
-                String lower = text.toLowerCase(Locale.ROOT);
-                List<String> drives = drivesForToken(lower);
-                boolean cookieBlob =
-                        lower.indexOf('=') >= 0 && lower.indexOf(';') >= 0;
-                if (cookieBlob) {
-                    for (String drive : drivesForCookieBlob(lower))
-                        if (!drives.contains(drive)) drives.add(drive);
-                }
-                if (drives.isEmpty()) continue;
-                for (String drive : drives) {
-                    hits++;
-                    AppLog.i(
-                            "PanLogin",
-                            "diagnose hit "
-                                    + drive
-                                    + " files:"
-                                    + info.rel
-                                    + " size="
-                                    + info.size
-                                    + " mtime="
-                                    + timeText(info.mtime));
-                    if (hits >= 40) break;
-                }
-                if (hits >= 40) break;
+            // 4) WebView Cookie 库 + databases 文本列 + 原始字节扫描（含 NUL 不跳过）
+            CookieDb cookieDb = cookieDbSnapshot(a);
+            AppLog.i(
+                    "PanLogin",
+                    "diagnose cookie-db rows="
+                            + cookieDb.rows
+                            + " loginHits="
+                            + cookieDb.loginHits.size()
+                            + " anyHits="
+                            + cookieDb.anyHits.size()
+                            + " opened="
+                            + cookieDb.opened);
+            int cookieDbShown = 0;
+            for (Hit hit : cookieDb.loginHits) {
+                if (cookieDbShown++ >= 10) break;
+                AppLog.i("PanLogin", "diagnose cookie-db hit " + hit.drive + " " + hit.where);
+            }
+            List<Hit> dbHits = databaseHits(a);
+            int dbShown = 0;
+            for (Hit hit : dbHits) {
+                if (dbShown++ >= 15) break;
+                AppLog.i("PanLogin", "diagnose dbhit " + hit.drive + " " + hit.where);
+            }
+            List<Hit> rawHits = fileHits(a);
+            int rawShown = 0;
+            for (Hit hit : rawHits) {
+                if (rawShown++ >= 30) break;
+                AppLog.i("PanLogin", "diagnose hit " + hit.drive + " " + hit.where);
             }
             AppLog.i(
                     "PanLogin",
                     "diagnose bytescan files="
-                            + scanned
-                            + " read="
-                            + readBytes
+                            + fileCountForLog
+                            + " sampled="
+                            + filesSampleForLog
                             + " hits="
-                            + hits);
+                            + rawHits.size()
+                            + " dbHits="
+                            + dbHits.size());
 
             int manual = 0;
             for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES)
