@@ -147,6 +147,8 @@ final class PanLoginGuide {
         ScrollView scroll;
         LinearLayout body;
         String activeDrive = "";
+        /** 每次渲染/刷新时重新检测的三态结果（本地凭据 / 源可确认 / 无法读取）。 */
+        java.util.Map<String, PanLoginState> states = new java.util.LinkedHashMap<>();
 
         Guide(MainActivity a, Cms.Site site, String drive, Runnable onChanged) {
             this.a = a;
@@ -242,6 +244,7 @@ final class PanLoginGuide {
                     site == null
                             ? new java.util.ArrayList<>()
                             : AccountPanel.scanCredentials(a, site);
+            states = PanLoginState.detectAll(a, site);
             if (activeDrive.isEmpty()) {
                 renderChooser(credentials);
             } else {
@@ -249,19 +252,27 @@ final class PanLoginGuide {
             }
         }
 
+        /** 从源面板返回后：若引导还开着就地刷新，同时通知账号面板刷新。 */
+        void refreshAfterSource() {
+            if (onChanged != null) onChanged.run();
+            if (dialog != null && dialog.isShowing() && body != null) render();
+        }
+
         void renderChooser(List<AccountPanel.Credential> credentials) {
             TextView intro =
                     a.text(
-                            "选择要登录/管理的网盘。4 个网盘共用配置源提供的登录凭据。",
+                            "选择要登录/管理的网盘。状态只显示本机可确认的信号；"
+                                    + "标「由源管理 · 无法读取」时以源面板为准。",
                             UiTokens.TYPE_BODY_SM,
                             UiTokens.TEXT_SECONDARY);
             intro.setLineSpacing(a.dp(4), 1.35f);
             body.addView(intro);
             for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES) {
-                boolean logged =
-                        AccountPanel.driveHasLocalCredential(credentials, drive.key);
+                PanLoginState pan = states.get(drive.key);
+                String status = pan == null ? "由源管理 · 无法读取" : pan.detail;
+                boolean known = pan != null && pan.known();
                 body.addView(
-                        driveRow(drive, logged, () -> {
+                        driveRow(drive, status, known, () -> {
                             activeDrive = drive.key;
                             render();
                         }),
@@ -286,10 +297,7 @@ final class PanLoginGuide {
                                                 new SettingsScreen(a)
                                                         .sourceAccountAction(
                                                                 "LoginShow",
-                                                                () -> {
-                                                                    if (onChanged != null)
-                                                                        onChanged.run();
-                                                                });
+                                                                this::refreshAfterSource);
                                                 a.toast("已打开源账号管理 · 完成后返回本页刷新");
                                             }));
             body.addView(manage, actionLp());
@@ -297,7 +305,13 @@ final class PanLoginGuide {
 
         void renderSteps(List<AccountPanel.Credential> credentials, String driveKey) {
             PanLoginGuide.Drive drive = PanLoginGuide.byKey(driveKey);
-            boolean logged = AccountPanel.driveHasLocalCredential(credentials, drive.key);
+            PanLoginState pan = states.get(drive.key);
+            boolean logged = pan != null && pan.known();
+            String statusDetail = pan == null ? "由源管理 · 无法读取" : pan.detail;
+            int statusColor =
+                    pan == null || pan.state == PanLoginState.STATE_UNKNOWN
+                            ? 0xffffb454
+                            : 0xff2ad47a;
 
             LinearLayout head = a.row();
             head.setGravity(Gravity.CENTER_VERTICAL);
@@ -330,16 +344,22 @@ final class PanLoginGuide {
             LinearLayout status = a.row();
             status.setGravity(Gravity.CENTER_VERTICAL);
             View dot = new View(a);
-            dot.setBackground(UiTokens.circle(logged ? 0xff2ad47a : 0xffffb454));
+            dot.setBackground(UiTokens.circle(statusColor));
             status.addView(dot, new LinearLayout.LayoutParams(a.dp(8), a.dp(8)));
-            TextView statusText =
-                    a.text(
-                            logged ? "已登录（本地凭据）" : "未登录 · 状态由源提供",
-                            11.5f,
-                            logged ? 0xff2ad47a : 0xffffb454);
+            TextView statusText = a.text(statusDetail, 11.5f, statusColor);
             LinearLayout.LayoutParams stLp = new LinearLayout.LayoutParams(-2, -2);
             stLp.leftMargin = a.dp(7);
             status.addView(statusText, stLp);
+            if (!logged) {
+                TextView note =
+                        a.text(
+                                "（本机无法读取源内登录态，需在源面板确认）",
+                                10.5f,
+                                UiTokens.TEXT_TERTIARY);
+                LinearLayout.LayoutParams noteLp = new LinearLayout.LayoutParams(-2, -2);
+                noteLp.leftMargin = a.dp(6);
+                status.addView(note, noteLp);
+            }
             LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(-1, -2);
             statusLp.topMargin = a.dp(14);
             body.addView(status, statusLp);
@@ -379,11 +399,15 @@ final class PanLoginGuide {
                                     + "完成登录后回到本面板即可。"),
                     bannerLp());
             if (logged) {
-                Button refresh = accentButton(a, "我已登录，刷新状态", () -> {
-                    dialog.dismiss();
-                    if (onChanged != null) onChanged.run();
-                    a.toast("已按本地凭据刷新");
-                });
+                Button refresh =
+                        accentButton(
+                                a,
+                                "我已登录，刷新状态",
+                                () -> {
+                                    render();
+                                    if (onChanged != null) onChanged.run();
+                                    a.toast("已重新检测登录状态");
+                                });
                 body.addView(refresh, actionLp());
             } else {
                 Button open =
@@ -400,19 +424,30 @@ final class PanLoginGuide {
                                             () -> {
                                                 new SettingsScreen(a)
                                                         .sourceAccountAction(
-                                                                "LoginShow", onChanged);
+                                                                "LoginShow",
+                                                                this::refreshAfterSource);
                                                 a.toast("已打开源登录界面 · 完成后返回本页刷新");
                                             });
                                 });
                 body.addView(open, actionLp());
                 Button other =
                         glassButton(a, "我已在其他设备登录", () -> {
-                            dialog.dismiss();
+                            render();
                             if (onChanged != null) onChanged.run();
-                            a.toast("登录态由源保存；若源内已登录，刷新后本页会显示已登录");
+                            a.toast("已重新检测：如果源内已登录，会显示可确认的源登录信号");
                         });
                 body.addView(other, actionLp());
             }
+            body.addView(
+                    glassButton(
+                            a,
+                            "刷新源状态",
+                            () -> {
+                                render();
+                                if (onChanged != null) onChanged.run();
+                                a.toast("已重新检测本地凭据 / WebView Cookie / 源存储");
+                            }),
+                    actionLp());
             Button back = glassButton(a, "返回网盘列表", () -> {
                 activeDrive = "";
                 render();
@@ -420,7 +455,8 @@ final class PanLoginGuide {
             body.addView(back, actionLp());
         }
 
-        View driveRow(PanLoginGuide.Drive drive, boolean logged, Runnable click) {
+        View driveRow(
+                PanLoginGuide.Drive drive, String statusText, boolean known, Runnable click) {
             LinearLayout row = a.row();
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(a.dp(14), a.dp(10), a.dp(12), a.dp(10));
@@ -446,9 +482,9 @@ final class PanLoginGuide {
             col.addView(title);
             TextView sub =
                     a.text(
-                            drive.provider + " · " + (logged ? "已登录（本地凭据）" : "未登录 · 由源管理"),
+                            drive.provider + " · " + statusText,
                             UiTokens.TYPE_MICRO,
-                            logged ? 0xff2ad47a : UiTokens.TEXT_TERTIARY);
+                            known ? 0xff2ad47a : 0xffffb454);
             sub.setIncludeFontPadding(false);
             sub.setSingleLine(true);
             sub.setEllipsize(android.text.TextUtils.TruncateAt.END);

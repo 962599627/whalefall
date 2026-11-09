@@ -29,16 +29,16 @@ import java.util.Map;
 /**
  * 「网盘与账号」面板：账号状态卡 + 源提供的功能列表 + 危险区（清除凭据）。
  *
- * <p>状态检测原则：<b>不伪造登录态</b>。App 只能读取本机保存的凭据，读不到 spider 内部会话，
- * 因此状态分为：
+ * <p>状态检测原则：<b>不伪造登录态</b>，三态严格区分（{@link PanLoginState}）：
  * <ul>
- *   <li>已配置凭据（本地检测到 Cookie/Token 等，绿点，账号名仍由源返回）
- *   <li>未登录（本地无凭据且来源是 App 自己管理的引擎，灰点）
- *   <li>状态由源提供（CSP/插件型来源，无法读取内部状态，橙点）
+ *   <li>已登录（本地凭据）：本机 prefs 里能读到该网盘的 Cookie/Token，绿点；
+ *   <li>源登录态可确认：WebView Cookie（插件/CatPaw 登录会落到系统 CookieManager）或
+ *       源存储在 shared_prefs 里的严格特征串，绿点但不显示未读到的账号名；
+ *   <li>由源管理 · 无法读取：以上都没有时如实标注，<b>不得显示成「未登录」</b>，橙/灰点。
  * </ul>
  * 登录/管理一律先打开我们自己的「网盘登录」玻璃面板（{@link PanLoginGuide}），
  * 只有用户在该面板里明确点「打开源登录界面 / 源账号管理」时才调用源提供的 LoginShow；
- * 接口返回后刷新本面板。
+ * 接口返回后刷新本面板并重新检测。
  */
 final class AccountPanel {
     private AccountPanel() {}
@@ -48,6 +48,8 @@ final class AccountPanel {
     private static final int STATE_UNKNOWN = 2;
     private static final int STATE_GUEST = 3;
     private static final int STATE_LOCAL = 4;
+    /** 源可确认的登录信号（WebView Cookie / 源存储），与「本地凭据」「无法读取」区分。 */
+    private static final int STATE_SOURCE = 5;
 
     private static final int DOT_GREEN = 0xff2ad47a;
     private static final int DOT_GRAY = 0xff8d9cb6;
@@ -75,6 +77,8 @@ final class AccountPanel {
         LinearLayout panRows;
         int state = STATE_GUEST;
         List<Credential> credentials = new ArrayList<>();
+        /** 每个网盘的三态检测结果（本地凭据 / 源可确认 / 无法读取）。 */
+        java.util.Map<String, PanLoginState> panStates = new java.util.LinkedHashMap<>();
         String accountName = "";
 
         Panel(MainActivity a, View anchor) {
@@ -306,7 +310,13 @@ final class AccountPanel {
             if (panRows == null) return;
             panRows.removeAllViews();
             for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES) {
-                boolean logged = driveHasLocalCredential(credentials, drive.key);
+                PanLoginState pan = panStates.get(drive.key);
+                boolean logged = pan != null && pan.known();
+                String statusText = pan == null ? "由源管理 · 无法读取" : pan.detail;
+                int statusColor =
+                        pan == null || pan.state == PanLoginState.STATE_UNKNOWN
+                                ? 0xffffb454
+                                : 0xff2ad47a;
                 LinearLayout row = a.row();
                 row.setGravity(Gravity.CENTER_VERTICAL);
                 row.setPadding(a.dp(14), a.dp(10), a.dp(12), a.dp(10));
@@ -332,11 +342,9 @@ final class AccountPanel {
                 col.addView(name);
                 TextView sub =
                         a.text(
-                                drive.provider
-                                        + " · "
-                                        + (logged ? "已登录（本地凭据）" : "未登录 · 由源管理"),
+                                drive.provider + " · " + statusText,
                                 UiTokens.TYPE_MICRO,
-                                logged ? 0xff2ad47a : UiTokens.TEXT_TERTIARY);
+                                statusColor);
                 sub.setSingleLine(true);
                 sub.setEllipsize(TextUtils.TruncateAt.END);
                 LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
@@ -379,6 +387,12 @@ final class AccountPanel {
             label.setPadding(a.dp(2), a.dp(20), a.dp(2), a.dp(8));
             body.addView(label, new LinearLayout.LayoutParams(-1, -2));
             addFunction(body, UiIcon.LAYERS, "源凭据配置（Cookie / Token）", "由源提供的凭据配置面板；登录请用上方网盘登录引导", "pushCkShow");
+            addFunction(
+                    body,
+                    UiIcon.TUNE,
+                    "刷新登录状态",
+                    "重新检测：本地凭据 / WebView Cookie / 源存储（无法读取时如实标注）",
+                    "accountRefresh");
             addFunction(body, UiIcon.TUNE, "网盘优先顺序", "调整网盘在播放线路中的优先级", "panSortShow");
             addFunction(body, UiIcon.FILTER, "网盘搜索顺序", "调整网盘在搜索结果中的顺序", "panSourceSortShow");
         }
@@ -416,7 +430,11 @@ final class AccountPanel {
                     UiIcon.view(a, UiIcon.CHEVRON_RIGHT, UiTokens.TEXT_TERTIARY, 18);
             row.addView(chevron, new LinearLayout.LayoutParams(a.dp(18), a.dp(18)));
             MobileDetailScreen.bindTouchFeedback(row);
-            row.setOnClickListener(v -> confirmSourcePanel(action, title));
+            row.setOnClickListener(
+                    v -> {
+                        if ("accountRefresh".equals(action)) runAction(action);
+                        else confirmSourcePanel(action, title);
+                    });
             row.setOnFocusChangeListener(
                     (v, focused) ->
                             FocusMotion.style(
@@ -532,11 +550,19 @@ final class AccountPanel {
             if (site == null || statusLabel == null) return;
             credentials = scanCredentials(a, site);
             accountName = findAccountName(credentials);
+            panStates = PanLoginState.detectAll(a, site);
+            int sourceKnown = 0, unknownDrives = 0;
+            for (PanLoginState pan : panStates.values()) {
+                if (pan.state == PanLoginState.STATE_SOURCE) sourceKnown++;
+                else if (pan.state == PanLoginState.STATE_UNKNOWN) unknownDrives++;
+            }
             boolean available = a.available(site);
             if (!available) {
                 state = STATE_DISABLED;
             } else if (!credentials.isEmpty()) {
                 state = STATE_LOCAL;
+            } else if (sourceKnown > 0) {
+                state = STATE_SOURCE;
             } else if (engineStateUnreadable(site)) {
                 state = STATE_UNKNOWN;
             } else {
@@ -562,15 +588,26 @@ final class AccountPanel {
                                             + " 项登录数据 · 凭据是否仍有效以源返回为准"
                                     : "账号：" + accountName + " · 凭据是否仍有效以源返回为准";
                     break;
+                case STATE_SOURCE:
+                    dotColor = DOT_GREEN;
+                    label = "源登录态可确认";
+                    detail =
+                            "检测到 "
+                                    + sourceKnown
+                                    + " 个网盘的源登录信号（WebView Cookie / 源存储）；"
+                                    + "账号名不可读时请以源面板为准。";
+                    break;
                 case STATE_UNKNOWN:
                     dotColor = DOT_ORANGE;
-                    label = "未登录 · 状态由源提供";
-                    detail = "本机未检测到凭据；此来源的登录态由扩展内部管理，点击登录后在源面板查看。";
+                    label = "由源管理 · 无法读取";
+                    detail =
+                            "本机没有可确认的本地凭据或 Cookie；登录状态由配置源内部管理，"
+                                    + "请用登录引导打开源面板确认。";
                     break;
                 default:
                     dotColor = DOT_GRAY;
-                    label = "未登录";
-                    detail = "点击登录，账号名与状态由网盘源返回。";
+                    label = "无法确认 · 由源管理";
+                    detail = "本机未检测到可确认信号（不等于未登录）；请用登录引导打开源面板查看真实状态。";
                     break;
             }
             statusDot.setBackground(UiTokens.circle(dotColor));
@@ -578,8 +615,15 @@ final class AccountPanel {
             detailLabel.setText(detail);
             String sourceName = site.name == null || site.name.trim().isEmpty() ? site.key : site.name;
             sourceLabel.setText(
-                    "配置源 · " + (sourceName == null ? "未知" : sourceName)
-                            + (credentials.isEmpty() ? "" : " · 本地凭据 " + credentials.size() + " 项"));
+                    "配置源 · "
+                            + (sourceName == null ? "未知" : sourceName)
+                            + (credentials.isEmpty() ? "" : " · 本地凭据 " + credentials.size() + " 项")
+                            + (sourceKnown == 0
+                                    ? ""
+                                    : " · 源登录信号 " + sourceKnown + " 个")
+                            + (unknownDrives == 0
+                                    ? ""
+                                    : " · 无法读取 " + unknownDrives + " 个"));
 
             actionSlot.removeAllViews();
             if (state == STATE_DISABLED) {
@@ -589,7 +633,8 @@ final class AccountPanel {
                 });
                 actionSlot.addView(enable, new FrameLayout.LayoutParams(-2, a.dp(44)));
             } else {
-                String actionLabel = state == STATE_LOCAL ? "管理" : "登录";
+                String actionLabel =
+                        state == STATE_LOCAL || state == STATE_SOURCE ? "管理" : "登录";
                 Button login =
                         accentButton(
                                 actionLabel,
@@ -613,6 +658,11 @@ final class AccountPanel {
 
         void runAction(String action) {
             if (site == null) return;
+            if ("accountRefresh".equals(action)) {
+                refresh();
+                a.toast("已重新检测：本地凭据 / WebView Cookie / 源存储");
+                return;
+            }
             new SettingsScreen(a).accountAction(action, this::refresh);
         }
 
