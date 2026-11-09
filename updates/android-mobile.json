@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.3.1",
-  "versionCode": 13001,
+  "versionName": "1.4.0",
+  "versionCode": 14000,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.3.1（手机 / 平板 / 电视）\n\n- 修复电视台直播：画面已出但「正在连接/正在加载官方页面」浮层不消失；现在播放即收起（DEF-2010）\n- 修复手机电视 tab 顶部「管理」按钮被右侧裁切（DEF-2011）\n- 修复点频道后布局错乱、播放器不出现：直播播放中旋转不再整页重建，退出后按竖屏重建，手机竖屏不再出侧栏（DEF-2012）\n- 首页海报网格 RecyclerView 虚拟化（E3-S1，滚动流畅度未真机验证）\n- 陕西卫视改为官方直播页地址；设置页版本号改为运行时读取\n- 本版直播/转屏/首页均未真机验证性能数据，不宣称已优化；TV 版未接手机版电视台直播/文件管理/离线下载等功能",
-  "size": 62000427,
-  "sha256": "ef5a8576ba644e4611c4921e4472b918d5030c6248cd39af3b1eb7ef6a0f636e",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.3.1/WhaleFall-1.3.1-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.3.1/WhaleFall-1.3.1-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.3.1"
+  "notes": "# 鲸落 1.4.0（手机 / 平板 / 电视）\n\n- 修复：直播加载浮层不消失；电视 tab 顶部按钮裁切；点频道后布局错乱/播放器不出现（横屏重建问题）\n- 修复：电视 tab 操作行改靠左；横屏右侧面板「收藏频道」被裁（面板可滚动+导航条 inset）；切 tab 回电视页变宽屏三栏（尺寸残留）\n- 修复：R8 缩减包启动闪退（kotlin 类缺失）\n- 新增（TV 版）：电视台直播入口（HomeDock 第 7 项「电视」）、设置「本机与工具」7 项（文件管理/管理员后台/崩溃日志/存储清理/观影统计/遥控器说明/关于）\n- 首页海报网格 RecyclerView 虚拟化；陕西卫视官方直播页；设置页版本号运行时读取\n- 本版多处为未真机验证（手机 6 项修复、TV 全部功能、R8 包），发布说明须保留未验证标注；TV 频道管理本轮未覆盖",
+  "size": 62004523,
+  "sha256": "3389de4058bf026d5c98b3e9954905581cb82992602bcbd30f794b5ff67b612a",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.0/WhaleFall-1.4.0-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.0/WhaleFall-1.4.0-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.0"
 }
