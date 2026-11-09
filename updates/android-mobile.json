@@ -1,40 +1,40 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.4.6",
-  "versionCode": 14006,
+  "versionName": "1.4.7",
+  "versionCode": 14007,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.4.6（手机 / 平板 / 电视）\n\n- 修复网盘「登录」直接弹出来源方白底原始面板：现在统一先进入 App 自己的「网盘登录」玻璃面板，面板内再「打开源登录界面 / 源账号管理」；源面板前有确认，返回后刷新状态\n- 含 1.4.5 全部内容：播放页壁纸遮挡修复、检查更新多包体选择、字体颜色自定义；1.4.4/1.4.3 修复\n- 本版网盘登录 UI 未真机验证（V31），发布说明须保留未验证标注",
-  "size": 62020907,
-  "sha256": "8852c4f65193e7c2e63ea014f5624fb60588ff89ed8d0f66c7fd1092eb555815",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.6/WhaleFall-1.4.6-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.6/WhaleFall-1.4.6-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.6",
+  "notes": "# 鲸落 1.4.7（手机 / 平板 / 电视）\n\n- 网盘登录状态改为三态真实检测：本地凭据 / 源可确认（WebView 登录 Cookie 或源存储凭据）/ 由源管理·无法读取；不再把「无法检测」显示成「未登录」\n- 修复本地凭据判据过宽会误报「已登录」的问题（只认凭据键 + 值形态，排除 alias/quality 等配置字段）\n- 网盘登录入口统一走 App 玻璃面板（1.4.6），源面板前有确认；检测改为后台扫描 + 60s 缓存，面板刷新更顺\n- 检查更新支持选择包体（1.4.5），字体颜色恢复默认/对比度确认按规范修正\n- 本版未真机验证（V32），发布说明须保留未验证标注",
+  "size": 62029099,
+  "sha256": "a3555fe3ccb0068fdd3252fa1a0d2f4c8667e0d38850916ea7b44158293217d6",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.7/WhaleFall-1.4.7-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.7/WhaleFall-1.4.7-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.7",
   "variants": [
     {
       "kind": "mobile",
       "label": "标准版（双 ABI，推荐）",
-      "size": 62020907,
-      "sha256": "8852c4f65193e7c2e63ea014f5624fb60588ff89ed8d0f66c7fd1092eb555815",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.6/WhaleFall-1.4.6-android-mobile.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.6/WhaleFall-1.4.6-android-mobile.apk"
+      "size": 62029099,
+      "sha256": "a3555fe3ccb0068fdd3252fa1a0d2f4c8667e0d38850916ea7b44158293217d6",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.7/WhaleFall-1.4.7-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.7/WhaleFall-1.4.7-android-mobile.apk"
     },
     {
       "kind": "arm64",
       "label": "arm64 精简版（约 35MB）",
-      "size": 35584598,
-      "sha256": "8cf37c7a1c6a194891b929295e9bef596cc2410d5e8494960cb26a5d3be2b1ef",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.6/WhaleFall-1.4.6-android-mobile-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.6/WhaleFall-1.4.6-android-mobile-arm64.apk"
+      "size": 35592790,
+      "sha256": "536d9a1cde095a432748ac27d1bf8cbc04e86444e146a6d5c3af050fd647aef4",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.7/WhaleFall-1.4.7-android-mobile-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.7/WhaleFall-1.4.7-android-mobile-arm64.apk"
     },
     {
       "kind": "r8",
       "label": "R8 精简版（约 33MB，未单独真机验证）",
-      "size": 33104432,
-      "sha256": "3b3596697ad65e80957101734cdc11df667dedd47b6748a2a2e8722ee26165a3",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.6/WhaleFall-1.4.6-android-mobile-r8-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.6/WhaleFall-1.4.6-android-mobile-r8-arm64.apk"
+      "size": 33112515,
+      "sha256": "e7b3c338607783fced3a3923aecceae892a97e4d93421649f478175d93c6c2bd",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.7/WhaleFall-1.4.7-android-mobile-r8-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.7/WhaleFall-1.4.7-android-mobile-r8-arm64.apk"
     }
   ]
 }
