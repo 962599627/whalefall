@@ -2128,16 +2128,10 @@ final class TvLive {
             chrome.animate().cancel();
             chrome.setVisibility(View.VISIBLE);
             chrome.setAlpha(1f);
-            // 从隐藏态唤出时，右侧信息面板从右滑入
-            if (fromHidden && infoPanel != null) {
+            if (infoPanel != null) {
                 infoPanel.animate().cancel();
-                infoPanel.setTranslationX(a.dp(30));
-                infoPanel.setAlpha(0f);
-                infoPanel.animate()
-                        .translationX(0f)
-                        .alpha(1f)
-                        .setDuration(240)
-                        .start();
+                infoPanel.setTranslationX(0f);
+                infoPanel.setAlpha(1f);
             }
             handler.removeCallbacks(hideChromeRunnable);
             if (!panelOpen) handler.postDelayed(hideChromeRunnable, CHROME_HIDE_MS);
@@ -2146,21 +2140,18 @@ final class TvLive {
         void fadeOutChrome() {
             if (chrome == null || overlay == null) return;
             chromeShown = false;
-            final int gen = ++chromeGen;
+            ++chromeGen;
             chrome.animate().cancel();
-            chrome.animate()
-                    .alpha(0f)
-                    .setDuration(260)
-                    .withEndAction(
-                            () -> {
-                                if (gen == chromeGen && chrome != null) {
-                                    chrome.setVisibility(View.INVISIBLE);
-                                }
-                            })
-                    .start();
+            chrome.setAlpha(1f);
+            chrome.setVisibility(View.INVISIBLE);
         }
 
+        long lastChromeToggleAt;
+
         void toggleChrome() {
+            long now = android.os.SystemClock.uptimeMillis();
+            if (now - lastChromeToggleAt < 350) return;
+            lastChromeToggleAt = now;
             if (chromeShown) {
                 handler.removeCallbacks(hideChromeRunnable);
                 fadeOutChrome();

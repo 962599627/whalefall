@@ -331,6 +331,39 @@ public final class MainActivity extends Activity {
         }
     }
 
+    /** 启动时展示上次崩溃栈，并另存一份到内置文件管理，方便截图/查看。 */
+    private void showLastCrashIfAny() {
+        try {
+            java.io.File src = new java.io.File(getFilesDir(), "crash-last.txt");
+            if (!src.isFile()) return;
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            try (java.io.InputStream in = new java.io.FileInputStream(src)) {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            }
+            String text = new String(out.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+            if (text.trim().isEmpty()) return;
+            PushFiles.writeText(this, "崩溃日志/上次崩溃.txt", text);
+            final String preview =
+                    text.length() > 1800 ? text.substring(0, 1800) + "\n…（完整内容见 文件管理/崩溃日志/上次崩溃.txt）" : text;
+            new AppDialog.Builder(this)
+                    .setTitle("上次崩溃日志")
+                    .setMessage(preview)
+                    .setPositiveButton("复制", (d, w) -> {
+                        android.content.ClipboardManager cm =
+                                (android.content.ClipboardManager)
+                                        getSystemService(CLIPBOARD_SERVICE);
+                        cm.setPrimaryClip(
+                                android.content.ClipData.newPlainText("崩溃日志", text));
+                        toast("崩溃日志已复制");
+                    })
+                    .setNegativeButton("关闭", null)
+                    .show();
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** 把上次崩溃栈复制到应用外部目录，便于直接取出排查。 */
     private void exportCrashLog() {
         try {
@@ -1429,6 +1462,7 @@ public final class MainActivity extends Activity {
         if (current != null) current.home = true;
         if (!isTvDevice()) {
             MobileShell.show(this);
+            ui.post(this::showLastCrashIfAny);
             return;
         }
         Cms.Site selected = null;
