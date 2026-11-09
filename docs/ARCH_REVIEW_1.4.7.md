@@ -72,3 +72,19 @@
 - **构建面：可构建**（新 `PanLoginState` 在 `android/src/main/java`，Python/Gradle 自动包含；无新增依赖；Java 8 语法合规；未发现 API 签名不匹配——`scanCredentials/driveHasLocalCredential/findAccountName`、`UpdatePolicy.validateVariant`、`TextColorDialog.show` 调用点均已核对）。
 - **应用代码必须修：M1（1.4.7 假状态判据）**；建议同轮修 T1/T2（字体颜色规范偏差）与 P1（缓存/线程），其余记风险。
 - **Top3 见回给 Lead 的消息。**
+
+---
+
+## 7. 修复后快速复核（提交 `aedf7a8`，只核 M1/U1/P1/T1/T2）
+
+> 状态：**可交付（无新增必须修）**；保留 2 条残余风险（低-中），建议记录不阻断。行号为 `aedf7a8` 快照。
+
+| # | 复核点 | 结论 | 证据 |
+|---|---|---|---|
+| 1 | **M1 判据收紧** | **通过（1 条残余低风险）** | `AccountPanel.credentialConfigKey:1105-1121` 只认 cookie/token/credential/auth/login/session 且显式排除 alias/quality/original/name/title/desc；`credentialValue:1123-1140` 要求 cookie 串（`=`+`;`）或 ≥16 位 token（无空白/`<`/`http`）；`driveHasLocalCredential:1142-1186` 裸 `ali` 已删，ali 只认 `refresh_token/aliyundrive/alipan/aliyun` 特征；`PanLoginState.storageEvidence:368-397` 也加了 `credentialValue` 过滤。残余：`:1152` 的 `|| PanLoginState.sourcePrefsFile(file)` 让来源 prefs 里**任意键**只要值形如 `x=y;` 且键名含网盘名（如 `quark_cookie_mode`、值 `auto=1;`）仍可判「已登录」——建议 value 为 cookie 串时要求含该网盘域名/凭据 token，或去掉 sourcePrefsFile 绕过、统一要求 credentialConfigKey。 |
+| 2 | **U1 arm64/r8 前缀** | **通过** | `UpdatePolicy:82-93`：mobile 走 `editionUrl`（`WhaleFall-<ver>-android-mobile.apk` 白名单），tv 走 `editionUrl(...,false)`（`-android-tv`）；arm64/r8 强制 `WhaleFall-<ver>-android-mobile-` 前缀（`:88-89`），arm64 排除 `-r8`（`:90`），r8 要求含 `-r8` 且 `-arm64`（`:91`，与现有 `...-r8-arm64.apk` 命名一致）✔。 |
+| 3 | **P1 缓存/worker/合并** | **通过（2 条残余风险）** | `PanLoginState:73-144`：60s 静态缓存（按 siteKey）、同站点并发 waiters 合并、force 失效、扫描在 `a.worker`、回 UI 前判 `dialog.isShowing/version`（`AccountPanel:559-576`、`PanLoginGuide:248-272`）；`detectAll:146-184` 一次 `scanCredentials` + `prefsSnapshot` + `cookieSnapshot`，`storageEvidence` 复用 prefs 快照（`:369-397`），两面板共享同一缓存（`AccountPanel:567`、`PanLoginGuide:257`），主线程无扫描残留 ✔（grep 仅 `detectAll` 调用 scan/snapshot）。残余：①全局单飞按 site，跨站点并发时先完成者会清空/回调另一站点 waiters（`:111-142`；单站点面板场景概率低）；②`force` 在 same-site 已有 in-flight 时只是加入 waiters，可能返回登录前的旧结果（`:111-113`）；③`CookieManager.getCookie` 在 worker 调用（已 try/catch，建议真机确认 OEM WebView 无异常）。 |
+| 4 | **T1 恢复默认只重置预览** | **通过** | `TextColorDialog:265-277`：只改 rgb、`refreshAll.run()`（滑条/HEX/预览同步）+ toast「点确定保存」，不写 prefs、不关弹窗；保存仍走「确定」→ `saveOrConfirm:294-297,318-345`。 |
+| 5 | **T2 对比度二次确认** | **通过** | `TextColorDialog:317-336`：对 `Skin.BG` 算 WCAG 对比度，`<4.5` 时关闭原弹窗并弹「该颜色可能看不清」；「仍然保存」→ `save:338-345`（写 prefs + toast + recreate）✔；「返回修改」→ `show(a,color):77-85,334` 带回刚选颜色重开 ✔。小注：二次确认默认焦点是 message 而非「返回修改」，建议明确聚焦安全按钮（非阻断）。 |
+
+**修复后结论：M1/U1/P1/T1/T2 全部通过；保留 2 条低-中残余风险（M1 的 sourcePrefsFile 绕过、P1 的跨站点单飞/force 合流），可交付 1.4.7，按 V32 验证。**

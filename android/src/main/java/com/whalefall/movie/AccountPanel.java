@@ -1149,7 +1149,8 @@ final class AccountPanel {
             String value = credential.value == null ? "" : credential.value;
             // ① 值必须像凭据；② 键名必须是凭据键，或 prefs 文件本身属于来源存储
             if (!credentialValue(value)) continue;
-            if (!credentialConfigKey(key) && !PanLoginState.sourcePrefsFile(file)) continue;
+            // 只认凭据键：来源 prefs 里任意键 + `x=y;` 形态值不再算本地凭据（源侧凭据由 PanLoginState 的 STATE_SOURCE 单独判定）。
+            if (!credentialConfigKey(key)) continue;
             String lower = value.toLowerCase(Locale.ROOT);
             switch (driveKey) {
                 case "quark":
