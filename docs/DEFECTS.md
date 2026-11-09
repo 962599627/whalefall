@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 适用版本 | 1.2.2（versionCode 12020）；1.3.0/1.3.1 实测新增项已单独标注 |
+| 适用版本 | 1.2.2（versionCode 12020）；1.3.0/1.3.1/1.4.0 实测新增项已单独标注 |
 | 维护 | QA；修复与验证结论由 QA 回填，Lead 最终验收 |
 | 关联文档 | [TEST_PLAN.md](TEST_PLAN.md)（用例 ID：SMK-*、R1–R8、M1–M14） |
 | 更新 | 2026-11-09 建立；已修项全部为「代码确认，待真机验证」 |
@@ -224,6 +224,34 @@
 
 **判定**：点频道后播放器不出现 / 页面错乱 / 退不回去 / 竖屏出现右侧竖栏 = 失败（P1，阻塞 1.3.1 收口）。
 
+### DEF-2013 R8 缩减包启动闪退（kotlin 类缺失，P1，已修待重出包）
+
+| 字段 | 内容 |
+|---|---|
+| 发现版本 | 1.3.1 R8 包 `WhaleFall-1.3.1-android-mobile-r8-arm64.apk`（`404fb92` 干净树构建，1.3.1/13001） |
+| 设备形态 | 手机（用户实机，arm64） |
+| 严重度 / 优先级 | **P1** / 修完必须重出包再验 |
+| 关联用例 | `docs/VERIFY_1.4.0.md` **V17** |
+| 复现率 | 1/1（启动即崩） |
+| 前置条件 | 安装 R8 缩减包，冷启动 |
+| 复现步骤 | ①安装 `WhaleFall-1.3.1-android-mobile-r8-arm64.apk` ②冷启动打开鲸落 |
+| 实际结果 | **启动闪退**（用户日志时间 22:39）。关键堆栈：`java.lang.NoClassDefFoundError: Failed resolution of: Lkotlin/jvm/internal/Intrinsics;` → `RecyclerView.<init>` → `PlayerView.<init>` → `VideoWallpaper.<init>` → `MainActivity.installBackdrop` → `MobileShell.show` |
+| 预期结果 | 正常进首页；首页图片、详情、播放可用 |
+| 日志线索 | 上述 `NoClassDefFoundError` 首行（22:39 崩溃日志）；指向 R8 产物缺 kotlin 类 |
+| 证据路径 | 用户崩溃日志（待归档 `/sdcard/Download/DSH-Go/鲸落/verify/1.4.0/`，建议 `r8-crash.png`） |
+| 状态 | **已修待重出包**（依赖已改，需重建 R8 包后按 V17 验证） |
+| 修复版本/提交 | 1.4.0（待重出 R8 包） |
+| 验证记录 | 待 V17 真机验证后回填 |
+
+**根因（Lead 确认 + QA 静态核对）**：
+- `gradle/app/build.gradle:37` 为兼容 AGP9，把 `kotlin-stdlib-1.8.0.jar`、`kotlin-stdlib-common-1.8.0.jar`、`annotations-13.0.jar` 从 `fileTree` 依赖中排除；`:111` 注释写明「AGP 9 会自动引入新版 kotlin-stdlib」。
+- 但 1.3.1 的 R8 包是用 **AGP 8.7.3** 构建的：AGP8 不会自动补 kotlin-stdlib，R8 产物缺 `kotlin.jvm.internal.Intrinsics` 等类 → 第一个用到 kotlin 的视图（`RecyclerView` 构造链）就抛 `NoClassDefFoundError`，经 `PlayerView`/`VideoWallpaper`/`installBackdrop` 冒到 `MobileShell.show`。
+- 只影响 **R8 缩减包**；主包与 arm64 非 R8 包可正常启动（用户实测主包正常）。同时说明「1.2.x 的 R8 真机记录（`3446eb9`）」不能代表 1.3.1 R8 包，因为构建链已换 AGP 8.7.3。
+
+**修复（Lead 已定）**：依赖**恢复包含 `kotlin-stdlib`**（不再从 fileTree 排除）+ **构建链锁定 AGP 8.7.3** + **重出 R8 包**；按 V17 验证：R8 包冷启动进首页 + 首页图片/详情/播放冒烟。
+
+**判定**：R8 包冷启动闪退或首页/详情/播放异常 = 失败（P1）。主包发布不受此条阻塞，但 **R8 包在 V17 通过前不得对外宣称可用**。
+
 ---
 
 ## 3. 已修缺陷（代码确认，待真机验证）
@@ -273,7 +301,7 @@
 |---|---|---|
 | 开放 P0 | 0 | — |
 | 开放 P1 | 1 | DEF-2002（1.3.1 修复中） |
-| 1.3.0/1.3.1 实测新增（已修待验证） | 3 | DEF-2010（P1）、DEF-2012（P1）、DEF-2011（P2） |
+| 1.3.0/1.3.1 实测新增（已修待验证/待重出包） | 4 | DEF-2010（P1）、DEF-2012（P1）、DEF-2011（P2）、DEF-2013（P1，R8 包） |
 | 开放 P2 | 4 | DEF-2003、DEF-2005、DEF-2008、DEF-2009 |
 | 开放 P3 | 3 | DEF-2004、DEF-2006、DEF-2007 |
 | 待确认 | 1 | DEF-3001 |
@@ -285,6 +313,8 @@
 
 **1.3.0 追加（2026-11-09 22:26，`1b8f45b`）**：用户 22:10 真机又报两条手机 UI 问题——**DEF-2011**（电视 tab 顶部「管理」被右缘裁切，P2）与 **DEF-2012**（点频道后布局错乱、播放器不出现，P1）。修复随 1.3.1 包交付，状态均为「已修待验证」；**未过 V12/V13 前，不得在发布说明里写「电视 tab 顶部按钮/转屏已修好」。**
 
+**1.3.1 R8 追加（2026-11-09 22:48）**：用户装 `r8-arm64` 包**启动闪退**（22:39，`NoClassDefFoundError: kotlin/jvm/internal/Intrinsics`），登记 **DEF-2013（P1，已修待重出包）**。根因是兼容 AGP9 的 kotlin-stdlib 排除项在 AGP 8.7.3 R8 构建下导致缺类。**R8 包在 V17 通过前不得对外宣称可用；主包/arm64 非 R8 包不受影响，不阻塞 1.4.0 手机主包发布。**
+
 ## 变更记录
 
 | 日期 | 版本 | 变更 |
@@ -292,3 +322,4 @@
 | 2026-11-09 | 1.2.2 | 建立缺陷库；登记 13 项已修待验证、8 项开放、1 项待确认；补充缺陷模板与判定口径；按 HANDOFF/SPRINT_BOARD 补版本或提交号 |
 | 2026-11-09 | 1.3.0/1.3.1 | 新增 **DEF-2010**（直播已出画面但加载浮层不消失，CCTV-2 实测，P1，已修待验证）；**DEF-2002** 更新为 1.3.1 修复中（inject 单例化 + 真实播放探针）；新增 P1 统计行与 QA 结论（未过 V9/V11 不得宣称已修）；配套回归清单 `docs/VERIFY_1.3.1.md` |
 | 2026-11-09 | 1.3.1 | 新增 **DEF-2011**（电视 tab 顶部「管理」按钮被裁切，P2）与 **DEF-2012**（点频道后布局错乱/播放器不出现，P1），均「已修待验证」，修复提交 `1b8f45b`；统计与 QA 结论更新；VERIFY_1.3.1 追加 V12/V13；RELEASE_1.3.1 补本版内容与未真机验证项 |
+| 2026-11-09 | 1.4.0 | 新增 **DEF-2013**（R8 缩减包启动闪退 `NoClassDefFoundError: kotlin/jvm/internal/Intrinsics`，P1，已修待重出包；根因 `gradle/app/build.gradle:37` 的 kotlin-stdlib 排除 + AGP 8.7.3 R8 构建）；统计/QA 结论更新；新增 `docs/VERIFY_1.4.0.md`（V14–V17） |
