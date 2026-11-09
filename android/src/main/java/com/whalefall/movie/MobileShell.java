@@ -9,7 +9,6 @@ import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RadialGradient;
-import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
@@ -727,17 +726,7 @@ final class MobileShell {
     }
 
     private static int homeScrollY;
-    /** 离开首页时首个可见 item（0 = header）与相对视口顶部的偏移，用于切回首页时精确复位。 */
-    private static int homeAnchorPosition = -1;
-    private static int homeAnchorOffset;
-    /**
-     * 首页滚动位置载体：MainActivity 仍以 {@code ScrollView#getScrollY()} 保存/恢复首页位置，
-     * 真实滚动由 {@link #homeRecycler} 承担。这里用不加入视图树的 {@link HomeScrollBridge}
-     * 镜像 RecyclerView 的像素偏移，保持 MainActivity 的存档/回顶逻辑不变。
-     */
     private ScrollView homeScroll;
-    private RecyclerView homeRecycler;
-    private HomeGridAdapter homeGridAdapter;
     private LinearLayout homeBody;
     private static View dockView;
 
@@ -819,33 +808,22 @@ final class MobileShell {
     // TAB 0: IPHONE PORTRAIT HOME (Scrollable Header + Category Pills + 3-Col Grid)
     // =========================================================================
     private void renderHomeTab() {
-        homeRecycler = null;
-        homeGridAdapter = null;
         if (a.config == null || currentSite == null) {
             renderEmptyWelcome();
             return;
         }
 
-        final int restoreScroll = pendingHomeScroll >= 0 ? pendingHomeScroll : homeScrollY;
-        // 内存态里的锚点最可靠；从 Activity 存档恢复时 static 已丢失，只能退回像素偏移。
-        final int restoreAnchor = pendingHomeScroll >= 0 ? -1 : homeAnchorPosition;
-        final int restoreAnchorOffset = homeAnchorOffset;
+        final ScrollView scrollView = new ScrollView(a);
+        homeScroll = scrollView;
+        final int restoreScroll =
+                pendingHomeScroll >= 0 ? pendingHomeScroll : homeScrollY;
         pendingHomeScroll = -1;
-
-        // 首页虚拟化：RecyclerView 承载 header + 网格行 + footer。
-        // HomeScrollBridge 不加入视图树，只把真实滚动偏移镜像给 MainActivity 存档/恢复。
-        final HomeScrollBridge scrollBridge = new HomeScrollBridge(a);
-        scrollBridge.mirror(Math.max(0, restoreScroll));
-        homeScroll = scrollBridge;
-        a.scroll = scrollBridge;
-
-        final RecyclerView recycler = new RecyclerView(a);
-        homeRecycler = recycler;
-        recycler.setLayoutManager(new LinearLayoutManager(a));
-        recycler.setItemAnimator(null);
-        recycler.setClipToPadding(false);
-        recycler.setVerticalScrollBarEnabled(false);
-        contentContainer.addView(recycler, new FrameLayout.LayoutParams(-1, -1));
+        scrollView.post(() -> scrollView.scrollTo(0, Math.max(0, restoreScroll)));
+        scrollView.setFillViewport(true);
+        scrollView.setVerticalScrollBarEnabled(false);
+        scrollView.setClipToPadding(false);
+        a.scroll = scrollView;
+        contentContainer.addView(scrollView, new FrameLayout.LayoutParams(-1, -1));
         if (filterSummaryBar != null) filterSummaryBar.view().bringToFront();
 
         // 底部常驻筛选摘要条：未选时是入口，已选时展示条件 chips，点击展开筛选浮层
@@ -864,14 +842,16 @@ final class MobileShell {
         filterBarLp.rightMargin = a.dp(UiTokens.SP_16);
         filterBarLp.bottomMargin = a.dp(filterBarBottomDp);
         contentContainer.addView(filterSummaryBar.view(), filterBarLp);
-        // 让开底部常驻筛选条 / Dock 的留白放在 RecyclerView padding 上，等价于旧 body 的 bottom padding
-        recycler.setPadding(
-                0, 0, 0, a.dp(filterBarBottomDp + FilterSummaryBar.HEIGHT_DP + 18));
 
         final LinearLayout body = a.vertical();
         a.body = body;
         homeBody = body;
-        body.setPadding(0, statusBarHeight() + a.dp(8), 0, 0);
+        body.setPadding(
+                0,
+                statusBarHeight() + a.dp(8),
+                0,
+                a.dp(filterBarBottomDp + FilterSummaryBar.HEIGHT_DP + 18));
+        scrollView.addView(body, new ScrollView.LayoutParams(-1, -2));
 
         // 1. Scrollable Top Header Row (Brand + Site Capsule + Netdisk Capsule + Search Icon)
         body.addView(buildHomeTopHeaderRow(), new LinearLayout.LayoutParams(-1, -2));
@@ -1116,11 +1096,16 @@ final class MobileShell {
         categoryBar.addView(filterButton, filterSize);
         body.addView(categoryBar, new LinearLayout.LayoutParams(-1, -2));
 
-        // 5. Status Text + virtualized 3/4/5-column poster grid (header + rows + footer items)
+        // 5. Status & 3-Column Poster Grid Container
         final TextView statusText = a.text("正在加载片单…", 13, MainActivity.MUTED);
         statusText.setGravity(Gravity.CENTER);
         statusText.setPadding(a.dp(16), a.dp(24), a.dp(16), a.dp(24));
         body.addView(statusText, new LinearLayout.LayoutParams(-1, -2));
+
+        final LinearLayout gridContainer = a.vertical();
+        gridContainer.setPadding(
+                a.dp(UiTokens.SP_16), a.dp(UiTokens.SP_2), a.dp(UiTokens.SP_16), 0);
+        body.addView(gridContainer, new LinearLayout.LayoutParams(-1, -2));
 
         final TextView loadMoreBtn = a.text("加载更多影片", 13.5f, MainActivity.WHITE);
         loadMoreBtn.setTag("home-load-more");
@@ -1131,70 +1116,13 @@ final class MobileShell {
                 glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.8f), 0x33ffffff));
         loadMoreBtn.setVisibility(View.GONE);
         MobileDetailScreen.bindTouchFeedback(loadMoreBtn);
-        RecyclerView.LayoutParams moreLp = new RecyclerView.LayoutParams(-1, -2);
+        LinearLayout.LayoutParams moreLp = new LinearLayout.LayoutParams(-1, -2);
         moreLp.setMargins(
                 a.dp(UiTokens.SP_16),
                 a.dp(UiTokens.SP_12),
                 a.dp(UiTokens.SP_16),
                 a.dp(UiTokens.SP_8));
-        loadMoreBtn.setLayoutParams(moreLp);
-
-        // 列数/海报高度沿用旧 LinearLayout 网格公式，保证卡片尺寸与间距不变。
-        float homeGridWidthDp = a.windowWidth() / a.getResources().getDisplayMetrics().density;
-        final int gridCols = homeGridWidthDp >= 720 ? 5 : (homeGridWidthDp >= 520 ? 4 : 3);
-        int gridHorizontalPaddingDp = homeGridWidthDp >= 640 ? 116 : 32;
-        int gridCardWidthDp =
-                Math.max(
-                        92,
-                        (int)
-                                ((homeGridWidthDp
-                                                - gridHorizontalPaddingDp
-                                                - (gridCols - 1) * 12)
-                                        / gridCols));
-        final int gridPosterHeightDp = Math.round(gridCardWidthDp * 1.48f);
-        homeGridAdapter = new HomeGridAdapter(body, loadMoreBtn, gridCols, gridPosterHeightDp);
-        recycler.setAdapter(homeGridAdapter);
-        // 旧 gridContainer 的 2dp 上内边距：只给第一行，保持不变（header 为 position 0）
-        recycler.addItemDecoration(
-                new RecyclerView.ItemDecoration() {
-                    @Override
-                    public void getItemOffsets(
-                            Rect outRect,
-                            View view,
-                            RecyclerView parent,
-                            RecyclerView.State state) {
-                        if (parent.getChildAdapterPosition(view) == 1)
-                            outRect.top = a.dp(UiTokens.SP_2);
-                    }
-                });
-
-        // 首屏数据回来后恢复首页位置：内存态优先用“首个可见 item + 偏移”，进程重建退回像素偏移。
-        final boolean[] homeScrollRestored = {false};
-        final Runnable restoreHomeScroll =
-                () -> {
-                    if (homeScrollRestored[0]
-                            || homeRecycler == null
-                            || homeGridAdapter == null) return;
-                    RecyclerView.LayoutManager lm = homeRecycler.getLayoutManager();
-                    if (!(lm instanceof LinearLayoutManager)) return;
-                    homeScrollRestored[0] = true;
-                    if (homeGridAdapter.rowCount() == 0) return; // 空片单没有可恢复的位置
-                    if (restoreAnchor >= 0) {
-                        int target =
-                                Math.min(
-                                        restoreAnchor,
-                                        Math.max(0, homeGridAdapter.getItemCount() - 1));
-                        ((LinearLayoutManager) lm)
-                                .scrollToPositionWithOffset(target, restoreAnchorOffset);
-                        homeRecycler.post(() -> syncHomeScrollPosition(homeRecycler));
-                    } else if (restoreScroll > 0) {
-                        homeRecycler.post(
-                                () -> {
-                                    settleHomeScroll(homeRecycler, restoreScroll, 2);
-                                    syncHomeScrollPosition(homeRecycler);
-                                });
-                    }
-                };
+        body.addView(loadMoreBtn, moreLp);
 
         final boolean[] loadingPage = {false};
         final boolean[] pageFailed = {false};
@@ -3096,12 +3024,13 @@ final class MobileShell {
         RecyclerView rv = new RecyclerView(a);
         final MyListAdapter adapter = new MyListAdapter(favoritesMode, cols, cardW, gap);
         if (cols > 1) {
-            GridLayoutManager glm = new GridLayoutManager(a, cols);
+            final int spanCount = cols;
+            GridLayoutManager glm = new GridLayoutManager(a, spanCount);
             glm.setSpanSizeLookup(
                     new GridLayoutManager.SpanSizeLookup() {
                         @Override
                         public int getSpanSize(int position) {
-                            return adapter.getItemViewType(position) == 2 ? cols : 1;
+                            return adapter.getItemViewType(position) == 2 ? spanCount : 1;
                         }
                     });
             rv.setLayoutManager(glm);
