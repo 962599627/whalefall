@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.2.2",
-  "versionCode": 12020,
+  "versionName": "1.4.3",
+  "versionCode": 14003,
   "minSdk": 23,
   "prerelease": true,
-  "notes": "# 鲸落 1.2.2（手机 / 平板 / 电视）\n\n- 电视频道补全：央视新增 4K/8K，卫视补齐北京/浙江/天津/辽宁/吉林/河南/陕西/青海/西藏/兵团/东南/厦门/卡通等，内置 47→67 个\n- 电视频道列表改用 RecyclerView，长列表滚动更流畅\n- 存储空间与缓存清理（临时缓存/插件缓存/更新包/日志/上传文件分别统计，一键清理）\n- 片源与直播配置傻瓜教程（内置 Markdown 阅读），可预览当前片源配置原文\n- 遥控器按键说明；图片预览双指缩放\n- 更新检查默认渠道修正为 stable，支持多镜像回退（gh-proxy / ghproxy / 直连）\n- 首页滚动位置在重建/恢复后保留\n- 构建：Gradle 支持 mobile/tv flavor，EDITION 与 LEANBACK_LAUNCHER 自动区分；版本号单点定义",
-  "size": 61988139,
-  "sha256": "e2c2cd251e24291c96919902acf849ad93c9877ccc326bf6dff2ab2ac4a8fa0e",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.2.2/WhaleFall-1.2.2-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.2.2/WhaleFall-1.2.2-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.2.2"
+  "notes": "# 鲸落 1.4.3（手机 / 平板 / 电视）\n\n- 修复播放页点按呼出控制条不灵敏：控制条隐藏时单击立即出现（不再等双击超时），快速连点只呼出、不会误暂停\n- 修复/恢复布局抖动：播放页只在窗口尺寸真实变化时重排控件与重铺视频\n- 设置→运行日志支持复制（手机）/另存到文件管理（TV），清空前二次确认\n- 含 1.4.2 全部内容：播放页铺满/贴边、视频 surface 重铺、诊断日志；1.4.1/1.4.0 全部修复与 TV 功能对齐\n- 本版点按与运行日志修改未真机验证（V25/V26），发布说明须保留未验证标注\n- 预览通道：与稳定版同包，仅通道标记不同",
+  "size": 62016811,
+  "sha256": "64b2f3da95f147933a74b3574fe046134eea4abe5c0a17f9eed9f5961ed055fe",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.3/WhaleFall-1.4.3-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.3/WhaleFall-1.4.3-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.3"
 }
