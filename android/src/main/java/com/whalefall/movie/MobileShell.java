@@ -28,6 +28,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -2957,21 +2958,19 @@ final class MobileShell {
                             sv.setClipToPadding(false);
                             LinearLayout body = a.vertical();
                             body.setPadding(0, 0, 0, a.dp(106));
-                            sv.addView(body, new ScrollView.LayoutParams(-1, -2));
+                            int downloadW =
+                                    Math.min(
+                                            a.windowWidth() > 0 ? a.windowWidth() : a.usableWidth,
+                                            a.dp(760));
+                            sv.addView(body, new ScrollView.LayoutParams(downloadW, -2));
                             MobileDownloads.render(a, body);
                             listHost.addView(sv, new FrameLayout.LayoutParams(-1, -1));
                             return;
                         }
 
-                        RecyclerView rv = new RecyclerView(a);
-                        rv.setLayoutManager(new LinearLayoutManager(a));
-                        rv.setClipToPadding(false);
-                        rv.setPadding(0, 0, 0, a.dp(106));
-                        final MyListAdapter adapter = new MyListAdapter(favMode);
-                        rv.setAdapter(adapter);
-                        adapterRef[0] = adapter;
-                        listHost.addView(rv, new FrameLayout.LayoutParams(-1, -1));
-                        adapter.reload();
+                        final boolean favModeFinal = favMode;
+                        listHost.post(
+                                () -> buildLibraryList(listHost, favModeFinal, adapterRef));
                     }
                 };
 
@@ -3006,15 +3005,48 @@ final class MobileShell {
         renderSubTab.run();
     }
 
-    /** 片库列表适配器：观看历史 / 我的收藏，使用 RecyclerView 做虚拟化。 */
+    /** 片库列表：手机单列行，平板/TV 自适应网格（列数按内容宽度计算）。 */
+    private void buildLibraryList(
+            FrameLayout host, boolean favoritesMode, MyListAdapter[] adapterRef) {
+        int avail = host.getWidth();
+        if (avail <= 0) avail = a.usableWidth > 0 ? a.usableWidth : a.windowWidth();
+        boolean phone = a.formFactor == TvLayoutPolicy.FORM_PHONE;
+        if (!phone) avail = Math.max(a.dp(320), avail - a.dp(88)); // 让出右侧全局导航栏
+        int sidePad = a.dp(phone ? 16 : 20);
+        int gap = a.dp(phone ? 12 : 14);
+        int cols = 1;
+        int widthDp = Math.round(avail / a.getResources().getDisplayMetrics().density);
+        if (!phone) {
+            if (widthDp >= 1080) cols = 5;
+            else if (widthDp >= 840) cols = 4;
+            else if (widthDp >= 600) cols = 3;
+        }
+        int cardW = cols > 1 ? (avail - sidePad * 2 - gap * (cols - 1)) / cols : avail;
+        RecyclerView rv = new RecyclerView(a);
+        if (cols > 1) rv.setLayoutManager(new GridLayoutManager(a, cols));
+        else rv.setLayoutManager(new LinearLayoutManager(a));
+        rv.setClipToPadding(false);
+        rv.setPadding(sidePad, 0, sidePad, a.dp(106));
+        MyListAdapter adapter = new MyListAdapter(favoritesMode, cols, cardW, gap);
+        rv.setAdapter(adapter);
+        if (adapterRef != null) adapterRef[0] = adapter;
+        host.addView(rv, new FrameLayout.LayoutParams(-1, -1));
+        adapter.reload();
+    }
+
+    /** 片库列表适配器：观看历史 / 我的收藏；手机为行布局，平板/TV 为 2:3 封面网格。 */
     private final class MyListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         private final boolean favoritesMode;
+        private final int cols, cardW, gap;
         private List<WatchHistory.Entry> history = new ArrayList<>();
         private List<Favorites.Entry> favorites = new ArrayList<>();
         private boolean empty;
 
-        MyListAdapter(boolean favoritesMode) {
+        MyListAdapter(boolean favoritesMode, int cols, int cardW, int gap) {
             this.favoritesMode = favoritesMode;
+            this.cols = cols;
+            this.cardW = cardW;
+            this.gap = gap;
         }
 
         void reload() {
@@ -3036,40 +3068,47 @@ final class MobileShell {
 
         @Override
         public int getItemViewType(int position) {
-            return empty ? 2 : (favoritesMode ? 1 : 0);
+            if (empty) return 2;
+            return cols > 1 ? 1 : 0;
         }
 
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
-            if (viewType == 2) {
-                LinearLayout box = a.vertical();
-                box.setGravity(Gravity.CENTER);
-                box.setPadding(a.dp(16), a.dp(48), a.dp(16), a.dp(48));
-                TextView hint =
-                        a.text(
-                                favoritesMode ? "还没有收藏任何影片" : "暂无观看历史记录",
-                                14,
-                                MainActivity.MUTED);
-                hint.setGravity(Gravity.CENTER);
-                box.addView(hint);
-                RowHolder holder = new RowHolder(box);
-                holder.emptyRow = true;
-                return holder;
+            if (viewType == 2) return new RowHolder(buildEmpty());
+            RowHolder holder;
+            if (viewType == 0) {
+                holder = new RowHolder(buildRow());
+            } else {
+                holder = new RowHolder(buildCard());
             }
+            RecyclerView.LayoutParams lp =
+                    new RecyclerView.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT);
+            if (viewType == 1) {
+                lp.rightMargin = gap;
+                lp.bottomMargin = gap;
+            }
+            holder.itemView.setLayoutParams(lp);
+            return holder;
+        }
+
+        /** 手机：横向行 100dp 高，缩略图 56×80。 */
+        private View buildRow() {
             LinearLayout row = a.row();
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
+            row.setPadding(a.dp(10), a.dp(8), a.dp(12), a.dp(8));
             row.setBackground(
                     glassBg(0xcc1e3557, 0xcc17294a, a.dp(16), a.dp(0.7f), 0x33ffffff));
             MobileDetailScreen.bindTouchFeedback(row);
-
             RowHolder holder = new RowHolder(row);
+
             ImageView thumb = new ImageView(a);
             holder.thumb = thumb;
             thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
             thumb.setBackground(a.bg(0xff1b2e48, 10));
             thumb.setClipToOutline(true);
-            LinearLayout.LayoutParams thumbLp = new LinearLayout.LayoutParams(a.dp(52), a.dp(74));
+            LinearLayout.LayoutParams thumbLp = new LinearLayout.LayoutParams(a.dp(56), a.dp(80));
             thumbLp.rightMargin = a.dp(12);
             row.addView(thumb, thumbLp);
 
@@ -3082,7 +3121,7 @@ final class MobileShell {
             info.addView(title);
             TextView sub = a.text("", 12, MainActivity.MUTED);
             holder.sub = sub;
-            sub.setPadding(0, a.dp(5), 0, 0);
+            sub.setPadding(0, a.dp(6), 0, 0);
             info.addView(sub);
             row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
 
@@ -3091,70 +3130,190 @@ final class MobileShell {
             action.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
             MobileDetailScreen.bindTouchFeedback(action);
             row.addView(action);
-            return holder;
+            return row;
+        }
+
+        /** 平板/TV：2:3 封面 + 固定两行标题 + meta + 封面底部进度。 */
+        private View buildCard() {
+            LinearLayout card = a.vertical();
+            RecyclerView.LayoutParams cardLp =
+                    new RecyclerView.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT);
+            cardLp.rightMargin = gap;
+            cardLp.bottomMargin = gap;
+            card.setLayoutParams(cardLp);
+
+            RowHolder holder = new RowHolder(card);
+            int coverH = Math.round(cardW * 1.5f);
+
+            FrameLayout coverWrap = new FrameLayout(a);
+            ImageView cover = new ImageView(a);
+            holder.thumb = cover;
+            cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            cover.setBackground(a.bg(0xff1b2e48, 12));
+            cover.setClipToOutline(true);
+            coverWrap.addView(cover, new FrameLayout.LayoutParams(-1, -1));
+
+            View track = new View(a);
+            track.setBackgroundColor(0x4dffffff);
+            FrameLayout.LayoutParams trackLp =
+                    new FrameLayout.LayoutParams(-1, a.dp(3), Gravity.BOTTOM);
+            coverWrap.addView(track, trackLp);
+            final View progress = new View(a);
+            progress.setBackgroundColor(UiTokens.ACCENT);
+            FrameLayout.LayoutParams progressLp =
+                    new FrameLayout.LayoutParams(0, a.dp(3), Gravity.BOTTOM);
+            coverWrap.addView(progress, progressLp);
+            holder.progress = progress;
+
+            TextView badge = a.text(favoritesMode ? "♥" : "✕", 12, Color.WHITE);
+            holder.action = badge;
+            badge.setGravity(Gravity.CENTER);
+            badge.setBackground(UiTokens.round(a, a.dp(12), 0x99000000));
+            FrameLayout.LayoutParams badgeLp =
+                    new FrameLayout.LayoutParams(a.dp(24), a.dp(24), Gravity.TOP | Gravity.RIGHT);
+            badgeLp.topMargin = a.dp(6);
+            badgeLp.rightMargin = a.dp(6);
+            coverWrap.addView(badge, badgeLp);
+            card.addView(coverWrap, new LinearLayout.LayoutParams(-1, coverH));
+
+            TextView title = a.text("", 15, MainActivity.WHITE);
+            holder.title = title;
+            title.setTypeface(null, Typeface.BOLD);
+            title.setMaxLines(2);
+            title.setEllipsize(TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-1, a.dp(46));
+            titleLp.topMargin = a.dp(8);
+            card.addView(title, titleLp);
+
+            TextView meta = a.text("", 11.5f, MainActivity.MUTED);
+            holder.sub = meta;
+            meta.setSingleLine(true);
+            meta.setEllipsize(TextUtils.TruncateAt.END);
+            card.addView(meta, new LinearLayout.LayoutParams(-1, a.dp(18)));
+            card.setTag("library-card");
+            return card;
+        }
+
+        /** 空状态：居中提示 + 去首页按钮。 */
+        private View buildEmpty() {
+            LinearLayout box = a.vertical();
+            box.setGravity(Gravity.CENTER_HORIZONTAL);
+            box.setPadding(a.dp(16), a.dp(72), a.dp(16), a.dp(48));
+            TextView icon = a.text("🎬", 40, 0xccffffff);
+            box.addView(icon);
+            TextView title =
+                    a.text(
+                            favoritesMode ? "还没有收藏任何影片" : "还没有观看记录",
+                            17,
+                            MainActivity.WHITE);
+            title.setTypeface(null, Typeface.BOLD);
+            LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-2, -2);
+            titleLp.topMargin = a.dp(14);
+            box.addView(title, titleLp);
+            TextView desc =
+                    a.text(
+                            favoritesMode
+                                    ? "在影片详情页点「收藏」，这里就会显示"
+                                    : "看过的影片会自动记录，方便继续播放",
+                            13,
+                            MainActivity.MUTED);
+            LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(-2, -2);
+            descLp.topMargin = a.dp(8);
+            box.addView(desc, descLp);
+            TextView go = a.text("去首页看看", 13, 0xffffb3c8);
+            go.setPadding(a.dp(18), a.dp(10), a.dp(18), a.dp(10));
+            go.setBackground(glassBg(0x24ff8fb1, 0x1affffff, 999, a.dp(0.8f), 0x40ffb3c8));
+            MobileDetailScreen.bindTouchFeedback(go);
+            LinearLayout.LayoutParams goLp = new LinearLayout.LayoutParams(-2, -2);
+            goLp.topMargin = a.dp(18);
+            go.setOnClickListener(v -> switchTab(0));
+            box.addView(go, goLp);
+            RowHolder holder = new RowHolder(box);
+            holder.emptyRow = true;
+            return box;
         }
 
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
             RowHolder h = (RowHolder) holder;
             if (h.emptyRow) return;
-            LinearLayout row = (LinearLayout) h.itemView;
-            ImageView thumb = h.thumb;
-            TextView title = h.title;
-            TextView sub = h.sub;
-            TextView action = h.action;
-
             if (favoritesMode) {
                 final Favorites.Entry f = favorites.get(position);
-                title.setText(f.title);
-                sub.setText("已收藏 · 点击查看详情");
-                action.setText("详情");
-                action.setTextColor(0xffc9d4e6);
-                if (f.poster != null && !f.poster.isEmpty()) a.poster(f.poster, thumb);
-                row.setOnClickListener(
-                        v -> {
-                            Cms.Site target = null;
-                            if (a.config != null)
-                                for (Cms.Site site : a.config.sites)
-                                    if (site.key.equals(f.site)) {
-                                        target = site;
-                                        break;
-                                    }
-                            if (target == null) target = currentSite;
-                            if (target == null) {
-                                a.toast("该收藏所属的片源不可用");
-                                return;
-                            }
-                            a.openListing(target, f.video());
-                        });
-                action.setOnClickListener(v -> row.performClick());
+                h.title.setText(f.title);
+                h.sub.setText("已收藏 · 点击查看详情");
+                if (h.progress != null) h.progress.setVisibility(View.GONE);
+                if (f.poster != null && !f.poster.isEmpty()) {
+                    int coverH = cols > 1 ? Math.round(cardW * 1.5f) : a.dp(80);
+                    a.poster(f.poster, h.thumb);
+                }
+                h.itemView.setOnClickListener(v -> openFavorite(f));
+                if (h.action != null) h.action.setOnClickListener(v -> removeFavorite(f));
+                if (h.action != null && cols == 1) h.action.setText("详情");
+                if (h.action != null && cols == 1) h.action.setTextColor(0xffc9d4e6);
             } else {
                 final WatchHistory.Entry e = history.get(position);
-                title.setText(e.title);
-                sub.setText(a.historyLabel(e));
-                action.setText("删除");
-                action.setTextColor(0xffef4444);
-                if (e.poster != null && !e.poster.isEmpty()) a.poster(e.poster, thumb);
-                row.setOnClickListener(v -> a.resumeHistory(e));
-                action.setOnClickListener(
-                        v -> {
-                            a.prefs
-                                    .edit()
-                                    .putString(
-                                            Prefs.WATCH_HISTORY,
-                                            WatchHistory.remove(
-                                                    a.prefs.getString(Prefs.WATCH_HISTORY, "[]"),
-                                                    e.key()))
-                                    .apply();
-                            reload();
-                        });
+                h.title.setText(e.title);
+                h.sub.setText(a.historyLabel(e));
+                if (e.poster != null && !e.poster.isEmpty()) {
+                    int coverH = cols > 1 ? Math.round(cardW * 1.5f) : a.dp(80);
+                    a.poster(e.poster, h.thumb);
+                }
+                if (h.progress != null) {
+                    int total = Math.max(1, e.duration);
+                    float frac = Math.max(0f, Math.min(1f, (float) e.position / total));
+                    FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) h.progress.getLayoutParams();
+                    lp.width = Math.round(cardW * frac);
+                    h.progress.setLayoutParams(lp);
+                }
+                h.itemView.setOnClickListener(v -> a.resumeHistory(e));
+                if (h.action != null) h.action.setOnClickListener(v -> removeHistory(e));
+                if (h.action != null && cols == 1) h.action.setText("删除");
+                if (h.action != null && cols == 1) h.action.setTextColor(0xffef4444);
             }
+        }
+
+        private void openFavorite(Favorites.Entry f) {
+            Cms.Site target = null;
+            if (a.config != null)
+                for (Cms.Site site : a.config.sites)
+                    if (site.key.equals(f.site)) {
+                        target = site;
+                        break;
+                    }
+            if (target == null) target = currentSite;
+            if (target == null) {
+                a.toast("该收藏所属的片源不可用");
+                return;
+            }
+            a.openListing(target, f.video());
+        }
+
+        private void removeFavorite(Favorites.Entry f) {
+            a.prefs.edit()
+                    .putString(
+                            Prefs.FAVORITES,
+                            Favorites.toggle(
+                                    a.prefs.getString(Prefs.FAVORITES, "[]"), f.site, f.video()))
+                    .apply();
+            reload();
+        }
+
+        private void removeHistory(WatchHistory.Entry e) {
+            a.prefs.edit()
+                    .putString(
+                            Prefs.WATCH_HISTORY,
+                            WatchHistory.remove(a.prefs.getString(Prefs.WATCH_HISTORY, "[]"), e.key()))
+                    .apply();
+            reload();
         }
     }
 
     private static final class RowHolder extends RecyclerView.ViewHolder {
         ImageView thumb;
         TextView title, sub, action;
+        View progress;
         boolean emptyRow;
 
         RowHolder(View itemView) {
