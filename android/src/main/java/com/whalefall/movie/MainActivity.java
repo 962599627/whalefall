@@ -834,28 +834,53 @@ public final class MainActivity extends Activity {
     public void onConfigurationChanged(android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         if (!layoutReady || root == null) return;
-        root.post(
-                () -> {
-                    if (isFinishing() || isDestroyed() || root == null) return;
-                    int w = root.getWidth(), h = root.getHeight();
-                    if (w > 0 && h > 0 && (w != usableWidth || h != usableHeight)) {
-                        usableWidth = w;
-                        usableHeight = h;
-                        if (current != null && current.player) {
-                            if (playerChrome != null) playerChrome.relayout();
-                            if (playbackControls != null)
-                                playbackControls.resize(
-                                        playbackControls.videoWidth, playbackControls.videoHeight);
-                        } else if (tvPlayer != null) {
-                            // 直播网页播放器是挂在 root 上的全屏 overlay，不属于 current.player：
-                            // 旋转时只 relayout，不能 refresh 整页，否则 overlay 会被新 root 丢掉，
-                            // 且横屏宽度会把底部 shell 重建成「侧栏 + 三段式」的错误布局。
-                            tvPlayer.relayout();
-                        } else if (current != null) {
-                            refresh();
-                        }
+        // 旋转/分屏时 root 在 config 回调里可能还是旧尺寸（横屏 2560 残留 → usableWidth 错误 →
+        // 电视页按 2560px 重建成三栏）。改为等「真正完成新布局」的全局布局回调再读取尺寸。
+        final FrameLayout watched = root;
+        final ViewTreeObserver.OnGlobalLayoutListener[] holder =
+                new ViewTreeObserver.OnGlobalLayoutListener[1];
+        holder[0] =
+                new ViewTreeObserver.OnGlobalLayoutListener() {
+                    @Override
+                    public void onGlobalLayout() {
+                        int w = watched.getWidth(), h = watched.getHeight();
+                        if (w <= 0 || h <= 0) return;
+                        // 布局仍是旧尺寸：等下一次布局，不在这里更新 usable
+                        if (w == usableWidth && h == usableHeight) return;
+                        ViewTreeObserver observer = watched.getViewTreeObserver();
+                        if (observer.isAlive()) observer.removeOnGlobalLayoutListener(holder[0]);
+                        watched.post(() -> applyWindowSize(w, h));
                     }
-                });
+                };
+        ViewTreeObserver observer = watched.getViewTreeObserver();
+        if (observer.isAlive()) observer.addOnGlobalLayoutListener(holder[0]);
+        // 兜底移除监听，避免极端情况下不触发布局造成观察者泄漏
+        ui.postDelayed(
+                () -> {
+                    ViewTreeObserver current = watched.getViewTreeObserver();
+                    if (current.isAlive()) current.removeOnGlobalLayoutListener(holder[0]);
+                },
+                2000);
+    }
+
+    /** 新布局完成后的尺寸更新与页面处理（旋转/分屏共用）。 */
+    private void applyWindowSize(int w, int h) {
+        if (isFinishing() || isDestroyed() || root == null) return;
+        if (w <= 0 || h <= 0) return;
+        if (w == usableWidth && h == usableHeight) return;
+        usableWidth = w;
+        usableHeight = h;
+        if (current != null && current.player) {
+            if (playerChrome != null) playerChrome.relayout();
+            if (playbackControls != null)
+                playbackControls.resize(playbackControls.videoWidth, playbackControls.videoHeight);
+        } else if (tvPlayer != null) {
+            // 直播网页播放器是挂在 root 上的全屏 overlay，不属于 current.player：
+            // 旋转时只 relayout，不能 refresh 整页，否则 overlay 会被新 root 丢掉。
+            tvPlayer.relayout();
+        } else if (current != null) {
+            refresh();
+        }
     }
 
     private static final int REQ_PICK_FILE = 7101;

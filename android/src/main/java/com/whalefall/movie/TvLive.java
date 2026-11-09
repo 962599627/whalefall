@@ -300,7 +300,11 @@ final class TvLive {
         final float density = a.getResources().getDisplayMetrics().density;
         final int windowDp = Math.round(a.windowWidth() / density);
         // 平板横向：左侧分类栏 + 中间编号列表 + 右侧频道信息三段式；手机/竖屏退化为单列列表
-        final boolean wide = windowDp >= 720;
+        // 手机竖屏一律单列（即使旋转时序导致 windowWidth 暂时残留横屏值也不出三栏）；
+        // 平板/TV 仍按宽度判断，保持原有横屏三段式。
+        final boolean wide =
+                windowDp >= 720
+                        && (a.formFactor != TvLayoutPolicy.FORM_PHONE || !a.isPortrait());
         // TV 遥控 overscan 安全边：横向 ≥24dp、纵向 ≥18dp；手机沿用原值
         final int sidePad = a.dp(tv ? 24 : (wide ? 20 : 16));
         final PageState page =
@@ -361,7 +365,7 @@ final class TvLive {
         LinearLayout actionsRow = null;
         if (!wide) {
             actionsRow = a.row();
-            actionsRow.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+            actionsRow.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
             TextView addBtn = TvUiKit.pill(a, "＋ 自定义", 12, false);
             ExtraPages.tvFocus(a, addBtn, 999);
             addBtn.setOnClickListener(
@@ -1749,11 +1753,21 @@ final class TvLive {
 
             if (widePlayer) {
                 infoPanel = buildInfoPanel();
+                // 右侧信息面板放进 ScrollView：横屏高度不足时可滚动，底部「收藏频道」不再被裁掉；
+                // 上下按安全边 + 导航条 inset 留白（不小于 16dp）。
+                ScrollView infoScroll = new ScrollView(a);
+                infoScroll.setVerticalScrollBarEnabled(false);
+                infoScroll.setClipToPadding(false);
+                infoScroll.addView(infoPanel, new ScrollView.LayoutParams(-1, -2));
                 FrameLayout.LayoutParams infoLp =
-                        new FrameLayout.LayoutParams(a.dp(172), -2, Gravity.TOP | Gravity.END);
+                        new FrameLayout.LayoutParams(
+                                a.dp(172), -1, Gravity.TOP | Gravity.END);
                 infoLp.setMargins(
-                        0, MobileDetailScreen.getStatusBarHeight(a) + a.dp(70), a.dp(10), 0);
-                chrome.addView(infoPanel, infoLp);
+                        0,
+                        MobileDetailScreen.getStatusBarHeight(a) + a.dp(56),
+                        a.dp(10),
+                        navigationBarHeight() + a.dp(16));
+                chrome.addView(infoScroll, infoLp);
             }
 
             bottomPanel = buildBottomPanel();
@@ -1947,6 +1961,17 @@ final class TvLive {
                     });
             top.addView(fullBtn, new LinearLayout.LayoutParams(-2, a.dp(32)));
             return top;
+        }
+
+        /** 系统导航条高度（手势导航可能为 0），用于右侧信息面板的底部安全 inset。 */
+        int navigationBarHeight() {
+            try {
+                int resId =
+                        a.getResources().getIdentifier("navigation_bar_height", "dimen", "android");
+                if (resId > 0) return a.getResources().getDimensionPixelSize(resId);
+            } catch (Throwable ignored) {
+            }
+            return a.dp(24);
         }
 
         LinearLayout buildInfoPanel() {
