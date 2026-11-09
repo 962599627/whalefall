@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.4.5",
-  "versionCode": 14005,
+  "versionName": "1.4.6",
+  "versionCode": 14006,
   "minSdk": 23,
   "prerelease": true,
-  "notes": "# 鲸落 1.4.5（手机 / 平板 / 电视）\n\n- 修复动态壁纸盖住播放器视频（播放页纯黑不铺壁纸，退出后壁纸立即恢复）\n- 检查更新支持选择下载不同包体：标准 / arm64 精简 / R8 精简 / TV（feed 新增可选 variants，旧 feed 兼容）\n- 新增字体颜色自定义：预设色板 + RGB 滑条（手机可输 HEX）+ 3 组推荐 + 恢复默认；次要文字自动降透明度，强调色不跟随\n- 含 1.4.4 全部内容（壁纸生命周期统一修复）与 1.4.3/1.4.2 全部修复\n- 本版未真机验证（V27/V28/V29/V30），发布说明须保留未验证标注\n- 预览通道：与稳定版同包，仅通道标记不同",
+  "notes": "# 鲸落 1.4.6（手机 / 平板 / 电视）\n\n- 修复网盘「登录」直接弹出来源方白底原始面板：现在统一先进入 App 自己的「网盘登录」玻璃面板，面板内再「打开源登录界面 / 源账号管理」；源面板前有确认，返回后刷新状态\n- 含 1.4.5 全部内容：播放页壁纸遮挡修复、检查更新多包体选择、字体颜色自定义；1.4.4/1.4.3 修复\n- 本版网盘登录 UI 未真机验证（V31），发布说明须保留未验证标注\n- 预览通道：与稳定版同包，仅通道标记不同",
   "size": 36248390,
-  "sha256": "d1e9b1d31d151659f8a08dac779042400589f7a2165c1393e40b919d383523ec",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.5/WhaleFall-1.4.5-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.5/WhaleFall-1.4.5-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.5",
+  "sha256": "3c4340f276ac91d76cc462c13dbddeed165b19e908f327b907df9ad52894a603",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.6/WhaleFall-1.4.6-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.6/WhaleFall-1.4.6-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.6",
   "variants": [
     {
       "kind": "tv",
       "label": "电视版（TV/盒子）",
       "size": 36248390,
-      "sha256": "d1e9b1d31d151659f8a08dac779042400589f7a2165c1393e40b919d383523ec",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.5/WhaleFall-1.4.5-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.5/WhaleFall-1.4.5-android-tv.apk"
+      "sha256": "3c4340f276ac91d76cc462c13dbddeed165b19e908f327b907df9ad52894a603",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.6/WhaleFall-1.4.6-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.6/WhaleFall-1.4.6-android-tv.apk"
     }
   ]
 }
