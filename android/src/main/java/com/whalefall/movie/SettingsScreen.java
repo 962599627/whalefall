@@ -433,8 +433,18 @@ final class SettingsScreen {
                                     a.reduced = false;
                                     a.recreate();
                                 }));
+        String appVersionName = "";
+        try {
+            android.content.pm.PackageInfo info =
+                    a.getPackageManager().getPackageInfo(a.getPackageName(), 0);
+            if (info.versionName != null) appVersionName = info.versionName;
+        } catch (Throwable ignored) {
+        }
+        if (appVersionName.isEmpty()) appVersionName = "开发版";
         a.paragraph(
-                "鲸落 1.2.0 · 基于 Marco Movie 0.5.3（作者 Pilipala，GPL-3.0-only）二次开发 · 本产品仅为工具，不含任何影视资源；内容与配置请自行合法获取。播放能力取决于服务授权和设备支持。");
+                "鲸落 "
+                        + appVersionName
+                        + " · 基于 Marco Movie 0.5.3（作者 Pilipala，GPL-3.0-only）二次开发 · 本产品仅为工具，不含任何影视资源；内容与配置请自行合法获取。播放能力取决于服务授权和设备支持。");
     }
 
     void confirm(String title, Runnable action) {
