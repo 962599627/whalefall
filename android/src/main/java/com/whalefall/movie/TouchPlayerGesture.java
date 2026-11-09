@@ -28,6 +28,10 @@ final class TouchPlayerGesture implements View.OnTouchListener {
     private float startVolume = 0.5f;
     private float savedSpeed = 1.0f;
     private boolean speedBoosting;
+    /** 控制条隐藏时单击立即呼出：记录呼出时刻，用于压制紧接着的「双击暂停」。 */
+    private long shownByTapAt;
+    private boolean tapStartedHidden;
+    private boolean tapHandledInUp;
 
     private TouchPlayerGesture(MainActivity activity) {
         this.a = activity;
@@ -53,9 +57,30 @@ final class TouchPlayerGesture implements View.OnTouchListener {
                             }
 
                             @Override
+                            public boolean onSingleTapUp(MotionEvent e) {
+                                if (a.miniMode
+                                        || dragMode != SeekGesture.MODE_NONE
+                                        || speedBoosting) return false;
+                                if (tapStartedHidden) {
+                                    // 控制条隐藏：画面任意处单击立即呼出，不再等 300ms 双击判定
+                                    shownByTapAt = android.os.SystemClock.uptimeMillis();
+                                    tapHandledInUp = true;
+                                    a.showControls(true);
+                                    return true;
+                                }
+                                return false;
+                            }
+
+                            @Override
                             public boolean onSingleTapConfirmed(MotionEvent e) {
                                 if (a.miniMode) {
                                     a.expandPlayback();
+                                    return true;
+                                }
+                                if (tapHandledInUp) return true;
+                                // 连点呼出期间（450ms 内）保持控制条可见，不因后续单击又立刻隐藏
+                                if (android.os.SystemClock.uptimeMillis() - shownByTapAt < 450) {
+                                    a.showControls(true);
                                     return true;
                                 }
                                 a.showControls(!a.controlsVisible);
@@ -65,6 +90,13 @@ final class TouchPlayerGesture implements View.OnTouchListener {
                             @Override
                             public boolean onDoubleTap(MotionEvent e) {
                                 if (a.miniMode) return false;
+                                // 控制条隐藏/刚被单击呼出时的双击：只呼出控制条，不暂停播放
+                                if (tapStartedHidden
+                                        || android.os.SystemClock.uptimeMillis() - shownByTapAt
+                                                < 450) {
+                                    a.showControls(true);
+                                    return true;
+                                }
                                 a.togglePlayback();
                                 a.showControls(true);
                                 return true;
@@ -105,11 +137,15 @@ final class TouchPlayerGesture implements View.OnTouchListener {
 
     @Override
     public boolean onTouch(View v, MotionEvent event) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            tapStartedHidden = !a.controlsVisible;
+            tapHandledInUp = false;
+        }
         if (a.miniMode) {
             return detector.onTouchEvent(event);
         }
         detector.onTouchEvent(event);
-        int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
             downX = event.getRawX();
             downY = event.getRawY();

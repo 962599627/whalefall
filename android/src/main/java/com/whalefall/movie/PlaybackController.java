@@ -29,6 +29,9 @@ final class PlaybackController {
 
     /** 播放页布局诊断日志只打一次（用户反馈「播放页卡片化」时看 设置→运行日志）。 */
     private static boolean layoutLogged;
+    /** 上次播放页 root 尺寸：只有真实变化才重排 chrome/重算 surface（避免持续布局干扰触摸）。 */
+    private static int lastPlayerLayoutW = -1;
+    private static int lastPlayerLayoutH = -1;
 
     static String formatTime(int ms) {
         int sec = Math.max(0, ms / 1000);
@@ -920,6 +923,8 @@ final class PlaybackController {
         a.root.setFocusableInTouchMode(true);
         a.root.setTag("player-surface");
         a.scroll = null;
+        lastPlayerLayoutW = -1;
+        lastPlayerLayoutH = -1;
         VideoOutput surface = new VideoOutput(a, a.prefs.getInt(Prefs.VIDEO_OUTPUT, 0) == 1);
         a.playbackLayer = new FrameLayout(a);
         a.playbackLayer.setTag("playback-layer");
@@ -963,9 +968,13 @@ final class PlaybackController {
                 (view, l, t, r, b, ol, ot, or, ob) -> {
                     int w = r - l, h = b - t;
                     if (w <= 0 || h <= 0) return;
+                    boolean sizeChanged = w != lastPlayerLayoutW || h != lastPlayerLayoutH;
+                    lastPlayerLayoutW = w;
+                    lastPlayerLayoutH = h;
                     a.usableWidth = w;
                     a.usableHeight = h;
-                    // 每次窗口布局完成都重排 chrome + 重算 surface（旧尺寸只算一次会长期停在小卡）
+                    // 只在真实尺寸变化时 post（首次 -1 必触发），避免 relayout 自身引发连续布局
+                    if (!sizeChanged) return;
                     view.post(
                             () -> {
                                 if (ticket != a.generation || a.isFinishing()) return;

@@ -538,18 +538,59 @@ final class SettingsScreen {
     }
 
     void diagnostics() {
-        String text = AppLog.dump();
-        new AppDialog.Builder(a)
-                .setTitle("运行日志")
-                .setMessage(text.isEmpty() ? "当前运行正常，暂无异常或告警记录。" : text)
-                .setNeutralButton(
+        final String text = AppLog.dump();
+        final boolean hasText = !text.isEmpty();
+        AppDialog.Builder builder =
+                new AppDialog.Builder(a)
+                        .setTitle("运行日志")
+                        .setMessage(hasText ? text : "当前运行正常，暂无异常或告警记录。");
+        if (hasText && !a.isTvDevice()) {
+            // 手机：复制到剪贴板
+            builder.setNeutralButton(
+                    "复制",
+                    (d, i) -> {
+                        android.content.ClipboardManager cm =
+                                (android.content.ClipboardManager)
+                                        a.getSystemService(
+                                                android.content.Context.CLIPBOARD_SERVICE);
+                        cm.setPrimaryClip(
+                                android.content.ClipData.newPlainText("运行日志", text));
+                        a.toast("已复制");
+                    });
+        } else if (hasText) {
+            // TV 无剪贴板：另存到内置文件管理
+            builder.setNeutralButton(
+                    "另存到文件管理",
+                    (d, i) -> {
+                        try {
+                            String stamp =
+                                    new java.text.SimpleDateFormat(
+                                                    "yyyyMMdd-HHmm", java.util.Locale.CHINA)
+                                            .format(new java.util.Date());
+                            String rel =
+                                    PushFiles.writeText(
+                                            a, "诊断/运行日志-" + stamp + ".txt", text);
+                            a.toast("已保存到文件管理：" + rel);
+                        } catch (Throwable e) {
+                            a.notice("另存失败：" + a.message(e));
+                        }
+                    });
+        }
+        builder.setNegativeButton(
                         "清空记录",
-                        (d, i) -> {
-                            AppLog.clear();
-                            a.toast("已清空运行日志");
-                        })
-                .setPositiveButton("关闭", null)
-                .show();
+                        (d, i) ->
+                                ExtraPages.confirmDanger(
+                                        a,
+                                        "清空运行日志？",
+                                        "会删除本机最近异常与诊断记录，不可恢复。",
+                                        "清空",
+                                        () -> {
+                                            AppLog.clear();
+                                            a.toast("已清空运行日志");
+                                        }))
+                .setPositiveButton("关闭", null);
+        AppDialog dialog = builder.show();
+        ExtraPages.focusDialog(a, dialog, "dialog-action:-1");
     }
 
     void toggle(String title, String key, boolean defaultValue, Runnable after) {

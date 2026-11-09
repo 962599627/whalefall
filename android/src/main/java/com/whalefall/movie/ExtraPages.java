@@ -458,7 +458,7 @@ final class ExtraPages {
         focusDialog(a, dialog, "dialog-action:-2");
     }
 
-    private static void focusDialog(final MainActivity a, final AppDialog dialog, final String tag) {
+    static void focusDialog(final MainActivity a, final AppDialog dialog, final String tag) {
         a.ui.post(
                 () -> {
                     if (dialog == null || dialog.getWindow() == null) return;
