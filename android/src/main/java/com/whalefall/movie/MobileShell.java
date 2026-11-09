@@ -462,6 +462,7 @@ final class MobileShell {
                             a.dp(64 * navScale),
                             Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
             dockLp.bottomMargin = a.dp(16);
+            dockView = bottomDock;
             a.root.addView(bottomDock, dockLp);
         }
 
@@ -726,6 +727,12 @@ final class MobileShell {
     private static int homeScrollY;
     private ScrollView homeScroll;
     private LinearLayout homeBody;
+    private static View dockView;
+
+    /** 全屏播放时隐藏底部 Dock，避免与播放器控件/网页控件叠加。 */
+    static void setDockVisible(boolean visible) {
+        if (dockView != null) dockView.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
 
     void switchTab(int index) {
         ++homeRequest;

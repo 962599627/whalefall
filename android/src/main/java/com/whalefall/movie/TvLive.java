@@ -1685,8 +1685,7 @@ final class TvLive {
                     });
 
             a.root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
-            overlay.setElevation(a.dp(40));
-            overlay.bringToFront();
+            MobileShell.setDockVisible(false);
             previousOrientation = a.getRequestedOrientation();
             a.setRequestedOrientation(
                     android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
@@ -2242,6 +2241,7 @@ final class TvLive {
                                 : previousOrientation);
             } catch (Throwable ignored) {
             }
+            MobileShell.setDockVisible(true);
             if (a.tvPlayer == this) a.tvPlayer = null;
             // 关闭后通知列表页刷新高亮（page::refresh）
             Runnable callback = onClosed;
