@@ -276,17 +276,16 @@ final class TvLive {
     }
 
     static View screen(MainActivity a) {
-        if (!a.isTvDevice()) {
-            // 响应式：手机（最小宽度 < 600dp）列表竖屏；平板保持横屏三栏布局
-            int smallestWidth =
-                    a.getResources().getConfiguration().smallestScreenWidthDp;
+        if (a.formFactor == TvLayoutPolicy.FORM_PHONE) {
             try {
                 a.setRequestedOrientation(
-                        smallestWidth >= 600
-                                ? android.content.pm.ActivityInfo
-                                        .SCREEN_ORIENTATION_UNSPECIFIED
-                                : android.content.pm.ActivityInfo
-                                        .SCREEN_ORIENTATION_PORTRAIT);
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+            } catch (Throwable ignored) {
+            }
+        } else if (a.formFactor == TvLayoutPolicy.FORM_TABLET) {
+            try {
+                a.setRequestedOrientation(
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
             } catch (Throwable ignored) {
             }
         }
@@ -1547,28 +1546,6 @@ final class TvLive {
             overlay.setFocusableInTouchMode(true);
 
             web = new TvWebView(a);
-            // 轻点网页区域：切换我们自己的控制条显隐；不消费事件，网页播放器照常响应
-            web.setOnTouchListener(
-                    new View.OnTouchListener() {
-                        float downX, downY;
-
-                        @Override
-                        public boolean onTouch(View v, android.view.MotionEvent event) {
-                            if (event.getActionMasked()
-                                    == android.view.MotionEvent.ACTION_DOWN) {
-                                downX = event.getX();
-                                downY = event.getY();
-                            } else if (event.getActionMasked()
-                                    == android.view.MotionEvent.ACTION_UP) {
-                                if (Math.abs(event.getX() - downX) < 20
-                                        && Math.abs(event.getY() - downY) < 20) {
-                                    if (chromeShown) fadeOutChrome();
-                                    else showChrome();
-                                }
-                            }
-                            return false;
-                        }
-                    });
             WebSettings s = web.getSettings();
             s.setJavaScriptEnabled(true);
             s.setDomStorageEnabled(true);
@@ -1594,7 +1571,12 @@ final class TvLive {
                             fullView = view;
                             fullCallback = callback;
                             overlay.addView(view, new FrameLayout.LayoutParams(-1, -1));
-                            if (topBar != null) topBar.setVisibility(View.GONE);
+                            if (chrome != null) {
+                                handler.removeCallbacks(hideChromeRunnable);
+                                chrome.animate().cancel();
+                                chrome.setVisibility(View.GONE);
+                                chromeShown = false;
+                            }
                         }
 
                         @Override
@@ -1606,7 +1588,7 @@ final class TvLive {
                                 fullCallback.onCustomViewHidden();
                                 fullCallback = null;
                             }
-                            if (topBar != null) topBar.setVisibility(View.VISIBLE);
+                            showChrome();
                         }
                     });
             web.setWebViewClient(
@@ -1631,7 +1613,7 @@ final class TvLive {
 
             // chrome 容器：顶栏 + 右侧信息面板 + 底部频道条，随 3 秒计时整体淡出
             boolean widePlayer =
-                    a.windowWidth() / a.getResources().getDisplayMetrics().density >= 720f;
+                    a.windowWidth() / a.getResources().getDisplayMetrics().density >= 840f;
 
             loadingCard = buildLoadingCard();
             overlay.addView(
@@ -1686,9 +1668,11 @@ final class TvLive {
 
             a.root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
             MobileShell.setDockVisible(false);
-            previousOrientation = a.getRequestedOrientation();
-            a.setRequestedOrientation(
-                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            if (a.formFactor == TvLayoutPolicy.FORM_PHONE) {
+                previousOrientation = a.getRequestedOrientation();
+                a.setRequestedOrientation(
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            }
             a.tvPlayer = this;
             overlay.requestFocus();
             load();
@@ -1755,7 +1739,7 @@ final class TvLive {
             LinearLayout top = a.row();
             top.setGravity(Gravity.CENTER_VERTICAL);
             top.setPadding(a.dp(8), a.dp(7), a.dp(8), a.dp(7));
-            top.setBackground(MobileDetailScreen.glassBg(a, 0x730b1220, 0x40ffffff, 20));
+            top.setBackground(MobileDetailScreen.glassBg(a, 0x99000000, 0x40ffffff, 20));
             top.setClickable(true);
             top.setOnClickListener(v -> toggleChrome());
 
@@ -1836,7 +1820,7 @@ final class TvLive {
         LinearLayout buildInfoPanel() {
             LinearLayout panel = a.vertical();
             panel.setPadding(a.dp(13), a.dp(13), a.dp(13), a.dp(12));
-            panel.setBackground(MobileDetailScreen.glassBg(a, 0x8c0b1220, 0x33ffffff, 20));
+            panel.setBackground(MobileDetailScreen.glassBg(a, 0xf20b1220, 0x40ffffff, 20));
             panel.setClickable(true);
             panel.setOnClickListener(v -> showChrome());
 
@@ -1935,7 +1919,7 @@ final class TvLive {
         LinearLayout buildBottomPanel() {
             LinearLayout panel = a.vertical();
             panel.setPadding(a.dp(10), a.dp(9), a.dp(10), a.dp(10));
-            panel.setBackground(MobileDetailScreen.glassBg(a, 0x8c0b1220, 0x33ffffff, 22));
+            panel.setBackground(MobileDetailScreen.glassBg(a, 0xf20b1220, 0x40ffffff, 22));
             panel.setClickable(true);
             panel.setOnClickListener(v -> showChrome());
 
@@ -1968,7 +1952,7 @@ final class TvLive {
             LinearLayout card = a.vertical();
             card.setGravity(Gravity.CENTER_HORIZONTAL);
             card.setPadding(a.dp(24), a.dp(18), a.dp(24), a.dp(18));
-            card.setBackground(MobileDetailScreen.glassBg(a, 0x8c101b2e, 0x40ffffff, 22));
+            card.setBackground(MobileDetailScreen.glassBg(a, 0xf20b1220, 0x40ffffff, 22));
             card.setElevation(a.dp(8));
             card.addView(
                     new TvUiKit.Spinner(a, 0xffff8fb1),
@@ -2156,7 +2140,7 @@ final class TvLive {
                         .start();
             }
             handler.removeCallbacks(hideChromeRunnable);
-            handler.postDelayed(hideChromeRunnable, CHROME_HIDE_MS);
+            if (!panelOpen) handler.postDelayed(hideChromeRunnable, CHROME_HIDE_MS);
         }
 
         void fadeOutChrome() {
@@ -2236,9 +2220,9 @@ final class TvLive {
             overlay = null;
             try {
                 a.setRequestedOrientation(
-                        previousOrientation == android.content.res.Configuration.ORIENTATION_UNDEFINED
-                                ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                                : previousOrientation);
+                        a.formFactor == TvLayoutPolicy.FORM_PHONE
+                                ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
             } catch (Throwable ignored) {
             }
             MobileShell.setDockVisible(true);
