@@ -1,10 +1,11 @@
 # 鲸落 Android · Sprint Board
 
-> 维护者：scrum-master ｜ 更新时间：2026-11-09 21:00 +08:00
-> 版本基线：`android/version.properties` = **1.2.2 / 12020**（唯一版本源）
+> 维护者：scrum-master ｜ 更新时间：2026-11-09 21:20 +08:00
+> 版本基线：`android/version.properties` = **1.2.2 / 12020**（唯一版本源）；下一版 **1.3.0**（待 Lead 构建：首页虚拟化 + 卫视地址修正 + 设置版本号修复）
 > 构建基线：`android/build/build-validation.json` — 1.2.2 双包已出（TV 36.2 MB / mobile 62.0 MB），
-> `git_commit=31655ec`、**`git_dirty=true`**、`device_install_tested=false`、`device_playback_tested=false`
+> `git_commit=31655ec`、**`git_dirty=true`**、`device_install_tested=false`、`device_playback_tested=false`；1.3.0 构建未开始
 > 发布路径：`scripts/build_android.py` → 拷 APK 到 `/sdcard/Download/DSH-Go/鲸落/` → 用户覆盖安装
+> 执行约束：子会话无 bash（仅文件工具），构建/命令全部串行到 Lead（见 R7）
 
 ## 0. 状态图例与完成定义
 
@@ -18,89 +19,94 @@
 
 优先级：**P0** 崩溃与安全（不做不行）、**P1** 性能与稳定性、**P2** 架构与体验债。
 完成定义（DoD）：代码改动 + 自测说明 + 以下之一 — ①构建产物字段 ②真机截图/录屏 ③App 内「运行日志 / 崩溃日志」摘要。**无证据不转 done。**
+口径提示：V1–V5 目前只有用户口头确认 → 保持 review；S1-06/S1-13 有文件行级证据 → 可转 done；S1-07/S2-01 代码未提交 → 不转 review。
 
-## 1. 当前 Sprint（S1 · 1.2.2 回归收口，11-09 ~ 11-10）
+## 1. 当前 Sprint（S1 · 1.2.2 收口 + 1.3.0 验证包，11-09 ~ 11-10）
 
-目标：**把已修的缺陷在真机上验收掉，产出 1.2.2 的干净发布证据**；本轮原则上不开新功能、不动大文件。
+目标：**在 1.2.2 口头验收基础上，把首页虚拟化提前做完（D4 已执行），产出含「虚拟化 + 卫视地址修正 + 设置版本号修复」的 1.3.0 验证包交用户覆盖安装；本轮不再开其他新功能。**
 
 | ID | 项目 | 负责人 | 状态 | 依赖 | 风险 | 证据 / 验收 |
 |---|---|---|---|---|---|---|
-| S1-01 | 1.2.2 双包与校验记录 | lead | done | — | 低 | `build-validation.json`：版本 1.2.2/12020、签名与 zipalign 校验通过 |
-| S1-02 | 片库 holder 崩溃（已修待回归） | qa-engineer（回归）/ mobile-dev（待命） | review | S1-01 | 低 | 真机「我的」页 4 条路径无崩溃 + 空态/有数据态切换；代码侧防御见 `MobileShell.java:3237` |
-| S1-03 | 直播控制条卡顿（已修待回归） | qa-engineer / tv-ui-designer | review | S1-01 | **中** | 真机直播 60s 录屏：呼出/收起 5 次、切台 3 次；主观帧感描述（哪一步卡） |
-| S1-04 | 手机/平板方向与布局回归 | qa-engineer / tv-ui-designer | review | S1-01 | **中** | 手机竖/横、平板竖/横、TV 各 1 张截图；对照 `docs/TV_LIVE_RESPONSIVE.md` §1.2/§2、`docs/LIBRARY_LAYOUT_SPEC.md` §1–2；方向实现见 `TvLive.java:279-287` |
-| S1-05 | 频道管理导入导出验证 | qa-engineer | review | S1-01 | 低-中 | 导出后 `文件管理/频道配置/全部频道配置.json` 存在；内置频道改址/隐藏 + 自定义频道导入回显；实现见 `ChannelManagerScreen.java:538,574` |
-| S1-06 | 设置页版本号硬编码 1.2.0 | mobile-dev | todo | — | 低 | `SettingsScreen.java:437` 文案硬编码「鲸落 1.2.0」，包为 1.2.2 → 改为读注入版本/`version.properties`；0.2 人日 |
-| S1-07 | 首页网格虚拟化 | mobile-dev | todo | S2 排期 | 中 | 现状 `MobileShell.renderHomeTab()`（`:810`）仍是 ScrollView 全量构建；**本轮不动**，见 S2-01 |
-| S1-08 | AGP9 + Measured Baseline Profile | android-auditor | **blocked** | 真机/模拟器 + 镜像 | 高 | AGP9 需 Gradle 9.x + 依赖镜像；实测 BP 需 macrobenchmark + 可 profile 设备（本机无 adb）。已交付手写 BP：`docs/BASELINE_PROFILE.md`、`baseline.prof` 已进包 |
-| S1-09 | 安全 P0 收口复核 | android-auditor / mobile-dev | review | S1-01 | **中** | P0-1 已落地（AdminConsole token + 403，`:141,218,258`）；P0-3 已清除（全仓无 `String.join`/`Files.*`/`removeIf`）；**P0-2 部分**：FTP 已限局域网 + 一次性 6 位口令（`MiniFtpServer.java:87-117`），但仍明文、固定 2121、RETR/DELE 开放、无 TTL |
-| S1-10 | 文档与变更记录同步 | pm-owner | todo | S1-06 | 低 | `CHANGELOG.md` 停在 0.5.3；`docs/STATUS.md` 0.4.16；`docs/BUILD.md:19` 0.4.33-preview；需补 1.2.2 首条变更记录 |
-| S1-11 | 真机验证执行（用户） | 用户 / qa-engineer 出清单 | doing | S1-01 | **高** | 见 §2 队列 V1–V5；证据统一收 `/sdcard/Download/DSH-Go/鲸落/verify/1.2.2/` |
-| S1-12 | 1.2.2 干净发布（commit + tag） | lead | todo | S1-02~S1-05 有证据 | **高** | 当前包来自 dirty 工作区（GPL 对应源码不可复现）；收口后统一提交并打 tag，再重出包 |
+| S1-01 | 1.2.2 双包与校验记录 | lead | done | — | 低 | `build-validation.json`：1.2.2/12020、签名与 zipalign 校验通过 |
+| S1-02 | 片库 holder 崩溃（已修待回归） | qa（dev 待命） | review | S1-01 | 低 | **用户口头确认通过，证据待补**；`docs/VERIFY_1.2.2.md` 已盘点、B 类证据 0 份；代码 `MobileShell.java:3237` |
+| S1-03 | 直播控制条卡顿（已修待回归） | qa / designer | review | S1-01 | **中** | **用户口头确认通过，证据待补**（60s 录屏缺）；实现 `TvLive.java:2258-2311`、去抖 `:2151-2161` |
+| S1-04 | 手机/平板方向与布局回归 | qa / designer | review | S1-01 | **中** | **用户口头确认通过，证据待补**；TV 端未覆盖（V4）；实现 `TvLive.java:278-291` |
+| S1-05 | 频道管理导入导出验证 | qa | review | S1-01 | 低-中 | **用户口头确认通过，证据待补**（toast/文件/导入后三连图缺）；实现 `ChannelManagerScreen.java:537-631` |
+| S1-06 | 设置页版本号硬编码 1.2.0 | lead | done | — | 低 | 复修执行登记见 **S1-13**；`SettingsScreen.java:436-447` 已改 PackageManager 运行时读取，原 `:437` 硬编码已消除 |
+| S1-07 | 首页网格虚拟化（已从「本轮不动」转 doing） | dev | doing | S1-01 / D4 | 中 | task-1 实现中；21:20 核查 `MobileShell.renderVideoGrid()`（`:1761`）仍为 `LinearLayout` 全量 addView，未到 review；Lead 负责构建与评审 |
+| S1-08 | AGP9 + Measured Baseline Profile | architect | **blocked** | 真机/模拟器 + 镜像 | 高 | 无 adb/模拟器，实测 BP 无法做；手写 BP 已进包（`docs/BASELINE_PROFILE.md`），实测挂 S3 |
+| S1-09 | 安全 P0 收口复核 | architect / dev | review | S1-01 | **中** | P0-1 已落地（AdminConsole token + 403）；P0-3 已清除；**P0-2 部分**：FTP 已限局域网 + 一次性 6 位口令，仍明文、固定 2121、RETR/DELE 开放、无 TTL |
+| S1-10 | 文档与变更记录同步 | lead | doing | S1-06 | 低 | Lead 收尾：`CHANGELOG.md` 停 0.5.3、`docs/STATUS.md` 0.4.16、`docs/BUILD.md:19` 0.4.33-preview → 补 1.3.0 首条 |
+| S1-11 | 真机验证执行（用户） | 用户 / qa 出清单 | doing | S1-01 | **高** | V1–V5 用户口头确认、证据待补；**V6 新增待验证（1.3.0 包）**；V7 待验证；证据统一收 `/sdcard/Download/DSH-Go/鲸落/verify/1.2.2/` |
+| S1-12 | 1.2.2 干净发布（commit + tag） | lead | todo | D1 | **高** | 1.2.2 是否 tag 待 §4 D1；1.3.0 须在 clean tree 上另出包；现 HEAD 已领先 1.2.2 包（`59e8ee1` 片库 P0 修复未进 20:49 包） |
+| S1-13 | 设置页版本号硬编码 | lead | done | — | 低 | 本轮 Lead 执行（原计划项 S1-06，登记为执行项）：`SettingsScreen.java:436-447` 改 PackageManager 运行时读取；1.3.0 包内生效，V1 时核对版本页 |
 
-**本轮已完成（供 Lead 汇报引用）**：P0-1/P0-3 安全与 API 崩溃修复落地；片库/直播两处体验修复落地待验；Gradle PoC 跑通（AGP 8.7.3 + R8 + mobile/tv flavor，mobile release 32.6 MB）；手写 baseline profile 进包；TV_LIVE/片库两套响应式规范与设计系统文档就绪。
+**本轮已完成（供 Lead 汇报引用）**：1.2.2 双包与校验记录在案；P0-1/P0-3、片库 holder、直播控制条、方向布局、频道导入导出已由用户口头确认（证据待补）；设置页版本号改运行时读取（S1-13，文件行级）；首页虚拟化从 S2 提前到本轮（S1-07/S2-01，dev 实现中）；卫视官方直播页地址审计进行中（task-2 / qa）；验证证据归档文档 `docs/VERIFY_1.2.2.md` 已产出（task-3 完成，但 B 类证据 0 份）。
 
 ## 2. 待用户真机验证队列（证据是唯一出口）
 
 本机 proot 无 sandbox、无障碍/ADB 常不可用 → **QA 出用例与静态核对，证据由用户在设备上给**。
 每项固定：操作路径 + 期望 + 证据。截图/录屏文件名建议 `V1.png`、`V2.mp4`；崩溃时补「设置 → 查看崩溃日志」截图；异常时补「设置 → 查看运行诊断日志」截图。
 
-| ID | 验证项 | 操作（≤3 步） | 期望 | 证据 |
-|---|---|---|---|---|
-| V1 | 覆盖安装 1.2.2 | 安装 `/sdcard/Download/DSH-Go/鲸落/` 包 → 设置 → 检查软件更新 | 显示 1.2.2 / 12020，可正常启动 | 安装成功 + 版本页 1 张 |
-| V2 | 片库崩溃回归 | 我的 → 观看历史/收藏/下载 往返切换 ≥10 次 → 清空历史 → 空态 → 删单条 | 不闪退、不白屏、列表正确刷新 | 30s 录屏（崩溃则加崩溃日志） |
-| V3 | 直播控制条卡顿 | 电视台 → 任一频道 → 点画面呼出/收起 ×5 → 切台 ×3 → 退出重进 | 呼出/收起跟手，掉帧不持续 | 60s 录屏 + 一句「哪一步卡」 |
-| V4 | 方向与布局 | 手机竖/横、平板竖/横（如有）、TV 首页/直播/片库 | 无锁错方向、无大空白、无文字重叠 | 截图 4–6 张 |
-| V5 | 频道管理导入导出 | 频道管理 → 导出全部 → 文件管理看 `频道配置/全部频道配置.json` → 改址+隐藏 → 导入 | 文件生成；导入后改址/隐藏/自定义均生效 | 3 张截图（toast / 文件 / 导入后列表） |
-| V6 | 首页网格滚动（S2 后） | 首页滚动到底、返回再进 | 首屏快、滚动不掉帧、无错位 | 30s 录屏 |
-| V7 | 诊断入口可用性 | 设置 → 查看运行诊断日志 / 查看崩溃日志 | 能打开、能复制/另存 | 各 1 张截图 |
+| ID | 验证项 | 操作（≤3 步） | 期望 | 证据 | 状态 |
+|---|---|---|---|---|---|
+| V1 | 覆盖安装 1.2.2 | 安装 `/sdcard/Download/DSH-Go/鲸落/` 包 → 设置 → 检查软件更新 | 显示 1.2.2 / 12020，可正常启动 | 安装成功 + 版本页 1 张 | **用户口头确认，证据待补**（1.2.2 包） |
+| V2 | 片库崩溃回归 | 我的 → 观看历史/收藏/下载 往返切换 ≥10 次 → 清空历史 → 空态 → 删单条 | 不闪退、不白屏、列表正确刷新 | 30s 录屏（崩溃则加崩溃日志） | **用户口头确认，证据待补** |
+| V3 | 直播控制条卡顿 | 电视台 → 任一频道 → 点画面呼出/收起 ×5 → 切台 ×3 → 退出重进 | 呼出/收起跟手，掉帧不持续 | 60s 录屏 + 一句「哪一步卡」 | **用户口头确认，证据待补** |
+| V4 | 方向与布局 | 手机竖/横、平板竖/横（如有）、TV 首页/直播/片库 | 无锁错方向、无大空白、无文字重叠 | 截图 4–6 张 | **用户口头确认，证据待补**；TV 端未覆盖 |
+| V5 | 频道管理导入导出 | 频道管理 → 导出全部 → 文件管理看 `频道配置/全部频道配置.json` → 改址+隐藏 → 导入 | 文件生成；导入后改址/隐藏/自定义均生效 | 3 张截图（toast / 文件 / 导入后列表） | **用户口头确认，证据待补** |
+| V6 | 首页网格滚动（1.3.0 包） | 1.3.0 包首页滚动到底 → 返回再进 → 再滚；看设置 → 运行日志「首页虚拟化：视频数=N，item数=M，可见卡数=K」 | 首屏快、滚动不掉帧、无错位；日志可见 item/可见卡数远小于视频数（非全量绑定） | 30s 录屏 + 运行日志截图 1 张 | **待验证（1.3.0 包）** |
+| V7 | 诊断入口可用性 | 设置 → 查看运行诊断日志 / 查看崩溃日志 | 能打开、能复制/另存 | 各 1 张截图 | 待验证（不变） |
 
 > 真机条件不足时的降级：V2/V3/V4 至少给「手机真机 + TV」两组；平板缺失时标「未覆盖」，不允许写「已验证」。
+> 证据口径：1.2.2 口头确认不算证据；1.3.0 包出后 V1/V2/V4/V6 须在新包复验，文件名/说明注明包版本（1.2.2 或 1.3.0），不得混用。
 
 ## 3. 风险登记
 
 | ID | 风险 | 等级 | 影响 | 缓解（负责人） |
 |---|---|---|---|---|
-| R1 | 真机/ADB 不可用，回归证据全靠用户手点 | **高** | review 项无法自动抓 logcat/帧数据，可能在发版后才发现问题 | 验证项压到 5 条以内、每条 ≤3 步；QA 出 checklist + 模拟器静态核对；无证据项保持 review 不转 done（qa-engineer） |
-| R2 | `git_dirty=true` + 多角色并行改大文件 | **高** | 包不可复现（GPL 合规）、多人覆盖改动（`MobileShell` 4591 行、`TvLive` 2228 行、`PlaybackControls` 1615 行） | 本轮只回归不改这些文件；**写窗口制**：一个文件一轮只一个负责人；收口后 Lead 统一 commit + tag（lead） |
-| R3 | 文档/版本漂移 | 中 | 用户与接手者误判版本；发布说明与包不一致 | S1-06 文案修正；S1-10 补 CHANGELOG 1.2.2；版本号只认 `version.properties`（pm-owner） |
-| R4 | P0-2 FTP 残留写/删能力 | 中 | 局域网内凭口令可上传/删除（明文，6 位口令可截屏泄露） | 发布前改「默认关闭」或「只写 + TTL」；或在 1.2.2 说明中明示（mobile-dev / auditor） |
-| R5 | 范围膨胀：审计 4×P0 + 9×P1 + 9×P2，设计规范 3 份 | **高** | 本轮 2 天，任何"顺手做"都会挤压回归 | 砍 P2 全部；P1 本轮只留 0 项，S2 起逐项开（scrum-master） |
-| R6 | 两条构建链（Python 脚本 / Gradle）产物无一致性门禁 | 中 | 发布用哪条链不明确，包体与校验口径可能不同 | S2-05 定死"发布链"，另一条只做验证（auditor） |
+| R1 | 真机/ADB 不可用，回归证据全靠用户手点 | **高** | review 项无法自动抓 logcat/帧数据，可能在发版后才发现问题 | 验证项压到 7 条以内、每条 ≤3 步；QA 出 checklist + 静态核对；无证据项保持 review 不转 done（qa） |
+| R2 | `git_dirty=true` + 多角色并行改大文件 | **高** | 包不可复现（GPL 合规）、多人覆盖改动（`MobileShell` 4591 行、`TvLive` 2228 行） | **本轮写窗口：dev 仅改 `MobileShell`/`MainActivity`（+可选 `tests/device/HomeProbe.java`）；Lead 改 `TvLive`/`SettingsScreen`/`version.properties`**；qa 只写 `docs/LIVE_CHANNEL_AUDIT.md`、`docs/VERIFY_1.2.2.md`；scrum 只写本 board；收口后 Lead 统一 commit + tag（lead） |
+| R3 | 文档/版本漂移 | 中 | 用户与接手者误判版本；发布说明与包不一致 | S1-13 版本号修复（文件行级已改，待 1.3.0 包验证）；S1-10 补 CHANGELOG 1.3.0；版本号只认 `version.properties`（lead） |
+| R4 | P0-2 FTP 残留写/删能力 | 中 | 局域网内凭口令可上传/删除（明文，6 位口令可截屏泄露） | 发布前改「默认关闭」或「只写 + TTL」；或在 1.3.0 说明中明示（dev / architect） |
+| R5 | 范围膨胀：审计 4×P0 + 9×P1 + 9×P2，设计规范 3 份 | **高** | 本轮 2 天，任何"顺手做"都会挤压回归 | 砍 P2 全部；P1 本轮只留虚拟化 1 项；其余 S2 起逐项开（scrum-master） |
+| R6 | 两条构建链（Python 脚本 / Gradle）产物无一致性门禁 | 中 | 发布用哪条链不明确，包体与校验口径可能不同 | S2-05 定死"发布链"，另一条只做验证（architect） |
+| R7 | 子会话（子代理）无法执行 bash：无沙箱后端 + 审批被禁 | **高** | 构建/编译/命令全部串行到 Lead；dev/qa 无法自测编译、无法主动落盘证据 → 串行瓶颈 + 证据补齐慢 | 子会话只用 read/grep/glob/write/edit，交付「改动 + 自测说明」；构建/校验统一由 Lead 在任务收口时跑一次；任务按依赖排序、减少构建轮次；证据由用户/Lead 补（lead） |
 
 ## 4. 待拍板（阻塞项，需 Lead / 产品决策）
 
-| ID | 问题 | 建议 | 决策人 |
-|---|---|---|---|
-| D1 | 1.2.2 是否直接对外发？当前包来自 dirty 工作区 | 先 commit + tag 1.2.2 再重出包，用重出的包做覆盖安装验证 | lead |
-| D2 | MiniFtpServer 默认关闭还是保留（只写 + TTL） | 默认关闭，保留入口；如保留则本轮补 TTL 与禁用 DELE | pm-owner |
-| D3 | Measured Baseline Profile 是否本轮硬指标 | 接受手写 BP 作为 1.2.2 交付，实测 BP 挂 S3（需真机环境） | lead |
-| D4 | 首页虚拟化是否挤进 S1 | 不挤，S2-01 首项，独占 `MobileShell` 写窗口 | scrum-master 建议 / lead 确认 |
-| D5 | targetSdk 33→35 升级窗口 | S4 起做，需产品接受行为回归面 | pm-owner |
+| ID | 问题 | 建议 | 当前状态 | 决策人 |
+|---|---|---|---|---|
+| D1 | 1.2.2 是否 tag 对外发？当前包来自 dirty 工作区，且将被 1.3.0（虚拟化+地址修正+版本号修复）取代 | 不在 1.2.2 上单独对外发；1.3.0 构建前先 commit clean tree 再出包；1.2.2 如需留里程碑，只在 clean commit 上打内部 tag | **待拍板** | lead（用户确认） |
+| D2 | MiniFtpServer 默认关闭还是保留（只写 + TTL） | 默认关闭，保留入口；如保留则补 TTL 与禁用 DELE | 待拍板 | pm |
+| D3 | Measured Baseline Profile 是否本轮硬指标 | 维持手写 BP 作为交付；S1-08 仍 blocked（无 adb/模拟器），实测 BP 挂 S3；不阻断 1.3.0 | **待确认（建议维持）** | lead |
+| D4 | 首页虚拟化是否挤进 S1 | **已执行**：虚拟化提前到本轮（S1-07/S2-01），dev 独占 `MobileShell`/`MainActivity` 写窗口，Lead 构建+评审 | **已执行** | lead |
+| D5 | targetSdk 33→35 升级窗口 | S4 起做，需产品接受行为回归面 | 待拍板 | pm |
 
 ## 5. 未来 2 轮排期建议
 
 ### S2（11-11 ~ 11-17，5 个工作日 + 真机窗口）主题：性能第一刀 + 构建正式化
 
-| 顺序 | 任务 | 负责人 | 人日 | 说明 |
-|---|---|---|---|---|
-| 1 | 首页/搜索网格 RecyclerView 虚拟化 | mobile-dev | 2–3 | 独占 `MobileShell`，先冻结其他改动；首屏 24 张其余分批 |
-| 2 | 图片磁盘缓存 LRU 配额 + 退出清理 | mobile-dev | 1 | `ImageLoader` 磁盘无上限（审计 P1-8） |
-| 3 | P0-2 FTP 收口（默认关闭 / 只写+TTL） | mobile-dev | 0.5 | 发版前必须有一版 |
-| 4 | 冷启动埋点（trace）+ 配置异步加载 | mobile-dev | 1–2 | 先埋点再优化（审计 P1-4） |
-| 5 | Gradle 正式化：flavor 对齐、R8 keep、16KB 校验进门禁 | android-auditor | 2 | 独立 `gradle/` 目录，与 1–4 不冲突 |
-| 6 | 回归门禁：JVM checks 全绿 + 冒烟清单 | qa-engineer | 1 | 现有 15+ 套件 CI 化 |
-| 7 | 真机验证 V6/V7 + S1 遗留项 | 用户 | — | 本轮证据回填 board |
+| 顺序 | ID | 任务 | 负责人 | 人日 | 状态 | 说明 |
+|---|---|---|---|---|---|---|
+| 1 | S2-01 | 首页/搜索网格 RecyclerView 虚拟化 | dev | 2–3 | **doing（已提前到 11-09 本轮）** | 独占 `MobileShell`/`MainActivity`；与 S1-07 同一件事；Lead 构建评审 |
+| 2 | S2-02 | 图片磁盘缓存 LRU 配额 + 退出清理 | dev | 1 | 未开始 | `ImageLoader` 磁盘无上限（审计 P1-8） |
+| 3 | S2-03 | P0-2 FTP 收口（默认关闭 / 只写+TTL） | dev | 0.5 | 未开始 | 发版前必须有一版 |
+| 4 | S2-04 | 冷启动埋点（trace）+ 配置异步加载 | dev | 1–2 | 未开始 | 先埋点再优化（审计 P1-4） |
+| 5 | S2-05 | Gradle 正式化：flavor 对齐、R8 keep、16KB 校验进门禁 | architect | 2 | 未开始 | 独立 `gradle/` 目录，与 1–4 不冲突 |
+| 6 | S2-06 | 回归门禁：JVM checks 全绿 + 冒烟清单 | qa | 1 | 未开始 | 现有 15+ 套件 CI 化 |
+| 7 | S2-07 | 真机验证 V6/V7 + S1 遗留项 | 用户 | — | 未开始 | 证据回填 board |
+| 8 | S2-08 | 卫视官方直播页地址审计（E2-S1） | qa | 1 | **doing** | task-2 进行中，产出 `docs/LIVE_CHANNEL_AUDIT.md`；改码由 Lead 统一应用（`TvLive`） |
 
-出口标准：首页滚动录屏不掉帧；mobile release 包 ≤ 40 MB（或给出明确预算）；构建链唯一；无 P0 遗留；CHANGELOG 1.3.0 首条草稿。
+出口标准：首页滚动录屏不掉帧（V6）+ 运行日志可见非全量绑定；mobile release 包 ≤ 40 MB（或给出明确预算）；构建链唯一；无 P0 遗留；CHANGELOG 1.3.0 首条草稿。
 
 ### S3（11-18 ~ 11-24）主题：架构升级启动（需 D5 决策）
 
-1. Media3 1.5.1 → 1.8.x + `DecoderProbe` 解码回归（auditor，2–3 人日，回归面高）。
-2. 后台释放播放器（低成本先行）→ 视 D5 再上前台服务/MediaSession（mobile-dev，1–3 人日）。
-3. AGP9 评估（仅当 S2-05 完成且镜像可用）（auditor，1 人日）。
-4. Compose 试点**只做决策与范围**，不实现（auditor + ui，0.5 人日）。
-5. targetSdk 33 分步方案评审（不落地）（auditor + pm，1 人日）。
+1. Media3 1.5.1 → 1.8.x + `DecoderProbe` 解码回归（architect，2–3 人日，回归面高）。
+2. 后台释放播放器（低成本先行）→ 视 D5 再上前台服务/MediaSession（dev，1–3 人日）。
+3. AGP9 评估（仅当 S2-05 完成且镜像可用）（architect，1 人日）。
+4. Compose 试点**只做决策与范围**，不实现（architect + designer，0.5 人日）。
+5. targetSdk 33 分步方案评审（不落地）（architect + pm，1 人日）。
 
 ### 建议砍掉 / 延后（S2–S3 不做）
 
@@ -114,3 +120,5 @@
 | 时间 | 变更 | 人 |
 |---|---|---|
 | 2026-11-09 | 创建 board；录入 1.2.2 收口轮 12 项任务、7 项真机验证、6 项风险、5 项待拍板；给出 S2/S3 排期 | scrum-master |
+| 2026-11-09 21:20 | 对齐 S1 现状：S1-06→done（文件行级）、S1-07 转 doing、S1-08 blocked、S1-10 转 doing/Lead、S1-02~05 标「口头通过·证据待补」；新增 S1-13（版本号执行登记）；V1–V5 标口头确认、V6 改「待验证（1.3.0 包）」；R2 更新写窗口、新增 R7（子会话无 bash 串行瓶颈）；D1/D3 更新、D4 标已执行；S2-01 doing、新增 S2-08 地址审计 doing | scrum-master |
+| 2026-11-09 21:40 | Lead 收尾：S1-07/S2-01 首页虚拟化实现完成（dev），架构复核静态通过 0 必修、设计师 17 条不变量无 P0；S2-08 地址审计完成并应用陕西 1 条（重庆候选 404 否掉）；1.3.0 双包已构建（mobile/tv）+ 已拷 `/sdcard/Download/DSH-Go/鲸落/`；新增 V8 陕西卫视抽验到 `docs/VERIFY_1.3.0.md`；S1-07/S2-01 转 **review（等 V6 真机证据）**，S2-08 转 review（等用户提供剩余官方页） | Lead |

@@ -135,7 +135,7 @@ final class TvLive {
         {"辽宁卫视", "https://www.lntv.cn/"},
         {"吉林卫视", "https://www.jlntv.cn/live"},
         {"河南卫视", "https://www.hntv.tv/live/index"},
-        {"陕西卫视", "https://www.snrtv.com/"},
+        {"陕西卫视", "http://live.snrtv.com/star"},
         {"青海卫视", "https://www.qhbtv.com/"},
         {"西藏卫视", "https://www.xzstv.com/"},
         {"兵团卫视", "https://www.btstv.com/"},

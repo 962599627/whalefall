@@ -132,7 +132,7 @@ final class MobileShell {
         // 复用旧页面时补一次背景层：修「返回后静态壁纸黑屏」（不重建内容）
         a.ensureBackdrop(retainedRoot);
         a.applyMobileSystemBars(false);
-        a.scroll = homeScroll;
+        a.scroll = homeList;
         a.body = homeBody;
         if (a.current != null) a.current.home = true;
         return true;
@@ -725,10 +725,26 @@ final class MobileShell {
         return bar;
     }
 
-    private static int homeScrollY;
-    private ScrollView homeScroll;
+    private RecyclerView homeList;
     private LinearLayout homeBody;
     private static View dockView;
+
+    // ---- 首页网格虚拟化（E3-S1）：头部区块 / 影片行 / 加载更多都是 RecyclerView item ----
+    private static final int HOME_ITEM_HEADER = 0;
+    private static final int HOME_ITEM_ROW = 1;
+    private static final int HOME_ITEM_FOOTER = 2;
+    /** 首页头部区块（item 0，单例复用，不随滚动重建）。 */
+    private LinearLayout homeHeaderBody;
+    /** 底部「加载更多」外层容器（末尾 item，单例复用）。 */
+    private FrameLayout homeFooterWrap;
+    private TextView homeFilterButton;
+    private HomeAdapter homeAdapter;
+    private int homeCols = 3, homeCardWidthDp, homePosterHeightDp;
+    /** 首屏数据到达后要恢复的滚动锚点（item position + 顶部偏移 px）。 */
+    private int homeRestorePos = -1, homeRestoreOffset;
+    /** 切换 tab 时保存的首页锚点；pending* 来自 onSaveInstanceState 恢复。 */
+    private static int homeAnchorPos = -1, homeAnchorOffset;
+    static int pendingHomeAnchorPos = -1, pendingHomeAnchorOffset;
 
     /** 全屏播放时隐藏底部 Dock，避免与播放器控件/网页控件叠加。 */
     static void setDockVisible(boolean visible) {
@@ -739,8 +755,7 @@ final class MobileShell {
         ++homeRequest;
         homeReady = false;
         ++a.generation;
-        if (activeTab == 0 && homeScroll != null && homeScroll.getScrollY() > 0)
-            homeScrollY = homeScroll.getScrollY();
+        if (activeTab == 0) captureHomeAnchor();
         activeTab = Math.max(0, Math.min(5, index));
         a.cancelPageRequests();
         // When on Search tab (1), highlight Home (0) in the 4-tab dock
@@ -813,17 +828,33 @@ final class MobileShell {
             return;
         }
 
-        final ScrollView scrollView = new ScrollView(a);
-        homeScroll = scrollView;
-        final int restoreScroll =
-                pendingHomeScroll >= 0 ? pendingHomeScroll : homeScrollY;
-        pendingHomeScroll = -1;
-        scrollView.post(() -> scrollView.scrollTo(0, Math.max(0, restoreScroll)));
-        scrollView.setFillViewport(true);
-        scrollView.setVerticalScrollBarEnabled(false);
-        scrollView.setClipToPadding(false);
-        a.scroll = scrollView;
-        contentContainer.addView(scrollView, new FrameLayout.LayoutParams(-1, -1));
+        // E3-S1：首页改为 RecyclerView 虚拟化。头部区块 / 影片行 / 加载更多各占 item，
+        // 影片只为「可见区 + 预取」创建卡片，不再一次性 addView 全部海报。
+        final int restorePos =
+                pendingHomeAnchorPos >= 0 ? pendingHomeAnchorPos : homeAnchorPos;
+        final int restoreOffset =
+                pendingHomeAnchorPos >= 0 ? pendingHomeAnchorOffset : homeAnchorOffset;
+        pendingHomeAnchorPos = -1;
+        final RecyclerView recycler = new RecyclerView(a);
+        homeList = recycler;
+        homeRestorePos = restorePos;
+        homeRestoreOffset = restoreOffset;
+        float homeWidthDp = a.windowWidth() / a.getResources().getDisplayMetrics().density;
+        homeCols = homeWidthDp >= 720 ? 5 : (homeWidthDp >= 520 ? 4 : 3);
+        int homeHorizontalPaddingDp = homeWidthDp >= 640 ? 116 : 32;
+        homeCardWidthDp =
+                Math.max(
+                        92,
+                        (int)
+                                ((homeWidthDp - homeHorizontalPaddingDp - (homeCols - 1) * 12)
+                                        / homeCols));
+        homePosterHeightDp = Math.round(homeCardWidthDp * 1.48f);
+        recycler.setLayoutManager(new LinearLayoutManager(a));
+        recycler.setItemAnimator(null);
+        recycler.setVerticalScrollBarEnabled(false);
+        recycler.setClipToPadding(false);
+        a.scroll = recycler;
+        contentContainer.addView(recycler, new FrameLayout.LayoutParams(-1, -1));
         if (filterSummaryBar != null) filterSummaryBar.view().bringToFront();
 
         // 底部常驻筛选摘要条：未选时是入口，已选时展示条件 chips，点击展开筛选浮层
@@ -843,15 +874,15 @@ final class MobileShell {
         filterBarLp.bottomMargin = a.dp(filterBarBottomDp);
         contentContainer.addView(filterSummaryBar.view(), filterBarLp);
 
-        final LinearLayout body = a.vertical();
-        a.body = body;
-        homeBody = body;
-        body.setPadding(
+        recycler.setPadding(
                 0,
                 statusBarHeight() + a.dp(8),
                 0,
                 a.dp(filterBarBottomDp + FilterSummaryBar.HEIGHT_DP + 18));
-        scrollView.addView(body, new ScrollView.LayoutParams(-1, -2));
+        final LinearLayout body = a.vertical();
+        a.body = body;
+        homeBody = body;
+        homeHeaderBody = body;
 
         // 1. Scrollable Top Header Row (Brand + Site Capsule + Netdisk Capsule + Search Icon)
         body.addView(buildHomeTopHeaderRow(), new LinearLayout.LayoutParams(-1, -2));
@@ -1084,6 +1115,7 @@ final class MobileShell {
         float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
         TextView filterButton = a.text("筛选", 13 * navScale, MainActivity.WHITE);
         filterButton.setTag("home-filters");
+        homeFilterButton = filterButton;
         filterButton.setSingleLine(true);
         filterButton.setGravity(Gravity.CENTER);
         filterButton.setPadding(
@@ -1102,10 +1134,7 @@ final class MobileShell {
         statusText.setPadding(a.dp(16), a.dp(24), a.dp(16), a.dp(24));
         body.addView(statusText, new LinearLayout.LayoutParams(-1, -2));
 
-        final LinearLayout gridContainer = a.vertical();
-        gridContainer.setPadding(
-                a.dp(UiTokens.SP_16), a.dp(UiTokens.SP_2), a.dp(UiTokens.SP_16), 0);
-        body.addView(gridContainer, new LinearLayout.LayoutParams(-1, -2));
+        // 影片网格改为 RecyclerView 的「影片行」item（见 HomeAdapter），不再建全量容器。
 
         final TextView loadMoreBtn = a.text("加载更多影片", 13.5f, MainActivity.WHITE);
         loadMoreBtn.setTag("home-load-more");
@@ -1116,13 +1145,17 @@ final class MobileShell {
                 glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.8f), 0x33ffffff));
         loadMoreBtn.setVisibility(View.GONE);
         MobileDetailScreen.bindTouchFeedback(loadMoreBtn);
-        LinearLayout.LayoutParams moreLp = new LinearLayout.LayoutParams(-1, -2);
-        moreLp.setMargins(
+        // 末尾 item：「加载更多」。用单例容器包住，隐藏时高度为 0，保持原本无占位的观感。
+        homeFooterWrap = new FrameLayout(a);
+        FrameLayout.LayoutParams moreFlp = new FrameLayout.LayoutParams(-1, -2);
+        moreFlp.setMargins(
                 a.dp(UiTokens.SP_16),
                 a.dp(UiTokens.SP_12),
                 a.dp(UiTokens.SP_16),
                 a.dp(UiTokens.SP_8));
-        body.addView(loadMoreBtn, moreLp);
+        homeFooterWrap.addView(loadMoreBtn, moreFlp);
+        homeAdapter = new HomeAdapter();
+        recycler.setAdapter(homeAdapter);
 
         final boolean[] loadingPage = {false};
         final boolean[] pageFailed = {false};
@@ -1323,13 +1356,9 @@ final class MobileShell {
                                             && filtered.size() == list.videos.size()) {
                                         a.ui.post(
                                                 () -> {
-                                                    View fbv =
-                                                            a.root == null
-                                                                    ? null
-                                                                    : a.root.findViewWithTag(
-                                                                            "home-filters");
-                                                    if (fbv != null)
-                                                        fbv.setVisibility(View.GONE);
+                                                    if (homeFilterButton != null)
+                                                        homeFilterButton.setVisibility(
+                                                                View.GONE);
                                                     if (filterSummaryBar != null)
                                                         filterSummaryBar
                                                                 .view()
@@ -1413,8 +1442,8 @@ final class MobileShell {
                                                     heroContainer.removeAllViews();
                                                     heroContainer.setVisibility(View.GONE);
                                                 }
-                                                renderVideoGrid(
-                                                        gridContainer, siteSnapshot, currentVideos);
+                                                homeAdapter.submit(
+                                                        currentVideos, siteSnapshot);
                                                 refreshTonight[0].run();
                                                 if (currentPage < totalPages) {
                                                     loadMoreBtn.setVisibility(View.VISIBLE);
@@ -1462,22 +1491,33 @@ final class MobileShell {
                 });
 
         // Auto-load next page when scrolling near bottom (matching iPhone infinite scroll)
-        scrollView
-                .getViewTreeObserver()
-                .addOnScrollChangedListener(
-                        () -> {
-                            if (loadingPage[0] || pageFailed[0] || currentPage >= totalPages)
-                                return;
-                            View child = scrollView.getChildAt(0);
-                            if (child == null) return;
-                            int diff =
-                                    child.getBottom()
-                                            - (scrollView.getHeight() + scrollView.getScrollY());
-                            if (diff <= a.dp(240)) {
-                                currentPage++;
-                                fetchCategoryPage[0].run();
-                            }
-                        });
+        recycler.addOnScrollListener(
+                new RecyclerView.OnScrollListener() {
+                    @Override
+                    public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
+                        // 只在向下滚动时触发，避免上滑回顶时误加载下一页
+                        if (dy <= 0) return;
+                        if (loadingPage[0] || pageFailed[0] || currentPage >= totalPages)
+                            return;
+                        RecyclerView.LayoutManager layoutManager =
+                                recyclerView.getLayoutManager();
+                        RecyclerView.Adapter<?> adapter = recyclerView.getAdapter();
+                        if (!(layoutManager instanceof LinearLayoutManager)
+                                || adapter == null) return;
+                        // 和旧 ScrollView 一致：离内容底部 <= 240dp 时自动加载下一页
+                        View contentLast =
+                                layoutManager.findViewByPosition(adapter.getItemCount() - 1);
+                        if (contentLast == null) return;
+                        int diff =
+                                contentLast.getBottom()
+                                        + recyclerView.getPaddingBottom()
+                                        - recyclerView.getHeight();
+                        if (diff <= a.dp(240)) {
+                            currentPage++;
+                            fetchCategoryPage[0].run();
+                        }
+                    }
+                });
 
         renderCategoryChips.run();
         fetchCategoryPage[0].run();
@@ -1640,13 +1680,11 @@ final class MobileShell {
                     if (selectedCategoryId.isEmpty() && !currentCategories.isEmpty())
                         selectedCategoryId = currentCategories.get(0).id;
                     currentPage = 1;
-                    View fbv = a.root == null ? null : a.root.findViewWithTag("home-filters");
-                    if (fbv instanceof TextView)
-                        ((TextView) fbv)
-                                .setText(
-                                        selectedFilters.isEmpty()
-                                                ? "筛选"
-                                                : "筛选 · " + selectedFilters.size());
+                    if (homeFilterButton != null)
+                        homeFilterButton.setText(
+                                selectedFilters.isEmpty()
+                                        ? "筛选"
+                                        : "筛选 · " + selectedFilters.size());
                     if (filterSummaryBar != null)
                         filterSummaryBar.refresh(mobileFilterDefinitions());
                     if (homeFilterApply != null) homeFilterApply.run();
@@ -1753,111 +1791,291 @@ final class MobileShell {
         row.addView(chip, lp);
     }
 
-    /**
-     * Renders the 3-column portrait poster grid matching the iPhone screenshot (`_buildVideoCard`):
-     * `12dp` rounded `2:3` poster with a smooth bottom gradient scrim and right-aligned `remarks`
-     * inside the poster bottom edge, plus two-line left-aligned `title` + `year · area` below.
-     */
-    private void renderVideoGrid(LinearLayout container, Cms.Site site, List<Cms.Video> videos) {
-        container.removeAllViews();
-        float widthDp = a.windowWidth() / a.getResources().getDisplayMetrics().density;
-        int cols = widthDp >= 720 ? 5 : (widthDp >= 520 ? 4 : 3);
-        int horizontalPaddingDp = widthDp >= 640 ? 116 : 32;
-        int cardWidthDp =
-                Math.max(92, (int) ((widthDp - horizontalPaddingDp - (cols - 1) * 12) / cols));
-        int posterHeightDp = Math.round(cardWidthDp * 1.48f);
+    // =========================================================================
+    // E3-S1：首页网格虚拟化。头部区块（item 0）与「加载更多」（末尾 item）各占一个
+    // 单例 item；影片按「每行 homeCols 张」作为可复用 item，卡片只为可见区 + 预取绑定，
+    // 不再一次性 addView 全部海报。
+    // =========================================================================
+    private final class HomeAdapter extends RecyclerView.Adapter<HomeItemHolder> {
+        private final List<Cms.Video> videos = new ArrayList<>();
+        private Cms.Site site;
+        private int rowCount;
 
-        LinearLayout currentRow = null;
-        for (int i = 0; i < videos.size(); i++) {
-            if (i % cols == 0) {
-                currentRow = a.row();
-                currentRow.setGravity(Gravity.TOP);
-                container.addView(currentRow, new LinearLayout.LayoutParams(-1, -2));
-            }
-            final Cms.Video v = videos.get(i);
-            LinearLayout card = a.vertical();
-            card.setTag(i == 0 ? "primary" : "video:" + v.id);
-            MobileDetailScreen.bindTouchFeedback(card);
-            card.setOnClickListener(view -> a.openListing(site, v));
-
-            FrameLayout art = new FrameLayout(a);
-            art.setBackground(glassBg(0xff1a2c45, 0xff13233a, a.dp(12), a.dp(0.6f), 0x33ffffff));
-            art.setClipToOutline(true);
-
-            // 无海报/加载失败时的占位：深海蓝渐变 + 片名首字
-            TextView placeholder =
-                    a.text(
-                            v.title == null || v.title.isEmpty()
-                                    ? "鲸"
-                                    : v.title.substring(0, 1),
-                            34,
-                            0x40ffffff);
-            placeholder.setTypeface(null, Typeface.BOLD);
-            placeholder.setGravity(Gravity.CENTER);
-            placeholder.setBackground(
-                    new GradientDrawable(
-                            GradientDrawable.Orientation.TL_BR,
-                            new int[] {0xff1b3352, 0xff2a1b33}));
-            art.addView(placeholder, new FrameLayout.LayoutParams(-1, -1));
-            ImageView img = new ImageView(a);
-            img.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            art.addView(img, new FrameLayout.LayoutParams(-1, -1));
-            if (v.poster != null && !v.poster.isEmpty()) a.poster(v.poster, img);
-
-            // Bottom gradient scrim + bottom-right remarks label inside poster (1:1 with iPhone)
-            if (v.remarks != null && !v.remarks.trim().isEmpty()) {
-                FrameLayout bottomScrim = new FrameLayout(a);
-                bottomScrim.setPadding(a.dp(7), a.dp(16), a.dp(7), a.dp(5));
-                bottomScrim.setBackground(
-                        new GradientDrawable(
-                                GradientDrawable.Orientation.TOP_BOTTOM,
-                                new int[] {0x00000000, 0xc8000000}));
-                TextView badge = a.text(v.remarks.trim(), 10, 0xfff5f7fa);
-                badge.setTypeface(null, Typeface.BOLD);
-                badge.setSingleLine(true);
-                badge.setEllipsize(TextUtils.TruncateAt.END);
-                badge.setGravity(Gravity.END);
-                bottomScrim.addView(
-                        badge, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM | Gravity.END));
-                art.addView(bottomScrim, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
-            }
-
-            card.addView(art, new LinearLayout.LayoutParams(-1, a.dp(posterHeightDp)));
-
-            // Line 1: Title (bold 13sp white)
-            TextView title = a.text(v.title, 13, 0xfff5f7fa);
-            title.setTypeface(null, Typeface.BOLD);
-            title.setSingleLine(true);
-            title.setEllipsize(TextUtils.TruncateAt.END);
-            title.setPadding(a.dp(1), a.dp(7), a.dp(1), 0);
-            card.addView(title);
-
-            // Line 2: Subtitle (`year · area` or fallback to `remarks` / `site.name`, 11sp muted)
-            String subtitleText = formatCardSubtitle(v, site);
-            TextView sub = a.text(subtitleText, 11, 0xff8e959e);
-            sub.setSingleLine(true);
-            sub.setEllipsize(TextUtils.TruncateAt.END);
-            sub.setPadding(a.dp(1), a.dp(2), a.dp(1), a.dp(2));
-            card.addView(sub);
-
-            LinearLayout.LayoutParams cellLp = new LinearLayout.LayoutParams(0, -2, 1);
-            int colIdx = i % cols;
-            cellLp.leftMargin = colIdx == 0 ? 0 : a.dp(5);
-            cellLp.rightMargin = colIdx == cols - 1 ? 0 : a.dp(5);
-            cellLp.topMargin = a.dp(4);
-            cellLp.bottomMargin = a.dp(14);
-            currentRow.addView(card, cellLp);
+        /** 数据更新（首屏 / 下拉分页 / 换分类）后整体刷新；只重绑可见行。 */
+        void submit(List<Cms.Video> all, Cms.Site currentSite) {
+            videos.clear();
+            if (all != null) videos.addAll(all);
+            site = currentSite;
+            rowCount = (videos.size() + homeCols - 1) / homeCols;
+            notifyDataSetChanged();
+            applyHomeRestore();
+            logVirtualization();
         }
-        if (currentRow != null) {
-            int rem = videos.size() % cols;
-            if (rem > 0) {
-                for (int i = rem; i < cols; i++) {
-                    LinearLayout.LayoutParams blankLp = new LinearLayout.LayoutParams(0, 1, 1);
-                    blankLp.leftMargin = a.dp(5);
-                    blankLp.rightMargin = i == cols - 1 ? 0 : a.dp(5);
-                    currentRow.addView(new View(a), blankLp);
-                }
+
+        @Override
+        public int getItemCount() {
+            return 2 + rowCount;
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            if (position == 0) return HOME_ITEM_HEADER;
+            if (position == getItemCount() - 1) return HOME_ITEM_FOOTER;
+            return HOME_ITEM_ROW;
+        }
+
+        @Override
+        public HomeItemHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            if (viewType == HOME_ITEM_HEADER) {
+                FrameLayout wrap = new FrameLayout(a);
+                wrap.setLayoutParams(new RecyclerView.LayoutParams(-1, -2));
+                return new HomeItemHolder(wrap);
             }
+            if (viewType == HOME_ITEM_FOOTER) {
+                FrameLayout wrap = new FrameLayout(a);
+                wrap.setLayoutParams(new RecyclerView.LayoutParams(-1, -2));
+                return new HomeItemHolder(wrap);
+            }
+            LinearLayout row = a.row();
+            row.setGravity(Gravity.TOP);
+            row.setLayoutParams(new RecyclerView.LayoutParams(-1, -2));
+            return new HomeItemHolder(row);
+        }
+
+        @Override
+        public void onBindViewHolder(HomeItemHolder holder, int position) {
+            // 头部与底部的单例内容挂到当前 item 壳里（换壳时先摘父），影片行按行复用绑定。
+            if (position == 0) {
+                attachHomeSingleton(holder.itemView, homeHeaderBody);
+                return;
+            }
+            if (position == getItemCount() - 1) {
+                attachHomeSingleton(holder.itemView, homeFooterWrap);
+                return;
+            }
+            bindHomeRow((LinearLayout) holder.itemView, position - 1);
+        }
+
+        /** 首屏数据到达后再恢复锚点（首帧只有头部时先跳过）。 */
+        void applyHomeRestore() {
+            if (homeRestorePos < 0 || homeList == null) return;
+            if (homeRestorePos >= getItemCount()) return;
+            RecyclerView.LayoutManager layoutManager = homeList.getLayoutManager();
+            if (!(layoutManager instanceof LinearLayoutManager)) return;
+            final LinearLayoutManager linear = (LinearLayoutManager) layoutManager;
+            final int pos = homeRestorePos;
+            final int offset = homeRestoreOffset;
+            homeRestorePos = -1;
+            homeList.post(
+                    () -> {
+                        if (homeList == null) return;
+                        linear.scrollToPositionWithOffset(pos, offset);
+                    });
+        }
+
+        /** 运行日志证据：实际绑定的卡片数 = 可见区 + 预取，远小于视频总数（每次数据更新一条）。 */
+        void logVirtualization() {
+            if (homeList == null) return;
+            homeList.post(
+                    () -> {
+                        if (homeList == null) return;
+                        RecyclerView.Adapter<?> bound = homeList.getAdapter();
+                        int items = bound == null ? 0 : bound.getItemCount();
+                        int rows = 0, cards = 0;
+                        for (int i = 0; i < homeList.getChildCount(); i++) {
+                            View child = homeList.getChildAt(i);
+                            // item 壳是新建的 FrameLayout，头部/底部内容挂在壳里：壳跳过
+                            View inner =
+                                    child instanceof ViewGroup
+                                                    && ((ViewGroup) child).getChildCount() > 0
+                                            ? ((ViewGroup) child).getChildAt(0)
+                                            : null;
+                            if (inner == homeHeaderBody || inner == homeFooterWrap) continue;
+                            rows++;
+                            if (!(child instanceof ViewGroup)) continue;
+                            ViewGroup group = (ViewGroup) child;
+                            for (int j = 0; j < group.getChildCount(); j++) {
+                                Object tag = group.getChildAt(j).getTag();
+                                if ("primary".equals(tag)
+                                        || (tag instanceof String
+                                                && ((String) tag).startsWith("video:"))) cards++;
+                            }
+                        }
+                        AppLog.i(
+                                "MobileShell",
+                                "首页虚拟化：视频数="
+                                        + videos.size()
+                                        + "，列表item数="
+                                        + items
+                                        + "，可见卡数="
+                                        + cards
+                                        + "（可见行="
+                                        + rows
+                                        + "）");
+                    });
+        }
+    }
+
+    /** 把单例头部/底部内容挂到当前 item 壳里；被 RecyclerView 回收换壳时先摘父，避免“child already has a parent”。 */
+    private void attachHomeSingleton(View host, View content) {
+        if (!(host instanceof ViewGroup) || content == null) return;
+        ViewGroup group = (ViewGroup) host;
+        if (content.getParent() == group) return;
+        if (content.getParent() instanceof ViewGroup)
+            ((ViewGroup) content.getParent()).removeView(content);
+        group.addView(content, new FrameLayout.LayoutParams(-1, -2));
+    }
+
+    /** 绑定一行影片卡：行视图来自 RecyclerView 复用池，卡片只为该行创建。 */
+    private void bindHomeRow(LinearLayout row, int rowIndex) {
+        row.removeAllViews();
+        row.setPadding(
+                a.dp(UiTokens.SP_16),
+                rowIndex == 0 ? a.dp(UiTokens.SP_2) : 0,
+                a.dp(UiTokens.SP_16),
+                0);
+        for (int col = 0; col < homeCols; col++) {
+            int index = rowIndex * homeCols + col;
+            if (index < homeAdapter.videos.size()) {
+                LinearLayout card = buildVideoCard(homeAdapter.videos.get(index), index);
+                LinearLayout.LayoutParams cellLp = new LinearLayout.LayoutParams(0, -2, 1);
+                cellLp.leftMargin = col == 0 ? 0 : a.dp(5);
+                cellLp.rightMargin = col == homeCols - 1 ? 0 : a.dp(5);
+                cellLp.topMargin = a.dp(4);
+                cellLp.bottomMargin = a.dp(14);
+                row.addView(card, cellLp);
+            } else {
+                LinearLayout.LayoutParams blankLp = new LinearLayout.LayoutParams(0, 1, 1);
+                blankLp.leftMargin = a.dp(5);
+                blankLp.rightMargin = col == homeCols - 1 ? 0 : a.dp(5);
+                row.addView(new View(a), blankLp);
+            }
+        }
+    }
+
+    /**
+     * 单张 3 列海报卡（与 iPhone `_buildVideoCard` 逐项一致）：`12dp` 圆角 `2:3` 海报 +
+     * 底部渐变遮罩与右下 `remarks`，下方两行 `title` + `year · area`。
+     */
+    private LinearLayout buildVideoCard(Cms.Video v, int index) {
+        final Cms.Site site = homeAdapter.site;
+        LinearLayout card = a.vertical();
+        card.setTag(index == 0 ? "primary" : "video:" + v.id);
+        MobileDetailScreen.bindTouchFeedback(card);
+        card.setOnClickListener(view -> a.openListing(site, v));
+
+        FrameLayout art = new FrameLayout(a);
+        art.setBackground(glassBg(0xff1a2c45, 0xff13233a, a.dp(12), a.dp(0.6f), 0x33ffffff));
+        art.setClipToOutline(true);
+
+        // 无海报/加载失败时的占位：深海蓝渐变 + 片名首字
+        TextView placeholder =
+                a.text(
+                        v.title == null || v.title.isEmpty() ? "鲸" : v.title.substring(0, 1),
+                        34,
+                        0x40ffffff);
+        placeholder.setTypeface(null, Typeface.BOLD);
+        placeholder.setGravity(Gravity.CENTER);
+        placeholder.setBackground(
+                new GradientDrawable(
+                        GradientDrawable.Orientation.TL_BR,
+                        new int[] {0xff1b3352, 0xff2a1b33}));
+        art.addView(placeholder, new FrameLayout.LayoutParams(-1, -1));
+        ImageView img = new ImageView(a);
+        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        art.addView(img, new FrameLayout.LayoutParams(-1, -1));
+        if (v.poster != null && !v.poster.isEmpty()) a.poster(v.poster, img);
+
+        // Bottom gradient scrim + bottom-right remarks label inside poster (1:1 with iPhone)
+        if (v.remarks != null && !v.remarks.trim().isEmpty()) {
+            FrameLayout bottomScrim = new FrameLayout(a);
+            bottomScrim.setPadding(a.dp(7), a.dp(16), a.dp(7), a.dp(5));
+            bottomScrim.setBackground(
+                    new GradientDrawable(
+                            GradientDrawable.Orientation.TOP_BOTTOM,
+                            new int[] {0x00000000, 0xc8000000}));
+            TextView badge = a.text(v.remarks.trim(), 10, 0xfff5f7fa);
+            badge.setTypeface(null, Typeface.BOLD);
+            badge.setSingleLine(true);
+            badge.setEllipsize(TextUtils.TruncateAt.END);
+            badge.setGravity(Gravity.END);
+            bottomScrim.addView(
+                    badge, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM | Gravity.END));
+            art.addView(bottomScrim, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
+        }
+
+        card.addView(art, new LinearLayout.LayoutParams(-1, a.dp(homePosterHeightDp)));
+
+        // Line 1: Title (bold 13sp white)
+        TextView title = a.text(v.title, 13, 0xfff5f7fa);
+        title.setTypeface(null, Typeface.BOLD);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        title.setPadding(a.dp(1), a.dp(7), a.dp(1), 0);
+        card.addView(title);
+
+        // Line 2: Subtitle (`year · area` or fallback to `remarks` / `site.name`, 11sp muted)
+        String subtitleText = formatCardSubtitle(v, site);
+        TextView sub = a.text(subtitleText, 11, 0xff8e959e);
+        sub.setSingleLine(true);
+        sub.setEllipsize(TextUtils.TruncateAt.END);
+        sub.setPadding(a.dp(1), a.dp(2), a.dp(1), a.dp(2));
+        card.addView(sub);
+        return card;
+    }
+
+    /** 保存首页滚动锚点（position + 顶部偏移），供切换 tab / 进程重建后恢复。 */
+    private void captureHomeAnchor() {
+        if (homeList == null) return;
+        RecyclerView.LayoutManager layoutManager = homeList.getLayoutManager();
+        if (!(layoutManager instanceof LinearLayoutManager)) return;
+        LinearLayoutManager linear = (LinearLayoutManager) layoutManager;
+        int pos = linear.findFirstVisibleItemPosition();
+        if (pos == RecyclerView.NO_POSITION) return;
+        View first = linear.findViewByPosition(pos);
+        homeAnchorPos = pos;
+        homeAnchorOffset = first == null ? 0 : first.getTop();
+    }
+
+    /** 任意 RecyclerView 列表的滚动锚点（position + 顶部偏移），给 MainActivity 保存/恢复用。 */
+    static int[] captureListAnchor(RecyclerView list) {
+        if (list == null) return new int[] {-1, 0};
+        RecyclerView.LayoutManager layoutManager = list.getLayoutManager();
+        if (!(layoutManager instanceof LinearLayoutManager)) return new int[] {-1, 0};
+        LinearLayoutManager linear = (LinearLayoutManager) layoutManager;
+        int pos = linear.findFirstVisibleItemPosition();
+        if (pos == RecyclerView.NO_POSITION) return new int[] {-1, 0};
+        View first = linear.findViewByPosition(pos);
+        return new int[] {pos, first == null ? 0 : first.getTop()};
+    }
+
+    /** 恢复锚点；数据未到时短暂重试，避免首帧 item 数不足把滚动位置丢掉。 */
+    static void restoreListAnchor(final RecyclerView list, final int pos, final int offset) {
+        if (list == null || pos < 0) return;
+        list.post(
+                new Runnable() {
+                    private int tries;
+
+                    @Override
+                    public void run() {
+                        RecyclerView.LayoutManager layoutManager = list.getLayoutManager();
+                        RecyclerView.Adapter<?> adapter = list.getAdapter();
+                        if (!(layoutManager instanceof LinearLayoutManager) || adapter == null)
+                            return;
+                        if (pos >= adapter.getItemCount()) {
+                            if (tries++ < 12) list.postDelayed(this, 80);
+                            return;
+                        }
+                        ((LinearLayoutManager) layoutManager)
+                                .scrollToPositionWithOffset(pos, offset);
+                    }
+                });
+    }
+
+    /** RecyclerView item 的通用 ViewHolder（头部 / 影片行 / 加载更多共用）。 */
+    private static final class HomeItemHolder extends RecyclerView.ViewHolder {
+        HomeItemHolder(View itemView) {
+            super(itemView);
         }
     }
 

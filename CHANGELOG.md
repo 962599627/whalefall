@@ -1,5 +1,14 @@
 # 版本记录
 
+## Android 手机 / 平板 1.3.0 — 2026-11-09（未发布，待真机验证）
+
+完整说明：[鲸落 1.3.0 发布说明草稿](docs/RELEASE_1.3.0.md)。
+
+- 首页海报网格改为 RecyclerView 虚拟化（header / 影片行 / 加载更多三类 item，卡片只为可见区+预取创建），替换原先 ScrollView + LinearLayout 全量构建；未真机验证滚动流畅度与「优化已验收」。
+- 陕西卫视改为官方直播页 `http://live.snrtv.com/star`（实测 200；页面可能先弹「确定前往」）；其余频道地址本版未动（67 条审计见 `docs/LIVE_CHANNEL_AUDIT.md`）。
+- 设置页「关于」版本号改为运行时读取安装包版本，修复硬编码「鲸落 1.2.0」。
+- 代码评审：`docs/ARCH_REVIEW_HOME_VIRTUALIZATION.md`（静态通过、静态必修 0 项）；设计走查：`docs/DESIGN_REVIEW_1.3.0.md`（视觉不变量 17 条、无 P0）；真机清单：`docs/VERIFY_1.3.0.md`。
+
 ## 未发布 — 订阅兼容修复中
 
 Android 手机/平板与电视的已验证升级与修复已随下方 0.5.3 独立发布。以下跨端验证及实验仍在继续，不能视为 iPhone 或其他端已更新。

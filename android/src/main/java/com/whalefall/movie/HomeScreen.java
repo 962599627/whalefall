@@ -41,7 +41,7 @@ final class HomeScreen {
     State state;
     FrameLayout retainedRoot;
     LinearLayout retainedBody;
-    android.widget.ScrollView retainedScroll;
+    android.view.View retainedScroll;
     HomeDock retainedDock;
     int retainedWidth, retainedHeight, retainedEngineEpoch;
     float retainedFontScale;
@@ -116,7 +116,8 @@ final class HomeScreen {
         }
         a.body.setClipChildren(false);
         a.body.setClipToPadding(false);
-        a.scroll.setClipChildren(false);
+        if (a.scroll instanceof android.view.ViewGroup)
+            ((android.view.ViewGroup) a.scroll).setClipChildren(false);
         float width = a.windowWidth() / a.getResources().getDisplayMetrics().density;
         int marginDp = bottomDock ? 36 : (34 + rightPadDp);
         posterWidth = Math.max(48, (int) ((width - marginDp - (COLUMNS - 1) * 14) / COLUMNS) - 8);

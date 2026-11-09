@@ -15,6 +15,7 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
+import androidx.recyclerview.widget.RecyclerView;
 
 /** Independent first native build. No original APK code or artwork is embedded. */
 public final class MainActivity extends Activity {
@@ -91,7 +92,8 @@ public final class MainActivity extends Activity {
     HomeDock homeDock;
     FrameLayout root;
     LinearLayout body;
-    ScrollView scroll;
+    /** 当前页滚动容器：普通页面是 ScrollView/TvScrollView，首页是虚拟化的 RecyclerView。 */
+    View scroll;
     Screen current;
     Cms.Config config;
     android.content.SharedPreferences prefs;
@@ -169,6 +171,9 @@ public final class MainActivity extends Activity {
         Runnable render;
         String focus, homeReturnFocus;
         int scroll;
+        /** 首页 RecyclerView 的滚动锚点（item position + 顶部偏移）；-1 表示无。 */
+        int scrollPos = -1;
+        int scrollOffset;
         int episodeFocus = -1;
         String episodeFocusLine = "";
         final EpisodeSelection selection = new EpisodeSelection();
@@ -759,6 +764,8 @@ public final class MainActivity extends Activity {
         if (b != null) {
             MobileShell.pendingRestoreTab = b.getInt("whale_tab", -1);
             MobileShell.pendingHomeScroll = b.getInt("whale_home_scroll", -1);
+            MobileShell.pendingHomeAnchorPos = b.getInt("whale_home_pos", -1);
+            MobileShell.pendingHomeAnchorOffset = b.getInt("whale_home_off", 0);
             String keyword = b.getString("whale_search", "");
             MobileShell.pendingRestoreKeyword = keyword == null ? "" : keyword;
         }
@@ -903,8 +910,16 @@ public final class MainActivity extends Activity {
         out.putBoolean("layout_initial_launch", !layoutReady && layoutIntro);
         if (!isTvDevice()) {
             out.putInt("whale_tab", MobileShell.activeTab);
-            if (scroll != null && current != null && current.home)
-                out.putInt("whale_home_scroll", scroll.getScrollY());
+            if (scroll != null && current != null && current.home) {
+                if (scroll instanceof RecyclerView) {
+                    int[] anchor = MobileShell.captureListAnchor((RecyclerView) scroll);
+                    out.putInt("whale_home_scroll", 0);
+                    out.putInt("whale_home_pos", anchor[0]);
+                    out.putInt("whale_home_off", anchor[1]);
+                } else {
+                    out.putInt("whale_home_scroll", scroll.getScrollY());
+                }
+            }
             out.putString("whale_search", MobileShell.cachedSearchKeyword);
         }
         super.onSaveInstanceState(out);
@@ -1153,10 +1168,11 @@ public final class MainActivity extends Activity {
             root.addView(homeAmbient, new FrameLayout.LayoutParams(-1, -1));
         }
         if (navigation) root.addView(homeGradient(), new FrameLayout.LayoutParams(-1, -1));
-        scroll = new TvScrollView(this);
-        scroll.setClipChildren(false);
-        scroll.setClipToPadding(false);
-        scroll.setFillViewport(true);
+        TvScrollView tvScroll = new TvScrollView(this);
+        scroll = tvScroll;
+        tvScroll.setClipChildren(false);
+        tvScroll.setClipToPadding(false);
+        tvScroll.setFillViewport(true);
         body = vertical();
         body.setClipChildren(false);
         body.setClipToPadding(false);
@@ -1165,7 +1181,7 @@ public final class MainActivity extends Activity {
         } else {
             body.setPadding(dp(46), dp(26), dp(46), dp(44));
         }
-        scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
+        tvScroll.addView(body, new ScrollView.LayoutParams(-1, -2));
         root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         setContentView(root);
         homeDock = null;
@@ -1275,7 +1291,15 @@ public final class MainActivity extends Activity {
         if (current != null) {
             View f = getCurrentFocus();
             if (f != null && f.getTag() instanceof String) current.focus = (String) f.getTag();
-            if (scroll != null) current.scroll = scroll.getScrollY();
+            if (scroll instanceof RecyclerView) {
+                int[] anchor = MobileShell.captureListAnchor((RecyclerView) scroll);
+                current.scroll = 0;
+                current.scrollPos = anchor[0];
+                current.scrollOffset = anchor[1];
+            } else if (scroll != null) {
+                current.scroll = scroll.getScrollY();
+                current.scrollPos = -1;
+            }
         }
     }
 
@@ -1286,7 +1310,10 @@ public final class MainActivity extends Activity {
         ui.post(
                 () -> {
                     if (current != s) return;
-                    if (scroll != null) scroll.scrollTo(0, s.scroll);
+                    if (scroll instanceof RecyclerView)
+                        MobileShell.restoreListAnchor(
+                                (RecyclerView) scroll, s.scrollPos, s.scrollOffset);
+                    else if (scroll != null) scroll.scrollTo(0, s.scroll);
                     if (!isTvDevice()) return;
                     View target = s.focus == null ? null : root.findViewWithTag(s.focus);
                     if (target != null) {
@@ -1748,9 +1775,20 @@ public final class MainActivity extends Activity {
     }
 
     void smoothHomeScroll(int y) {
+        if (scroll == null) return;
         if (scroll instanceof TvScrollView) ((TvScrollView) scroll).moveTo(y);
-        else if (reduced) scroll.scrollTo(0, y);
-        else scroll.smoothScrollTo(0, y);
+        else if (scroll instanceof RecyclerView) {
+            RecyclerView list = (RecyclerView) scroll;
+            if (y <= 0) {
+                if (reduced) list.scrollToPosition(0);
+                else list.smoothScrollToPosition(0);
+            } else if (reduced) {
+                list.scrollBy(0, y);
+            } else {
+                list.smoothScrollBy(0, y);
+            }
+        } else if (reduced) scroll.scrollTo(0, y);
+        else ((ScrollView) scroll).smoothScrollTo(0, y);
     }
 
     void jumpHomeTop() {
@@ -1760,8 +1798,26 @@ public final class MainActivity extends Activity {
         if (target == null) target = root.findViewWithTag("source-switcher");
         if (target == null) target = root.findViewWithTag("primary");
         if (target != null) target.requestFocus();
+        else if (scroll instanceof RecyclerView)
+            // 首页虚拟化后头部可能尚未绑定：滚回顶部、item 重新绑定后再补一次焦点
+            ui.postDelayed(this::focusHomeTopAfterScroll, 320);
         current.scroll = 0;
+        current.scrollPos = 0;
+        current.scrollOffset = 0;
         smoothHomeScroll(0);
+    }
+
+    private void focusHomeTopAfterScroll() {
+        if (isFinishing()) return;
+        if (current == null || !current.home) return;
+        View target = root.findViewWithTag("home-history:0");
+        if (target == null) target = root.findViewWithTag("home-tab:0");
+        if (target == null) target = root.findViewWithTag("source-switcher");
+        if (target == null) target = root.findViewWithTag("primary");
+        if (target != null) {
+            target.requestFocus();
+            autoFocus = target;
+        }
     }
 
     @Override
