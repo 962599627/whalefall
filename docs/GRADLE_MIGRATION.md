@@ -67,3 +67,8 @@ Gradle 化路径已经跑通「源码 + 资源 + 运行时 assets + jniLibs + �
 - 验证：删除 `android/build/catpaw` 后直接 `gradle :app:assembleRelease`
   → 自动生成 assets → **BUILD SUCCESSFUL in 1m14s**，R8 arm64 release APK 33.05MB
 - 至此 Gradle 构建不再需要先手动跑一次完整 Python 构建，只剩 tv flavor / 版本注入 / Baseline Profile 未接
+
+## 第五轮（2026-11-09 22:50）：AGP 9 产物不可用，锁定 AGP 8.7.3；R8 包必须包含 kotlin-stdlib
+- AGP 9.5.1 + Gradle 9.6 出的 mobile release APK **缺 AndroidManifest.xml / resources（仅 129 entries，不可安装）**，判定 AGP9 收尾未完成，本轮**正式锁定 AGP 8.7.3 + Gradle 8.13**（`gradle/build.gradle` 已改回并提交）。
+- 用户实测 R8 包启动闪退：`NoClassDefFoundError: kotlin/jvm/internal/Intrinsics`（VideoWallpaper→PlayerView→RecyclerView inflate）。根因：为兼容 AGP9 曾把本地 `kotlin-stdlib-1.8.0.jar`/`kotlin-stdlib-common` 从依赖中排除，AGP8.7.3 下 R8 产物缺 kotlin 类。已恢复包含（仅排除 `annotations-13.0.jar`）。
+- R8 构建验证要求：产物必须含 `AndroidManifest.xml`+`res/`（用 aapt dump badging 能看到 versionCode/Name）、dex 内能搜到 `Lkotlin/jvm/internal/Intrinsics;`、并与主包同签名可覆盖安装。

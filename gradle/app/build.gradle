@@ -34,7 +34,7 @@ android {
 }
 
 dependencies {
-    implementation fileTree(dir: '../../tools/java-dependencies', include: ['*.jar'], exclude: ['kotlin-stdlib-1.8.0.jar', 'kotlin-stdlib-common-1.8.0.jar', 'annotations-13.0.jar'])
+    implementation fileTree(dir: '../../tools/java-dependencies', include: ['*.jar'], exclude: ['annotations-13.0.jar'])
     implementation fileTree(dir: '../../tools/java-dependencies', include: ['*.aar'])
 }
 

@@ -41,7 +41,14 @@ final class FilesScreen {
         a.setContentView(a.root);
 
         LinearLayout column = a.vertical();
-        column.setPadding(a.dp(20), MobileDetailScreen.getStatusBarHeight(a) + a.dp(12), a.dp(20), a.dp(32));
+        // TV 遥控 overscan 安全边：横向 ≥24dp、纵向 ≥18dp；手机沿用原值
+        column.setPadding(
+                a.dp(a.isTvDevice() ? 24 : 20),
+                a.isTvDevice()
+                        ? a.dp(18)
+                        : MobileDetailScreen.getStatusBarHeight(a) + a.dp(12),
+                a.dp(a.isTvDevice() ? 24 : 20),
+                a.dp(a.isTvDevice() ? 18 : 32));
         ScrollView scroll = new ScrollView(a);
         scroll.setVerticalScrollBarEnabled(false);
         scroll.setFillViewport(true);
@@ -58,6 +65,7 @@ final class FilesScreen {
         back.setGravity(Gravity.CENTER);
         back.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(back);
+        ExtraPages.tvFocus(a, back, 999);
         back.setOnClickListener(
                 v -> {
                     if (path.isEmpty()) a.onBackPressed();
@@ -75,7 +83,16 @@ final class FilesScreen {
         uploadBtn.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
         uploadBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(uploadBtn);
-        uploadBtn.setOnClickListener(v -> a.pickAndUploadFile());
+        ExtraPages.tvFocus(a, uploadBtn, 999);
+        uploadBtn.setOnClickListener(
+                v -> {
+                    if (a.isTvDevice()) {
+                        // 遥控端统一降级：不打开系统文件选择器
+                        ExtraPages.degrade(a, true);
+                        return;
+                    }
+                    a.pickAndUploadFile();
+                });
         LinearLayout.LayoutParams uploadLp = new LinearLayout.LayoutParams(-2, -2);
         uploadLp.rightMargin = a.dp(8);
         nav.addView(uploadBtn, uploadLp);
@@ -84,6 +101,7 @@ final class FilesScreen {
         adminBtn.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
         adminBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(adminBtn);
+        ExtraPages.tvFocus(a, adminBtn, 999);
         adminBtn.setOnClickListener(v -> AdminPanel.show(a));
         LinearLayout.LayoutParams adminLp = new LinearLayout.LayoutParams(-2, -2);
         adminLp.rightMargin = a.dp(8);
@@ -93,6 +111,7 @@ final class FilesScreen {
         mkdir.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
         mkdir.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(mkdir);
+        ExtraPages.tvFocus(a, mkdir, 999);
         mkdir.setOnClickListener(v -> createFolder(a, path));
         nav.addView(mkdir);
         column.addView(nav, new LinearLayout.LayoutParams(-1, -2));
@@ -140,9 +159,13 @@ final class FilesScreen {
             d.setGravity(Gravity.CENTER);
             empty.addView(d);
             column.addView(empty, new LinearLayout.LayoutParams(-1, -2));
+            // 空态：设计规定首焦点=「管理员后台」
+            if (a.isTvDevice()) adminBtn.setTag("primary");
+            tvFirstFocus(a, a.isTvDevice() ? adminBtn : back);
             return;
         }
 
+        View firstTvTarget = null;
         for (final File f : files) {
             final String rel = PushFiles.join(path, f.getName());
             LinearLayout row = a.row();
@@ -150,6 +173,13 @@ final class FilesScreen {
             row.setPadding(a.dp(14), a.dp(12), a.dp(12), a.dp(12));
             row.setBackground(MobileDetailScreen.glassBg(a, 0xcc16283f, 0x26ffffff, 16));
             MobileDetailScreen.bindTouchFeedback(row);
+            // TV：文件行可遥控聚焦；OK 打开、长按 OK 弹出重命名/删除菜单
+            ExtraPages.tvFocus(a, row, 16);
+            if (firstTvTarget == null) {
+                firstTvTarget = row;
+                // restore() 的 TV 首焦点会先找 tag "primary"：让首个文件行拿到它
+                if (a.isTvDevice()) row.setTag("primary");
+            }
 
             String name = f.getName();
             boolean dir = f.isDirectory();
@@ -225,6 +255,17 @@ final class FilesScreen {
             lp.bottomMargin = a.dp(8);
             column.addView(row, lp);
         }
+        tvFirstFocus(a, firstTvTarget);
+    }
+
+    /** TV 端：页面渲染后给一个明确的初始焦点（不抢用户已有的焦点）。 */
+    private static void tvFirstFocus(final MainActivity a, final View target) {
+        if (!a.isTvDevice() || target == null) return;
+        target.post(
+                () -> {
+                    if (!a.isTvDevice() || a.isFinishing()) return;
+                    if (a.getCurrentFocus() == null) target.requestFocus();
+                });
     }
 
     private static void fileMenu(MainActivity a, String rel, String dir) {
@@ -236,24 +277,26 @@ final class FilesScreen {
                         (d, index) -> {
                             if (index == 0) rename(a, rel, dir);
                             else
-                                new AppDialog.Builder(a)
-                                        .setTitle("删除")
-                                        .setMessage("确定删除「" + PushFiles.baseName(rel) + "」？不可恢复。")
-                                        .setNegativeButton("取消", null)
-                                        .setPositiveButton(
-                                                "删除",
-                                                (dd, w) -> {
-                                                    PushFiles.delete(a, rel);
-                                                    a.toast("已删除");
-                                                    show(a, dir);
-                                                })
-                                        .show();
+                                ExtraPages.confirmDanger(
+                                        a,
+                                        "删除",
+                                        "确定删除「" + PushFiles.baseName(rel) + "」？不可恢复。",
+                                        "删除",
+                                        () -> {
+                                            PushFiles.delete(a, rel);
+                                            a.toast("已删除");
+                                            show(a, dir);
+                                        });
                         })
                 .setNegativeButton("取消", null)
                 .show();
     }
 
     private static void rename(MainActivity a, String rel, String dir) {
+        if (a.isTvDevice()) {
+            ExtraPages.degrade(a, true);
+            return;
+        }
         EditText input = new EditText(a);
         input.setText(PushFiles.baseName(rel));
         input.setSelectAllOnFocus(true);
@@ -276,6 +319,10 @@ final class FilesScreen {
     }
 
     private static void createFolder(MainActivity a, String dir) {
+        if (a.isTvDevice()) {
+            ExtraPages.degrade(a, true);
+            return;
+        }
         EditText input = new EditText(a);
         input.setHint("文件夹名称");
         new AppDialog.Builder(a)
@@ -315,7 +362,7 @@ final class FilesScreen {
                         })
                 .start();
         overlay.addView(image, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
-        TextView hint = a.text(PushFiles.baseName(rel) + " · 双指缩放 · 点按返回", 12, 0xccffffff);
+        TextView hint = a.text(PushFiles.baseName(rel) + (a.isTvDevice() ? " · 按返回键关闭" : " · 双指缩放 · 点按返回"), 12, 0xccffffff);
         hint.setGravity(Gravity.CENTER);
         FrameLayout.LayoutParams hintLp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
         hintLp.bottomMargin = a.dp(32);
@@ -373,6 +420,23 @@ final class FilesScreen {
                     }
                 });
         a.root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+        if (a.isTvDevice()) {
+            // 遥控端：聚焦遮罩后按返回/OK 关闭，避免 BACK 直接退掉整个文件管理页
+            overlay.setFocusable(true);
+            overlay.setFocusableInTouchMode(true);
+            overlay.requestFocus();
+            overlay.setOnKeyListener(
+                    (v, keyCode, event) -> {
+                        if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
+                        if (keyCode == android.view.KeyEvent.KEYCODE_BACK
+                                || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+                                || keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
+                            a.root.removeView(overlay);
+                            return true;
+                        }
+                        return false;
+                    });
+        }
     }
 
     /** 安装上传的 APK：复制到更新缓存目录，用现有 provider 交给系统安装器。 */

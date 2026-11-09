@@ -9,10 +9,10 @@ final class HomeDock {
     final MainActivity a;
     final LinearLayout rail;
     final TextView hint;
-    final View[] items = new View[6];
-    final String[] labels = {"首页", "搜索", "直播", "收藏", "网盘", "设置"};
+    final View[] items = new View[7];
+    final String[] labels = {"首页", "搜索", "直播", "电视", "收藏", "网盘", "设置"};
     final String[] keys = {
-        "nav-home", "nav-search", "nav-live", "nav-favorites", "nav-accounts", "nav-settings"
+        "nav-home", "nav-search", "nav-live", "nav-tv", "nav-favorites", "nav-accounts", "nav-settings"
     };
 
     final boolean bottomMode;
@@ -25,7 +25,8 @@ final class HomeDock {
         navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
         cellDp = Math.round(38 * navScale);
         crossDp = Math.round(50 * navScale);
-        mainDp = Math.round((bottomMode ? 296 : 292) * navScale);
+        // 7 项等分：7×38 + 6×4 + 2×8 = 306dp（140% navScale 时约 428dp，仍小于 960×540 的安全高 504dp）
+        mainDp = Math.round(306 * navScale);
         hintHeightDp = Math.round(28 * navScale);
         rail = bottomMode ? a.row() : a.vertical();
         rail.setTag("home-dock");
@@ -74,8 +75,9 @@ final class HomeDock {
             },
             a::globalSearchDialog,
             () -> a.open(new MainActivity.Screen(a::liveSources), true),
+            () -> a.open(new MainActivity.Screen(() -> TvLive.show(a)), true),
             () -> a.open(new MainActivity.Screen(() -> new FavoritesScreen(a).show()), true),
-            () -> AccountPanel.show(a, items[4]),
+            () -> AccountPanel.show(a, items[5]),
             () -> a.open(new MainActivity.Screen(a::settings), true)
         };
         for (int i = 0; i < items.length; i++) {
@@ -135,10 +137,10 @@ final class HomeDock {
         for (int i = 0; i < items.length; i++) {
             if (bottomMode) {
                 items[i].setNextFocusLeftId(items[Math.max(0, i - 1)].getId());
-                items[i].setNextFocusRightId(items[Math.min(5, i + 1)].getId());
+                items[i].setNextFocusRightId(items[Math.min(6, i + 1)].getId());
             } else {
                 items[i].setNextFocusUpId(items[Math.max(0, i - 1)].getId());
-                items[i].setNextFocusDownId(items[Math.min(5, i + 1)].getId());
+                items[i].setNextFocusDownId(items[Math.min(6, i + 1)].getId());
                 items[i].setNextFocusRightId(items[i].getId());
             }
         }
@@ -298,7 +300,7 @@ final class HomeDock {
         }
     }
 
-    /** Dock 图标 → 统一 vector 图标（首页/搜索/直播/收藏/网盘/设置）。 */
+    /** Dock 图标 → 统一 vector 图标（首页/搜索/直播/电视/收藏/网盘/设置）。 */
     static int glyphKind(int kind) {
         switch (kind) {
             case 0:
@@ -308,8 +310,10 @@ final class HomeDock {
             case 2:
                 return UiIcon.LIVE;
             case 3:
-                return UiIcon.FAVORITE;
+                return UiIcon.TV;
             case 4:
+                return UiIcon.FAVORITE;
+            case 5:
                 return UiIcon.CLOUD;
             default:
                 return UiIcon.TUNE;

@@ -3960,15 +3960,15 @@ final class MobileShell {
                 body.addView(
                         a.text("关闭的板块只在首页隐藏，数据不会删除；随时可以再打开。", 12, 0xff8d9cb6));
             } else if (settingsSubPage == 6) {
-                addAboutPage(body);
+                ExtraPages.about(a, body);
             } else if (settingsSubPage == 7) {
-                addStatsPage(body);
+                ExtraPages.stats(a, body);
             } else if (settingsSubPage == 8) {
-                addKeymapPage(body);
+                ExtraPages.keymap(a, body);
             } else if (settingsSubPage == 9) {
                 addSourceGuidePage(body);
             } else if (settingsSubPage == 10) {
-                addStoragePage(body);
+                ExtraPages.storage(a, body);
             } else {
                 addSectionHeader(body, "更新、备份与诊断");
                 addSettingCard(
@@ -4053,89 +4053,6 @@ final class MobileShell {
     }
 
     /** 设置 → 关于鲸落：版本、开源信息、上游归属与相关操作。 */
-    private void addAboutPage(LinearLayout body) {
-        LinearLayout brand = a.vertical();
-        brand.setGravity(Gravity.CENTER_HORIZONTAL);
-        android.widget.ImageView logo = new android.widget.ImageView(a);
-        logo.setImageResource(R.drawable.logo_mark);
-        brand.addView(logo, new LinearLayout.LayoutParams(a.dp(76), a.dp(76)));
-        TextView name = a.text("鲸落", 26, MainActivity.WHITE);
-        name.setTypeface(null, Typeface.BOLD);
-        name.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(-1, -2);
-        nameLp.topMargin = a.dp(12);
-        brand.addView(name, nameLp);
-        TextView sub = a.text("WHALEFALL · 沉入故事深处", 11.5f, 0xffffb3c8);
-        sub.setGravity(Gravity.CENTER);
-        brand.addView(sub);
-        TextView version = a.text("版本 " + UpdateManager.installedVersion(a), 12.5f, 0xff8d9cb6);
-        version.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams verLp = new LinearLayout.LayoutParams(-1, -2);
-        verLp.topMargin = a.dp(6);
-        brand.addView(version, verLp);
-        a.gap(body, 14);
-        body.addView(brand, new LinearLayout.LayoutParams(-1, -2));
-
-        addSectionHeader(body, "关于软件");
-        addSettingCard(
-                body,
-                6,
-                "检查更新",
-                "当前版本：" + UpdateManager.installedVersion(a),
-                () -> a.open(new MainActivity.Screen(() -> new UpdateScreen(a).show()), true));
-        addSettingCard(
-                body,
-                6,
-                "开源许可",
-                "GPL-3.0-only · 衍生自 MarcoMovie（Pilipala9919）",
-                () -> {
-                    String text =
-                            "鲸落基于 MarcoMovie 二次开发，遵循 GNU General Public License v3.0（GPL-3.0-only）发布。\n\n"
-                                    + "上游项目：MarcoMovie（作者 Pilipala）\n"
-                                    + "本衍生版本保留原版权与许可声明，衍生代码同样以 GPL-3.0 开源。\n\n"
-                                    + "本应用不提供任何影视内容，所有内容均来自用户自行配置的第三方片源。";
-                    new AppDialog.Builder(a)
-                            .setTitle("开源许可")
-                            .setMessage(text)
-                            .setNegativeButton("知道了", null)
-                            .show();
-                });
-        addSettingCard(
-                body,
-                6,
-                "复制项目源码地址",
-                "GitHub · 962599627/whalefall",
-                () -> {
-                    android.content.ClipboardManager cm =
-                            (android.content.ClipboardManager)
-                                    a.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
-                    cm.setPrimaryClip(
-                            android.content.ClipData.newPlainText(
-                                    "whalefall", "https://github.com/962599627/whalefall"));
-                    a.toast("源码地址已复制");
-                });
-        addSettingCard(
-                body,
-                6,
-                "设备与包名",
-                android.os.Build.MANUFACTURER
-                        + " "
-                        + android.os.Build.MODEL
-                        + " · Android "
-                        + android.os.Build.VERSION.RELEASE
-                        + " · "
-                        + a.getPackageName(),
-                () -> a.toast("应用包名：" + a.getPackageName()));
-        a.gap(body, 12);
-        TextView footer =
-                a.text(
-                        "本应用为开源软件，不提供任何影视资源；\n内容均来自用户自行配置的第三方接口。",
-                        11.5f,
-                        0xff8d9cb6);
-        footer.setGravity(Gravity.CENTER);
-        body.addView(footer);
-    }
-
     /** 首页「继续观看」清理：已完成 / 7 天前 / 全部。 */
     void showHistoryCleanup() {
         String[] options = {"清除已看完的", "清除 7 天前的", "全部清除"};
@@ -4168,111 +4085,6 @@ final class MobileShell {
                         })
                 .setNegativeButton("取消", null)
                 .show();
-    }
-
-    /** 设置 → 存储空间与缓存清理：统计各类占用并提供清理。 */
-    private void addStoragePage(LinearLayout body) {
-        final java.io.File cache = a.getCacheDir();
-        final java.io.File csp = new java.io.File(a.getFilesDir(), "csp");
-        final java.io.File updates = new java.io.File(cache, "updates");
-        long cacheBytes = dirSize(cache) - dirSize(updates);
-        long cspBytes = dirSize(csp);
-        long logBytes = logBytes();
-        long pushBytes = dirSize(PushFiles.root(a));
-        long total = cacheBytes + cspBytes + logBytes;
-        addSectionHeader(body, "缓存占用");
-        body.addView(
-                a.text(
-                        "可清理缓存合计：" + android.text.format.Formatter.formatFileSize(a, Math.max(0, total)),
-                        13.5f,
-                        0xffffb3c8));
-        a.gap(body, 8);
-        addStorageRow(body, "临时缓存（图片/网页/JS 模块/磁力临时文件）", cacheBytes,
-                () -> clearDir(cache, false));
-        addStorageRow(body, "已下载的更新安装包", dirSize(updates), () -> clearDir(updates, true));
-        addStorageRow(body, "插件缓存（JS/PY/JAR 运行缓存）", cspBytes, () -> clearDir(csp, true));
-        addStorageRow(body, "运行日志", logBytes, this::clearLogs);
-        addStorageRow(body, "文件管理里上传的文件", pushBytes, () -> FilesScreen.show(a));
-        a.gap(body, 12);
-        addSettingCard(
-                body,
-                5,
-                "一键清理全部缓存",
-                "清理临时缓存、插件缓存和日志；不会删除观看历史、收藏和上传的文件",
-                () -> {
-                    clearDir(cache, true);
-                    clearDir(csp, true);
-                    clearLogs();
-                    a.toast("缓存已清理");
-                    a.refresh();
-                });
-    }
-
-    private void addStorageRow(LinearLayout body, String label, long bytes, Runnable action) {
-        LinearLayout row = a.row();
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
-        row.setBackground(glassBg(0xcc16283f, 0xb3121d2e, a.dp(14), a.dp(0.8f), 0x33ffffff));
-        LinearLayout text = a.vertical();
-        TextView t = a.text(label, 12.5f, 0xffe6edf9);
-        text.addView(t);
-        TextView size = a.text(android.text.format.Formatter.formatFileSize(a, Math.max(0, bytes)), 11.5f, 0xffffb3c8);
-        size.setPadding(0, a.dp(3), 0, 0);
-        text.addView(size);
-        row.addView(text, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView clean = a.text("清理", 12, 0xffff8fb1);
-        clean.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
-        clean.setBackground(glassBg(0x1affffff, 0x33ffffff, a.dp(999), a.dp(0.8f), 0));
-        MobileDetailScreen.bindTouchFeedback(clean);
-        clean.setOnClickListener(v -> action.run());
-        row.addView(clean);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.bottomMargin = a.dp(6);
-        body.addView(row, lp);
-    }
-
-    private static long dirSize(java.io.File dir) {
-        if (dir == null || !dir.exists()) return 0;
-        if (dir.isFile()) return dir.length();
-        long total = 0;
-        java.io.File[] children = dir.listFiles();
-        if (children == null) return 0;
-        for (java.io.File child : children) total += dirSize(child);
-        return total;
-    }
-
-    private long logBytes() {
-        long bytes = 0;
-        java.io.File dir = a.getFilesDir();
-        java.io.File[] files = dir == null ? null : dir.listFiles();
-        if (files == null) return 0;
-        for (java.io.File f : files) {
-            String name = f.getName();
-            if (f.isFile() && (name.endsWith(".log") || name.equals("crash-last.txt")))
-                bytes += f.length();
-        }
-        return bytes;
-    }
-
-    private void clearLogs() {
-        java.io.File dir = a.getFilesDir();
-        java.io.File[] files = dir == null ? null : dir.listFiles();
-        if (files == null) return;
-        for (java.io.File f : files) {
-            String name = f.getName();
-            if (f.isFile() && (name.endsWith(".log") || name.equals("crash-last.txt"))) f.delete();
-        }
-    }
-
-    private void clearDir(java.io.File dir, boolean removeRoot) {
-        if (dir == null || !dir.exists()) return;
-        java.io.File[] children = dir.listFiles();
-        if (children != null)
-            for (java.io.File child : children) {
-                if (child.isDirectory()) clearDir(child, true);
-                else child.delete();
-            }
-        if (removeRoot) dir.delete();
     }
 
     /** 设置 → 片源与直播配置教程：面向小白的图文步骤 + 可复制示例。 */
@@ -4401,120 +4213,6 @@ final class MobileShell {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.bottomMargin = a.dp(6);
         body.addView(row, lp);
-    }
-
-    /** 设置 → 遥控器按键说明：电视端遥控器 / 键盘 / 手机手势对照。 */
-    private void addKeymapPage(LinearLayout body) {
-        String[][] rows = {
-            {"确定 / 回车", "播放 / 暂停；弹出控件时确认当前选项"},
-            {"返回", "收起控件 → 再按退出播放"},
-            {"上 / 下", "呼出工具条后选择按钮；直播时换台"},
-            {"左 / 右", "快退 / 快进 10 秒；列表内移动焦点"},
-            {"菜单键", "打开片源选择"},
-            {"数字键", "直播时直接输入频道号换台"},
-            {"首页三击上键", "回到首页顶部"},
-            {"长按确定", "收藏当前频道（直播页）"},
-            {"空格 / 回车（键盘）", "播放 / 暂停"},
-            {"Esc（键盘）", "退出播放或返回上一页"},
-            {"手机上双击", "播放 / 暂停"},
-            {"手机左右滑动", "快退 / 快进"},
-            {"手机左半屏上下滑", "调节屏幕亮度"},
-            {"手机右半屏上下滑", "调节音量"},
-            {"手机长按", "2 倍速快进"}
-        };
-        addSectionHeader(body, "电视遥控器");
-        for (int i = 0; i < 8; i++) addKeymapRow(body, rows[i][0], rows[i][1]);
-        a.gap(body, 14);
-        addSectionHeader(body, "键盘 / 手机手势");
-        for (int i = 8; i < rows.length; i++) addKeymapRow(body, rows[i][0], rows[i][1]);
-    }
-
-    private void addKeymapRow(LinearLayout body, String key, String desc) {
-        LinearLayout row = a.row();
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
-        row.setBackground(glassBg(0xcc16283f, 0xb3121d2e, a.dp(14), a.dp(0.8f), 0x33ffffff));
-        TextView keyView = a.text(key, 12.5f, 0xffffb3c8);
-        keyView.setTypeface(null, Typeface.BOLD);
-        keyView.setMinWidth(a.dp(120));
-        row.addView(keyView);
-        TextView descView = a.text(desc, 12.5f, 0xffc9d4e6);
-        descView.setPadding(a.dp(10), 0, 0, 0);
-        row.addView(descView, new LinearLayout.LayoutParams(0, -2, 1f));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.bottomMargin = a.dp(6);
-        body.addView(row, lp);
-    }
-
-    /** 设置 → 观影统计：按本地观看历史统计本周数据。 */
-    private void addStatsPage(LinearLayout body) {
-        java.util.List<WatchHistory.Entry> entries = a.watchHistory();
-        long now = System.currentTimeMillis() / 1000;
-        long weekAgo = now - 7 * 24 * 3600L;
-        int weekTitles = 0;
-        long weekSeconds = 0;
-        java.util.Set<String> days = new java.util.HashSet<>();
-        java.util.List<WatchHistory.Entry> week = new java.util.ArrayList<>();
-        for (WatchHistory.Entry e : entries) {
-            if (e.updated < weekAgo) continue;
-            week.add(e);
-            weekTitles++;
-            weekSeconds += Math.max(0, Math.min(e.position, Math.max(1, e.duration))) / 1000L;
-            days.add(new java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.CHINA)
-                    .format(new java.util.Date(e.updated * 1000L)));
-        }
-        long minutes = weekSeconds / 60;
-        addSectionHeader(body, "本周观影");
-        LinearLayout metrics = a.row();
-        metrics.setGravity(Gravity.CENTER_VERTICAL);
-        metrics.addView(metricCard("本周观影", weekTitles + " 部", 0xffffb3c8),
-                new LinearLayout.LayoutParams(0, -2, 1f));
-        LinearLayout.LayoutParams m2 = new LinearLayout.LayoutParams(0, -2, 1f);
-        m2.leftMargin = a.dp(10);
-        metrics.addView(metricCard("本周时长", (minutes >= 60 ? (minutes / 60) + " 小时 " : "") + (minutes % 60) + " 分", 0xff8fc5ff), m2);
-        LinearLayout.LayoutParams m3 = new LinearLayout.LayoutParams(0, -2, 1f);
-        m3.leftMargin = a.dp(10);
-        metrics.addView(metricCard("活跃天数", days.size() + " 天", 0xff5ee0a0), m3);
-        body.addView(metrics, new LinearLayout.LayoutParams(-1, -2));
-        a.gap(body, 14);
-
-        addSectionHeader(body, "最近观看");
-        if (week.isEmpty()) {
-            body.addView(a.text("本周还没有观看记录", 13, 0xff8d9cb6));
-            return;
-        }
-        int limit = Math.min(10, week.size());
-        for (int i = 0; i < limit; i++) {
-            WatchHistory.Entry e = week.get(i);
-            LinearLayout row = a.row();
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
-            row.setBackground(glassBg(0xcc16283f, 0xb3121d2e, a.dp(14), a.dp(0.8f), 0x33ffffff));
-            TextView t = a.text(e.title, 13.5f, MainActivity.WHITE);
-            t.setTypeface(null, Typeface.BOLD);
-            t.setSingleLine(true);
-            t.setEllipsize(TextUtils.TruncateAt.END);
-            row.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
-            int pct = e.duration > 0 ? Math.min(100, Math.round(e.position * 100f / e.duration)) : 0;
-            TextView p = a.text(pct + "%", 11.5f, 0xffffb3c8);
-            row.addView(p);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.bottomMargin = a.dp(6);
-            body.addView(row, lp);
-        }
-    }
-
-    private LinearLayout metricCard(String label, String value, int accent) {
-        LinearLayout card = a.vertical();
-        card.setPadding(a.dp(14), a.dp(14), a.dp(14), a.dp(14));
-        card.setBackground(glassBg(0xcc16283f, 0xb3121d2e, a.dp(16), a.dp(0.8f), 0x33ffffff));
-        TextView v = a.text(value, 18, accent);
-        v.setTypeface(null, Typeface.BOLD);
-        card.addView(v);
-        TextView l = a.text(label, 11, 0xff8d9cb6);
-        l.setPadding(0, a.dp(3), 0, 0);
-        card.addView(l);
-        return card;
     }
 
     /** 屏幕保护设置：开关 / 时长 / 时钟样式统一在一个对话框里。 */

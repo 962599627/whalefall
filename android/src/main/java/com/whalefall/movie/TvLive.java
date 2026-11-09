@@ -275,6 +275,12 @@ final class TvLive {
         }
     }
 
+    /** TV 版入口（1.4.0）：把电视台直播作为独立页面打开，不依赖手机版 MobileShell。 */
+    static void show(MainActivity a) {
+        a.renderPage("", "", false);
+        a.root.addView(screen(a), new FrameLayout.LayoutParams(-1, -1));
+    }
+
     static View screen(MainActivity a) {
         if (a.formFactor == TvLayoutPolicy.FORM_PHONE) {
             try {
@@ -290,19 +296,22 @@ final class TvLive {
             }
         }
         final Store store = new Store(a);
+        final boolean tv = a.isTvDevice();
         final float density = a.getResources().getDisplayMetrics().density;
         final int windowDp = Math.round(a.windowWidth() / density);
         // 平板横向：左侧分类栏 + 中间编号列表 + 右侧频道信息三段式；手机/竖屏退化为单列列表
         final boolean wide = windowDp >= 720;
-        final int sidePad = a.dp(wide ? 20 : 16);
+        // TV 遥控 overscan 安全边：横向 ≥24dp、纵向 ≥18dp；手机沿用原值
+        final int sidePad = a.dp(tv ? 24 : (wide ? 20 : 16));
         final PageState page =
                 new PageState(
                         a,
                         store,
                         wide,
                         sidePad,
-                        a.dp(wide ? 150 : 0),
-                        a.dp(wide ? 252 : 0));
+                        // TV 设计值：左栏 176 + 16 + 列表 + 16 + 预览 300；手机/平板沿用原值
+                        a.dp(tv ? 176 : (wide ? 150 : 0)),
+                        a.dp(tv ? 300 : (wide ? 252 : 0)));
 
         FrameLayout root = new FrameLayout(a);
         root.setBackground(Skin.backdrop(a));
@@ -314,7 +323,7 @@ final class TvLive {
         LinearLayout header = a.vertical();
         header.setPadding(
                 sidePad,
-                MobileDetailScreen.getStatusBarHeight(a) + a.dp(6),
+                tv ? a.dp(18) : MobileDetailScreen.getStatusBarHeight(a) + a.dp(6),
                 sidePad,
                 0);
         shell.addView(header, new LinearLayout.LayoutParams(-1, -2));
@@ -354,14 +363,25 @@ final class TvLive {
             actionsRow = a.row();
             actionsRow.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
             TextView addBtn = TvUiKit.pill(a, "＋ 自定义", 12, false);
-            addBtn.setOnClickListener(v -> addChannelDialog(a, store, () -> page.refresh()));
+            ExtraPages.tvFocus(a, addBtn, 999);
+            addBtn.setOnClickListener(
+                    v -> {
+                        if (a.isTvDevice()) ExtraPages.degrade(a, true);
+                        else addChannelDialog(a, store, () -> page.refresh());
+                    });
             actionsRow.addView(addBtn, new LinearLayout.LayoutParams(-2, a.dp(34)));
             TextView importBtn = TvUiKit.pill(a, "导入列表", 12, false);
+            ExtraPages.tvFocus(a, importBtn, 999);
             LinearLayout.LayoutParams importLp = new LinearLayout.LayoutParams(-2, a.dp(34));
             importLp.leftMargin = a.dp(8);
-            importBtn.setOnClickListener(v -> importDialog(a, store));
+            importBtn.setOnClickListener(
+                    v -> {
+                        if (a.isTvDevice()) ExtraPages.degrade(a, true);
+                        else importDialog(a, store);
+                    });
             actionsRow.addView(importBtn, importLp);
             TextView manageBtn = TvUiKit.pill(a, "管理", 12, false);
+            ExtraPages.tvFocus(a, manageBtn, 999);
             LinearLayout.LayoutParams manageLp = new LinearLayout.LayoutParams(-2, a.dp(34));
             manageLp.leftMargin = a.dp(8);
             manageBtn.setOnClickListener(v -> ChannelManagerScreen.show(a));
@@ -442,6 +462,11 @@ final class TvLive {
             searchRow.addView(searchHint);
         }
         header.addView(searchRow, new LinearLayout.LayoutParams(-1, -2));
+        if (tv) {
+            // 设计规范：TV 隐藏搜索框（遥控无输入，首字母键盘二期）
+            searchRow.setVisibility(View.GONE);
+            input.setFocusable(false);
+        }
 
         searchBox.setOnClickListener(
                 v -> {
@@ -519,8 +544,12 @@ final class TvLive {
         if (!wide) {
             LinearLayout body = a.vertical();
             FrameLayout.LayoutParams bodyLp = new FrameLayout.LayoutParams(-1, -1);
-            // 底部给悬浮 Dock 留出空间
-            bodyLp.setMargins(sidePad, a.dp(4), sidePad, a.dp(96));
+            // 底部给手机悬浮 Dock 留出空间；TV 页无手机 Dock，只留安全边
+            bodyLp.setMargins(
+                    sidePad,
+                    a.dp(a.isTvDevice() ? 18 : 4),
+                    sidePad,
+                    a.dp(a.isTvDevice() ? 18 : 96));
             page.contentSlot.addView(body, bodyLp);
 
             HorizontalScrollView chipScroll = new HorizontalScrollView(a);
@@ -542,6 +571,8 @@ final class TvLive {
                                 ? TvUiKit.accentFill(a, 999)
                                 : MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
                 MobileDetailScreen.bindTouchFeedback(chip);
+                if (a.isTvDevice()) chip.setTag("tv-focus-cat:" + g);
+                ExtraPages.tvFocus(a, chip, 999);
                 TextView nm = a.text(gs[i], 12.5f, on ? 0xff31141f : 0xffd6e1f0);
                 nm.setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
                 chip.addView(nm);
@@ -565,7 +596,11 @@ final class TvLive {
             LinearLayout bodyRow = a.row();
             bodyRow.setGravity(Gravity.TOP);
             FrameLayout.LayoutParams bodyLp = new FrameLayout.LayoutParams(-1, -1);
-            bodyLp.setMargins(sidePad, a.dp(8), sidePad, a.dp(20));
+            bodyLp.setMargins(
+                    sidePad,
+                    a.dp(a.isTvDevice() ? 18 : 8),
+                    sidePad,
+                    a.dp(a.isTvDevice() ? 18 : 20));
             page.contentSlot.addView(bodyRow, bodyLp);
 
             bodyRow.addView(
@@ -583,6 +618,46 @@ final class TvLive {
                     buildPreview(page, chosen),
                     new LinearLayout.LayoutParams(page.previewWidth, -1));
         }
+        focusFirstTvItem(page);
+    }
+
+    /** TV 端：整块重绘后把焦点还给「当前分组」或频道首项，避免刷新/退出播放后焦点丢失。 */
+    static void focusFirstTvItem(final PageState page) {
+        final MainActivity a = page.a;
+        if (!a.isTvDevice() || page.contentSlot == null) return;
+        final FrameLayout slot = page.contentSlot;
+        slot.post(
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        if (page.contentSlot != slot || a.isFinishing()) return;
+                        View focused = a.getCurrentFocus();
+                        // 用户已经把焦点放在仍在页面上的控件（如搜索框）时不要抢
+                        if (focused != null && focused.isAttachedToWindow()) return;
+                        View target =
+                                page.wide
+                                        ? slot.findViewWithTag("tv-focus-cat:" + page.group)
+                                        : slot.findViewWithTag("tv-focus-channel");
+                        if (target == null) target = firstFocusable(slot);
+                        if (target != null) {
+                            target.requestFocus();
+                            a.autoFocus = target;
+                        }
+                    }
+                });
+    }
+
+    /** 递归找第一个可聚焦且可见的子视图（TV 定首焦点用）。 */
+    static View firstFocusable(View view) {
+        if (view == null || view.getVisibility() != View.VISIBLE || !view.isShown()) return null;
+        if (view.isFocusable()) return view;
+        if (!(view instanceof android.view.ViewGroup)) return null;
+        android.view.ViewGroup group = (android.view.ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View found = firstFocusable(group.getChildAt(i));
+            if (found != null) return found;
+        }
+        return null;
     }
 
     /** 左侧分组栏：名称 + 数量，选中项用樱花粉渐变块。 */
@@ -609,6 +684,8 @@ final class TvLive {
             if (on) item.setBackground(TvUiKit.accentFill(a, 14));
             MobileDetailScreen.bindTouchFeedback(item);
             item.setClickable(true);
+            if (a.isTvDevice()) item.setTag("tv-focus-cat:" + g);
+            ExtraPages.tvFocus(a, item, 14);
 
             TextView name = a.text(gs[i], 14, on ? 0xff31141f : 0xffd6e1f0);
             name.setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
@@ -619,7 +696,7 @@ final class TvLive {
             item.addView(count);
 
             item.setOnClickListener(v -> page.pickGroup(g));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, a.dp(46));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, a.dp(a.isTvDevice() ? 56 : 46));
             if (i > 0) lp.topMargin = a.dp(6);
             rail.addView(item, lp);
         }
@@ -641,6 +718,7 @@ final class TvLive {
         addPill.setGravity(Gravity.CENTER);
         addPill.setBackground(MobileDetailScreen.glassBg(a, 0x24ff8fb1, 0x40ffb3c8, 999));
         MobileDetailScreen.bindTouchFeedback(addPill);
+        ExtraPages.tvFocus(a, addPill, 999);
         addPill.addView(
                 new TvUiKit.PlusGlyph(a, 0xffffb3c8),
                 new LinearLayout.LayoutParams(a.dp(11), a.dp(11)));
@@ -648,7 +726,11 @@ final class TvLive {
         LinearLayout.LayoutParams addTxtLp = new LinearLayout.LayoutParams(-2, -2);
         addTxtLp.leftMargin = a.dp(4);
         addPill.addView(addTxt, addTxtLp);
-        addPill.setOnClickListener(v -> addChannelDialog(a, page.store, () -> page.refresh()));
+        addPill.setOnClickListener(
+                v -> {
+                    if (a.isTvDevice()) ExtraPages.degrade(a, true);
+                    else addChannelDialog(a, page.store, () -> page.refresh());
+                });
         LinearLayout.LayoutParams addPillLp = new LinearLayout.LayoutParams(0, a.dp(34), 1f);
         addPillLp.rightMargin = a.dp(6);
         actions.addView(addPill, addPillLp);
@@ -657,6 +739,7 @@ final class TvLive {
         impPill.setGravity(Gravity.CENTER);
         impPill.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
         MobileDetailScreen.bindTouchFeedback(impPill);
+        ExtraPages.tvFocus(a, impPill, 999);
         impPill.addView(
                 new TvUiKit.ImportGlyph(a, 0xffc9d6ea),
                 new LinearLayout.LayoutParams(a.dp(11), a.dp(11)));
@@ -664,7 +747,11 @@ final class TvLive {
         LinearLayout.LayoutParams impTxtLp = new LinearLayout.LayoutParams(-2, -2);
         impTxtLp.leftMargin = a.dp(4);
         impPill.addView(impTxt, impTxtLp);
-        impPill.setOnClickListener(v -> importDialog(a, page.store));
+        impPill.setOnClickListener(
+                v -> {
+                    if (a.isTvDevice()) ExtraPages.degrade(a, true);
+                    else importDialog(a, page.store);
+                });
         LinearLayout.LayoutParams impPillLp = new LinearLayout.LayoutParams(0, a.dp(34), 1f);
         impPillLp.rightMargin = a.dp(6);
         actions.addView(impPill, impPillLp);
@@ -673,6 +760,7 @@ final class TvLive {
         managePill.setGravity(Gravity.CENTER);
         managePill.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
         MobileDetailScreen.bindTouchFeedback(managePill);
+        ExtraPages.tvFocus(a, managePill, 999);
         TextView manageTxt = a.text("管理", 11, 0xffc9d6ea);
         managePill.addView(manageTxt);
         managePill.setOnClickListener(
@@ -742,7 +830,7 @@ final class TvLive {
             return mid;
         }
 
-        final int rowH = a.dp(wide ? 40 : 56);
+        final int rowH = a.dp(wide ? (a.isTvDevice() ? 64 : 40) : 56);
         final RecyclerView recycler = new RecyclerView(a);
         final LinearLayoutManager layout = new LinearLayoutManager(a);
         recycler.setLayoutManager(layout);
@@ -847,6 +935,9 @@ final class TvLive {
             row.setBackground(MobileDetailScreen.glassBg(a, 0x2bff8fb1, 0x66ffb3c8, 14));
         }
         MobileDetailScreen.bindTouchFeedback(row);
+        // TV：频道行可遥控聚焦并有焦点态；手机 no-op
+        ExtraPages.tvFocus(a, row, 14);
+        if (a.isTvDevice()) row.setTag("tv-focus-channel");
         row.setClickable(true);
         row.setOnClickListener(v -> onOpen.run());
         row.setOnLongClickListener(
@@ -1063,24 +1154,26 @@ final class TvLive {
                 MobileDetailScreen.glassBg(
                         a, fav ? 0x2bff8fb1 : 0x1affffff, fav ? 0x66ffb3c8 : 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(favBtn);
+        ExtraPages.tvFocus(a, favBtn, 999);
         favBtn.setOnClickListener(
                 v -> {
                     boolean now = toggleFavorite(page.a, page.store, sel);
                     page.a.toast((now ? "已收藏 " : "已取消收藏 ") + sel.name);
                     page.refresh();
                 });
-        LinearLayout.LayoutParams favLp = new LinearLayout.LayoutParams(-1, a.dp(36));
+        LinearLayout.LayoutParams favLp = new LinearLayout.LayoutParams(-1, a.dp(a.isTvDevice() ? 48 : 36));
         favLp.bottomMargin = a.dp(6);
         panel.addView(favBtn, favLp);
 
         TextView watch = TvUiKit.pill(a, "▶  观看直播", 14, true);
+        ExtraPages.tvFocus(a, watch, 999);
         final String openGroup = page.query.isEmpty() ? page.group : sel.group;
         watch.setOnClickListener(
                 v -> {
                     page.selected = sel.name;
                     open(page.a, page.store, openGroup, sel, () -> page.refresh());
                 });
-        LinearLayout.LayoutParams watchLp = new LinearLayout.LayoutParams(-1, a.dp(42));
+        LinearLayout.LayoutParams watchLp = new LinearLayout.LayoutParams(-1, a.dp(a.isTvDevice() ? 52 : 42));
         watchLp.bottomMargin = a.dp(4);
         panel.addView(watch, watchLp);
         return panel;
