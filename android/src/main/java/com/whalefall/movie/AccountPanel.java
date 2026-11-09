@@ -36,7 +36,9 @@ import java.util.Map;
  *   <li>未登录（本地无凭据且来源是 App 自己管理的引擎，灰点）
  *   <li>状态由源提供（CSP/插件型来源，无法读取内部状态，橙点）
  * </ul>
- * 登录/管理统一调用源提供的 LoginShow，接口返回后刷新本面板。
+ * 登录/管理一律先打开我们自己的「网盘登录」玻璃面板（{@link PanLoginGuide}），
+ * 只有用户在该面板里明确点「打开源登录界面 / 源账号管理」时才调用源提供的 LoginShow；
+ * 接口返回后刷新本面板。
  */
 final class AccountPanel {
     private AccountPanel() {}
@@ -376,7 +378,7 @@ final class AccountPanel {
                     a.text("账号与网盘设置", UiTokens.TYPE_MICRO, UiTokens.TEXT_TERTIARY);
             label.setPadding(a.dp(2), a.dp(20), a.dp(2), a.dp(8));
             body.addView(label, new LinearLayout.LayoutParams(-1, -2));
-            addFunction(body, UiIcon.LAYERS, "登录凭据配置", "Cookie / Token 等登录凭据（由源提供）", "pushCkShow");
+            addFunction(body, UiIcon.LAYERS, "源凭据配置（Cookie / Token）", "由源提供的凭据配置面板；登录请用上方网盘登录引导", "pushCkShow");
             addFunction(body, UiIcon.TUNE, "网盘优先顺序", "调整网盘在播放线路中的优先级", "panSortShow");
             addFunction(body, UiIcon.FILTER, "网盘搜索顺序", "调整网盘在搜索结果中的顺序", "panSourceSortShow");
         }

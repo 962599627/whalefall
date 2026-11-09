@@ -232,6 +232,8 @@ final class PanLoginGuide {
                         .setInterpolator(new android.view.animation.DecelerateInterpolator())
                         .start();
             }
+            // TV：默认焦点放到关闭钮，保证遥控器能立刻操作
+            if (a.isTvDevice()) close.requestFocus();
         }
 
         void render() {
@@ -270,6 +272,27 @@ final class PanLoginGuide {
                             "提示：登录界面由配置源提供，样式不受本 App 控制；"
                                     + "若源内显示白底页面，属正常现象。"),
                     bannerLp());
+            Button manage =
+                    glassButton(
+                            a,
+                            "源账号管理（启用 / 停用）",
+                            () ->
+                                    confirmSourcePanel(
+                                            a,
+                                            "打开源账号管理",
+                                            "“启用 / 停用”由配置源的面板绘制（白底样式不受本 App 控制）。"
+                                                    + "继续后进入源账号面板，返回 App 后再打开本面板刷新状态。",
+                                            () -> {
+                                                new SettingsScreen(a)
+                                                        .sourceAccountAction(
+                                                                "LoginShow",
+                                                                () -> {
+                                                                    if (onChanged != null)
+                                                                        onChanged.run();
+                                                                });
+                                                a.toast("已打开源账号管理 · 完成后返回本页刷新");
+                                            }));
+            body.addView(manage, actionLp());
         }
 
         void renderSteps(List<AccountPanel.Credential> credentials, String driveKey) {
@@ -369,10 +392,17 @@ final class PanLoginGuide {
                                 "打开源登录界面",
                                 () -> {
                                     dialog.dismiss();
-                                    if (onChanged != null) {
-                                        new SettingsScreen(a).accountAction("LoginShow", onChanged);
-                                    }
-                                    a.toast("已打开源登录界面 · 完成后返回本页刷新");
+                                    confirmSourcePanel(
+                                            a,
+                                            "打开源登录界面",
+                                            "登录页面由配置源绘制（白底/红色按钮等样式不受本 App 控制）。"
+                                                    + "继续后进入源登录页；完成登录后返回 App，再打开本面板点「我已登录，刷新状态」。",
+                                            () -> {
+                                                new SettingsScreen(a)
+                                                        .sourceAccountAction(
+                                                                "LoginShow", onChanged);
+                                                a.toast("已打开源登录界面 · 完成后返回本页刷新");
+                                            });
                                 });
                 body.addView(open, actionLp());
                 Button other =

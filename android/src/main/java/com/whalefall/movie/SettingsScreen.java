@@ -163,7 +163,13 @@ final class SettingsScreen {
         accountAction(action, null);
     }
 
-    /** 与 accountAction(action) 相同，额外在源返回后回调 finished（账号面板刷新状态用）。 */
+    /**
+     * 与 accountAction(action) 相同，额外在源返回后回调 finished（账号面板刷新状态用）。
+     *
+     * <p>「LoginShow」一律先进入我们自己的「网盘登录」引导面板，绝不直接弹配置源自带的
+     * 白底登录面板；只有用户在引导里明确点「打开源登录界面/源账号管理」后，才由
+     * {@link #sourceAccountAction} 直达源面板。
+     */
     void accountAction(String action, Runnable finished) {
         if (a.config != null)
             for (Cms.Site site : a.config.sites)
@@ -173,7 +179,29 @@ final class SettingsScreen {
                         if (finished != null) finished.run();
                         return;
                     }
+                    if ("LoginShow".equals(action)) {
+                        PanLoginGuide.show(a, site, "", finished);
+                        return;
+                    }
                     a.sourceAction(site, action, finished);
+                    return;
+                }
+        a.notice("当前配置没有提供网盘账号入口，请先导入支持网盘的配置源。");
+        if (finished != null) finished.run();
+    }
+
+    /** 只供 PanLoginGuide 的明确动作使用：直接执行源 action，不再二次进入引导。 */
+    void sourceAccountAction(String action, Runnable finished) {
+        if (a.config != null)
+            for (Cms.Site site : a.config.sites)
+                if (site.api != null && site.api.contains("MyDrive")) {
+                    if (!a.available(site)) {
+                        a.notice("请先在“搜索与数据”中启用来源扩展。");
+                        if (finished != null) finished.run();
+                        return;
+                    }
+                    // 绕过 MainActivity.sourceAction 的登录拦截：这是用户在引导里明确点的动作
+                    SourceController.sourceAction(a, site, action, finished);
                     return;
                 }
         a.notice("当前配置没有提供网盘账号入口，请先导入支持网盘的配置源。");

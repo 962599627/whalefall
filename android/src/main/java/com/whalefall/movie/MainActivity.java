@@ -1560,10 +1560,18 @@ public final class MainActivity extends Activity {
     }
 
     void sourceAction(Cms.Site site, String action) {
-        SourceController.sourceAction(this, site, action);
+        sourceAction(site, action, null);
     }
 
+    /**
+     * 来源 action 统一入口：登录类动作先进入我们自己的网盘登录引导，
+     * 避免任何菜单/旧入口直接弹出配置源的白底登录面板。
+     */
     void sourceAction(Cms.Site site, String action, Runnable finished) {
+        if ("LoginShow".equals(action)) {
+            PanLoginGuide.show(this, site, "", finished);
+            return;
+        }
         SourceController.sourceAction(this, site, action, finished);
     }
 
