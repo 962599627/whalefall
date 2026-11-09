@@ -1493,6 +1493,8 @@ final class TvLive {
         boolean chromeShown = true;
         int chromeGen;
         int loadingGen;
+        /** 注入脚本是否已启动（单例循环，避免多次进度/页面回调叠加出多条 self-post 循环）。 */
+        boolean injectStarted;
         Runnable onClosed;
         View fullView;
         WebChromeClient.CustomViewCallback fullCallback;
@@ -1515,11 +1517,24 @@ final class TvLive {
                 new Runnable() {
                     @Override
                     public void run() {
-                        if (web == null) return;
+                        if (!injectStarted || web == null) return;
                         web.evaluateJavascript(INJECT_JS + fitJs(), null);
+                        // 探针：页面内 video 真的在播就收掉加载浮层（不依赖 onPageFinished）
+                        web.evaluateJavascript(
+                                PLAYING_JS,
+                                value -> {
+                                    if ("true".equals(value)) hideLoading();
+                                });
                         handler.postDelayed(this, 1800);
                     }
                 };
+
+        /** 注入脚本单例启动：已有循环在跑就不再叠加。 */
+        void startInject() {
+            if (injectStarted) return;
+            injectStarted = true;
+            handler.post(inject);
+        }
 
         Player(MainActivity a, Store store, String group, Channel channel) {
             this.a = a;
@@ -1562,7 +1577,8 @@ final class TvLive {
                             if (loadingSub != null && progress > 0 && progress < 100) {
                                 loadingSub.setText("正在加载官方页面 " + progress + "%");
                             }
-                            if (progress > 80) handler.post(inject);
+                            if (progress >= 100) hideLoading();
+                            if (progress > 80) startInject();
                         }
 
                         @Override
@@ -1577,6 +1593,8 @@ final class TvLive {
                                 chrome.setVisibility(View.GONE);
                                 chromeShown = false;
                             }
+                            // 网页原生全屏 = 已经在播，收掉加载浮层
+                            hideLoading();
                         }
 
                         @Override
@@ -1595,6 +1613,7 @@ final class TvLive {
                     new WebViewClient() {
                         @Override
                         public void onPageStarted(WebView v, String url, android.graphics.Bitmap favicon) {
+                            injectStarted = false;
                             showLoading(playingName);
                         }
 
@@ -1604,7 +1623,7 @@ final class TvLive {
                             if (infoSize != null && web != null) {
                                 infoSize.setText(web.getWidth() + " × " + web.getHeight());
                             }
-                            handler.post(inject);
+                            startInject();
                             handler.postDelayed(Player.this::pressFullscreenKey, 1800);
                             handler.postDelayed(Player.this::pressFullscreenKey, 4500);
                         }
@@ -1676,7 +1695,7 @@ final class TvLive {
             a.tvPlayer = this;
             overlay.requestFocus();
             load();
-            handler.postDelayed(inject, 2500);
+            handler.postDelayed(this::startInject, 2500);
             showChrome();
             handler.post(clockTick);
         }
@@ -1727,10 +1746,11 @@ final class TvLive {
 
         void load() {
             if (list.isEmpty()) return;
+            injectStarted = false;
             handler.removeCallbacks(inject);
             String url = list.get(index).url;
             web.loadUrl(url);
-            handler.postDelayed(inject, 2500);
+            handler.postDelayed(this::startInject, 2500);
         }
 
         // ---------------- chrome（顶栏 / 信息面板 / 底部频道条） ----------------
@@ -2168,6 +2188,8 @@ final class TvLive {
             loadingSub.setText("官方网页直播 · 首次加载稍慢");
             loadingCard.setAlpha(1f);
             loadingCard.setVisibility(View.VISIBLE);
+            // 进度可能长期停在 <80%（直播长连接/iframe）：兜底 1.2s 后也把播放探针跑起来
+            handler.postDelayed(this::startInject, 1200);
         }
 
         void hideLoading() {
@@ -2199,6 +2221,7 @@ final class TvLive {
 
         void close() {
             handler.removeCallbacksAndMessages(null);
+            injectStarted = false;
             if (chrome != null) chrome.animate().cancel();
             if (loadingCard != null) loadingCard.animate().cancel();
             if (overlay != null && overlay.getParent() instanceof FrameLayout)
@@ -2385,4 +2408,8 @@ final class TvLive {
                     + "document.documentElement.style.overflow='hidden';document.body.style.overflow='hidden';"
                     + "}catch(e){}"
                     + "})();";
+
+    /** 页面内是否真的有 video 在播（画面已出但 onPageFinished 迟迟不来时用来收掉加载浮层）。 */
+    static final String PLAYING_JS =
+            "(function(){try{var vs=document.querySelectorAll('video');for(var i=0;i<vs.length;i++){var v=vs[i];if(v&&!v.paused&&v.readyState>=2&&v.currentTime>0)return true;}return false;}catch(e){return false;}})()";
 }
