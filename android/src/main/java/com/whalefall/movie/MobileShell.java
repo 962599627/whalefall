@@ -3074,17 +3074,8 @@ final class MobileShell {
 
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
-            if (viewType == 2) {
-                RowHolder emptyHolder = new RowHolder(buildEmpty());
-                emptyHolder.emptyRow = true;
-                return emptyHolder;
-            }
-            RowHolder holder;
-            if (viewType == 0) {
-                holder = new RowHolder(buildRow());
-            } else {
-                holder = new RowHolder(buildCard());
-            }
+            if (viewType == 2) return buildEmpty();
+            RowHolder holder = viewType == 0 ? buildRow() : buildCard();
             RecyclerView.LayoutParams lp =
                     new RecyclerView.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -3098,7 +3089,7 @@ final class MobileShell {
         }
 
         /** 手机：横向行 100dp 高，缩略图 56×80。 */
-        private View buildRow() {
+        private RowHolder buildRow() {
             LinearLayout row = a.row();
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(a.dp(10), a.dp(8), a.dp(12), a.dp(8));
@@ -3134,11 +3125,11 @@ final class MobileShell {
             action.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
             MobileDetailScreen.bindTouchFeedback(action);
             row.addView(action);
-            return row;
+            return holder;
         }
 
         /** 平板/TV：2:3 封面 + 固定两行标题 + meta + 封面底部进度。 */
-        private View buildCard() {
+        private RowHolder buildCard() {
             LinearLayout card = a.vertical();
             RecyclerView.LayoutParams cardLp =
                     new RecyclerView.LayoutParams(
@@ -3197,11 +3188,11 @@ final class MobileShell {
             meta.setEllipsize(TextUtils.TruncateAt.END);
             card.addView(meta, new LinearLayout.LayoutParams(-1, a.dp(18)));
             card.setTag("library-card");
-            return card;
+            return holder;
         }
 
         /** 空状态：居中提示 + 去首页按钮。 */
-        private View buildEmpty() {
+        private RowHolder buildEmpty() {
             LinearLayout box = a.vertical();
             box.setGravity(Gravity.CENTER_HORIZONTAL);
             box.setPadding(a.dp(16), a.dp(72), a.dp(16), a.dp(48));
@@ -3236,13 +3227,14 @@ final class MobileShell {
             box.addView(go, goLp);
             RowHolder holder = new RowHolder(box);
             holder.emptyRow = true;
-            return box;
+            return holder;
         }
 
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
             RowHolder h = (RowHolder) holder;
             if (h.emptyRow || empty) return;
+            if (h.title == null || h.sub == null) return; // 防御：布局未完整构建时不绑定
             if (favoritesMode) {
                 final Favorites.Entry f = favorites.get(position);
                 h.title.setText(f.title);
