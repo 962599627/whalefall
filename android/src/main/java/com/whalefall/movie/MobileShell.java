@@ -200,6 +200,7 @@ final class MobileShell {
     private String homePendingTagFocus = "";
     private TextView homeActiveCategoryChip;
     private boolean homeSkipFilterAnim;
+    private android.animation.ValueAnimator homeFilterHeightAnim;
     private String lastChipTap = "";
     private long lastChipTapAt;
     private Runnable homeFilterApply;
@@ -1332,31 +1333,47 @@ final class MobileShell {
         categoryBar.setClipChildren(true);
         categoryBar.setGravity(Gravity.CENTER_VERTICAL);
         categoryBar.addView(catScroll, new LinearLayout.LayoutParams(0, -2, 1));
-        float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
-        TextView filterButton = a.text("筛选", 13 * navScale, MainActivity.WHITE);
-        filterButton.setTag("home-filters");
-        homeFilterButton = filterButton;
-        filterButton.setVisibility(View.GONE); // 1.9.33：右上「筛选」按钮不再显示
-        filterButton.setSingleLine(true);
-        filterButton.setGravity(Gravity.CENTER);
-        filterButton.setPadding(
-                a.dp(14 * navScale), a.dp(9 * navScale), a.dp(14 * navScale), a.dp(9 * navScale));
-        a.glass(filterButton, 999);
-        LinearLayout.LayoutParams filterSize = new LinearLayout.LayoutParams(-2, -2);
-        filterSize.leftMargin = a.dp(8);
-        filterSize.rightMargin = a.dp(16);
-        filterSize.topMargin = a.dp(2);
-        // 1.9.34：彻底移除 L1 行右侧「筛选」pill（不再 addView）
+        // 1.9.34：彻底删除旧「筛选」按钮（不创建、不监听、不占位）
         body.addView(categoryBar, new LinearLayout.LayoutParams(-1, -2));
-        // 1.9.34：L2+L3 放在同一个玻璃面板里，避免与影视卡片重叠/裁切
+        // 1.9.34：L2+L3 单色玻璃面板（圆角 20 / padding 14·12 / 外边距 16·8·16·12）
         float filterDensity = a.getResources().getDisplayMetrics().density;
         homeFilterWide = a.windowWidth() / filterDensity >= 640 && !a.isPortrait();
         homeFilterPanel = a.vertical();
-        homeFilterPanel.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
-        homeFilterPanel.setBackground(
-                glassBg(0xcc16283f, 0x33ffffff, a.dp(16), a.dp(0.8f), 0x33ffffff));
+        homeFilterPanel.setPadding(a.dp(14), a.dp(12), a.dp(14), a.dp(12));
+        android.graphics.drawable.GradientDrawable panelBg =
+                new android.graphics.drawable.GradientDrawable();
+        panelBg.setColor(0xe6141c2a);
+        panelBg.setCornerRadius(a.dp(20));
+        panelBg.setStroke(a.dp(1), 0x33ffffff);
+        homeFilterPanel.setBackground(panelBg);
+        homeFilterPanel.setClipChildren(false);
         homeFilterPanel.setVisibility(View.GONE);
         LinearLayout.LayoutParams panelLp = new LinearLayout.LayoutParams(-1, -2);
+        panelLp.setMargins(a.dp(16), a.dp(8), a.dp(16), a.dp(12));
+        body.addView(homeFilterPanel, panelLp);
+        // 面板 header：「筛选」+ 右侧「清除全部」
+        LinearLayout filterHeader = a.row();
+        filterHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView filterTitle = a.text("筛选", 14, MainActivity.WHITE);
+        filterTitle.setTypeface(null, Typeface.BOLD);
+        filterTitle.setPadding(0, 0, 0, a.dp(8));
+        filterHeader.addView(filterTitle, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView clearAll = a.text("清除全部", 12, UiTokens.ACCENT_SOFT);
+        clearAll.setPadding(a.dp(8), a.dp(6), a.dp(8), a.dp(6));
+        MobileDetailScreen.bindTouchFeedback(clearAll);
+        clearAll.setFocusable(true);
+        clearAll.setOnClickListener(
+                v -> {
+                    if (!selectedFilters.isEmpty()) {
+                        selectedFilters.clear();
+                        AppLog.i("Filter", "clear-all category=" + selectedCategoryId);
+                        currentPage = 1;
+                        if (homeFilterApply != null) homeFilterApply.run();
+                    }
+                    collapseMobileFilterUi();
+                });
+        filterHeader.addView(clearAll);
+        homeFilterPanel.addView(filterHeader, new LinearLayout.LayoutParams(-1, -2));
         panelLp.setMargins(a.dp(16), a.dp(8), a.dp(16), a.dp(8));
         body.addView(homeFilterPanel, panelLp);
         homeFilterTagScroll = new android.widget.HorizontalScrollView(a);
@@ -2095,9 +2112,20 @@ final class MobileShell {
             return;
         }
         homeFilterTagScroll.setVisibility(View.VISIBLE);
-        homeFilterPanel.setVisibility(View.VISIBLE);
-        animateFilterRow(
-                homeFilterPanel, homeSkipFilterAnim ? 0 : 160, homeSkipFilterAnim ? 0 : 6);
+        boolean panelHidden = homeFilterPanel.getVisibility() != View.VISIBLE;
+        if (panelHidden) {
+            android.view.ViewGroup.LayoutParams lp = homeFilterPanel.getLayoutParams();
+            lp.height = 0;
+            homeFilterPanel.setLayoutParams(lp);
+            homeFilterPanel.setVisibility(View.VISIBLE);
+            homeFilterPanel.setAlpha(1f);
+        }
+        int targetHeight = measureFilterPanelHeight(homeFilterPanel);
+        animatePanelHeight(
+                homeFilterPanel,
+                targetHeight,
+                homeSkipFilterAnim ? 0 : (mobileOptionsVisible() ? 160 : 180),
+                false);
         homeSkipFilterAnim = false;
         for (final VideoFilters.Definition def : defs) {
             String value = selectedFilters.get(def.dimension);
@@ -2106,24 +2134,24 @@ final class MobileShell {
             TextView chip =
                     a.text(
                             active ? def.label + " · " + def.labelFor(value) : def.label,
-                            13,
+                            12,
                             active || open ? UiTokens.ACCENT_SOFT : 0xffc2cbd7);
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(a.dp(12), a.dp(5), a.dp(12), a.dp(5));
             android.graphics.drawable.GradientDrawable bg =
                     new android.graphics.drawable.GradientDrawable();
             bg.setCornerRadius(a.dp(999));
-            bg.setColor((active || open) ? 0x33ff8fb1 : 0x14ffffff);
+            bg.setColor((active || open) ? 0x26ff8fb1 : 0x14ffffff);
             bg.setStroke(a.dp(1), (active || open) ? 0x66ffb3c8 : 0x1affffff);
             chip.setBackground(bg);
             MobileDetailScreen.bindTouchFeedback(chip);
             chip.setFocusable(true);
             chip.setFocusableInTouchMode(true);
-            chip.setMinHeight(a.dp(homeFilterWide ? 40 : 32));
+            int tagH = homeFilterWide ? 40 : 34;
+            chip.setMinHeight(a.dp(tagH));
             chip.setNextFocusDownId(View.generateViewId());
             chip.setOnClickListener(v -> showMobileFilterOptions(def));
-            LinearLayout.LayoutParams lp =
-                    new LinearLayout.LayoutParams(-2, a.dp(homeFilterWide ? 40 : 32));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(tagH));
             lp.rightMargin = a.dp(8);
             homeFilterTagRow.addView(chip, lp);
             if (def.dimension.equals(homePendingTagFocus)) {
@@ -2185,7 +2213,7 @@ final class MobileShell {
             TextView chip =
                     a.text(
                             choice.label,
-                            13,
+                            12,
                             active ? 0xff0b1220 : 0xffc2cbd7);
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(a.dp(12), a.dp(5), a.dp(12), a.dp(5));
@@ -2198,7 +2226,7 @@ final class MobileShell {
             MobileDetailScreen.bindTouchFeedback(chip);
             chip.setFocusable(true);
             chip.setFocusableInTouchMode(true);
-            int h = a.dp(wide ? 48 : 32);
+            int h = a.dp(wide ? 48 : 34);
             chip.setMinHeight(h);
             chip.setOnClickListener(
                     v -> applyMobileFilterChoice(def, choice));
@@ -2254,23 +2282,13 @@ final class MobileShell {
     void collapseMobileFilterUi() {
         hideMobileFilterOptions();
         if (homeFilterPanel == null) return;
-        homeFilterPanel.animate().cancel();
-        if (a.reduced) {
-            homeFilterPanel.setVisibility(View.GONE);
-            homeFilterPanel.setAlpha(1f);
-            return;
-        }
-        homeFilterPanel.animate().alpha(0f).setDuration(140).withEndAction(() -> {
-            if (homeFilterPanel != null) {
-                homeFilterPanel.setVisibility(View.GONE);
-                homeFilterPanel.setAlpha(1f);
-            }
-        }).start();
+        if (homeFilterPanel.getVisibility() != View.VISIBLE) return;
+        animatePanelHeight(homeFilterPanel, 0, 140, true);
     }
 
     private void animateFilterRow(View view, int durationMs, float offsetDp) {
         if (view == null) return;
-        if (a.reduced) {
+        if (a.reduced || durationMs <= 0) {
             view.setAlpha(1f);
             view.setTranslationY(0);
             return;
@@ -2278,6 +2296,50 @@ final class MobileShell {
         view.setAlpha(0f);
         view.setTranslationY(-a.dp((int) offsetDp));
         view.animate().alpha(1f).translationY(0).setDuration(durationMs).start();
+    }
+
+    /** 1.9.34：面板高度动画（height 0↔measured），禁止 scaleY。 */
+    void animatePanelHeight(
+            android.view.View panel, int targetHeight, int durationMs, boolean collapse) {
+        if (panel == null) return;
+        if (homeFilterHeightAnim != null) homeFilterHeightAnim.cancel();
+        android.view.ViewGroup.LayoutParams lp = panel.getLayoutParams();
+        int start = Math.max(0, lp.height);
+        if (a.reduced || durationMs <= 0) {
+            lp.height = targetHeight;
+            panel.setLayoutParams(lp);
+            if (collapse) panel.setVisibility(android.view.View.GONE);
+            return;
+        }
+        homeFilterHeightAnim = android.animation.ValueAnimator.ofInt(start, targetHeight);
+        homeFilterHeightAnim.setDuration(durationMs);
+        homeFilterHeightAnim.addUpdateListener(
+                animation -> {
+                    int value = (Integer) animation.getAnimatedValue();
+                    lp.height = value;
+                    panel.setLayoutParams(lp);
+                });
+        homeFilterHeightAnim.addListener(
+                new android.animation.AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(android.animation.Animator animation) {
+                        if (collapse) panel.setVisibility(android.view.View.GONE);
+                        lp.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
+                        panel.setLayoutParams(lp);
+                    }
+                });
+        homeFilterHeightAnim.start();
+    }
+
+    int measureFilterPanelHeight(android.view.View panel) {
+        if (panel == null) return 0;
+        int width = panel.getWidth() > 0 ? panel.getWidth() : a.windowWidth() - a.dp(64);
+        panel.measure(
+                android.view.View.MeasureSpec.makeMeasureSpec(
+                        Math.max(1, width), android.view.View.MeasureSpec.AT_MOST),
+                android.view.View.MeasureSpec.makeMeasureSpec(
+                        0, android.view.View.MeasureSpec.UNSPECIFIED));
+        return panel.getMeasuredHeight();
     }
 
     boolean backFilterUi() {

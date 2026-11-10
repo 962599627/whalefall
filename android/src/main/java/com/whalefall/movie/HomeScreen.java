@@ -33,6 +33,7 @@ final class HomeScreen {
     String filterOpenDim = "";
     String filterPendingTag = "";
     boolean filterSkipAnim;
+    android.animation.ValueAnimator filterHeightAnim;
     /** 1.8.12 云盘配置原地容器（首页分类栏下方，默认隐藏）。 */
     LinearLayout cloudInline;
     View cloudContent;
@@ -158,15 +159,40 @@ final class HomeScreen {
         filters = new CategoryFlow(a, this::wireNavigation);
         filters.setPadding(0, a.dp(2), 0, a.dp(8));
         a.body.addView(filters);
-        // 1.9.34：L2+L3 放进独立玻璃面板，避免与影片卡片重叠/裁切
+        // 1.9.34：L2+L3 单色玻璃面板（圆角 20 / padding 16·14 / 外边距 24·8·24·14）
         filterPanel = a.vertical();
-        filterPanel.setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12));
-        filterPanel.setBackground(
-                MobileDetailScreen.glassBg(a, 0xcc16283f, 0x33ffffff, 16));
+        filterPanel.setPadding(a.dp(16), a.dp(14), a.dp(16), a.dp(14));
+        android.graphics.drawable.GradientDrawable filterPanelBg =
+                new android.graphics.drawable.GradientDrawable();
+        filterPanelBg.setColor(0xe6141c2a);
+        filterPanelBg.setCornerRadius(a.dp(20));
+        filterPanelBg.setStroke(a.dp(1), 0x33ffffff);
+        filterPanel.setBackground(filterPanelBg);
+        filterPanel.setClipChildren(false);
         filterPanel.setVisibility(View.GONE);
         LinearLayout.LayoutParams filterPanelLp = new LinearLayout.LayoutParams(-1, -2);
-        filterPanelLp.setMargins(a.dp(24), a.dp(8), a.dp(24), a.dp(10));
+        filterPanelLp.setMargins(a.dp(24), a.dp(8), a.dp(24), a.dp(14));
         a.body.addView(filterPanel, filterPanelLp);
+        LinearLayout filterHeader = a.row();
+        filterHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView filterTitle = a.text("筛选", 15, MainActivity.WHITE);
+        filterTitle.setTypeface(null, Typeface.BOLD);
+        filterHeader.addView(filterTitle, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView clearAll = a.text("清除全部", 13, UiTokens.ACCENT_SOFT);
+        clearAll.setPadding(a.dp(8), a.dp(6), a.dp(8), a.dp(6));
+        MobileDetailScreen.bindTouchFeedback(clearAll);
+        clearAll.setFocusable(true);
+        clearAll.setOnClickListener(
+                v -> {
+                    if (!state.selectedFilters.isEmpty()) {
+                        state.selectedFilters.clear();
+                        AppLog.i("Filter", "clear-all category=" + state.category);
+                        applyFilters();
+                    }
+                    collapseFilterUi();
+                });
+        filterHeader.addView(clearAll);
+        filterPanel.addView(filterHeader, new LinearLayout.LayoutParams(-1, -2));
         filterTagScroll = new android.widget.HorizontalScrollView(a);
         filterTagScroll.setHorizontalScrollBarEnabled(false);
         filterTagScroll.setClipChildren(false);
@@ -854,8 +880,20 @@ final class HomeScreen {
             return;
         }
         filterTagScroll.setVisibility(View.VISIBLE);
-        filterPanel.setVisibility(View.VISIBLE);
-        animateFilterRow(filterPanel, filterSkipAnim ? 0 : 160, filterSkipAnim ? 0 : 6);
+        boolean panelHidden = filterPanel.getVisibility() != View.VISIBLE;
+        if (panelHidden) {
+            android.view.ViewGroup.LayoutParams lp = filterPanel.getLayoutParams();
+            lp.height = 0;
+            filterPanel.setLayoutParams(lp);
+            filterPanel.setVisibility(View.VISIBLE);
+        }
+        animateFilterPanelHeight(
+                filterPanel,
+                measureFilterPanelHeight(filterPanel),
+                filterSkipAnim ? 0 : (filterOptionGrid != null
+                                && filterOptionGrid.getVisibility() == View.VISIBLE
+                        ? 160
+                        : 180));
         filterSkipAnim = false;
         for (final VideoFilters.Definition def : defs) {
             String value = state.selectedFilters.get(def.dimension);
@@ -976,19 +1014,51 @@ final class HomeScreen {
 
     void collapseFilterUi() {
         hideFilterOptions();
-        if (filterPanel == null) return;
-        filterPanel.animate().cancel();
-        if (a.reduced) {
-            filterPanel.setVisibility(View.GONE);
-            filterPanel.setAlpha(1f);
+        if (filterPanel == null || filterPanel.getVisibility() != View.VISIBLE) return;
+        animateFilterPanelHeight(filterPanel, 0, 140);
+    }
+
+    /** 1.9.34：面板高度动画（height 0↔measured），禁止 scaleY。 */
+    void animateFilterPanelHeight(View panel, int targetHeight, int durationMs) {
+        if (panel == null) return;
+        if (filterHeightAnim != null) filterHeightAnim.cancel();
+        ViewGroup.LayoutParams lp = panel.getLayoutParams();
+        int start = Math.max(0, lp.height);
+        boolean collapse = targetHeight == 0;
+        if (a.reduced || durationMs <= 0) {
+            lp.height = collapse ? 0 : ViewGroup.LayoutParams.WRAP_CONTENT;
+            panel.setLayoutParams(lp);
+            if (collapse) panel.setVisibility(View.GONE);
+            else panel.setVisibility(View.VISIBLE);
             return;
         }
-        filterPanel.animate().alpha(0f).setDuration(140).withEndAction(() -> {
-            if (filterPanel != null) {
-                filterPanel.setVisibility(View.GONE);
-                filterPanel.setAlpha(1f);
-            }
-        }).start();
+        filterHeightAnim = android.animation.ValueAnimator.ofInt(start, targetHeight);
+        filterHeightAnim.setDuration(durationMs);
+        filterHeightAnim.addUpdateListener(
+                animation -> {
+                    int value = (Integer) animation.getAnimatedValue();
+                    lp.height = value;
+                    panel.setLayoutParams(lp);
+                });
+        filterHeightAnim.addListener(
+                new android.animation.AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(android.animation.Animator animation) {
+                        if (collapse) panel.setVisibility(View.GONE);
+                        lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+                        panel.setLayoutParams(lp);
+                    }
+                });
+        filterHeightAnim.start();
+    }
+
+    int measureFilterPanelHeight(View panel) {
+        if (panel == null) return 0;
+        int width = panel.getWidth() > 0 ? panel.getWidth() : a.windowWidth() - a.dp(64);
+        panel.measure(
+                View.MeasureSpec.makeMeasureSpec(Math.max(1, width), View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        return panel.getMeasuredHeight();
     }
 
     private void animateFilterRow(View view, int durationMs, float offsetDp) {
