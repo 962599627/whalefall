@@ -566,7 +566,9 @@ final class QuarkUcApi {
         java.util.List<String> entries = AppLog.entries();
         java.util.List<String> picked = new java.util.ArrayList<>();
         for (String line : entries) {
-            if (line.contains("/QuarkGet") || line.contains("/QuarkPlay")) picked.add(line);
+            if (line.contains("/QuarkGet")
+                    || line.contains("/QuarkPlay")
+                    || line.contains("/QuarkList")) picked.add(line);
         }
         StringBuilder out = new StringBuilder();
         int start = Math.max(0, picked.size() - Math.max(1, limit));

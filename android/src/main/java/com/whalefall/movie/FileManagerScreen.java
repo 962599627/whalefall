@@ -97,17 +97,28 @@ final class FileManagerScreen {
         if (tab == 1) buildProviderChips();
         content = a.vertical();
         a.body.addView(content);
-        // 1.9.2：全局下载入口/常驻条
+        // 1.9.2/1.9.11：全局下载入口 + 网盘诊断
+        LinearLayout tools = a.row();
+        tools.setGravity(Gravity.CENTER_VERTICAL);
         downCenterBtn = a.text("下载中心", 11.5f, UiTokens.ACCENT_SOFT);
         downCenterBtn.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
         downCenterBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(downCenterBtn);
         downCenterBtn.setOnClickListener(v -> DownloadCenterScreen.show(a));
-        LinearLayout.LayoutParams dclp = new LinearLayout.LayoutParams(-2, -2);
-        dclp.leftMargin = a.dp(16);
-        dclp.rightMargin = a.dp(16);
-        dclp.bottomMargin = a.dp(6);
-        a.body.addView(downCenterBtn, dclp);
+        tools.addView(downCenterBtn);
+        TextView diagBtn = a.text("网盘诊断", 11.5f, UiTokens.TEXT_PRIMARY);
+        diagBtn.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
+        diagBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+        MobileDetailScreen.bindTouchFeedback(diagBtn);
+        diagBtn.setOnClickListener(v -> NetdiskDiagScreen.show(a));
+        LinearLayout.LayoutParams diagLp = new LinearLayout.LayoutParams(-2, -2);
+        diagLp.leftMargin = a.dp(8);
+        tools.addView(diagBtn, diagLp);
+        LinearLayout.LayoutParams toolsLp = new LinearLayout.LayoutParams(-2, -2);
+        toolsLp.leftMargin = a.dp(16);
+        toolsLp.rightMargin = a.dp(16);
+        toolsLp.bottomMargin = a.dp(6);
+        a.body.addView(tools, toolsLp);
         globalStrip = a.row();
         globalStrip.setGravity(Gravity.CENTER_VERTICAL);
         globalStrip.setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8));
@@ -124,11 +135,11 @@ final class FileManagerScreen {
         gslp.rightMargin = a.dp(16);
         gslp.bottomMargin = a.dp(8);
         a.body.addView(globalStrip, gslp);
-        // 放到内容区上方（顶部「下载中心」入口）
+        // 放到内容区上方（顶部「下载中心/网盘诊断」入口）
         int contentIndex = a.body.indexOfChild(content);
-        a.body.removeView(downCenterBtn);
+        a.body.removeView(tools);
         a.body.removeView(globalStrip);
-        a.body.addView(downCenterBtn, Math.max(0, contentIndex));
+        a.body.addView(tools, Math.max(0, contentIndex));
         a.body.addView(globalStrip, Math.max(0, contentIndex));
         startDownloadPoll();
         refresh();
@@ -1335,29 +1346,37 @@ final class FileManagerScreen {
         }
     }
 
+    /** 1.9.11：统一失败弹窗（含「复制日志」「关闭」），文案只加一次「下载失败：」。 */
+    static void showFailureDialog(MainActivity a, String message) {
+        String text = message == null ? "" : message;
+        if (!text.startsWith("下载失败")) text = "下载失败：" + text;
+        new AppDialog.Builder(a)
+                .setTitle("下载失败")
+                .setMessage(text)
+                .setNeutralButton("复制日志", (d, i) -> copyQuarkLogs(a))
+                .setPositiveButton("关闭", (d, i) -> {})
+                .show();
+    }
+
     private void notifyDownloadFailure(String message, final String providerKey) {
         String text = message == null ? "" : message;
         if (!text.startsWith("下载失败")) text = "下载失败：" + text;
         final boolean auth = text.contains("登录状态过期") || text.contains("重新扫码");
-        AppDialog.Builder builder =
-                new AppDialog.Builder(a)
-                        .setTitle(auth ? "登录状态过期" : "下载失败")
-                        .setMessage(
-                                auth
-                                        ? "夸克/UC 登录已过期，请重新扫码登录后再试。"
-                                        : text)
-                        .setNeutralButton("复制日志", (d, i) -> copyQuarkLogs(a));
-        if (auth) {
-            builder.setPositiveButton(
-                            "去扫码",
-                            (d, i) ->
-                                    NetdiskQrLogin.show(
-                                            a, providerKey, () -> a.ui.postDelayed(this::refresh, 300)))
-                    .setNegativeButton("取消", null);
-        } else {
-            builder.setPositiveButton("关闭", null);
+        if (!auth) {
+            showFailureDialog(a, text);
+            return;
         }
-        builder.show();
+        new AppDialog.Builder(a)
+                .setTitle("登录状态过期")
+                .setMessage("夸克/UC 登录已过期，请重新扫码登录后再试。")
+                .setNeutralButton("复制日志", (d, i) -> copyQuarkLogs(a))
+                .setPositiveButton(
+                        "去扫码",
+                        (d, i) ->
+                                NetdiskQrLogin.show(
+                                        a, providerKey, () -> a.ui.postDelayed(this::refresh, 300)))
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     private void downloadForView(final QuarkUcApi.FileItem item, final boolean image) {

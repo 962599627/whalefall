@@ -812,7 +812,7 @@ final class FileManagerCore {
                 item,
                 null,
                 file -> playLocal(a, file),
-                message -> a.notice("下载失败：" + message),
+                message -> FileManagerScreen.showFailureDialog(a, message),
                 null,
                 false);
     }
