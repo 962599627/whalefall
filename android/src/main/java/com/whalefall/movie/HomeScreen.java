@@ -888,14 +888,6 @@ final class HomeScreen {
             filterPanel.setLayoutParams(lp);
             filterPanel.setVisibility(View.VISIBLE);
         }
-        animateFilterPanelHeight(
-                filterPanel,
-                measureFilterPanelHeight(filterPanel),
-                filterSkipAnim ? 0 : (filterOptionGrid != null
-                                && filterOptionGrid.getVisibility() == View.VISIBLE
-                        ? 160
-                        : 180));
-        filterSkipAnim = false;
         for (final VideoFilters.Definition def : defs) {
             String value = state.selectedFilters.get(def.dimension);
             boolean active = value != null && !value.isEmpty();
@@ -911,7 +903,7 @@ final class HomeScreen {
             android.graphics.drawable.GradientDrawable tagBg =
                     new android.graphics.drawable.GradientDrawable();
             tagBg.setCornerRadius(a.dp(999));
-            tagBg.setColor(active || open ? 0x33ff8fb1 : 0x14ffffff);
+            tagBg.setColor(active || open ? 0x26ff8fb1 : 0x14ffffff);
             tagBg.setStroke(a.dp(1), active || open ? 0x66ffb3c8 : 0x33ffffff);
             chip.setBackground(tagBg);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(40));
@@ -922,6 +914,14 @@ final class HomeScreen {
                 filterPendingTag = "";
             }
         }
+        animateFilterPanelHeight(
+                filterPanel,
+                measureFilterPanelHeight(filterPanel),
+                filterSkipAnim ? 0 : (filterOptionGrid != null
+                                && filterOptionGrid.getVisibility() == View.VISIBLE
+                        ? 160
+                        : 180));
+        filterSkipAnim = false;
         if (filterTagRow.getChildCount() > 0 && a.isTvDevice()) {
             View first = filterTagRow.getChildAt(0);
             if (!first.hasFocus() && filterPendingTag.isEmpty()) first.requestFocus();
@@ -976,7 +976,7 @@ final class HomeScreen {
             }
             LinearLayout.LayoutParams lp =
                     new LinearLayout.LayoutParams(-2, a.dp(56));
-            lp.rightMargin = a.dp(8);
+            lp.rightMargin = a.dp(10);
             lp.bottomMargin = a.dp(10);
             row.addView(chip, lp);
             if (count == 0) chip.requestFocus();

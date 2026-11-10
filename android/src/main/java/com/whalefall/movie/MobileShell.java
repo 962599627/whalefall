@@ -1350,7 +1350,6 @@ final class MobileShell {
         homeFilterPanel.setVisibility(View.GONE);
         LinearLayout.LayoutParams panelLp = new LinearLayout.LayoutParams(-1, -2);
         panelLp.setMargins(a.dp(16), a.dp(8), a.dp(16), a.dp(12));
-        body.addView(homeFilterPanel, panelLp);
         // 面板 header：「筛选」+ 右侧「清除全部」
         LinearLayout filterHeader = a.row();
         filterHeader.setGravity(Gravity.CENTER_VERTICAL);
@@ -2107,13 +2106,6 @@ final class MobileShell {
             homeFilterPanel.setVisibility(View.VISIBLE);
             homeFilterPanel.setAlpha(1f);
         }
-        int targetHeight = measureFilterPanelHeight(homeFilterPanel);
-        animatePanelHeight(
-                homeFilterPanel,
-                targetHeight,
-                homeSkipFilterAnim ? 0 : (mobileOptionsVisible() ? 160 : 180),
-                false);
-        homeSkipFilterAnim = false;
         for (final VideoFilters.Definition def : defs) {
             String value = selectedFilters.get(def.dimension);
             boolean active = value != null && !value.isEmpty();
@@ -2146,6 +2138,13 @@ final class MobileShell {
                 homePendingTagFocus = "";
             }
         }
+        int targetHeight = measureFilterPanelHeight(homeFilterPanel);
+        animatePanelHeight(
+                homeFilterPanel,
+                targetHeight,
+                homeSkipFilterAnim ? 0 : (mobileOptionsVisible() ? 160 : 180),
+                false);
+        homeSkipFilterAnim = false;
         if (homePendingTagFocus.isEmpty() && defs.size() > 0 && !mobileOptionsVisible()) {
             // 首次展开把焦点交给第一个标签（TV/键盘）；选项层打开时不抢焦点
             View first = homeFilterTagRow.getChildAt(0);
