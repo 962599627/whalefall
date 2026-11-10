@@ -330,7 +330,10 @@ final class AccountPanel {
                             logged ? 0xff2ad47a : 0xffffb454,
                             logged,
                             logged ? "管理" : "App 内登录",
-                            () -> QuarkDrive.showPanel(a, () -> refresh(false)));
+                            () -> {
+                                PanLoginState.invalidate();
+                                QuarkDrive.showPanel(a, () -> refresh(true));
+                            });
                     continue;
                 }
                 PanLoginState pan = panStates.get(drive.key);
@@ -941,11 +944,13 @@ final class AccountPanel {
             accountName = "";
             // 连夸克原生直连的凭据一起清除（独立模块，不走插件）
             try {
-                QuarkDrive.clear(a);
-                QuarkDrive.clearWebViewCookies();
+                QuarkDrive.deviceLogout(a, null);
             } catch (Throwable ignored) {
             }
-            if (dialog != null && dialog.isShowing()) refresh();
+            if (dialog != null && dialog.isShowing()) {
+                PanLoginState.invalidate();
+                refresh(true);
+            }
             a.toast(removed > 0 ? "已清除账号与凭据" : "未找到可清除的本机凭据");
         }
 

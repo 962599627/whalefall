@@ -463,8 +463,9 @@ final class PanLoginState {
                             }
                         }
                         if (drives.isEmpty()) continue;
-                        // 直读值仍要求凭据形态；Base64 命中已由解码内容保证
-                        if (!decodedHit && !AccountPanel.credentialValue(raw)) continue;
+                        // 直读值还要求键名像凭据（避免插件配置里的 token 字样误报）；
+                        // Base64 命中已由解码后的 cookie 形态保证，不再限制键名
+                        if (!decodedHit && !relaxedCredentialKey(entry.getKey())) continue;
                         for (String drive : drives)
                             hits.add(
                                     new Hit(
@@ -480,6 +481,24 @@ final class PanLoginState {
             AppLog.w("PanLogin", "prefs scan failed", error);
         }
         return hits;
+    }
+
+    /** 放宽的凭据键名：含网盘/授权词或 ck/st 后缀（仍要求值形态命中才计入）。 */
+    static boolean relaxedCredentialKey(String key) {
+        if (key == null) return false;
+        String lower = key.toLowerCase(Locale.ROOT);
+        if (lower.isEmpty()) return false;
+        if (AccountPanel.credentialConfigKey(key)) return true;
+        if (lower.contains("quark")
+                || lower.contains("uc_")
+                || lower.contains("baidu")
+                || lower.contains("ali")
+                || lower.contains("pan")
+                || lower.contains("drive")) return true;
+        return lower.endsWith("_ck")
+                || lower.endsWith("ck")
+                || lower.endsWith("st")
+                || lower.endsWith("_st");
     }
 
     // ---------------- Base64 支持（spUtils.quark_ck 等） ----------------
@@ -645,6 +664,9 @@ final class PanLoginState {
                 if (bigFile && !info.rel.startsWith("files/")) continue;
                 if (binaryExtension(info.file.getName())) continue;
                 if (lowValue(info.rel)) continue;
+                // 排除插件资源/源配置，且文件名必须像凭据（避免 csp/*.jar、config.json 误报）
+                if (excludedSourceResource(info.rel)) continue;
+                if (!credentialLikeName(info.rel)) continue;
                 byte[] data;
                 boolean sampled = info.size > SAMPLE_BYTES;
                 try {
@@ -744,6 +766,36 @@ final class PanLoginState {
                 || lower.endsWith(".lock")
                 || lower.contains(".webview")
                 || lower.contains("/tmp/");
+    }
+
+    /** 排除插件资源/配置文件：files/csp/**、files/config.json、csp-diagnostic、guard 等。 */
+    static boolean excludedSourceResource(String rel) {
+        if (rel == null) return true;
+        String lower = rel.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("files/csp/") || lower.equals("files/csp")) return true;
+        if (lower.equals("files/config.json") || lower.endsWith("/config.json")) return true;
+        if (lower.contains("csp-diagnostic") || lower.contains("csp_diagnostic")) return true;
+        if (lower.contains("/guard") || lower.startsWith("files/guard")) return true;
+        return false;
+    }
+
+    /** 文件名/表名/列名是否像凭据（ck/cookie/token/auth/login/account/secret/session）。 */
+    static boolean credentialLikeName(String value) {
+        if (value == null) return false;
+        String lower = value.toLowerCase(Locale.ROOT);
+        int slash = Math.max(lower.lastIndexOf('/'), lower.lastIndexOf('\\'));
+        if (slash >= 0) lower = lower.substring(slash + 1);
+        if (lower.endsWith("ck")
+                || lower.contains("_ck")
+                || lower.contains("-ck")
+                || lower.contains(".ck")) return true;
+        return lower.contains("cookie")
+                || lower.contains("token")
+                || lower.contains("auth")
+                || lower.contains("login")
+                || lower.contains("account")
+                || lower.contains("secret")
+                || lower.contains("session");
     }
 
     // ---------------- WebView Cookies SQLite 库 ----------------
@@ -889,8 +941,19 @@ final class PanLoginState {
                             String escaped = table.replace("\"", "\"\"");
                             rows = sqlite.rawQuery("SELECT * FROM \"" + escaped + "\" LIMIT 20", null);
                             int columns = rows.getColumnCount();
+                            String[] columnNames = new String[columns];
+                            boolean tableCredentialLike = credentialLikeName(table);
+                            boolean columnCredentialLike = false;
+                            for (int c = 0; c < columns; c++) {
+                                columnNames[c] = rows.getColumnName(c);
+                                if (credentialLikeName(columnNames[c])) columnCredentialLike = true;
+                            }
+                            // 数据库证据要求表名或列名含凭据词，避免插件普通数据误报
+                            if (!tableCredentialLike && !columnCredentialLike) continue;
                             while (rows.moveToNext() && hits.size() < MAX_FILE_HITS) {
                                 for (int c = 0; c < columns; c++) {
+                                    if (!tableCredentialLike && !credentialLikeName(columnNames[c]))
+                                        continue;
                                     String value;
                                     try {
                                         value = rows.getString(c);

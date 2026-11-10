@@ -143,6 +143,60 @@ final class QuarkDrive {
      * 打开夸克登录页；登录成功后保存 Cookie 并验证真实登录态。
      * 不使用插件、不读写插件存储；失败时提示用户在夸克页面完成登录后再试。
      */
+    /** 只保留登录二维码：隐藏页面头/导航/文案，白底居中放大二维码。 */
+    private static final String QR_JS =
+            "(function(){try{"
+                    + "var cands=document.querySelectorAll('canvas,img,svg');var qr=null;"
+                    + "for(var i=0;i<cands.length;i++){var el=cands[i];var r=el.getBoundingClientRect();"
+                    + "if(r.width>=110&&r.height>=110){qr=el;break;}}"
+                    + "if(!qr){var sels=['[class*=qrcode]','[id*=qrcode]','[class*=qr]','[id*=qr]'];"
+                    + "for(var s=0;s<sels.length&&!qr;s++){var ns=document.querySelectorAll(sels[s]);"
+                    + "for(var j=0;j<ns.length;j++){var b=ns[j].getBoundingClientRect();"
+                    + "if(b.width>=90&&b.height>=90){qr=ns[j];break;}}}}"
+                    + "if(!qr)return 'false';"
+                    + "var old=qr;document.body.innerHTML='';"
+                    + "document.body.style.background='#ffffff';document.documentElement.style.background='#ffffff';"
+                    + "var wrap=document.createElement('div');"
+                    + "wrap.style.cssText='position:fixed;left:0;top:0;right:0;bottom:0;display:flex;"
+                    + "flex-direction:column;align-items:center;justify-content:center;background:#fff;';"
+                    + "old.style.width='260px';old.style.height='260px';old.style.maxWidth='78vw';"
+                    + "old.style.maxHeight='78vw';old.style.display='block';"
+                    + "wrap.appendChild(old);"
+                    + "var tip=document.createElement('div');tip.textContent='用夸克 App 扫码登录';"
+                    + "tip.style.cssText='margin-top:16px;font:15px sans-serif;color:#333;';"
+                    + "wrap.appendChild(tip);document.body.appendChild(wrap);return 'true';"
+                    + "}catch(e){return 'false';}})()";
+
+    /** 注入二维码精简逻辑；找不到容器时最多重试 7 次，然后降级原页面并提示。 */
+    static void injectQr(
+            final WebView web,
+            final MainActivity a,
+            final int attempt,
+            final boolean[] found,
+            final boolean[] warned) {
+        if (web == null || found[0]) return;
+        if (attempt > 6) {
+            if (!warned[0]) {
+                warned[0] = true;
+                a.toast("未找到二维码容器，请在夸克页面完成登录");
+            }
+            return;
+        }
+        try {
+            web.evaluateJavascript(
+                    QR_JS,
+                    value -> {
+                        boolean ok = value != null && value.contains("true");
+                        if (ok) found[0] = true;
+                        else
+                            a.ui.postDelayed(
+                                    () -> injectQr(web, a, attempt + 1, found, warned), 700);
+                    });
+        } catch (Throwable error) {
+            a.ui.postDelayed(() -> injectQr(web, a, attempt + 1, found, warned), 800);
+        }
+    }
+
     static void login(final MainActivity a, final Runnable onChanged) {
         final Dialog dialog = new Dialog(a);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -151,7 +205,7 @@ final class QuarkDrive {
         LinearLayout header = a.row();
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(a.dp(16), a.dp(12), a.dp(12), a.dp(8));
-        TextView title = a.text("登录夸克网盘", UiTokens.TYPE_TITLE, UiTokens.TEXT_PRIMARY);
+        TextView title = a.text("夸克扫码登录", UiTokens.TYPE_TITLE, UiTokens.TEXT_PRIMARY);
         title.setTypeface(null, Typeface.BOLD);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
         header.addView(
@@ -160,8 +214,8 @@ final class QuarkDrive {
         page.addView(header);
         TextView hint =
                 a.text(
-                        "在下方夸克官方页面扫码或登录；登录成功后 App 会自动保存 Cookie 并验证账号。"
-                                + "本功能完全独立于配置源插件，不读取插件里的数据。",
+                        "用夸克 App 扫描下方二维码；登录成功后 App 会自动保存并验证账号。"
+                                + "完全独立于配置源插件，不读取插件里的数据。",
                         UiTokens.TYPE_MICRO,
                         UiTokens.TEXT_TERTIARY);
         hint.setPadding(a.dp(16), 0, a.dp(16), a.dp(8));
@@ -172,12 +226,23 @@ final class QuarkDrive {
         web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false);
         web.getSettings().setAllowContentAccess(false);
+        final boolean[] qrFound = {false};
+        final boolean[] qrWarned = {false};
         web.setWebViewClient(
                 new WebViewClient() {
                     @Override
                     public boolean shouldOverrideUrlLoading(WebView view, String url) {
                         String scheme = Uri.parse(url).getScheme();
                         return !"https".equals(scheme) && !"http".equals(scheme);
+                    }
+
+                    @Override
+                    public void onPageFinished(WebView view, String url) {
+                        super.onPageFinished(view, url);
+                        // 只保留二维码（找不到时降级为原页面并提示）
+                        qrFound[0] = false;
+                        qrWarned[0] = false;
+                        injectQr(view, a, 0, qrFound, qrWarned);
                     }
                 });
         page.addView(web, new LinearLayout.LayoutParams(-1, 0, 1f));
@@ -435,14 +500,38 @@ final class QuarkDrive {
                 .setMessage("只清除本 App 保存的夸克 Cookie 与账号缓存，不影响夸克 App 与配置源插件。")
                 .setPositiveButton(
                         "退出登录",
-                        (d, i) -> {
-                            clear(a);
-                            clearWebViewCookies();
-                            a.toast("已退出夸克登录");
-                            if (onChanged != null) onChanged.run();
-                        })
+                        (d, i) ->
+                                deviceLogout(
+                                        a,
+                                        () -> {
+                                            a.toast("已退出夸克登录");
+                                            if (onChanged != null) onChanged.run();
+                                        }))
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    /** 同步清除本机 prefs + 系统 WebView Cookie（异步 removeAllCookies 后 flush），并记日志。 */
+    static void deviceLogout(final MainActivity a, final Runnable done) {
+        clear(a);
+        boolean webViewCleared = false;
+        try {
+            CookieManager manager = CookieManager.getInstance();
+            manager.removeAllCookies(value -> {});
+            manager.removeSessionCookies(value -> {});
+            manager.flush();
+            webViewCleared = true;
+        } catch (Throwable ignored) {
+        }
+        AppLog.i(
+                "Quark",
+                "logout cleared cookie="
+                        + hasCookie(a)
+                        + " account="
+                        + cachedAccount(a).isEmpty()
+                        + " webviewCookies="
+                        + webViewCleared);
+        if (done != null) a.ui.post(done);
     }
 
     static void clearWebViewCookies() {
