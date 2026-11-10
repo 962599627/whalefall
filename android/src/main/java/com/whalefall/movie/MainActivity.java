@@ -182,6 +182,7 @@ public final class MainActivity extends Activity {
                                 }
                             }
                         };
+            }
             int result =
                     bgAudioManager.requestAudioFocus(
                             bgFocusListener,
