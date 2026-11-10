@@ -253,8 +253,48 @@ final class QuarkUcApi {
         return out;
     }
 
-    /** 1.9.4：刷新 Cookie（OpenList 同款：从 Set-Cookie 取 __puus/__pus 合并回 Cookie）。 */
+    /** 1.9.18：Cookie 刷新限流（每盘每小时最多 1 次）+ 失败冷却。 */
+    private static final long REFRESH_INTERVAL_MS = 3600_000L;
+    private static final java.util.Map<String, Long> LAST_REFRESH = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, Integer> FAIL_COUNT = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, Long> COOLDOWN_UNTIL = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, Integer> LAST_ENDPOINT = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long COOLDOWN_MS = 60_000L;
+
+    static long cooldownRemaining(Provider p) {
+        Long until = COOLDOWN_UNTIL.get(p.key);
+        return until == null ? 0 : Math.max(0, until - System.currentTimeMillis());
+    }
+
+    static void noteFailure(Provider p) {
+        int count = FAIL_COUNT.merge(p.key, 1, Integer::sum);
+        if (count >= 2) {
+            COOLDOWN_UNTIL.put(p.key, System.currentTimeMillis() + COOLDOWN_MS);
+            FAIL_COUNT.put(p.key, 0);
+            AppLog.i("QuarkGet", "cooldown=60s reason=io provider=" + p.key);
+        }
+    }
+
+    static void noteSuccess(Provider p) {
+        FAIL_COUNT.put(p.key, 0);
+        COOLDOWN_UNTIL.remove(p.key);
+    }
+
+    /** 1.9.18：限流版 refreshCookie（每小时每盘最多 1 次）。 */
     static String refreshCookie(MainActivity a, Provider p, String cookie) {
+        long now = System.currentTimeMillis();
+        Long last = LAST_REFRESH.get(p.key);
+        if (last != null && now - last < REFRESH_INTERVAL_MS) {
+            AppLog.i("QuarkGet", "refresh throttled provider=" + p.key);
+            return cookie == null ? "" : cookie;
+        }
+        LAST_REFRESH.put(p.key, now);
+        String result = doRefreshCookie(a, p, cookie);
+        return result;
+    }
+
+    /** 1.9.4：刷新 Cookie（OpenList 同款：从 Set-Cookie 取 __puus/__pus 合并回 Cookie）。 */
+    static String doRefreshCookie(MainActivity a, Provider p, String cookie) {
         if (cookie == null || cookie.isEmpty()) return cookie == null ? "" : cookie;
         String merged = cookie;
         boolean puus = false;
@@ -387,6 +427,10 @@ final class QuarkUcApi {
     static String downloadUrl(
             MainActivity a, Provider p, String cookie, String fid, String shareFidToken)
             throws Exception {
+        long cooldown = cooldownRemaining(p);
+        if (cooldown > 0)
+            throw new IOException(
+                    "夸克暂时限制访问（风控/限流），请 " + (cooldown / 1000 + 1) + " 秒后再试");
         String fresh = cookie;
         if (a != null) fresh = refreshCookie(a, p, cookie);
         String[] endpoints =
@@ -414,7 +458,11 @@ final class QuarkUcApi {
                             .toString());
         }
         Exception last = null;
-        for (String endpoint : endpoints) {
+        int startIndex =
+                Math.floorMod(LAST_ENDPOINT.getOrDefault(p.key, 0), endpoints.length);
+        for (int step = 0; step < endpoints.length; step++) {
+            int endpointIndex = (startIndex + step) % endpoints.length;
+            String endpoint = endpoints[endpointIndex];
             for (String body : bodies) {
                 HttpURLConnection connection = null;
                 try {
@@ -486,10 +534,13 @@ final class QuarkUcApi {
                         last = new IOException("download_url 为空");
                         continue;
                     }
+                    LAST_ENDPOINT.put(p.key, endpointIndex);
+                    noteSuccess(p);
                     return url;
                 } catch (Throwable error) {
                     if (error instanceof LimitException) throw (LimitException) error;
                     last = new IOException(error.getClass().getSimpleName());
+                    noteFailure(p);
                 } finally {
                     if (connection != null) connection.disconnect();
                 }
@@ -501,6 +552,10 @@ final class QuarkUcApi {
     /** 1.9.12：转码播放接口；plf 候选 android/web/pc + 双端点，成功后记住 plf。 */
     static String playProjectUrl(MainActivity a, Provider p, String cookie, String fid)
             throws Exception {
+        long cooldown = cooldownRemaining(p);
+        if (cooldown > 0)
+            throw new IOException(
+                    "夸克暂时限制访问（风控/限流），请 " + (cooldown / 1000 + 1) + " 秒后再试");
         String fresh = a == null ? cookie : refreshCookie(a, p, cookie);
         String[] endpoints =
                 "quark".equals(p.key)
@@ -582,6 +637,7 @@ final class QuarkUcApi {
                             String url = info == null ? "" : info.optString("url", "");
                             if (!url.isEmpty()) {
                                 lastWorkingPlf = plf;
+                                noteSuccess(p);
                                 AppLog.i(
                                         "QuarkPlay",
                                         "project ok plf="
@@ -595,12 +651,45 @@ final class QuarkUcApi {
                     last = new IOException("转码列表为空");
                 } catch (Throwable error) {
                     last = new IOException(friendly(error));
+                    noteFailure(p);
                 } finally {
                     if (connection != null) connection.disconnect();
                 }
             }
         }
         throw last == null ? new IOException("转码不可用") : last;
+    }
+
+    /** 1.9.18：源插件已解析的缓存直链（不消耗 API）；返回 [url, matched]。 */
+    static String[] cachedPluginUrl(MainActivity a, String fileName) {
+        try {
+            android.content.SharedPreferences prefs =
+                    a.getSharedPreferences("spUtils", android.content.Context.MODE_PRIVATE);
+            String url = prefs.getString("lastQuarkPlayUrl", "");
+            if (url == null || url.isEmpty()) url = prefs.getString("lastQuarkDownUrl", "");
+            if (url == null || url.isEmpty()) return new String[] {"", "no"};
+            String lower = url.toLowerCase(java.util.Locale.ROOT);
+            String name = fileName == null ? "" : fileName.toLowerCase(java.util.Locale.ROOT);
+            int dot = name.lastIndexOf('.');
+            String base = dot > 0 ? name.substring(0, dot) : name;
+            boolean matched = false;
+            try {
+                String decoded =
+                        java.net.URLDecoder.decode(lower, java.nio.charset.StandardCharsets.UTF_8.name());
+                matched = (!name.isEmpty() && decoded.contains(name))
+                        || (!base.isEmpty() && decoded.contains(base));
+            } catch (Throwable ignored) {
+            }
+            String host = "";
+            try {
+                host = android.net.Uri.parse(url).getHost();
+            } catch (Throwable ignored) {
+            }
+            AppLog.i("QuarkCache", "play urlHost=" + host + " matched=" + matched);
+            return new String[] {url, matched ? "yes" : "no"};
+        } catch (Throwable ignored) {
+            return new String[] {"", "no"};
+        }
     }
 
     /** 1.9.9：最近 Quark 相关日志（复制给开发者；token 已脱敏）。 */
@@ -637,19 +726,22 @@ final class QuarkUcApi {
     static String resolveUrl(
             MainActivity a, Provider p, String cookie, String fid, String shareFidToken)
             throws Exception {
-        String fresh = a == null ? cookie : refreshCookie(a, p, cookie);
+        // 1.9.18：不在 resolveUrl 重复 refresh（downloadUrl 内已做，且有限流）
+        String fresh = cookie == null ? "" : cookie;
         String url = downloadUrl(a, p, fresh, fid, shareFidToken);
-        if (a != null) fresh = refreshCookie(a, p, fresh); // file/download 也可能下发 __puus
+        // 若刷新后的 Cookie 已保存到 App 存储，取最新值用于 GET
+        try {
+            String saved = cookie(a, p);
+            if (saved != null && !saved.isEmpty()) fresh = saved;
+        } catch (Throwable ignored) {
+        }
         Exception last = null;
         for (int round = 0; round < 2; round++) {
             boolean afterRefresh = round == 1;
             if (afterRefresh) {
                 if (a == null) break;
+                // 限流版 refresh：每小时最多一次；拿不到新值就保持原值
                 fresh = refreshCookie(a, p, fresh);
-                try {
-                    url = downloadUrl(a, p, fresh, fid, shareFidToken);
-                } catch (Throwable ignored) {
-                }
             }
             String[] uas = uaVariants(p);
             for (String ua : uas) {

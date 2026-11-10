@@ -1137,7 +1137,11 @@ final class FileManagerScreen {
                         new AppDialog.Builder(a)
                                 .setTitle("播放：" + item.name)
                                 .setItems(
-                                        new String[] {"播放（转码 / 直链）", "网页播放（推荐兜底）"},
+                                        new String[] {
+                                            "播放（转码 / 直链）",
+                                            "网页播放（推荐兜底）",
+                                            "用源插件缓存地址播放"
+                                        },
                                         (d, which) -> {
                                             if (which == 0) {
                                                 FileManagerCore.playRemote(
@@ -1146,12 +1150,39 @@ final class FileManagerScreen {
                                                         netdiskCookie,
                                                         videoItem,
                                                         netdiskFromSource);
-                                            } else {
+                                            } else if (which == 1) {
                                                 WebPlayerScreen.show(
                                                         a,
                                                         providerKey,
                                                         netdiskCookie,
                                                         videoItem.fid);
+                                            } else {
+                                                String[] cached =
+                                                        QuarkUcApi.cachedPluginUrl(
+                                                                a, videoItem.name);
+                                                if (cached[0].isEmpty()) {
+                                                    a.toast("没有可用的源插件缓存地址");
+                                                    return;
+                                                }
+                                                if ("yes".equals(cached[1])) {
+                                                    FileManagerCore.playCachedUrl(
+                                                            a, cached[0], videoItem.name);
+                                                } else {
+                                                    new AppDialog.Builder(a)
+                                                            .setTitle("缓存地址可能不匹配")
+                                                            .setMessage(
+                                                                    "源插件缓存地址可能来自上一个视频，仍要尝试播放吗？")
+                                                            .setPositiveButton(
+                                                                    "仍要播放",
+                                                                    (dd, ii) ->
+                                                                            FileManagerCore
+                                                                                    .playCachedUrl(
+                                                                                            a,
+                                                                                            cached[0],
+                                                                                            videoItem.name))
+                                                            .setNegativeButton("取消", null)
+                                                            .show();
+                                                }
                                             }
                                         })
                                 .show();

@@ -817,6 +817,28 @@ final class FileManagerCore {
                 false);
     }
 
+    /** 1.9.18：用源插件缓存直链直接播放（不请求 API）。 */
+    static void playCachedUrl(final MainActivity a, String url, String title) {
+        if (url == null || url.isEmpty()) {
+            a.toast("没有可用的源插件缓存地址");
+            return;
+        }
+        final Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Referer", "https://pan.quark.cn/");
+        headers.put("User-Agent", QuarkUcApi.UA_CHROME);
+        try {
+            AppLog.i(
+                    "QuarkCache",
+                    "play urlHost=" + android.net.Uri.parse(url).getHost() + " title=" + title);
+        } catch (Throwable ignored) {
+        }
+        syntheticPlay(a, "cached_plugin", "源插件缓存地址", url, title, headers);
+    }
+
+    public static void playCachedUrl(MainActivity a, String url) {
+        playCachedUrl(a, url, "缓存视频");
+    }
+
     private static void syntheticPlay(
             MainActivity a,
             String key,
