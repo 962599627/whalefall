@@ -48,6 +48,80 @@ final class HomeScreen {
     boolean remoteSingleToastShown;
     /** 1.9.45：组合筛选不支持提示只弹一次。 */
     boolean filterUnsupportedToastShown;
+    /** 1.9.49：TV 统一 loading overlay。 */
+    FrameLayout loadingOverlay;
+    WhaleLoadingView loadingWhale;
+    boolean loadingVisible;
+    long loadingShownAt;
+
+    void attachLoadingOverlay() {
+        if (loadingOverlay != null && loadingOverlay.getParent() != null) return;
+        if (loadingOverlay != null && loadingOverlay.getParent() == null) {
+            // 页面根被重建，允许重新挂载
+            loadingOverlay = null;
+            loadingWhale = null;
+        }
+        if (!(a.root instanceof android.view.ViewGroup)) return;
+        android.view.ViewGroup root = (android.view.ViewGroup) a.root;
+        loadingOverlay = new FrameLayout(a);
+        loadingOverlay.setTag("tv-loading-overlay");
+        loadingOverlay.setClickable(false);
+        loadingOverlay.setFocusable(false);
+        loadingOverlay.setVisibility(View.GONE);
+        FrameLayout.LayoutParams lp =
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        Gravity.CENTER);
+        loadingWhale = new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
+        loadingWhale.setText("加载中…");
+        loadingOverlay.addView(
+                loadingWhale,
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        Gravity.CENTER));
+        root.addView(loadingOverlay, lp);
+    }
+
+    void showHomeLoading(String reason) {
+        if (loadingVisible) return;
+        if (loadingOverlay == null || loadingOverlay.getParent() == null) attachLoadingOverlay();
+        loadingVisible = true;
+        loadingShownAt = android.os.SystemClock.uptimeMillis();
+        AppLog.i("Loading", "show reason=" + reason + " tv=true");
+        if (loadingOverlay != null) {
+            loadingOverlay.setVisibility(View.VISIBLE);
+            loadingOverlay.bringToFront();
+            if (loadingWhale != null) loadingWhale.post(loadingWhale::start);
+        }
+        if (a.body != null && !a.reduced)
+            a.body.animate().alpha(0.35f).setDuration(120).start();
+    }
+
+    void hideHomeLoading(String reason) {
+        if (!loadingVisible) return;
+        long elapsed = android.os.SystemClock.uptimeMillis() - loadingShownAt;
+        long minShow = 400;
+        if (elapsed < minShow) {
+            final String why = reason;
+            a.body.postDelayed(() -> doHideHomeLoading(why), minShow - elapsed);
+            return;
+        }
+        doHideHomeLoading(reason);
+    }
+
+    private void doHideHomeLoading(String reason) {
+        if (!loadingVisible) return;
+        loadingVisible = false;
+        AppLog.i("Loading", "hide reason=" + reason + " tv=true");
+        if (loadingWhale != null) loadingWhale.stop();
+        if (loadingOverlay != null) loadingOverlay.setVisibility(View.GONE);
+        if (a.body != null) {
+            if (a.reduced) a.body.setAlpha(1f);
+            else a.body.animate().alpha(1f).setDuration(170).start();
+        }
+    }
     android.animation.ValueAnimator filterHeightAnim;
     /** 1.8.12 云盘配置原地容器（首页分类栏下方，默认隐藏）。 */
     LinearLayout cloudInline;
@@ -207,9 +281,11 @@ final class HomeScreen {
         filterPanel.addView(filterOptionScroll, new LinearLayout.LayoutParams(-1, -2));
         filterOptionGrid = a.vertical();
         filterOptionGrid.setVisibility(View.GONE);
-        status = a.text("正在整理片单…", 13, MainActivity.MUTED);
+        status = a.text("", 13, MainActivity.MUTED);
         status.setPadding(a.dp(4), a.dp(12), 0, a.dp(12));
+        status.setVisibility(View.GONE);
         a.body.addView(status);
+        attachLoadingOverlay();
         earlier =
                 pill(
                         "查看前面的影片",
@@ -437,8 +513,7 @@ final class HomeScreen {
     void loadHome() {
         if (busy) return;
         busy = true;
-        status.setVisibility(View.VISIBLE);
-        status.setText("正在整理片单…");
+        showHomeLoading("category");
         more.setVisibility(View.GONE);
         int token = ++request;
         a.prefs.edit().putString(Prefs.LOADING_SITE, site.key).commit();
@@ -476,6 +551,8 @@ final class HomeScreen {
                                     busy = false;
                                     snapshot = result;
                                     a.homeData.put(site.key, result);
+                                    hideHomeLoading("category");
+                                    status.setVisibility(View.GONE);
                                     renderSnapshot();
                                 });
                     } catch (Throwable e) {
@@ -485,7 +562,9 @@ final class HomeScreen {
                                     a.prefs.edit().putString(Prefs.LOADING_SITE, "").apply();
                                     if (!active() || token != request) return;
                                     busy = false;
-                                    status.setText(a.message(e));
+                                    hideHomeLoading("category");
+                                    status.setVisibility(View.VISIBLE);
+                                    status.setText("加载失败：" + a.message(e));
                                     more.setText("重新加载");
                                     more.setVisibility(View.VISIBLE);
                                     wireNavigation();
@@ -1684,10 +1763,12 @@ final class HomeScreen {
                             + " variants="
                             + variants.size());
         }
-        status.setVisibility(first ? View.VISIBLE : View.GONE);
-        status.setText(first ? "正在读取分类…" : "");
+        status.setVisibility(View.GONE);
+        status.setText("");
         more.setText("正在加载…");
         more.setVisibility(first ? View.GONE : View.VISIBLE);
+        final String loadReason = selections.isEmpty() ? "category" : "filter";
+        if (first) showHomeLoading(loadReason);
         a.submitPage(
                 () -> {
                     try {
@@ -1776,6 +1857,7 @@ final class HomeScreen {
                                     // so focus never falls back to the category tabs at the top.
                                     pendingFocus =
                                             !first && focusMore ? "home-video:" + focusIndex : null;
+                                    hideHomeLoading(loadReason);
                                     drawGrid(!first && !changedWindow);
                                     if (first
                                             && a.current != null
@@ -1789,8 +1871,9 @@ final class HomeScreen {
                                 () -> {
                                     if (!active() || token != request) return;
                                     busy = false;
+                                    hideHomeLoading(loadReason);
                                     status.setVisibility(View.VISIBLE);
-                                    status.setText(a.message(e));
+                                    status.setText("加载失败：" + a.message(e));
                                     more.setText("重新加载");
                                     more.setVisibility(View.VISIBLE);
                                     wireNavigation();
