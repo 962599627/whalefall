@@ -774,100 +774,6 @@ final class AccountPanel {
             new SettingsScreen(a).accountAction(action, () -> refresh(false));
         }
 
-        void confirmClear() {
-            java.util.List<String> nativeLabels = new ArrayList<>();
-            for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES)
-                if (NetdiskQrLogin.hasCredential(a, drive.key))
-                    nativeLabels.add(drive.alias);
-            if (credentials.isEmpty() && nativeLabels.isEmpty()) {
-                showNoticeDialog(
-                        "App 内没有原生登录",
-                        "源插件的账号请在「网盘」面板里停用/退出。",
-                        null);
-                return;
-            }
-            StringBuilder message = new StringBuilder();
-            message.append("将清除 App 内保存的登录：\n\n");
-            if (!credentials.isEmpty()) {
-                message.append("· 本机凭据 ").append(credentials.size()).append(" 项\n");
-                int shown = 0;
-                for (Credential credential : credentials) {
-                    if (shown >= 3) {
-                        message.append("· … 另有 ").append(credentials.size() - shown).append(" 项\n");
-                        break;
-                    }
-                    message.append("· ").append(credential.display()).append('\n');
-                    shown++;
-                }
-            }
-            if (!nativeLabels.isEmpty()) {
-                message.append("· App 内原生扫码登录：");
-                for (int i = 0; i < nativeLabels.size(); i++) {
-                    if (i > 0) message.append('、');
-                    message.append(nativeLabels.get(i));
-                }
-                message.append('\n');
-            }
-            message.append("\n此操作不可恢复；不影响源插件账号——源插件的登录请到源面板退出。");
-            showClearConfirm(message.toString());
-        }
-
-        void showClearConfirm(String message) {
-            final Dialog confirm = new Dialog(a);
-            confirm.requestWindowFeature(Window.FEATURE_NO_TITLE);
-            FrameLayout root = new FrameLayout(a);
-            LinearLayout card = a.vertical();
-            card.setPadding(a.dp(22), a.dp(20), a.dp(22), a.dp(18));
-            card.setBackground(
-                    UiTokens.round(a, UiTokens.RADIUS_20, 0xf2141c2a, UiTokens.STROKE));
-            UiCompat.setElevation(card, a.dp(18));
-            TextView title = a.text("清除 App 内登录？", UiTokens.TYPE_TITLE, UiTokens.TEXT_PRIMARY);
-            title.setTypeface(null, Typeface.BOLD);
-            card.addView(title);
-            TextView body = a.text(message, UiTokens.TYPE_BODY_SM, UiTokens.TEXT_SECONDARY);
-            body.setLineSpacing(a.dp(4), 1.35f);
-            LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(-1, -2);
-            bodyLp.topMargin = a.dp(10);
-            card.addView(body, bodyLp);
-            LinearLayout buttons = a.row();
-            buttons.setGravity(Gravity.END);
-            LinearLayout.LayoutParams buttonsLp = new LinearLayout.LayoutParams(-1, -2);
-            buttonsLp.topMargin = a.dp(18);
-            card.addView(buttons, buttonsLp);
-            Button cancel = glassButton("取消", "account-clear-cancel", confirm::dismiss);
-            LinearLayout.LayoutParams cancelLp = new LinearLayout.LayoutParams(a.dp(96), a.dp(46));
-            cancelLp.rightMargin = a.dp(10);
-            buttons.addView(cancel, cancelLp);
-            Button clear = dangerButton("清除", "account-clear-confirm", () -> {
-                confirm.dismiss();
-                performClear();
-            });
-            buttons.addView(clear, new LinearLayout.LayoutParams(a.dp(110), a.dp(46)));
-            int width =
-                    Math.min(
-                            a.dp(wide ? 460 : 440),
-                            a.windowWidth() - a.dp(wide ? 48 : 40));
-            root.addView(
-                    card,
-                    new FrameLayout.LayoutParams(
-                            Math.max(a.dp(260), width), -2, Gravity.CENTER));
-            confirm.setContentView(root);
-            confirm.show();
-            Window window = confirm.getWindow();
-            if (window != null) {
-                window.setBackgroundDrawableResource(android.R.color.transparent);
-                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-                WindowManager.LayoutParams attrs = window.getAttributes();
-                attrs.dimAmount = 0.62f;
-                window.setAttributes(attrs);
-                window.setLayout(
-                        Math.max(a.dp(260), width), -2);
-                window.setGravity(Gravity.CENTER);
-                window.getDecorView().setSystemUiVisibility(5894);
-            }
-            cancel.requestFocus();
-        }
-
         void showNoticeDialog(String titleText, String message, Runnable onOk) {
             final Dialog notice = new Dialog(a);
             notice.requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -914,48 +820,6 @@ final class AccountPanel {
                 window.getDecorView().setSystemUiVisibility(5894);
             }
             ok.requestFocus();
-        }
-
-        void performClear() {
-            List<Credential> targets = credentials;
-            Map<String, SharedPreferences> cache = new LinkedHashMap<>();
-            int removed = 0;
-            for (Credential credential : targets) {
-                try {
-                    SharedPreferences sp = cache.get(credential.file);
-                    if (sp == null) {
-                        sp = a.getSharedPreferences(credential.file, Context.MODE_PRIVATE);
-                        cache.put(credential.file, sp);
-                    }
-                    if (sp.edit().remove(credential.key).commit()) removed++;
-                } catch (Throwable error) {
-                    AppLog.w("AccountPanel", "clear credential failed: " + credential.display(), error);
-                }
-            }
-            AppLog.i(
-                    "AccountPanel",
-                    "cleared " + removed + "/" + targets.size() + " pan credential entries");
-            // 丢弃缓存引擎，确保下一次访问重新读取（源端无删除接口时只能做到这一步）
-            try {
-                a.closeEngines();
-            } catch (Throwable error) {
-                AppLog.w("AccountPanel", "close engines after clear failed", error);
-            }
-            credentials = new ArrayList<>();
-            accountName = "";
-            // 1.7.1 原生移植：清除夸克/UC Cookie 与容量缓存
-            try {
-                QuarkUcApi.logout(a, QuarkUcApi.QUARK);
-                QuarkUcApi.logout(a, QuarkUcApi.UC);
-                NetdiskQrLogin.logout(a, NetdiskQrLogin.BAIDU);
-                NetdiskQrLogin.logout(a, NetdiskQrLogin.ALI);
-            } catch (Throwable ignored) {
-            }
-            if (dialog != null && dialog.isShowing()) {
-                PanLoginState.invalidate();
-                refresh(true);
-            }
-            a.toast("已清除 App 内登录");
         }
 
         // ---------------- 小部件 ----------------
@@ -1012,30 +876,6 @@ final class AccountPanel {
             return b;
         }
 
-        Button dangerButton(String label, String tag, Runnable action) {
-            Button b = a.button(label, tag, action);
-            b.setTextSize(UiTokens.TYPE_BODY_SM);
-            b.setTypeface(null, Typeface.BOLD);
-            b.setTextColor(0xff0b1220);
-            b.setBackground(UiTokens.round(a, 20, DANGER));
-            b.setMinHeight(a.dp(46));
-            b.setMinimumHeight(a.dp(46));
-            b.setPadding(a.dp(18), 0, a.dp(18), 0);
-            b.setOnFocusChangeListener(
-                    (v, focused) ->
-                            FocusMotion.style(
-                                    a,
-                                    b,
-                                    focused,
-                                    DANGER,
-                                    0xffffb3bf,
-                                    20,
-                                    0xff0b1220,
-                                    0xff31141f,
-                                    true,
-                                    1.03f));
-            return b;
-        }
     }
 
     // ====================== 状态检测 ======================
