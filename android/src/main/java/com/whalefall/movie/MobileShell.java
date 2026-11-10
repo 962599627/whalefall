@@ -2237,16 +2237,16 @@ final class MobileShell {
                             + (defs.isEmpty() ? 0 : defs.get(0).choices.size())
                             + " zeroLoad=true");
             // 记录滚动锚点，展开面板的高度变化不得把列表顶回顶部
-            androidx.recyclerview.widget.LinearLayoutManager lm =
-                    recycler.getLayoutManager()
-                                    instanceof androidx.recyclerview.widget.LinearLayoutManager
-                            ? (androidx.recyclerview.widget.LinearLayoutManager)
-                                    recycler.getLayoutManager()
+            androidx.homeRecyclerRefview.widget.LinearLayoutManager lm =
+                    homeRecyclerRef.getLayoutManager()
+                                    instanceof androidx.homeRecyclerRefview.widget.LinearLayoutManager
+                            ? (androidx.homeRecyclerRefview.widget.LinearLayoutManager)
+                                    homeRecyclerRef.getLayoutManager()
                             : null;
             final int pos = lm == null ? -1 : lm.findFirstVisibleItemPosition();
             final android.view.View av =
                     lm == null || pos < 0 ? null : lm.findViewByPosition(pos);
-            final int off = av == null ? 0 : av.getTop() - recycler.getPaddingTop();
+            final int off = av == null ? 0 : av.getTop() - homeRecyclerRef.getPaddingTop();
             renderMobileFilterTags();
             if (!defs.isEmpty()) {
                 VideoFilters.Definition target = defs.get(0);
@@ -2258,9 +2258,9 @@ final class MobileShell {
                 showMobileFilterOptions(target);
             }
             if (lm != null && pos >= 0)
-                recycler.post(
+                homeRecyclerRef.post(
                         () -> {
-                            if (recycler.getLayoutManager() == lm)
+                            if (homeRecyclerRef.getLayoutManager() == lm)
                                 lm.scrollToPositionWithOffset(pos, off);
                         });
             return;
