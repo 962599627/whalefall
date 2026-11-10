@@ -83,6 +83,8 @@ final class Prefs {
     /** 字体颜色自定义：TEXT_COLOR_CUSTOM 开启时 TEXT_COLOR（ARGB）生效。 */
     static final String TEXT_COLOR_CUSTOM = "text_color_custom";
     static final String TEXT_COLOR = "text_color";
+    /** 1.9.32：未自定义时的默认文字颜色（亮绿）。 */
+    static final int DEFAULT_TEXT_COLOR = 0xff4cff80;
     // 1.7.0：原生网盘登录已下线（回退源插件流程）；旧版本残留的 *_native_* 键由
     // AccountPanel.purgeLegacyNativePrefs 在打开网盘面板时清理。
 

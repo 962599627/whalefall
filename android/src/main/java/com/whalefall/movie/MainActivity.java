@@ -1128,10 +1128,23 @@ public final class MainActivity extends Activity {
         }
     }
 
-    /** 用户自定义字体颜色：主文字用用户色、次要文字用同色降透明度；强调色（ACCENT 等）保持原样。 */
+    /** 1.9.32：默认文字色改为亮绿 #4CFF80；自定义开启时用 TEXT_COLOR，灰白文字按 alpha 映射，强调色保持。 */
+    static int lastTextColorLog;
+
     int userTextColor(int color) {
-        if (!prefs.getBoolean(Prefs.TEXT_COLOR_CUSTOM, false)) return color;
-        int rgb = prefs.getInt(Prefs.TEXT_COLOR, 0xffffffff) & 0xffffff;
+        boolean custom = prefs.getBoolean(Prefs.TEXT_COLOR_CUSTOM, false);
+        int rgb =
+                (custom ? prefs.getInt(Prefs.TEXT_COLOR, Prefs.DEFAULT_TEXT_COLOR) : Prefs.DEFAULT_TEXT_COLOR)
+                        & 0xffffff;
+        int effectiveLog = custom ? rgb : (Prefs.DEFAULT_TEXT_COLOR & 0xffffff);
+        if (lastTextColorLog != effectiveLog) {
+            lastTextColorLog = effectiveLog;
+            if (custom)
+                AppLog.i(
+                        "Theme",
+                        String.format(java.util.Locale.ROOT, "userTextColor=#%06X", rgb));
+            else AppLog.i("Theme", "defaultTextColor=#4CFF80");
+        }
         if (color == WHITE) return 0xff000000 | rgb;
         if (color == MUTED) return 0xb3000000 | rgb;
         if (color == UiTokens.TEXT_TERTIARY) return 0x8f000000 | rgb;

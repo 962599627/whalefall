@@ -13,26 +13,26 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 字体颜色自定义：9 格预设色板（默认 #F5F7FC + 8 色）+ RGB 滑条（手机另有 HEX）+ 即时预览。
+ * 字体颜色自定义：9 格预设色板（默认 #4CFF80 亮绿 + 8 色）+ RGB 滑条（手机另有 HEX）+ 即时预览。
  *
  * <p>手机与 TV 共用：TV 用方向键在色块/滑条间移动，左右键每次调 5；手机滑条精度 1 并支持 HEX。
  * 设计规范见 docs/DESIGN_REVIEW_1.4.6.md：只改主色，次要 70%、弱文字 56% 自动派生。
  */
 final class TextColorDialog {
-    /** 9 格色板：第 0 格是默认 #F5F7FC。 */
+    /** 9 格色板：第 0 格是默认 #4CFF80 亮绿。 */
     private static final int[] PRESETS = {
-        0xfff5f7fc, 0xff2b313b, 0xffffb3c8,
+        0xff4cff80, 0xff2b313b, 0xffffb3c8,
         0xffff8fb1, 0xff7fb2ff, 0xff28c7c7,
         0xff43d17a, 0xffffd54f, 0xffa97bff
     };
     private static final String[] NAMES = {
-        "默认月白", "亮壁纸深灰", "樱粉",
+        "默认亮绿", "亮壁纸深灰", "樱粉",
         "樱花粉", "深海蓝", "青色",
         "绿色", "黄色", "紫色"
     };
     /** 推荐组合：只改主色，次要/弱文字按 70%/56% 自动派生。 */
-    private static final int[] RECOMMENDED = {0xfff5f7fc, 0xff2b313b, 0xffffb3c8};
-    private static final String[] RECOMMENDED_NAMES = {"月白", "亮壁纸深灰", "樱粉"};
+    private static final int[] RECOMMENDED = {0xff4cff80, 0xff2b313b, 0xffffb3c8};
+    private static final String[] RECOMMENDED_NAMES = {"亮绿", "亮壁纸深灰", "樱粉"};
 
     private TextColorDialog() {}
 
@@ -62,8 +62,8 @@ final class TextColorDialog {
 
     /** 设置页入口摘要文本。 */
     static String summary(MainActivity a) {
-        if (!a.prefs.getBoolean(Prefs.TEXT_COLOR_CUSTOM, false)) return "默认月白 #F5F7FC";
-        int color = a.prefs.getInt(Prefs.TEXT_COLOR, 0xfff5f7fc);
+        if (!a.prefs.getBoolean(Prefs.TEXT_COLOR_CUSTOM, false)) return "默认亮绿 #4CFF80";
+        int color = a.prefs.getInt(Prefs.TEXT_COLOR, Prefs.DEFAULT_TEXT_COLOR);
         return String.format(
                 java.util.Locale.ROOT,
                 "自定义 #%06X · 次要文字自动降透明度",
@@ -80,9 +80,12 @@ final class TextColorDialog {
                 initialArgb >= 0
                         ? opaque(initialArgb)
                         : (a.prefs.getBoolean(Prefs.TEXT_COLOR_CUSTOM, false)
-                                ? a.prefs.getInt(Prefs.TEXT_COLOR, 0xfff5f7fc)
-                                : 0xfff5f7fc);
+                                ? a.prefs.getInt(Prefs.TEXT_COLOR, Prefs.DEFAULT_TEXT_COLOR)
+                                : Prefs.DEFAULT_TEXT_COLOR);
         final int[] rgb = {(initial >> 16) & 0xff, (initial >> 8) & 0xff, initial & 0xff};
+        final boolean[] restoreDefault = {
+            initialArgb < 0 && !a.prefs.getBoolean(Prefs.TEXT_COLOR_CUSTOM, false)
+        };
         final SeekBar[] bars = new SeekBar[3];
         final TextView[] values = new TextView[3];
         final EditText[] hexField = new EditText[1];
@@ -119,6 +122,7 @@ final class TextColorDialog {
                                 "",
                                 "textcolor-preset:" + i,
                                 () -> {
+                                    restoreDefault[0] = false;
                                     rgb[0] = (preset >> 16) & 0xff;
                                     rgb[1] = (preset >> 8) & 0xff;
                                     rgb[2] = preset & 0xff;
@@ -162,6 +166,7 @@ final class TextColorDialog {
                             RECOMMENDED_NAMES[i],
                             "textcolor-combo:" + i,
                             () -> {
+                                restoreDefault[0] = false;
                                 rgb[0] = (preset >> 16) & 0xff;
                                 rgb[1] = (preset >> 8) & 0xff;
                                 rgb[2] = preset & 0xff;
@@ -264,16 +269,17 @@ final class TextColorDialog {
 
         Button reset =
                 a.button(
-                        "恢复默认（#F5F7FC）",
+                        "恢复默认（#4CFF80）",
                         "textcolor-reset",
                         () -> {
                             // §2.1：只重置预览/滑条/HEX，不写 prefs；点「确定」才保存
-                            int defaultColor = 0xfff5f7fc;
+                            int defaultColor = Prefs.DEFAULT_TEXT_COLOR;
                             rgb[0] = (defaultColor >> 16) & 0xff;
                             rgb[1] = (defaultColor >> 8) & 0xff;
                             rgb[2] = defaultColor & 0xff;
+                            restoreDefault[0] = true;
                             refreshAll[0].run();
-                            a.toast("已恢复默认色预览 · 点「确定」保存");
+                            a.toast("已恢复默认亮绿 #4CFF80 · 点「确定」保存");
                         });
         reset.setTextColor(MainActivity.MUTED);
         box.addView(reset, new LinearLayout.LayoutParams(-1, a.dp(42)));
@@ -293,7 +299,15 @@ final class TextColorDialog {
                         .setNegativeButton("取消", null)
                         .setPositiveButton(
                                 "确定",
-                                (d, i) -> saveOrConfirm(a, rgb))
+                                (d, i) -> {
+                                    if (restoreDefault[0]
+                                            && toRgb(rgb)
+                                                    == (Prefs.DEFAULT_TEXT_COLOR & 0xffffff)) {
+                                        saveDefault(a);
+                                    } else {
+                                        saveOrConfirm(a, rgb);
+                                    }
+                                })
                         .show();
         // 手机/电视默认焦点放到第一个色块（AppDialog 只会找直接子 View）
         dialog.getWindow()
@@ -333,6 +347,17 @@ final class TextColorDialog {
                 .setPositiveButton("仍然保存", (d, i) -> save(a, color))
                 .setNegativeButton("返回修改", (d, i) -> show(a, color))
                 .show();
+    }
+
+    /** 1.9.32：恢复默认亮绿（关闭自定义，回到 #4CFF80）。 */
+    static void saveDefault(MainActivity a) {
+        a.prefs.edit()
+                .putBoolean(Prefs.TEXT_COLOR_CUSTOM, false)
+                .putInt(Prefs.TEXT_COLOR, Prefs.DEFAULT_TEXT_COLOR)
+                .apply();
+        AppLog.i("Theme", "defaultTextColor=#4CFF80 (restored)");
+        a.toast("已恢复默认亮绿 #4CFF80");
+        a.recreate();
     }
 
     static void save(MainActivity a, int color) {
