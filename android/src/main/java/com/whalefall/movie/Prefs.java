@@ -164,7 +164,7 @@ final class Prefs {
         ranges.put(NAV_SCALE_PERCENT, new int[] {85, 140});
         ranges.put(HOME_ROWS, new int[] {1, 4});
         ranges.put(HOME_SECTIONS, new int[] {0, 5});
-        ranges.put(WALLPAPER_DIM, new int[] {0, 100});
+        ranges.put(WALLPAPER_DIM, new int[] {20, 100});
         ranges.put(TV_ASPECT, new int[] {0, 2});
         ranges.put(TV_FILL, new int[] {0, 2});
         ranges.put(SCREENSAVER_TIMEOUT_MIN, new int[] {1, 60});

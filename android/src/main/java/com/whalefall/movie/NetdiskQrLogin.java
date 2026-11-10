@@ -120,10 +120,11 @@ final class NetdiskQrLogin {
         }
         AppLog.i("NetdiskQr", "manual credential saved drive=" + drive);
         a.toast("已保存，正在验证…");
-        validate(a, drive, onChanged);
+        validate(a, drive, onChanged, a.generation);
     }
 
-    static String capacityText(MainActivity a, String key) {        long total;
+    static String capacityText(MainActivity a, String key) {
+        long total;
         long used;
         switch (key) {
             case QUARK:
@@ -150,13 +151,14 @@ final class NetdiskQrLogin {
                 + QuarkUcApi.formatSize(total);
     }
 
-    static void validate(final MainActivity a, final String key, final Runnable onChanged) {
+    static void validate(
+            final MainActivity a, final String key, final Runnable onChanged, final int pageGen) {
         switch (key) {
             case QUARK:
-                QuarkUcApi.verify(a, QuarkUcApi.QUARK, status -> done(a, onChanged, "夸克", status.logged, status.error));
+                QuarkUcApi.verify(a, QuarkUcApi.QUARK, status -> done(a, onChanged, "夸克", status.logged, status.error, pageGen));
                 break;
             case UC:
-                QuarkUcApi.verify(a, QuarkUcApi.UC, status -> done(a, onChanged, "UC", status.logged, status.error));
+                QuarkUcApi.verify(a, QuarkUcApi.UC, status -> done(a, onChanged, "UC", status.logged, status.error, pageGen));
                 break;
             case BAIDU:
                 a.worker.execute(
@@ -168,10 +170,10 @@ final class NetdiskQrLogin {
                                                 + "?channel=chunlei&clienttype=0&web=1", cookie));
                                 boolean ok = info.optInt("errno", -1) == 0;
                                 a.prefs.edit().putBoolean("baidu_open_verified", ok).apply();
-                                a.ui.post(() -> done(a, onChanged, "百度", ok, "errno=" + info.optInt("errno", -1)));
+                                a.ui.post(() -> done(a, onChanged, "百度", ok, "errno=" + info.optInt("errno", -1), pageGen));
                             } catch (Throwable error) {
                                 a.prefs.edit().putBoolean("baidu_open_verified", false).apply();
-                                a.ui.post(() -> done(a, onChanged, "百度", false, error.getMessage()));
+                                a.ui.post(() -> done(a, onChanged, "百度", false, error.getMessage(), pageGen));
                             }
                         });
                 break;
@@ -193,10 +195,10 @@ final class NetdiskQrLogin {
                                         .putLong("ali_open_total", json.optLong("total_size", 0))
                                         .putLong("ali_open_used", json.optLong("used_size", 0))
                                         .apply();
-                                a.ui.post(() -> done(a, onChanged, "阿里", true, ""));
+                                a.ui.post(() -> done(a, onChanged, "阿里", true, "", pageGen));
                             } catch (Throwable error) {
                                 a.prefs.edit().putBoolean("ali_open_verified", false).apply();
-                                a.ui.post(() -> done(a, onChanged, "阿里", false, error.getMessage()));
+                                a.ui.post(() -> done(a, onChanged, "阿里", false, error.getMessage(), pageGen));
                             }
                         });
                 break;
@@ -205,7 +207,17 @@ final class NetdiskQrLogin {
     }
 
     private static void done(
-            MainActivity a, Runnable onChanged, String drive, boolean ok, String error) {
+            MainActivity a,
+            Runnable onChanged,
+            String drive,
+            boolean ok,
+            String error,
+            int pageGen) {
+        // 1.8.25：扫码成功瞬间切页时不再弹旧页面/触发 BadToken
+        if (a.isFinishing() || a.isDestroyed() || pageGen != a.generation) {
+            AppLog.i("NetdiskQr", "validate callback skipped pageGen=" + pageGen);
+            return;
+        }
         if (ok) a.toast(drive + "登录验证通过");
         else a.notice(drive + "登录验证失败：" + (error == null ? "" : error));
         if (onChanged != null) onChanged.run();
@@ -295,7 +307,7 @@ final class NetdiskQrLogin {
                                             if (!alive(a, pageGen, closed)) return;
                                             dialog.dismiss();
                                             a.toast(name(drive) + "扫码成功，正在验证…");
-                                            validate(a, drive, onChanged);
+                                            validate(a, drive, onChanged, pageGen);
                                         });
                                 return;
                             }

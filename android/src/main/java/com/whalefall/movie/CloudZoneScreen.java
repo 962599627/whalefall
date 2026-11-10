@@ -67,11 +67,23 @@ final class CloudZoneScreen {
 
         for (final String drive : DRIVES) {
             boolean logged = NetdiskQrLogin.isLoggedIn(a, drive);
-            String state =
+            boolean src = CloudInlineView.hasSourceLogin(a, drive);
+            String appState =
                     logged
                             ? "App 内已登录" + NetdiskQrLogin.capacityText(a, drive)
                             : NetdiskQrLogin.hasCredential(a, drive) ? "App 内登录未通过验证" : "App 内未登录";
-            AppLog.i("CloudZone", "drive=" + drive + " state=" + (logged ? "logged" : "absent"));
+            String state =
+                    "源插件：" + (src ? "已登录" : "未检测到") + "\n" + appState;
+            if (NetdiskQrLogin.BAIDU.equals(drive) || NetdiskQrLogin.ALI.equals(drive))
+                state = state + "\n仅登录/退出 · 暂不支持浏览";
+            AppLog.i(
+                    "CloudZone",
+                    "drive="
+                            + drive
+                            + " app="
+                            + (logged ? "logged" : "absent")
+                            + " source="
+                            + (src ? "logged" : "absent"));
             icons.add(UiIcon.CLOUD);
             tints.add(
                     NetdiskQrLogin.QUARK.equals(drive)
@@ -150,34 +162,106 @@ final class CloudZoneScreen {
         gridLp.rightMargin = a.dp(16);
         body.addView(grid, gridLp);
 
-        boolean quark = NetdiskQrLogin.hasCredential(a, NetdiskQrLogin.QUARK);
-        boolean uc = NetdiskQrLogin.hasCredential(a, NetdiskQrLogin.UC);
-        if (quark || uc) {
-            TextView head = a.text("本地网盘文件", 14, UiTokens.ACCENT_SOFT);
-            head.setTypeface(null, android.graphics.Typeface.BOLD);
-            head.setPadding(a.dp(16), a.dp(14), a.dp(16), a.dp(8));
-            body.addView(head);
-            if (quark) body.addView(fileRow(a, QuarkUcApi.QUARK));
-            if (uc) body.addView(fileRow(a, QuarkUcApi.UC));
+        // 1.8.25：夸克/UC 文件入口常驻；App 凭据优先，其次源插件 spUtils 登录数据
+        TextView head = a.text("本地网盘文件", 14, UiTokens.ACCENT_SOFT);
+        head.setTypeface(null, android.graphics.Typeface.BOLD);
+        head.setPadding(a.dp(16), a.dp(14), a.dp(16), a.dp(8));
+        body.addView(head);
+        body.addView(fileRow(a, QuarkUcApi.QUARK, true));
+        body.addView(fileRow(a, QuarkUcApi.UC, true));
+    }
+
+    /** 解析源插件 spUtils 登录 Cookie（quark_ck/quarkSt、uc_ck/ucSt；Base64 解码）。 */
+    static String sourceCookie(MainActivity a, QuarkUcApi.Provider provider) {
+        try {
+            android.content.SharedPreferences prefs =
+                    a.getSharedPreferences("spUtils", android.content.Context.MODE_PRIVATE);
+            String prefix = provider.key;
+            String ck = null;
+            String ticket = null;
+            for (String key : prefs.getAll().keySet()) {
+                String lower = key.toLowerCase(java.util.Locale.ROOT);
+                if (!lower.startsWith(prefix)) continue;
+                Object value = prefs.getAll().get(key);
+                if (value == null) continue;
+                String text = String.valueOf(value).trim();
+                if (text.isEmpty()) continue;
+                if (lower.endsWith("ck") || lower.contains("cookie")) ck = text;
+                else if (lower.endsWith("st") || lower.contains("ticket")) ticket = text;
+            }
+            if (ck != null) {
+                String decoded = decodeBase64(ck);
+                if (decoded != null && decoded.contains("=")) return decoded;
+                if (ck.contains("=")) return ck;
+            }
+            if (ticket != null) return prefix + "_st=" + ticket;
+        } catch (Throwable error) {
+            AppLog.i("CloudZone", "sourceCookie error=" + error.getClass().getSimpleName());
+        }
+        return "";
+    }
+
+    private static String decodeBase64(String value) {
+        try {
+            byte[] bytes =
+                    android.util.Base64.decode(
+                            value, android.util.Base64.URL_SAFE | android.util.Base64.NO_WRAP);
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Throwable ignored) {
+        }
+        try {
+            byte[] bytes = android.util.Base64.decode(value, android.util.Base64.DEFAULT);
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 
-    private static LinearLayout fileRow(MainActivity a, final QuarkUcApi.Provider provider) {
+    private static LinearLayout fileRow(
+            MainActivity a, final QuarkUcApi.Provider provider, boolean alwaysVisible) {
+        final String appCookie = QuarkUcApi.cookie(a, provider);
+        final boolean hasApp = QuarkUcApi.hasCookie(a, provider);
+        final String sourceCookie = hasApp ? "" : sourceCookie(a, provider);
+        final String cookie = hasApp ? appCookie : sourceCookie;
+        final boolean fromSource = !hasApp && !sourceCookie.isEmpty();
         LinearLayout row = a.row();
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(a.dp(14), a.dp(12), a.dp(14), a.dp(12));
         row.setBackground(MobileDetailScreen.glassBg(a, 0xcc16283f, 0xb3121d2e, 14));
-        TextView name = a.text("查看" + provider.name + "网盘文件", 13, MainActivity.WHITE);
+        TextView name =
+                a.text(
+                        "查看" + provider.name + "网盘文件"
+                                + (hasApp ? "（App 内）" : fromSource ? "（源插件）" : ""),
+                        13,
+                        MainActivity.WHITE);
         row.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView go = a.text("打开", 12, 0xFFFFB3C8);
+        TextView go = a.text(cookie.isEmpty() ? "未登录" : "打开", 12, 0xFFFFB3C8);
         go.setPadding(a.dp(10), a.dp(4), a.dp(10), a.dp(4));
         row.addView(go);
         row.setFocusable(true);
         MobileDetailScreen.bindTouchFeedback(row);
         row.setOnClickListener(
                 v -> {
-                    AppLog.i("CloudZone", "open files provider=" + provider.key);
-                    QuarkUcFiles.show(a, provider);
+                    if (!cookie.isEmpty()) {
+                        AppLog.i(
+                                "CloudZone",
+                                "open files provider="
+                                        + provider.key
+                                        + " source="
+                                        + fromSource);
+                        QuarkUcFiles.show(a, provider, cookie, fromSource);
+                        return;
+                    }
+                    new AppDialog.Builder(a)
+                            .setTitle(provider.name + "网盘未登录")
+                            .setMessage("该盘未登录：可扫码登录（App 内），或在源面板登录后使用源插件数据。")
+                            .setPositiveButton(
+                                    "去登录",
+                                    (d, i) ->
+                                            NetdiskQrLogin.show(
+                                                    a, provider.key, () -> a.ui.postDelayed(() -> show(a), 200)))
+                            .setNegativeButton("取消", null)
+                            .show();
                 });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.leftMargin = a.dp(16);

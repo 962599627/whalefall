@@ -49,6 +49,7 @@ final class HomeScreen {
     android.view.View retainedScroll;
     HomeDock retainedDock;
     int retainedWidth, retainedHeight, retainedEngineEpoch;
+    boolean retainedSafeMode;
     float retainedFontScale;
     Map<String, Object> retainedAppearance;
 
@@ -204,6 +205,7 @@ final class HomeScreen {
         retainedHeight = a.windowHeight();
         retainedFontScale = a.getResources().getConfiguration().fontScale;
         retainedEngineEpoch = a.engineEpoch;
+        retainedSafeMode = SafeMode.enabled(a);
         retainedAppearance = appearance();
         if (a.current != null) a.current.retainedHome = this;
         Snapshot saved = state.snapshot != null ? state.snapshot : a.homeData.get(site.key);
@@ -341,19 +343,18 @@ final class HomeScreen {
         a.homeDock = retainedDock;
         a.homeAmbient = ambient;
         a.setContentView(retainedRoot);
-        // 1.8.24：resume 时按当前安全模式状态重铺壁纸/安全底，避免设置页开关后返回仍黑
+        // 1.8.25：安全模式状态未变时只补壁纸，不 clear/release（避免返回首页重建视频壁纸黑闪）
+        boolean safeNow = SafeMode.enabled(a);
         if (retainedRoot != null) {
-            if (SafeMode.enabled(a)) {
-                a.applySafeModeVisual();
-            } else {
-                a.applySafeModeVisual();
-                a.applyWallpaper(retainedRoot);
+            if (safeNow != retainedSafeMode) {
+                a.applySafeModeVisual(); // 状态切换才 clear/重建
+            } else if (!safeNow) {
+                a.applyWallpaper(retainedRoot); // 仅幂等补层，不 release 已有视频壁纸
             }
+            retainedSafeMode = safeNow;
             AppLog.i(
                     "Wallpaper",
-                    "page=HomeScreen resume safe="
-                            + SafeMode.enabled(a)
-                            + " bg=transparent");
+                    "page=HomeScreen resume safe=" + safeNow + " changed=false bg=transparent");
         }
         int drawn = state.windowStart;
         for (List<View> row : rows) drawn += row.size();

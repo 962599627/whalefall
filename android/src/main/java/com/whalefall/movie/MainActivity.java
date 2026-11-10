@@ -1127,6 +1127,8 @@ public final class MainActivity extends Activity {
 
     static final String BACKDROP_TAG = "whale-backdrop";
     static final String SAFE_BACKDROP_TAG = "safe-mode-backdrop";
+    /** 1.8.25：延迟补铺 token，只有最后一次生效，避免多次开关重复重建。 */
+    int safeRestoreToken;
     /** 用户壁纸层（静态 Images/Atmosphere）专用 tag：与 base 渐变分开，便于幂等维护。 */
     static final String WALLPAPER_TAG = "whale-wallpaper-image";
     /** applyWallpaper 的日志签名：只在状态变化时写一条，避免刷屏。 */
@@ -1284,6 +1286,7 @@ public final class MainActivity extends Activity {
         }
         // 1.8.21/1.8.24：关闭安全模式 → 统一清层（含 wallpaper-video）→ 重建 → 150/400/800 补铺
         lastWallpaperLog = "";
+        final int restoreToken = ++safeRestoreToken;
         clearWallpaperLayers(target, true);
         for (int i = target.getChildCount() - 1; i >= 0; i--)
             if (SAFE_BACKDROP_TAG.equals(target.getChildAt(i).getTag()))
@@ -1295,6 +1298,7 @@ public final class MainActivity extends Activity {
                 });
         ui.postDelayed(
                 () -> {
+                    if (restoreToken != safeRestoreToken) return;
                     if (root != null && !SafeMode.enabled(this)) {
                         applyWallpaper(root);
                         AppLog.i(
@@ -1312,6 +1316,7 @@ public final class MainActivity extends Activity {
                 150);
         ui.postDelayed(
                 () -> {
+                    if (restoreToken != safeRestoreToken) return;
                     if (root != null && !SafeMode.enabled(this)) {
                         applyWallpaper(root);
                         AppLog.i(
@@ -1329,6 +1334,7 @@ public final class MainActivity extends Activity {
                 400);
         ui.postDelayed(
                 () -> {
+                    if (restoreToken != safeRestoreToken) return;
                     if (root != null && !SafeMode.enabled(this)) {
                         applyWallpaper(root);
                         AppLog.i(
@@ -1471,7 +1477,7 @@ public final class MainActivity extends Activity {
                     || "wallpaper-video".equals(tag)) target.removeViewAt(i);
         }
         releaseWallpaper();
-        // 其它 root 上的孤儿视频壁纸也按 tag 摘掉
+        // 只处理“target 之外的 a.root”上的孤儿视频壁纸；target==root 时上面循环已覆盖
         if (root != null && root != target) {
             for (int i = root.getChildCount() - 1; i >= 0; i--) {
                 View child = root.getChildAt(i);
@@ -1594,10 +1600,16 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (tvPlayer != null && tvPlayer.back()) return;
-        // 1.8.23：云盘扫码页不直接退出，返回片库 tab
+        // 1.8.25：云盘扫码页不直接退出；TV 回 TV 首页，手机回片库 tab
         if (body != null && "netdisk-sheet".equals(body.getTag())) {
-            MobileShell.show(this);
-            if (MobileShell.activeShell != null) MobileShell.activeShell.switchTab(3);
+            if (isTvDevice()) {
+                current = new MainActivity.Screen(this::home);
+                current.home = true;
+                renderReturn(current);
+            } else {
+                MobileShell.show(this);
+                if (MobileShell.activeShell != null) MobileShell.activeShell.switchTab(3);
+            }
             return;
         }
         if (MobileShell.exitLibrarySelection()) return;

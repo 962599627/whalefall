@@ -13,15 +13,31 @@ final class QuarkUcFiles {
     private QuarkUcFiles() {}
 
     static void show(final MainActivity a, final QuarkUcApi.Provider p) {
+        show(a, p, QuarkUcApi.cookie(a, p), false);
+    }
+
+    /** 1.8.25：支持外部 Cookie（优先 App 本地，否则源插件 spUtils 解码）。 */
+    static void show(
+            final MainActivity a,
+            final QuarkUcApi.Provider p,
+            final String cookieOverride,
+            final boolean fromSource) {
         a.toast("正在读取" + p.name + "网盘文件…");
-        final String cookie = QuarkUcApi.cookie(a, p);
+        final String cookie = cookieOverride == null ? "" : cookieOverride;
         a.worker.execute(
                 () -> {
                     java.util.List<QuarkUcApi.FileItem> files = new java.util.ArrayList<>();
                     String error = "";
                     try {
                         files = QuarkUcApi.list(p, cookie, "0");
-                        AppLog.i("QuarkUc", "list provider=" + p.key + " items=" + files.size());
+                        AppLog.i(
+                                "QuarkUc",
+                                "list provider="
+                                        + p.key
+                                        + " items="
+                                        + files.size()
+                                        + " sourceCookie="
+                                        + fromSource);
                     } catch (Throwable failure) {
                         error = failure.getMessage();
                         AppLog.i("QuarkUc", "list provider=" + p.key + " error=" + error);
@@ -34,7 +50,7 @@ final class QuarkUcFiles {
                                     a.notice("读取文件失败：" + failure);
                                     return;
                                 }
-                                dialog(a, p, result);
+                                dialog(a, p, result, cookie, fromSource);
                             });
                 });
     }
@@ -42,7 +58,9 @@ final class QuarkUcFiles {
     private static void dialog(
             final MainActivity a,
             final QuarkUcApi.Provider p,
-            final java.util.List<QuarkUcApi.FileItem> files) {
+            final java.util.List<QuarkUcApi.FileItem> files,
+            final String cookie,
+            final boolean fromSource) {
         LinearLayout box = a.vertical();
         TextView head =
                 a.text(
@@ -77,7 +95,8 @@ final class QuarkUcFiles {
             box.addView(size);
             if (file.video) {
                 Button play =
-                        a.button("▶ 播放", "quarkuc-play:" + file.fid, () -> play(a, p, file));
+                        a.button(
+                                "▶ 播放", "quarkuc-play:" + file.fid, () -> play(a, p, file, cookie));
                 play.setTextSize(12);
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, a.dp(40));
                 lp.bottomMargin = a.dp(8);
@@ -85,16 +104,22 @@ final class QuarkUcFiles {
             }
         }
         new AppDialog.Builder(a)
-                .setTitle("我的" + p.name + "网盘 · App 内登录")
+                .setTitle(
+                        "我的"
+                                + p.name
+                                + "网盘 · "
+                                + (fromSource ? "源插件登录（只读）" : "App 内登录"))
                 .setView(box)
                 .setNegativeButton("关闭", null)
                 .show();
     }
 
     static void play(
-            final MainActivity a, final QuarkUcApi.Provider p, final QuarkUcApi.FileItem file) {
+            final MainActivity a,
+            final QuarkUcApi.Provider p,
+            final QuarkUcApi.FileItem file,
+            final String cookie) {
         a.toast("正在获取播放地址…");
-        final String cookie = QuarkUcApi.cookie(a, p);
         a.worker.execute(
                 () -> {
                     try {
