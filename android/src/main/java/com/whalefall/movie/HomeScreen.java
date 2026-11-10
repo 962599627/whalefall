@@ -1318,7 +1318,7 @@ final class HomeScreen {
         card.setOnFocusChangeListener(
                 (v, f) -> {
                     outline(card, f, 13, Color.TRANSPARENT);
-                    title.setTextColor(f ? Color.WHITE : 0xffc8d5ea);
+                    title.setTextColor(a.userTextColor(f ? Color.WHITE : 0xffc8d5ea));
                     if (f && ambient != null) ambient.follow(art);
                     if (f) {
                         v.requestRectangleOnScreen(

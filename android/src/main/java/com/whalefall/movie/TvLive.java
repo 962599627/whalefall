@@ -455,7 +455,7 @@ final class TvLive {
         input.setSingleLine(true);
         input.setHint("搜索频道或拼音首字母，如 hnws、cctv5");
         input.setHintTextColor(0xff7f8fa9);
-        input.setTextColor(0xfff5f7fc);
+        input.setTextColor(a.userTextColor(0xfff5f7fc));
         input.setTextSize(13.5f);
         input.setIncludeFontPadding(false);
         input.setInputType(InputType.TYPE_CLASS_TEXT);
@@ -1563,11 +1563,11 @@ final class TvLive {
     static void addWebLiveDialog(final MainActivity a, final Runnable done) {
         EditText nameInput = new EditText(a);
         nameInput.setHint("名称，如 深圳卫视");
-        nameInput.setTextColor(0xfff5f7fc);
+        nameInput.setTextColor(a.userTextColor(0xfff5f7fc));
         nameInput.setHintTextColor(0xff7f8fa9);
         EditText urlInput = new EditText(a);
         urlInput.setHint("https://… 网页地址");
-        urlInput.setTextColor(0xfff5f7fc);
+        urlInput.setTextColor(a.userTextColor(0xfff5f7fc));
         urlInput.setHintTextColor(0xff7f8fa9);
         LinearLayout box = a.vertical();
         box.addView(nameInput);
@@ -2152,7 +2152,7 @@ final class TvLive {
                             a.prefs.edit().putInt(Prefs.TV_ASPECT, value).apply();
                             for (int k = 0; k < ratioViews.length; k++)
                                 ratioViews[k].setTextColor(
-                                        k == value ? 0xffffb3c8 : 0xff9aa9c0);
+                                        k == value ? 0xffffb3c8 : a.userTextColor(0xff9aa9c0));
                             if (web != null) web.evaluateJavascript(fitJs(), null);
                         });
                 ratios.addView(item, new LinearLayout.LayoutParams(0, a.dp(24), 1f));
@@ -2175,7 +2175,7 @@ final class TvLive {
                             a.prefs.edit().putInt(Prefs.TV_FILL, value).apply();
                             for (int k = 0; k < fillViews.length; k++)
                                 fillViews[k].setTextColor(
-                                        k == value ? 0xffffb3c8 : 0xff9aa9c0);
+                                        k == value ? 0xffffb3c8 : a.userTextColor(0xff9aa9c0));
                             if (web != null) web.evaluateJavascript(fitJs(), null);
                         });
                 fills.addView(item, new LinearLayout.LayoutParams(0, a.dp(24), 1f));
@@ -2202,7 +2202,7 @@ final class TvLive {
                         Channel c = list.get(Math.max(0, Math.min(index, list.size() - 1)));
                         boolean now = toggleFavorite(a, store, c);
                         fav.setText(now ? "♥ 已收藏" : "♡ 收藏频道");
-                        fav.setTextColor(now ? 0xffff8fb1 : 0xffe6edf9);
+                        fav.setTextColor(now ? 0xffff8fb1 : a.userTextColor(0xffe6edf9));
                         a.toast((now ? "已收藏 " : "已取消收藏 ") + c.name);
                         refreshTopChrome();
                     });
@@ -2397,7 +2397,7 @@ final class TvLive {
                 Channel cur = list.get(Math.max(0, Math.min(index, list.size() - 1)));
                 boolean on = store.favorites.contains(cur.name);
                 infoFav.setText(on ? "♥ 已收藏" : "♡ 收藏频道");
-                infoFav.setTextColor(on ? 0xffff8fb1 : 0xffe6edf9);
+                infoFav.setTextColor(on ? 0xffff8fb1 : a.userTextColor(0xffe6edf9));
             }
         }
 

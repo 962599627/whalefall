@@ -894,6 +894,96 @@ final class PlaybackController {
                 });
     }
 
+    /** 1.9.22：播放失败/卡顿时自动换线路（最多 2 次，记住用户偏好）。 */
+    static boolean tryAutoSource(
+            final MainActivity a,
+            final Cms.Site s,
+            final Cms.Video v,
+            final Cms.Episode ep,
+            String reason) {
+        if (!a.prefs.getBoolean("auto_switch_source", true)) return false;
+        if (v == null || v.lines == null || v.lines.size() < 2 || ep == null) return false;
+        int attempts = 0;
+        try {
+            attempts = ep.media == null ? 0 : ep.media.optInt("_autoSourceAttempts", 0);
+        } catch (Throwable ignored) {
+        }
+        if (attempts >= 2) return false;
+        Cms.Line current = a.activeLine;
+        int idx = current == null ? -1 : v.lines.indexOf(current);
+        for (int step = 1; step < v.lines.size(); step++) {
+            Cms.Line alt = v.lines.get((idx + step + 1 + v.lines.size()) % v.lines.size());
+            if (alt == null || alt == current || alt.episodes.isEmpty()) continue;
+            Cms.Episode altEp = findMatchingEpisode(alt, current, ep);
+            if (altEp == null || altEp.url == null || altEp.url.trim().isEmpty()) continue;
+            int next = attempts + 1;
+            try {
+                if (ep.media == null) ep.media = new JSONObject();
+                ep.media.put("_autoSourceAttempts", next);
+                if (altEp.media == null) altEp.media = new JSONObject();
+                altEp.media.put("_autoSourceAttempts", next);
+            } catch (Throwable ignored) {
+            }
+            AppLog.i(
+                    "AutoSource",
+                    "fallback from="
+                            + (current == null ? "" : current.name)
+                            + " to="
+                            + alt.name
+                            + " attempt="
+                            + next
+                            + " result=try reason="
+                            + reason);
+            a.prefs.edit().putString("auto_source_last_line", alt.name).apply();
+            String message = "播放失败，正在自动换源（" + next + "/2）";
+            a.playStatus.setText(message);
+            a.toast(message);
+            final Cms.Episode target = altEp;
+            a.activeLine = alt;
+            a.activeEpisode = altEp;
+            a.resumeAt = a.player == null ? 0 : a.player.getCurrentPosition();
+            final int ticket = a.generation;
+            a.ui.post(
+                    () -> {
+                        if (ticket == a.generation) playerPage(a, s, v, target);
+                    });
+            return true;
+        }
+        return false;
+    }
+
+    /** 1.9.22：播放 5 秒无进度视为卡死，尝试自动换源。 */
+    private static void scheduleStallWatchdog(
+            final MainActivity a,
+            final Cms.Site s,
+            final Cms.Video v,
+            final Cms.Episode ep,
+            final int ticket) {
+        final int[] lastPos = {-1};
+        final int[] stuck = {0};
+        final Runnable[] tick = new Runnable[1];
+        tick[0] =
+                () -> {
+                    if (ticket != a.generation || a.player == null || !a.prepared) return;
+                    int pos;
+                    try {
+                        pos = a.player.getCurrentPosition();
+                    } catch (Throwable error) {
+                        return;
+                    }
+                    if (pos == lastPos[0] && a.playing) stuck[0]++;
+                    else stuck[0] = 0;
+                    lastPos[0] = pos;
+                    if (stuck[0] >= 5) {
+                        stuck[0] = 0;
+                        AppLog.i("AutoSource", "stall 5s pos=" + pos + " try fallback");
+                        if (tryAutoSource(a, s, v, ep, "stall")) return;
+                    }
+                    a.ui.postDelayed(tick[0], 1000);
+                };
+        a.ui.postDelayed(tick[0], 1500);
+    }
+
     static void playerPage(MainActivity a, Cms.Site s, Cms.Video v, Cms.Episode ep) {
         if (a == null || s == null || v == null || ep == null) return;
         if (ep.url == null) ep.url = "";
@@ -1142,6 +1232,8 @@ final class PlaybackController {
                                                                 else mp.pause();
                                                                 controls.prepared();
                                                                 savePlaybackHistoryOnPrepared(a);
+                                                                scheduleStallWatchdog(
+                                                                        a, s, v, ep, ticket);
                                                                 a.playStatus.setText(
                                                                         a.foreground
                                                                                 ? ("live"
@@ -1286,6 +1378,9 @@ final class PlaybackController {
                                                                             });
                                                                     return true;
                                                                 }
+                                                                if (tryAutoSource(
+                                                                        a, s, v, ep, "error"))
+                                                                    return true;
                                                                 stopEmbySession(a);
                                                                 a.prepared = false;
                                                                 a.playing = false;

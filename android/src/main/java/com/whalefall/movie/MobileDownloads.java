@@ -421,7 +421,7 @@ final class MobileDownloads {
     }
 
     private static void styleCell(MainActivity a, TextView cell, boolean selected) {
-        cell.setTextColor(selected ? Color.WHITE : 0xffe3eaf7);
+        cell.setTextColor(selected ? Color.WHITE : a.userTextColor(0xffe3eaf7));
         cell.setBackground(a.bg(selected ? 0xff3b82f6 : 0xff182a45, 10));
     }
 

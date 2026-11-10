@@ -95,6 +95,7 @@ final class FileManagerScreen {
                 "FileMgr",
                 "page=FileManager tab=" + (tab == 0 ? "local" : "netdisk") + " items=0");
         buildStorageCard();
+        if (!MainActivity.cloudEnabled(a)) tab = 0;
         buildSegment();
         buildToolbar();
         buildFilterChips();
@@ -225,7 +226,8 @@ final class FileManagerScreen {
     private void buildSegment() {
         LinearLayout row = a.row();
         row.setPadding(0, a.dp(10), 0, a.dp(6));
-        for (int i = 0; i < 2; i++) {
+        int segmentCount = MainActivity.cloudEnabled(a) ? 2 : 1;
+        for (int i = 0; i < segmentCount; i++) {
             final int mode = i;
             TextView chip =
                     a.text(
@@ -624,6 +626,11 @@ final class FileManagerScreen {
     }
 
     private void refreshNetdisk() {
+        if (!MainActivity.cloudEnabled(a)) {
+            tab = 0;
+            refreshLocal();
+            return;
+        }
         AppLog.i(
                 "FileMgr",
                 "page=FileManager tab=netdisk provider="

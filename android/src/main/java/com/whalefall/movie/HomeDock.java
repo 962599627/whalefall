@@ -117,6 +117,7 @@ final class HomeDock {
                 cell.bottomMargin = cellGap;
             }
             rail.addView(icon, cell);
+            if (i == 6 && !MainActivity.cloudEnabled(a)) icon.setVisibility(View.GONE);
             icon.setOnClickListener(v -> actions[index].run());
             icon.setOnFocusChangeListener(
                     (v, focused) -> {

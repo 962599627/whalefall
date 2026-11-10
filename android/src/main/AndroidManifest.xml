@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.whalefall.movie" android:versionCode="19020" android:versionName="1.9.20">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.whalefall.movie" android:versionCode="19022" android:versionName="1.9.22">
   <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="28" />
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -13,6 +13,12 @@
   <application android:label="鲸落" android:theme="@style/AppTheme" android:icon="@mipmap/ic_launcher" android:banner="@drawable/app_banner" android:allowBackup="false" android:usesCleartextTraffic="true" android:hardwareAccelerated="true" android:largeHeap="true">
     <meta-data android:name="com.whalefall.movie.EDITION" android:value="tv" />
     <provider android:name=".UpdateApkProvider" android:authorities="com.whalefall.movie.updates" android:exported="false" android:grantUriPermissions="true" />
+    <receiver android:name=".BgPlay$Receiver" android:exported="false">
+      <intent-filter>
+        <action android:name="com.whalefall.movie.BG_TOGGLE" />
+        <action android:name="com.whalefall.movie.BG_STOP" />
+      </intent-filter>
+    </receiver>
     <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="unspecified" android:configChanges="keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />

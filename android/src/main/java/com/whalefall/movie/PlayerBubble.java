@@ -118,7 +118,7 @@ final class PlayerBubble {
                                         : android.text.TextUtils.TruncateAt.END);
                         if (f && labels[index] != null && labels[index].length() > 14) {
                             hint.setText(labels[index]);
-                            hint.setTextColor(0xffdde6f5);
+                            hint.setTextColor(a.userTextColor(0xffdde6f5));
                         } else if (f) {
                             hint.setText(defaultHint);
                             hint.setTextColor(MainActivity.MUTED);

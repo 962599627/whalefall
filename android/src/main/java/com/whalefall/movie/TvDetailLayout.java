@@ -628,7 +628,7 @@ final class TvDetailLayout {
                 final boolean current =
                         highlightEpisode != null && highlightEpisode.equals(episode.name);
                 cell.setBackground(a.bg(current ? 0xffff8fb1 : 0x1affffff, 14));
-                cell.setTextColor(current ? MainActivity.DARK : 0xffe6edf9);
+                cell.setTextColor(current ? MainActivity.DARK : a.userTextColor(0xffe6edf9));
                 cell.setOnFocusChangeListener(
                         (v, focused) -> {
                             if (focused && a.current != null) {

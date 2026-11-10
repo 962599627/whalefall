@@ -141,6 +141,105 @@ public final class MainActivity extends Activity {
     Runnable hideControls;
     PlayerChrome playerChrome;
     MoviePlayer player;
+    /** 1.9.22 后台播放状态。 */
+    boolean bgPlayback;
+
+    android.media.AudioManager bgAudioManager;
+    android.media.AudioManager.OnAudioFocusChangeListener bgFocusListener;
+
+    private String bgTitle() {
+        try {
+            if (activeEpisode != null && activeEpisode.name != null) return activeEpisode.name;
+        } catch (Throwable ignored) {
+        }
+        return "正在播放";
+    }
+
+    private boolean acquireAudioFocus() {
+        try {
+            if (bgAudioManager == null)
+                bgAudioManager =
+                        (android.media.AudioManager)
+                                getSystemService(android.content.Context.AUDIO_SERVICE);
+            if (bgFocusListener == null) {
+                bgFocusListener =
+                        change -> {
+                            AppLog.i("BgPlay", "focus=" + change);
+                            if (change == android.media.AudioManager.AUDIOFOCUS_LOSS
+                                    || change
+                                            == android.media.AudioManager
+                                                    .AUDIOFOCUS_LOSS_TRANSIENT) {
+                                if (player != null && player.isPlaying()) {
+                                    player.pause();
+                                    playing = false;
+                                    BgPlay.show(this, false, bgTitle());
+                                }
+                            } else if (change == android.media.AudioManager.AUDIOFOCUS_GAIN) {
+                                if (bgPlayback && player != null) {
+                                    player.start();
+                                    playing = true;
+                                    BgPlay.show(this, true, bgTitle());
+                                }
+                            }
+                        };
+            int result =
+                    bgAudioManager.requestAudioFocus(
+                            bgFocusListener,
+                            android.media.AudioManager.STREAM_MUSIC,
+                            android.media.AudioManager.AUDIOFOCUS_GAIN);
+            return result == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private void releaseAudioFocus() {
+        try {
+            if (bgAudioManager != null && bgFocusListener != null)
+                bgAudioManager.abandonAudioFocus(bgFocusListener);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    void startBackgroundPlayback() {
+        if (player == null) return;
+        bgPlayback = true;
+        acquireAudioFocus();
+        BgPlay.show(this, playing, bgTitle());
+        AppLog.i("BgPlay", "start focus=" + (bgAudioManager != null));
+    }
+
+    void toggleBackgroundPlayback() {
+        if (player == null) return;
+        try {
+            if (player.isPlaying()) {
+                player.pause();
+                playing = false;
+                AppLog.i("BgPlay", "toggle=pause");
+            } else {
+                player.start();
+                playing = true;
+                AppLog.i("BgPlay", "toggle=play");
+            }
+        } catch (Throwable ignored) {
+        }
+        BgPlay.show(this, playing, bgTitle());
+    }
+
+    void stopBackgroundPlayback() {
+        bgPlayback = false;
+        releaseAudioFocus();
+        BgPlay.cancel(this);
+        try {
+            if (player != null) {
+                player.pause();
+                playing = false;
+            }
+        } catch (Throwable ignored) {
+        }
+        savePlaybackHistory(true);
+        AppLog.i("BgPlay", "stop");
+    }
     com.pilipala.emby.EmbyLibrary.Reporter embyReporter;
     String configOrigin = "";
     TextView playStatus, playClock;
@@ -191,6 +290,11 @@ public final class MainActivity extends Activity {
 
     /** Foreground activity that source extensions may need for dialogs; cleared on destroy. */
     static volatile MainActivity activeActivity;
+
+    /** 1.9.22：云盘相关功能总开关（默认关闭）。 */
+    static boolean cloudEnabled(MainActivity a) {
+        return a != null && a.prefs.getBoolean("cloud_features_enabled", false);
+    }
 
     /**
      * Extension background threads must never take the whole app down. Main-thread errors and
@@ -356,7 +460,7 @@ public final class MainActivity extends Activity {
         TextView view = new TextView(this);
         view.setTextSize(11f);
         view.setTypeface(android.graphics.Typeface.MONOSPACE);
-        view.setTextColor(0xffd5e1f2);
+        view.setTextColor(userTextColor(0xffd5e1f2));
         view.setLineSpacing(0f, 1.15f);
         view.setPadding(dp(12), dp(12), dp(12), dp(12));
         view.setBackground(MobileDetailScreen.glassBg(this, 0x66000000, 0x33ffffff, 14));
@@ -981,6 +1085,20 @@ public final class MainActivity extends Activity {
         if (color == WHITE) return 0xff000000 | rgb;
         if (color == MUTED) return 0xb3000000 | rgb;
         if (color == UiTokens.TEXT_TERTIARY) return 0x8f000000 | rgb;
+        // 1.9.21：按灰阶/亮度识别正文/次要文字（覆盖裸色值 0xffe6edf9/0xff8d9cb6 等）
+        int alpha = (color >>> 24) & 0xff;
+        int r = (color >> 16) & 0xff;
+        int g = (color >> 8) & 0xff;
+        int b = color & 0xff;
+        int max = Math.max(r, Math.max(g, b));
+        int min = Math.min(r, Math.min(g, b));
+        boolean grey = max - min <= 28;
+        boolean readable = max >= 90;
+        if (grey && readable) {
+            int outAlpha = alpha >= 0xF0 ? 0xff : alpha >= 0x80 ? 0xb3 : 0x8f;
+            return (outAlpha << 24) | rgb;
+        }
+        // 饱和色（粉/红/绿/蓝等强调色）保持原样
         return color;
     }
 
@@ -2335,6 +2453,11 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (playerChrome != null) playerChrome.resumeLoadingAnimation();
+        if (bgPlayback) {
+            bgPlayback = false;
+            releaseAudioFocus();
+            BgPlay.cancel(this);
+        }
     }
 
     @Override
@@ -2359,7 +2482,14 @@ public final class MainActivity extends Activity {
         savePlaybackHistory(true);
         foreground = false;
         super.onStop();
-        if (player != null)
+        boolean background =
+                prefs.getBoolean("bg_play", true)
+                        && current != null
+                        && current.player
+                        && player != null;
+        if (background) {
+            startBackgroundPlayback();
+        } else if (player != null)
             try {
                 player.pause();
                 playing = false;

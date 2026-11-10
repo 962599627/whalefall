@@ -779,6 +779,7 @@ final class MobileShell {
                             sliding = false;
                             if (action == android.view.MotionEvent.ACTION_UP && pendingTab >= 0) {
                                 if (pendingTab == 6) {
+                                    if (!MainActivity.cloudEnabled(a)) return;
                                     AppLog.i("Nav", "cloud-zone open rail=shell tab");
                                     switchTab(6);
                                 } else switchTab(pendingTab);
@@ -846,11 +847,16 @@ final class MobileShell {
             tab.setOnClickListener(
                     v -> {
                         if (tabIdx == 6) {
+                            if (!MainActivity.cloudEnabled(a)) {
+                                a.toast("云盘功能已暂停，可在配置中恢复");
+                                return;
+                            }
                             AppLog.i("Nav", "cloud-zone open rail=shell tab");
                             switchTab(6);
                         } else switchTab(tabIdx);
                     });
             navTabs[tabIdx] = tab;
+            if (tabIdx == 6 && !MainActivity.cloudEnabled(a)) tab.setVisibility(View.GONE);
 
             LinearLayout.LayoutParams lp =
                     verticalRail
@@ -3531,7 +3537,7 @@ final class MobileShell {
                                                 ? 0xffffffff
                                                 : 0x38ffffff));
                         chip.setTextColor(
-                                entry.getValue().equals(current) ? 0xff000000 : 0xffe6edf9);
+                                entry.getValue().equals(current) ? 0xff000000 : a.userTextColor(0xffe6edf9));
                         chip.setFocusable(true);
                         MobileDetailScreen.bindTouchFeedback(chip);
                         chip.setOnClickListener(
@@ -4152,7 +4158,7 @@ final class MobileShell {
                         h.action.setOnClickListener(v -> removeFavorite(f));
                         if (cols == 1) {
                             h.action.setText("详情");
-                            h.action.setTextColor(0xffc9d4e6);
+                            h.action.setTextColor(a.userTextColor(0xffc9d4e6));
                         }
                     }
                 }
@@ -4445,7 +4451,7 @@ final class MobileShell {
     }
 
     private void styleLibraryPill(TextView pill, boolean active) {
-        pill.setTextColor(active ? 0xff000000 : 0xffe6edf9);
+        pill.setTextColor(active ? 0xff000000 : a.userTextColor(0xffe6edf9));
         pill.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
         pill.setPadding(a.dp(15), a.dp(7), a.dp(15), a.dp(7));
         if (active) {
@@ -4655,6 +4661,32 @@ final class MobileShell {
                         () -> {
                             a.prefs.edit().putBoolean(Prefs.TUNNELED_PLAYBACK, !tunnel).apply();
                             refreshInPlace.run();
+                        });
+                addSettingCard(
+                        body,
+                        3,
+                        "后台播放",
+                        a.prefs.getBoolean("bg_play", true)
+                                ? "已开启：按 HOME/锁屏后音频继续，通知栏可暂停/停止"
+                                : "已关闭：离开 App 自动暂停",
+                        () -> {
+                            boolean next = !a.prefs.getBoolean("bg_play", true);
+                            a.prefs.edit().putBoolean("bg_play", next).apply();
+                            refreshInPlace.run();
+                            a.toast(next ? "已开启后台播放" : "已关闭后台播放");
+                        });
+                addSettingCard(
+                        body,
+                        3,
+                        "播放失败自动换源",
+                        a.prefs.getBoolean("auto_switch_source", true)
+                                ? "已开启：播放失败/卡 5 秒自动换同片其它线路（最多 2 次）"
+                                : "已关闭：失败后仅提示手动换源",
+                        () -> {
+                            boolean next = !a.prefs.getBoolean("auto_switch_source", true);
+                            a.prefs.edit().putBoolean("auto_switch_source", next).apply();
+                            refreshInPlace.run();
+                            a.toast(next ? "已开启自动换源" : "已关闭自动换源");
                         });
                 final boolean autoNext = a.prefs.getBoolean(Prefs.AUTO_NEXT, true);
                 addSettingCard(
