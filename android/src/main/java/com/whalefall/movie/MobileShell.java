@@ -4622,31 +4622,50 @@ final class MobileShell {
                         1,
                         "文件管理器（本地 / 网盘 / 下载）",
                         "浏览本地与网盘文件、播放、下载到 Download/鲸落/、查看下载中心",
-                        () -> FileManagerScreen.show(a));
+                        () ->
+                                a.open(
+                                        new MainActivity.Screen(
+                                                () -> FileManagerScreen.show(a)),
+                                        true));
                 addSettingCard(
                         body,
                         1,
                         "App 内置文件（教程 / 配置 / 上传）",
                         "App 内置配置/教程文件与管理员后台上传；本地与网盘文件请用「文件管理器」",
-                        () -> FilesScreen.show(a));
+                        () ->
+                                a.open(
+                                        new MainActivity.Screen(() -> FilesScreen.show(a)),
+                                        true));
                 addSettingCard(
                         body,
                         1,
                         "下载中心",
                         "查看下载进度、暂停/继续/取消/重试与完成历史",
-                        () -> DownloadCenterScreen.show(a));
+                        () ->
+                                a.open(
+                                        new MainActivity.Screen(
+                                                () -> DownloadCenterScreen.show(a)),
+                                        true));
                 addSettingCard(
                         body,
                         1,
                         "片源体检 / 失效源清理",
                         "检测每个片源可用性与耗时，失效源可禁用或恢复",
-                        () -> SourceCheckScreen.show(a));
+                        () ->
+                                a.open(
+                                        new MainActivity.Screen(
+                                                () -> SourceCheckScreen.show(a)),
+                                        true));
                 addSettingCard(
                         body,
                         1,
                         "手机遥控 / 扫码输入",
                         "电视端扫码用手机浏览器当遥控器/输入法（也可在本机打开二维码）",
-                        () -> RemoteInputScreen.show(a));
+                        () ->
+                                a.open(
+                                        new MainActivity.Screen(
+                                                () -> RemoteInputScreen.show(a)),
+                                        true));
                 a.gap(body, 12);
                 addSectionHeader(body, "新手教程");
                 addSettingCard(

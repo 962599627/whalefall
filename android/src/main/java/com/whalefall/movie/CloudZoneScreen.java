@@ -40,7 +40,11 @@ final class CloudZoneScreen {
         fileMgr.setBackground(MobileDetailScreen.glassBg(a, 0x24ffffff, 0x33ffffff, 999));
         fileMgr.setFocusable(true);
         MobileDetailScreen.bindTouchFeedback(fileMgr);
-        fileMgr.setOnClickListener(v -> FileManagerScreen.showFrom(a, 1));
+        fileMgr.setOnClickListener(
+                v ->
+                        a.open(
+                                new MainActivity.Screen(() -> FileManagerScreen.showFrom(a, 1)),
+                                true));
         LinearLayout.LayoutParams fileMgrLp = new LinearLayout.LayoutParams(-1, -2);
         fileMgrLp.leftMargin = a.dp(16);
         fileMgrLp.rightMargin = a.dp(16);

@@ -1762,8 +1762,33 @@ public final class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        AppLog.i(
+                "Back",
+                "page="
+                        + (body == null ? "null" : String.valueOf(body.getTag()))
+                        + " stack="
+                        + back.size()
+                        + " home="
+                        + (current != null && current.home)
+                        + " player="
+                        + (current != null && current.player));
         if (tvPlayer != null && tvPlayer.back()) return;
-        // 1.9.26：片源体检返回设置
+        // 1.9.30：入栈页面优先 pop（手势返回与硬件 BACK 同一路径）；未入栈的原地页面走下方自定义分支
+        if (!back.isEmpty()
+                && current != null
+                && !current.home
+                && !current.player
+                && isPushedPage(body == null ? null : String.valueOf(body.getTag()))) {
+            logBackAction("pop");
+            capture();
+            current = back.pop();
+            renderReturn(current);
+            restore(current);
+            return;
+        }
+        if (isPushedPage(body == null ? null : String.valueOf(body.getTag()))
+                || (body != null && "file-manager".equals(body.getTag())))
+            logBackAction("custom");
         if (body != null && "source-check".equals(body.getTag())) {
             if (isTvDevice()) {
                 current = new MainActivity.Screen(this::home);
@@ -1821,7 +1846,16 @@ public final class MainActivity extends Activity {
         if ((current == null || !current.player)
                 && body != null
                 && "file-manager".equals(body.getTag())) {
+            // 1.9.30：先处理子目录/多选，再按入栈记录返回上一级
             if (FileManagerScreen.handleBack()) return;
+            if (!back.isEmpty() && current != null && !current.home) {
+                logBackAction("pop");
+                capture();
+                current = back.pop();
+                renderReturn(current);
+                restore(current);
+                return;
+            }
             if (isTvDevice()) {
                 current = new MainActivity.Screen(this::home);
                 current.home = true;
@@ -1908,15 +1942,47 @@ public final class MainActivity extends Activity {
             return;
         }
         if (!back.isEmpty()) {
+            logBackAction("pop");
             capture();
             current = back.pop();
             renderReturn(current);
             restore(current);
         } else {
+            logBackAction("finish");
             releasePlayer();
         releaseWallpaper();
             finish();
         }
+    }
+
+    static boolean isPushedPage(String tag) {
+        if (tag == null) return false;
+        switch (tag) {
+            case "source-check":
+            case "lan-remote":
+            case "web-live":
+            case "web-player":
+            case "netdisk-diag":
+            case "download-center":
+            case "image-viewer":
+            case "text-viewer":
+            case "netdisk-sheet":
+            case "source-cloud-config":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    void logBackAction(String action) {
+        AppLog.i(
+                "Back",
+                "page="
+                        + (body == null ? "null" : String.valueOf(body.getTag()))
+                        + " stack="
+                        + back.size()
+                        + " action="
+                        + action);
     }
 
     void minimizePlayback() {

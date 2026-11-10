@@ -996,6 +996,16 @@ public final class GlobalSearchScreen implements AutoCloseable {
     }
 
     void renderFilters() {
+        // 1.9.30：来源筛选行固定显示：标签 + 全部 + 各源（数量/失败）
+        if (sourceFilters.getChildCount() == 0 || !"source-filter-label".equals(
+                String.valueOf(sourceFilters.getChildAt(0).getTag()))) {
+            sourceFilters.removeAllViews();
+            TextView label = a.text("来源筛选：", 12, UiTokens.TEXT_TERTIARY);
+            label.setTag("source-filter-label");
+            label.setPadding(0, 0, a.dp(4), 0);
+            label.setGravity(Gravity.CENTER_VERTICAL);
+            sourceFilters.addView(label);
+        }
         if (!filterButtons.containsKey("")) addFilter("全部", "");
         for (SourceResult source : results.values())
             if (!filterButtons.containsKey(source.site.key))
@@ -1061,10 +1071,10 @@ public final class GlobalSearchScreen implements AutoCloseable {
                 a,
                 b,
                 focused,
-                selected ? 0xff3a5d8c : 0xff272f3a,
-                MainActivity.WHITE,
+                selected ? UiTokens.ACCENT : 0xff272f3a,
+                selected ? 0xffffb3c8 : MainActivity.WHITE,
                 17,
-                selected ? MainActivity.WHITE : 0xffc2cbd7,
+                selected ? 0xff0b1220 : 0xffc2cbd7,
                 MainActivity.DARK,
                 true,
                 1.035f);
@@ -1085,6 +1095,8 @@ public final class GlobalSearchScreen implements AutoCloseable {
                     else if (source.outcome == SearchCoordinator.Outcome.TIMEOUT) label += " 超时";
                 }
                 b.setText(label);
+                if (!key.isEmpty() && selectedSources.contains(key))
+                    b.setText("✓ " + b.getText());
             }
             styleFilter(b, key, b.hasFocus());
             if (!key.isEmpty()) {
@@ -1098,6 +1110,37 @@ public final class GlobalSearchScreen implements AutoCloseable {
                     }
                 }
             }
+        }
+        View oldClear = sourceFilters.findViewWithTag("source-filter-clear");
+        if (oldClear != null) sourceFilters.removeView(oldClear);
+        if (filtering()) {
+            Button clear =
+                    a.button("清除", "source-filter-clear", () -> toggleFilter(""));
+            clear.setTextSize(12);
+            clear.setMinHeight(0);
+            clear.setMinimumHeight(0);
+            clear.setPadding(a.dp(14), 0, a.dp(14), 0);
+            clear.setGravity(Gravity.CENTER);
+            clear.setTextColor(0xffff8fb1);
+            FocusMotion.style(
+                    a, clear, false, 0x003a1d2a, 0x55ff8fb1, 999, 0xffff8fb1, 0xff0b1220, false, 1.02f);
+            clear.setOnFocusChangeListener(
+                    (v, focused) ->
+                            FocusMotion.style(
+                                    a,
+                                    clear,
+                                    focused,
+                                    0x003a1d2a,
+                                    0x55ff8fb1,
+                                    999,
+                                    0xffff8fb1,
+                                    0xff0b1220,
+                                    focused,
+                                    1.04f));
+            LinearLayout.LayoutParams clearLp =
+                    new LinearLayout.LayoutParams(-2, a.dp(34));
+            clearLp.setMargins(a.dp(2), 0, a.dp(8), 0);
+            sourceFilters.addView(clear, clearLp);
         }
         if (filterSummaryText != null) {
             if (filtering()) {

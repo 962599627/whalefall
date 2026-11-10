@@ -108,27 +108,27 @@ final class SettingsScreen {
                     "文件管理器（本地 / 网盘 / 下载）",
                     "浏览本地/网盘、播放与下载；支持多选与下载中心",
                     "settings-file-manager",
-                    () -> FileManagerScreen.showFrom(a, 0));
+                    () -> open(() -> FileManagerScreen.showFrom(a, 0)));
             link(
                     "App 内置文件（教程 / 配置 / 上传）",
                     "仅 App 内置配置/教程与管理员后台上传文件",
                     "settings-files",
-                    () -> FilesScreen.show(a));
+                    () -> open(() -> FilesScreen.show(a)));
             link(
                     "片源体检 / 失效源清理",
                     "逐个检测片源可用性与耗时，可禁用/恢复失效源",
                     "settings-source-check",
-                    () -> SourceCheckScreen.show(a));
+                    () -> open(() -> SourceCheckScreen.show(a)));
             link(
                     "手机遥控 / 扫码输入",
                     "手机浏览器扫码当遥控器和输入法，无需安装 App",
                     "settings-lan-remote",
-                    () -> RemoteInputScreen.show(a));
+                    () -> open(() -> RemoteInputScreen.show(a)));
             link(
                     "管理员后台（手机/电脑）",
                     "扫码或用浏览器打开，用手机/电脑管理文件与设置",
                     "settings-admin",
-                    () -> AdminPanel.show(a));
+                    () -> open(() -> AdminPanel.show(a)));
             link(
                     "查看崩溃日志",
                     "上次异常退出堆栈；可另存到文件管理",
