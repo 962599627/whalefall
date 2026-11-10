@@ -620,7 +620,7 @@ final class PlayerChrome {
     void setLoading(boolean value) {
         loading = value;
         boolean show = value && !a.prepared && !a.miniMode && a.playbackLoading == null;
-        if (!show) loadingLayer.stopAnimationsNow(); // 1.8.3：首帧/prepared 立即停止动画，不等淡出
+        if (!show) loadingLayer.hideNow("setLoading(" + value + ")");
         loadingLayer.setActive(show);
         if (show != lastLoadingShown) {
             lastLoadingShown = show;
@@ -693,7 +693,7 @@ final class PlayerChrome {
         if (a.prepared) loading = false;
         if (a.player != null && a.prepared) applyResolutionShort();
         boolean showSpinner = loading && !a.prepared && a.playbackLoading == null && !a.miniMode;
-        if (!showSpinner) loadingLayer.stopAnimationsNow();
+        if (!showSpinner) loadingLayer.hideNow("update");
         loadingLayer.setActive(showSpinner);
         if (showSpinner != lastLoadingShown) {
             lastLoadingShown = showSpinner;
@@ -1018,18 +1018,31 @@ final class PlayerChrome {
         }
 
         private void hideLayer() {
-            if (getVisibility() != View.VISIBLE) return;
+            hideNow("setActive(false)");
+        }
+
+        /** 1.8.4 修复：立即隐藏，绝不因 stopAnimationsNow 取消淡出任务而永久留在画面上。 */
+        void hideNow(String reason) {
+            boolean wasVisible = getVisibility() == View.VISIBLE;
+            if (wasVisible || getAlpha() > 0f)
+                AppLog.i(
+                        "PlayerChrome",
+                        "loading hide requested reason="
+                                + reason
+                                + " prepared="
+                                + a.prepared
+                                + " alpha="
+                                + getAlpha()
+                                + " visible="
+                                + wasVisible);
             stopAnimationsNow();
-            fadeTo(0f);
-            hideTask =
-                    () -> {
-                        if (!active) {
-                            pause();
-                            setVisibility(View.GONE);
-                        }
-                        hideTask = null;
-                    };
-            a.ui.postDelayed(hideTask, FADE_MS);
+            if (fadeAnimator != null) {
+                fadeAnimator.cancel();
+                fadeAnimator = null;
+            }
+            setAlpha(0f);
+            setVisibility(View.GONE);
+            if (wasVisible) AppLog.i("PlayerChrome", "loading hidden reason=" + reason);
         }
 
         private void fadeTo(float target) {
@@ -1063,6 +1076,7 @@ final class PlayerChrome {
             if (glowAnimator != null) glowAnimator.cancel();
             if (floatAnimator != null) floatAnimator.cancel();
             if (fadeAnimator != null) fadeAnimator.cancel();
+            if (!glowOn && !floatOn && !active && !paused) return;
             AppLog.i(
                     "PlayerChrome",
                     "loading animator stop glow="

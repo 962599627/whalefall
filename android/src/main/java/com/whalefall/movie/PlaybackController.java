@@ -1119,6 +1119,24 @@ final class PlaybackController {
                                                                 if (a.playerChrome != null)
                                                                     a.playerChrome.setLoading(
                                                                             false);
+                                                                // 1.8.4：prepared 后再补一次，防止早于 chrome 创建/首帧回调丢失
+                                                                a.ui.postDelayed(
+                                                                        () -> {
+                                                                            if (ticket
+                                                                                            == a
+                                                                                                    .generation
+                                                                                    && a.prepared
+                                                                                    && a.playerChrome
+                                                                                            != null) {
+                                                                                a.playerChrome
+                                                                                        .setLoading(
+                                                                                                false);
+                                                                                AppLog.i(
+                                                                                        "PlayerChrome",
+                                                                                        "loading hide requested reason=prepared-delayed");
+                                                                            }
+                                                                        },
+                                                                        300);
                                                                 a.playing = a.foreground;
                                                                 if (a.foreground) mp.start();
                                                                 else mp.pause();
