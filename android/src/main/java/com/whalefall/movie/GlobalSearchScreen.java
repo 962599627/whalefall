@@ -374,10 +374,25 @@ public final class GlobalSearchScreen implements AutoCloseable {
         filterSummaryText.setPadding(a.dp(6), 0, a.dp(6), a.dp(2));
         filterSummaryText.setVisibility(View.GONE);
         filterSummaryText.setFocusable(true);
+        filterSummaryText.setFocusableInTouchMode(true);
+        filterSummaryText.setOnFocusChangeListener(
+                (v, focused) ->
+                        FocusMotion.style(
+                                a,
+                                v,
+                                focused,
+                                0x0016283f,
+                                0x33ff8fb1,
+                                999,
+                                0xffffb3c8,
+                                0xff0b1220,
+                                focused,
+                                1.02f));
         filterSummaryText.setOnClickListener(
                 v -> {
                     selectedSources.clear();
                     activeFilter = "";
+                    shownLimit = 24;
                     resetGrid();
                     renderFilters();
                     renderResults();
@@ -913,7 +928,9 @@ public final class GlobalSearchScreen implements AutoCloseable {
                                                 timedOut++;
                                             if (outcome == SearchCoordinator.Outcome.BUSY) busy++;
                                             updateStatus(sourceCount);
-                                            scheduleRender();
+                                            // 1.9.29 P2：单源重试后重建分组标题/卡片计数
+                                            resetGrid();
+                                            renderResults();
                                         }),
                         Prefs.clampSearchTimeoutSeconds(a.prefs.getInt(Prefs.SEARCH_TIMEOUT, 20))
                                 * 1000L,
@@ -1388,7 +1405,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
                     posterCards.put(key, card);
                 }
                 placeResult(key, card, state);
-                if (state[2] == 1 || realCardCount >= 120) break;
+                if (state[2] == 1 || state[0] >= 120) break;
             }
             available = state[0];
             added = state[1];
@@ -1424,9 +1441,9 @@ public final class GlobalSearchScreen implements AutoCloseable {
                         posterCards.put(key, card);
                     }
                     placeResult(key, card, state);
-                    if (state[2] == 1 || realCardCount >= 120) break;
+                    if (state[2] == 1 || state[0] >= 120) break;
                 }
-                if (state[2] == 1 || realCardCount >= 120) break;
+                if (state[2] == 1 || state[0] >= 120) break;
             }
             available = state[0];
             added = state[1];
@@ -1446,9 +1463,9 @@ public final class GlobalSearchScreen implements AutoCloseable {
                         posterCards.put(key, card);
                     }
                     placeResult(key, card, state);
-                    if (state[2] == 1 || realCardCount >= 120) break;
+                    if (state[2] == 1 || state[0] >= 120) break;
                 }
-                if (state[2] == 1 || realCardCount >= 120) break;
+                if (state[2] == 1 || state[0] >= 120) break;
             }
             available = state[0];
             added = state[1];
@@ -1473,10 +1490,12 @@ public final class GlobalSearchScreen implements AutoCloseable {
                                                             : "此源已响应，但没有匹配结果。可更换关键词再试。");
         }
         retrySource.setVisibility(
-                filtering() && realCardCount == 0 ? View.VISIBLE : View.GONE);
+                selectedSources.size() <= 1 && realCardCount == 0
+                        ? View.VISIBLE
+                        : View.GONE);
         retrySource.setEnabled(retryCoordinator == null);
         moreResults.setVisibility(available > shownLimit ? View.VISIBLE : View.GONE);
-        resultHint.setVisibility(realCardCount >= 120 ? View.VISIBLE : View.GONE);
+        resultHint.setVisibility(available >= 120 ? View.VISIBLE : View.GONE);
         if (!remaining && restoringResults) {
             restoringResults = false;
             View saved =
@@ -1502,9 +1521,10 @@ public final class GlobalSearchScreen implements AutoCloseable {
 
     /** 1.9.29：统一卡片落位（合并/按源分组/单源三模式共用）。state = {available, added, remaining}。 */
     void placeResult(String key, LinearLayout card, int[] state) {
-        if (displayed.contains(key)) return;
+        // 1.9.29 P1：先统计遍历到的候选（含已显示/跳过的），保证 pending 轮次和 120 上限正确
         state[0]++;
         if (state[0] > shownLimit) return;
+        if (displayed.contains(key)) return;
         if (state[1] >= 4) {
             state[2] = 1;
             return;
