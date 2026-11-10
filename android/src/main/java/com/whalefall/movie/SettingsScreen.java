@@ -560,6 +560,17 @@ final class SettingsScreen {
                                                 ? "on"
                                                 : "off")));
         link(
+                "安全模式",
+                SafeMode.enabled(a) ? "开启（壁纸与加载动效已禁用）" : "关闭",
+                "settings-safe-mode",
+                () -> {
+                    boolean next = !SafeMode.enabled(a);
+                    SafeMode.set(a, next);
+                    a.applySafeModeVisual();
+                    a.toast(next ? "已开启安全模式（壁纸与加载动效已禁用）" : "已关闭安全模式（已恢复）");
+                    a.refresh();
+                });
+        link(
                 "网盘与账号",
                 "直接打开配置源自带的账号面板",
                 "settings-account",
