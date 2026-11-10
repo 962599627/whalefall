@@ -81,6 +81,8 @@ final class AccountPanel {
         List<Credential> credentials = new ArrayList<>();
         /** 每个网盘的三态检测结果（本地凭据 / 源可确认 / 无法读取）。 */
         java.util.Map<String, PanLoginState> panStates = new java.util.LinkedHashMap<>();
+        /** 「高级」里折叠的「诊断登录数据」行。 */
+        LinearLayout diagRow;
         String accountName = "";
 
         Panel(MainActivity a, View anchor) {
@@ -353,7 +355,11 @@ final class AccountPanel {
                 subLp.topMargin = a.dp(2);
                 col.addView(sub, subLp);
                 row.addView(col, new LinearLayout.LayoutParams(0, -2, 1f));
-                TextView action = a.text(logged ? "管理" : "登录", 11.5f, UiTokens.ACCENT_SOFT);
+                TextView action =
+                        a.text(
+                                logged ? "管理" : "去源面板 / 已登录?",
+                                11.5f,
+                                UiTokens.ACCENT_SOFT);
                 action.setTypeface(null, Typeface.BOLD);
                 action.setGravity(Gravity.CENTER);
                 action.setPadding(a.dp(12), 0, a.dp(12), 0);
@@ -361,7 +367,7 @@ final class AccountPanel {
                 row.addView(action, new LinearLayout.LayoutParams(-2, a.dp(32)));
                 MobileDetailScreen.bindTouchFeedback(row);
                 row.setOnClickListener(
-                        v -> PanLoginGuide.show(a, site, drive.key, () -> refresh(true)));
+                        v -> PanLoginGuide.show(a, site, drive.key, () -> refresh(false)));
                 row.setOnFocusChangeListener(
                         (v, focused) ->
                                 FocusMotion.style(
@@ -395,17 +401,25 @@ final class AccountPanel {
                     "刷新登录状态",
                     "重新检测：本地凭据 / WebView Cookie / 源存储（无法读取时如实标注）",
                     "accountRefresh");
+            diagRow =
+                    addFunction(
+                            body,
+                            UiIcon.TUNE,
+                            "诊断登录数据",
+                            "扫描全部 prefs / 私有目录 / Cookie，把命中位置写入运行日志（不含值）",
+                            "accountDiag");
+            diagRow.setVisibility(View.GONE);
             addFunction(
                     body,
-                    UiIcon.TUNE,
-                    "诊断登录数据",
-                    "扫描全部 prefs / 私有目录 / Cookie，把命中位置写入运行日志（不含值）",
-                    "accountDiag");
+                    UiIcon.INFO,
+                    "高级",
+                    "展开「诊断登录数据」（排查用；插件以后改存储格式时可能又能读）",
+                    "accountAdvanced");
             addFunction(body, UiIcon.TUNE, "网盘优先顺序", "调整网盘在播放线路中的优先级", "panSortShow");
             addFunction(body, UiIcon.FILTER, "网盘搜索顺序", "调整网盘在搜索结果中的顺序", "panSourceSortShow");
         }
 
-        void addFunction(
+        LinearLayout addFunction(
                 LinearLayout body, int iconKind, String title, String desc, String action) {
             LinearLayout row = a.row();
             row.setGravity(Gravity.CENTER_VERTICAL);
@@ -459,6 +473,7 @@ final class AccountPanel {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
             lp.bottomMargin = a.dp(8);
             body.addView(row, lp);
+            return row;
         }
 
         /** 打开源内设置面板前先给提示（白底样式由源绘制，用户有心理预期）。 */
@@ -647,16 +662,15 @@ final class AccountPanel {
                     dotColor = DOT_ORANGE;
                     label = "由源管理 · 无法读取";
                     detail =
-                            "本机未发现可读取的登录数据（登录态可能在源服务端/加密存储，属技术边界）→ "
-                                    + "可到源面板确认，或在网盘登录引导里「手动标记为已登录」；"
-                                    + "也可先点「诊断登录数据」把日志发我们定位。";
+                            "该来源把登录数据加密存储在插件内，App 无法读取（技术边界）。"
+                                    + "登录状态请以源面板为准，或手动标记。";
                     break;
                 default:
                     dotColor = DOT_GRAY;
                     label = "无法确认 · 由源管理";
                     detail =
-                            "本机未发现可读取的登录数据（不等于未登录；可能在源服务端/加密存储）→ "
-                                    + "可在网盘登录引导里手动标记为已登录，或到源面板确认。";
+                            "该来源把登录数据加密存储在插件内，App 无法读取（技术边界）。"
+                                    + "登录状态请以源面板为准，或手动标记。";
                     break;
             }
             statusDot.setBackground(UiTokens.circle(dotColor));
@@ -688,12 +702,12 @@ final class AccountPanel {
                 String actionLabel =
                         state == STATE_LOCAL || state == STATE_SOURCE || state == STATE_MANUAL
                                 ? "管理"
-                                : "登录";
+                                : "去源面板";
                 Button login =
                         accentButton(
                                 actionLabel,
                                 "account-login",
-                                () -> PanLoginGuide.show(a, site, "", () -> refresh(true)));
+                                () -> PanLoginGuide.show(a, site, "", () -> refresh(false)));
                 actionSlot.addView(login, new FrameLayout.LayoutParams(-2, a.dp(44)));
             }
             rebuildPanRows();
@@ -718,6 +732,14 @@ final class AccountPanel {
                 a.toast("已重新检测：本地凭据 / WebView Cookie / 源存储");
                 return;
             }
+            if ("accountAdvanced".equals(action)) {
+                if (diagRow != null) {
+                    diagRow.setVisibility(View.VISIBLE);
+                    if (a.isTvDevice()) diagRow.requestFocus();
+                }
+                a.toast("已展开「诊断登录数据」；以后插件改存储格式时可再试");
+                return;
+            }
             if ("accountDiag".equals(action)) {
                 a.toast("正在扫描登录数据，请稍候…");
                 PanLoginState.diagnose(
@@ -729,7 +751,7 @@ final class AccountPanel {
                         });
                 return;
             }
-            new SettingsScreen(a).accountAction(action, () -> refresh(true));
+            new SettingsScreen(a).accountAction(action, () -> refresh(false));
         }
 
         void confirmClear() {

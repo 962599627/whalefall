@@ -134,6 +134,99 @@ final class PanLoginGuide {
         open.requestFocus();
     }
 
+    /**
+     * 从源面板返回后的轻量确认：列出 4 个网盘多选，用户勾选源面板里已登录的，
+     * 确认后持久化为「已登录（用户确认）」。
+     */
+    static void promptManualMarks(final MainActivity a, final Runnable done) {
+        final Dialog dialog = new Dialog(a);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        FrameLayout root = new FrameLayout(a);
+        LinearLayout card = a.vertical();
+        card.setPadding(a.dp(22), a.dp(20), a.dp(22), a.dp(16));
+        card.setBackground(UiTokens.round(a, UiTokens.RADIUS_20, 0xf2141c2a, UiTokens.STROKE));
+        UiCompat.setElevation(card, a.dp(18));
+        card.setClickable(true);
+
+        TextView title = a.text("源面板里显示已登录的网盘？", UiTokens.TYPE_TITLE, UiTokens.TEXT_PRIMARY);
+        title.setTypeface(null, Typeface.BOLD);
+        card.addView(title);
+        TextView hint =
+                a.text(
+                        "该来源把登录数据加密存储在插件内，App 无法读取。请按源面板的显示勾选，"
+                                + "确认后标记为「已登录（用户确认）」，可随时取消。",
+                        UiTokens.TYPE_BODY_SM,
+                        UiTokens.TEXT_SECONDARY);
+        hint.setLineSpacing(a.dp(4), 1.3f);
+        LinearLayout.LayoutParams hintLp = new LinearLayout.LayoutParams(-1, -2);
+        hintLp.topMargin = a.dp(8);
+        card.addView(hint, hintLp);
+
+        final boolean[] checked = new boolean[DRIVES.length];
+        final Button[] rows = new Button[DRIVES.length];
+        for (int i = 0; i < DRIVES.length; i++) {
+            final int index = i;
+            checked[i] = PanLoginState.manualLogin(a, DRIVES[i].key);
+            Button row =
+                    a.button(
+                            (checked[i] ? "✓  " : "○  ") + DRIVES[i].alias,
+                            "pan-mark:" + i,
+                            () -> {
+                                checked[index] = !checked[index];
+                                rows[index].setText(
+                                        (checked[index] ? "✓  " : "○  ")
+                                                + DRIVES[index].alias);
+                            });
+            row.setTextSize(14);
+            rows[i] = row;
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, a.dp(44));
+            rowLp.topMargin = i == 0 ? a.dp(12) : a.dp(4);
+            card.addView(row, rowLp);
+        }
+
+        LinearLayout buttons = a.row();
+        buttons.setGravity(Gravity.END);
+        LinearLayout.LayoutParams buttonsLp = new LinearLayout.LayoutParams(-1, -2);
+        buttonsLp.topMargin = a.dp(12);
+        card.addView(buttons, buttonsLp);
+        Button cancel = glassButton(a, "跳过", dialog::dismiss);
+        LinearLayout.LayoutParams cancelLp = new LinearLayout.LayoutParams(a.dp(90), a.dp(44));
+        cancelLp.rightMargin = a.dp(10);
+        buttons.addView(cancel, cancelLp);
+        Button confirm =
+                accentButton(
+                        a,
+                        "确认标记",
+                        () -> {
+                            for (int i = 0; i < DRIVES.length; i++)
+                                if (checked[i]) PanLoginState.markManual(a, DRIVES[i].key, true);
+                            dialog.dismiss();
+                            PanLoginState.invalidate();
+                            a.toast("已保存「已登录（用户确认）」标记");
+                            if (done != null) done.run();
+                        });
+        buttons.addView(confirm, new LinearLayout.LayoutParams(a.dp(120), a.dp(44)));
+
+        int width = Math.min(a.dp(460), a.windowWidth() - a.dp(40));
+        root.addView(
+                card,
+                new FrameLayout.LayoutParams(Math.max(a.dp(280), width), -2, Gravity.CENTER));
+        dialog.setContentView(root);
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.dimAmount = 0.56f;
+            window.setAttributes(attrs);
+            window.setLayout(Math.max(a.dp(280), width), -2);
+            window.setGravity(Gravity.CENTER);
+            window.getDecorView().setSystemUiVisibility(5894);
+        }
+        confirm.requestFocus();
+    }
+
     // ====================== 引导面板 ======================
 
     private static final class Guide {
@@ -271,10 +364,15 @@ final class PanLoginGuide {
                     });
         }
 
-        /** 从源面板返回后：强制重检并就地刷新，同时通知账号面板刷新。 */
+        /** 从源面板返回后：弹一次轻量多选确认，再重检一次并通知账号面板刷新。 */
         void refreshAfterSource() {
-            if (onChanged != null) onChanged.run();
-            if (dialog != null && dialog.isShowing() && body != null) render(true);
+            promptManualMarks(
+                    a,
+                    () -> {
+                        PanLoginState.invalidate();
+                        if (onChanged != null) onChanged.run();
+                        if (dialog != null && dialog.isShowing() && body != null) render(false);
+                    });
         }
 
         void renderChooser(List<AccountPanel.Credential> credentials) {
@@ -383,6 +481,33 @@ final class PanLoginGuide {
             statusLp.topMargin = a.dp(14);
             body.addView(status, statusLp);
 
+            // 手动标记放在步骤页第一位：源插件加密存储时，这是唯一可靠的确认路径
+            if (pan == null || pan.state == PanLoginState.STATE_UNKNOWN) {
+                body.addView(
+                        glassButton(
+                                a,
+                                "我已在源里登录（手动标记）",
+                                () -> {
+                                    PanLoginState.markManual(a, drive.key, true);
+                                    render(true);
+                                    if (onChanged != null) onChanged.run();
+                                    a.toast("已标记为「已登录（用户确认）」");
+                                }),
+                        actionLp());
+            } else if (pan.state == PanLoginState.STATE_MANUAL) {
+                body.addView(
+                        glassButton(
+                                a,
+                                "取消手动标记",
+                                () -> {
+                                    PanLoginState.markManual(a, drive.key, false);
+                                    render(true);
+                                    if (onChanged != null) onChanged.run();
+                                    a.toast("已取消手动标记");
+                                }),
+                        actionLp());
+            }
+
             TextView stepsTitle =
                     a.text("登录步骤", UiTokens.TYPE_MICRO, UiTokens.TEXT_TERTIARY);
             stepsTitle.setPadding(0, a.dp(18), 0, a.dp(6));
@@ -417,32 +542,6 @@ final class PanLoginGuide {
                             "接下来若打开源登录界面，将显示配置源自带的页面（白底/红色按钮等样式由源决定），"
                                     + "完成登录后回到本面板即可。"),
                     bannerLp());
-            if (pan == null || pan.state == PanLoginState.STATE_UNKNOWN) {
-                // 兜底（非自动检测）：用户明确知道自己已在源里登录时的手动确认
-                body.addView(
-                        glassButton(
-                                a,
-                                "我已在源里登录（手动标记）",
-                                () -> {
-                                    PanLoginState.markManual(a, drive.key, true);
-                                    render(true);
-                                    if (onChanged != null) onChanged.run();
-                                    a.toast("已标记为「已登录（用户确认）」");
-                                }),
-                        actionLp());
-            } else if (pan.state == PanLoginState.STATE_MANUAL) {
-                body.addView(
-                        glassButton(
-                                a,
-                                "取消手动标记",
-                                () -> {
-                                    PanLoginState.markManual(a, drive.key, false);
-                                    render(true);
-                                    if (onChanged != null) onChanged.run();
-                                    a.toast("已取消手动标记");
-                                }),
-                        actionLp());
-            }
             if (logged) {
                 Button refresh =
                         accentButton(
