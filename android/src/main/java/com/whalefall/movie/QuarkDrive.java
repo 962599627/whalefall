@@ -204,6 +204,36 @@ final class QuarkDrive {
     }
 
     static void login(final MainActivity a, final Runnable onChanged) {
+        // 复用通用扫码弹窗（与其它三盘一致：深色遮罩 + 白底二维码，加载完才露出）
+        PanDriveLogin.Config config = new PanDriveLogin.Config();
+        config.title = "夸克扫码登录";
+        config.hint = "用夸克 App 扫码登录；成功后 App 会调夸克 API 验证真实账号。";
+        config.loginUrl = LOGIN_URL;
+        config.cookieNames = new String[] {"__puus", "kps"};
+        config.maxAttempts = 10;
+        PanDriveLogin.show(
+                a,
+                config,
+                value -> {
+                    saveCookie(a, value);
+                    a.toast("已捕获夸克登录信息，正在验证账号…");
+                    verifyAsync(
+                            a,
+                            status -> {
+                                if (status.logged)
+                                    a.toast(
+                                            "夸克登录成功"
+                                                    + (status.account.isEmpty()
+                                                            ? ""
+                                                            : "：" + status.account));
+                                else a.notice("登录信息已保存，但验证失败：" + status.error);
+                                if (onChanged != null) onChanged.run();
+                            });
+                });
+    }
+
+    /** 旧版内嵌 WebView 登录（保留但不再使用）。 */
+    static void loginLegacy(final MainActivity a, final Runnable onChanged) {
         final Dialog dialog = new Dialog(a);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout page = a.vertical();

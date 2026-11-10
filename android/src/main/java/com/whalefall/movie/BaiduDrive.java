@@ -8,6 +8,9 @@ import org.json.JSONObject;
 final class BaiduDrive {
     static final String API = "https://pan.baidu.com";
     static final String LOGIN_URL = "https://pan.baidu.com/";
+    /** 桌面 UA 下 passport 登录页通常直接给二维码（同源可注入）。 */
+    static final String LOGIN_PAGE =
+            "https://passport.baidu.com/v2/?login&u=https%3A%2F%2Fpan.baidu.com%2F";
 
     private BaiduDrive() {}
 
@@ -79,11 +82,12 @@ final class BaiduDrive {
         PanDriveLogin.Config config = new PanDriveLogin.Config();
         config.title = "百度网盘扫码登录";
         config.hint = "用百度网盘 App 扫码登录；成功后 App 会调百度 API 验证真实账号。";
-        config.loginUrl = LOGIN_URL;
+        config.loginUrl = LOGIN_PAGE;
         config.cookieNames = new String[] {"BDUSS", "STOKEN"};
         config.userAgent = PanDriveLogin.DESKTOP_UA;
         config.injectDelayMs = 2000;
-        config.maxAttempts = 12;
+        config.maxAttempts = 20;
+        config.clickLoginEntry = true;
         PanDriveLogin.show(
                 a,
                 config,
