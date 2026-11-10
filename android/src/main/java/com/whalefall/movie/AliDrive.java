@@ -7,6 +7,7 @@ import org.json.JSONObject;
 /** 阿里云盘原生直连（Phase 4；登录态在 localStorage.token，桌面 UA + 扫码 tab）。 */
 final class AliDrive {
     static final String API = "https://api.alipan.com";
+    static final String PASSPORT = "https://passport.alipan.com";
     static final String LOGIN_URL = "https://www.alipan.com/signin";
     static final String DEVICE_ID = "whalefall-pan-0001";
     static final String TOKEN_JS =
@@ -62,7 +63,7 @@ final class AliDrive {
 
     static void showPanel(final MainActivity a, final Runnable onChanged) {
         if (!hasToken(a)) {
-            login(a, onChanged);
+            startQrLogin(a, onChanged);
             return;
         }
         verifyAsync(
@@ -88,6 +89,175 @@ final class AliDrive {
                     }
                     menu(a, status, onChanged);
                 });
+    }
+
+    /**
+     * 官方二维码登录 API：generate.do 取 qrCodeUrl/t/ck → 本地 zxing 渲染 → query.do 轮询
+     * CONFIRMED 后从 bizExt 取 access_token/refresh_token → 走 getDriveInfo 验证。
+     */
+    static void startQrLogin(final MainActivity a, final Runnable onChanged) {
+        final QrLoginDialog ui = new QrLoginDialog(a, "阿里云盘扫码登录", "用阿里云盘 App 扫码", null);
+        ui.setRefresh(
+                () -> {
+                    ui.dismiss();
+                    startQrLogin(a, onChanged);
+                });
+        a.worker.execute(
+                () -> {
+                    try {
+                        String generate =
+                                PASSPORT
+                                        + "/newlogin/qrcode/generate.do?appName=aliyun_drive"
+                                        + "&fromSite=52&appEntrance=web";
+                        String body =
+                                DriveApi.post(
+                                        generate,
+                                        DriveApi.headers(
+                                                "Referer", "https://www.alipan.com/",
+                                                "User-Agent", PanDriveLogin.DESKTOP_UA),
+                                        "");
+                        JSONObject json = new JSONObject(body);
+                        JSONObject content = json.optJSONObject("content");
+                        JSONObject data = content == null ? null : content.optJSONObject("data");
+                        if (data == null) throw new java.io.IOException("generate 返回缺少 content.data");
+                        String qrContent = data.optString("qrCodeUrl", "");
+                        String t = data.optString("t", "");
+                        String ck = data.optString("ck", "");
+                        AppLog.i(
+                                "AliQr",
+                                "generate hasQr="
+                                        + !qrContent.isEmpty()
+                                        + " t="
+                                        + !t.isEmpty()
+                                        + " ck="
+                                        + !ck.isEmpty());
+                        if (qrContent.isEmpty() || t.isEmpty() || ck.isEmpty())
+                            throw new java.io.IOException("generate 缺少 qrCodeUrl/t/ck");
+                        android.graphics.Bitmap bitmap = PanQr.render(qrContent, 640);
+                        a.ui.post(() -> ui.showBitmap(bitmap));
+                        long deadline = System.currentTimeMillis() + 120000;
+                        while (System.currentTimeMillis() < deadline && !ui.closed) {
+                            Thread.sleep(2000);
+                            String query =
+                                    PASSPORT
+                                            + "/newlogin/qrcode/query.do?appName=aliyun_drive"
+                                            + "&fromSite=52&t="
+                                            + android.net.Uri.encode(t)
+                                            + "&ck="
+                                            + android.net.Uri.encode(ck);
+                            String queryBody =
+                                    DriveApi.post(
+                                            query,
+                                            DriveApi.headers(
+                                                    "Referer", "https://www.alipan.com/",
+                                                    "User-Agent", PanDriveLogin.DESKTOP_UA),
+                                            "");
+                            JSONObject q = new JSONObject(queryBody);
+                            JSONObject qContent = q.optJSONObject("content");
+                            JSONObject qData = qContent == null ? null : qContent.optJSONObject("data");
+                            if (qData == null) continue;
+                            String status = qData.optString("qrCodeStatus", "");
+                            AppLog.i(
+                                    "AliQr",
+                                    "poll status="
+                                            + status
+                                            + " code="
+                                            + qContent.optString("code", ""));
+                            if ("CONFIRMED".equalsIgnoreCase(status)) {
+                                String bizExt = qData.optString("bizExt", "");
+                                String tokens = decodeBizExt(bizExt);
+                                if (tokens.isEmpty()) {
+                                    AppLog.i("AliQr", "CONFIRMED but bizExt token missing");
+                                    ui.setStatus("已确认，但未拿到 token，请刷新重试");
+                                    continue;
+                                }
+                                a.prefs.edit()
+                                        .putString(Prefs.ALI_TOKEN, tokens)
+                                        .putBoolean(Prefs.ALI_VERIFIED, false)
+                                        .apply();
+                                verifyAsync(
+                                        a,
+                                        result -> {
+                                            ui.dismiss();
+                                            if (result.logged)
+                                                a.toast(
+                                                        "阿里登录成功"
+                                                                + (result.account.isEmpty()
+                                                                        ? ""
+                                                                        : "：" + result.account));
+                                            else
+                                                a.notice(
+                                                        "二维码已确认，但验证失败："
+                                                                + result.error);
+                                            if (onChanged != null) onChanged.run();
+                                        });
+                                return;
+                            }
+                            if ("SCANED".equalsIgnoreCase(status))
+                                ui.setStatus("已扫码，请在手机上确认登录");
+                            if ("EXPIRED".equalsIgnoreCase(status)) {
+                                ui.setStatus("二维码已过期，请点「刷新二维码」");
+                                return;
+                            }
+                        }
+                        ui.setStatus("二维码已过期，请点「刷新二维码」");
+                    } catch (Throwable error) {
+                        AppLog.i("AliQr", "generate error=" + DriveApi.friendly(error));
+                        a.ui.post(
+                                () -> {
+                                    ui.dismiss();
+                                    new AppDialog.Builder(a)
+                                            .setTitle("获取阿里二维码失败")
+                                            .setMessage(
+                                                    DriveApi.friendly(error)
+                                                            + "\n\n可改用网页扫码登录。")
+                                            .setPositiveButton(
+                                                    "用网页登录", (d, i) -> login(a, onChanged))
+                                            .setNegativeButton("取消", null)
+                                            .show();
+                                });
+                    }
+                });
+    }
+
+    /** bizExt 通常是 Base64(JSON)，取出 access_token/refresh_token 并拼成 token JSON。 */
+    static String decodeBizExt(String bizExt) {
+        if (bizExt == null || bizExt.trim().isEmpty()) return "";
+        String text = bizExt.trim();
+        JSONObject parsed = null;
+        try {
+            parsed = new JSONObject(text);
+        } catch (Throwable ignored) {
+            try {
+                String decoded =
+                        new String(
+                                android.util.Base64.decode(
+                                        text, android.util.Base64.URL_SAFE | android.util.Base64.NO_WRAP),
+                                java.nio.charset.StandardCharsets.UTF_8);
+                parsed = new JSONObject(decoded);
+            } catch (Throwable ignored2) {
+                try {
+                    String decoded =
+                            new String(
+                                    android.util.Base64.decode(text, android.util.Base64.DEFAULT),
+                                    java.nio.charset.StandardCharsets.UTF_8);
+                    parsed = new JSONObject(decoded);
+                } catch (Throwable ignored3) {
+                    return "";
+                }
+            }
+        }
+        String access = parsed.optString("access_token", parsed.optString("accessToken", ""));
+        String refresh = parsed.optString("refresh_token", parsed.optString("refreshToken", ""));
+        if (access.isEmpty()) return "";
+        try {
+            return new JSONObject()
+                    .put("access_token", access)
+                    .put("refresh_token", refresh)
+                    .toString();
+        } catch (Throwable ignored) {
+            return "";
+        }
     }
 
     static void login(final MainActivity a, final Runnable onChanged) {

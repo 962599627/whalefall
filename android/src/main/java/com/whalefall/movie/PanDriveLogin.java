@@ -44,9 +44,18 @@ final class PanDriveLogin {
         int requiredHits = 1;
         boolean clickScanTab;
         boolean clickLoginEntry;
+        /** 注入 JS stealth（UC 等反 WebView 页面）：隐藏 webdriver、伪造 plugins/chrome。 */
+        boolean stealth;
     }
 
     private PanDriveLogin() {}
+
+    private static final String STEALTH_JS =
+            "(function(){try{Object.defineProperty(navigator,'webdriver',{get:function(){return false;}});"
+                    + "window.chrome=window.chrome||{runtime:{}};"
+                    + "Object.defineProperty(navigator,'plugins',{get:function(){return [1,2,3,4,5];}});"
+                    + "Object.defineProperty(navigator,'languages',{get:function(){return ['zh-CN','zh'];}});"
+                    + "}catch(e){}})();";
 
     private static final String CLICK_LOGIN_JS =
             "(function(){try{var texts=['去登录','立即登录','登录','扫码登录','二维码登录'];"
@@ -181,6 +190,12 @@ final class PanDriveLogin {
                     @Override
                     public void onPageFinished(WebView view, String url) {
                         super.onPageFinished(view, url);
+                        if (config.stealth) {
+                            try {
+                                view.evaluateJavascript(STEALTH_JS, null);
+                            } catch (Throwable ignored) {
+                            }
+                        }
                         qrHits[0] = 0;
                         qrFound[0] = false;
                         qrWarned[0] = false;

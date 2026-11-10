@@ -7,6 +7,7 @@ import org.json.JSONObject;
 /** 百度网盘原生直连（Phase 4；桌面 UA + BDUSS/STOKEN + bdstoken）。 */
 final class BaiduDrive {
     static final String API = "https://pan.baidu.com";
+    static final String PASSPORT = "https://passport.baidu.com";
     static final String LOGIN_URL = "https://pan.baidu.com/";
     /** 桌面 UA 下 passport 登录页通常直接给二维码（同源可注入）。 */
     static final String LOGIN_PAGE =
@@ -50,7 +51,7 @@ final class BaiduDrive {
 
     static void showPanel(final MainActivity a, final Runnable onChanged) {
         if (!hasCookie(a)) {
-            login(a, onChanged);
+            startQrLogin(a, onChanged);
             return;
         }
         verifyAsync(
@@ -75,6 +76,133 @@ final class BaiduDrive {
                         return;
                     }
                     menu(a, status, onChanged);
+                });
+    }
+
+    /**
+     * 官方二维码登录 API（优先，插件同款）：
+     * getqrcode 取 imgurl/channel_id/gid → 显示二维码 → unicast 轮询拿 BDUSS/STOKEN → Cookie 后走 verify。
+     * 失败时降级为网页扫码（login）。
+     */
+    static void startQrLogin(final MainActivity a, final Runnable onChanged) {
+        final QrLoginDialog ui = new QrLoginDialog(a, "百度网盘扫码登录", "用百度网盘 App 扫码", null);
+        ui.setRefresh(
+                () -> {
+                    ui.dismiss();
+                    startQrLogin(a, onChanged);
+                });
+        a.worker.execute(
+                () -> {
+                    try {
+                        String gid = java.util.UUID.randomUUID().toString().toUpperCase();
+                        String generate =
+                                PASSPORT
+                                        + "/v2/api/getqrcode?lp=pc&qrloginfrom=pc&gid="
+                                        + gid
+                                        + "&callback=cb";
+                        String body =
+                                DriveApi.get(
+                                        generate,
+                                        DriveApi.headers(
+                                                "Referer", "https://passport.baidu.com/",
+                                                "User-Agent", PanDriveLogin.DESKTOP_UA));
+                        JSONObject json = new JSONObject(PanQr.stripJsonp(body));
+                        String imgurl = json.optString("imgurl", "");
+                        String channel = json.optString("channel_id", "");
+                        AppLog.i(
+                                "BaiduQr",
+                                "generate imgurl="
+                                        + !imgurl.isEmpty()
+                                        + " channel="
+                                        + !channel.isEmpty()
+                                        + " errno="
+                                        + json.optInt("errno", 0));
+                        if (imgurl.isEmpty() || channel.isEmpty())
+                            throw new java.io.IOException("getqrcode 缺少 imgurl/channel_id");
+                        a.ui.post(() -> ui.showImageUrl(imgurl));
+                        long deadline = System.currentTimeMillis() + 120000;
+                        while (System.currentTimeMillis() < deadline && !ui.closed) {
+                            Thread.sleep(2000);
+                            String poll =
+                                    PASSPORT
+                                            + "/channel/unicast?channel_id="
+                                            + channel
+                                            + "&tpl=netdisk&gid="
+                                            + gid
+                                            + "&callback=cb";
+                            String pollBody =
+                                    DriveApi.get(
+                                            poll,
+                                            DriveApi.headers(
+                                                    "Referer", "https://passport.baidu.com/",
+                                                    "User-Agent", PanDriveLogin.DESKTOP_UA));
+                            JSONObject pollJson = new JSONObject(PanQr.stripJsonp(pollBody));
+                            String v = pollJson.optString("v", "");
+                            AppLog.i(
+                                    "BaiduQr",
+                                    "poll errno="
+                                            + pollJson.optInt("errno", -1)
+                                            + " hasV="
+                                            + !v.isEmpty());
+                            if (v.isEmpty()) continue;
+                            android.net.Uri data = android.net.Uri.parse("?" + v);
+                            String bduss = data.getQueryParameter("BDUSS");
+                            String stoken = data.getQueryParameter("STOKEN");
+                            if (bduss == null || bduss.isEmpty()) {
+                                AppLog.i("BaiduQr", "poll v missing BDUSS");
+                                continue;
+                            }
+                            String cookie =
+                                    "BDUSS=" + bduss + (stoken == null ? "" : "; STOKEN=" + stoken);
+                            a.prefs.edit()
+                                    .putString(Prefs.BAIDU_COOKIE, cookie)
+                                    .putBoolean(Prefs.BAIDU_VERIFIED, false)
+                                    .apply();
+                            try {
+                                android.webkit.CookieManager manager =
+                                        android.webkit.CookieManager.getInstance();
+                                manager.setCookie(
+                                        "https://pan.baidu.com",
+                                        "BDUSS=" + bduss + "; domain=.baidu.com; path=/");
+                                manager.flush();
+                            } catch (Throwable ignored) {
+                            }
+                            fetchBdstokenBlocking(a, cookie);
+                            verifyAsync(
+                                    a,
+                                    status -> {
+                                        ui.dismiss();
+                                        if (status.logged)
+                                            a.toast(
+                                                    "百度登录成功"
+                                                            + (status.account.isEmpty()
+                                                                    ? ""
+                                                                    : "：" + status.account));
+                                        else
+                                            a.notice(
+                                                    "二维码已确认，但验证失败："
+                                                            + status.error);
+                                        if (onChanged != null) onChanged.run();
+                                    });
+                            return;
+                        }
+                        ui.setStatus("二维码已过期，请点「刷新二维码」");
+                    } catch (Throwable error) {
+                        AppLog.i("BaiduQr", "generate error=" + DriveApi.friendly(error));
+                        a.ui.post(
+                                () -> {
+                                    ui.dismiss();
+                                    new AppDialog.Builder(a)
+                                            .setTitle("获取百度二维码失败")
+                                            .setMessage(
+                                                    DriveApi.friendly(error)
+                                                            + "\n\n可改用网页扫码登录。")
+                                            .setPositiveButton(
+                                                    "用网页登录", (d, i) -> login(a, onChanged))
+                                            .setNegativeButton("取消", null)
+                                            .show();
+                                });
+                    }
                 });
     }
 

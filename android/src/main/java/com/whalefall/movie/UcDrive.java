@@ -55,7 +55,7 @@ final class UcDrive {
 
     static void showPanel(final MainActivity a, final Runnable onChanged) {
         if (!hasCookie(a)) {
-            login(a, onChanged);
+            startUcLogin(a, onChanged);
             return;
         }
         verifyAsync(
@@ -83,6 +83,48 @@ final class UcDrive {
                 });
     }
 
+    /**
+     * UC 登录：先探测官方二维码 API（无公开稳定协议，仅记录结果），
+     * 再退化为桌面 UA + JS stealth 的 WebView 扫码；若网页是防御页则明确提示限制。
+     */
+    static void startUcLogin(final MainActivity a, final Runnable onChanged) {
+        a.worker.execute(
+                () -> {
+                    String[] probes = {
+                        "https://pc-api.uc.cn/1/clouddrive/qrcode/generate?pr=UCBrowser&fr=pc&uc_param_str=",
+                        "https://pc-api.uc.cn/1/clouddrive/qrcode?pr=UCBrowser&fr=pc&uc_param_str=",
+                    };
+                    for (String url : probes) {
+                        try {
+                            String body =
+                                    DriveApi.get(
+                                            url,
+                                            DriveApi.headers(
+                                                    "Referer", LOGIN_URL,
+                                                    "User-Agent", PanDriveLogin.DESKTOP_UA));
+                            org.json.JSONObject json = new org.json.JSONObject(body);
+                            AppLog.i(
+                                    "UcQr",
+                                    "probe url="
+                                            + url.substring(0, Math.min(url.length(), 80))
+                                            + " code="
+                                            + json.optInt("code", -1)
+                                            + " status="
+                                            + json.optInt("status", -1)
+                                            + " hasQr="
+                                            + (body.contains("qr") || body.contains("QR")));
+                        } catch (Throwable error) {
+                            AppLog.i("UcQr", "probe error=" + DriveApi.friendly(error));
+                        }
+                    }
+                    a.ui.post(
+                            () -> {
+                                a.toast("UC 未提供稳定公共扫码 API，正在用网页扫码尝试");
+                                login(a, onChanged);
+                            });
+                });
+    }
+
     static void login(final MainActivity a, final Runnable onChanged) {
         PanDriveLogin.Config config = new PanDriveLogin.Config();
         config.title = "UC 扫码登录";
@@ -91,6 +133,7 @@ final class UcDrive {
         config.cookieNames = new String[] {"__puus", "kps", "_uc_s"};
         config.userAgent = PanDriveLogin.DESKTOP_UA;
         config.injectDelayMs = 1500;
+        config.stealth = true;
         PanDriveLogin.show(
                 a,
                 config,
