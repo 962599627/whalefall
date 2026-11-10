@@ -1705,7 +1705,12 @@ final class MobileShell {
                                                     if (homeFilterOptionRow != null)
                                                         homeFilterOptionRow.setVisibility(
                                                                 View.GONE);
-                                                    a.toast("该片源不支持筛选，已隐藏筛选入口");
+                                                    AppLog.i(
+                                                            "Filter",
+                                                            "capability hidden reason=no-remote-defs site="
+                                                                    + (currentSite == null
+                                                                            ? "null"
+                                                                            : currentSite.key));
                                                 });
                                     }
                                     final boolean filterEmpty =
@@ -2101,7 +2106,7 @@ final class MobileShell {
         return text.contains("云盘") || text.contains("云盤") || text.contains("网盘配置");
     }
 
-    /** 1.9.33：按分类判断是否有筛选能力（1.9.35：只看片源 schema，不用本地兜底）。 */
+    /** 1.9.38：能力 = schema 有该分类 且 能解析出至少一个远程筛选维度（图标与点击同一判定）。 */
     boolean hasMobileFiltersFor(String catId) {
         try {
             String category =
@@ -2110,21 +2115,38 @@ final class MobileShell {
                                     ? currentCategories.get(0).id
                                     : selectedCategoryId)
                             : catId;
-            boolean has =
+            boolean schema =
                     currentSite != null
                             && currentSite.key.equals(filterSchemaSite)
                             && VideoFilters.hasSchemaFilters(filterSchema, category);
+            int remoteDefs = 0;
+            if (schema) {
+                List<VideoFilters.Definition> defs =
+                        VideoFilters.definitions(filterSchema, category, currentVideos);
+                boolean supported = currentSite != null && currentSite.supported();
+                for (VideoFilters.Definition def : defs) {
+                    if (supported && !VideoFilters.allowedKey(def.key)) continue;
+                    if (def.remote && def.choices.size() > 1) remoteDefs++;
+                }
+            }
+            boolean icons = schema && remoteDefs > 0;
             AppLog.i(
                     "Filter",
                     "capability category="
                             + category
+                            + " key="
+                            + category
                             + " schema="
-                            + has
+                            + schema
+                            + " defs="
+                            + remoteDefs
+                            + " icons="
+                            + icons
                             + " site="
                             + (currentSite == null ? "null" : currentSite.key)
                             + " types="
                             + VideoFilters.schemaKinds(filterSchema));
-            return has;
+            return icons;
         } catch (Throwable ignored) {
             return false;
         }

@@ -804,7 +804,7 @@ final class HomeScreen {
         return definitions;
     }
 
-    /** 1.9.33：该分类是否有筛选能力（1.9.35：只看片源 schema，不用本地兜底）。 */
+    /** 1.9.38：能力 = schema 有该分类 且 至少一个远程筛选维度可解析（图标与点击同一判定）。 */
     boolean categoryHasFilters(String catId) {
         if (snapshot == null) return false;
         String category =
@@ -813,18 +813,35 @@ final class HomeScreen {
                                 ? snapshot.categories.get(0).id
                                 : state.category)
                         : catId;
-        boolean has = VideoFilters.hasSchemaFilters(snapshot.filterSchema, category);
+        boolean schema = VideoFilters.hasSchemaFilters(snapshot.filterSchema, category);
+        int remoteDefs = 0;
+        if (schema) {
+            List<VideoFilters.Definition> defs =
+                    VideoFilters.definitions(snapshot.filterSchema, category, snapshot.videos);
+            boolean supported = site != null && site.supported();
+            for (VideoFilters.Definition def : defs) {
+                if (supported && !VideoFilters.allowedKey(def.key)) continue;
+                if (def.remote && def.choices.size() > 1) remoteDefs++;
+            }
+        }
+        boolean icons = schema && remoteDefs > 0;
         AppLog.i(
                 "Filter",
                 "capability category="
                         + category
+                        + " key="
+                        + category
                         + " schema="
-                        + has
+                        + schema
+                        + " defs="
+                        + remoteDefs
+                        + " icons="
+                        + icons
                         + " site="
                         + (site == null ? "null" : site.key)
                         + " types="
                         + VideoFilters.schemaKinds(snapshot.filterSchema));
-        return has;
+        return icons;
     }
 
     private android.graphics.drawable.Drawable funnelDrawable(int color, int sizeDp) {
