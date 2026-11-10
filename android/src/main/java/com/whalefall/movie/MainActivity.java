@@ -1575,6 +1575,15 @@ public final class MainActivity extends Activity {
         SourceController.sourceAction(this, site, action, finished);
     }
 
+    /**
+     * 首页「网盘」胶囊 / 设置「网盘与账号」直连源插件账号面板（唯一一层），
+     * 不再经过我们的 AccountPanel / PanLoginGuide 中间层。
+     */
+    void openSourceAccountPanel() {
+        AppLog.i("AccountEntrance", "direct source=LoginShow");
+        new SettingsScreen(this).sourceAccountAction("LoginShow", null);
+    }
+
     void pickDanmaku() {
         SourceController.pickDocument(this, 43, "这台电视没有文件选择器。");
     }

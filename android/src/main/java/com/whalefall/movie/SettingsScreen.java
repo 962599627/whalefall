@@ -493,8 +493,16 @@ final class SettingsScreen {
         toggle("启用来源扩展", Prefs.EXPERIMENTAL_CSP, true, a::closeEngines);
         link(
                 "网盘与账号",
-                "网盘扫码登录、凭据与网盘顺序（由配置提供）",
-                "settings-accounts",
+                "直接打开配置源自带的账号面板",
+                "settings-account",
+                () -> {
+                    AppLog.i("AccountEntrance", "direct source=LoginShow");
+                    sourceAccountAction("LoginShow", null);
+                });
+        link(
+                "账号设置（清除凭据 / 原生网盘登录）",
+                "清除本机凭据，或使用 App 内官方扫码登录（可选）",
+                "settings-account-advanced",
                 () -> AccountPanel.show(a, null));
         link(
                 "备份配置与偏好",

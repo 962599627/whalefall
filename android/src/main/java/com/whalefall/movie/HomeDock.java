@@ -78,7 +78,7 @@ final class HomeDock {
             () -> a.open(new MainActivity.Screen(a::liveSources), true),
             () -> a.open(new MainActivity.Screen(() -> TvLive.show(a)), true),
             () -> a.open(new MainActivity.Screen(() -> new FavoritesScreen(a).show()), true),
-            () -> AccountPanel.show(a, items[5]),
+            () -> a.openSourceAccountPanel(),
             () -> a.open(new MainActivity.Screen(a::settings), true)
         };
         for (int i = 0; i < items.length; i++) {

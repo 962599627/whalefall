@@ -590,7 +590,7 @@ final class MobileShell {
         netdiskPill.setOnClickListener(
                 v -> {
                     if (a.config == null) showMobileImportDialog(a);
-                    else AccountPanel.show(a, null);
+                    else a.openSourceAccountPanel();
                 });
         LinearLayout.LayoutParams ndLp = new LinearLayout.LayoutParams(-2, a.dp(34));
         ndLp.rightMargin = a.dp(6);
@@ -4055,7 +4055,13 @@ final class MobileShell {
                         refreshInPlace.run();
                     });
         }
-        addSettingCard(body, 2, "网盘与账号授权", "", () -> AccountPanel.show(a, null));
+        addSettingCard(body, 2, "网盘与账号（源面板）", "直接打开配置源自带的账号面板", a::openSourceAccountPanel);
+        addSettingCard(
+                body,
+                2,
+                "账号设置（清除凭据 / 原生网盘登录）",
+                "清除本机凭据，或使用 App 内官方扫码登录（可选）",
+                () -> AccountPanel.show(a, null));
     }
 
     /** 设置 → 关于鲸落：版本、开源信息、上游归属与相关操作。 */
