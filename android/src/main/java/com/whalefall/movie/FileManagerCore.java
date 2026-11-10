@@ -772,12 +772,12 @@ final class FileManagerCore {
                     final String playUrl = url;
                     final String playVia = via;
                     if (playUrl == null || playUrl.isEmpty()) {
-                        AppLog.i("QuarkPlay", "play fallback=download fid=" + item.fid);
+                        AppLog.i("QuarkPlay", "play blocked account-limit fid=" + item.fid);
                         a.ui.post(
-                                () -> {
-                                    a.toast("直链/转码均失败，改为下载后播放…");
-                                    downloadThenPlay(a, p, cookie, item);
-                                });
+                                () ->
+                                        a.notice(
+                                                "该文件受账号限制（转码/直链均不可用），建议在源里观看；"
+                                                        + "如为超大文件也可能触发夸克非会员下载限制（code 23018）。"));
                         return;
                     }
                     final Map<String, String> headers = new LinkedHashMap<>();

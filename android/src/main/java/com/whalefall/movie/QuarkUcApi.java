@@ -365,6 +365,16 @@ final class QuarkUcApi {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) quark-cloud-drive/2.5.20 Chrome/100.0 Safari/537.36";
 
+    /** 1.9.12：夸克非会员下载大小限制（code 23018），不可重试。 */
+    static final class LimitException extends IOException {
+        LimitException(String message) {
+            super(message);
+        }
+    }
+
+    /** 转码 plf 候选（成功过的优先）。 */
+    static volatile String lastWorkingPlf = null;
+
     /** 1.9.5：夸克/UC PC 下载接口 + __puus 刷新；400 时尝试 body/接口变体。 */
     static String downloadUrl(MainActivity a, Provider p, String cookie, String fid) throws Exception {
         return downloadUrl(a, p, cookie, fid, "");
@@ -443,6 +453,13 @@ final class QuarkUcApi {
                         last = new IOException("HTTP " + status + "（夸克风控）");
                         continue;
                     }
+                    // 1.9.12：23018 = 非会员下载大小限制，短路，不再尝试其它变体
+                    if (text != null && (text.contains("23018") || text.contains("size limit"))) {
+                        AppLog.i("QuarkGet", "download-api limit code=23018 fid=" + fid);
+                        throw new LimitException(
+                                "该文件超过夸克非会员下载限制（code 23018），无法直接下载；"
+                                        + "可在源里观看或开通会员后重试。");
+                    }
                     if (status < 200 || status >= 300) {
                         last =
                                 new IOException(
@@ -466,6 +483,7 @@ final class QuarkUcApi {
                     }
                     return url;
                 } catch (Throwable error) {
+                    if (error instanceof LimitException) throw (LimitException) error;
                     last = new IOException(error.getClass().getSimpleName());
                 } finally {
                     if (connection != null) connection.disconnect();
@@ -475,7 +493,7 @@ final class QuarkUcApi {
         throw last == null ? new IOException("没有下载地址") : last;
     }
 
-    /** 1.9.9：转码播放接口（m3u8），drive-pc / drive 双端点兜底，日志含 status+body。 */
+    /** 1.9.12：转码播放接口；plf 候选 android/web/pc + 双端点，成功后记住 plf。 */
     static String playProjectUrl(MainActivity a, Provider p, String cookie, String fid)
             throws Exception {
         String fresh = a == null ? cookie : refreshCookie(a, p, cookie);
@@ -489,73 +507,92 @@ final class QuarkUcApi {
                             "https://pc-api.uc.cn/1/clouddrive/file/v2/play/project?pr=UCBrowser&fr=pc",
                             "https://drive.uc.cn/1/clouddrive/file/v2/play/project?pr=UCBrowser&fr=pc"
                         };
-        JSONObject body =
-                new JSONObject()
-                        .put("fid", fid)
-                        .put("resolutions", "low,normal,high,super,2k,4k")
-                        .put("supports", "fmp4_av,m3u8,dolby_vision");
+        java.util.LinkedHashSet<String> plfs = new java.util.LinkedHashSet<>();
+        if (lastWorkingPlf != null) plfs.add(lastWorkingPlf);
+        plfs.add("android");
+        plfs.add("web");
+        plfs.add("pc");
         Exception last = null;
-        for (String endpoint : endpoints) {
-            HttpURLConnection connection = null;
-            try {
-                connection = (HttpURLConnection) new URL(endpoint).openConnection();
-                connection.setRequestMethod("POST");
-                connection.setConnectTimeout(12000);
-                connection.setReadTimeout(15000);
-                connection.setDoOutput(true);
-                connection.setRequestProperty("Cookie", fresh == null ? "" : fresh);
-                connection.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
-                connection.setRequestProperty("Accept", "application/json, text/plain, */*");
-                connection.setRequestProperty("User-Agent", UA_CHROME);
-                connection.setRequestProperty("Referer", p.referer);
-                java.io.OutputStream out = connection.getOutputStream();
-                out.write(body.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                out.close();
-                int status = connection.getResponseCode();
-                String text =
-                        read(
-                                status >= 200 && status < 400
-                                        ? connection.getInputStream()
-                                        : connection.getErrorStream());
-                String masked = text == null ? "" : text;
-                if (masked.length() > 300) masked = masked.substring(0, 300);
-                masked =
-                        masked.replaceAll(
-                                "\"(url|token|__puus|download_url)\"\\s*:\\s*\"[^\"]*\"",
-                                "\"$1\":\"<redacted>\"");
-                AppLog.i(
-                        "QuarkPlay",
-                        "project provider="
-                                + p.key
-                                + " fid="
-                                + fid
-                                + " api="
-                                + android.net.Uri.parse(endpoint).getHost()
-                                + " status="
-                                + status
-                                + " body="
-                                + masked);
-                if (status < 200 || status >= 300) {
-                    last = new IOException("HTTP " + status);
-                    continue;
-                }
-                JSONObject json = new JSONObject(text);
-                JSONObject data = json.optJSONObject("data");
-                org.json.JSONArray list = data == null ? null : data.optJSONArray("video_list");
-                if (list != null) {
-                    for (int i = 0; i < list.length(); i++) {
-                        JSONObject item = list.optJSONObject(i);
-                        if (item == null) continue;
-                        JSONObject info = item.optJSONObject("video_info");
-                        String url = info == null ? "" : info.optString("url", "");
-                        if (!url.isEmpty()) return url;
+        for (String plf : plfs) {
+            for (String endpoint : endpoints) {
+                HttpURLConnection connection = null;
+                try {
+                    JSONObject body =
+                            new JSONObject()
+                                    .put("fid", fid)
+                                    .put("resolutions", "low,normal,high,super,2k,4k")
+                                    .put("supports", "fmp4_av,m3u8,dolby_vision")
+                                    .put("plf", plf);
+                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                    connection.setRequestMethod("POST");
+                    connection.setConnectTimeout(12000);
+                    connection.setReadTimeout(15000);
+                    connection.setDoOutput(true);
+                    connection.setRequestProperty("Cookie", fresh == null ? "" : fresh);
+                    connection.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
+                    connection.setRequestProperty("Accept", "application/json, text/plain, */*");
+                    connection.setRequestProperty("User-Agent", UA_CHROME);
+                    connection.setRequestProperty("Referer", p.referer);
+                    java.io.OutputStream out = connection.getOutputStream();
+                    out.write(body.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    out.close();
+                    int status = connection.getResponseCode();
+                    String text =
+                            read(
+                                    status >= 200 && status < 400
+                                            ? connection.getInputStream()
+                                            : connection.getErrorStream());
+                    String bodyLog = text == null ? "" : text;
+                    if (bodyLog.length() > 800) bodyLog = bodyLog.substring(0, 800);
+                    bodyLog =
+                            bodyLog.replaceAll(
+                                    "\"(url|token|__puus|download_url)\"\\s*:\\s*\"[^\"]*\"",
+                                    "\"$1\":\"<redacted>\"");
+                    AppLog.i(
+                            "QuarkPlay",
+                            "project provider="
+                                    + p.key
+                                    + " fid="
+                                    + fid
+                                    + " plf="
+                                    + plf
+                                    + " api="
+                                    + android.net.Uri.parse(endpoint).getHost()
+                                    + " status="
+                                    + status
+                                    + " body="
+                                    + bodyLog);
+                    if (status < 200 || status >= 300) {
+                        last = new IOException("HTTP " + status);
+                        continue;
                     }
+                    JSONObject json = new JSONObject(text);
+                    JSONObject data = json.optJSONObject("data");
+                    org.json.JSONArray list = data == null ? null : data.optJSONArray("video_list");
+                    if (list != null) {
+                        for (int i = 0; i < list.length(); i++) {
+                            JSONObject item = list.optJSONObject(i);
+                            if (item == null) continue;
+                            JSONObject info = item.optJSONObject("video_info");
+                            String url = info == null ? "" : info.optString("url", "");
+                            if (!url.isEmpty()) {
+                                lastWorkingPlf = plf;
+                                AppLog.i(
+                                        "QuarkPlay",
+                                        "project ok plf="
+                                                + plf
+                                                + " urlHost="
+                                                + android.net.Uri.parse(url).getHost());
+                                return url;
+                            }
+                        }
+                    }
+                    last = new IOException("转码列表为空");
+                } catch (Throwable error) {
+                    last = new IOException(friendly(error));
+                } finally {
+                    if (connection != null) connection.disconnect();
                 }
-                last = new IOException("转码列表为空");
-            } catch (Throwable error) {
-                last = new IOException(friendly(error));
-            } finally {
-                if (connection != null) connection.disconnect();
             }
         }
         throw last == null ? new IOException("转码不可用") : last;

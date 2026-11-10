@@ -74,6 +74,11 @@ final class DownloadCenterScreen {
         AppLog.i("DownCenter", "tasks=" + tasks.size() + " done=" + history.size());
     }
 
+    private static boolean isAccountLimit(String error) {
+        return error != null
+                && (error.contains("23018") || error.contains("账号限制") || error.contains("非会员"));
+    }
+
     private static void addTaskRow(
             MainActivity a, LinearLayout container, final FileManagerCore.Info info) {
         LinearLayout card = a.vertical();
@@ -130,9 +135,26 @@ final class DownloadCenterScreen {
         if (info.state == 0) actions.addView(action(a, "暂停", () -> FileManagerCore.pause(info.id)));
         if (info.state == 1 || info.state == 2)
             actions.addView(action(a, "继续", () -> FileManagerCore.resume(info.id)));
-        if (info.state == 4) actions.addView(action(a, "重试", () -> FileManagerCore.retry(info.id)));
+        if (info.state == 4 && !isAccountLimit(info.error))
+            actions.addView(action(a, "重试", () -> FileManagerCore.retry(info.id)));
         if (info.state != 4)
             actions.addView(action(a, "取消", () -> FileManagerCore.cancel(info.id)));
+        else if (isAccountLimit(info.error))
+            actions.addView(
+                    action(
+                            a,
+                            "账号限制",
+                            () ->
+                                    new AppDialog.Builder(a)
+                                            .setTitle("无法重试")
+                                            .setMessage(
+                                                    "夸克非会员下载限制（code 23018）：该文件超过账号允许的下载大小，"
+                                                            + "开通会员或改在源里观看。")
+                                            .setPositiveButton("关闭", (d, i) -> {})
+                                            .setNeutralButton(
+                                                    "复制日志",
+                                                    (d, i) -> FileManagerScreen.copyQuarkLogs(a))
+                                            .show()));
         card.addView(actions);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = a.dp(8);
