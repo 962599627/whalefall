@@ -106,6 +106,23 @@ final class PlaybackController {
 
     static void failInPlaceSwitch(MainActivity a, String message) {
         if (a.playerChrome != null) a.playerChrome.setLoading(false);
+        final PlaybackLoading loading = a.playbackLoading;
+        if (loading != null) {
+            // 加载失败/超时：停止动画并显示「加载失败 + 重试」
+            final Cms.Site site = a.playbackControls == null ? null : a.playbackControls.site;
+            final Cms.Video video = a.playbackControls == null ? null : a.playbackControls.video;
+            final Cms.Line line = a.activeLine;
+            final Cms.Episode ep = a.activeEpisode;
+            AppLog.i("PlaybackController", "loading failed: " + message);
+            loading.showError(
+                    message,
+                    () -> {
+                        clearPlaybackLoading(a);
+                        if (site != null && video != null && ep != null)
+                            a.resolvePlayer(site, video, line, ep);
+                    });
+            return;
+        }
         if (a.current != null && a.current.player) {
             if (a.playStatus != null) a.playStatus.setText(message);
             showControls(a, true);
