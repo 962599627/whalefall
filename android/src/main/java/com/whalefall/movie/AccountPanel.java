@@ -314,6 +314,25 @@ final class AccountPanel {
             if (panRows == null) return;
             panRows.removeAllViews();
             for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES) {
+                // 夸克：原生直连优先（真实 API 验证），不再依赖插件登录态
+                if ("quark".equals(drive.key)) {
+                    boolean logged = QuarkDrive.hasCookie(a);
+                    String account = QuarkDrive.cachedAccount(a);
+                    String status =
+                            logged
+                                    ? "已登录（夸克原生"
+                                            + (account.isEmpty() ? "" : " · " + account)
+                                            + "）"
+                                    : "未登录 · App 内登录夸克（独立于插件）";
+                    addPanRow(
+                            drive,
+                            status,
+                            logged ? 0xff2ad47a : 0xffffb454,
+                            logged,
+                            logged ? "管理" : "App 内登录",
+                            () -> QuarkDrive.showPanel(a, () -> refresh(false)));
+                    continue;
+                }
                 PanLoginState pan = panStates.get(drive.key);
                 boolean logged = pan != null && pan.known();
                 String statusText = pan == null ? "由源管理 · 无法读取" : pan.detail;
@@ -321,70 +340,76 @@ final class AccountPanel {
                         pan == null || pan.state == PanLoginState.STATE_UNKNOWN
                                 ? 0xffffb454
                                 : 0xff2ad47a;
-                LinearLayout row = a.row();
-                row.setGravity(Gravity.CENTER_VERTICAL);
-                row.setPadding(a.dp(14), a.dp(10), a.dp(12), a.dp(10));
-                row.setMinimumHeight(a.dp(62));
-                row.setBackground(UiTokens.round(a, UiTokens.RADIUS_14, 0x14ffffff));
-                row.setFocusable(true);
-                row.setFocusableInTouchMode(a.isTvDevice());
-                row.setClickable(true);
-                FrameLayout badge = new FrameLayout(a);
-                badge.setBackground(
-                        UiTokens.round(a, UiTokens.RADIUS_12, alpha(drive.color, 0x2e)));
-                ImageView icon = new ImageView(a);
-                icon.setImageResource(UiIcon.res(UiIcon.CLOUD));
-                icon.setColorFilter(drive.color, android.graphics.PorterDuff.Mode.SRC_IN);
-                badge.addView(
-                        icon,
-                        new FrameLayout.LayoutParams(a.dp(22), a.dp(22), Gravity.CENTER));
-                row.addView(badge, new LinearLayout.LayoutParams(a.dp(38), a.dp(38)));
-                LinearLayout col = a.vertical();
-                col.setPadding(a.dp(10), 0, a.dp(8), 0);
-                TextView name = a.text(drive.alias, UiTokens.TYPE_BODY_SM + 1, UiTokens.TEXT_PRIMARY);
-                name.setIncludeFontPadding(false);
-                col.addView(name);
-                TextView sub =
-                        a.text(
-                                drive.provider + " · " + statusText,
-                                UiTokens.TYPE_MICRO,
-                                statusColor);
-                sub.setSingleLine(true);
-                sub.setEllipsize(TextUtils.TruncateAt.END);
-                LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
-                subLp.topMargin = a.dp(2);
-                col.addView(sub, subLp);
-                row.addView(col, new LinearLayout.LayoutParams(0, -2, 1f));
-                TextView action =
-                        a.text(
-                                logged ? "管理" : "去源面板 / 已登录?",
-                                11.5f,
-                                UiTokens.ACCENT_SOFT);
-                action.setTypeface(null, Typeface.BOLD);
-                action.setGravity(Gravity.CENTER);
-                action.setPadding(a.dp(12), 0, a.dp(12), 0);
-                action.setBackground(UiTokens.round(a, 999, 0x26ff8fb1, 0x4dffb3c8));
-                row.addView(action, new LinearLayout.LayoutParams(-2, a.dp(32)));
-                MobileDetailScreen.bindTouchFeedback(row);
-                row.setOnClickListener(
-                        v -> PanLoginGuide.show(a, site, drive.key, () -> refresh(false)));
-                row.setOnFocusChangeListener(
-                        (v, focused) ->
-                                FocusMotion.style(
-                                        a,
-                                        row,
-                                        focused,
-                                        0x14ffffff,
-                                        0x33ffb3c8,
-                                        UiTokens.RADIUS_14,
-                                        UiTokens.TEXT_PRIMARY,
-                                        UiTokens.TEXT_PRIMARY,
-                                        true,
-                                        1.02f));
-                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
-                rowLp.bottomMargin = a.dp(8);
-                panRows.addView(row, rowLp);
+                addPanRow(
+                        drive,
+                        statusText,
+                        statusColor,
+                        logged,
+                        logged ? "管理" : "去源面板 / 已登录?",
+                        () -> PanLoginGuide.show(a, site, drive.key, () -> refresh(false)));
             }
+        }
+
+        void addPanRow(
+                PanLoginGuide.Drive drive,
+                String statusText,
+                int statusColor,
+                boolean logged,
+                String actionLabel,
+                Runnable click) {
+            LinearLayout row = a.row();
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(a.dp(14), a.dp(10), a.dp(12), a.dp(10));
+            row.setMinimumHeight(a.dp(62));
+            row.setBackground(UiTokens.round(a, UiTokens.RADIUS_14, 0x14ffffff));
+            row.setFocusable(true);
+            row.setFocusableInTouchMode(a.isTvDevice());
+            row.setClickable(true);
+            FrameLayout badge = new FrameLayout(a);
+            badge.setBackground(UiTokens.round(a, UiTokens.RADIUS_12, alpha(drive.color, 0x2e)));
+            ImageView icon = new ImageView(a);
+            icon.setImageResource(UiIcon.res(UiIcon.CLOUD));
+            icon.setColorFilter(drive.color, android.graphics.PorterDuff.Mode.SRC_IN);
+            badge.addView(
+                    icon, new FrameLayout.LayoutParams(a.dp(22), a.dp(22), Gravity.CENTER));
+            row.addView(badge, new LinearLayout.LayoutParams(a.dp(38), a.dp(38)));
+            LinearLayout col = a.vertical();
+            col.setPadding(a.dp(10), 0, a.dp(8), 0);
+            TextView name = a.text(drive.alias, UiTokens.TYPE_BODY_SM + 1, UiTokens.TEXT_PRIMARY);
+            name.setIncludeFontPadding(false);
+            col.addView(name);
+            TextView sub =
+                    a.text(drive.provider + " · " + statusText, UiTokens.TYPE_MICRO, statusColor);
+            sub.setSingleLine(true);
+            sub.setEllipsize(TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
+            subLp.topMargin = a.dp(2);
+            col.addView(sub, subLp);
+            row.addView(col, new LinearLayout.LayoutParams(0, -2, 1f));
+            TextView action = a.text(actionLabel, 11.5f, UiTokens.ACCENT_SOFT);
+            action.setTypeface(null, Typeface.BOLD);
+            action.setGravity(Gravity.CENTER);
+            action.setPadding(a.dp(12), 0, a.dp(12), 0);
+            action.setBackground(UiTokens.round(a, 999, 0x26ff8fb1, 0x4dffb3c8));
+            row.addView(action, new LinearLayout.LayoutParams(-2, a.dp(32)));
+            MobileDetailScreen.bindTouchFeedback(row);
+            row.setOnClickListener(v -> click.run());
+            row.setOnFocusChangeListener(
+                    (v, focused) ->
+                            FocusMotion.style(
+                                    a,
+                                    row,
+                                    focused,
+                                    0x14ffffff,
+                                    0x33ffb3c8,
+                                    UiTokens.RADIUS_14,
+                                    UiTokens.TEXT_PRIMARY,
+                                    UiTokens.TEXT_PRIMARY,
+                                    true,
+                                    1.02f));
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+            rowLp.bottomMargin = a.dp(8);
+            panRows.addView(row, rowLp);
         }
 
         // ---------------- 功能列表 ----------------
@@ -612,6 +637,9 @@ final class AccountPanel {
             if (!available) {
                 state = STATE_DISABLED;
             } else if (!credentials.isEmpty()) {
+                state = STATE_LOCAL;
+            } else if (QuarkDrive.hasCookie(a)) {
+                // 原生直连的夸克登录优先于插件状态展示
                 state = STATE_LOCAL;
             } else if (sourceKnown > 0) {
                 state = STATE_SOURCE;
@@ -911,6 +939,12 @@ final class AccountPanel {
             }
             credentials = new ArrayList<>();
             accountName = "";
+            // 连夸克原生直连的凭据一起清除（独立模块，不走插件）
+            try {
+                QuarkDrive.clear(a);
+                QuarkDrive.clearWebViewCookies();
+            } catch (Throwable ignored) {
+            }
             if (dialog != null && dialog.isShowing()) refresh();
             a.toast(removed > 0 ? "已清除账号与凭据" : "未找到可清除的本机凭据");
         }

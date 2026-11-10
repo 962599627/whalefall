@@ -79,6 +79,11 @@ final class Prefs {
     /** 字体颜色自定义：TEXT_COLOR_CUSTOM 开启时 TEXT_COLOR（ARGB）生效。 */
     static final String TEXT_COLOR_CUSTOM = "text_color_custom";
     static final String TEXT_COLOR = "text_color";
+    // ---------------- 夸克原生登录（不入 KEYS，避免备份导出凭据） ----------------
+    static final String QUARK_COOKIE = "quark_native_cookie";
+    static final String QUARK_ACCOUNT = "quark_native_account";
+    static final String QUARK_TOTAL = "quark_native_total";
+    static final String QUARK_USED = "quark_native_used";
 
     static final String[] KEYS = {
         UI_SCALE_PERCENT,
