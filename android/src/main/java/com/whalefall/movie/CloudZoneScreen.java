@@ -337,8 +337,23 @@ final class CloudZoneScreen {
             final MainActivity a, final LinearLayout body, final Runnable onChanged) {
         TextView head = a.text("源插件登录（本机数据，可退出）", 14, UiTokens.ACCENT_SOFT);
         head.setTypeface(null, android.graphics.Typeface.BOLD);
-        head.setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(8));
-        body.addView(head);
+        head.setPadding(a.dp(16), a.dp(12), 0, a.dp(8));
+        LinearLayout headRow = a.row();
+        headRow.setGravity(Gravity.CENTER_VERTICAL);
+        headRow.setPadding(a.dp(16), a.dp(8), a.dp(16), 0);
+        headRow.addView(head, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView panelLogin = a.text("打开源面板登录", 11, 0xff0b1220);
+        panelLogin.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+        panelLogin.setBackground(UiTokens.round(a, 999, UiTokens.ACCENT));
+        panelLogin.setFocusable(true);
+        MobileDetailScreen.bindTouchFeedback(panelLogin);
+        panelLogin.setOnClickListener(
+                v -> {
+                    AppLog.i("SourceLogout", "open source panel login");
+                    new SettingsScreen(a).sourceAccountAction("LoginShow", null);
+                });
+        headRow.addView(panelLogin);
+        body.addView(headRow);
         for (final String drive : DRIVES) {
             final java.util.List<String> keys = sourceKeys(a, drive);
             LinearLayout row = a.row();
@@ -353,6 +368,20 @@ final class CloudZoneScreen {
                             11,
                             keys.isEmpty() ? MainActivity.MUTED : 0xff2ad47a);
             row.addView(state);
+            // 1.9.8：每行「登录」按钮 → 源面板（登录只能在那里完成）
+            TextView login = a.text("登录", 11.5f, 0xff0b1220);
+            login.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+            login.setBackground(UiTokens.round(a, 999, UiTokens.ACCENT));
+            login.setFocusable(true);
+            MobileDetailScreen.bindTouchFeedback(login);
+            login.setOnClickListener(
+                    v -> {
+                        AppLog.i("SourceLogout", "open source panel login drive=" + drive);
+                        new SettingsScreen(a).sourceAccountAction("LoginShow", null);
+                    });
+            LinearLayout.LayoutParams loginLp = new LinearLayout.LayoutParams(-2, -2);
+            loginLp.leftMargin = a.dp(8);
+            row.addView(login, loginLp);
             TextView exit =
                     a.text("退出源插件登录", 11.5f, keys.isEmpty() ? 0x66ffffff : 0xFFFFB3C8);
             exit.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
@@ -390,6 +419,28 @@ final class CloudZoneScreen {
             rowLp.topMargin = a.dp(6);
             body.addView(row, rowLp);
         }
+        boolean stale = false;
+        for (String drive : DRIVES) if (!sourceKeys(a, drive).isEmpty()) stale = true;
+        if (stale && System.currentTimeMillis() - lastLogoutAt < 8000) {
+            TextView again = a.text("插件可能仍缓存，点此再次刷新", 11.5f, UiTokens.ACCENT);
+            again.setGravity(Gravity.CENTER);
+            again.setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8));
+            again.setBackground(MobileDetailScreen.glassBg(a, 0x24ffffff, 0x33ffffff, 999));
+            again.setFocusable(true);
+            MobileDetailScreen.bindTouchFeedback(again);
+            again.setOnClickListener(
+                    v -> {
+                        reloadPlugin(a);
+                        AppLog.i("SourceLogout", "manual refresh");
+                        a.toast("已刷新");
+                        a.ui.postDelayed(() -> onChanged.run(), 200);
+                    });
+            LinearLayout.LayoutParams againLp = new LinearLayout.LayoutParams(-1, -2);
+            againLp.leftMargin = a.dp(16);
+            againLp.rightMargin = a.dp(16);
+            againLp.topMargin = a.dp(8);
+            body.addView(again, againLp);
+        }
         TextView all = a.text("清除全部源插件登录数据", 12, 0xffef4444);
         all.setGravity(Gravity.CENTER);
         all.setPadding(a.dp(12), a.dp(9), a.dp(12), a.dp(9));
@@ -418,8 +469,16 @@ final class CloudZoneScreen {
                                                 "SourceLogout",
                                                 "drive=all keys=" + allKeys + " removed=" + removed);
                                         reloadPlugin(a);
-                                        a.toast("已清除，源插件状态已刷新；如仍显示已登录请重启 App");
-                                        if (onChanged != null) onChanged.run();
+                                        lastLogoutAt = System.currentTimeMillis();
+                                        AppLog.i(
+                                                "SourceLogout",
+                                                "refresh drive=all keys=" + allKeys);
+                                        a.toast("已清除，正在刷新源插件状态…");
+                                        a.ui.postDelayed(
+                                                () -> {
+                                                    if (onChanged != null) onChanged.run();
+                                                },
+                                                200);
                                     })
                             .setNegativeButton("取消", null)
                             .show();
@@ -444,6 +503,8 @@ final class CloudZoneScreen {
         return out;
     }
 
+    private static long lastLogoutAt;
+
     static void sourceLogout(
             final MainActivity a,
             final String drive,
@@ -460,8 +521,10 @@ final class CloudZoneScreen {
                     "drive=" + drive + " remainingSpUtilsKeys=" + prefs.getAll().keySet());
         } catch (Throwable ignored) {
         }
-        a.toast("已清除，源插件状态已刷新；如仍显示已登录请重启 App");
-        if (onChanged != null) onChanged.run();
+        a.toast("已清除，正在刷新源插件状态…");
+        lastLogoutAt = System.currentTimeMillis();
+        AppLog.i("SourceLogout", "refresh drive=" + drive + " keys=" + keys);
+        if (onChanged != null) a.ui.postDelayed(() -> onChanged.run(), 200);
     }
 
     static int removeSourceKeys(MainActivity a, java.util.List<String> keys) {
