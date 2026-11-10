@@ -750,41 +750,52 @@ final class FileManagerCore {
         a.toast("正在解析播放地址…");
         a.worker.execute(
                 () -> {
+                    String url = null;
+                    String via = "";
+                    // 1.9.7：转码 m3u8 → 直链 → 下载后播放
                     try {
-                        // 1.9.1：跟随重定向拿最终直链；播放器 headers 带 Cookie/Referer/UA
-                        String url =
-                                QuarkUcApi.resolveUrl(
-                                        a, p, cookie, item.fid, item.shareFidToken);
-                        final Map<String, String> headers = new LinkedHashMap<>();
-                        headers.put("Cookie", cookie == null ? "" : cookie);
-                        headers.put("Referer", p.referer);
-                        headers.put("User-Agent", p.ua);
-                        AppLog.i("QuarkPlay", "play provider=" + p.key + " fid=" + item.fid + " url=ok");
-                        final String resolved = url;
-                        a.ui.post(
-                                () ->
-                                        syntheticPlay(
-                                                a,
-                                                "open_" + p.key,
-                                                p.name + "网盘（" + (fromSource ? "源插件" : "App 内") + "）",
-                                                resolved,
-                                                item.name,
-                                                headers));
+                        url = QuarkUcApi.playProjectUrl(a, p, cookie, item.fid);
+                        via = "transcode";
                     } catch (Throwable error) {
-                        AppLog.i(
-                                "QuarkPlay",
-                                "play failed provider="
-                                        + p.key
-                                        + " fid="
-                                        + item.fid
-                                        + " error="
-                                        + friendly(error));
+                        AppLog.i("QuarkPlay", "project failed error=" + friendly(error));
+                    }
+                    if (url == null || url.isEmpty()) {
+                        try {
+                            url =
+                                    QuarkUcApi.resolveUrl(
+                                            a, p, cookie, item.fid, item.shareFidToken);
+                            via = "direct";
+                        } catch (Throwable error) {
+                            AppLog.i("QuarkPlay", "direct failed error=" + friendly(error));
+                        }
+                    }
+                    final String playUrl = url;
+                    final String playVia = via;
+                    if (playUrl == null || playUrl.isEmpty()) {
+                        AppLog.i("QuarkPlay", "play fallback=download fid=" + item.fid);
                         a.ui.post(
                                 () -> {
-                                    a.toast("直链播放失败，改为下载后播放…");
+                                    a.toast("直链/转码均失败，改为下载后播放…");
                                     downloadThenPlay(a, p, cookie, item);
                                 });
+                        return;
                     }
+                    final Map<String, String> headers = new LinkedHashMap<>();
+                    headers.put("Cookie", cookie == null ? "" : cookie);
+                    headers.put("Referer", p.referer);
+                    headers.put("User-Agent", p.ua);
+                    AppLog.i(
+                            "QuarkPlay",
+                            "play provider=" + p.key + " fid=" + item.fid + " via=" + playVia);
+                    a.ui.post(
+                            () ->
+                                    syntheticPlay(
+                                            a,
+                                            "open_" + p.key,
+                                            p.name + "网盘（" + (fromSource ? "源插件" : "App 内") + "）",
+                                            playUrl,
+                                            item.name,
+                                            headers));
                 });
     }
 

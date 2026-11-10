@@ -468,7 +468,108 @@ final class QuarkUcApi {
                 }
             }
         }
+        // 1.9.7：再补 GET fids 变体（部分账号/分享目录只接受 GET）
+        for (String endpoint : endpoints) {
+            HttpURLConnection connection = null;
+            try {
+                String getUrl = endpoint + "&fids=" + java.net.URLEncoder.encode(fid, "UTF-8");
+                connection = (HttpURLConnection) new URL(getUrl).openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(12000);
+                connection.setReadTimeout(15000);
+                connection.setRequestProperty("Cookie", fresh == null ? "" : fresh);
+                connection.setRequestProperty("Accept", "application/json, text/plain, */*");
+                connection.setRequestProperty("User-Agent", UA_CHROME);
+                connection.setRequestProperty("Referer", p.referer);
+                int status = connection.getResponseCode();
+                String text =
+                        read(
+                                status >= 200 && status < 400
+                                        ? connection.getInputStream()
+                                        : connection.getErrorStream());
+                AppLog.i(
+                        "QuarkGet",
+                        "download-get status="
+                                + status
+                                + " host="
+                                + android.net.Uri.parse(endpoint).getHost());
+                if (status < 200 || status >= 300) {
+                    last =
+                            new IOException(
+                                    "HTTP "
+                                            + status
+                                            + (status == 400
+                                                    ? "：该文件可能受分享目录限制，暂不能下载；可尝试直接播放"
+                                                    : ""));
+                    continue;
+                }
+                JSONObject json = new JSONObject(text);
+                org.json.JSONArray data = json.optJSONArray("data");
+                if (data != null && data.length() > 0) {
+                    String url = data.optJSONObject(0).optString("download_url", "");
+                    if (!url.isEmpty()) return url;
+                }
+            } catch (Throwable error) {
+                last = new IOException(error.getClass().getSimpleName());
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }
         throw last == null ? new IOException("没有下载地址") : last;
+    }
+
+    /** 1.9.7：转码播放接口（m3u8），绕过下载风控。 */
+    static String playProjectUrl(MainActivity a, Provider p, String cookie, String fid)
+            throws Exception {
+        String fresh = a == null ? cookie : refreshCookie(a, p, cookie);
+        String endpoint = p.api + "/file/v2/play/project?pr=" + p.pr + "&fr=pc";
+        JSONObject body =
+                new JSONObject()
+                        .put("fid", fid)
+                        .put("resolutions", "low,normal,high,super,2k,4k")
+                        .put("supports", "fmp4_av,m3u8,dolby_vision");
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(endpoint).openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(12000);
+            connection.setReadTimeout(15000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Cookie", fresh == null ? "" : fresh);
+            connection.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
+            connection.setRequestProperty("Accept", "application/json, text/plain, */*");
+            connection.setRequestProperty("User-Agent", UA_CHROME);
+            connection.setRequestProperty("Referer", p.referer);
+            java.io.OutputStream out = connection.getOutputStream();
+            out.write(body.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            out.close();
+            int status = connection.getResponseCode();
+            String host = "";
+            try {
+                host = android.net.Uri.parse(endpoint).getHost();
+            } catch (Throwable ignored) {
+            }
+            AppLog.i("QuarkPlay", "project status=" + status + " urlHost=" + host);
+            if (status == 400 || status == 403 || status == 412)
+                throw new IOException("HTTP " + status);
+            if (status < 200 || status >= 300) throw new IOException("HTTP " + status);
+            String text = read(connection.getInputStream());
+            JSONObject json = new JSONObject(text);
+            JSONObject data = json.optJSONObject("data");
+            org.json.JSONArray list = data == null ? null : data.optJSONArray("video_list");
+            if (list != null) {
+                for (int i = 0; i < list.length(); i++) {
+                    JSONObject item = list.optJSONObject(i);
+                    if (item == null) continue;
+                    JSONObject info = item.optJSONObject("video_info");
+                    String url = info == null ? "" : info.optString("url", "");
+                    if (!url.isEmpty()) return url;
+                }
+            }
+            throw new IOException("转码列表为空");
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
     }
 
     static String[] uaVariants(Provider p) {

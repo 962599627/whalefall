@@ -659,14 +659,15 @@ final class FileManagerScreen {
         int cardW = Math.max(a.dp(100), (inner - gap * (cols - 1)) / cols);
         int thumbH = Math.round(cardW * 0.625f);
         int cardH = thumbH + a.dp(90);
+        int rows = (count + cols - 1) / cols;
         AppLog.i(
                 "FileMgr",
-                "grid w="
+                "grid avail="
                         + avail
                         + " cols="
                         + cols
-                        + " cardW="
-                        + cardW
+                        + " rows="
+                        + rows
                         + " cardH="
                         + cardH
                         + " margin="
@@ -675,12 +676,18 @@ final class FileManagerScreen {
         wrapper.setPadding(margin, 0, margin, a.dp(20));
         for (int i = 0; i < count; i += cols) {
             LinearLayout row = a.row();
-            for (int c = 0; c < cols && i + c < count; c++) {
-                View card = builder.build(i + c);
-                card.setTag("filemgr-card:" + (i + c));
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(cardW, cardH);
+            for (int c = 0; c < cols; c++) {
+                View cell;
+                if (i + c < count) {
+                    cell = builder.build(i + c);
+                    cell.setTag("filemgr-card:" + (i + c));
+                } else {
+                    cell = new View(a); // 行内占位，保证每行列宽一致
+                }
+                LinearLayout.LayoutParams lp =
+                        new LinearLayout.LayoutParams(0, cardH, 1f);
                 if (c > 0) lp.leftMargin = gap;
-                row.addView(card, lp);
+                row.addView(cell, lp);
             }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
             if (wrapper.getChildCount() > 0) lp.topMargin = gap;
@@ -790,6 +797,24 @@ final class FileManagerScreen {
         }
     }
 
+    private static boolean usableBitmap(android.graphics.Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled() || bitmap.getWidth() <= 0 || bitmap.getHeight() <= 0)
+            return false;
+        try {
+            int[][] points = {
+                {bitmap.getWidth() / 2, bitmap.getHeight() / 2},
+                {bitmap.getWidth() / 4, bitmap.getHeight() / 4},
+                {bitmap.getWidth() * 3 / 4, bitmap.getHeight() * 3 / 4}
+            };
+            for (int[] point : points) {
+                int pixel = bitmap.getPixel(point[0], point[1]);
+                if (android.graphics.Color.alpha(pixel) > 8) return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
     private void addThumb(
             LinearLayout card, int thumbH, final FileManagerCore.LocalEntry entry, String name) {
         FrameLayout thumb = new FrameLayout(a);
@@ -806,7 +831,7 @@ final class FileManagerScreen {
                 a.worker.execute(
                         () -> {
                             final android.graphics.Bitmap bitmap = ThumbCache.video(entry.file);
-                            if (bitmap != null)
+                            if (usableBitmap(bitmap))
                                 a.ui.post(
                                         () -> {
                                             if (image.getParent() != null) {
@@ -817,7 +842,7 @@ final class FileManagerScreen {
                         });
             } else {
                 android.graphics.Bitmap bitmap = ThumbCache.image(entry.file);
-                if (bitmap != null) {
+                if (usableBitmap(bitmap)) {
                     image.setImageBitmap(bitmap);
                     glyph.setVisibility(View.GONE);
                 }
