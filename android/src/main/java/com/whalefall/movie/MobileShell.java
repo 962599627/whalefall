@@ -2157,6 +2157,13 @@ final class MobileShell {
         final int anchorOffset =
                 anchorView == null ? 0 : anchorView.getTop() - homeRecyclerRef.getPaddingTop();
         homeSkipFilterAnim = false;
+        // 1.9.36 P1：toggle 后立即刷新 L2 标签与已展开的 L3 选中态
+        boolean optionsOpen = mobileOptionsVisible();
+        renderMobileFilterTags();
+        if (optionsOpen) {
+            hideMobileFilterOptions();
+            showMobileFilterOptions(def);
+        }
         if (homeFilterApply != null) homeFilterApply.run();
         if (lm != null && anchorPos >= 0)
             a.ui.postDelayed(

@@ -919,6 +919,10 @@ final class HomeScreen {
         final int scroll = a.scroll == null ? 0 : a.scroll.getScrollY();
         applyFilters();
         renderFilterTags();
+        if (filterOptionScroll != null && filterOptionScroll.getVisibility() == View.VISIBLE) {
+            hideFilterOptions();
+            showFilterOptions(def);
+        }
         a.ui.postDelayed(
                 () -> {
                     if (a.scroll != null) a.scroll.scrollTo(0, scroll);
