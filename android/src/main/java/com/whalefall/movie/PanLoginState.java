@@ -485,37 +485,85 @@ final class PanLoginState {
     // ---------------- Base64 支持（spUtils.quark_ck 等） ----------------
 
     static boolean looksBase64(String value) {
-        if (value == null) return false;
-        String v = value.trim();
+        String v = compactBase64(value);
+        if (v == null) return false;
         if (v.length() < 16 || v.length() > 65536) return false;
         if (!v.matches("[A-Za-z0-9+/=_-]+")) return false;
         int mod = v.length() % 4;
         return mod == 0 || mod == 2 || mod == 3;
     }
 
-    /** 标准 + URL-safe + 去 padding 兜底解码；非可打印文本返回 null。 */
-    static String decodeBase64(String value) {
-        if (!looksBase64(value)) return null;
-        String normalized = value.trim().replace('-', '+').replace('_', '/');
-        int mod = normalized.length() % 4;
+    /** 去掉空白/换行后再判 Base64（SharedPreferences 里可能带换行）。 */
+    static String compactBase64(String value) {
+        if (value == null) return null;
+        String v = value.replaceAll("\\s+", "");
+        return v.isEmpty() ? null : v;
+    }
+
+    /** 解码诊断结果：printable 百分比 + kind(cookie/json/text/binary) + cookie 前 6 字符。 */
+    static final class DecodeReport {
+        final String decoded;
+        final int printable;
+        final String kind;
+        final String head;
+
+        DecodeReport(String decoded, int printable, String kind, String head) {
+            this.decoded = decoded;
+            this.printable = printable;
+            this.kind = kind;
+            this.head = head;
+        }
+    }
+
+    /** 纯诊断：即使解码是二进制也返回报告（kind=binary），用于判断是否加密。 */
+    static DecodeReport inspectBase64(String value) {
+        String compact = compactBase64(value);
+        if (compact == null) return null;
+        if (compact.length() < 16 || compact.length() > 65536) return null;
+        if (!compact.matches("[A-Za-z0-9+/=_-]+")) return null;
+        int mod = compact.length() % 4;
+        if (!(mod == 0 || mod == 2 || mod == 3)) return null;
+        String normalized = compact.replace('-', '+').replace('_', '/');
         if (mod == 2) normalized += "==";
         else if (mod == 3) normalized += "=";
-        else if (mod == 1) return null;
+        byte[] bytes;
         try {
-            byte[] bytes = android.util.Base64.decode(normalized, android.util.Base64.DEFAULT);
-            if (bytes == null || bytes.length == 0 || bytes.length > 64 * 1024) return null;
-            String text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
-            if (text.isEmpty()) return null;
-            int printable = 0;
-            for (int i = 0; i < text.length(); i++) {
-                char c = text.charAt(i);
-                if (c >= 32 && c < 127) printable++;
-            }
-            if (printable * 100 / text.length() < 70) return null;
-            return text;
+            bytes = android.util.Base64.decode(normalized, android.util.Base64.DEFAULT);
         } catch (Throwable ignored) {
             return null;
         }
+        if (bytes == null || bytes.length == 0 || bytes.length > 64 * 1024) return null;
+        String text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        int printable = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c >= 32 && c < 127) printable++;
+        }
+        int percent = text.isEmpty() ? 0 : printable * 100 / text.length();
+        String kind;
+        if (percent < 70) {
+            kind = "binary";
+        } else {
+            String lower = text.toLowerCase(Locale.ROOT);
+            String trim = text.trim();
+            if ((lower.contains("=") && lower.contains(";")) || lower.contains("kps=")) {
+                kind = "cookie";
+            } else if (trim.startsWith("{") || trim.startsWith("[")) {
+                kind = "json";
+            } else {
+                kind = "text";
+            }
+        }
+        String head = null;
+        if ("cookie".equals(kind) && text.length() >= 6) head = text.substring(0, 6);
+        return new DecodeReport(text, percent, kind, head);
+    }
+
+    /** 标准 + URL-safe + 去 padding 兜底解码；非可打印文本返回 null（检测路径用）。 */
+    static String decodeBase64(String value) {
+        DecodeReport report = inspectBase64(value);
+        if (report == null || report.printable < 70) return null;
+        return report.decoded;
     }
 
     /** 解码后的内容必须是 cookie 形态或强 token，设备 ID/纯状态文本不算登录。 */
@@ -1179,30 +1227,36 @@ final class PanLoginState {
                                         + (base64 ? "yes" : "no"));
                         meta++;
                     }
-                    // Base64 解码验证（打印命中网盘/是否命中，不打印内容）
+                    // Base64 解码诊断（每次都打；binary 也打，用于判断是否加密）
                     int decodeShown = 0;
                     for (Map.Entry<String, ?> entry : values.entrySet()) {
-                        if (decodeShown >= 20) break;
+                        if (decodeShown >= 30) break;
                         Object value = entry.getValue();
                         if (!(value instanceof String)) continue;
-                        String raw = (String) value;
-                        if (!looksBase64(raw)) continue;
-                        String decoded = decodeBase64(raw);
-                        if (decoded == null) continue;
-                        List<String> drives = decodedDrives(decoded);
+                        DecodeReport report = inspectBase64((String) value);
+                        if (report == null) continue;
                         decodeShown++;
-                        AppLog.i(
-                                "PanLogin",
-                                "diagnose decode "
-                                        + prefName
-                                        + "."
-                                        + entry.getKey()
-                                        + " b64=yes lenDecoded="
-                                        + decoded.length()
-                                        + " drive="
-                                        + joinAll(drives)
-                                        + " matched="
-                                        + (drives.isEmpty() ? "no" : "yes"));
+                        List<String> drives =
+                                "binary".equals(report.kind)
+                                        ? new ArrayList<String>()
+                                        : decodedDrives(report.decoded);
+                        StringBuilder line =
+                                new StringBuilder("diagnose decode ")
+                                        .append(prefName)
+                                        .append('.')
+                                        .append(entry.getKey())
+                                        .append(" b64=yes lenDecoded=")
+                                        .append(report.decoded == null ? 0 : report.decoded.length())
+                                        .append(" printable=")
+                                        .append(report.printable)
+                                        .append("% kind=")
+                                        .append(report.kind);
+                        if (report.head != null) line.append(" head=").append(report.head);
+                        line.append(" drive=")
+                                .append(joinAll(drives))
+                                .append(" matched=")
+                                .append(drives.isEmpty() ? "no" : "yes");
+                        AppLog.i("PanLogin", line.toString());
                     }
                 }
             } catch (Throwable ignored) {
