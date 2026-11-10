@@ -521,6 +521,9 @@ final class SettingsScreen {
                     a.applySafeModeVisual();
                     a.toast(checked ? "已开启安全模式（壁纸与加载动效已禁用）" : "已关闭安全模式（已恢复）");
                     a.refresh();
+                    // 1.8.2：refresh 会重建当前页，下一帧再确保壁纸层补回
+                    a.ui.postDelayed(a::applySafeModeVisual, 120);
+                    a.ui.postDelayed(a::applySafeModeVisual, 400);
                 });
         safeRow.addView(safeSwitch, new LinearLayout.LayoutParams(-2, a.dp(44)));
         a.body.addView(safeRow, new LinearLayout.LayoutParams(-1, -2));

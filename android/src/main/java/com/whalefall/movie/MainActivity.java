@@ -1239,25 +1239,62 @@ public final class MainActivity extends Activity {
 
     /** 设置里手动切换安全模式后立即刷新壁纸/动效（无需重启）。 */
     void applySafeModeVisual() {
-        if (root == null) return;
-        if (!SafeMode.enabled(this)) {
-            applyWallpaper(root);
-            AppLog.i("SafeMode", "visual restored (wallpaper re-applied)");
+        final FrameLayout target = root;
+        if (target == null) {
+            AppLog.i("SafeMode", "visual restore pending root=null");
+            ui.post(
+                    () -> {
+                        if (root != null) applySafeModeVisual();
+                    });
             return;
         }
-        for (int i = root.getChildCount() - 1; i >= 0; i--) {
-            View child = root.getChildAt(i);
-            Object tag = child.getTag();
-            if (BACKDROP_TAG.equals(tag) || WALLPAPER_TAG.equals(tag)) root.removeViewAt(i);
-        }
-        if (videoWallpaper != null) {
-            try {
-                videoWallpaper.release();
-            } catch (Throwable ignored) {
+        if (SafeMode.enabled(this)) {
+            for (int i = target.getChildCount() - 1; i >= 0; i--) {
+                View child = target.getChildAt(i);
+                Object tag = child.getTag();
+                if (BACKDROP_TAG.equals(tag) || WALLPAPER_TAG.equals(tag))
+                    target.removeViewAt(i);
             }
-            videoWallpaper = null;
+            if (videoWallpaper != null) {
+                try {
+                    videoWallpaper.release();
+                } catch (Throwable ignored) {
+                }
+                videoWallpaper = null;
+            }
+            AppLog.i("SafeMode", "visual applied root=" + System.identityHashCode(target));
+            return;
         }
-        AppLog.i("SafeMode", "visual applied (wallpaper removed)");
+        // 1.8.2：关闭安全模式 → 强制重建壁纸层（静态/动态都重建），并下一帧再补一次
+        lastWallpaperLog = "";
+        try {
+            if (videoWallpaper != null) videoWallpaper.release();
+        } catch (Throwable ignored) {
+        }
+        videoWallpaper = null;
+        for (int i = target.getChildCount() - 1; i >= 0; i--) {
+            View child = target.getChildAt(i);
+            Object tag = child.getTag();
+            if (WALLPAPER_TAG.equals(tag) || BACKDROP_TAG.equals(tag))
+                target.removeViewAt(i);
+        }
+        applyWallpaper(target);
+        ui.post(
+                () -> {
+                    if (root != null) applyWallpaper(root);
+                });
+        boolean staticOn = prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false);
+        boolean videoOn = videoWallpaperEnabled();
+        AppLog.i(
+                "SafeMode",
+                "visual restore root="
+                        + System.identityHashCode(target)
+                        + " static="
+                        + staticOn
+                        + " video="
+                        + videoOn
+                        + " wallpaper="
+                        + ((staticOn || videoOn) ? "ok" : "empty"));
     }
 
     void renderPage(String title, String eyebrow, boolean navigation) {

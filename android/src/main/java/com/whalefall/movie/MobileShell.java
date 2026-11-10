@@ -4180,6 +4180,9 @@ final class MobileShell {
                     SafeMode.set(a, checked);
                     a.applySafeModeVisual();
                     a.toast(checked ? "已开启安全模式（壁纸与加载动效已禁用）" : "已关闭安全模式（已恢复）");
+                    // 1.8.2：下一帧再补一次，覆盖页面重建/返回首页的时序
+                    a.ui.postDelayed(a::applySafeModeVisual, 120);
+                    a.ui.postDelayed(a::applySafeModeVisual, 400);
                 });
         safeRow.addView(safeSwitch, new LinearLayout.LayoutParams(-2, a.dp(44)));
         LinearLayout.LayoutParams safeRowLp = new LinearLayout.LayoutParams(-1, -2);
