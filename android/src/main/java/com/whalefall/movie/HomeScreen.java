@@ -868,11 +868,11 @@ final class HomeScreen {
                         label,
                         "home-tab:" + index,
                         () -> {
-                            // 1.8.20：云盘 tab → 上游 netdisk_sheet 移植页（扫码与账号配置）
+                            // 1.8.28：云盘 tab → 我们的玻璃 UI 管理源插件登录
                             boolean cloud = MobileShell.isCloudConfigCategory(label, id);
                             AppLog.i(
                                     "CloudConfig",
-                                    "homeTab -> netdisk sheet label="
+                                    "homeTab -> SourceCloudConfigScreen label="
                                             + label
                                             + " id="
                                             + id
@@ -880,7 +880,7 @@ final class HomeScreen {
                                             + cloud);
                             if (cloud) {
                                 hideCloudHomeInline();
-                                NetdiskSheetScreen.show(a);
+                                SourceCloudConfigScreen.show(a);
                                 return;
                             }
                             hideCloudHomeInline();

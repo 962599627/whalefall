@@ -219,7 +219,20 @@ final class NetdiskQrLogin {
             return;
         }
         if (ok) a.toast(drive + "登录验证通过");
-        else a.notice(drive + "登录验证失败：" + (error == null ? "" : error));
+        else {
+            String detail = error == null ? "" : error;
+            String http = "";
+            int at = detail.indexOf("HTTP ");
+            if (at >= 0) {
+                String tail = detail.substring(at + 5).trim();
+                int space = tail.indexOf(' ');
+                http = space > 0 ? tail.substring(0, space) : tail;
+            }
+            a.notice(
+                    http.isEmpty()
+                            ? drive + "登录信息验证失败，可重新扫码"
+                            : drive + "登录信息验证失败（HTTP " + http + "），可重新扫码");
+        }
         if (onChanged != null) onChanged.run();
     }
 
@@ -344,6 +357,8 @@ final class NetdiskQrLogin {
 
     private static final class QrSession {
         String token = "", content = "", extra = "";
+        /** 1.8.29：二维码 token 与服务票据分开保存，避免把 service_ticket 当 token。 */
+        String qrToken = "", st = "";
     }
 
     private static QrSession generate(String drive) throws Exception {
@@ -355,6 +370,7 @@ final class NetdiskQrLogin {
                         json(get("https://uop.quark.cn/cas/ajax/getTokenForQrcodeLogin"
                                 + "?client_id=532&v=1.2&request_id=" + ts, ""));
                 s.token = path(map, "data", "members", "token");
+                s.qrToken = s.token;
                 s.content =
                         "https://su.quark.cn/4_eMHBJ?token=" + s.token
                                 + "&client_id=532&ssb=weblogin&uc_param_str=&uc_biz_str="
@@ -366,6 +382,7 @@ final class NetdiskQrLogin {
                         json(get("https://api.open.uc.cn/cas/ajax/getTokenForQrcodeLogin"
                                 + "?client_id=381&v=1.2&request_id=" + ts, ""));
                 s.token = path(map, "data", "members", "token");
+                s.qrToken = s.token;
                 s.content =
                         "https://su.uc.cn/1_n0ZCv?uc_param_str="
                                 + "dsdnfrpfbivesscpgimibtbmnijblauputogpintnwktprchmt"
@@ -407,10 +424,11 @@ final class NetdiskQrLogin {
                                         + "?client_id=532&v=1.2&token="
                                 : "https://api.open.uc.cn/cas/ajax/getServiceTicketByQrcodeToken"
                                         + "?client_id=381&v=1.2&token=";
-                JSONObject map = json(get(base + s.token + "&request_id=" + System.currentTimeMillis(), ""));
+                JSONObject map = json(get(base + s.qrToken + "&request_id=" + System.currentTimeMillis(), ""));
                 int status = map.optInt("status", 0);
                 if (status == 2000000) {
-                    s.token = path(map, "data", "members", "service_ticket");
+                    // 1.8.29：service_ticket 存到 st，保留 qrToken 供 account/info 使用
+                    s.st = path(map, "data", "members", "service_ticket");
                     return 2;
                 }
                 if (status == 50004002) return 3;
@@ -459,11 +477,46 @@ final class NetdiskQrLogin {
 
     private static void saveCredential(MainActivity a, String drive, QrSession s) {
         switch (drive) {
-            case QUARK:
-                QuarkUcApi.saveCookie(a, QuarkUcApi.QUARK, "quark_st=" + s.token + "; token=" + s.token);
+            case QUARK: {
+                // 1.8.29：上游做法：quark_st=<st>; token=<qrToken> 请求 account/info，抓 Set-Cookie
+                String fallback = "quark_st=" + s.st + "; token=" + s.qrToken;
+                String cookie = fallback;
+                boolean setCookie = false;
+                try {
+                    String[] result =
+                            getCapture(
+                                    "https://pan.quark.cn/account/info?st="
+                                            + java.net.URLEncoder.encode(s.st, "UTF-8")
+                                            + "&lw=scan",
+                                    fallback);
+                    if (result[1] != null && !result[1].isEmpty()) {
+                        cookie = result[1];
+                        setCookie = true;
+                    }
+                } catch (Throwable ignored) {
+                }
+                AppLog.i(
+                        "NetdiskQr",
+                        "quark stLen="
+                                + s.st.length()
+                                + " qrTokenLen="
+                                + s.qrToken.length()
+                                + " setCookie="
+                                + (setCookie ? "yes" : "no")
+                                + " cookieLen="
+                                + cookie.length());
+                QuarkUcApi.saveCookie(a, QuarkUcApi.QUARK, cookie);
                 break;
+            }
             case UC:
-                QuarkUcApi.saveCookie(a, QuarkUcApi.UC, "uc_st=" + s.token + "; token=" + s.token);
+                // UC 上游不抓 Set-Cookie，但 token 必须是 qrToken，不能是 service_ticket
+                QuarkUcApi.saveCookie(
+                        a,
+                        QuarkUcApi.UC,
+                        "uc_st=" + s.st + "; token=" + s.qrToken);
+                AppLog.i(
+                        "NetdiskQr",
+                        "uc stLen=" + s.st.length() + " qrTokenLen=" + s.qrToken.length());
                 break;
             case BAIDU:
                 a.prefs.edit().putString("baidu_open_cookie", "BDUSS=" + s.token)
@@ -475,6 +528,55 @@ final class NetdiskQrLogin {
                 break;
         }
         AppLog.i("NetdiskQr", "credential saved drive=" + drive);
+    }
+
+    /** GET 并返回 {body, set-cookie}（1.8.29：夸克登录需从 account/info 的 Set-Cookie 取真实 Cookie）。 */
+    private static String[] getCapture(String url, String cookie) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        try {
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(12000);
+            connection.setRequestProperty(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                            + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            connection.setRequestProperty("Accept", "application/json, text/plain, */*");
+            if (cookie != null && !cookie.isEmpty())
+                connection.setRequestProperty("Cookie", cookie);
+            int status = connection.getResponseCode();
+            InputStream input =
+                    status >= 200 && status < 400
+                            ? connection.getInputStream()
+                            : connection.getErrorStream();
+            String text = read(input);
+            return new String[] {text, joinSetCookie(connection)};
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private static String joinSetCookie(HttpURLConnection connection) {
+        try {
+            java.util.List<String> values = new java.util.ArrayList<>();
+            for (java.util.Map.Entry<String, java.util.List<String>> entry :
+                    connection.getHeaderFields().entrySet()) {
+                if (entry.getKey() != null && "set-cookie".equalsIgnoreCase(entry.getKey()))
+                    values.addAll(entry.getValue());
+            }
+            StringBuilder out = new StringBuilder();
+            for (String value : values) {
+                if (value == null) continue;
+                String pair = value.split(";", 2)[0];
+                if (pair.contains("=")) {
+                    if (out.length() > 0) out.append("; ");
+                    out.append(pair);
+                }
+            }
+            return out.toString();
+        } catch (Throwable ignored) {
+            return "";
+        }
     }
 
     static String aliAccessToken(String raw) {

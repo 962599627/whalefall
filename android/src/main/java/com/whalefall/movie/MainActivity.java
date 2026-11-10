@@ -1600,8 +1600,10 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (tvPlayer != null && tvPlayer.back()) return;
-        // 1.8.25：云盘扫码页不直接退出；TV 回 TV 首页，手机回片库 tab
-        if (body != null && "netdisk-sheet".equals(body.getTag())) {
+        // 1.8.25/1.8.28：云盘相关独立页不直接退出；TV 回 TV 首页，手机回片库 tab
+        if (body != null
+                && ("netdisk-sheet".equals(body.getTag())
+                        || "source-cloud-config".equals(body.getTag()))) {
             if (isTvDevice()) {
                 current = new MainActivity.Screen(this::home);
                 current.home = true;

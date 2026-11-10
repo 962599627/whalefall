@@ -320,7 +320,7 @@ final class CloudZoneScreen {
 
     // ---------------- 源插件登录（本机 spUtils，可退出） ----------------
 
-    private static void addSourceSection(
+    static void addSourceSection(
             final MainActivity a, final LinearLayout body, final Runnable onChanged) {
         TextView head = a.text("源插件登录（本机数据，可退出）", 14, UiTokens.ACCENT_SOFT);
         head.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -431,7 +431,7 @@ final class CloudZoneScreen {
         return out;
     }
 
-    private static void sourceLogout(
+    static void sourceLogout(
             final MainActivity a,
             final String drive,
             final java.util.List<String> keys,
@@ -451,7 +451,7 @@ final class CloudZoneScreen {
         if (onChanged != null) onChanged.run();
     }
 
-    private static int removeSourceKeys(MainActivity a, java.util.List<String> keys) {
+    static int removeSourceKeys(MainActivity a, java.util.List<String> keys) {
         int removed = 0;
         try {
             android.content.SharedPreferences prefs =
