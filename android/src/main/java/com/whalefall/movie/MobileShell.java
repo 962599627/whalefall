@@ -4601,6 +4601,21 @@ final class MobileShell {
                             a.toast(!cspEnabled ? "已开启扩展片源支持" : "已关闭扩展片源支持");
                         });
                 a.gap(body, 12);
+                addSettingCard(
+                        body,
+                        1,
+                        "聚合搜索（跨源合并）",
+                        a.prefs.getBoolean("search_aggregate_enabled", true)
+                                ? "已开启：跨源按标题合并，显示 N 个来源与排序"
+                                : "已关闭：按来源分组显示，不跨源合并",
+                        () -> {
+                            boolean next = !a.prefs.getBoolean("search_aggregate_enabled", true);
+                            a.prefs.edit().putBoolean("search_aggregate_enabled", next).apply();
+                            AppLog.i("SearchAgg", "aggregate=" + (next ? "on" : "off"));
+                            refreshInPlace.run();
+                            a.toast(next ? "已开启聚合搜索" : "已关闭聚合搜索（按来源分组）");
+                        });
+                a.gap(body, 12);
                 addSectionHeader(body, "文件与存储");
                 addSettingCard(
                         body,

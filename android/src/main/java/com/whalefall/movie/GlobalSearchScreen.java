@@ -64,6 +64,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
     int sortMode; // 0来源数 1可播优先 2相关度
     LinearLayout statusChips, sortRow;
     TextView mergeHint;
+    private String lastAggregateMode = "";
     boolean mergedLogged;
 
     static String staticSubmitted = "";
@@ -1153,6 +1154,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
             resultBody.addView(sortRow, 0);
         }
         updateSortLabels();
+        boolean aggregate = aggregateEnabled();
         if (mergeHint == null) {
             mergeHint =
                     a.text(
@@ -1164,6 +1166,14 @@ public final class GlobalSearchScreen implements AutoCloseable {
             mergeHint.setPadding(0, 0, 0, a.dp(4));
             resultBody.addView(mergeHint, Math.min(1, resultBody.getChildCount()));
         }
+        mergeHint.setVisibility(View.VISIBLE);
+        mergeHint.setText(
+                aggregate
+                        ? (a.isTvDevice()
+                                ? "OK 进详情 · 长按 OK（或下方「切换来源」）选来源"
+                                : "长按卡片或点「切换来源」可切换来源")
+                        : "聚合已关闭：按来源分组显示，可在设置开启「聚合搜索」");
+        if (sortRow != null) sortRow.setVisibility(aggregate ? View.VISIBLE : View.GONE);
         if (statusChips == null) {
             statusChips = a.row();
             statusChips.setPadding(0, 0, 0, a.dp(6));
@@ -1254,77 +1264,86 @@ public final class GlobalSearchScreen implements AutoCloseable {
         if (resultGrid == null) return;
         renderFilters();
         ensureMergeControls();
+        String mode = aggregateEnabled() ? "on" : "off";
+        if (!mode.equals(lastAggregateMode)) {
+            lastAggregateMode = mode;
+            AppLog.i("SearchAgg", "aggregate=" + mode);
+        }
         renderPasses++;
         int available = 0, added = 0;
         boolean remaining = false;
-        if (activeFilter.isEmpty()) {
+        boolean aggregate = aggregateEnabled();
+        if (activeFilter.isEmpty() && aggregate) {
             // 1.9.27：全部视图用跨源合并去重后的列表
             List<Merged> mergedList = buildMerged();
-            for (int i = 0; i < mergedList.size() && available < 120; i++) {
-                available++;
-                if (available > shownLimit) continue;
-                Merged merged = mergedList.get(i);
+            int[] state = {0, 0, 0};
+            for (Merged merged : mergedList) {
                 String key = "merged:" + merged.norm;
-                if (displayed.contains(key)) continue;
-                if (added >= 4) {
-                    remaining = true;
-                    continue;
-                }
-                if (displayed.size() % columns == 0) newResultRow();
                 LinearLayout card = posterCards.get(key);
                 if (card == null) {
                     card = makeMergedCard(merged);
                     posterCards.put(key, card);
                 }
-                if (card.getParent() instanceof ViewGroup)
-                    ((ViewGroup) card.getParent()).removeView(card);
-                int column = displayed.size() % columns;
-                lastRow.removeViewAt(column);
-                LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, -2, 1);
-                cell.setMargins(a.dp(3), a.dp(3), a.dp(8), a.dp(13));
-                lastRow.addView(card, column, cell);
-                displayed.add(key);
-                added++;
-                if (focusNewResults) {
-                    card.requestFocus();
-                    focusNewResults = false;
-                }
+                placeResult(key, card, state);
+                if (state[2] == 1 || state[0] >= 120) break;
             }
+            available = state[0];
+            added = state[1];
+            remaining = state[2] == 1;
+        } else if (activeFilter.isEmpty()) {
+            // 1.9.29：聚合关闭 → 按来源分组逐源展示
+            int[] state = {0, 0, 0};
+            for (SourceResult source : results.values()) {
+                if (source.videos == null || source.videos.isEmpty()) continue;
+                // 先补齐当前行，再插入来源标题
+                padCurrentRow();
+                TextView header =
+                        a.text(
+                                clean(source.site.name)
+                                        + " · "
+                                        + source.videos.size()
+                                        + " 条",
+                                13,
+                                UiTokens.ACCENT_SOFT);
+                header.setPadding(a.dp(4), a.dp(10), a.dp(4), a.dp(4));
+                resultGrid.addView(header, new LinearLayout.LayoutParams(-1, -2));
+                lastRow = null;
+                for (int i = 0; i < Math.min(24, source.videos.size()); i++) {
+                    Cms.Video video = source.videos.get(i);
+                    String key = source.site.key + ":" + video.id;
+                    LinearLayout card = posterCards.get(key);
+                    if (card == null) {
+                        card = makeCard(source, video);
+                        posterCards.put(key, card);
+                    }
+                    placeResult(key, card, state);
+                    if (state[2] == 1 || state[0] >= 120) break;
+                }
+                if (state[2] == 1 || state[0] >= 120) break;
+            }
+            available = state[0];
+            added = state[1];
+            remaining = state[2] == 1;
         } else {
+            int[] state = {0, 0, 0};
             for (SourceResult source : results.values())
                 if (source.site.key.equals(activeFilter))
                     for (int i = 0;
-                            i < Math.min(24, source.videos.size()) && available < 120;
+                            i < Math.min(24, source.videos.size()) && state[0] < 120;
                             i++) {
-                        available++;
-                        if (available > shownLimit) continue;
                         Cms.Video video = source.videos.get(i);
                         String key = source.site.key + ":" + video.id;
-                        if (displayed.contains(key)) continue;
-                        if (added >= 4) {
-                            remaining = true;
-                            continue;
-                        }
-                        if (displayed.size() % columns == 0) newResultRow();
                         LinearLayout card = posterCards.get(key);
                         if (card == null) {
                             card = makeCard(source, video);
                             posterCards.put(key, card);
                         }
-                        if (card.getParent() instanceof ViewGroup)
-                            ((ViewGroup) card.getParent()).removeView(card);
-                        int column = displayed.size() % columns;
-                        lastRow.removeViewAt(column);
-                        LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, -2, 1);
-                        cell.setMargins(a.dp(3), a.dp(3), a.dp(8), a.dp(13));
-                        lastRow.addView(card, column, cell);
-                        displayed.add(key);
-                        added++;
-                        if (focusNewResults) {
-                            card.requestFocus();
-                            focusNewResults = false;
-                        }
+                        placeResult(key, card, state);
+                        if (state[2] == 1 || state[0] >= 120) break;
                     }
+            available = state[0];
+            added = state[1];
+            remaining = state[2] == 1;
         }
         emptyResult.setVisibility(displayed.isEmpty() ? View.VISIBLE : View.GONE);
         if (displayed.isEmpty()) {
@@ -1366,6 +1385,41 @@ public final class GlobalSearchScreen implements AutoCloseable {
                     };
             a.ui.postDelayed(pendingRender, 16);
         }
+    }
+
+    boolean aggregateEnabled() {
+        return a.prefs.getBoolean("search_aggregate_enabled", true);
+    }
+
+    /** 1.9.29：统一卡片落位（合并/按源分组/单源三模式共用）。state = {available, added, remaining}。 */
+    void placeResult(String key, LinearLayout card, int[] state) {
+        state[0]++;
+        if (state[0] > shownLimit) return;
+        if (displayed.contains(key)) return;
+        if (state[1] >= 4) {
+            state[2] = 1;
+            return;
+        }
+        if (lastRow == null || displayed.size() % columns == 0) newResultRow();
+        if (card.getParent() instanceof ViewGroup)
+            ((ViewGroup) card.getParent()).removeView(card);
+        int column = displayed.size() % columns;
+        lastRow.removeViewAt(column);
+        LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, -2, 1);
+        cell.setMargins(a.dp(3), a.dp(3), a.dp(8), a.dp(13));
+        lastRow.addView(card, column, cell);
+        displayed.add(key);
+        state[1]++;
+        if (focusNewResults) {
+            card.requestFocus();
+            focusNewResults = false;
+        }
+    }
+
+    /** 为「按来源分组」模式补齐列占位，保证每组从新行开始。 */
+    void padCurrentRow() {
+        if (lastRow == null) return;
+        while (displayed.size() % columns != 0) displayed.add("__group_pad:" + displayed.size());
     }
 
     void newResultRow() {
