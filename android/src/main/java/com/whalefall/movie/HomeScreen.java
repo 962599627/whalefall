@@ -46,6 +46,8 @@ final class HomeScreen {
     int filterAnimSeq;
     /** 1.9.43：远程单选提示只弹一次。 */
     boolean remoteSingleToastShown;
+    /** 1.9.45：组合筛选不支持提示只弹一次。 */
+    boolean filterUnsupportedToastShown;
     android.animation.ValueAnimator filterHeightAnim;
     /** 1.8.12 云盘配置原地容器（首页分类栏下方，默认隐藏）。 */
     LinearLayout cloudInline;
@@ -1721,6 +1723,16 @@ final class HomeScreen {
                                         + remoteRequest
                                         + " filters="
                                         + remoteFilters);
+                        if (remoteRequest && received == 0 && !filterUnsupportedToastShown) {
+                            filterUnsupportedToastShown = true;
+                            a.ui.post(() -> a.toast("该源不支持该组合筛选，已显示未筛选内容"));
+                            AppLog.i(
+                                    "Filter",
+                                    "unsupported combo site="
+                                            + (site == null ? "null" : site.key)
+                                            + " filters="
+                                            + remoteFilters);
+                        }
                         List<Cms.Video> matching =
                                 remoteRequest
                                         ? new java.util.ArrayList<>(list.videos)

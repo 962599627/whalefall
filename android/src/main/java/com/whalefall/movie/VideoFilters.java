@@ -36,6 +36,16 @@ final class VideoFilters {
         }
     }
 
+    /** 1.9.45：筛选参数的 key 以源 schema 为准，仅禁止会影响路由/鉴权的保留参数。 */
+    static boolean requestKeyAllowed(String key) {
+        if (key == null || key.isEmpty() || key.length() > 64) return false;
+        String lower = key.toLowerCase(Locale.ROOT);
+        return !Arrays.asList(
+                        "ac", "at", "ids", "id", "wd", "pg", "t", "ext", "extend", "key",
+                        "token", "auth", "sign", "url", "api", "path")
+                .contains(lower);
+    }
+
     static boolean allowedKey(String key) {
         return Arrays.asList("class", "genre", "area", "region", "country", "year").contains(key);
     }

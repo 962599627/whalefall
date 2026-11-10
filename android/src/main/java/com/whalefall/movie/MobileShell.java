@@ -107,6 +107,8 @@ final class MobileShell {
     long homeLoadingShownAt;
     /** 1.9.43：远程单选提示只弹一次。 */
     private boolean remoteSingleToastShown;
+    /** 1.9.45：组合筛选不支持提示只弹一次。 */
+    private boolean filterUnsupportedToastShown;
 
     void showHomeLoading(String reason) {
         if (homeLoadingVisible) return;
@@ -1697,6 +1699,24 @@ final class MobileShell {
                                                     + usedRemoteVariants[0]
                                                     + " filters="
                                                     + requestFilters);
+                                    if (usedRemoteVariants[0] && list.videos.isEmpty()) {
+                                        // 1.9.45：组合筛选无结果时提示（引擎已回退无筛选请求）
+                                        if (!filterUnsupportedToastShown) {
+                                            filterUnsupportedToastShown = true;
+                                            a.ui.post(
+                                                    () ->
+                                                            a.toast(
+                                                                    "该源不支持该组合筛选，已显示未筛选内容"));
+                                        }
+                                        AppLog.i(
+                                                "Filter",
+                                                "unsupported combo site="
+                                                        + (siteSnapshot == null
+                                                                ? "null"
+                                                                : siteSnapshot.key)
+                                                        + " filters="
+                                                        + requestFilters);
+                                    }
                                     List<Cms.Video> filtered =
                                             usedRemoteVariants[0]
                                                     ? new java.util.ArrayList<>(list.videos)
