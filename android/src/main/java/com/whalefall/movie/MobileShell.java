@@ -1317,7 +1317,6 @@ final class MobileShell {
         final LinearLayout catRow = a.row();
         catRow.setGravity(Gravity.CENTER_VERTICAL);
         catScroll.addView(catRow);
-        filterButton.setVisibility(View.GONE); // 1.9.33：右上「筛选」按钮不再显示
         LinearLayout categoryBar = a.row();
         categoryBar.setClipChildren(true);
         categoryBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -1326,6 +1325,7 @@ final class MobileShell {
         TextView filterButton = a.text("筛选", 13 * navScale, MainActivity.WHITE);
         filterButton.setTag("home-filters");
         homeFilterButton = filterButton;
+        filterButton.setVisibility(View.GONE); // 1.9.33：右上「筛选」按钮不再显示
         filterButton.setSingleLine(true);
         filterButton.setGravity(Gravity.CENTER);
         filterButton.setPadding(
