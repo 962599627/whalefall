@@ -9,6 +9,7 @@ import android.view.Window;
 import android.webkit.CookieManager;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -16,10 +17,11 @@ import android.widget.TextView;
 import java.util.Locale;
 
 /**
- * 通用「网盘扫码登录」弹窗：深色外壳 + 白底二维码（只保留二维码，隐藏网页其余部分），
- * 登录成功后通过 Cookie 名或页面 JS token 捕获登录态，回调给各原生网盘模块。
+ * 通用「网盘扫码登录」弹窗：深色外壳 + 深色加载遮罩 + 白底二维码。
  *
- * <p>可配置桌面 UA、二维码注入延迟/重试次数/连续命中次数、「扫码登录」tab 点击。
+ * <p>遮罩时序：显示后最多 6 秒自动隐藏（保证用户能看到/扫页面里的二维码）；一旦检测到
+ * 二维码立即隐藏；遮罩上另有「显示网页」按钮可手动隐藏。只在确认检测到二维码时才做
+ * 「只保留二维码」精简，检测不确定时只隐藏遮罩、保留原页面，避免白屏/遮罩压二维码。
  */
 final class PanDriveLogin {
     interface Success {
@@ -30,7 +32,6 @@ final class PanDriveLogin {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-    /** 登录弹窗配置：每个网盘按自己的页面特点填。 */
     static final class Config {
         String title = "扫码登录";
         String hint = "请使用对应网盘 App 扫码登录";
@@ -42,13 +43,11 @@ final class PanDriveLogin {
         int maxAttempts = 7;
         int requiredHits = 1;
         boolean clickScanTab;
-        /** 百度等先自动点「去登录/立即登录」再找二维码。 */
         boolean clickLoginEntry;
     }
 
     private PanDriveLogin() {}
 
-    /** 点击「去登录/立即登录/扫码登录」入口（若页面有），再找二维码。 */
     private static final String CLICK_LOGIN_JS =
             "(function(){try{var texts=['去登录','立即登录','登录','扫码登录','二维码登录'];"
                     + "var els=document.querySelectorAll('button,a,div,span,li,p');"
@@ -57,24 +56,36 @@ final class PanDriveLogin {
                     + "if(s===texts[t]&&el.offsetParent!==null){el.click();return 'clicked';}}}"
                     + "}catch(e){}return 'no';})()";
 
-    /** 点击「扫码登录/二维码」tab（若页面有），再找二维码。 */
     private static final String CLICK_SCAN_JS =
             "(function(){try{var els=document.querySelectorAll('button,a,div,span,li');"
                     + "for(var i=0;i<els.length;i++){var el=els[i];var t=(el.textContent||'').trim();"
                     + "if((t==='扫码登录'||t==='二维码登录'||t==='扫码'||t==='二维码')&&el.offsetParent!==null){"
                     + "el.click();return 'clicked';}}}catch(e){}return 'no';})()";
 
-    /** 只保留登录二维码的注入脚本（与 QuarkDrive 相同策略）。 */
-    private static final String QR_JS =
-            "(function(){try{"
+    /** 共享检测片段：返回 qr 元素或 null；页面是否有「扫码」文案。 */
+    private static final String DETECT_FN =
+            "function vis(el){var r=el.getBoundingClientRect();return r.width>=80&&r.height>=80&&el.offsetParent!==null;}"
+                    + "function hint(el){var s=((el.getAttribute&&(el.getAttribute('src')||''))+' '"
+                    + "+(el.className||'')+' '+(el.id||''));var p=el.parentElement;"
+                    + "for(var d=0;d<3&&p;d++){s+=' '+(p.className||'')+' '+(p.id||'');p=p.parentElement;}"
+                    + "return /qr|qrcode|code/i.test(s);}"
+                    + "var scanText=((document.body&&document.body.innerText)||'').indexOf('扫码')>=0;"
                     + "var cands=document.querySelectorAll('canvas,img,svg');var qr=null;"
-                    + "for(var i=0;i<cands.length;i++){var el=cands[i];var r=el.getBoundingClientRect();"
-                    + "if(r.width>=110&&r.height>=110){qr=el;break;}}"
-                    + "if(!qr){var sels=['[class*=qrcode]','[id*=qrcode]','[class*=qr]','[id*=qr]'];"
-                    + "for(var s=0;s<sels.length&&!qr;s++){var ns=document.querySelectorAll(sels[s]);"
-                    + "for(var j=0;j<ns.length;j++){var b=ns[j].getBoundingClientRect();"
-                    + "if(b.width>=90&&b.height>=90){qr=ns[j];break;}}}}"
-                    + "if(!qr)return 'false';"
+                    + "for(var i=0;i<cands.length;i++){var el=cands[i];if(!vis(el))continue;"
+                    + "var tag=el.tagName.toLowerCase();"
+                    + "if(hint(el)||(scanText&&(tag==='canvas'||tag==='svg'))){qr=el;break;}}";
+
+    /** 只检测（不精简页面）：返回 qr/page/no。 */
+    private static final String DETECT_JS =
+            "(function(){try{" + DETECT_FN + "if(qr)return 'qr';return scanText?'page':'no';"
+                    + "}catch(e){return 'no';}})()";
+
+    /** 检测 + 精简为白底二维码；检测不确定时返回 page 且不动页面。 */
+    private static final String LOOK_JS =
+            "(function(){try{"
+                    + DETECT_FN
+                    + "if(!qr)return scanText?'page':'no';"
+                    + "if(!hint(qr)&&!scanText)return 'page';"
                     + "var old=qr;document.body.innerHTML='';"
                     + "document.body.style.background='#ffffff';document.documentElement.style.background='#ffffff';"
                     + "var wrap=document.createElement('div');"
@@ -85,8 +96,8 @@ final class PanDriveLogin {
                     + "wrap.appendChild(old);"
                     + "var tip=document.createElement('div');tip.textContent='请使用对应网盘 App 扫码登录';"
                     + "tip.style.cssText='margin-top:16px;font:15px sans-serif;color:#333;';"
-                    + "wrap.appendChild(tip);document.body.appendChild(wrap);return 'true';"
-                    + "}catch(e){return 'false';}})()";
+                    + "wrap.appendChild(tip);document.body.appendChild(wrap);return 'simplified';"
+                    + "}catch(e){return 'no';}})()";
 
     static void show(final MainActivity a, final Config config, final Success success) {
         final Dialog dialog = new Dialog(a);
@@ -114,13 +125,8 @@ final class PanDriveLogin {
         web.getSettings().setAllowContentAccess(false);
         if (config.userAgent != null && !config.userAgent.isEmpty())
             web.getSettings().setUserAgentString(config.userAgent);
-        final int[] qrHits = {0};
-        final boolean[] qrFound = {false};
-        final boolean[] qrWarned = {false};
-        final boolean[] scanClicked = {false};
-        // 遮罩：二维码注入成功前一直盖住网页，避免先闪原页面
-        final FrameLayout webWrap = new FrameLayout(a);
-        webWrap.addView(web, new FrameLayout.LayoutParams(-1, -1));
+
+        // 遮罩：最多 6 秒自动隐藏；检测到二维码立即隐藏；可手动「显示网页」
         final FrameLayout mask = new FrameLayout(a);
         mask.setBackgroundColor(0xff0b1220);
         LinearLayout maskCol = a.vertical();
@@ -131,8 +137,7 @@ final class PanDriveLogin {
         spinner.setIndeterminateTintList(
                 android.content.res.ColorStateList.valueOf(UiTokens.ACCENT));
         maskCol.addView(spinner, new LinearLayout.LayoutParams(a.dp(34), a.dp(34)));
-        TextView maskTitle =
-                a.text("请使用对应网盘 App 扫码登录", 16, UiTokens.TEXT_PRIMARY);
+        TextView maskTitle = a.text("请使用对应网盘 App 扫码登录", 16, UiTokens.TEXT_PRIMARY);
         maskTitle.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams maskTitleLp = new LinearLayout.LayoutParams(-2, -2);
         maskTitleLp.topMargin = a.dp(16);
@@ -142,11 +147,29 @@ final class PanDriveLogin {
         LinearLayout.LayoutParams maskHintLp = new LinearLayout.LayoutParams(-2, -2);
         maskHintLp.topMargin = a.dp(6);
         maskCol.addView(maskHint, maskHintLp);
-        mask.addView(
-                maskCol,
-                new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        final boolean[] maskHidden = {false};
+        final Runnable hideMask =
+                () -> {
+                    if (maskHidden[0]) return;
+                    maskHidden[0] = true;
+                    mask.setVisibility(View.GONE);
+                };
+        Button showWeb = a.button("显示网页", "pan-login-show-web", hideMask);
+        showWeb.setTextSize(13);
+        LinearLayout.LayoutParams showLp = new LinearLayout.LayoutParams(a.dp(120), a.dp(40));
+        showLp.topMargin = a.dp(18);
+        maskCol.addView(showWeb, showLp);
+        mask.addView(maskCol, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+
+        final FrameLayout webWrap = new FrameLayout(a);
+        webWrap.addView(web, new FrameLayout.LayoutParams(-1, -1));
         webWrap.addView(mask, new FrameLayout.LayoutParams(-1, -1));
-        final Runnable hideMask = () -> mask.setVisibility(View.GONE);
+        page.addView(webWrap, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        final int[] qrHits = {0};
+        final boolean[] qrFound = {false};
+        final boolean[] qrWarned = {false};
+        final boolean[] scanClicked = {false};
         web.setWebViewClient(
                 new WebViewClient() {
                     @Override
@@ -177,7 +200,6 @@ final class PanDriveLogin {
                                 Math.max(0, config.injectDelayMs));
                     }
                 });
-        page.addView(webWrap, new LinearLayout.LayoutParams(-1, 0, 1f));
         dialog.setContentView(page);
         dialog.setOnDismissListener(
                 d -> {
@@ -192,6 +214,8 @@ final class PanDriveLogin {
             window.setGravity(Gravity.CENTER);
             window.getDecorView().setSystemUiVisibility(5894);
         }
+        // 1.6.4：6 秒兜底，必定露出网页，避免遮罩压住二维码
+        a.ui.postDelayed(hideMask, 6000);
         AppLog.i(
                 "PanLoginWeb",
                 "open title="
@@ -202,10 +226,7 @@ final class PanDriveLogin {
                         + (config.userAgent != null && config.userAgent.contains("Windows"))
                         + " delay="
                         + config.injectDelayMs
-                        + " cookieNames="
-                        + java.util.Arrays.toString(config.cookieNames)
-                        + " tokenScript="
-                        + (config.tokenScript != null));
+                        + " maskAutoHide=6000ms");
         web.loadUrl(config.loginUrl);
 
         final boolean[] active = {true};
@@ -303,44 +324,25 @@ final class PanDriveLogin {
             }
             return;
         }
-        final String script;
-        if (config.clickLoginEntry && !scanClicked[0]) {
-            script = CLICK_LOGIN_JS + ";" + QR_JS;
-        } else if (config.clickScanTab && !scanClicked[0]) {
-            script = CLICK_SCAN_JS + ";" + QR_JS;
-        } else {
-            script = QR_JS;
-        }
+        String click = "";
+        if (config.clickLoginEntry && !scanClicked[0]) click = CLICK_LOGIN_JS + ";";
+        else if (config.clickScanTab && !scanClicked[0]) click = CLICK_SCAN_JS + ";";
+        // requiredHits>1（阿里）：第一轮只检测并隐藏遮罩，第二轮才精简
+        boolean detectOnly = config.requiredHits > 1 && hits[0] == 0;
+        final String script = click + (detectOnly ? DETECT_JS : LOOK_JS);
         try {
             web.evaluateJavascript(
                     script,
                     value -> {
-                        boolean ok = value != null && value.contains("true");
-                        if ((config.clickLoginEntry || config.clickScanTab)
-                                && !scanClicked[0]
-                                && value != null)
-                            scanClicked[0] = value.contains("clicked");
-                        if (ok) {
-                            hits[0]++;
-                            // 阿里等页面需要连续多次命中（等二维码稳定渲染）才简化
-                            if (hits[0] >= Math.max(1, config.requiredHits)) {
-                                found[0] = true;
-                                if (hideMask != null) hideMask.run();
-                            } else
-                                a.ui.postDelayed(
-                                        () ->
-                                                injectQr(
-                                                        web,
-                                                        a,
-                                                        config,
-                                                        attempt + 1,
-                                                        hits,
-                                                        found,
-                                                        warned,
-                                                        scanClicked,
-                                                        hideMask),
-                                        600);
-                        } else
+                        String result = value == null ? "" : value;
+                        if (!scanClicked[0] && result.contains("clicked"))
+                            scanClicked[0] = true;
+                        boolean simplified = result.contains("simplified");
+                        boolean qr = result.contains("'qr'") || result.contains("\"qr\"");
+                        boolean page = result.contains("'page'") || result.contains("\"page\"");
+                        if (detectOnly && (qr || page)) {
+                            hits[0] = 1;
+                            if (hideMask != null) hideMask.run();
                             a.ui.postDelayed(
                                     () ->
                                             injectQr(
@@ -353,7 +355,33 @@ final class PanDriveLogin {
                                                     warned,
                                                     scanClicked,
                                                     hideMask),
-                                    800);
+                                    600);
+                            return;
+                        }
+                        if (simplified) {
+                            found[0] = true;
+                            if (hideMask != null) hideMask.run();
+                            return;
+                        }
+                        if (page) {
+                            // 检测不确定：只隐藏遮罩，保留原页面，不再重排/精简
+                            found[0] = true;
+                            if (hideMask != null) hideMask.run();
+                            return;
+                        }
+                        a.ui.postDelayed(
+                                () ->
+                                        injectQr(
+                                                web,
+                                                a,
+                                                config,
+                                                attempt + 1,
+                                                hits,
+                                                found,
+                                                warned,
+                                                scanClicked,
+                                                hideMask),
+                                800);
                     });
         } catch (Throwable error) {
             a.ui.postDelayed(
