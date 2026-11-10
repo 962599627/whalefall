@@ -57,6 +57,7 @@ final class PlayerChrome {
     /** 弹层锚点（不可见）：位于底部控制区上方中央，供 PlayerBubble 向上展开。 */
     View menuAnchor;
     boolean loading = true;
+    boolean lastLoadingShown;
     boolean progressOnlyMode = false;
     boolean bottomCollapsed = false;
     final Rect windowInsets = new Rect();
@@ -618,6 +619,25 @@ final class PlayerChrome {
 
     void setLoading(boolean value) {
         loading = value;
+        boolean show = value && !a.prepared && !a.miniMode && a.playbackLoading == null;
+        loadingLayer.setActive(show);
+        if (show != lastLoadingShown) {
+            lastLoadingShown = show;
+            AppLog.i(
+                    "PlayerChrome",
+                    "loading set value="
+                            + value
+                            + " active="
+                            + show
+                            + " prepared="
+                            + a.prepared
+                            + " mini="
+                            + a.miniMode
+                            + " overlay="
+                            + (a.playbackLoading != null)
+                            + " layerVisible="
+                            + (loadingLayer.getVisibility() == View.VISIBLE));
+        }
         update();
     }
 
@@ -673,6 +693,23 @@ final class PlayerChrome {
         if (a.player != null && a.prepared) applyResolutionShort();
         boolean showSpinner = loading && !a.prepared && a.playbackLoading == null && !a.miniMode;
         loadingLayer.setActive(showSpinner);
+        if (showSpinner != lastLoadingShown) {
+            lastLoadingShown = showSpinner;
+            AppLog.i(
+                    "PlayerChrome",
+                    "loading update active="
+                            + showSpinner
+                            + " spinner="
+                            + showSpinner
+                            + " prepared="
+                            + a.prepared
+                            + " mini="
+                            + a.miniMode
+                            + " overlay="
+                            + (a.playbackLoading != null)
+                            + " layerVisible="
+                            + (loadingLayer.getVisibility() == View.VISIBLE));
+        }
 
         // 中央播放钮：图标 + 描述跟随播放状态；未就绪时降透明度
         UiIcon.setIcon(state, a.playing ? UiIcon.PAUSE : UiIcon.PLAY);
@@ -818,6 +855,7 @@ final class PlayerChrome {
             setClickable(true);
             setFocusable(false);
             setAlpha(0f);
+            setVisibility(View.GONE);
 
             int avatar = a.dp(tv ? 260 : 168);
             int glowSize = a.dp(tv ? 340 : 220);
@@ -925,6 +963,14 @@ final class PlayerChrome {
         void setActive(boolean value) {
             if (active == value) return;
             active = value;
+            AppLog.i(
+                    "PlayerChrome",
+                    "loading active="
+                            + value
+                            + " layerVisible="
+                            + (getVisibility() == View.VISIBLE)
+                            + " frames="
+                            + (frames != null && frames.length == 7));
             if (value) showLayer();
             else hideLayer();
         }

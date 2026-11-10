@@ -962,6 +962,17 @@ final class PlaybackController {
         a.root.addView(a.playbackLayer, new FrameLayout.LayoutParams(-1, -1));
         a.playbackLayer.addView(surface, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
         a.playerChrome = new PlayerChrome(a, v, ep, "live".equals(s.key));
+        // 1.7.10：进入播放页即按 loading 状态点亮加载动画（此前从未调用 setLoading(true)）
+        a.playerChrome.setLoading(!a.prepared && !a.miniMode);
+        a.playerChrome.update();
+        AppLog.i(
+                "PlayerChrome",
+                "loading init prepared="
+                        + a.prepared
+                        + " mini="
+                        + a.miniMode
+                        + " overlay="
+                        + (a.playbackLoading != null));
         if (!a.isTvDevice()) {
             final PlayerChrome chrome = a.playerChrome;
             a.root.setOnApplyWindowInsetsListener(
