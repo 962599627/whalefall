@@ -779,7 +779,7 @@ final class MobileShell {
                             sliding = false;
                             if (action == android.view.MotionEvent.ACTION_UP && pendingTab >= 0) {
                                 if (pendingTab == 6) {
-                                    if (!MainActivity.cloudEnabled(a)) return;
+                                    if (!MainActivity.cloudEnabled(a)) return true;
                                     AppLog.i("Nav", "cloud-zone open rail=shell tab");
                                     switchTab(6);
                                 } else switchTab(pendingTab);
