@@ -74,6 +74,19 @@ final class TvLive {
     static final String GROUP_CCTV = "央视频道";
     static final String GROUP_SAT = "卫视频道";
     static final String GROUP_MINE = "我的收藏";
+    /** 1.9.19：网页直播分组（内置+自定义 weblive_sources）。 */
+    static final String GROUP_WEB = "网页直播";
+
+    static final Object[][] WEBLIVE = {
+        {"深视 4K 超高清", "https://www.sztv.com.cn/dianshi.shtml?id=24725"},
+        {"深圳卫视", "https://www.sztv.com.cn/dianshi.shtml?id=7867"},
+        {"都市频道", "https://www.sztv.com.cn/dianshi.shtml?id=7868"},
+        {"电视剧频道", "https://www.sztv.com.cn/dianshi.shtml?id=7880"},
+        {"少儿频道", "https://www.sztv.com.cn/dianshi.shtml?id=7881"},
+        {"移动电视", "https://www.sztv.com.cn/dianshi.shtml?id=7869"},
+        {"宜和购物频道", "https://www.sztv.com.cn/dianshi.shtml?id=7878"},
+        {"国际频道", "https://www.sztv.com.cn/dianshi.shtml?id=7944"},
+    };
 
     static final Object[][] CCTV = {
         {"CCTV-1 综合", "https://tv.cctv.com/live/cctv1/"},
@@ -170,6 +183,14 @@ final class TvLive {
                                     (String) row[0],
                                     overrides.getOrDefault((String) row[0], (String) row[1]),
                                     GROUP_SAT));
+            for (Object[] row : WEBLIVE)
+                if (!hidden.contains((String) row[0]))
+                    builtin.add(
+                            new Channel(
+                                    (String) row[0],
+                                    overrides.getOrDefault((String) row[0], (String) row[1]),
+                                    GROUP_WEB));
+            builtin.addAll(readWebLive(a));
             custom.addAll(readCustom(a));
             favorites.addAll(readFavorites(a));
         }
@@ -375,6 +396,16 @@ final class TvLive {
                         else addChannelDialog(a, store, () -> page.refresh());
                     });
             actionsRow.addView(addBtn, new LinearLayout.LayoutParams(-2, a.dp(34)));
+            TextView webBtn = TvUiKit.pill(a, "＋ 网页直播", 12, false);
+            ExtraPages.tvFocus(a, webBtn, 999);
+            webBtn.setOnClickListener(
+                    v -> {
+                        if (a.isTvDevice()) ExtraPages.degrade(a, true);
+                        else addWebLiveDialog(a, () -> page.refresh());
+                    });
+            LinearLayout.LayoutParams webLp = new LinearLayout.LayoutParams(-2, a.dp(34));
+            webLp.leftMargin = a.dp(8);
+            actionsRow.addView(webBtn, webLp);
             TextView importBtn = TvUiKit.pill(a, "导入列表", 12, false);
             ExtraPages.tvFocus(a, importBtn, 999);
             LinearLayout.LayoutParams importLp = new LinearLayout.LayoutParams(-2, a.dp(34));
@@ -565,7 +596,7 @@ final class TvLive {
             LinearLayout chipRow = a.row();
             chipScroll.addView(chipRow);
 
-            String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_MINE};
+            String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_WEB, GROUP_MINE};
             int[] counts = {cctvCount, satCount, favCount};
             for (int i = 0; i < gs.length; i++) {
                 final String g = gs[i];
@@ -694,7 +725,7 @@ final class TvLive {
         cap.setPadding(a.dp(7), 0, 0, a.dp(8));
         rail.addView(cap, new LinearLayout.LayoutParams(-1, -2));
 
-        String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_MINE};
+        String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_WEB, GROUP_MINE};
         int[] counts = {cctvCount, satCount, favCount};
         for (int i = 0; i < gs.length; i++) {
             final String g = gs[i];
@@ -1479,6 +1510,87 @@ final class TvLive {
         }
     }
 
+    static List<Channel> readWebLive(MainActivity a) {
+        List<Channel> list = new ArrayList<>();
+        try {
+            String raw = a.prefs.getString("weblive_sources", "[]");
+            org.json.JSONArray array = new org.json.JSONArray(raw);
+            for (int i = 0; i < array.length(); i++) {
+                org.json.JSONObject item = array.optJSONObject(i);
+                if (item == null) continue;
+                String name = item.optString("name", "").trim();
+                String url = item.optString("url", "").trim();
+                if (!name.isEmpty() && !url.isEmpty())
+                    list.add(new Channel(name, url, GROUP_WEB));
+            }
+        } catch (Throwable ignored) {
+        }
+        return list;
+    }
+
+    static void addWebLive(MainActivity a, String name, String url) {
+        try {
+            org.json.JSONArray array =
+                    new org.json.JSONArray(a.prefs.getString("weblive_sources", "[]"));
+            org.json.JSONArray next = new org.json.JSONArray();
+            org.json.JSONObject item = new org.json.JSONObject();
+            item.put("name", name);
+            item.put("url", url);
+            next.put(item);
+            for (int i = 0; i < array.length(); i++) next.put(array.opt(i));
+            a.prefs.edit().putString("weblive_sources", next.toString()).apply();
+            AppLog.i("WebLive", "add name=" + name + " total=" + next.length());
+        } catch (Throwable ignored) {
+        }
+    }
+
+    static void removeWebLive(MainActivity a, String name) {
+        try {
+            org.json.JSONArray array =
+                    new org.json.JSONArray(a.prefs.getString("weblive_sources", "[]"));
+            org.json.JSONArray next = new org.json.JSONArray();
+            for (int i = 0; i < array.length(); i++) {
+                org.json.JSONObject item = array.optJSONObject(i);
+                if (item != null && name.equals(item.optString("name", ""))) continue;
+                next.put(array.opt(i));
+            }
+            a.prefs.edit().putString("weblive_sources", next.toString()).apply();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    static void addWebLiveDialog(final MainActivity a, final Runnable done) {
+        EditText nameInput = new EditText(a);
+        nameInput.setHint("名称，如 深圳卫视");
+        nameInput.setTextColor(0xfff5f7fc);
+        nameInput.setHintTextColor(0xff7f8fa9);
+        EditText urlInput = new EditText(a);
+        urlInput.setHint("https://… 网页地址");
+        urlInput.setTextColor(0xfff5f7fc);
+        urlInput.setHintTextColor(0xff7f8fa9);
+        LinearLayout box = a.vertical();
+        box.addView(nameInput);
+        box.addView(urlInput);
+        new AppDialog.Builder(a)
+                .setTitle("添加网页直播")
+                .setView(box)
+                .setPositiveButton(
+                        "保存",
+                        (d, i) -> {
+                            String name = nameInput.getText().toString().trim();
+                            String url = urlInput.getText().toString().trim();
+                            if (name.isEmpty() || !url.startsWith("http")) {
+                                a.toast("请填写名称和 http(s) 地址");
+                                return;
+                            }
+                            addWebLive(a, name, url);
+                            a.toast("已添加");
+                            if (done != null) done.run();
+                        })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
     static List<Channel> readCustom(MainActivity a) {
         List<Channel> list = new ArrayList<>();
         File f = new File(a.getFilesDir(), CUSTOM_FILE);
@@ -1581,6 +1693,12 @@ final class TvLive {
     static void open(
             MainActivity a, Store store, String group, Channel channel, Runnable onClosed) {
         a.prefs.edit().putString(LAST, channel.name + "\n" + channel.url).apply();
+        // 1.9.19：网页直播分组统一用全屏 WebLiveScreen（通用网页直播入口）
+        if (GROUP_WEB.equals(group)) {
+            WebLiveScreen.show(a, channel.name, channel.url);
+            if (onClosed != null) onClosed.run();
+            return;
+        }
         Player player = new Player(a, store, group, channel);
         player.onClosed = onClosed;
         player.show();
@@ -2163,7 +2281,7 @@ final class TvLive {
         void rebuildGroupChips() {
             if (groupStrip == null) return;
             groupStrip.removeAllViews();
-            String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_MINE};
+            String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_WEB, GROUP_MINE};
             String[] shortNames = {"央视", "卫视", "收藏"};
             for (int i = 0; i < gs.length; i++) {
                 final String g = gs[i];

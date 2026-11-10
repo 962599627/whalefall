@@ -1600,6 +1600,13 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (tvPlayer != null && tvPlayer.back()) return;
+        // 1.9.19：网页直播 BACK（先退全屏，再回直播 tab）
+        if (body != null && "web-live".equals(body.getTag())) {
+            if (WebLiveScreen.handleBack(this)) return;
+            MobileShell.show(this);
+            if (MobileShell.activeShell != null) MobileShell.activeShell.switchTab(2);
+            return;
+        }
         // 1.9.17：网页播放（先退全屏再离开）
         if (body != null && "web-player".equals(body.getTag())) {
             if (WebPlayerScreen.handleBack(this)) return;
