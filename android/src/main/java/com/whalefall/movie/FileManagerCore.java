@@ -230,7 +230,7 @@ final class FileManagerCore {
         HttpURLConnection connection = null;
         try {
             // 1.9.3/1.9.4：刷新 __puus → PC 下载接口 → 跟随重定向
-            String direct = QuarkUcApi.resolveUrl(a, task.p, task.cookie, task.item.fid);
+            String direct = QuarkUcApi.resolveUrl(a, task.p, task.cookie, task.item.fid, task.item.shareFidToken);
             String streamCookie = QuarkUcApi.refreshCookie(a, task.p, task.cookie);
             connection = (HttpURLConnection) new URL(direct).openConnection();
             task.connection = connection;
@@ -247,8 +247,7 @@ final class FileManagerCore {
             AppLog.i(
                     "QuarkGet",
                     "stream status=" + status + " ua=chrome host=" + hostOf(direct));
-            if (status == 403 || status == 412) {
-                // 换 okhttp UA 重试一次
+            if (status == 400 || status == 403 || status == 412) {
                 try {
                     connection.disconnect();
                 } catch (Throwable ignored) {
@@ -275,8 +274,13 @@ final class FileManagerCore {
                 AppLog.i("FileMgr", "resume provider=" + task.p.key + " fid=" + task.item.fid + " range=unsupported");
                 append = false;
                 existing = 0;
-            } else if (status == 403 || status == 412) {
-                throw new IOException("HTTP " + status + "（" + task.p.name + "直链风控，可稍后重试或换 UA）");
+            } else if (status == 400 || status == 403 || status == 412) {
+                throw new IOException(
+                        "HTTP "
+                                + status
+                                + (status == 400
+                                        ? "：请求被拒（可尝试重新扫码）"
+                                        : "（" + task.p.name + "直链风控，可稍后重试或换 UA）"));
             } else if (status != 200 && status != 206) {
                 throw new IOException("HTTP " + status);
             } else if (append) {
@@ -748,7 +752,9 @@ final class FileManagerCore {
                 () -> {
                     try {
                         // 1.9.1：跟随重定向拿最终直链；播放器 headers 带 Cookie/Referer/UA
-                        String url = QuarkUcApi.resolveUrl(a, p, cookie, item.fid);
+                        String url =
+                                QuarkUcApi.resolveUrl(
+                                        a, p, cookie, item.fid, item.shareFidToken);
                         final Map<String, String> headers = new LinkedHashMap<>();
                         headers.put("Cookie", cookie == null ? "" : cookie);
                         headers.put("Referer", p.referer);

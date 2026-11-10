@@ -154,18 +154,30 @@ final class QuarkUcApi {
         final long updated;
         final boolean folder;
         final boolean video;
+        final String shareFidToken;
 
         FileItem(String fid, String name, long size, boolean folder) {
-            this(fid, name, size, 0L, folder);
+            this(fid, name, size, 0L, folder, "");
         }
 
         FileItem(String fid, String name, long size, long updated, boolean folder) {
+            this(fid, name, size, updated, folder, "");
+        }
+
+        FileItem(
+                String fid,
+                String name,
+                long size,
+                long updated,
+                boolean folder,
+                String shareFidToken) {
             this.fid = fid == null ? "" : fid;
             this.name = name == null ? "" : name;
             this.size = size;
             this.updated = updated;
             this.folder = folder;
             this.video = !folder && isVideoName(this.name);
+            this.shareFidToken = shareFidToken == null ? "" : shareFidToken;
         }
     }
 
@@ -216,7 +228,21 @@ final class QuarkUcApi {
                                     item.optLong(
                                             "updated_at",
                                             item.optLong("l_updated_at", 0)),
-                                    !item.optBoolean("file", true)));
+                                    !item.optBoolean("file", true),
+                                    item.optString(
+                                            "share_fid_token",
+                                            item.optString("shareFidToken", ""))));
+                    try {
+                        AppLog.i(
+                                "QuarkList",
+                                "item name="
+                                        + item.optString("file_name", "")
+                                        + " fid="
+                                        + item.optString("fid", "")
+                                        + " shareFidToken="
+                                        + (item.optString("share_fid_token", "").isEmpty() ? "no" : "yes"));
+                    } catch (Throwable ignored) {
+                    }
                 }
             JSONObject metadata = json.optJSONObject("metadata");
             if (metadata != null) total = metadata.optInt("_total", total);
@@ -339,8 +365,14 @@ final class QuarkUcApi {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) quark-cloud-drive/2.5.20 Chrome/100.0 Safari/537.36";
 
-    /** 1.9.3/1.9.4：夸克/UC PC 下载接口 + __puus 刷新（drive-pc / pc-api）。 */
+    /** 1.9.5：夸克/UC PC 下载接口 + __puus 刷新；400 时尝试 body/接口变体。 */
     static String downloadUrl(MainActivity a, Provider p, String cookie, String fid) throws Exception {
+        return downloadUrl(a, p, cookie, fid, "");
+    }
+
+    static String downloadUrl(
+            MainActivity a, Provider p, String cookie, String fid, String shareFidToken)
+            throws Exception {
         String fresh = cookie;
         if (a != null) fresh = refreshCookie(a, p, cookie);
         String[] endpoints =
@@ -353,56 +385,87 @@ final class QuarkUcApi {
                             "https://pc-api.uc.cn/1/clouddrive/file/download?pr=UCBrowser&fr=pc",
                             "https://drive.uc.cn/1/clouddrive/file/download?pr=UCBrowser&fr=pc"
                         };
-        String body = new JSONObject().put("fids", new org.json.JSONArray().put(fid)).toString();
+        java.util.List<String> bodies = new java.util.ArrayList<>();
+        bodies.add(new JSONObject().put("fids", new org.json.JSONArray().put(fid)).toString());
+        bodies.add(
+                new JSONObject()
+                        .put("fids", new org.json.JSONArray().put(fid))
+                        .put("type", 1)
+                        .toString());
+        if (shareFidToken != null && !shareFidToken.isEmpty()) {
+            bodies.add(
+                    new JSONObject()
+                            .put("fids", new org.json.JSONArray().put(fid))
+                            .put("share_fid_token", shareFidToken)
+                            .toString());
+        }
         Exception last = null;
         for (String endpoint : endpoints) {
-            HttpURLConnection connection = null;
-            try {
-                connection = (HttpURLConnection) new URL(endpoint).openConnection();
-                connection.setRequestMethod("POST");
-                connection.setConnectTimeout(12000);
-                connection.setReadTimeout(15000);
-                connection.setDoOutput(true);
-                connection.setRequestProperty("Cookie", fresh == null ? "" : fresh);
-                connection.setRequestProperty("Content-Type", "application/json");
-                connection.setRequestProperty("Accept", "*/*");
-                connection.setRequestProperty("User-Agent", UA_CHROME);
-                connection.setRequestProperty("Referer", p.referer);
-                java.io.OutputStream out = connection.getOutputStream();
-                out.write(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                out.close();
-                int status = connection.getResponseCode();
-                AppLog.i(
-                        "QuarkGet",
-                        "download-api status="
-                                + status
-                                + " ua=chrome host="
-                                + android.net.Uri.parse(endpoint).getHost());
-                String text = read(status >= 200 && status < 400 ? connection.getInputStream() : connection.getErrorStream());
-                if (status == 403 || status == 412) {
-                    last = new IOException("HTTP " + status + "（夸克风控）");
-                    continue;
+            for (String body : bodies) {
+                HttpURLConnection connection = null;
+                try {
+                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                    connection.setRequestMethod("POST");
+                    connection.setConnectTimeout(12000);
+                    connection.setReadTimeout(15000);
+                    connection.setDoOutput(true);
+                    connection.setRequestProperty("Cookie", fresh == null ? "" : fresh);
+                    connection.setRequestProperty(
+                            "Content-Type", "application/json;charset=UTF-8");
+                    connection.setRequestProperty("Accept", "application/json, text/plain, */*");
+                    connection.setRequestProperty("User-Agent", UA_CHROME);
+                    connection.setRequestProperty("Referer", p.referer);
+                    java.io.OutputStream out = connection.getOutputStream();
+                    out.write(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    out.close();
+                    int status = connection.getResponseCode();
+                    String text =
+                            read(
+                                    status >= 200 && status < 400
+                                            ? connection.getInputStream()
+                                            : connection.getErrorStream());
+                    String masked = text == null ? "" : text;
+                    if (masked.length() > 500) masked = masked.substring(0, 500);
+                    masked = masked.replaceAll("\"(download_url|token|__puus)\"\\s*:\\s*\"[^\"]*\"", "\"$1\":\"<redacted>\"");
+                    AppLog.i(
+                            "QuarkGet",
+                            "download-api status="
+                                    + status
+                                    + " ua=chrome host="
+                                    + android.net.Uri.parse(endpoint).getHost()
+                                    + " body="
+                                    + masked);
+                    if (status == 403 || status == 412) {
+                        last = new IOException("HTTP " + status + "（夸克风控）");
+                        continue;
+                    }
+                    if (status < 200 || status >= 300) {
+                        last =
+                                new IOException(
+                                        "HTTP "
+                                                + status
+                                                + (status == 400
+                                                        ? "：请求被拒（可尝试重新扫码）"
+                                                        : ""));
+                        continue;
+                    }
+                    JSONObject json = new JSONObject(text);
+                    org.json.JSONArray data = json.optJSONArray("data");
+                    if (data == null || data.length() == 0) {
+                        last = new IOException("没有下载地址");
+                        continue;
+                    }
+                    String url = data.optJSONObject(0).optString("download_url", "");
+                    if (url.isEmpty()) {
+                        last = new IOException("download_url 为空");
+                        continue;
+                    }
+                    return url;
+                } catch (Throwable error) {
+                    last = new IOException(error.getClass().getSimpleName());
+                } finally {
+                    if (connection != null) connection.disconnect();
                 }
-                if (status < 200 || status >= 300) {
-                    last = new IOException("HTTP " + status);
-                    continue;
-                }
-                JSONObject json = new JSONObject(text);
-                org.json.JSONArray data = json.optJSONArray("data");
-                if (data == null || data.length() == 0) {
-                    last = new IOException("没有下载地址");
-                    continue;
-                }
-                String url = data.optJSONObject(0).optString("download_url", "");
-                if (url.isEmpty()) {
-                    last = new IOException("download_url 为空");
-                    continue;
-                }
-                return url;
-            } catch (Throwable error) {
-                last = new IOException(error.getClass().getSimpleName());
-            } finally {
-                if (connection != null) connection.disconnect();
             }
         }
         throw last == null ? new IOException("没有下载地址") : last;
@@ -414,8 +477,14 @@ final class QuarkUcApi {
 
     /** 1.9.3/1.9.4：刷新 Cookie → 下载接口 → 跟随 302；403/412 时刷新后重试、再换 UA。 */
     static String resolveUrl(MainActivity a, Provider p, String cookie, String fid) throws Exception {
+        return resolveUrl(a, p, cookie, fid, "");
+    }
+
+    static String resolveUrl(
+            MainActivity a, Provider p, String cookie, String fid, String shareFidToken)
+            throws Exception {
         String fresh = a == null ? cookie : refreshCookie(a, p, cookie);
-        String url = downloadUrl(a, p, fresh, fid);
+        String url = downloadUrl(a, p, fresh, fid, shareFidToken);
         if (a != null) fresh = refreshCookie(a, p, fresh); // file/download 也可能下发 __puus
         Exception last = null;
         for (int round = 0; round < 2; round++) {
@@ -424,7 +493,7 @@ final class QuarkUcApi {
                 if (a == null) break;
                 fresh = refreshCookie(a, p, fresh);
                 try {
-                    url = downloadUrl(a, p, fresh, fid);
+                    url = downloadUrl(a, p, fresh, fid, shareFidToken);
                 } catch (Throwable ignored) {
                 }
             }

@@ -217,8 +217,9 @@ final class FileManagerScreen {
                         tab = mode;
                         rebuild();
                     });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, a.dp(44), 1f);
             if (i > 0) lp.leftMargin = a.dp(8);
+            chip.setGravity(Gravity.CENTER);
             row.addView(chip, lp);
         }
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
@@ -573,6 +574,7 @@ final class FileManagerScreen {
         lastGridCount = count;
         lastGridBuilder = builder;
         int avail = content != null ? content.getWidth() : 0;
+        if (avail <= 0 && a.root != null) avail = a.root.getWidth() - a.dp(32);
         if (avail <= 0) {
             // 首帧尚未布局：用窗口宽兜底，post 后再按实测宽重建
             avail = a.windowWidth();
@@ -585,13 +587,15 @@ final class FileManagerScreen {
         int margin = widthDp < 600 ? a.dp(16) : a.dp(24);
         int gap = tv ? a.dp(18) : widthDp < 420 ? a.dp(12) : widthDp < 600 ? a.dp(12) : a.dp(16);
         int inner = avail - margin * 2;
-        while (cols > 1 && (inner - gap * (cols - 1)) / cols < a.dp(110)) cols--;
+        if (!tv && cols < 2) cols = 2;
+        while (cols > 2 && (inner - gap * (cols - 1)) / cols < a.dp(110)) cols--;
+        if (!tv && cols < 2) cols = 2;
         int cardW = Math.max(a.dp(100), (inner - gap * (cols - 1)) / cols);
         int thumbH = Math.round(cardW * 0.625f);
         int cardH = thumbH + a.dp(90);
         AppLog.i(
                 "FileMgr",
-                "grid avail="
+                "grid w="
                         + avail
                         + " cols="
                         + cols
@@ -639,6 +643,7 @@ final class FileManagerScreen {
     /** 1.9.2：按实测 content 宽计算列数与卡宽（与 buildGrid 一致）。 */
     private int cardWidth() {
         int avail = content != null ? content.getWidth() : 0;
+        if (avail <= 0 && a.root != null) avail = a.root.getWidth() - a.dp(32);
         if (avail <= 0) avail = a.windowWidth();
         float density = a.getResources().getDisplayMetrics().density;
         int widthDp = Math.round(avail / density);
@@ -647,7 +652,9 @@ final class FileManagerScreen {
         int margin = widthDp < 600 ? a.dp(16) : a.dp(24);
         int gap = tv ? a.dp(18) : widthDp < 600 ? a.dp(12) : a.dp(16);
         int inner = avail - margin * 2;
-        while (cols > 1 && (inner - gap * (cols - 1)) / cols < a.dp(110)) cols--;
+        if (!tv && cols < 2) cols = 2;
+        while (cols > 2 && (inner - gap * (cols - 1)) / cols < a.dp(110)) cols--;
+        if (!tv && cols < 2) cols = 2;
         return Math.max(a.dp(100), (inner - gap * (cols - 1)) / cols);
     }
 
@@ -1091,20 +1098,11 @@ final class FileManagerScreen {
                         message -> {
                             activeTaskId = null;
                             stripPaused = false;
-                            // 1.9.4：412/过期时引导重新扫码
                             notifyDownloadFailure(message, providerKey);
-                            buildFailedStrip(
-                                    item.name,
-                                    message,
-                                    () ->
-                                            beginDownload(
-                                                    item, dir, provider, queue, next, overwrite));
-                            AppLog.i("FileMgr", "download failed retry available fid=" + item.fid);
+                            AppLog.i("FileMgr", "download failed task kept for DownloadCenter fid=" + item.fid);
                         },
                         dir,
                         overwrite);
-        buildDownloadStrip(item.name);
-        AppLog.i("FileMgr", "download queue provider=" + provider.key + " fid=" + item.fid);
     }
 
     private void notifyDownloadFailure(String message, final String providerKey) {
