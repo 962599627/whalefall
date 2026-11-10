@@ -88,6 +88,15 @@ final class MobileShell {
     LinearLayout homeCloudHolder;
     RecyclerView homeRecyclerRef;
     LinearLayout homeStatusWrapRef;
+    /** 1.9.37：薄玻璃（滤镜面板同款），让壁纸透出。 */
+    android.graphics.drawable.GradientDrawable thinGlass(int radiusDp, boolean strongerStroke) {
+        android.graphics.drawable.GradientDrawable d =
+                new android.graphics.drawable.GradientDrawable();
+        d.setColor(0x1affffff);
+        d.setCornerRadius(a.dp(radiusDp));
+        d.setStroke(a.dp(1), strongerStroke ? 0x26ffffff : 0x1affffff);
+        return d;
+    }
     /** 1.9.36：统一加载指示（一个实例，分类/筛选/翻页共用）。 */
     LinearLayout homeStatusWrap;
     WhaleLoadingView homeWhale;
@@ -1180,13 +1189,7 @@ final class MobileShell {
                         a.dp(UiTokens.SP_10),
                         a.dp(UiTokens.SP_12),
                         a.dp(UiTokens.SP_10));
-                card.setBackground(
-                        glassBg(
-                                0xcc1e3557,
-                                0xb8151b19,
-                                a.dp(UiTokens.RADIUS_20),
-                                a.dp(0.8f),
-                                0x38ffffff));
+                card.setBackground(thinGlass(16, true));
                 MobileDetailScreen.bindTouchFeedback(card);
                 card.setOnClickListener(v -> a.resumeHistory(e));
 
@@ -1247,11 +1250,10 @@ final class MobileShell {
             body.addView(heroContainer, new LinearLayout.LayoutParams(-1, -2));
         }
 
-        // 3.5 「今晚看什么」：随机三部，换一批
+        // 3.5 「今晚看什么」：随机三部，换一批；1.9.37 薄玻璃（透出壁纸）
         final LinearLayout tonightCard = a.vertical();
         tonightCard.setPadding(a.dp(16), a.dp(14), a.dp(16), a.dp(12));
-        tonightCard.setBackground(
-                glassBg(0xcc16283f, 0xb3121d2e, a.dp(20), a.dp(0.8f), 0x33ffffff));
+        tonightCard.setBackground(thinGlass(16, false));
         tonightCard.setVisibility(View.GONE);
         LinearLayout tonightHeader = a.row();
         tonightHeader.setGravity(Gravity.CENTER_VERTICAL);

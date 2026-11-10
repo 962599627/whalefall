@@ -29,6 +29,15 @@ final class HomeScreen {
     LinearLayout content;
     /** 1.9.33：L2 筛选标签行 / L3 选项行（分类 chip 之下）。 */
     LinearLayout filterTagRow, filterOptionRow, filterOptionGrid;
+    /** 1.9.37：薄玻璃（筛选面板同款），壁纸透出；TV 历史卡使用。 */
+    android.graphics.drawable.GradientDrawable thinGlass(int radiusDp, boolean strongerStroke) {
+        android.graphics.drawable.GradientDrawable d =
+                new android.graphics.drawable.GradientDrawable();
+        d.setColor(0x1affffff);
+        d.setCornerRadius(a.dp(radiusDp));
+        d.setStroke(a.dp(1), strongerStroke ? 0x26ffffff : 0x1affffff);
+        return d;
+    }
     LinearLayout filterPanel;
     android.widget.HorizontalScrollView filterTagScroll, filterOptionScroll;
     String filterOpenDim = "";
@@ -646,7 +655,7 @@ final class HomeScreen {
             final WatchHistory.Entry e = entries.get(i);
             LinearLayout card = a.row();
             card.setPadding(a.dp(9), a.dp(6), a.dp(12), a.dp(6));
-            card.setBackground(a.bg(0xff16243c, 14));
+            card.setBackground(thinGlass(16, true));
             ImageView image = new AmbientPoster();
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
             image.setBackground(a.bg(0xff303038, 7));
