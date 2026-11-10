@@ -253,6 +253,9 @@ final class MobileShell {
     private final List<Cms.Video> currentVideos = new ArrayList<>();
     private List<Cms.Category> currentCategories = new ArrayList<>();
     private String filterSchema = "{}";
+    /** 1.9.40：缓存上次解析成功的筛选定义，避免刷新期间 defs 短暂为空导致标签消失。 */
+    private List<VideoFilters.Definition> lastMobileFilterDefs;
+    private String lastMobileFilterDefsSite = "";
     /** 1.9.37：filterSchema 归属的片源，避免切换源后沿用旧 schema 误判筛选能力。 */
     private String filterSchemaSite = "";
     private final java.util.Map<String, String> selectedFilters = new java.util.LinkedHashMap<>();
@@ -660,21 +663,28 @@ final class MobileShell {
     }
 
     private void resolveActiveSite() {
+        String previous = currentSite == null ? "" : currentSite.key;
         currentSite = null;
         if (a.config == null || a.config.sites.isEmpty()) return;
         String wanted = a.prefs.getString(Prefs.SELECTED_SITE, "");
         for (Cms.Site s : a.config.sites) {
             if (s.key.equals(wanted) && a.available(s)) {
                 currentSite = s;
-                return;
+                break;
             }
         }
-        for (Cms.Site s : a.config.sites) {
-            if (a.available(s)) {
-                currentSite = s;
-                a.prefs.edit().putString(Prefs.SELECTED_SITE, s.key).apply();
-                return;
+        if (currentSite == null)
+            for (Cms.Site s : a.config.sites) {
+                if (a.available(s)) {
+                    currentSite = s;
+                    a.prefs.edit().putString(Prefs.SELECTED_SITE, s.key).apply();
+                    break;
+                }
             }
+        // 1.9.40：源切换才清筛选定义缓存
+        if (currentSite != null && !currentSite.key.equals(previous)) {
+            lastMobileFilterDefs = null;
+            lastMobileFilterDefsSite = "";
         }
     }
 
@@ -1688,32 +1698,17 @@ final class MobileShell {
                                                                     "该片源不返回筛选结果，已按本地影片资料筛选"));
                                         }
                                     }
-                                    // 片源既不返回筛选结果、本地资料也筛不动：隐藏筛选入口并提示
+                                    // 1.9.40：本地兜底筛选时不再隐藏筛选入口/标签行，保持面板展开
                                     if (!filterSnapshot.isEmpty()
                                             && remoteSent.isEmpty()
                                             && !list.videos.isEmpty()
                                             && filtered.size() == list.videos.size()) {
-                                        a.ui.post(
-                                                () -> {
-                                                    if (homeFilterButton != null)
-                                                        homeFilterButton.setVisibility(
-                                                                View.GONE);
-                                                    if (filterSummaryBar != null)
-                                                        filterSummaryBar
-                                                                .view()
-                                                                .setVisibility(View.GONE);
-                                                    if (homeFilterTagRow != null)
-                                                        homeFilterTagRow.setVisibility(View.GONE);
-                                                    if (homeFilterOptionRow != null)
-                                                        homeFilterOptionRow.setVisibility(
-                                                                View.GONE);
-                                                    AppLog.i(
-                                                            "Filter",
-                                                            "capability hidden reason=no-remote-defs site="
-                                                                    + (currentSite == null
-                                                                            ? "null"
-                                                                            : currentSite.key));
-                                                });
+                                        AppLog.i(
+                                                "Filter",
+                                                "capability fallback=local keepPanel=true site="
+                                                        + (currentSite == null
+                                                                ? "null"
+                                                                : currentSite.key));
                                     }
                                     final boolean filterEmpty =
                                             filtered.isEmpty() && !filterSnapshot.isEmpty();
@@ -2242,6 +2237,17 @@ final class MobileShell {
         }
         if (homeFilterPanel != null) homeFilterPanel.setVisibility(View.VISIBLE);
         if (homeFilterApply != null) homeFilterApply.run();
+        AppLog.i(
+                "Filter",
+                "panel keep after apply defs="
+                        + mobileFilterDefinitions().size()
+                        + " cached="
+                        + (lastMobileFilterDefs == null ? 0 : lastMobileFilterDefs.size())
+                        + " panel="
+                        + (homeFilterPanel != null
+                                        && homeFilterPanel.getVisibility() == View.VISIBLE
+                                ? 1
+                                : 0));
         if (lm != null && anchorPos >= 0)
             a.ui.postDelayed(
                     () -> {
@@ -2310,7 +2316,22 @@ final class MobileShell {
         homeFilterTagRow.removeAllViews();
         List<VideoFilters.Definition> defs = mobileFilterDefinitions();
         if (defs.isEmpty()) {
-            // 1.9.39：标签渲染绝不收起面板（能力判定在上层保证）
+            // 1.9.40：用缓存定义继续渲染，绝不隐藏/收起面板
+            defs = lastMobileFilterDefs;
+            AppLog.i(
+                    "Filter",
+                    "tags useCache cached="
+                            + (defs == null ? 0 : defs.size())
+                            + " panel="
+                            + (homeFilterPanel != null
+                                            && homeFilterPanel.getVisibility() == View.VISIBLE
+                                    ? 1
+                                    : 0));
+        } else {
+            lastMobileFilterDefs = defs;
+            lastMobileFilterDefsSite = currentSite == null ? "" : currentSite.key;
+        }
+        if (defs == null || defs.isEmpty()) {
             AppLog.i("Filter", "tags empty panelKeep=true");
             return;
         }
