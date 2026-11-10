@@ -2045,6 +2045,86 @@ final class MobileShell {
         return glyph;
     }
 
+    /** 1.9.36：同维度多选（逗号分隔存 selectedFilters，兼容旧逻辑）。 */
+    static java.util.LinkedHashSet<String> filterValueSet(String raw) {
+        java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<>();
+        if (raw != null)
+            for (String part : raw.split(","))
+                if (!part.trim().isEmpty()) set.add(part.trim());
+        return set;
+    }
+
+    static String joinFilterValues(java.util.Set<String> values) {
+        return TextUtils.join(",", values);
+    }
+
+    static String filterLabel(VideoFilters.Definition def, String raw) {
+        java.util.Set<String> values = filterValueSet(raw);
+        if (values.isEmpty()) return "全部";
+        StringBuilder out = new StringBuilder();
+        for (String value : values) {
+            if (out.length() > 0) out.append("+");
+            out.append(def.labelFor(value));
+        }
+        return out.toString();
+    }
+
+    /** 1.9.36：L3 选项 toggle（同维度多选）；「全部」清空该维度。 */
+    void toggleMobileFilterValue(VideoFilters.Definition def, VideoFilters.Choice choice) {
+        java.util.LinkedHashSet<String> values =
+                filterValueSet(selectedFilters.get(def.dimension));
+        if (choice.value.isEmpty()) {
+            values.clear();
+        } else if (!values.remove(choice.value)) {
+            values.add(choice.value);
+        }
+        if (values.isEmpty()) selectedFilters.remove(def.dimension);
+        else selectedFilters.put(def.dimension, joinFilterValues(values));
+        String joined = selectedFilters.containsKey(def.dimension)
+                ? selectedFilters.get(def.dimension)
+                : "";
+        StringBuilder labels = new StringBuilder("[");
+        for (String value : filterValueSet(joined)) {
+            if (labels.length() > 1) labels.append(",");
+            labels.append(def.labelFor(value));
+        }
+        labels.append("]");
+        AppLog.i(
+                "Filter",
+                "apply dim="
+                        + def.dimension
+                        + " values="
+                        + labels
+                        + " joined="
+                        + joined);
+        if (filterValueSet(joined).size() > 1 && def.remote) {
+            AppLog.i("Filter", "multi unsupported dim=" + def.dimension + " site=remote");
+            a.toast("该源筛选可能只取第一个值");
+        }
+        homePendingTagFocus = def.dimension;
+        currentPage = 1;
+        // 应用筛选才刷新；记录滚动位置，刷新后恢复
+        final androidx.recyclerview.widget.LinearLayoutManager lm =
+                recycler.getLayoutManager() instanceof androidx.recyclerview.widget.LinearLayoutManager
+                        ? (androidx.recyclerview.widget.LinearLayoutManager)
+                                recycler.getLayoutManager()
+                        : null;
+        final int anchorPos = lm == null ? -1 : lm.findFirstVisibleItemPosition();
+        final android.view.View anchorView =
+                lm == null || anchorPos < 0 ? null : lm.findViewByPosition(anchorPos);
+        final int anchorOffset =
+                anchorView == null ? 0 : anchorView.getTop() - recycler.getPaddingTop();
+        homeSkipFilterAnim = false;
+        if (homeFilterApply != null) homeFilterApply.run();
+        if (lm != null && anchorPos >= 0)
+            a.ui.postDelayed(
+                    () -> {
+                        if (recycler.getLayoutManager() == lm)
+                            lm.scrollToPositionWithOffset(anchorPos, anchorOffset);
+                    },
+                    450);
+    }
+
     /** 1.9.35：同分类点击循环：第二次一次性展开 L2+L3，第三次收起。 */
     void handleMobileCategoryFilterTap() {
         if (homeFilterPanel == null) return;
@@ -2106,12 +2186,13 @@ final class MobileShell {
             tagWrap.setGravity(Gravity.CENTER_HORIZONTAL);
             TextView chip =
                     a.text(
-                            active ? def.label + " · " + def.labelFor(value) : def.label,
+                            active ? def.label + " · " + filterLabel(def, value) : def.label,
                             12,
-                            active || open ? 0xffffb3c8 : 0xffa9b7d0);
-            // 紧凑稿：标签不使用全局字体色/默认绿，显式中性色
-            chip.setTextColor(active || open ? 0xffffb3c8 : 0xffa9b7d0);
+                            active || open ? UiTokens.ACCENT_SOFT : 0xffa9b7d0);
             chip.setTypeface(null, (active || open) ? Typeface.BOLD : Typeface.NORMAL);
+            chip.setSingleLine(true);
+            chip.setEllipsize(TextUtils.TruncateAt.END);
+            chip.setMaxWidth(a.dp(homeFilterWide ? 220 : 160));
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(a.dp(2), 0, a.dp(2), 0);
             chip.setMinHeight(a.dp(tagHeight - 6));
@@ -2207,14 +2288,17 @@ final class MobileShell {
         int gap = a.dp(homeFilterWide ? 10 : 8);
         int count = 0;
         for (final VideoFilters.Choice choice : def.choices) {
-            String current = selectedFilters.get(def.dimension);
-            boolean active = choice.value.equals(current == null ? "" : current);
+            String currentRaw = selectedFilters.get(def.dimension);
+            java.util.Set<String> currentValues = filterValueSet(currentRaw);
+            boolean active =
+                    choice.value.isEmpty()
+                            ? currentValues.isEmpty()
+                            : currentValues.contains(choice.value);
             TextView chip =
                     a.text(
                             choice.label,
                             13,
                             active ? 0xff070d18 : 0xfff5f7fc);
-            chip.setTextColor(active ? 0xff070d18 : 0xfff5f7fc);
             chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
             chip.setGravity(Gravity.CENTER);
             chip.setSingleLine(true);
@@ -2229,7 +2313,27 @@ final class MobileShell {
             chip.setFocusable(true);
             chip.setFocusableInTouchMode(true);
             chip.setMinHeight(chipHeight);
-            chip.setOnClickListener(v -> applyMobileFilterChoice(def, choice));
+            chip.setOnClickListener(
+                    v -> {
+                        // 1.9.36：120ms 缩放反馈后 toggle（同维度多选）
+                        if (!a.reduced) {
+                            chip.animate()
+                                    .scaleX(0.96f)
+                                    .scaleY(0.96f)
+                                    .setDuration(60)
+                                    .withEndAction(
+                                            () ->
+                                                    chip.animate()
+                                                            .scaleX(1f)
+                                                            .scaleY(1f)
+                                                            .setDuration(60)
+                                                            .start())
+                                    .start();
+                            a.ui.postDelayed(() -> toggleMobileFilterValue(def, choice), 70);
+                        } else {
+                            toggleMobileFilterValue(def, choice);
+                        }
+                    });
             LinearLayout.LayoutParams lp =
                     new LinearLayout.LayoutParams(-2, chipHeight);
             lp.rightMargin = gap;
@@ -2288,46 +2392,50 @@ final class MobileShell {
         view.animate().alpha(1f).translationY(0).setDuration(durationMs).start();
     }
 
-    /** 1.9.34：面板高度动画（height 0↔measured），禁止 scaleY。 */
+    /** 1.9.36：面板过渡改为 translationY+alpha（去掉逐帧 LayoutParams.height）。 */
     void animatePanelHeight(
             android.view.View panel, int targetHeight, int durationMs, boolean collapse) {
         if (panel == null) return;
-        if (homeFilterHeightAnim != null) homeFilterHeightAnim.cancel();
+        if (homeFilterHeightAnim != null) {
+            homeFilterHeightAnim.cancel();
+            homeFilterHeightAnim = null;
+        }
         android.view.ViewGroup.LayoutParams lp = panel.getLayoutParams();
-        int start = panel.getHeight() > 0 ? panel.getHeight() : Math.max(0, lp.height);
         if (a.reduced || durationMs <= 0) {
-            lp.height = targetHeight;
+            lp.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
             panel.setLayoutParams(lp);
-            if (collapse) panel.setVisibility(android.view.View.GONE);
+            panel.setAlpha(1f);
+            panel.setTranslationY(0);
+            panel.setVisibility(collapse ? android.view.View.GONE : android.view.View.VISIBLE);
             return;
         }
-        homeFilterHeightAnim = android.animation.ValueAnimator.ofInt(start, targetHeight);
-        homeFilterHeightAnim.setDuration(durationMs);
-        if (start == 0 && !collapse) {
+        lp.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
+        panel.setLayoutParams(lp);
+        panel.animate().cancel();
+        if (collapse) {
+            panel.animate()
+                    .alpha(0f)
+                    .translationY(a.dp(6))
+                    .setDuration(durationMs)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                    .withEndAction(
+                            () -> {
+                                panel.setVisibility(android.view.View.GONE);
+                                panel.setAlpha(1f);
+                                panel.setTranslationY(0);
+                            })
+                    .start();
+        } else {
+            panel.setVisibility(android.view.View.VISIBLE);
             panel.setAlpha(0f);
-            panel.setTranslationY(-a.dp(4));
-            panel.animate().alpha(1f).translationY(0).setDuration(durationMs).start();
-        } else if (collapse) {
-            panel.animate().alpha(0f).setDuration(durationMs).start();
+            panel.setTranslationY(-a.dp(6));
+            panel.animate()
+                    .alpha(1f)
+                    .translationY(0)
+                    .setDuration(durationMs)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                    .start();
         }
-        homeFilterHeightAnim.addUpdateListener(
-                animation -> {
-                    int value = (Integer) animation.getAnimatedValue();
-                    lp.height = value;
-                    panel.setLayoutParams(lp);
-                });
-        homeFilterHeightAnim.addListener(
-                new android.animation.AnimatorListenerAdapter() {
-                    @Override
-                    public void onAnimationEnd(android.animation.Animator animation) {
-                        if (collapse) panel.setVisibility(android.view.View.GONE);
-                        panel.setAlpha(1f);
-                        panel.setTranslationY(0);
-                        lp.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
-                        panel.setLayoutParams(lp);
-                    }
-                });
-        homeFilterHeightAnim.start();
     }
 
     int measureFilterPanelHeight(android.view.View panel) {

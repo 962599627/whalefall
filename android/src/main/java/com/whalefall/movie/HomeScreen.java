@@ -862,6 +862,70 @@ final class HomeScreen {
     }
 
     /** L2：文字标签 + 2dp 粉色下划线（紧凑稿，无胶囊底）。 */
+    /** 1.9.36：同维度多选（逗号分隔，兼容原 Map 结构）。 */
+    static java.util.LinkedHashSet<String> filterValueSet(String raw) {
+        java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<>();
+        if (raw != null)
+            for (String part : raw.split(","))
+                if (!part.trim().isEmpty()) set.add(part.trim());
+        return set;
+    }
+
+    static String joinFilterValues(java.util.Set<String> values) {
+        return TextUtils.join(",", values);
+    }
+
+    static String filterLabel(VideoFilters.Definition def, String raw) {
+        java.util.Set<String> values = filterValueSet(raw);
+        if (values.isEmpty()) return "全部";
+        StringBuilder out = new StringBuilder();
+        for (String value : values) {
+            if (out.length() > 0) out.append("+");
+            out.append(def.labelFor(value));
+        }
+        return out.toString();
+    }
+
+    void toggleHomeFilterValue(VideoFilters.Definition def, VideoFilters.Choice choice) {
+        java.util.LinkedHashSet<String> values =
+                filterValueSet(state.selectedFilters.get(def.dimension));
+        if (choice.value.isEmpty()) values.clear();
+        else if (!values.remove(choice.value)) values.add(choice.value);
+        if (values.isEmpty()) state.selectedFilters.remove(def.dimension);
+        else state.selectedFilters.put(def.dimension, joinFilterValues(values));
+        String joined =
+                state.selectedFilters.containsKey(def.dimension)
+                        ? state.selectedFilters.get(def.dimension)
+                        : "";
+        StringBuilder labels = new StringBuilder("[");
+        for (String value : filterValueSet(joined)) {
+            if (labels.length() > 1) labels.append(",");
+            labels.append(def.labelFor(value));
+        }
+        labels.append("]");
+        AppLog.i(
+                "Filter",
+                "apply dim="
+                        + def.dimension
+                        + " values="
+                        + labels
+                        + " joined="
+                        + joined);
+        if (filterValueSet(joined).size() > 1 && def.remote) {
+            AppLog.i("Filter", "multi unsupported dim=" + def.dimension + " site=remote");
+            a.toast("该源筛选可能只取第一个值");
+        }
+        filterPendingTag = def.dimension;
+        final int scroll = a.scroll == null ? 0 : a.scroll.getScrollY();
+        applyFilters();
+        renderFilterTags();
+        a.ui.postDelayed(
+                () -> {
+                    if (a.scroll != null) a.scroll.scrollTo(0, scroll);
+                },
+                450);
+    }
+
     void renderFilterTags() {
         if (filterTagScroll == null) return;
         filterTagRow.removeAllViews();
@@ -886,11 +950,13 @@ final class HomeScreen {
             tagWrap.setGravity(Gravity.CENTER_HORIZONTAL);
             TextView chip =
                     a.text(
-                            active ? def.label + " · " + def.labelFor(value) : def.label,
+                            active ? def.label + " · " + filterLabel(def, value) : def.label,
                             14,
-                            active || open ? 0xffffb3c8 : 0xffa9b7d0);
-            chip.setTextColor(active || open ? 0xffffb3c8 : 0xffa9b7d0);
+                            active || open ? UiTokens.ACCENT_SOFT : 0xffa9b7d0);
             chip.setTypeface(null, (active || open) ? Typeface.BOLD : Typeface.NORMAL);
+            chip.setSingleLine(true);
+            chip.setEllipsize(TextUtils.TruncateAt.END);
+            chip.setMaxWidth(a.dp(260));
             chip.setGravity(Gravity.CENTER);
             chip.setSingleLine(true);
             chip.setPadding(a.dp(2), 0, a.dp(2), 0);
@@ -980,14 +1046,17 @@ final class HomeScreen {
         int padH = a.dp(12);
         int count = 0;
         for (final VideoFilters.Choice choice : def.choices) {
-            String current = state.selectedFilters.get(def.dimension);
-            boolean active = choice.value.equals(current == null ? "" : current);
+            java.util.Set<String> currentValues =
+                    filterValueSet(state.selectedFilters.get(def.dimension));
+            boolean active =
+                    choice.value.isEmpty()
+                            ? currentValues.isEmpty()
+                            : currentValues.contains(choice.value);
             TextView chip =
                     a.text(
                             choice.label,
                             14,
                             active ? 0xff070d18 : 0xfff5f7fc);
-            chip.setTextColor(active ? 0xff070d18 : 0xfff5f7fc);
             chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
             chip.setGravity(Gravity.CENTER);
             chip.setSingleLine(true);
@@ -1002,7 +1071,26 @@ final class HomeScreen {
             chip.setFocusable(true);
             chip.setFocusableInTouchMode(true);
             chip.setMinHeight(chipHeight);
-            chip.setOnClickListener(v -> applyFilterChoice(def, choice));
+            chip.setOnClickListener(
+                    v -> {
+                        if (!a.reduced) {
+                            chip.animate()
+                                    .scaleX(0.96f)
+                                    .scaleY(0.96f)
+                                    .setDuration(60)
+                                    .withEndAction(
+                                            () ->
+                                                    chip.animate()
+                                                            .scaleX(1f)
+                                                            .scaleY(1f)
+                                                            .setDuration(60)
+                                                            .start())
+                                    .start();
+                            a.ui.postDelayed(() -> toggleHomeFilterValue(def, choice), 70);
+                        } else {
+                            toggleHomeFilterValue(def, choice);
+                        }
+                    });
             LinearLayout.LayoutParams lp =
                     new LinearLayout.LayoutParams(-2, chipHeight);
             lp.rightMargin = a.dp(10);
@@ -1047,47 +1135,48 @@ final class HomeScreen {
         animateFilterPanelHeight(filterPanel, 0, 120);
     }
 
-    /** 1.9.34：面板高度动画（height 0↔measured），禁止 scaleY。 */
+    /** 1.9.36：面板过渡改为 translationY+alpha（去掉逐帧 LayoutParams.height）。 */
     void animateFilterPanelHeight(View panel, int targetHeight, int durationMs) {
         if (panel == null) return;
-        if (filterHeightAnim != null) filterHeightAnim.cancel();
-        ViewGroup.LayoutParams lp = panel.getLayoutParams();
-        int start = panel.getHeight() > 0 ? panel.getHeight() : Math.max(0, lp.height);
         boolean collapse = targetHeight == 0;
+        if (filterHeightAnim != null) {
+            filterHeightAnim.cancel();
+            filterHeightAnim = null;
+        }
+        ViewGroup.LayoutParams lp = panel.getLayoutParams();
+        lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+        panel.setLayoutParams(lp);
         if (a.reduced || durationMs <= 0) {
-            lp.height = collapse ? 0 : ViewGroup.LayoutParams.WRAP_CONTENT;
-            panel.setLayoutParams(lp);
-            if (collapse) panel.setVisibility(View.GONE);
-            else panel.setVisibility(View.VISIBLE);
+            panel.setAlpha(1f);
+            panel.setTranslationY(0);
+            panel.setVisibility(collapse ? View.GONE : View.VISIBLE);
             return;
         }
-        filterHeightAnim = android.animation.ValueAnimator.ofInt(start, targetHeight);
-        filterHeightAnim.setDuration(durationMs);
-        if (start == 0 && !collapse) {
+        panel.animate().cancel();
+        if (collapse) {
+            panel.animate()
+                    .alpha(0f)
+                    .translationY(a.dp(6))
+                    .setDuration(durationMs)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                    .withEndAction(
+                            () -> {
+                                panel.setVisibility(View.GONE);
+                                panel.setAlpha(1f);
+                                panel.setTranslationY(0);
+                            })
+                    .start();
+        } else {
+            panel.setVisibility(View.VISIBLE);
             panel.setAlpha(0f);
-            panel.setTranslationY(-a.dp(4));
-            panel.animate().alpha(1f).translationY(0).setDuration(durationMs).start();
-        } else if (collapse) {
-            panel.animate().alpha(0f).setDuration(durationMs).start();
+            panel.setTranslationY(-a.dp(6));
+            panel.animate()
+                    .alpha(1f)
+                    .translationY(0)
+                    .setDuration(durationMs)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                    .start();
         }
-        filterHeightAnim.addUpdateListener(
-                animation -> {
-                    int value = (Integer) animation.getAnimatedValue();
-                    lp.height = value;
-                    panel.setLayoutParams(lp);
-                });
-        filterHeightAnim.addListener(
-                new android.animation.AnimatorListenerAdapter() {
-                    @Override
-                    public void onAnimationEnd(android.animation.Animator animation) {
-                        if (collapse) panel.setVisibility(View.GONE);
-                        panel.setAlpha(1f);
-                        panel.setTranslationY(0);
-                        lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-                        panel.setLayoutParams(lp);
-                    }
-                });
-        filterHeightAnim.start();
     }
 
     int measureFilterPanelHeight(View panel) {
