@@ -28,3 +28,7 @@
 ## 出证后回我一句
 
 「1.4.11 V36：日志是否有 8 行 Cookie host/name、prefs 键名、DB 表名与采样明细，判定登录态存在哪类位置。」
+
+---
+
+**V36 实测结果（2026-11-10，1.4.11 包）**：日志定位成功——登录数据在 **`spUtils` prefs**：**`quark_ck`（len=168，Base64 编码的夸克 Cookie）**、**`quarkSt`（len=32，Base64）**，另有 `quarkSt/lastQuark*` 等键。误导项排除：Cookie 库 8 行**全是 CCTV 的 Cookie**（不是网盘），`files/` 是我们自己的 wallpaper/config/csp jar，`databases/tv` 是电视源库。**结论：V36 通过（定位成功）**。根因：值是 **Base64 + 键名不含 cookie/token 关键字**，被过滤漏掉。转 1.4.12 精确读取（见 `docs/VERIFY_1.4.12.md` **V37**）。

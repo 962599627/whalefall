@@ -291,12 +291,17 @@ final class PanLoginState {
         all.addAll(sqlite);
         if (!all.isEmpty()) {
             String joined = joinList(all);
-            return new PanLoginState(
-                    drive,
-                    STATE_SOURCE,
-                    all.size() > 1 ? "源存储/私有文件/数据库命中多条凭据" : "源存储/私有文件/数据库有登录凭据（账号名不可读）",
-                    "",
-                    joined);
+            String first = all.get(0);
+            String detail;
+            if (first.startsWith("prefs:") && first.contains("base64")) {
+                String where = first.substring("prefs:".length()).replace(" · base64", "");
+                detail = "源已登录（源存储登录凭据 · " + where + "）";
+            } else if (all.size() > 1) {
+                detail = "源存储/私有文件/数据库命中多条凭据";
+            } else {
+                detail = "源存储/私有文件/数据库有登录凭据（账号名不可读）";
+            }
+            return new PanLoginState(drive, STATE_SOURCE, detail, "", joined);
         }
         if (manualLogin(a, drive)) {
             return new PanLoginState(
@@ -446,9 +451,27 @@ final class PanLoginState {
                         Object value = entry.getValue();
                         if (!(value instanceof String)) continue;
                         String raw = (String) value;
-                        if (!AccountPanel.credentialValue(raw)) continue;
-                        for (String drive : drivesForToken(raw))
-                            hits.add(new Hit(drive, "prefs:" + name + " · " + entry.getKey()));
+                        String whereKey = name + " · " + entry.getKey();
+                        List<String> drives = drivesForToken(raw);
+                        boolean decodedHit = false;
+                        if (drives.isEmpty() && looksBase64(raw)) {
+                            // Base64 存储（如 spUtils.quark_ck）：解码后按强 token/cookie 形态判定
+                            String decoded = decodeBase64(raw);
+                            if (decoded != null) {
+                                drives = decodedDrives(decoded);
+                                decodedHit = !drives.isEmpty();
+                            }
+                        }
+                        if (drives.isEmpty()) continue;
+                        // 直读值仍要求凭据形态；Base64 命中已由解码内容保证
+                        if (!decodedHit && !AccountPanel.credentialValue(raw)) continue;
+                        for (String drive : drives)
+                            hits.add(
+                                    new Hit(
+                                            drive,
+                                            "prefs:"
+                                                    + whereKey
+                                                    + (decodedHit ? " · base64" : "")));
                     }
                 } catch (Throwable ignored) {
                 }
@@ -457,6 +480,63 @@ final class PanLoginState {
             AppLog.w("PanLogin", "prefs scan failed", error);
         }
         return hits;
+    }
+
+    // ---------------- Base64 支持（spUtils.quark_ck 等） ----------------
+
+    static boolean looksBase64(String value) {
+        if (value == null) return false;
+        String v = value.trim();
+        if (v.length() < 16 || v.length() > 65536) return false;
+        if (!v.matches("[A-Za-z0-9+/=_-]+")) return false;
+        int mod = v.length() % 4;
+        return mod == 0 || mod == 2 || mod == 3;
+    }
+
+    /** 标准 + URL-safe + 去 padding 兜底解码；非可打印文本返回 null。 */
+    static String decodeBase64(String value) {
+        if (!looksBase64(value)) return null;
+        String normalized = value.trim().replace('-', '+').replace('_', '/');
+        int mod = normalized.length() % 4;
+        if (mod == 2) normalized += "==";
+        else if (mod == 3) normalized += "=";
+        else if (mod == 1) return null;
+        try {
+            byte[] bytes = android.util.Base64.decode(normalized, android.util.Base64.DEFAULT);
+            if (bytes == null || bytes.length == 0 || bytes.length > 64 * 1024) return null;
+            String text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            if (text.isEmpty()) return null;
+            int printable = 0;
+            for (int i = 0; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (c >= 32 && c < 127) printable++;
+            }
+            if (printable * 100 / text.length() < 70) return null;
+            return text;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** 解码后的内容必须是 cookie 形态或强 token，设备 ID/纯状态文本不算登录。 */
+    static List<String> decodedDrives(String decoded) {
+        List<String> drives = new ArrayList<>();
+        if (decoded == null) return drives;
+        String lower = decoded.toLowerCase(Locale.ROOT);
+        boolean cookieShape =
+                (lower.contains("=") && lower.contains(";"))
+                        || lower.contains("kps=")
+                        || lower.contains("__puus")
+                        || lower.contains("__pus");
+        if (!cookieShape) return drives;
+        drives.addAll(drivesForToken(lower));
+        if (lower.contains("quark") && !drives.contains("quark")) drives.add("quark");
+        if ((lower.contains("drive.uc.cn") || lower.contains("uc_st")) && !drives.contains("uc"))
+            drives.add("uc");
+        if (lower.contains("baidu") && !drives.contains("baidu")) drives.add("baidu");
+        if ((lower.contains("aliyundrive") || lower.contains("alipan"))
+                && !drives.contains("ali")) drives.add("ali");
+        return drives;
     }
 
     // ---------------- 私有目录原始字节扫描（不跳过含 NUL 文件，DB 优先） ----------------
@@ -1098,6 +1178,31 @@ final class PanLoginState {
                                         + " b64="
                                         + (base64 ? "yes" : "no"));
                         meta++;
+                    }
+                    // Base64 解码验证（打印命中网盘/是否命中，不打印内容）
+                    int decodeShown = 0;
+                    for (Map.Entry<String, ?> entry : values.entrySet()) {
+                        if (decodeShown >= 20) break;
+                        Object value = entry.getValue();
+                        if (!(value instanceof String)) continue;
+                        String raw = (String) value;
+                        if (!looksBase64(raw)) continue;
+                        String decoded = decodeBase64(raw);
+                        if (decoded == null) continue;
+                        List<String> drives = decodedDrives(decoded);
+                        decodeShown++;
+                        AppLog.i(
+                                "PanLogin",
+                                "diagnose decode "
+                                        + prefName
+                                        + "."
+                                        + entry.getKey()
+                                        + " b64=yes lenDecoded="
+                                        + decoded.length()
+                                        + " drive="
+                                        + joinAll(drives)
+                                        + " matched="
+                                        + (drives.isEmpty() ? "no" : "yes"));
                     }
                 }
             } catch (Throwable ignored) {
