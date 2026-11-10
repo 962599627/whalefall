@@ -206,6 +206,23 @@ final class SourceController {
         final int ticket = a.generation, epoch = a.engineEpoch;
         final String key = epoch + ":" + site.key.length() + ":" + site.key + id;
         final DetailRequest timing = new DetailRequest();
+        final long started = SystemClock.elapsedRealtime();
+        final Runnable timeout =
+                () ->
+                        a.ui.post(
+                                () -> {
+                                    if (a.isFinishing() || ticket != a.generation) return;
+                                    AppLog.i(
+                                            "Loading",
+                                            "timeout page=detail elapsed="
+                                                    + (SystemClock.elapsedRealtime() - started));
+                                    View state =
+                                            a.root == null
+                                                    ? null
+                                                    : a.root.findViewWithTag("detail-loading");
+                                    showLoadingError(a, state, "加载超时，请重试");
+                                });
+        a.ui.postDelayed(timeout, DETAIL_TIMEOUT_MS);
         Future<?> request =
                 RequestScope.submit(
                         a.details,
@@ -252,11 +269,13 @@ final class SourceController {
                                 Cms.Video video = listing.videos.get(0);
                                 a.ui.post(
                                         () -> {
+                                            a.ui.removeCallbacks(timeout);
                                             if (a.isFinishing() || ticket != a.generation) return;
                                             try {
                                                 done.accept(video);
                                                 a.root.postOnAnimation(timing::ready);
                                             } catch (Throwable error) {
+                                                AppLog.w("Loading", "detail present failed", error);
                                                 a.paragraph("详情数据无法显示，请返回后重试。");
                                             }
                                         });
@@ -264,18 +283,14 @@ final class SourceController {
                                 if (Thread.currentThread().isInterrupted()) return;
                                 a.ui.post(
                                         () -> {
+                                            a.ui.removeCallbacks(timeout);
                                             if (a.isFinishing() || ticket != a.generation) return;
-                                            View state = a.root.findViewWithTag("detail-loading");
-                                            if (state instanceof TextView)
-                                                ((TextView) state).setText(a.message(error));
-                                            LinearLayout target =
-                                                    state != null
-                                                                    && state.getParent()
-                                                                            instanceof LinearLayout
-                                                            ? (LinearLayout) state.getParent()
-                                                            : a.body;
-                                            a.addButton(
-                                                    target, a.button("重试", "primary", a::refresh));
+                                            View state =
+                                                    a.root == null
+                                                            ? null
+                                                            : a.root.findViewWithTag("detail-loading");
+                                            if (a.isFinishing()) return;
+                                            showLoadingError(a, state, a.message(error));
                                         });
                             }
                         });
@@ -285,23 +300,76 @@ final class SourceController {
         a.pageRequests.add(request);
     }
 
+    /** 详情/页面加载超时兜底（1.8.4）。 */
+    static final long DETAIL_TIMEOUT_MS = 20000L;
+    static final long PAGE_TIMEOUT_MS = 20000L;
+
+    /** 失败/超时三路统一：停止 WhaleLoadingView + 文案 + 重试按钮。 */
+    static void showLoadingError(MainActivity a, View state, String message) {
+        if (a == null) return;
+        String text = message == null || message.trim().isEmpty() ? "加载失败，请重试" : message;
+        if (state instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) state;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                if (child instanceof WhaleLoadingView) ((WhaleLoadingView) child).stop();
+                if (child instanceof TextView) ((TextView) child).setText(text);
+            }
+        }
+        if (state != null && state.getParent() instanceof LinearLayout) {
+            LinearLayout target = (LinearLayout) state.getParent();
+            a.addButton(
+                    target,
+                    a.button(
+                            "重试",
+                            "loading-retry",
+                            () -> {
+                                state.setVisibility(View.GONE);
+                                a.refresh();
+                            }));
+        } else {
+            a.paragraph(text);
+            a.addButton(a.body, a.button("重试", "loading-retry", a::refresh));
+        }
+    }
+
     static <T> void load(
             MainActivity a, String label, MainActivity.Work<T> task, MainActivity.Done<T> done) {
         final int ticket = a.generation;
+        final long started = SystemClock.elapsedRealtime();
         final LinearLayout loading = a.vertical();
         loading.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
-        WhaleLoadingView sourceWhale = new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
+        final WhaleLoadingView sourceWhale = new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
         sourceWhale.setText(label);
         sourceWhale.start();
         loading.addView(sourceWhale);
         a.body.addView(loading);
+        final Runnable timeout =
+                () ->
+                        a.ui.post(
+                                () -> {
+                                    if (a.isFinishing() || ticket != a.generation) return;
+                                    AppLog.i(
+                                            "Loading",
+                                            "timeout page=generic elapsed="
+                                                    + (SystemClock.elapsedRealtime() - started)
+                                                    + " label="
+                                                    + label);
+                                    sourceWhale.stop();
+                                    a.body.removeView(loading);
+                                    a.paragraph("加载超时，请重试");
+                                    a.addButton(a.body, a.button("重试", "loading-retry", a::refresh));
+                                });
+        a.ui.postDelayed(timeout, PAGE_TIMEOUT_MS);
         a.submitPage(
                 () -> {
                     try {
                         T value = task.run();
                         a.ui.post(
                                 () -> {
+                                    a.ui.removeCallbacks(timeout);
                                     if (a.isFinishing() || ticket != a.generation) return;
+                                    sourceWhale.stop();
                                     a.body.removeView(loading);
                                     try {
                                         done.accept(value);
@@ -312,7 +380,9 @@ final class SourceController {
                     } catch (Throwable e) {
                         a.ui.post(
                                 () -> {
+                                    a.ui.removeCallbacks(timeout);
                                     if (a.isFinishing() || ticket != a.generation) return;
+                                    sourceWhale.stop();
                                     a.body.removeView(loading);
                                     a.paragraph(a.message(e));
                                     a.addButton(a.body, a.button("重试", "primary", a::refresh));

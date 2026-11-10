@@ -178,13 +178,13 @@ final class TvDetailLayout {
 
         // 加载中：焦点先落「返回」，避免无焦点空档；1.8.3 用圆形帧动画
         final FrameLayout stateWrap = new FrameLayout(a);
+        stateWrap.setTag("detail-loading");
         final WhaleLoadingView tvWhale = new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
         tvWhale.setText("正在读取详情与剧集…");
         tvWhale.start();
         stateWrap.addView(
                 tvWhale, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         final TextView state = a.text("正在读取详情与剧集…", 12, MainActivity.MUTED);
-        state.setTag("detail-loading");
         state.setGravity(Gravity.CENTER);
         state.setPadding(0, a.dp(4), 0, 0);
         FrameLayout.LayoutParams tvStateLp =

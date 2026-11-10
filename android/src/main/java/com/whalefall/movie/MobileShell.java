@@ -1808,6 +1808,12 @@ final class MobileShell {
      * Builds a category pill 1:1 with iPhone `_buildCategoryPill`: white stadium pill with black
      * bold text when selected, translucent dark glass pill with white text when unselected.
      */
+    static boolean isCloudConfigCategory(String label, String id) {
+        String text = ((label == null ? "" : label) + " " + (id == null ? "" : id))
+                .toLowerCase(java.util.Locale.ROOT);
+        return text.contains("云盘") || text.contains("云盤") || text.contains("网盘配置");
+    }
+
     private void addCategoryChip(
             LinearLayout row,
             String label,
@@ -1829,6 +1835,12 @@ final class MobileShell {
         MobileDetailScreen.bindTouchFeedback(chip);
         chip.setOnClickListener(
                 v -> {
+                    // 1.8.4：源里的「云盘配置」是动作页而不是影片列表，直接打开操作页，避免空白
+                    if (isCloudConfigCategory(label, catId)) {
+                        AppLog.i("Catalog", "cloud-config chip clicked label=" + label + " id=" + catId);
+                        CloudConfigScreen.show(a);
+                        return;
+                    }
                     long now = android.os.SystemClock.uptimeMillis();
                     boolean doubleTap =
                             catId.equals(lastChipTap) && now - lastChipTapAt < 350;

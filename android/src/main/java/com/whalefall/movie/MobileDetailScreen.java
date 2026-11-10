@@ -668,6 +668,12 @@ final class MobileDetailScreen {
         detailWhale.start();
         loadingState.addView(
                 detailWhale, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        TextView loadingHint = a.text("", 12, MainActivity.MUTED);
+        loadingHint.setGravity(Gravity.CENTER);
+        FrameLayout.LayoutParams hintLp =
+                new FrameLayout.LayoutParams(
+                        -1, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        loadingState.addView(loadingHint, hintLp);
         lowerBody.addView(
                 loadingState,
                 new LinearLayout.LayoutParams(-1, a.dp(150)));
