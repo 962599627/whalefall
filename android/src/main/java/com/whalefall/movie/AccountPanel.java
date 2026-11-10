@@ -334,30 +334,35 @@ final class AccountPanel {
             if (panRows == null) return;
             panRows.removeAllViews();
             for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES) {
-                // 1.7.1：夸克/UC 走 OpenList 原生移植（文件列表 + 下载直链）
-                if ("quark".equals(drive.key) || "uc".equals(drive.key)) {
-                    QuarkUcApi.Provider provider = QuarkUcApi.of(drive.key);
-                    boolean credential = QuarkUcApi.hasCookie(a, provider);
-                    boolean logged = QuarkUcApi.isLoggedIn(a, provider);
+                // 1.7.2：四盘全部走官方二维码登录（上游开源 netdisk_service.dart 移植）
+                if ("quark".equals(drive.key)
+                        || "uc".equals(drive.key)
+                        || "baidu".equals(drive.key)
+                        || "ali".equals(drive.key)) {
+                    String key = drive.key;
+                    String driveName = NetdiskQrLogin.name(key);
+                    boolean credential = NetdiskQrLogin.hasCredential(a, key);
+                    boolean logged = NetdiskQrLogin.isLoggedIn(a, key);
                     String status =
                             logged
                                     ? "已登录（"
-                                            + provider.name
-                                            + "网盘 · 容量 "
-                                            + QuarkUcApi.formatSize(QuarkUcApi.used(a, provider))
-                                            + " / "
-                                            + QuarkUcApi.formatSize(QuarkUcApi.total(a, provider))
+                                            + driveName
+                                            + "网盘"
+                                            + NetdiskQrLogin.capacityText(a, key)
                                             + "）"
                                     : credential
                                             ? "登录信息已保存 · 验证失败（点此重试）"
-                                            : "未登录 · App 内登录" + provider.name + "（OpenList 移植）";
+                                            : "未登录 · App 内登录" + driveName + "（官方扫码）";
                     addPanRow(
                             drive,
                             status,
                             logged ? 0xff2ad47a : 0xffffb454,
                             logged,
                             logged ? "管理" : credential ? "重试验证" : "App 内登录",
-                            () -> QuarkUcApi.showPanel(a, provider, () -> refresh(true)));
+                            () -> {
+                                PanLoginState.invalidate();
+                                NetdiskQrLogin.showPanel(a, key, () -> refresh(true));
+                            });
                     continue;
                 }
                 PanLoginState pan = panStates.get(drive.key);
@@ -666,8 +671,10 @@ final class AccountPanel {
             } else if (!credentials.isEmpty()) {
                 state = STATE_LOCAL;
             } else if (QuarkUcApi.isLoggedIn(a, QuarkUcApi.QUARK)
-                    || QuarkUcApi.isLoggedIn(a, QuarkUcApi.UC)) {
-                // OpenList 原生直连（1.7.1）：验证通过才计入
+                    || QuarkUcApi.isLoggedIn(a, QuarkUcApi.UC)
+                    || NetdiskQrLogin.baiduLoggedIn(a)
+                    || NetdiskQrLogin.aliLoggedIn(a)) {
+                // 官方二维码登录（1.7.2）：验证通过才计入
                 state = STATE_LOCAL;
             } else if (sourceKnown > 0) {
                 state = STATE_SOURCE;
@@ -971,6 +978,8 @@ final class AccountPanel {
             try {
                 QuarkUcApi.logout(a, QuarkUcApi.QUARK);
                 QuarkUcApi.logout(a, QuarkUcApi.UC);
+                NetdiskQrLogin.logout(a, NetdiskQrLogin.BAIDU);
+                NetdiskQrLogin.logout(a, NetdiskQrLogin.ALI);
             } catch (Throwable ignored) {
             }
             if (dialog != null && dialog.isShowing()) {
@@ -1179,7 +1188,9 @@ final class AccountPanel {
                 || key.startsWith("uc_native_")
                 || key.startsWith("baidu_native_")
                 || key.startsWith("ali_native_")
-                || key.startsWith("quark_uc_")) return false;
+                || key.startsWith("quark_uc_")
+                || key.startsWith("baidu_open_")
+                || key.startsWith("ali_open_")) return false;
         String k = key.toLowerCase(Locale.ROOT);
         return k.contains("pan")
                 || k.contains("drive")
