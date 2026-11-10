@@ -79,6 +79,30 @@ final class MobileShell {
     /** Sub-page of the 片库 tab: 0 history, 1 favorites, 2 downloads. */
     static int mySubTab = 0;
 
+    /** 1.8.9 首页分类原地渲染：云盘配置内容容器与列表显隐引用。 */
+    LinearLayout homeCloudHolder;
+    RecyclerView homeRecyclerRef;
+    LinearLayout homeStatusWrapRef;
+    TextView homeLoadMoreRef;
+
+    private void showCloudConfigInline() {
+        if (homeCloudHolder == null) return;
+        homeCloudHolder.setVisibility(View.VISIBLE);
+        homeCloudHolder.removeAllViews();
+        CloudConfigScreen.renderInto(a, homeCloudHolder, this::showCloudConfigInline);
+        if (homeRecyclerRef != null) homeRecyclerRef.setVisibility(View.GONE);
+        if (homeStatusWrapRef != null) homeStatusWrapRef.setVisibility(View.GONE);
+        if (homeLoadMoreRef != null) homeLoadMoreRef.setVisibility(View.GONE);
+        AppLog.i("Catalog", "cloud-config inline rendered");
+    }
+
+    private void hideCloudConfigInline() {
+        if (homeCloudHolder == null) return;
+        homeCloudHolder.setVisibility(View.GONE);
+        if (homeRecyclerRef != null) homeRecyclerRef.setVisibility(View.VISIBLE);
+        if (homeStatusWrapRef != null) homeStatusWrapRef.setVisibility(View.VISIBLE);
+    }
+
     /**
      * Sub-page of the 设置 tab:
      * 0 = Main 5-card index, 1 = 片源与直播配置, 2 = 播放、解码与字幕, 3 = 界面外观与偏好, 4 = 备份、更新与诊断.
@@ -1181,6 +1205,12 @@ final class MobileShell {
         categoryBar.addView(filterButton, filterSize);
         body.addView(categoryBar, new LinearLayout.LayoutParams(-1, -2));
 
+        // 1.8.9 云盘配置内容原地容器（仅动作型 chip 使用，默认隐藏）
+        homeCloudHolder = a.vertical();
+        homeCloudHolder.setTag("home-cloud-inline");
+        homeCloudHolder.setVisibility(View.GONE);
+        body.addView(homeCloudHolder, new LinearLayout.LayoutParams(-1, -2));
+
         // 5. Status & 3-Column Poster Grid Container
         final LinearLayout statusWrap = a.vertical();
         statusWrap.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -1197,6 +1227,9 @@ final class MobileShell {
         // 影片网格改为 RecyclerView 的「影片行」item（见 HomeAdapter），不再建全量容器。
 
         final TextView loadMoreBtn = a.text("加载更多影片", 13.5f, MainActivity.WHITE);
+        homeRecyclerRef = recycler;
+        homeStatusWrapRef = statusWrap;
+        homeLoadMoreRef = loadMoreBtn;
         loadMoreBtn.setTag("home-load-more");
         loadMoreBtn.setTypeface(null, Typeface.BOLD);
         loadMoreBtn.setGravity(Gravity.CENTER);
@@ -1835,14 +1868,15 @@ final class MobileShell {
         MobileDetailScreen.bindTouchFeedback(chip);
         chip.setOnClickListener(
                 v -> {
-                    // 1.8.6：读取源真实 Cloud-drive 地址展示网盘条目（不再自绘假卡片）
+                    // 1.8.9：云盘配置内容原地渲染在 chips 下方，不跳新页面
                     if (isCloudConfigCategory(label, catId)) {
                         AppLog.i(
                                 "Catalog",
-                                "cloud-config chip clicked label=" + label + " id=" + catId);
-                        CloudConfigScreen.show(a);
+                                "cloud-config inline chip label=" + label + " id=" + catId);
+                        showCloudConfigInline();
                         return;
                     }
+                    hideCloudConfigInline();
                     long now = android.os.SystemClock.uptimeMillis();
                     boolean doubleTap =
                             catId.equals(lastChipTap) && now - lastChipTapAt < 350;

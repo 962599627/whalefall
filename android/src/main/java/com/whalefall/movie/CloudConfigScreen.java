@@ -20,12 +20,18 @@ final class CloudConfigScreen {
 
     static void show(final MainActivity a) {
         a.renderPage("云盘配置", "CLOUD DRIVE");
-        AppLog.i("CloudConfig", "cards=5 sourcePanel=true");
+        renderInto(a, a.body, () -> show(a));
+    }
+
+    /** 1.8.9：原地渲染到指定容器（首页分类 chips 下方），不跳新页面。 */
+    static void renderInto(
+            final MainActivity a, final LinearLayout parent, final Runnable onChanged) {
+        AppLog.i("CloudConfig", "cards=5 sourcePanel=true inline=true");
         int widthDp = Math.round(a.windowWidth() / a.getResources().getDisplayMetrics().density);
         int cols = widthDp < 360 ? 2 : widthDp < 600 ? 2 : widthDp < 900 ? 3 : 4;
         LinearLayout grid = a.vertical();
         LinearLayout row = a.row();
-        row.addView(loginCard(a), new LinearLayout.LayoutParams(0, a.dp(104), 1f));
+        row.addView(loginCard(a, onChanged), new LinearLayout.LayoutParams(0, a.dp(104), 1f));
         int inRow = 1;
         for (String drive : DRIVES) {
             if (inRow >= cols) {
@@ -35,13 +41,15 @@ final class CloudConfigScreen {
                 row = a.row();
                 inRow = 0;
             }
-            row.addView(clearCard(a, drive), new LinearLayout.LayoutParams(0, a.dp(104), 1f));
+            row.addView(
+                    clearCard(a, drive, onChanged),
+                    new LinearLayout.LayoutParams(0, a.dp(104), 1f));
             inRow++;
         }
         LinearLayout.LayoutParams lastLp = new LinearLayout.LayoutParams(-1, -2);
         lastLp.topMargin = a.dp(10);
         grid.addView(row, lastLp);
-        a.body.addView(grid, new LinearLayout.LayoutParams(-1, -2));
+        parent.addView(grid, new LinearLayout.LayoutParams(-1, -2));
 
         TextView open = a.text("打开源插件账号面板", 13, 0xffffb3c8);
         open.setGravity(Gravity.CENTER);
@@ -53,10 +61,10 @@ final class CloudConfigScreen {
                 v -> new SettingsScreen(a).sourceAccountAction("LoginShow", null));
         LinearLayout.LayoutParams openLp = new LinearLayout.LayoutParams(-1, a.dp(48));
         openLp.topMargin = a.dp(16);
-        a.body.addView(open, openLp);
+        parent.addView(open, openLp);
     }
 
-    private static View loginCard(MainActivity a) {
+    private static View loginCard(final MainActivity a, final Runnable onChanged) {
         return card(
                 a,
                 UiIcon.CLOUD,
@@ -71,14 +79,13 @@ final class CloudConfigScreen {
                                                 NetdiskQrLogin.show(
                                                         a,
                                                         DRIVES[index],
-                                                        () ->
-                                                                a.ui.postDelayed(
-                                                                        () -> show(a), 200)))
+                                                        () -> a.ui.postDelayed(onChanged, 200)))
                                 .setNegativeButton("取消", null)
                                 .show());
     }
 
-    private static View clearCard(MainActivity a, final String drive) {
+    private static View clearCard(
+            MainActivity a, final String drive, final Runnable onChanged) {
         final boolean logged = NetdiskQrLogin.isLoggedIn(a, drive);
         String status =
                 logged
@@ -89,10 +96,10 @@ final class CloudConfigScreen {
                 logged ? UiIcon.INFO : UiIcon.REFRESH,
                 "清除" + NetdiskQrLogin.name(drive) + "登录",
                 status,
-                () -> clear(a, drive));
+                () -> clear(a, drive, onChanged));
     }
 
-    private static void clear(final MainActivity a, final String drive) {
+    private static void clear(final MainActivity a, final String drive, final Runnable onChanged) {
         if (!NetdiskQrLogin.hasCredential(a, drive)) {
             a.toast("该盘当前未登录");
             return;
@@ -101,7 +108,7 @@ final class CloudConfigScreen {
         clearWebCookies(drive);
         a.toast("已清除" + NetdiskQrLogin.name(drive) + "登录");
         AppLog.i("CloudConfig", "cleared drive=" + drive);
-        show(a);
+        if (onChanged != null) onChanged.run();
     }
 
     /** 同步清 WebView CookieManager 对应域，避免网页登录态残留。 */
