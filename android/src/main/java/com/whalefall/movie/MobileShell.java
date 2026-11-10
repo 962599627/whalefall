@@ -2568,10 +2568,23 @@ final class MobileShell {
         final Runnable renderSearchStatus =
                 () -> {
                     int separator = cachedSearchStatus.indexOf('\n');
-                    searchStatus.setText(
+                    String head =
                             separator < 0
                                     ? cachedSearchStatus
-                                    : cachedSearchStatus.substring(0, separator));
+                                    : cachedSearchStatus.substring(0, separator);
+                    // 1.9.32：有来源筛选时统计数字按过滤后的可见条目重算
+                    if (!cachedSearchSourceFilter.isEmpty()) {
+                        int visible = searchAdapter.visibleCount();
+                        head = head.replaceFirst("已找到 \\d+ 条结果", "已找到 " + visible + " 条结果");
+                        if (head.isEmpty() || !head.startsWith("已找到"))
+                            head =
+                                    "已筛选 "
+                                            + cachedSearchSourceFilter.size()
+                                            + " 个来源 · 找到 "
+                                            + visible
+                                            + " 条结果";
+                    }
+                    searchStatus.setText(head);
                     sourceNotices.setText(
                             separator < 0 ? "" : cachedSearchStatus.substring(separator + 1));
                     sourceNotices.setVisibility(separator < 0 ? View.GONE : View.VISIBLE);
@@ -2606,6 +2619,7 @@ final class MobileShell {
                                         cachedSearchSourceFilter.clear();
                                         searchAdapter.setFilter(cachedSearchSourceFilter);
                                         renderMobileFilters[0].run();
+                                        renderSearchStatus.run();
                                     });
                     mobileFilterRow.addView(all, mobileFilterChipLp());
                     int mobileChips = 0;
@@ -2627,6 +2641,7 @@ final class MobileShell {
                                                 cachedSearchSourceFilter.add(site.key);
                                             searchAdapter.setFilter(cachedSearchSourceFilter);
                                             renderMobileFilters[0].run();
+                                            renderSearchStatus.run();
                                         });
                         mobileFilterRow.addView(chip, mobileFilterChipLp());
                         mobileChips++;
@@ -2641,6 +2656,7 @@ final class MobileShell {
                                     cachedSearchSourceFilter.clear();
                                     searchAdapter.setFilter(cachedSearchSourceFilter);
                                     renderMobileFilters[0].run();
+                                    renderSearchStatus.run();
                                 });
                         mobileFilterRow.addView(clear, mobileFilterChipLp());
                     }
@@ -2944,9 +2960,10 @@ final class MobileShell {
     /** 搜索页结果列表适配器：第 0 项是来源提示，其余是结果行，按需构建视图。 */
     private final class SearchResultsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         private final TextView notices;
+        /** 过滤+合并后用于展示的列表。 */
         private final List<CachedSearchHit> hits = new ArrayList<>();
-        /** 1.9.31：合并后的全量结果，手机来源筛选只影响 hits 视图列表。 */
-        private final List<CachedSearchHit> all = new ArrayList<>();
+        /** 1.9.32：原始结果（每条只属于一个来源），筛选在合并之前作用于它。 */
+        private final List<CachedSearchHit> raw = new ArrayList<>();
         private final java.util.Set<String> filter = new java.util.HashSet<>();
 
         SearchResultsAdapter(TextView notices) {
@@ -2956,19 +2973,19 @@ final class MobileShell {
         }
 
         void clear() {
-            all.clear();
+            raw.clear();
             hits.clear();
             notifyDataSetChanged();
         }
 
         void setHits(List<CachedSearchHit> source) {
-            all.clear();
-            for (CachedSearchHit hit : source) mergeInto(all, hit);
+            raw.clear();
+            for (CachedSearchHit hit : source) raw.add(hit);
             rebuild();
         }
 
         void add(CachedSearchHit hit) {
-            mergeInto(all, hit);
+            raw.add(hit);
             rebuild();
         }
 
@@ -2978,16 +2995,20 @@ final class MobileShell {
             rebuild();
         }
 
+        int visibleCount() {
+            return hits.size();
+        }
+
         java.util.Map<String, Cms.Site> sourceMap() {
             java.util.Map<String, Cms.Site> map = new java.util.LinkedHashMap<>();
-            for (CachedSearchHit hit : all)
+            for (CachedSearchHit hit : raw)
                 for (Cms.Site site : hit.sites) map.put(site.key, site);
             return map;
         }
 
         int countFor(String key) {
             int count = 0;
-            for (CachedSearchHit hit : all)
+            for (CachedSearchHit hit : raw)
                 for (Cms.Site site : hit.sites)
                     if (site.key.equals(key)) {
                         count++;
@@ -2996,38 +3017,58 @@ final class MobileShell {
             return count;
         }
 
-        private void mergeInto(List<CachedSearchHit> target, CachedSearchHit hit) {
-            String key = SearchAggregator.normalize(hit.video == null ? "" : hit.video.title);
-            if (!key.isEmpty()) {
-                for (CachedSearchHit existing : target) {
-                    if (key.equals(
-                            SearchAggregator.normalize(
-                                    existing.video == null ? "" : existing.video.title))) {
-                        for (Cms.Site site : hit.sites)
-                            if (!existing.sites.contains(site)) existing.sites.add(site);
-                        existing.sources = existing.sites.size();
-                        return;
-                    }
-                }
-            }
-            target.add(hit);
-        }
-
+        /** 1.9.32：先按来源 key 过滤原始结果，再做标题合并；卡片 sources 只统计选中来源。 */
         private void rebuild() {
-            hits.clear();
-            for (CachedSearchHit hit : all) {
+            List<CachedSearchHit> base = new ArrayList<>();
+            for (CachedSearchHit hit : raw) {
                 if (filter.isEmpty()) {
-                    hits.add(hit);
+                    base.add(hit);
                     continue;
                 }
-                boolean match = false;
                 for (Cms.Site site : hit.sites)
                     if (filter.contains(site.key)) {
-                        match = true;
+                        base.add(hit);
                         break;
                     }
-                if (match) hits.add(hit);
             }
+            hits.clear();
+            for (CachedSearchHit hit : base) {
+                String key =
+                        SearchAggregator.normalize(hit.video == null ? "" : hit.video.title);
+                CachedSearchHit merged = null;
+                if (!key.isEmpty()) {
+                    for (CachedSearchHit existing : hits)
+                        if (key.equals(
+                                SearchAggregator.normalize(
+                                        existing.video == null ? "" : existing.video.title))) {
+                            merged = existing;
+                            break;
+                        }
+                }
+                if (merged == null) {
+                    merged = new CachedSearchHit(hit.site, hit.video);
+                    hits.add(merged);
+                } else {
+                    for (Cms.Site site : hit.sites) {
+                        boolean has = false;
+                        for (Cms.Site existingSite : merged.sites)
+                            if (existingSite.key.equals(site.key)) {
+                                has = true;
+                                break;
+                            }
+                        if (!has) merged.sites.add(site);
+                    }
+                    merged.sources = merged.sites.size();
+                }
+            }
+            AppLog.i(
+                    "SearchFilter",
+                    "applied filter="
+                            + filter
+                            + " hits before="
+                            + raw.size()
+                            + " after="
+                            + hits.size());
             notifyDataSetChanged();
         }
 
