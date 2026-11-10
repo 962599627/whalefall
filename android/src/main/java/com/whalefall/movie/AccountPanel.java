@@ -334,6 +334,32 @@ final class AccountPanel {
             if (panRows == null) return;
             panRows.removeAllViews();
             for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES) {
+                // 1.7.1：夸克/UC 走 OpenList 原生移植（文件列表 + 下载直链）
+                if ("quark".equals(drive.key) || "uc".equals(drive.key)) {
+                    QuarkUcApi.Provider provider = QuarkUcApi.of(drive.key);
+                    boolean credential = QuarkUcApi.hasCookie(a, provider);
+                    boolean logged = QuarkUcApi.isLoggedIn(a, provider);
+                    String status =
+                            logged
+                                    ? "已登录（"
+                                            + provider.name
+                                            + "网盘 · 容量 "
+                                            + QuarkUcApi.formatSize(QuarkUcApi.used(a, provider))
+                                            + " / "
+                                            + QuarkUcApi.formatSize(QuarkUcApi.total(a, provider))
+                                            + "）"
+                                    : credential
+                                            ? "登录信息已保存 · 验证失败（点此重试）"
+                                            : "未登录 · App 内登录" + provider.name + "（OpenList 移植）";
+                    addPanRow(
+                            drive,
+                            status,
+                            logged ? 0xff2ad47a : 0xffffb454,
+                            logged,
+                            logged ? "管理" : credential ? "重试验证" : "App 内登录",
+                            () -> QuarkUcApi.showPanel(a, provider, () -> refresh(true)));
+                    continue;
+                }
                 PanLoginState pan = panStates.get(drive.key);
                 boolean logged = pan != null && pan.known();
                 String statusText = pan == null ? "由源管理 · 无法读取" : pan.detail;
@@ -639,6 +665,10 @@ final class AccountPanel {
                 state = STATE_DISABLED;
             } else if (!credentials.isEmpty()) {
                 state = STATE_LOCAL;
+            } else if (QuarkUcApi.isLoggedIn(a, QuarkUcApi.QUARK)
+                    || QuarkUcApi.isLoggedIn(a, QuarkUcApi.UC)) {
+                // OpenList 原生直连（1.7.1）：验证通过才计入
+                state = STATE_LOCAL;
             } else if (sourceKnown > 0) {
                 state = STATE_SOURCE;
             } else if (manualDrives > 0) {
@@ -937,6 +967,12 @@ final class AccountPanel {
             }
             credentials = new ArrayList<>();
             accountName = "";
+            // 1.7.1 原生移植：清除夸克/UC Cookie 与容量缓存
+            try {
+                QuarkUcApi.logout(a, QuarkUcApi.QUARK);
+                QuarkUcApi.logout(a, QuarkUcApi.UC);
+            } catch (Throwable ignored) {
+            }
             if (dialog != null && dialog.isShowing()) {
                 PanLoginState.invalidate();
                 refresh(true);
@@ -1142,7 +1178,8 @@ final class AccountPanel {
         if (key.startsWith("quark_native_")
                 || key.startsWith("uc_native_")
                 || key.startsWith("baidu_native_")
-                || key.startsWith("ali_native_")) return false;
+                || key.startsWith("ali_native_")
+                || key.startsWith("quark_uc_")) return false;
         String k = key.toLowerCase(Locale.ROOT);
         return k.contains("pan")
                 || k.contains("drive")
