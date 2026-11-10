@@ -1616,6 +1616,7 @@ final class TvLive {
         LinearLayout loadingCard;
         TextView loadingTitle;
         TextView loadingSub;
+        WhaleLoadingView loadingWhale;
         boolean panelOpen;
         boolean chromeShown = true;
         int chromeGen;
@@ -2132,9 +2133,10 @@ final class TvLive {
             card.setPadding(a.dp(24), a.dp(18), a.dp(24), a.dp(18));
             card.setBackground(MobileDetailScreen.glassBg(a, 0xf20b1220, 0x40ffffff, 22));
             card.setElevation(a.dp(8));
-            card.addView(
-                    new TvUiKit.Spinner(a, 0xffff8fb1),
-                    new LinearLayout.LayoutParams(a.dp(30), a.dp(30)));
+            // 1.8.3：直播连接卡片改用通用圆形帧动画（小尺寸简洁模式）
+            loadingWhale = new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
+            loadingWhale.setText("正在连接…");
+            card.addView(loadingWhale, new LinearLayout.LayoutParams(-2, -2));
 
             loadingTitle = a.text("正在连接 " + playingName, 13, 0xfff5f7fc);
             loadingTitle.setTypeface(null, Typeface.BOLD);
@@ -2344,6 +2346,10 @@ final class TvLive {
             loadingCard.animate().cancel();
             loadingTitle.setText("正在连接 " + name);
             loadingSub.setText("官方网页直播 · 首次加载稍慢");
+            if (loadingWhale != null) {
+                loadingWhale.setText("正在连接…");
+                loadingWhale.start();
+            }
             loadingCard.setAlpha(1f);
             loadingCard.setVisibility(View.VISIBLE);
             // 进度可能长期停在 <80%（直播长连接/iframe）：兜底 1.2s 后也把播放探针跑起来
@@ -2352,6 +2358,7 @@ final class TvLive {
 
         void hideLoading() {
             if (loadingCard == null || loadingCard.getVisibility() != View.VISIBLE) return;
+            if (loadingWhale != null) loadingWhale.stop();
             final int gen = ++loadingGen;
             loadingCard.animate().cancel();
             loadingCard.animate()

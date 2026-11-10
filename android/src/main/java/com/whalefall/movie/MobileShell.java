@@ -1182,10 +1182,17 @@ final class MobileShell {
         body.addView(categoryBar, new LinearLayout.LayoutParams(-1, -2));
 
         // 5. Status & 3-Column Poster Grid Container
-        final TextView statusText = a.text("正在加载片单…", 13, MainActivity.MUTED);
+        final LinearLayout statusWrap = a.vertical();
+        statusWrap.setGravity(Gravity.CENTER_HORIZONTAL);
+        final WhaleLoadingView shelfWhale =
+                new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
+        shelfWhale.setText("正在加载片单…");
+        statusWrap.addView(shelfWhale);
+        final TextView statusText = a.text("正在加载片单…", 12, MainActivity.MUTED);
         statusText.setGravity(Gravity.CENTER);
-        statusText.setPadding(a.dp(16), a.dp(24), a.dp(16), a.dp(24));
-        body.addView(statusText, new LinearLayout.LayoutParams(-1, -2));
+        statusText.setPadding(a.dp(16), a.dp(6), a.dp(16), a.dp(24));
+        statusWrap.addView(statusText, new LinearLayout.LayoutParams(-1, -2));
+        body.addView(statusWrap, new LinearLayout.LayoutParams(-1, -2));
 
         // 影片网格改为 RecyclerView 的「影片行」item（见 HomeAdapter），不再建全量容器。
 
@@ -1256,6 +1263,8 @@ final class MobileShell {
                     if (currentPage == 1) {
                         statusText.setVisibility(View.VISIBLE);
                         statusText.setText("正在加载…");
+                        shelfWhale.setText("正在加载…");
+                        shelfWhale.start();
                         loadMoreBtn.setVisibility(View.GONE);
                     } else {
                         loadMoreBtn.setVisibility(View.VISIBLE);
@@ -1458,6 +1467,7 @@ final class MobileShell {
                                                         currentVideos.isEmpty()
                                                                 ? View.VISIBLE
                                                                 : View.GONE);
+                                                shelfWhale.stop();
                                                 if (currentVideos.isEmpty()) {
                                                     statusText.setText(
                                                             selectedFilters.isEmpty()
@@ -1527,8 +1537,11 @@ final class MobileShell {
                                                 loadingPage[0] = false;
                                                 pageFailed[0] = true;
                                                 homeReady = !currentVideos.isEmpty();
-                                                statusText.setVisibility(View.VISIBLE);
+                                                statusText.setVisibility(
+                                                        View.VISIBLE);
                                                 statusText.setText("加载失败：" + a.message(e));
+                                                shelfWhale.setText("加载失败");
+                                                shelfWhale.stop();
                                                 loadMoreBtn.setVisibility(View.VISIBLE);
                                                 loadMoreBtn.setText("点击重试");
                                             });
@@ -2858,9 +2871,16 @@ final class MobileShell {
         groupScroll.addView(groupRow);
         topHeader.addView(groupScroll, new LinearLayout.LayoutParams(-1, -2));
 
-        final TextView stateView = a.text("正在加载直播频道…", 13, MainActivity.MUTED);
-        stateView.setPadding(a.dp(16), a.dp(16), a.dp(16), a.dp(16));
-        page.addView(stateView);
+        final LinearLayout liveStateWrap = a.vertical();
+        liveStateWrap.setGravity(Gravity.CENTER_HORIZONTAL);
+        final WhaleLoadingView liveWhale =
+                new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
+        liveWhale.setText("正在加载直播频道…");
+        liveStateWrap.addView(liveWhale);
+        final TextView stateView = a.text("正在加载直播频道…", 12, MainActivity.MUTED);
+        stateView.setPadding(a.dp(16), a.dp(4), a.dp(16), a.dp(16));
+        liveStateWrap.addView(stateView, new LinearLayout.LayoutParams(-1, -2));
+        page.addView(liveStateWrap);
 
         // Main Multi-Column Channel Card Grid Area
         ScrollView channelScroll = new ScrollView(a);
@@ -2947,6 +2967,8 @@ final class MobileShell {
                     channelGridCol.removeAllViews();
                     stateView.setVisibility(View.VISIBLE);
                     stateView.setText("正在加载频道列表…");
+                    liveWhale.setText("正在加载频道列表…");
+                    liveWhale.start();
                     final LiveCatalog.Source selectedSource = sources.get(activeSrcIdx[0]);
                     final int ticket = a.generation;
                     a.submitPage(
@@ -2963,6 +2985,7 @@ final class MobileShell {
                                                 a.liveSession =
                                                         new LiveSession(selectedSource, catalog);
                                                 stateView.setVisibility(View.GONE);
+                                                liveWhale.stop();
                                                 renderLiveGroupsAndChannels(
                                                         selectedSource,
                                                         catalog,
@@ -2979,6 +3002,8 @@ final class MobileShell {
                                                         || request != liveRequest[0]) return;
                                                 stateView.setVisibility(View.VISIBLE);
                                                 stateView.setText("读取直播源失败：" + a.message(e));
+                                                liveWhale.setText("加载失败");
+                                                liveWhale.stop();
                                             });
                                 }
                             });

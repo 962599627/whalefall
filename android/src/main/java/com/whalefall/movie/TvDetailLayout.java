@@ -176,11 +176,21 @@ final class TvDetailLayout {
         episodesLp.topMargin = a.dp(8);
         rightCol.addView(episodesWrap, episodesLp);
 
-        // 加载中：焦点先落「返回」，避免无焦点空档
-        final TextView state = a.text("正在读取详情与剧集…", 14, MainActivity.MUTED);
+        // 加载中：焦点先落「返回」，避免无焦点空档；1.8.3 用圆形帧动画
+        final FrameLayout stateWrap = new FrameLayout(a);
+        final WhaleLoadingView tvWhale = new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
+        tvWhale.setText("正在读取详情与剧集…");
+        tvWhale.start();
+        stateWrap.addView(
+                tvWhale, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        final TextView state = a.text("正在读取详情与剧集…", 12, MainActivity.MUTED);
         state.setTag("detail-loading");
         state.setGravity(Gravity.CENTER);
-        rightCol.addView(state, new LinearLayout.LayoutParams(-1, -2));
+        state.setPadding(0, a.dp(4), 0, 0);
+        FrameLayout.LayoutParams tvStateLp =
+                new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        stateWrap.addView(state, tvStateLp);
+        rightCol.addView(stateWrap, new LinearLayout.LayoutParams(-1, a.dp(150)));
         backBtn.requestFocus();
 
         // ---------------- 数据填充 ----------------
@@ -213,6 +223,8 @@ final class TvDetailLayout {
                         return;
                     }
                     state.setVisibility(View.GONE);
+                    stateWrap.setVisibility(View.GONE);
+                    tvWhale.stop();
 
                     WatchHistory.Entry bookmark = null;
                     for (WatchHistory.Entry entry : a.watchHistory())
@@ -329,6 +341,7 @@ final class TvDetailLayout {
             } catch (Exception error) {
                 AppLog.w("TvDetailLayout", "present ready detail failed", error);
                 state.setText("详情数据无法显示，请返回后重试。");
+                tvWhale.stop();
             }
         } else if (!a.reduced && hasPlayableLines(listing)) {
             try {

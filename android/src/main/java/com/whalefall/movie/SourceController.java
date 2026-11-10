@@ -288,7 +288,12 @@ final class SourceController {
     static <T> void load(
             MainActivity a, String label, MainActivity.Work<T> task, MainActivity.Done<T> done) {
         final int ticket = a.generation;
-        TextView loading = a.text(label, 17, MainActivity.MUTED);
+        final LinearLayout loading = a.vertical();
+        loading.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+        WhaleLoadingView sourceWhale = new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
+        sourceWhale.setText(label);
+        sourceWhale.start();
+        loading.addView(sourceWhale);
         a.body.addView(loading);
         a.submitPage(
                 () -> {

@@ -660,11 +660,17 @@ final class MobileDetailScreen {
         playWrapLp.topMargin = a.dp(UiTokens.SP_16);
         lowerBody.addView(playBtnWrap, playWrapLp);
 
-        final TextView loadingState = a.text("正在加载剧集资源…", 13, 0xff8d9cb6);
+        // 1.8.3：详情页资源加载改用圆形帧动画（简洁模式）
+        final FrameLayout loadingState = new FrameLayout(a);
         loadingState.setTag("detail-loading");
-        loadingState.setGravity(Gravity.CENTER);
-        loadingState.setPadding(a.dp(4), a.dp(22), a.dp(4), a.dp(14));
-        lowerBody.addView(loadingState, new LinearLayout.LayoutParams(-1, -2));
+        WhaleLoadingView detailWhale = new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
+        detailWhale.setText("正在加载剧集资源…");
+        detailWhale.start();
+        loadingState.addView(
+                detailWhale, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        lowerBody.addView(
+                loadingState,
+                new LinearLayout.LayoutParams(-1, a.dp(150)));
 
         // ---------------- 片源 / 线路列表（平板在左栏下方，手机在资料列里） ----------------
         LinearLayout lineSection = a.vertical();

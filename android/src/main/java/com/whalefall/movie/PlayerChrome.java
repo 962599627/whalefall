@@ -620,6 +620,7 @@ final class PlayerChrome {
     void setLoading(boolean value) {
         loading = value;
         boolean show = value && !a.prepared && !a.miniMode && a.playbackLoading == null;
+        if (!show) loadingLayer.stopAnimationsNow(); // 1.8.3：首帧/prepared 立即停止动画，不等淡出
         loadingLayer.setActive(show);
         if (show != lastLoadingShown) {
             lastLoadingShown = show;
@@ -692,6 +693,7 @@ final class PlayerChrome {
         if (a.prepared) loading = false;
         if (a.player != null && a.prepared) applyResolutionShort();
         boolean showSpinner = loading && !a.prepared && a.playbackLoading == null && !a.miniMode;
+        if (!showSpinner) loadingLayer.stopAnimationsNow();
         loadingLayer.setActive(showSpinner);
         if (showSpinner != lastLoadingShown) {
             lastLoadingShown = showSpinner;
@@ -819,6 +821,7 @@ final class PlayerChrome {
         boolean active;
         boolean paused;
         boolean failed;
+        boolean lowPower;
         float baseOffsetY;
         int dots;
 
@@ -828,16 +831,17 @@ final class PlayerChrome {
                 new Runnable() {
                     @Override
                     public void run() {
-                        if (!active || paused) return;
+                        if (!active || paused || !isShown()) return;
                         crossFade();
                         a.ui.postDelayed(this, FRAME_MS);
                     }
                 };
+        Runnable hideTask;
         final Runnable dotsTicker =
                 new Runnable() {
                     @Override
                     public void run() {
-                        if (!active || paused || tv) return;
+                        if (!active || paused || tv || !isShown()) return;
                         dots = (dots + 1) % 4;
                         StringBuilder text = new StringBuilder("正在加载");
                         for (int i = 0; i < dots; i++) text.append('.');
@@ -1015,15 +1019,17 @@ final class PlayerChrome {
 
         private void hideLayer() {
             if (getVisibility() != View.VISIBLE) return;
+            stopAnimationsNow();
             fadeTo(0f);
-            a.ui.postDelayed(
+            hideTask =
                     () -> {
                         if (!active) {
                             pause();
                             setVisibility(View.GONE);
                         }
-                    },
-                    FADE_MS);
+                        hideTask = null;
+                    };
+            a.ui.postDelayed(hideTask, FADE_MS);
         }
 
         private void fadeTo(float target) {
@@ -1040,11 +1046,33 @@ final class PlayerChrome {
 
         void pause() {
             paused = true;
+            stopAnimationsNow();
+        }
+
+        /** 1.8.3：立即停止帧 ticker/光晕/浮动/淡入淡出，播放开始后不留 280ms 周期任务。 */
+        void stopAnimationsNow() {
             a.ui.removeCallbacks(frameTicker);
             a.ui.removeCallbacks(dotsTicker);
+            if (hideTask != null) {
+                a.ui.removeCallbacks(hideTask);
+                hideTask = null;
+            }
+            boolean glowOn = glowAnimator != null && glowAnimator.isRunning();
+            boolean floatOn = floatAnimator != null && floatAnimator.isRunning();
             if (crossAnimator != null) crossAnimator.cancel();
             if (glowAnimator != null) glowAnimator.cancel();
             if (floatAnimator != null) floatAnimator.cancel();
+            if (fadeAnimator != null) fadeAnimator.cancel();
+            AppLog.i(
+                    "PlayerChrome",
+                    "loading animator stop glow="
+                            + glowOn
+                            + " float="
+                            + floatOn
+                            + " ticker="
+                            + active
+                            + " paused="
+                            + paused);
         }
 
         void resume() {
@@ -1077,32 +1105,53 @@ final class PlayerChrome {
                 showingA = true;
             }
             refreshBaseOffset();
-            a.ui.removeCallbacks(frameTicker);
-            a.ui.postDelayed(frameTicker, FRAME_MS);
-            if (!tv) {
-                a.ui.removeCallbacks(dotsTicker);
-                a.ui.postDelayed(dotsTicker, DOTS_MS);
-            }
             boolean reduced = false;
             try {
                 reduced = a.prefs.getBoolean(Prefs.REDUCED, false);
             } catch (Throwable ignored) {
             }
-            if (!reduced) startGlow();
-            else {
+            lowPower = reduced || isLowRam(a);
+            a.ui.removeCallbacks(frameTicker);
+            a.ui.postDelayed(frameTicker, FRAME_MS);
+            if (!tv && !lowPower) {
+                a.ui.removeCallbacks(dotsTicker);
+                a.ui.postDelayed(dotsTicker, DOTS_MS);
+            }
+            if (!lowPower) {
+                startGlow();
+                startFloat();
+            } else {
                 glow.setBreath(0.5f);
                 glowBox.setScaleX(1f);
                 glowBox.setScaleY(1f);
+                AppLog.i("PlayerChrome", "loading low-power mode (frames only)");
             }
-            if (!reduced) startFloat();
+        }
+
+        static boolean isLowRam(MainActivity a) {
+            try {
+                android.app.ActivityManager am =
+                        (android.app.ActivityManager)
+                                a.getSystemService(android.content.Context.ACTIVITY_SERVICE);
+                return am != null && am.isLowRamDevice();
+            } catch (Throwable ignored) {
+                return false;
+            }
         }
 
         private void crossFade() {
             Bitmap[] cache = frames;
             if (cache == null || cache.length == 0) return;
+            frameIndex = (frameIndex + 1) % cache.length;
+            if (lowPower) {
+                frameA.setImageBitmap(cache[frameIndex]);
+                frameA.setAlpha(1f);
+                frameB.setAlpha(0f);
+                showingA = true;
+                return;
+            }
             final ImageView next = showingA ? frameB : frameA;
             final ImageView old = showingA ? frameA : frameB;
-            frameIndex = (frameIndex + 1) % cache.length;
             next.setImageBitmap(cache[frameIndex]);
             next.setAlpha(0f);
             next.bringToFront();
