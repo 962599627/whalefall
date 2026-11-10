@@ -126,75 +126,8 @@ final class MobileShell {
     }
 
     private void buildCloudRowsInline() {
-        TextView title = a.text("云盘配置", 16, MainActivity.WHITE);
-        title.setTypeface(null, Typeface.BOLD);
-        title.setPadding(0, a.dp(10), 0, a.dp(6));
-        homeCloudHolder.addView(title);
-        String[] drives = {
-            NetdiskQrLogin.QUARK, NetdiskQrLogin.UC, NetdiskQrLogin.BAIDU, NetdiskQrLogin.ALI
-        };
-        for (final String drive : drives) {
-            LinearLayout row = a.row();
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
-            row.setBackground(glassBg(0xcc16283f, 0xb3121d2e, a.dp(14), a.dp(0.7f), 0x33ffffff));
-            boolean logged = NetdiskQrLogin.isLoggedIn(a, drive);
-            String state =
-                    logged
-                            ? "已登录" + NetdiskQrLogin.capacityText(a, drive)
-                            : NetdiskQrLogin.hasCredential(a, drive) ? "登录信息未通过验证" : "未登录";
-            TextView name = a.text(NetdiskQrLogin.name(drive) + "网盘", 14, MainActivity.WHITE);
-            name.setTypeface(null, Typeface.BOLD);
-            LinearLayout info = a.vertical();
-            info.addView(name);
-            TextView stateView = a.text(state, 11, logged ? 0xff2ad47a : MainActivity.MUTED);
-            stateView.setPadding(0, a.dp(3), 0, 0);
-            info.addView(stateView);
-            row.addView(info, new LinearLayout.LayoutParams(0, -2, 1f));
-            TextView login = a.text("登录", 12, 0xff0b1220);
-            login.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
-            login.setBackground(UiTokens.round(a, 16, UiTokens.ACCENT));
-            login.setFocusable(true);
-            MobileDetailScreen.bindTouchFeedback(login);
-            login.setOnClickListener(
-                    v ->
-                            NetdiskQrLogin.show(
-                                    a, drive, () -> a.ui.postDelayed(this::showCloudConfigInline, 200)));
-            row.addView(login);
-            TextView clear = a.text("清除", 12, 0xffef4444);
-            clear.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
-            clear.setFocusable(true);
-            MobileDetailScreen.bindTouchFeedback(clear);
-            clear.setOnClickListener(
-                    v -> {
-                        if (!NetdiskQrLogin.hasCredential(a, drive)) {
-                            a.toast("该盘当前未登录");
-                            return;
-                        }
-                        NetdiskQrLogin.logout(a, drive);
-                        CloudConfigScreen.clearWebCookies(drive);
-                        a.toast("已清除" + NetdiskQrLogin.name(drive) + "登录");
-                        AppLog.i("CloudConfig", "cleared drive=" + drive);
-                        showCloudConfigInline();
-                    });
-            LinearLayout.LayoutParams clearLp = new LinearLayout.LayoutParams(-2, -2);
-            clearLp.leftMargin = a.dp(8);
-            row.addView(clear, clearLp);
-            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
-            rowLp.bottomMargin = a.dp(8);
-            homeCloudHolder.addView(row, rowLp);
-        }
-        TextView sourcePanel = a.text("打开源插件账号面板", 13, 0xffffb3c8);
-        sourcePanel.setGravity(Gravity.CENTER);
-        sourcePanel.setPadding(a.dp(12), a.dp(12), a.dp(12), a.dp(12));
-        sourcePanel.setBackground(glassBg(0x24ff8fb1, 0x1affffff, a.dp(999), a.dp(0.8f), 0x40ffb3c8));
-        sourcePanel.setFocusable(true);
-        MobileDetailScreen.bindTouchFeedback(sourcePanel);
-        sourcePanel.setOnClickListener(
-                v -> new SettingsScreen(a).sourceAccountAction("LoginShow", null));
-        LinearLayout.LayoutParams sourceLp = new LinearLayout.LayoutParams(-1, a.dp(48));
-        sourceLp.topMargin = a.dp(6);
-        homeCloudHolder.addView(sourcePanel, sourceLp);
+        // 1.8.12：与首页共用同一套四盘卡片（CloudInlineView）
+        CloudInlineView.build(a, homeCloudHolder, this::showCloudConfigInline);
     }
 
     private void hideCloudConfigInline() {

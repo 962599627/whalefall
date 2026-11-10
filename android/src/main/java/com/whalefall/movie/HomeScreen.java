@@ -26,6 +26,11 @@ final class HomeScreen {
     final List<View> historyCards = new ArrayList<>(), tabs = new ArrayList<>();
     final List<List<View>> rows = new ArrayList<>();
     LinearLayout content;
+    /** 1.8.12 云盘配置原地容器（首页分类栏下方，默认隐藏）。 */
+    LinearLayout cloudInline;
+    View cloudContent;
+    TextView cloudStatus;
+    View cloudFooter;
     CategoryFlow filters;
     HomeAmbient ambient;
     TextView status, source, more, earlier, allHistory;
@@ -181,6 +186,14 @@ final class HomeScreen {
         footer.setPadding(0, a.dp(14), 0, a.dp(8));
         footer.addView(more, new LinearLayout.LayoutParams(a.dp(180), a.dp(40)));
         a.body.addView(footer);
+        // 1.8.12：云盘配置原地容器（与 content/footer 同级，默认 GONE）
+        cloudContent = content;
+        cloudStatus = status;
+        cloudFooter = footer;
+        cloudInline = a.vertical();
+        cloudInline.setTag("home-cloud-inline");
+        cloudInline.setVisibility(View.GONE);
+        a.body.addView(cloudInline, new LinearLayout.LayoutParams(-1, -2));
         more.setVisibility(View.GONE);
         wireNavigation();
         retainedRoot = a.root;
@@ -798,8 +811,66 @@ final class HomeScreen {
         }
     }
 
+    /** 1.8.12：首页云盘 tab → 原地四盘卡片（异常有兜底，不白屏）。 */
+    void showCloudHomeInline() {
+        if (cloudInline == null) {
+            AppLog.i("CloudConfig", "home inline holder=null");
+            return;
+        }
+        try {
+            cloudInline.setVisibility(View.VISIBLE);
+            cloudInline.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+            if (cloudContent != null) cloudContent.setVisibility(View.GONE);
+            if (cloudStatus != null) cloudStatus.setVisibility(View.GONE);
+            if (cloudFooter != null) cloudFooter.setVisibility(View.GONE);
+            CloudInlineView.build(a, cloudInline, this::showCloudHomeInline);
+            AppLog.i(
+                    "CloudConfig",
+                    "home inline show holder="
+                            + System.identityHashCode(cloudInline)
+                            + " rows="
+                            + cloudInline.getChildCount()
+                            + " error=");
+        } catch (Throwable error) {
+            AppLog.w("CloudConfig", "home inline show failed", error);
+            CloudInlineView.showError(a, cloudInline, error, this::showCloudHomeInline);
+            cloudInline.setVisibility(View.VISIBLE);
+        }
+    }
+
+    void hideCloudHomeInline() {
+        if (cloudInline == null || cloudInline.getVisibility() != View.VISIBLE) return;
+        cloudInline.setVisibility(View.GONE);
+        if (cloudContent != null) cloudContent.setVisibility(View.VISIBLE);
+        if (cloudStatus != null) cloudStatus.setVisibility(View.VISIBLE);
+        if (cloudFooter != null) cloudFooter.setVisibility(View.VISIBLE);
+        AppLog.i("CloudConfig", "home inline hidden");
+    }
+
     void addTab(String label, String id, int index) {
-        TextView button = pill(label, "home-tab:" + index, () -> choose(id, true));
+        TextView button =
+                pill(
+                        label,
+                        "home-tab:" + index,
+                        () -> {
+                            // 1.8.12：首页分类栏的云盘 tab 原地渲染四盘卡片，不走默认分类加载
+                            boolean cloud =
+                                    MobileShell.isCloudConfigCategory(label, id);
+                            AppLog.i(
+                                    "CloudConfig",
+                                    "homeTab click label="
+                                            + label
+                                            + " id="
+                                            + id
+                                            + " handled="
+                                            + cloud);
+                            if (cloud) {
+                                showCloudHomeInline();
+                                return;
+                            }
+                            hideCloudHomeInline();
+                            choose(id, true);
+                        });
         tabIds.put(button, id);
         button.setOnKeyListener(
                 (v, keyCode, event) -> {
@@ -837,8 +908,7 @@ final class HomeScreen {
         addTabView(button);
     }
 
-    void addTabView(TextView button) {
-        button.setSingleLine(false);
+    void addTabView(TextView button) {        button.setSingleLine(false);
         button.setMaxLines(Integer.MAX_VALUE);
         button.setEllipsize(null);
         button.setMinHeight(a.dp(Math.round(34 * navScale)));
@@ -907,6 +977,7 @@ final class HomeScreen {
     }
 
     void choose(String category, boolean user) {
+        hideCloudHomeInline();
         if (category.equals(state.category) && (state.ready || busy)) return;
         a.cancelPageRequests();
         request++;
