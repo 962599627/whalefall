@@ -2039,8 +2039,17 @@ public final class MainActivity extends Activity {
         body.addView(t);
         gap(body, 10);
         int supported = 0;
-        for (Cms.Site s : config.sites) if (available(s)) supported++;
-        paragraph("已保存 " + config.sites.size() + " 个来源。选择一个，开始浏览。还未支持的来源会保留在列表中。");
+        int disabledCount = 0;
+        for (Cms.Site s : config.sites) {
+            if (SourceCheckScreen.isDisabled(this, s)) disabledCount++;
+            else if (available(s)) supported++;
+        }
+        paragraph(
+                "已保存 "
+                        + config.sites.size()
+                        + " 个来源（"
+                        + disabledCount
+                        + " 个已禁用）。选择一个，开始浏览。还未支持的来源会保留在列表中。");
     }
 
     void contentHome(Cms.Site site) {

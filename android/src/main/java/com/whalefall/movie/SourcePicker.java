@@ -52,15 +52,22 @@ final class SourcePicker {
             a.notice("暂无可管理的线路");
             return;
         }
-        String[] names = new String[config.sites.size()];
-        for (int i = 0; i < names.length; i++) names[i] = config.sites.get(i).name;
+        java.util.List<Cms.Site> visible = new java.util.ArrayList<>();
+        for (Cms.Site site : config.sites)
+            if (!SourceCheckScreen.isDisabled(a, site)) visible.add(site);
+        if (visible.isEmpty()) {
+            a.notice("所有片源都已禁用，请先在片源体检中恢复");
+            return;
+        }
+        String[] names = new String[visible.size()];
+        for (int i = 0; i < names.length; i++) names[i] = visible.get(i).name;
         new AppDialog.Builder(a)
                 .wrapChoices()
                 .setTitle("管理线路")
                 .setItems(
                         names,
                         (d, index) -> {
-                            Cms.Site site = config.sites.get(index);
+                            Cms.Site site = visible.get(index);
                             new AppDialog.Builder(a)
                                     .wrapChoices()
                                     .setTitle(site.name)
@@ -108,8 +115,19 @@ final class SourcePicker {
             org.json.JSONObject saved = new org.json.JSONObject(a.prefs.getString(key, "{}"));
             java.util.List<Cms.Site> sites = new java.util.ArrayList<>(config.sites);
             sites.remove(site);
-            if (target >= 0) sites.add(target, site);
-            else {
+            if (target >= 0) {
+                // 1.9.28：target 来自可见列表下标，需映射回全量列表真实位置（禁用源占位不参与排序）
+                java.util.List<Cms.Site> visible = new java.util.ArrayList<>();
+                for (Cms.Site s : sites)
+                    if (!SourceCheckScreen.isDisabled(a, s)) visible.add(s);
+                int realIndex;
+                if (target >= visible.size()) realIndex = sites.size();
+                else {
+                    realIndex = sites.indexOf(visible.get(target));
+                    if (realIndex < 0) realIndex = sites.size();
+                }
+                sites.add(realIndex, site);
+            } else {
                 org.json.JSONArray hidden = saved.optJSONArray("removed");
                 if (hidden == null) hidden = new org.json.JSONArray();
                 saved.put("removed", hidden.put(site.key));
@@ -225,6 +243,39 @@ final class SourcePicker {
         viewport.addView(scrolling, new FrameLayout.LayoutParams(-1, -1));
         panel.addView(viewport, new LinearLayout.LayoutParams(-1, a.dp(286)));
         String selected = a.prefs.getString(Prefs.SELECTED_SITE, "");
+        // 1.9.28：隐藏已禁用源，并在默认偏好/当前源被禁用时回退
+        java.util.List<Cms.Site> visible = new java.util.ArrayList<>();
+        int hidden = 0;
+        for (Cms.Site site : a.config.sites) {
+            if (SourceCheckScreen.isDisabled(a, site)) hidden++;
+            else visible.add(site);
+        }
+        AppLog.i("SourcePicker", "hidden=" + hidden + " total=" + a.config.sites.size());
+        if (hidden > 0) {
+            Cms.Site fallback = visible.isEmpty() ? null : visible.get(0);
+            boolean selectedDisabled = false;
+            for (Cms.Site site : a.config.sites)
+                if (site.key.equals(selected) && SourceCheckScreen.isDisabled(a, site))
+                    selectedDisabled = true;
+            if (selectedDisabled && fallback != null) {
+                a.prefs.edit()
+                        .putString(Prefs.SELECTED_SITE, fallback.key)
+                        .putString(Prefs.LOADING_SITE, fallback.key)
+                        .apply();
+                selected = fallback.key;
+                a.notice("当前片源已被禁用，已自动回退到「" + fallback.name + "」");
+            }
+            boolean preferredDisabled = false;
+            for (Cms.Site site : a.config.sites)
+                if (SourceCheckScreen.isDisabled(a, site)
+                        && SourcePreferences.isPreferred(a, site)) preferredDisabled = true;
+            if (preferredDisabled && fallback != null) {
+                a.prefs.edit()
+                        .putString(Prefs.PREFERRED_SITE, fallback.key + "\n" + fallback.api)
+                        .apply();
+                a.notice("默认偏好源已被禁用，已自动改为「" + fallback.name + "」");
+            }
+        }
         Button selectedButton = null;
         LinearLayout row = null;
         float fontScale = a.getResources().getConfiguration().fontScale;
@@ -237,7 +288,7 @@ final class SourcePicker {
                                         ((Math.min(a.windowWidth(), a.dp(720)) - a.dp(100))
                                                 / (a.dp(230) * Math.max(1f, fontScale)))));
         int index = 0;
-        for (Cms.Site site : a.config.sites) {
+        for (Cms.Site site : visible) {
             if (index % columns == 0) {
                 row = a.row();
                 row.setClipChildren(false);
@@ -308,8 +359,21 @@ final class SourcePicker {
             while (index++ % columns != 0)
                 row.addView(new View(a), new LinearLayout.LayoutParams(0, 1, 1));
         a.gap(panel, 10);
-        TextView count = a.text(a.config.sites.size() + " 个片源", 12, MainActivity.MUTED);
+        TextView count = a.text(visible.size() + " 个片源", 12, MainActivity.MUTED);
         panel.addView(count);
+        if (hidden > 0) {
+            TextView hiddenRow =
+                    a.text("已隐藏 " + hidden + " 个已禁用源 · 去恢复", 12, 0xffffb454);
+            hiddenRow.setPadding(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
+            hiddenRow.setFocusable(true);
+            MobileDetailScreen.bindTouchFeedback(hiddenRow);
+            hiddenRow.setOnClickListener(
+                    v -> {
+                        dialog.dismiss();
+                        SourceCheckScreen.show(a);
+                    });
+            panel.addView(hiddenRow);
+        }
         a.gap(panel, 6);
         LinearLayout footer = a.row();
         a.addButton(

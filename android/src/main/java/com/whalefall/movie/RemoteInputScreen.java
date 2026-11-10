@@ -176,26 +176,31 @@ final class RemoteInputScreen {
                             stop("page-left");
                             return;
                         }
-                        if (server != null) {
-                            server.pump();
-                            boolean waiting = !server.sawClient;
-                            boolean connected =
-                                    server.sawClient
-                                            && System.currentTimeMillis() - server.lastSeen < 6000;
-                            if (waiting) {
-                                statusRef.setText("等待手机连接");
-                                statusRef.setTextColor(UiTokens.TEXT_TERTIARY);
-                                circleRef.setColor(UiTokens.TEXT_TERTIARY);
-                            } else if (connected) {
-                                statusRef.setText("已连接");
-                                statusRef.setTextColor(0xff2ad47a);
-                                circleRef.setColor(0xff2ad47a);
-                            } else {
-                                statusRef.setText("连接中断（重新打开网页即可）");
-                                statusRef.setTextColor(0xffffb454);
-                                circleRef.setColor(0xffffb454);
-                            }
-                        } else return;
+                        // 1.9.28 修复 NPE：先取局部快照；pump 内 dispatchKeyEvent 可能同步
+                        // 触发 BACK→stop()，导致 server 被置 null，之后不能再访问字段。
+                        final LanRemoteServer snapshot = server;
+                        if (snapshot == null) return;
+                        snapshot.pump();
+                        final boolean sawClient = snapshot.sawClient;
+                        final long lastSeen = snapshot.lastSeen;
+                        boolean waiting = !sawClient;
+                        boolean connected =
+                                sawClient && System.currentTimeMillis() - lastSeen < 6000;
+                        if (waiting) {
+                            statusRef.setText("等待手机连接");
+                            statusRef.setTextColor(UiTokens.TEXT_TERTIARY);
+                            circleRef.setColor(UiTokens.TEXT_TERTIARY);
+                        } else if (connected) {
+                            statusRef.setText("已连接");
+                            statusRef.setTextColor(0xff2ad47a);
+                            circleRef.setColor(0xff2ad47a);
+                        } else {
+                            statusRef.setText("连接中断（重新打开网页即可）");
+                            statusRef.setTextColor(0xffffb454);
+                            circleRef.setColor(0xffffb454);
+                        }
+                        // stop() 可能在 snapshot.pump() 内被同步触发；此时不再续跑
+                        if (server != snapshot) return;
                         a.ui.postDelayed(this, 100);
                     }
                 };
