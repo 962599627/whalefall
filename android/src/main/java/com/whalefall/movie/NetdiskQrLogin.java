@@ -88,8 +88,42 @@ final class NetdiskQrLogin {
         AppLog.i("NetdiskQr", "logout drive=" + key);
     }
 
-    static String capacityText(MainActivity a, String key) {
-        long total;
+    /** 手动配置 Cookie/Token：保存到本地并立即验证（对应 Dart「手动配置」）。 */
+    static void saveManual(final MainActivity a, final String drive, String value,
+            final Runnable onChanged) {
+        String text = value == null ? "" : value.trim();
+        if (text.isEmpty()) {
+            a.toast("请输入 Cookie 或 Token");
+            return;
+        }
+        switch (drive) {
+            case QUARK:
+                QuarkUcApi.saveCookie(a, QuarkUcApi.QUARK, text);
+                break;
+            case UC:
+                QuarkUcApi.saveCookie(a, QuarkUcApi.UC, text);
+                break;
+            case BAIDU:
+                if (!text.toLowerCase(java.util.Locale.ROOT).contains("bduss="))
+                    text = "BDUSS=" + text;
+                a.prefs.edit()
+                        .putString("baidu_open_cookie", text)
+                        .putBoolean("baidu_open_verified", false)
+                        .apply();
+                break;
+            default:
+                a.prefs.edit()
+                        .putString("ali_open_token", text)
+                        .putBoolean("ali_open_verified", false)
+                        .apply();
+                break;
+        }
+        AppLog.i("NetdiskQr", "manual credential saved drive=" + drive);
+        a.toast("已保存，正在验证…");
+        validate(a, drive, onChanged);
+    }
+
+    static String capacityText(MainActivity a, String key) {        long total;
         long used;
         switch (key) {
             case QUARK:

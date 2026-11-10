@@ -853,11 +853,11 @@ final class HomeScreen {
                         label,
                         "home-tab:" + index,
                         () -> {
-                            // 1.8.18：云盘配置 tab 直接打开源插件账号面板，不再渲染仿制页
+                            // 1.8.20：云盘 tab → 上游 netdisk_sheet 移植页（扫码与账号配置）
                             boolean cloud = MobileShell.isCloudConfigCategory(label, id);
                             AppLog.i(
                                     "CloudConfig",
-                                    "homeTab -> source panel label="
+                                    "homeTab -> netdisk sheet label="
                                             + label
                                             + " id="
                                             + id
@@ -865,8 +865,7 @@ final class HomeScreen {
                                             + cloud);
                             if (cloud) {
                                 hideCloudHomeInline();
-                                new SettingsScreen(a)
-                                        .sourceAccountAction("LoginShow", null);
+                                NetdiskSheetScreen.show(a);
                                 return;
                             }
                             hideCloudHomeInline();

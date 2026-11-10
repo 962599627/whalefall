@@ -1952,12 +1952,12 @@ final class MobileShell {
         MobileDetailScreen.bindTouchFeedback(chip);
         chip.setOnClickListener(
                 v -> {
-                    // 1.8.18：云盘配置 chip 直接打开源插件自己的账号面板（不再渲染仿制页）
+                    // 1.8.20：云盘配置 → 移植自上游 netdisk_sheet 的扫码与账号配置页
                     if (isCloudConfigCategory(label, catId)) {
                         AppLog.i(
                                 "CloudConfig",
-                                "chip -> source panel label=" + label + " id=" + catId);
-                        new SettingsScreen(a).sourceAccountAction("LoginShow", null);
+                                "chip -> netdisk sheet label=" + label + " id=" + catId);
+                        NetdiskSheetScreen.show(a);
                         return;
                     }
                     hideCloudConfigInline();
