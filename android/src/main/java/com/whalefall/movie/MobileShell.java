@@ -88,6 +88,37 @@ final class MobileShell {
     LinearLayout homeCloudHolder;
     RecyclerView homeRecyclerRef;
     LinearLayout homeStatusWrapRef;
+    /** 1.9.36：统一加载指示（一个实例，分类/筛选/翻页共用）。 */
+    LinearLayout homeStatusWrap;
+    WhaleLoadingView homeWhale;
+    TextView homeStatusText;
+    boolean homeLoadingVisible;
+
+    void showHomeLoading(String reason) {
+        if (homeLoadingVisible) return;
+        homeLoadingVisible = true;
+        AppLog.i("Loading", "show reason=" + reason);
+        if (homeStatusWrap != null) homeStatusWrap.setVisibility(View.VISIBLE);
+        if (homeWhale != null) {
+            homeWhale.setVisibility(View.VISIBLE);
+            homeWhale.setText("加载中…");
+            homeWhale.start();
+        }
+        if (homeStatusText != null) homeStatusText.setVisibility(View.GONE);
+        if (homeRecyclerRef != null) homeRecyclerRef.setAlpha(0f);
+    }
+
+    void hideHomeLoading(String reason) {
+        if (!homeLoadingVisible) return;
+        homeLoadingVisible = false;
+        AppLog.i("Loading", "hide reason=" + reason);
+        if (homeWhale != null) homeWhale.stop();
+        if (homeStatusWrap != null) homeStatusWrap.setVisibility(View.GONE);
+        if (homeRecyclerRef != null) {
+            if (a.reduced) homeRecyclerRef.setAlpha(1f);
+            else homeRecyclerRef.animate().alpha(1f).setDuration(170).start();
+        }
+    }
     TextView homeLoadMoreRef;
     TextView homeFilterBtnRef;
     boolean cloudInlineActive;
@@ -1394,6 +1425,12 @@ final class MobileShell {
         statusText.setGravity(Gravity.CENTER);
         statusText.setPadding(a.dp(16), a.dp(6), a.dp(16), a.dp(24));
         statusWrap.addView(statusText, new LinearLayout.LayoutParams(-1, -2));
+        // 1.9.36：统一 loading（同一时间只有一个指示，不叠两行文字）
+        homeStatusWrap = statusWrap;
+        homeWhale = shelfWhale;
+        homeStatusText = statusText;
+        shelfWhale.setVisibility(View.GONE);
+        statusText.setVisibility(View.GONE);
         body.addView(statusWrap, new LinearLayout.LayoutParams(-1, -2));
 
         // 影片网格改为 RecyclerView 的「影片行」item（见 HomeAdapter），不再建全量容器。
@@ -1454,10 +1491,9 @@ final class MobileShell {
                     final int request = ++homeRequest;
                     loadingPage[0] = true;
                     if (currentPage == 1) {
-                        statusText.setVisibility(View.VISIBLE);
-                        statusText.setText("正在加载…");
-                        shelfWhale.setText("正在加载…");
-                        shelfWhale.start();
+                        String loadReason =
+                                !selectedFilters.isEmpty() ? "filter" : "category";
+                        showHomeLoading(loadReason);
                         loadMoreBtn.setVisibility(View.GONE);
                     } else {
                         loadMoreBtn.setVisibility(View.VISIBLE);
@@ -1661,16 +1697,22 @@ final class MobileShell {
                                                     }
                                                 }
                                                 totalPages = Math.max(1, finalList.pageCount);
+                                                hideHomeLoading(
+                                                        !selectedFilters.isEmpty()
+                                                                ? "filter"
+                                                                : "category");
                                                 statusText.setVisibility(
                                                         currentVideos.isEmpty()
                                                                 ? View.VISIBLE
                                                                 : View.GONE);
-                                                shelfWhale.stop();
                                                 if (currentVideos.isEmpty()) {
                                                     statusText.setText(
                                                             selectedFilters.isEmpty()
                                                                     ? "当前分类暂无影片"
                                                                     : "当前筛选暂无匹配，可继续加载更多影片");
+                                                    if (homeStatusWrap != null)
+                                                        homeStatusWrap.setVisibility(
+                                                                View.VISIBLE);
                                                 }
                                                 // Render Featured Hero Showcase on Recommend tab
                                                 if (catSnapshot.isEmpty()
@@ -1735,11 +1777,11 @@ final class MobileShell {
                                                 loadingPage[0] = false;
                                                 pageFailed[0] = true;
                                                 homeReady = !currentVideos.isEmpty();
+                                                hideHomeLoading("category");
                                                 statusText.setVisibility(
                                                         View.VISIBLE);
                                                 statusText.setText("加载失败：" + a.message(e));
-                                                shelfWhale.setText("加载失败");
-                                                shelfWhale.stop();
+                                                homeWhale.setText("加载失败");
                                                 loadMoreBtn.setVisibility(View.VISIBLE);
                                                 loadMoreBtn.setText("点击重试");
                                             });
