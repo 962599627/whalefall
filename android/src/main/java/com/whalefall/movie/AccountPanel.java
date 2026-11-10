@@ -647,7 +647,7 @@ final class AccountPanel {
                     dotColor = DOT_ORANGE;
                     label = "由源管理 · 无法读取";
                     detail =
-                            "本机未发现可读取的登录数据（插件可能加密存储/仅内存）→ "
+                            "本机未发现可读取的登录数据（登录态可能在源服务端/加密存储，属技术边界）→ "
                                     + "可到源面板确认，或在网盘登录引导里「手动标记为已登录」；"
                                     + "也可先点「诊断登录数据」把日志发我们定位。";
                     break;
@@ -655,8 +655,8 @@ final class AccountPanel {
                     dotColor = DOT_GRAY;
                     label = "无法确认 · 由源管理";
                     detail =
-                            "本机未发现可读取的登录数据（不等于未登录）→ 可到源面板确认，"
-                                    + "或在网盘登录引导里手动标记；也可先点「诊断登录数据」。";
+                            "本机未发现可读取的登录数据（不等于未登录；可能在源服务端/加密存储）→ "
+                                    + "可在网盘登录引导里手动标记为已登录，或到源面板确认。";
                     break;
             }
             statusDot.setBackground(UiTokens.circle(dotColor));

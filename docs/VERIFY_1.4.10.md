@@ -28,3 +28,7 @@
 ## 出证后回我一句
 
 「1.4.10 V35：夸克是否显示可确认凭据证据，或日志是否指出确切存储位置（整段已回传）。」
+
+---
+
+**实测结果（2026-11-10 13:45，1.4.10 包）**：用户回传 **`scan prefs=7 prefHits=0 files=300 sampled=0 fileHits=0 dbHits=0 cookieDbRows=8 cookies=[]`**——Cookie 库有 8 行，但 `cookies=[]`；files 采样、DB 均 0 命中。**结论：V35 未通过**，**DEF-2029 仍「未解决」**，转 **1.4.11 诊断 v3**（见 `docs/VERIFY_1.4.11.md` **V36**）。

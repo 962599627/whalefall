@@ -488,13 +488,33 @@ final class PanLoginState {
             addRoot(roots, "app_webview", new File(dataDir, "app_webview"));
             List<FileInfo> all = new ArrayList<>();
             for (DirRoot root : roots) collect(root.root, root.label + "/", all, new int[] {4000});
+            // 扫描优先级：databases（小）→ files/（含 70MB 插件大文件，必须采到）→ 其余按 mtime
+            List<FileInfo> ordered = new ArrayList<>();
+            List<FileInfo> databases = new ArrayList<>();
+            List<FileInfo> filesRoot = new ArrayList<>();
+            List<FileInfo> others = new ArrayList<>();
+            for (FileInfo info : all) {
+                if (info.rel.startsWith("databases/")) databases.add(info);
+                else if (info.rel.startsWith("files/")) filesRoot.add(info);
+                else others.add(info);
+            }
             java.util.Collections.sort(
-                    all, (left, right) -> Long.compare(right.mtime, left.mtime));
+                    databases, (left, right) -> Long.compare(right.mtime, left.mtime));
+            java.util.Collections.sort(
+                    filesRoot, (left, right) -> Long.compare(right.mtime, left.mtime));
+            java.util.Collections.sort(
+                    others, (left, right) -> Long.compare(right.mtime, left.mtime));
+            ordered.addAll(databases);
+            ordered.addAll(filesRoot);
+            ordered.addAll(others);
             long readTotal = 0;
             int scanned = 0;
-            for (FileInfo info : all) {
+            for (FileInfo info : ordered) {
                 if (scanned >= MAX_FILES || readTotal >= MAX_TOTAL_BYTES) break;
-                if (info.size <= 0 || info.size > 8L * 1024 * 1024) continue;
+                if (info.size <= 0 || info.size > 512L * 1024 * 1024) continue;
+                boolean bigFile = info.size > 8L * 1024 * 1024;
+                // 只对 files/ 下的大文件做前后采样；其它目录的大文件仍跳过
+                if (bigFile && !info.rel.startsWith("files/")) continue;
                 if (binaryExtension(info.file.getName())) continue;
                 if (lowValue(info.rel)) continue;
                 byte[] data;
@@ -603,6 +623,8 @@ final class PanLoginState {
     static final class CookieDb {
         final List<Hit> loginHits = new ArrayList<>();
         final List<Hit> anyHits = new ArrayList<>();
+        /** 每行 host/name/expires（仅诊断日志用，不含 cookie 值）。 */
+        final List<String> rowDetails = new ArrayList<>();
         int rows;
         boolean opened;
     }
@@ -635,6 +657,7 @@ final class PanLoginState {
                 host = host.toLowerCase(Locale.ROOT);
                 name = name.toLowerCase(Locale.ROOT);
                 out.rows++;
+                out.rowDetails.add("#" + out.rows + " host=" + host + " name=" + name);
                 for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES) {
                     if (!hostMatchesDrive(host, drive.key)) continue;
                     Hit hit = new Hit(drive.key, "cookie-db host=" + host + " name=" + name);
@@ -670,15 +693,18 @@ final class PanLoginState {
 
     static boolean hostMatchesDrive(String host, String drive) {
         String lower = host == null ? "" : host.toLowerCase(Locale.ROOT);
+        // 宽松匹配：历史数据里出现过 .quark.cn / quark.cn. / login.quark.cn 等变体
         switch (drive) {
             case "quark":
-                return lower.endsWith("quark.cn");
+                return lower.contains("quark");
             case "uc":
-                return lower.endsWith("uc.cn");
+                return lower.endsWith("uc.cn")
+                        || lower.contains(".uc.")
+                        || lower.contains("login.uc");
             case "baidu":
-                return lower.endsWith("baidu.com");
+                return lower.contains("baidu");
             case "ali":
-                return lower.endsWith("alipan.com") || lower.endsWith("aliyundrive.com");
+                return lower.contains("alipan") || lower.contains("aliyundrive");
             default:
                 return false;
         }
@@ -792,13 +818,13 @@ final class PanLoginState {
     private static String[] loginCookieNames(String drive) {
         switch (drive) {
             case "quark":
-                return new String[] {"__puus"};
+                return new String[] {"__puus", "__pus", "kps"};
             case "uc":
-                return new String[] {"__puus", "_uc_s"};
+                return new String[] {"__puus", "_uc_s", "uc_st", "__pus"};
             case "baidu":
-                return new String[] {"bduss"};
+                return new String[] {"bduss", "stoken"};
             case "ali":
-                return new String[] {"refresh_token", "aliyun"};
+                return new String[] {"refresh_token", "aliyun", "__pus"};
             default:
                 return new String[0];
         }
@@ -1034,6 +1060,48 @@ final class PanLoginState {
                     prefNames.add(name);
                 }
             AppLog.i("PanLogin", "diagnose prefs files=[" + joinAll(prefNames) + "] count=" + prefNames.size());
+            // 1b) 每个 prefs 的键名 + 值长度/base64 特征（不打印值内容）
+            try {
+                for (String prefName : prefNames) {
+                    android.content.SharedPreferences prefs =
+                            a.getSharedPreferences(prefName, android.content.Context.MODE_PRIVATE);
+                    Map<String, ?> values = prefs.getAll();
+                    List<String> keys = new ArrayList<>(values.keySet());
+                    List<String> shownKeys = new ArrayList<>();
+                    for (int i = 0; i < keys.size() && i < 40; i++) shownKeys.add(keys.get(i));
+                    AppLog.i(
+                            "PanLogin",
+                            "diagnose pref "
+                                    + prefName
+                                    + " keys=["
+                                    + joinAll(shownKeys)
+                                    + "] count="
+                                    + keys.size());
+                    int meta = 0;
+                    for (Map.Entry<String, ?> entry : values.entrySet()) {
+                        if (meta >= 12) break;
+                        Object value = entry.getValue();
+                        String text = value instanceof String ? (String) value : "";
+                        boolean base64 =
+                                text.length() >= 16
+                                        && text.matches("[A-Za-z0-9+/=_-]+")
+                                        && text.length() >= 24;
+                        if (!base64 && text.length() < 24) continue;
+                        AppLog.i(
+                                "PanLogin",
+                                "diagnose prefval "
+                                        + prefName
+                                        + " key="
+                                        + entry.getKey()
+                                        + " len="
+                                        + text.length()
+                                        + " b64="
+                                        + (base64 ? "yes" : "no"));
+                        meta++;
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
             // 预置/加密存储：值像 base64/长串但判不出网盘的记 opaque，不硬解
             try {
                 int opaque = 0;
@@ -1104,21 +1172,78 @@ final class PanLoginState {
                 budget[0] -= dirFiles.size();
                 if (budget[0] <= 0) break;
             }
+            // 2b) files/ 下文件名单（大文件名字本身可能提示功能，如 csp.db/plugin.js/config.json）
+            int filesShown = 0;
+            for (FileInfo info : all) {
+                if (!info.rel.startsWith("files/")) continue;
+                if (filesShown >= 40) break;
+                filesShown++;
+                AppLog.i(
+                        "PanLogin",
+                        "diagnose files "
+                                + info.rel
+                                + " size="
+                                + info.size);
+            }
 
-            // 3) databases 与 app_webview/Cookies
+            // 3) databases 表清单（只表名）与 app_webview/Cookies
             try {
                 File dbDir = new File(dataDir, "databases");
                 File[] dbs = dbDir.listFiles();
                 if (dbs != null)
                     for (File db : dbs) {
                         String lower = db.getName().toLowerCase(Locale.ROOT);
-                        if (lower.endsWith(".db") || lower.endsWith(".sqlite") || lower.contains("cookie"))
+                        if (lower.endsWith(".db")
+                                || lower.endsWith(".sqlite")
+                                || lower.contains("cookie"))
                             AppLog.i(
                                     "PanLogin",
                                     "diagnose db file="
                                             + db.getName()
                                             + " size="
                                             + db.length());
+                        if (!(lower.endsWith(".db") || lower.endsWith(".sqlite"))) continue;
+                        if (db.length() <= 0 || db.length() > 2L * 1024 * 1024) continue;
+                        File dbCopy = new File(a.getCacheDir(), "pan-db-tables.db");
+                        android.database.sqlite.SQLiteDatabase sqlite = null;
+                        android.database.Cursor tables = null;
+                        try {
+                            copyFile(db, dbCopy);
+                            sqlite =
+                                    android.database.sqlite.SQLiteDatabase.openDatabase(
+                                            dbCopy.getAbsolutePath(),
+                                            null,
+                                            android.database.sqlite.SQLiteDatabase
+                                                    .OPEN_READONLY);
+                            tables =
+                                    sqlite.rawQuery(
+                                            "SELECT name FROM sqlite_master WHERE type='table'",
+                                            null);
+                            List<String> names = new ArrayList<>();
+                            while (tables.moveToNext() && names.size() < 40) {
+                                String table = tables.getString(0);
+                                if (table == null || table.startsWith("sqlite_")) continue;
+                                names.add(table);
+                            }
+                            AppLog.i(
+                                    "PanLogin",
+                                    "diagnose db "
+                                            + db.getName()
+                                            + " tables=["
+                                            + joinAll(names)
+                                            + "]");
+                        } catch (Throwable ignored) {
+                        } finally {
+                            if (tables != null) try {
+                                tables.close();
+                            } catch (Throwable ignored) {
+                            }
+                            if (sqlite != null) try {
+                                sqlite.close();
+                            } catch (Throwable ignored) {
+                            }
+                            dbCopy.delete();
+                        }
                     }
             } catch (Throwable ignored) {
             }
@@ -1137,8 +1262,12 @@ final class PanLoginState {
                             + " opened="
                             + cookieDb.opened);
             int cookieDbShown = 0;
+            for (String row : cookieDb.rowDetails) {
+                if (cookieDbShown++ >= 40) break;
+                AppLog.i("PanLogin", "diagnose cookie-db row " + row);
+            }
             for (Hit hit : cookieDb.loginHits) {
-                if (cookieDbShown++ >= 10) break;
+                if (cookieDbShown++ >= 50) break;
                 AppLog.i("PanLogin", "diagnose cookie-db hit " + hit.drive + " " + hit.where);
             }
             List<Hit> dbHits = databaseHits(a);
