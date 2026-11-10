@@ -807,6 +807,33 @@ final class HomeScreen {
         return glyph;
     }
 
+    /** 1.9.34：已选中分类点击循环：L2 → 类型 L3 → 收起。 */
+    void handleCategoryFilterTap() {
+        if (filterPanel == null) return;
+        if (filterPanel.getVisibility() != View.VISIBLE) {
+            renderFilterTags();
+            return;
+        }
+        boolean optionsVisible =
+                filterOptionGrid != null && filterOptionGrid.getVisibility() == View.VISIBLE;
+        if (!optionsVisible) {
+            List<VideoFilters.Definition> defs = filterDefinitions();
+            if (defs.isEmpty()) {
+                collapseFilterUi();
+                return;
+            }
+            VideoFilters.Definition target = defs.get(0);
+            for (VideoFilters.Definition def : defs)
+                if ("class".equals(def.dimension)) {
+                    target = def;
+                    break;
+                }
+            showFilterOptions(target);
+            return;
+        }
+        collapseFilterUi();
+    }
+
     void toggleFilterTags() {
         if (filterPanel == null) return;
         if (filterPanel.getVisibility() == View.VISIBLE) {
@@ -1136,7 +1163,7 @@ final class HomeScreen {
                             }
                             hideCloudHomeInline();
                             if (id.equals(state.category)) {
-                                if (categoryHasFilters(id)) toggleFilterTags();
+                                if (categoryHasFilters(id)) handleCategoryFilterTap();
                                 return;
                             }
                             choose(id, true);

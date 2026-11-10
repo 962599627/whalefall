@@ -2052,6 +2052,31 @@ final class MobileShell {
         return glyph;
     }
 
+    /** 1.9.34：已选中分类的点击循环：L2 → 类型 L3 → 收起。 */
+    void handleMobileCategoryFilterTap() {
+        if (homeFilterPanel == null) return;
+        if (homeFilterPanel.getVisibility() != View.VISIBLE) {
+            renderMobileFilterTags();
+            return;
+        }
+        if (!mobileOptionsVisible()) {
+            List<VideoFilters.Definition> defs = mobileFilterDefinitions();
+            if (defs.isEmpty()) {
+                collapseMobileFilterUi();
+                return;
+            }
+            VideoFilters.Definition target = defs.get(0);
+            for (VideoFilters.Definition def : defs)
+                if ("class".equals(def.dimension)) {
+                    target = def;
+                    break;
+                }
+            showMobileFilterOptions(target);
+            return;
+        }
+        collapseMobileFilterUi();
+    }
+
     void toggleMobileFilterTags() {
         if (homeFilterPanel == null) return;
         if (homeFilterPanel.getVisibility() == View.VISIBLE) {
@@ -2321,9 +2346,9 @@ final class MobileShell {
                         return;
                     }
                     hideCloudConfigInline();
-                    // 1.9.33：有筛选能力的分类点击 = 选中+展开 L2；已选中 = 展开/收起 L2
+                    // 1.9.34：同一分类点击：第一次出 L2 → 第二次展开「类型」L3 → 第三次收起
                     if (hasFilters && catId.equals(selectedCategoryId)) {
-                        toggleMobileFilterTags();
+                        handleMobileCategoryFilterTap();
                         return;
                     }
                     if (selectedCategoryId.equals(catId)) return;
