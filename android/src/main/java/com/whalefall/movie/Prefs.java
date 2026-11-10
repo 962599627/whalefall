@@ -84,6 +84,23 @@ final class Prefs {
     static final String QUARK_ACCOUNT = "quark_native_account";
     static final String QUARK_TOTAL = "quark_native_total";
     static final String QUARK_USED = "quark_native_used";
+    // UC 原生直连
+    static final String UC_COOKIE = "uc_native_cookie";
+    static final String UC_ACCOUNT = "uc_native_account";
+    static final String UC_TOTAL = "uc_native_total";
+    static final String UC_USED = "uc_native_used";
+    // 百度原生直连
+    static final String BAIDU_COOKIE = "baidu_native_cookie";
+    static final String BAIDU_STOKEN = "baidu_native_bdstoken";
+    static final String BAIDU_ACCOUNT = "baidu_native_account";
+    static final String BAIDU_TOTAL = "baidu_native_total";
+    static final String BAIDU_USED = "baidu_native_used";
+    // 阿里原生直连（localStorage token）
+    static final String ALI_TOKEN = "ali_native_token";
+    static final String ALI_ACCOUNT = "ali_native_account";
+    static final String ALI_DRIVE_ID = "ali_native_drive_id";
+    static final String ALI_TOTAL = "ali_native_total";
+    static final String ALI_USED = "ali_native_used";
 
     static final String[] KEYS = {
         UI_SCALE_PERCENT,
