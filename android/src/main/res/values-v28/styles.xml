@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- API 28+：插件弹窗圆角（低版本忽略该属性，由 plugin_dialog_bg 的 shape 圆角兜底） -->
+  <style name="PluginAlertDialog" parent="android:style/Theme.Material.Dialog.Alert">
+    <item name="android:windowBackground">@drawable/plugin_dialog_bg</item>
+    <item name="android:windowNoTitle">true</item>
+    <item name="android:windowIsFloating">true</item>
+    <item name="android:windowMinWidthMajor">84%</item>
+    <item name="android:windowMinWidthMinor">84%</item>
+    <item name="android:dialogCornerRadius">24dp</item>
+    <item name="android:colorAccent">#FF8FB1</item>
+    <item name="android:colorBackground">#141C2A</item>
+    <item name="android:colorForeground">#F5F7FC</item>
+    <item name="android:colorPrimary">#FF8FB1</item>
+    <item name="android:textColorPrimary">#F5F7FC</item>
+    <item name="android:textColorSecondary">#A9B7D0</item>
+    <item name="android:textColorTertiary">#8D9CB6</item>
+    <item name="android:buttonBarButtonStyle">@style/PluginDialogButton</item>
+    <item name="android:buttonBarNegativeButtonStyle">@style/PluginDialogButton</item>
+    <item name="android:buttonBarPositiveButtonStyle">@style/PluginDialogButton</item>
+    <item name="android:buttonBarNeutralButtonStyle">@style/PluginDialogButton</item>
+  </style>
+</resources>
