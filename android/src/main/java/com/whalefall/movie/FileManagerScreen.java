@@ -67,6 +67,7 @@ final class FileManagerScreen {
         downloadStrip = null;
         stripProgressWrap = null;
         providerBar = null;
+        content = null;
         AppLog.i(
                 "FileMgr",
                 "page=FileManager tab=" + (tab == 0 ? "local" : "netdisk") + " items=0");

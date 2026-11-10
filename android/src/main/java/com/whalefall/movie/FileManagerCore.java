@@ -319,7 +319,7 @@ final class FileManagerCore {
                     "FileMgr",
                     "download provider=" + task.p.key + " fid=" + task.item.fid + " bytes=" + task.written + " state=" + (task.cancelled ? "cancel" : "fail") + " error=" + message);
             if (!task.cancelled) notifyFail(a, task.notifyId, task.item.name, message);
-            if (task.failure != null) {
+            if (!task.cancelled && task.failure != null) {
                 final String text = message;
                 a.ui.post(() -> task.failure.onError(text));
             }
