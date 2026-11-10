@@ -227,6 +227,110 @@ final class QuarkUcApi {
         return out;
     }
 
+    /** 1.9.4：刷新 Cookie（OpenList 同款：从 Set-Cookie 取 __puus/__pus 合并回 Cookie）。 */
+    static String refreshCookie(MainActivity a, Provider p, String cookie) {
+        if (cookie == null || cookie.isEmpty()) return cookie == null ? "" : cookie;
+        String merged = cookie;
+        boolean puus = false;
+        String[] endpoints = {
+            p.api + "/config?pr=" + p.pr + "&fr=pc",
+            "https://pan.quark.cn/account/info?lw=scan",
+            "https://drive.uc.cn/1/clouddrive/config?pr=UCBrowser&fr=pc"
+        };
+        for (String endpoint : endpoints) {
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(10000);
+                connection.setReadTimeout(12000);
+                connection.setRequestProperty("Cookie", merged);
+                connection.setRequestProperty("Referer", p.referer);
+                connection.setRequestProperty("User-Agent", UA_CHROME);
+                connection.setRequestProperty("Accept", "application/json, text/plain, */*");
+                int status = connection.getResponseCode();
+                String newCookie = merged;
+                boolean found = false;
+                try {
+                    java.util.List<String> raw = new java.util.ArrayList<>();
+                    for (java.util.Map.Entry<String, java.util.List<String>> entry :
+                            connection.getHeaderFields().entrySet()) {
+                        if (entry.getKey() != null && "set-cookie".equalsIgnoreCase(entry.getKey()))
+                            raw.addAll(entry.getValue());
+                    }
+                    for (String value : raw) {
+                        if (value == null) continue;
+                        for (String part : value.split(";")) {
+                            String pair = part.trim();
+                            int eq = pair.indexOf('=');
+                            if (eq <= 0) continue;
+                            String name = pair.substring(0, eq);
+                            if (!name.startsWith("__puus")
+                                    && !name.startsWith("__pus")
+                                    && !name.equals("kps")
+                                    && !name.equals("_uc_s")
+                                    && !name.equals("__kp")
+                                    && !name.equals("__uid")) continue;
+                            newCookie = mergeCookie(newCookie, name, pair.substring(eq + 1));
+                            found = true;
+                            if (name.startsWith("__puus")) puus = true;
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+                merged = newCookie;
+                AppLog.i(
+                        "QuarkGet",
+                        "refresh status="
+                                + status
+                                + " puus="
+                                + (puus ? "yes" : "no")
+                                + " changed="
+                                + found
+                                + " host="
+                                + android.net.Uri.parse(endpoint).getHost());
+                if (found) break;
+            } catch (Throwable ignored) {
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }
+        if (!merged.equals(cookie)) {
+            // 只覆盖 App 内保存的 Cookie；源插件 Cookie 仅本次会话使用，不写回 App 存储
+            String stored = cookie(a, p);
+            if (stored != null && stored.equals(cookie)) {
+                try {
+                    saveCookie(a, p, merged);
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        return merged;
+    }
+
+    static String mergeCookie(String cookie, String name, String value) {
+        StringBuilder out = new StringBuilder();
+        boolean replaced = false;
+        for (String part : (cookie == null ? "" : cookie).split(";")) {
+            String pair = part.trim();
+            if (pair.isEmpty()) continue;
+            int eq = pair.indexOf('=');
+            if (eq > 0 && pair.substring(0, eq).equals(name)) {
+                if (out.length() > 0) out.append("; ");
+                out.append(name).append('=').append(value);
+                replaced = true;
+            } else {
+                if (out.length() > 0) out.append("; ");
+                out.append(pair);
+            }
+        }
+        if (!replaced) {
+            if (out.length() > 0) out.append("; ");
+            out.append(name).append('=').append(value);
+        }
+        return out.toString();
+    }
+
     static final String UA_CHROME =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -235,8 +339,10 @@ final class QuarkUcApi {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) quark-cloud-drive/2.5.20 Chrome/100.0 Safari/537.36";
 
-    /** 1.9.3：夸克/UC PC 下载接口（drive-pc / pc-api），避免风控 403/412。 */
-    static String downloadUrl(Provider p, String cookie, String fid) throws Exception {
+    /** 1.9.3/1.9.4：夸克/UC PC 下载接口 + __puus 刷新（drive-pc / pc-api）。 */
+    static String downloadUrl(MainActivity a, Provider p, String cookie, String fid) throws Exception {
+        String fresh = cookie;
+        if (a != null) fresh = refreshCookie(a, p, cookie);
         String[] endpoints =
                 "quark".equals(p.key)
                         ? new String[] {
@@ -257,7 +363,7 @@ final class QuarkUcApi {
                 connection.setConnectTimeout(12000);
                 connection.setReadTimeout(15000);
                 connection.setDoOutput(true);
-                connection.setRequestProperty("Cookie", cookie == null ? "" : cookie);
+                connection.setRequestProperty("Cookie", fresh == null ? "" : fresh);
                 connection.setRequestProperty("Content-Type", "application/json");
                 connection.setRequestProperty("Accept", "*/*");
                 connection.setRequestProperty("User-Agent", UA_CHROME);
@@ -306,55 +412,87 @@ final class QuarkUcApi {
         return new String[] {UA_CHROME, UA_OKHTTP, p.ua == null ? UA_QUARK_APP : p.ua};
     }
 
-    /** 1.9.3：跟随 302 拿最终直链；403/412 依次换 UA / 加 x-requested-with 重试。 */
-    static String resolveUrl(Provider p, String cookie, String fid) throws Exception {
-        String url = downloadUrl(p, cookie, fid);
+    /** 1.9.3/1.9.4：刷新 Cookie → 下载接口 → 跟随 302；403/412 时刷新后重试、再换 UA。 */
+    static String resolveUrl(MainActivity a, Provider p, String cookie, String fid) throws Exception {
+        String fresh = a == null ? cookie : refreshCookie(a, p, cookie);
+        String url = downloadUrl(a, p, fresh, fid);
+        if (a != null) fresh = refreshCookie(a, p, fresh); // file/download 也可能下发 __puus
         Exception last = null;
-        String[] uas = uaVariants(p);
-        for (String ua : uas) {
-            for (int extra = 0; extra < 2; extra++) {
-                String current = url;
+        for (int round = 0; round < 2; round++) {
+            boolean afterRefresh = round == 1;
+            if (afterRefresh) {
+                if (a == null) break;
+                fresh = refreshCookie(a, p, fresh);
                 try {
-                    for (int hop = 0; hop < 6; hop++) {
-                        HttpURLConnection connection = (HttpURLConnection) new URL(current).openConnection();
-                        try {
-                            connection.setInstanceFollowRedirects(false);
-                            connection.setConnectTimeout(10000);
-                            connection.setReadTimeout(12000);
-                            connection.setRequestProperty("Cookie", cookie == null ? "" : cookie);
-                            connection.setRequestProperty("Referer", p.referer);
-                            connection.setRequestProperty("User-Agent", ua);
-                            connection.setRequestProperty("Accept", "*/*");
-                            connection.setRequestProperty("Range", "bytes=0-0");
-                            if (extra == 1) connection.setRequestProperty("x-requested-with", "XMLHttpRequest");
-                            int code = connection.getResponseCode();
-                            String location = connection.getHeaderField("Location");
-                            String host = "";
+                    url = downloadUrl(a, p, fresh, fid);
+                } catch (Throwable ignored) {
+                }
+            }
+            String[] uas = uaVariants(p);
+            for (String ua : uas) {
+                for (int extra = 0; extra < 2; extra++) {
+                    String current = url;
+                    try {
+                        for (int hop = 0; hop < 6; hop++) {
+                            HttpURLConnection connection =
+                                    (HttpURLConnection) new URL(current).openConnection();
                             try {
-                                host = android.net.Uri.parse(current).getHost();
-                            } catch (Throwable ignored) {
+                                connection.setInstanceFollowRedirects(false);
+                                connection.setConnectTimeout(10000);
+                                connection.setReadTimeout(12000);
+                                connection.setRequestProperty("Cookie", fresh == null ? "" : fresh);
+                                connection.setRequestProperty("Referer", p.referer);
+                                connection.setRequestProperty("User-Agent", ua);
+                                connection.setRequestProperty("Accept", "*/*");
+                                connection.setRequestProperty("Range", "bytes=0-0");
+                                if (extra == 1)
+                                    connection.setRequestProperty("x-requested-with", "XMLHttpRequest");
+                                int code = connection.getResponseCode();
+                                String location = connection.getHeaderField("Location");
+                                String host = "";
+                                try {
+                                    host = android.net.Uri.parse(current).getHost();
+                                } catch (Throwable ignored) {
+                                }
+                                AppLog.i(
+                                        "QuarkGet",
+                                        "dl status="
+                                                + code
+                                                + " ua="
+                                                + uaTag(ua)
+                                                + " afterRefresh="
+                                                + afterRefresh
+                                                + " urlHost="
+                                                + host);
+                                if (code == 403 || code == 412) {
+                                    last =
+                                            new IOException(
+                                                    "HTTP "
+                                                            + code
+                                                            + (afterRefresh
+                                                                    ? "（登录状态过期，请重新扫码）"
+                                                                    : "（夸克直链风控）"));
+                                    break;
+                                }
+                                if (code >= 300
+                                        && code < 400
+                                        && location != null
+                                        && !location.isEmpty()) {
+                                    current =
+                                            location.startsWith("http")
+                                                    ? location
+                                                    : new URL(new URL(current), location).toString();
+                                    continue;
+                                }
+                                if (code != 200 && code != 206) throw new IOException("HTTP " + code);
+                                return current;
+                            } finally {
+                                connection.disconnect();
                             }
-                            AppLog.i("QuarkGet", "status=" + code + " ua=" + uaTag(ua) + " urlHost=" + host);
-                            if (code == 403 || code == 412) {
-                                last = new IOException("HTTP " + code + "（夸克直链风控）");
-                                break;
-                            }
-                            if (code >= 300 && code < 400 && location != null && !location.isEmpty()) {
-                                current =
-                                        location.startsWith("http")
-                                                ? location
-                                                : new URL(new URL(current), location).toString();
-                                continue;
-                            }
-                            if (code != 200 && code != 206)
-                                throw new IOException("HTTP " + code);
-                            return current;
-                        } finally {
-                            connection.disconnect();
                         }
+                    } catch (Throwable error) {
+                        last = new IOException(friendly(error));
                     }
-                } catch (Throwable error) {
-                    last = new IOException(friendly(error));
                 }
             }
         }

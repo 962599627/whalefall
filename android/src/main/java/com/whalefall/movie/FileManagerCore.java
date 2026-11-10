@@ -229,14 +229,15 @@ final class FileManagerCore {
         InputStream in = null;
         HttpURLConnection connection = null;
         try {
-            // 1.9.3：PC 下载接口 + 跟随重定向 + UA 变体（提升夸克风控通过率）
-            String direct = QuarkUcApi.resolveUrl(task.p, task.cookie, task.item.fid);
+            // 1.9.3/1.9.4：刷新 __puus → PC 下载接口 → 跟随重定向
+            String direct = QuarkUcApi.resolveUrl(a, task.p, task.cookie, task.item.fid);
+            String streamCookie = QuarkUcApi.refreshCookie(a, task.p, task.cookie);
             connection = (HttpURLConnection) new URL(direct).openConnection();
             task.connection = connection;
             connection.setInstanceFollowRedirects(true);
             connection.setConnectTimeout(15000);
             connection.setReadTimeout(30000);
-            connection.setRequestProperty("Cookie", task.cookie == null ? "" : task.cookie);
+            connection.setRequestProperty("Cookie", streamCookie == null ? "" : streamCookie);
             connection.setRequestProperty("Referer", task.p.referer);
             connection.setRequestProperty("User-Agent", QuarkUcApi.UA_CHROME);
             connection.setRequestProperty("Accept", "*/*");
@@ -257,7 +258,7 @@ final class FileManagerCore {
                 connection.setInstanceFollowRedirects(true);
                 connection.setConnectTimeout(15000);
                 connection.setReadTimeout(30000);
-                connection.setRequestProperty("Cookie", task.cookie == null ? "" : task.cookie);
+                connection.setRequestProperty("Cookie", QuarkUcApi.refreshCookie(a, task.p, streamCookie));
                 connection.setRequestProperty("Referer", task.p.referer);
                 connection.setRequestProperty("User-Agent", QuarkUcApi.UA_OKHTTP);
                 connection.setRequestProperty("Accept", "*/*");
@@ -747,7 +748,7 @@ final class FileManagerCore {
                 () -> {
                     try {
                         // 1.9.1：跟随重定向拿最终直链；播放器 headers 带 Cookie/Referer/UA
-                        String url = QuarkUcApi.resolveUrl(p, cookie, item.fid);
+                        String url = QuarkUcApi.resolveUrl(a, p, cookie, item.fid);
                         final Map<String, String> headers = new LinkedHashMap<>();
                         headers.put("Cookie", cookie == null ? "" : cookie);
                         headers.put("Referer", p.referer);

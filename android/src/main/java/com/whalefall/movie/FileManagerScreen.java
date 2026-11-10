@@ -1091,7 +1091,8 @@ final class FileManagerScreen {
                         message -> {
                             activeTaskId = null;
                             stripPaused = false;
-                            // 1.9.0：失败任务条保留并可重试
+                            // 1.9.4：412/过期时引导重新扫码
+                            notifyDownloadFailure(message, providerKey);
                             buildFailedStrip(
                                     item.name,
                                     message,
@@ -1104,6 +1105,26 @@ final class FileManagerScreen {
                         overwrite);
         buildDownloadStrip(item.name);
         AppLog.i("FileMgr", "download queue provider=" + provider.key + " fid=" + item.fid);
+    }
+
+    private void notifyDownloadFailure(String message, final String providerKey) {
+        String text = message == null ? "" : message;
+        if (text.startsWith("下载失败")) text = text;
+        else text = "下载失败：" + text;
+        if (text.contains("登录状态过期") || text.contains("重新扫码")) {
+            new AppDialog.Builder(a)
+                    .setTitle("登录状态过期")
+                    .setMessage("夸克/UC 登录已过期，请重新扫码登录后再试。")
+                    .setPositiveButton(
+                            "去扫码",
+                            (d, i) ->
+                                    NetdiskQrLogin.show(
+                                            a, providerKey, () -> a.ui.postDelayed(this::refresh, 300)))
+                    .setNegativeButton("取消", null)
+                    .show();
+        } else {
+            a.toast(text);
+        }
     }
 
     private void downloadForView(final QuarkUcApi.FileItem item, final boolean image) {
@@ -1120,7 +1141,7 @@ final class FileManagerScreen {
                     if (image) ImageViewerScreen.show(a, file);
                     else TextViewerScreen.show(a, file);
                 },
-                message -> a.notice("下载失败：" + message),
+                message -> notifyDownloadFailure(message, providerKey),
                 dir,
                 false);
     }
