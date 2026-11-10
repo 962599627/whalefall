@@ -242,6 +242,48 @@ final class QuarkUcApi {
         return url;
     }
 
+    /** 1.9.1：跟随 302/重定向拿最终直链（播放器需要最终 URL；日志脱敏只打 host）。 */
+    static String resolveUrl(Provider p, String cookie, String fid) throws Exception {
+        String url = downloadUrl(p, cookie, fid);
+        String host = "";
+        try {
+            host = android.net.Uri.parse(url).getHost();
+        } catch (Throwable ignored) {
+        }
+        for (int hop = 0; hop < 6; hop++) {
+            HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+            try {
+                connection.setInstanceFollowRedirects(false);
+                connection.setConnectTimeout(10000);
+                connection.setReadTimeout(12000);
+                connection.setRequestProperty("Cookie", cookie == null ? "" : cookie);
+                connection.setRequestProperty("Referer", p.referer);
+                connection.setRequestProperty("User-Agent", p.ua);
+                connection.setRequestProperty("Range", "bytes=0-0");
+                int code = connection.getResponseCode();
+                String location = connection.getHeaderField("Location");
+                AppLog.i(
+                        "QuarkPlay",
+                        "url=" + host + " code=" + code + " redirect=" + (location != null));
+                if (code >= 300 && code < 400 && location != null && !location.isEmpty()) {
+                    url = location.startsWith("http") ? location : new URL(new URL(url), location).toString();
+                    try {
+                        host = android.net.Uri.parse(url).getHost();
+                    } catch (Throwable ignored) {
+                    }
+                    continue;
+                }
+                if (code != 200 && code != 206)
+                    throw new IOException("HTTP " + code);
+                return url;
+            } finally {
+                connection.disconnect();
+            }
+        }
+        AppLog.i("QuarkPlay", "redirect limit url=" + host);
+        return url;
+    }
+
     static Status member(Provider p, String cookie) throws Exception {        JSONObject json =
                 request(
                         p,

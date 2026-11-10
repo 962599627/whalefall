@@ -546,30 +546,61 @@ final class FileManagerCore {
             final String cookie,
             final QuarkUcApi.FileItem item,
             final boolean fromSource) {
-        a.toast("正在获取播放地址…");
+        a.toast("正在解析播放地址…");
         a.worker.execute(
                 () -> {
                     try {
-                        String url = QuarkUcApi.downloadUrl(p, cookie, item.fid);
+                        // 1.9.1：跟随重定向拿最终直链；播放器 headers 带 Cookie/Referer/UA
+                        String url = QuarkUcApi.resolveUrl(p, cookie, item.fid);
                         final Map<String, String> headers = new LinkedHashMap<>();
                         headers.put("Cookie", cookie == null ? "" : cookie);
                         headers.put("Referer", p.referer);
                         headers.put("User-Agent", p.ua);
-                        AppLog.i("FileMgr", "play remote provider=" + p.key + " fid=" + item.fid + " url=ok");
+                        AppLog.i("QuarkPlay", "play provider=" + p.key + " fid=" + item.fid + " url=ok");
+                        final String resolved = url;
                         a.ui.post(
                                 () ->
                                         syntheticPlay(
                                                 a,
                                                 "open_" + p.key,
                                                 p.name + "网盘（" + (fromSource ? "源插件" : "App 内") + "）",
-                                                url,
+                                                resolved,
                                                 item.name,
                                                 headers));
                     } catch (Throwable error) {
-                        AppLog.i("FileMgr", "play remote error=" + friendly(error));
-                        a.ui.post(() -> a.notice("获取播放地址失败：" + friendly(error)));
+                        AppLog.i(
+                                "QuarkPlay",
+                                "play failed provider="
+                                        + p.key
+                                        + " fid="
+                                        + item.fid
+                                        + " error="
+                                        + friendly(error));
+                        a.ui.post(
+                                () -> {
+                                    a.toast("直链播放失败，改为下载后播放…");
+                                    downloadThenPlay(a, p, cookie, item);
+                                });
                     }
                 });
+    }
+
+    /** 1.9.1：直链不可用时自动下载到本地再播放。 */
+    private static void downloadThenPlay(
+            final MainActivity a,
+            final QuarkUcApi.Provider p,
+            final String cookie,
+            final QuarkUcApi.FileItem item) {
+        download(
+                a,
+                p,
+                cookie,
+                item,
+                null,
+                file -> playLocal(a, file),
+                message -> a.notice("下载失败：" + message),
+                null,
+                false);
     }
 
     private static void syntheticPlay(

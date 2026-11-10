@@ -595,7 +595,11 @@ final class FileManagerScreen {
                         exitSelection();
                         refresh();
                     } else if (entry.video) FileManagerCore.playLocal(a, entry.file);
-                    else a.toast("当前仅支持视频播放与下载");
+                    else if (TextViewerScreen.isImageName(entry.name))
+                        ImageViewerScreen.show(a, entry.file);
+                    else if (TextViewerScreen.isTextName(entry.name))
+                        TextViewerScreen.show(a, entry.file);
+                    else a.toast("当前仅支持视频/图片/文本查看与下载");
                 });
         card.setOnLongClickListener(
                 v -> {
@@ -652,7 +656,11 @@ final class FileManagerScreen {
                                 netdiskCookie,
                                 item,
                                 netdiskFromSource);
-                    } else a.toast("当前仅支持视频播放与下载");
+                    } else if (TextViewerScreen.isImageName(item.name)) {
+                        downloadForView(item, true);
+                    } else if (TextViewerScreen.isTextName(item.name)) {
+                        downloadForView(item, false);
+                    } else a.toast("当前仅支持视频/图片/文本查看与下载");
                 });
         card.setOnLongClickListener(
                 v -> {
@@ -986,6 +994,33 @@ final class FileManagerScreen {
                         overwrite);
         buildDownloadStrip(item.name);
         AppLog.i("FileMgr", "download queue provider=" + provider.key + " fid=" + item.fid);
+    }
+
+    private void downloadForView(final QuarkUcApi.FileItem item, final boolean image) {
+        File dir = new File(FileManagerCore.downloadDir(a), ".viewer");
+        if (!dir.exists()) dir.mkdirs();
+        a.toast("正在下载以查看：" + item.name);
+        FileManagerCore.download(
+                a,
+                QuarkUcApi.of(providerKey),
+                netdiskCookie,
+                item,
+                null,
+                file -> {
+                    if (image) ImageViewerScreen.show(a, file);
+                    else TextViewerScreen.show(a, file);
+                },
+                message -> a.notice("下载失败：" + message),
+                dir,
+                false);
+    }
+
+    static void showNetdisk(MainActivity a, String providerKey) {
+        FileManagerScreen screen = new FileManagerScreen(a);
+        screen.tab = 1;
+        if (providerKey != null && !providerKey.isEmpty()) screen.providerKey = providerKey;
+        screen.open();
+        current = screen;
     }
 
     private void buildDownloadStrip(String name) {

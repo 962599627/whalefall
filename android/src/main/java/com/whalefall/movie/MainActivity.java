@@ -1600,6 +1600,12 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (tvPlayer != null && tvPlayer.back()) return;
+        // 1.9.1：图片/文本查看器返回文件管理器
+        if (body != null
+                && ("image-viewer".equals(body.getTag()) || "text-viewer".equals(body.getTag()))) {
+            FileManagerScreen.show(this);
+            return;
+        }
         // 1.9.0：文件管理器先交给页面处理（多选→上级），再离开页面
         if ((current == null || !current.player)
                 && body != null
