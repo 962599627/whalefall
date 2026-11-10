@@ -1942,6 +1942,8 @@ public final class MainActivity extends Activity {
             }
             releasePlayer();
         releaseWallpaper();
+            // 1.9.31：根页面返回需 2 秒内再按一次才退出
+            if (!rootExitGuard()) return;
             finish();
             return;
         }
@@ -1955,8 +1957,25 @@ public final class MainActivity extends Activity {
             logBackAction("finish");
             releasePlayer();
         releaseWallpaper();
+            if (!rootExitGuard()) return;
             finish();
         }
+    }
+
+    /** 1.9.31：首页/根页面「再按一次退出」保护（手势返回同样生效）。 */
+    long lastRootBackAt;
+
+    boolean rootExitGuard() {
+        long now = System.currentTimeMillis();
+        if (lastRootBackAt > 0 && now - lastRootBackAt <= 2000) {
+            AppLog.i("Back", "root exitGuard=exit");
+            lastRootBackAt = 0;
+            return true;
+        }
+        lastRootBackAt = now;
+        AppLog.i("Back", "root exitGuard=first");
+        toast("再按一次退出应用");
+        return false;
     }
 
     static boolean isPushedPage(String tag) {
