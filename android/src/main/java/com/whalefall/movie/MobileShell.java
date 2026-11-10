@@ -4276,15 +4276,6 @@ final class MobileShell {
             if (group.equals(e.group == null ? "" : e.group)) keys.add(e.key());
         return keys;
     }
-        pill.setTextColor(active ? 0xff000000 : 0xffe6edf9);
-        pill.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
-        pill.setPadding(a.dp(15), a.dp(7), a.dp(15), a.dp(7));
-        if (active) {
-            pill.setBackground(glassBg(0xffffffff, 0xffe9eef9, a.dp(999), 0, 0));
-        } else {
-            pill.setBackground(glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
-        }
-    }
 
     // =========================================================================
     // TAB 4: MOBILE SETTINGS (2-Level Clean Architecture, Zero Emojis, Zero Ghosting)
