@@ -241,6 +241,7 @@ final class SourceCheckScreen {
             String detail = result.status;
             if (result.ms > 0) detail += " · " + result.ms + "ms";
             if (!result.error.isEmpty()) detail += " · " + result.error;
+            final String detailText = detail;
             TextView status = a.text(detail, tv ? 13f : 12f, color);
             status.setSingleLine(true);
             status.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -248,7 +249,7 @@ final class SourceCheckScreen {
                     v ->
                             new AppDialog.Builder(a)
                                     .setTitle(result.site.name)
-                                    .setMessage(detail + (result.error.isEmpty() ? "" : "\n错误：" + result.error))
+                                    .setMessage(detailText + (result.error.isEmpty() ? "" : "\n错误：" + result.error))
                                     .setPositiveButton("关闭", (d, i) -> {})
                                     .show());
             info.addView(status);
