@@ -69,6 +69,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
     final LinkedHashSet<String> selectedSources = new LinkedHashSet<>();
     TextView filterSummaryText;
     Button filterClearChip;
+    View filterRowView;
     final Map<String, TextView> groupHeaders = new HashMap<>();
     int realCardCount;
 
@@ -357,9 +358,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         left.addView(submit, submitSize);
         LinearLayout right = a.vertical();
         split.addView(right, new LinearLayout.LayoutParams(0, -1, 1));
-        status = a.text("输入即搜索 · 停顿片刻自动更新结果。", 14, MainActivity.MUTED);
-        status.setMinHeight(a.dp(30));
-        right.addView(status);
+        // 1.9.31：来源筛选行固定在统计行之上（搜索框/历史 → 筛选行 → 统计 → 结果）
         HorizontalScrollView filterScroll = new HorizontalScrollView(a);
         filterScroll.setTag("search-source-scroll");
         filterScroll.setHorizontalScrollBarEnabled(false);
@@ -373,7 +372,11 @@ public final class GlobalSearchScreen implements AutoCloseable {
         filterButtons.clear();
         filterClearChip = null;
         filterScroll.addView(sourceFilters);
+        filterRowView = filterScroll;
         right.addView(filterScroll, new LinearLayout.LayoutParams(-1, a.dp(46)));
+        status = a.text("输入即搜索 · 停顿片刻自动更新结果。", 14, MainActivity.MUTED);
+        status.setMinHeight(a.dp(30));
+        right.addView(status);
         filterSummaryText = a.text("", 12, UiTokens.ACCENT_SOFT);
         filterSummaryText.setPadding(a.dp(6), 0, a.dp(6), a.dp(2));
         filterSummaryText.setVisibility(View.GONE);
@@ -1153,6 +1156,22 @@ public final class GlobalSearchScreen implements AutoCloseable {
             sourceFilters.addView(filterClearChip, clearLp);
         }
         filterClearChip.setVisibility(filtering() ? View.VISIBLE : View.GONE);
+        if (filterRowView != null && filterRowView.getParent() instanceof ViewGroup) {
+            int rowIndex = ((ViewGroup) filterRowView.getParent()).indexOfChild(filterRowView);
+            int statusIndex = -1;
+            if (status != null && status.getParent() instanceof ViewGroup)
+                statusIndex = ((ViewGroup) status.getParent()).indexOfChild(status);
+            AppLog.i(
+                    "SearchFilter",
+                    "row=visible chips="
+                            + filterButtons.size()
+                            + " top="
+                            + (rowIndex >= 0 && rowIndex < statusIndex)
+                            + " rowIndex="
+                            + rowIndex
+                            + " statusIndex="
+                            + statusIndex);
+        }
         if (filterSummaryText != null) {
             // 1.9.30：固定筛选行已有「清除」入口，摘要行仅保留隐藏状态，避免两个清除
             filterSummaryText.setVisibility(View.GONE);
@@ -1407,6 +1426,8 @@ public final class GlobalSearchScreen implements AutoCloseable {
             lp.setMargins(0, 0, a.dp(6), 0);
             statusChips.addView(chip, lp);
         }
+        // 1.9.31：失败源信息已合并进固定筛选行，状态徽章行不再单独占位
+        statusChips.setVisibility(View.GONE);
         // 1.9.29：resetGrid 重建 resultBody 后确保「前 120 条」提示仍在（且位于末尾）
         if (resultHint != null && resultHint.getParent() == null && resultBody != null) {
             resultBody.addView(resultHint);

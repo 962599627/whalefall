@@ -64,16 +64,21 @@ final class MobileShell {
         final Cms.Site site;
         final Cms.Video video;
         int sources = 1;
+        /** 1.9.31：同一标题合并的多个来源，供手机来源筛选使用。 */
+        final List<Cms.Site> sites = new ArrayList<>();
 
         CachedSearchHit(Cms.Site site, Cms.Video video) {
             this.site = site;
             this.video = video;
+            sites.add(site);
         }
     }
 
     static String cachedSearchKeyword = "";
     static String cachedSearchStatus = "";
     static final List<CachedSearchHit> cachedSearchHits = new ArrayList<>();
+    /** 1.9.31：手机搜索页来源筛选（空=全部）。 */
+    static final java.util.Set<String> cachedSearchSourceFilter = new java.util.HashSet<>();
     static int cachedSearchScrollY = 0;
 
     /** Sub-page of the 片库 tab: 0 history, 1 favorites, 2 downloads. */
@@ -2526,6 +2531,18 @@ final class MobileShell {
         final LinearLayout historyWrap = a.vertical();
         page.addView(historyWrap, new LinearLayout.LayoutParams(-1, -2));
 
+        // 1.9.31：来源筛选固定行（历史之下、统计行之上），独立于结果 adapter
+        final HorizontalScrollView mobileFilterScroll = new HorizontalScrollView(a);
+        mobileFilterScroll.setHorizontalScrollBarEnabled(false);
+        mobileFilterScroll.setClipChildren(false);
+        mobileFilterScroll.setClipToPadding(false);
+        final LinearLayout mobileFilterRow = a.row();
+        mobileFilterRow.setPadding(a.dp(2), a.dp(6), a.dp(2), a.dp(2));
+        mobileFilterScroll.addView(mobileFilterRow);
+        page.addView(mobileFilterScroll, new LinearLayout.LayoutParams(-1, a.dp(46)));
+        final java.util.Set<String> failedSourceNames = new java.util.LinkedHashSet<>();
+        final Runnable[] renderMobileFilters = new Runnable[1];
+
         final TextView searchStatus = a.text("输入关键词搜索全部已启用的片源", 12, MainActivity.MUTED);
         searchStatus.setMaxLines(2);
         searchStatus.setEllipsize(TextUtils.TruncateAt.END);
@@ -2558,6 +2575,84 @@ final class MobileShell {
                     sourceNotices.setVisibility(separator < 0 ? View.GONE : View.VISIBLE);
                 };
 
+        // 1.9.31：手机来源筛选行渲染（全部 / 各源数量 / 失败 / 清除）
+        final Runnable buildMobileFilters =
+                () -> {
+                    mobileFilterRow.removeAllViews();
+                    TextView label = a.text("来源筛选：", 12, MainActivity.MUTED);
+                    label.setPadding(0, 0, a.dp(4), 0);
+                    mobileFilterRow.addView(label);
+                    java.util.Map<String, Cms.Site> sites = searchAdapter.sourceMap();
+                    if (sites.isEmpty()) {
+                        TextView empty = a.text("搜索后显示来源", 11.5f, MainActivity.MUTED);
+                        mobileFilterRow.addView(empty);
+                        return;
+                    }
+                    java.util.List<Cms.Site> ordered = new java.util.ArrayList<>(sites.values());
+                    java.util.Collections.sort(
+                            ordered,
+                            (x, y) ->
+                                    Integer.compare(
+                                            searchAdapter.countFor(y.key),
+                                            searchAdapter.countFor(x.key)));
+                    android.view.View all =
+                            mobileFilterChip(
+                                    "全部",
+                                    cachedSearchSourceFilter.isEmpty(),
+                                    MainActivity.WHITE,
+                                    () -> {
+                                        cachedSearchSourceFilter.clear();
+                                        searchAdapter.setFilter(cachedSearchSourceFilter);
+                                        renderMobileFilters[0].run();
+                                    });
+                    mobileFilterRow.addView(all, mobileFilterChipLp());
+                    int mobileChips = 0;
+                    for (final Cms.Site site : ordered) {
+                        int count = searchAdapter.countFor(site.key);
+                        boolean selected = cachedSearchSourceFilter.contains(site.key);
+                        boolean failed = failedSourceNames.contains(site.name);
+                        String text =
+                                site.name
+                                        + (count > 0 ? " " + count : "")
+                                        + (failed ? " 失败" : "");
+                        android.view.View chip =
+                                mobileFilterChip(
+                                        text,
+                                        selected,
+                                        failed && count == 0 ? 0xff9aa3b2 : 0xffc2cbd7,
+                                        () -> {
+                                            if (!cachedSearchSourceFilter.remove(site.key))
+                                                cachedSearchSourceFilter.add(site.key);
+                                            searchAdapter.setFilter(cachedSearchSourceFilter);
+                                            renderMobileFilters[0].run();
+                                        });
+                        mobileFilterRow.addView(chip, mobileFilterChipLp());
+                        mobileChips++;
+                    }
+                    if (!cachedSearchSourceFilter.isEmpty()) {
+                        TextView clear = a.text("清除", 12, 0xffff8fb1);
+                        clear.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+                        MobileDetailScreen.bindTouchFeedback(clear);
+                        clear.setFocusable(true);
+                        clear.setOnClickListener(
+                                v -> {
+                                    cachedSearchSourceFilter.clear();
+                                    searchAdapter.setFilter(cachedSearchSourceFilter);
+                                    renderMobileFilters[0].run();
+                                });
+                        mobileFilterRow.addView(clear, mobileFilterChipLp());
+                    }
+                    AppLog.i(
+                            "SearchFilter",
+                            "mobile chips="
+                                    + mobileChips
+                                    + " sources="
+                                    + cachedSearchSourceFilter
+                                    + " failed="
+                                    + failedSourceNames);
+                };
+        renderMobileFilters[0] = buildMobileFilters;
+
         clearBtn.setOnClickListener(
                 v -> {
                     searchSerial[0]++;
@@ -2567,10 +2662,13 @@ final class MobileShell {
                     cachedSearchStatus = "";
                     cachedSearchHits.clear();
                     cachedSearchScrollY = 0;
+                    cachedSearchSourceFilter.clear();
+                    failedSourceNames.clear();
                     searchAdapter.clear();
                     sourceNotices.setText("");
                     sourceNotices.setVisibility(View.GONE);
                     searchStatus.setText("输入关键词搜索全部已启用的片源");
+                    renderMobileFilters[0].run();
                 });
 
         final Runnable[] triggerSearch = new Runnable[1];
@@ -2678,6 +2776,9 @@ final class MobileShell {
                     cachedSearchKeyword = kw;
                     cachedSearchHits.clear();
                     cachedSearchScrollY = 0;
+                    cachedSearchSourceFilter.clear();
+                    failedSourceNames.clear();
+                    renderMobileFilters[0].run();
 
                     List<Cms.Site> searchableSites = new ArrayList<>();
                     for (Cms.Site s : SourcePreferences.prioritized(a, a.config.sites)) {
@@ -2729,9 +2830,11 @@ final class MobileShell {
                                                                 || searchTicket != searchSerial[0]
                                                                 || a.isFinishing()) return;
                                                         completed[0]++;
-                                                        if (!sourceNotice.isEmpty())
+                                                        if (!sourceNotice.isEmpty()) {
                                                             searchNotices.add(
                                                                     site.name + "：" + sourceNotice);
+                                                            failedSourceNames.add(site.name);
+                                                        }
                                                         for (final Cms.Video v : matches) {
                                                             hitCount[0]++;
                                                             if (kw.equals(cachedSearchKeyword)) {
@@ -2768,8 +2871,11 @@ final class MobileShell {
                                                             cachedSearchStatus +=
                                                                     "\n"
                                                                             + TextUtils.join(
-                                                                                    "\n",
+                                                                                    "；",
                                                                                     searchNotices);
+                                                        searchAdapter.setFilter(
+                                                                cachedSearchSourceFilter);
+                                                        renderMobileFilters[0].run();
                                                         renderSearchStatus.run();
                                                     });
                                         });
@@ -2791,6 +2897,7 @@ final class MobileShell {
                 });
 
         renderHistoryChips.run();
+        renderMobileFilters[0].run();
         if (!pendingSearchKeyword.isEmpty()) {
             String wantedKw = pendingSearchKeyword;
             pendingSearchKeyword = "";
@@ -2798,9 +2905,11 @@ final class MobileShell {
             input.setSelection(wantedKw.length());
             if (wantedKw.equals(cachedSearchKeyword) && !cachedSearchHits.isEmpty()) {
                 searchAdapter.setHits(cachedSearchHits);
+                searchAdapter.setFilter(cachedSearchSourceFilter);
                 if (cachedSearchStatus.isEmpty())
                     cachedSearchStatus = "已保留搜索结果，共 " + cachedSearchHits.size() + " 条";
                 renderSearchStatus.run();
+                renderMobileFilters[0].run();
                 final int savedScroll = cachedSearchScrollY;
                 if (savedScroll > 0) {
                     resultScroll.post(
@@ -2813,9 +2922,11 @@ final class MobileShell {
             input.setText(cachedSearchKeyword);
             input.setSelection(cachedSearchKeyword.length());
             searchAdapter.setHits(cachedSearchHits);
+            searchAdapter.setFilter(cachedSearchSourceFilter);
             if (cachedSearchStatus.isEmpty())
                 cachedSearchStatus = "已保留搜索结果，共 " + cachedSearchHits.size() + " 条";
             renderSearchStatus.run();
+            renderMobileFilters[0].run();
             final int savedScroll = cachedSearchScrollY;
             if (savedScroll > 0) {
                 resultScroll.post(
@@ -2828,6 +2939,9 @@ final class MobileShell {
     private final class SearchResultsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         private final TextView notices;
         private final List<CachedSearchHit> hits = new ArrayList<>();
+        /** 1.9.31：合并后的全量结果，手机来源筛选只影响 hits 视图列表。 */
+        private final List<CachedSearchHit> all = new ArrayList<>();
+        private final java.util.Set<String> filter = new java.util.HashSet<>();
 
         SearchResultsAdapter(TextView notices) {
             this.notices = notices;
@@ -2836,32 +2950,79 @@ final class MobileShell {
         }
 
         void clear() {
+            all.clear();
             hits.clear();
             notifyDataSetChanged();
         }
 
         void setHits(List<CachedSearchHit> source) {
-            hits.clear();
-            for (CachedSearchHit hit : source) add(hit);
-            notifyDataSetChanged();
+            all.clear();
+            for (CachedSearchHit hit : source) mergeInto(all, hit);
+            rebuild();
         }
 
         void add(CachedSearchHit hit) {
+            mergeInto(all, hit);
+            rebuild();
+        }
+
+        void setFilter(java.util.Set<String> keys) {
+            filter.clear();
+            filter.addAll(keys);
+            rebuild();
+        }
+
+        java.util.Map<String, Cms.Site> sourceMap() {
+            java.util.Map<String, Cms.Site> map = new java.util.LinkedHashMap<>();
+            for (CachedSearchHit hit : all)
+                for (Cms.Site site : hit.sites) map.put(site.key, site);
+            return map;
+        }
+
+        int countFor(String key) {
+            int count = 0;
+            for (CachedSearchHit hit : all)
+                for (Cms.Site site : hit.sites)
+                    if (site.key.equals(key)) {
+                        count++;
+                        break;
+                    }
+            return count;
+        }
+
+        private void mergeInto(List<CachedSearchHit> target, CachedSearchHit hit) {
             String key = SearchAggregator.normalize(hit.video == null ? "" : hit.video.title);
             if (!key.isEmpty()) {
-                for (int i = 0; i < hits.size(); i++) {
-                    CachedSearchHit existing = hits.get(i);
+                for (CachedSearchHit existing : target) {
                     if (key.equals(
                             SearchAggregator.normalize(
                                     existing.video == null ? "" : existing.video.title))) {
-                        existing.sources++;
-                        notifyItemChanged(i + 1);
+                        for (Cms.Site site : hit.sites)
+                            if (!existing.sites.contains(site)) existing.sites.add(site);
+                        existing.sources = existing.sites.size();
                         return;
                     }
                 }
             }
-            hits.add(hit);
-            notifyItemInserted(hits.size());
+            target.add(hit);
+        }
+
+        private void rebuild() {
+            hits.clear();
+            for (CachedSearchHit hit : all) {
+                if (filter.isEmpty()) {
+                    hits.add(hit);
+                    continue;
+                }
+                boolean match = false;
+                for (Cms.Site site : hit.sites)
+                    if (filter.contains(site.key)) {
+                        match = true;
+                        break;
+                    }
+                if (match) hits.add(hit);
+            }
+            notifyDataSetChanged();
         }
 
         @Override
@@ -2903,6 +3064,30 @@ final class MobileShell {
                     buildSearchResultRow(hit),
                     new FrameLayout.LayoutParams(-1, -2));
         }
+    }
+
+    /** 1.9.31：手机来源筛选 chip。 */
+    private TextView mobileFilterChip(
+            String label, boolean selected, int textColor, final Runnable onClick) {
+        TextView chip = a.text(selected ? "✓ " + label : label, 12, selected ? 0xff0b1220 : textColor);
+        chip.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+        chip.setSingleLine(true);
+        chip.setGravity(Gravity.CENTER);
+        if (selected)
+            chip.setBackground(a.bg(0xffff8fb1, 999));
+        else
+            chip.setBackground(glassBg(0x14ffffff, 0x33ffffff, a.dp(999), a.dp(0.8f), 0x33ffffff));
+        MobileDetailScreen.bindTouchFeedback(chip);
+        chip.setFocusable(true);
+        chip.setFocusableInTouchMode(true);
+        chip.setOnClickListener(v -> onClick.run());
+        return chip;
+    }
+
+    private LinearLayout.LayoutParams mobileFilterChipLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(34));
+        lp.setMargins(a.dp(2), 0, a.dp(6), 0);
+        return lp;
     }
 
     private View buildSearchResultRow(final CachedSearchHit hit) {
