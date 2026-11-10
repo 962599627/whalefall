@@ -4896,17 +4896,32 @@ final class MobileShell {
 
         a.gap(body, 14);
         final String[] categories = {
-            "片源与直播配置", "播放、解码与字幕", "界面外观与偏好", "备份、更新与诊断", "首页设置",
-            "关于鲸落", "观影统计"
+            "数据源：片源与直播配置",
+            "播放器：解码与字幕",
+            "外观：界面与偏好",
+            "首页：布局与推荐",
+            "备份与诊断",
+            "关于鲸落",
+            "观影统计"
         };
-        final int[] icons = {1, 3, 4, 5, 2, 6, 4};
+        final String[] subtitles = {
+            "导入配置、直播源、来源扩展与网盘账号",
+            "播放器内核、解码、字幕与画面比例",
+            "缩放、导航栏、壁纸、动效与透明效果",
+            "首页区块、推荐、继续观看与历史展示",
+            "备份/还原、检查更新、缓存与诊断日志",
+            "版本信息、免责声明与开源致谢",
+            "播放次数、观看时长与本机统计"
+        };
+        final int[] icons = {1, 3, 4, 2, 5, 6, 4};
+        final int[] pages = {1, 2, 3, 5, 4, 6, 7};
         for (int i = 0; i < categories.length; i++) {
-            final int page = i + 1;
+            final int page = pages[i];
             addSettingCard(
                     body,
                     icons[i],
                     categories[i],
-                    "",
+                    subtitles[i],
                     () -> {
                         settingsSubPage = page;
                         sv.scrollTo(0, 0);

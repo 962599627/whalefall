@@ -66,10 +66,30 @@ final class SettingsScreen {
 
     void show() {
         page("设置", "");
-        link("首页与壁纸", "", "settings-appearance", () -> open(this::appearance));
-        link("播放与字幕", "", "settings-playback", () -> open(this::playback));
-        link("搜索与数据", "", "settings-data", () -> open(this::data));
-        link("软件更新", "", "settings-updates", () -> open(() -> new UpdateScreen(a).show()));
+        // 1.8.11 分组：数据源 / 播放器 / 备份与诊断 / 关于（对齐友商层级）
+        section("数据源与首页");
+        link(
+                "搜索与数据",
+                "配置地址与历史、来源扩展、直播源、网盘账号面板",
+                "settings-data",
+                () -> open(this::data));
+        link(
+                "首页与壁纸",
+                "首页区块、推荐数量、壁纸与启动动画",
+                "settings-appearance",
+                () -> open(this::appearance));
+        section("播放器");
+        link(
+                "播放与字幕",
+                "播放器内核、解码、画面比例、片头片尾与字幕",
+                "settings-playback",
+                () -> open(this::playback));
+        section("备份与诊断");
+        link(
+                "软件更新",
+                "检查新版本、下载与安装",
+                "settings-updates",
+                () -> open(() -> new UpdateScreen(a).show()));
         // 1.4.0：「本机与工具」分组只给 TV（R2：手机设置页保持原 4 项，手机零变化）。
         // 放设置页而不是 Dock：7 项 Dock 已排满，再加会挤爆且打乱遥控焦点顺序。
         if (a.isTvDevice()) {

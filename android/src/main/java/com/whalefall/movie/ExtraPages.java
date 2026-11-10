@@ -104,6 +104,36 @@ final class ExtraPages {
                         + " · "
                         + a.getPackageName(),
                 () -> a.toast("应用包名：" + a.getPackageName()));
+        settingCard(
+                a,
+                body,
+                6,
+                "免责声明",
+                "仅聚合展示用户自行配置的第三方内容 · 不参与制作/上传/存储",
+                () ->
+                        legalDialog(
+                                a,
+                                "免责声明",
+                                "1. 本应用仅为影视内容聚合与播放工具，不内置、不提供、不托管任何影视资源或播放地址。\n\n"
+                                        + "2. 所有内容均来自用户自行配置/合法获取的第三方片源、网盘与直播源，本应用不参与内容的制作、上传、存储与分发。\n\n"
+                                        + "3. 请确保你有权访问所使用的内容；请在下载/观看后 24 小时内删除相关缓存与下载文件。\n\n"
+                                        + "4. 请遵守当地法律法规与内容平台的用户协议，仅将本应用用于合法合规的个人用途。\n\n"
+                                        + "5. 因使用第三方内容产生的任何纠纷与责任，由使用者自行承担。"));
+        settingCard(
+                a,
+                body,
+                6,
+                "开源致谢",
+                "TVBoxOSC · MarcoMovie · AList · OpenList",
+                () ->
+                        creditsDialog(
+                                a,
+                                new String[][] {
+                                    {"TVBoxOSC", "https://github.com/j4Uq/TVBoxOSC"},
+                                    {"MarcoMovie（上游）", "https://github.com/Pilipala9919/MarcoMovie"},
+                                    {"AList", "https://github.com/AlistGo/alist"},
+                                    {"OpenList", "https://github.com/OpenListTeam/OpenList"}
+                                }));
         a.gap(body, 12);
         TextView footer =
                 a.text(
@@ -112,6 +142,52 @@ final class ExtraPages {
                         0xff8d9cb6);
         footer.setGravity(Gravity.CENTER);
         body.addView(footer);
+    }
+
+    /** 1.8.11 可滚动文本弹窗（手机/TV 通用）。 */
+    private static void legalDialog(MainActivity a, String title, String text) {
+        android.widget.ScrollView scroll = new android.widget.ScrollView(a);
+        TextView body = a.text(text, a.isTvDevice() ? 15 : 13, 0xffc9d4e6);
+        body.setLineSpacing(a.dp(4), 1.4f);
+        body.setTextIsSelectable(true);
+        scroll.addView(body);
+        new AppDialog.Builder(a)
+                .setTitle(title)
+                .setView(scroll)
+                .setNegativeButton("知道了", null)
+                .show();
+    }
+
+    /** 1.8.11 开源致谢：每项可点，外部浏览器打开。 */
+    private static void creditsDialog(MainActivity a, String[][] credits) {
+        android.widget.ScrollView scroll = new android.widget.ScrollView(a);
+        LinearLayout list = a.vertical();
+        scroll.addView(list);
+        for (String[] item : credits) {
+            final String name = item[0];
+            final String url = item[1];
+            TextView row = a.text(name + "\n" + url, a.isTvDevice() ? 15 : 13, 0xffffb3c8);
+            row.setPadding(a.dp(4), a.dp(10), a.dp(4), a.dp(10));
+            row.setFocusable(true);
+            MobileDetailScreen.bindTouchFeedback(row);
+            row.setOnClickListener(
+                    v -> {
+                        try {
+                            a.startActivity(
+                                    new android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse(url)));
+                        } catch (Throwable error) {
+                            a.toast("无法打开浏览器：" + error.getMessage());
+                        }
+                    });
+            list.addView(row);
+        }
+        new AppDialog.Builder(a)
+                .setTitle("开源致谢")
+                .setView(scroll)
+                .setNegativeButton("关闭", null)
+                .show();
     }
 
     /** 存储空间与缓存清理：统计各类占用并提供清理。 */

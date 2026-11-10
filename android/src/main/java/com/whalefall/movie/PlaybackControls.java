@@ -685,15 +685,31 @@ final class PlaybackControls {
     }
 
     void aspect() {
-        String[] labels = {"适应画面", "铺满屏幕", "16:9", "4:3", "裁切填充"};
+        String[] labels = {"适应画面", "铺满屏幕", "16:9", "4:3", "裁切填充", "恢复默认比例（跟随设置）"};
+        int current = AspectMemory.read(a, video == null ? "" : video.title, a.prefs.getInt(Prefs.ASPECT, 4));
         choose(
-                "画面比例",
+                "画面比例 · 当前 " + AspectMemory.label(current),
                 labels,
-                a.prefs.getInt(Prefs.ASPECT, 4),
+                current,
                 i -> {
+                    if (i >= labels.length - 1) {
+                        AspectMemory.clear(a, video == null ? "" : video.title);
+                        int fallback = a.prefs.getInt(Prefs.ASPECT, 4);
+                        a.prefs.edit().putInt(Prefs.ASPECT, fallback).apply();
+                        resize(videoWidth, videoHeight);
+                        updateLabels();
+                        a.toast("已恢复默认比例 · " + AspectMemory.label(fallback));
+                        if (a.playStatus != null)
+                            a.playStatus.setText("画面比例：" + AspectMemory.label(fallback));
+                        return;
+                    }
+                    AspectMemory.save(a, video == null ? "" : video.title, i);
                     a.prefs.edit().putInt(Prefs.ASPECT, i).apply();
                     resize(videoWidth, videoHeight);
                     updateLabels();
+                    String label = AspectMemory.label(i);
+                    a.toast("画面比例：" + label + "（本片已记忆）");
+                    if (a.playStatus != null) a.playStatus.setText("画面比例：" + label);
                 });
     }
 
@@ -1692,7 +1708,11 @@ final class PlaybackControls {
         resizeRetry = 0;
         int w = layer.getWidth(),
                 h = layer.getHeight(),
-                mode = a.prefs.getInt(Prefs.ASPECT, 4);
+                mode =
+                        AspectMemory.read(
+                                a,
+                                video == null ? "" : video.title,
+                                a.prefs.getInt(Prefs.ASPECT, 4));
         float ratio = mode == 2 ? 16f / 9 : mode == 3 ? 4f / 3 : (float) width / height;
         if (mode != 1) {
             if (mode == 4) {
