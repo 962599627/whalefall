@@ -188,14 +188,15 @@ final class CatalogScreen {
     }
 
     static String historyLabel(WatchHistory.Entry e) {
+        // 1.8.0 折叠卡：看到第几集 + 进度百分比
+        if (e.complete()) return e.episode + " · 已看完";
+        if (e.duration > 0) {
+            int percent = Math.max(0, Math.min(100, Math.round(e.position * 100f / e.duration)));
+            return e.episode + " · 进度 " + percent + "%";
+        }
         return e.episode
                 + " · "
-                + (e.complete()
-                        ? "已看完"
-                        : PlaybackController.formatTime(e.position)
-                                + (e.duration > 0
-                                        ? " / " + PlaybackController.formatTime(e.duration)
-                                        : ""));
+                + PlaybackController.formatTime(e.position);
     }
 
     static void resumeHistory(MainActivity a, WatchHistory.Entry e) {
@@ -245,11 +246,19 @@ final class CatalogScreen {
 
     static void historyPage(MainActivity a) {
         a.renderPage("观看历史", "CONTINUE WATCHING");
-        List<WatchHistory.Entry> entries = a.watchHistory();
-        if (entries.isEmpty()) {
+        List<WatchHistory.Entry> all = a.watchHistory();
+        if (all.isEmpty()) {
             a.paragraph("播放后会在这里记录集数和进度。");
             return;
         }
+        List<WatchHistory.Entry> entries = WatchHistory.collapsed(all);
+        if (entries.size() < all.size())
+            a.paragraph(
+                    "同剧已折叠：看到第几集与进度（共 "
+                            + entries.size()
+                            + " 部 · "
+                            + all.size()
+                            + " 条记录）");
         a.addButton(
                 a.body,
                 a.navButton(
@@ -293,15 +302,38 @@ final class CatalogScreen {
                                         .edit()
                                         .putString(
                                                 Prefs.WATCH_HISTORY,
-                                                WatchHistory.remove(
+                                                WatchHistory.removeGroup(
                                                         a.prefs.getString(
                                                                 Prefs.WATCH_HISTORY, "[]"),
-                                                        e.key()))
+                                                        e))
                                         .apply();
                                 a.refresh();
                             }));
             a.body.addView(line);
             a.gap(a.body, 8);
         }
+        if (entries.size() < all.size())
+            a.addButton(
+                    a.body,
+                    a.navButton(
+                            "展开全部 " + all.size() + " 条",
+                            "history-expand",
+                            () -> {
+                                for (WatchHistory.Entry e : all) {
+                                    LinearLayout line = a.row();
+                                    line.setPadding(0, a.dp(4), 0, a.dp(4));
+                                    Button item =
+                                            a.button(
+                                                    "　" + e.title + " · " + historyLabel(e),
+                                                    "history-all:" + e.key(),
+                                                    () -> resumeHistory(a, e));
+                                    item.setSingleLine(true);
+                                    item.setEllipsize(TextUtils.TruncateAt.END);
+                                    line.addView(
+                                            item,
+                                            new LinearLayout.LayoutParams(0, a.dp(46), 1));
+                                    a.body.addView(line);
+                                }
+                            }));
     }
 }

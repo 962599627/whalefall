@@ -668,6 +668,8 @@ public final class MainActivity extends Activity {
         if (privateMode) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
         activeActivity = this;
         installPluginCrashGuard();
+        SafeMode.installCrashHandler(getApplication());
+        SafeMode.onLaunch(getApplication());
         android.util.DisplayMetrics rawScreen = new android.util.DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(rawScreen);
         formFactor =
@@ -1131,6 +1133,7 @@ public final class MainActivity extends Activity {
     /** 幂等：确保 base 渐变 + 用户壁纸层（静态图或动态视频）都存在且唯一；缺则补、多则删。 */
     void applyWallpaper(android.widget.FrameLayout target) {
         if (target == null) return;
+        if (SafeMode.enabled(this)) return; // 安全模式：禁用壁纸层，减少重绘
         // 播放页是纯黑视频页（root 由 PlaybackController 创建并打 player-surface tag）：
         // 绝不铺壁纸，否则壁纸层会插到 playbackLayer 之上盖住视频。
         if ("player-surface".equals(target.getTag())) return;

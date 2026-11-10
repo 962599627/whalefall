@@ -90,4 +90,35 @@ final class WatchHistory {
                 }
         return a.toString();
     }
+
+    /** 1.8.0 同一部剧折叠为一条：按标题分组取最近更新的集/进度。 */
+    static List<Entry> collapsed(List<Entry> entries) {
+        java.util.LinkedHashMap<String, Entry> groups = new java.util.LinkedHashMap<>();
+        if (entries == null) return new ArrayList<>();
+        for (Entry e : entries) {
+            String key = e.title == null ? "" : e.title.trim().toLowerCase(java.util.Locale.ROOT);
+            if (key.isEmpty()) key = e.key();
+            Entry existing = groups.get(key);
+            if (existing == null || e.updated > existing.updated) groups.put(key, e);
+        }
+        return new ArrayList<>(groups.values());
+    }
+
+    /** 折叠项移除：同一部剧的所有历史一起移除。 */
+    static String removeGroup(String text, Entry target) {
+        String title = target.title == null ? "" : target.title.trim();
+        JSONArray a = new JSONArray();
+        for (Entry e : read(text)) {
+            boolean same =
+                    !title.isEmpty()
+                            && e.title != null
+                            && title.equals(e.title.trim());
+            if (!same && !e.key().equals(target.key()))
+                try {
+                    a.put(e.json());
+                } catch (Exception ignored) {
+                }
+        }
+        return a.toString();
+    }
 }

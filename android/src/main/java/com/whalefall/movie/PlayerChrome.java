@@ -1058,6 +1058,17 @@ final class PlayerChrome {
             paused = false;
             ensureFrames(a);
             if (frames == null || frames.length == 0) return;
+            // 1.8.0 安全模式：不做帧切换/光晕/浮动/省略号，只显示静态帧，减少重绘
+            if (SafeMode.enabled(a)) {
+                frameA.setImageBitmap(frames[0]);
+                frameA.setAlpha(1f);
+                frameB.setAlpha(0f);
+                glow.setBreath(0.5f);
+                glowBox.setScaleX(1f);
+                glowBox.setScaleY(1f);
+                AppLog.i("SafeMode", "loading animation disabled (static frame)");
+                return;
+            }
             if (frameA.getDrawable() == null) {
                 frameIndex = 0;
                 frameA.setImageBitmap(frames[0]);

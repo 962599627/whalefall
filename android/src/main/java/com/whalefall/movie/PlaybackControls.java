@@ -1526,6 +1526,20 @@ final class PlaybackControls {
                 ("live".equals(site.key) || explicitRestart)
                         ? 0
                         : historyResume ? a.resumeAt : a.prefs.getInt(Prefs.SKIP_INTRO, 0) * 1000;
+        // 1.8.0 跨源续播：源间时长差异 >10% 时按百分比兜底
+        if (historyResume
+                && duration > 0
+                && a.playingBookmark != null
+                && a.playingBookmark.duration > 0) {
+            int savedDuration = a.playingBookmark.duration;
+            if (Math.abs(duration - savedDuration) > Math.max(15000, savedDuration / 10)) {
+                float fraction = a.resumeAt / (float) savedDuration;
+                seek = Math.round(duration * Math.max(0f, Math.min(1f, fraction)));
+                AppLog.i(
+                        "PlaybackController",
+                        "cross-source percent resume " + Math.round(fraction * 100) + "%");
+            }
+        }
         a.resumeAt = 0;
         if (seek > 0) {
             if (duration > 0) {

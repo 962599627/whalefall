@@ -533,7 +533,7 @@ final class HomeScreen {
     }
 
     void historySection() {
-        List<WatchHistory.Entry> entries = a.watchHistory();
+        List<WatchHistory.Entry> entries = WatchHistory.collapsed(a.watchHistory());
         if (entries.isEmpty()) return;
         boolean compactStack = a.useBottomDock();
         LinearLayout section = a.vertical();

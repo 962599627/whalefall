@@ -930,6 +930,14 @@ final class MobileDetailScreen {
                             break;
                         }
                     }
+                    // 1.8.0 跨源续播：当前源没有记录时按影片名+集名匹配其它源最近进度
+                    if (bookmark == null && v.title != null && !v.title.trim().isEmpty()) {
+                        String title = v.title.trim();
+                        for (WatchHistory.Entry entry : a.watchHistory()) {
+                            if (entry.title == null || !title.equals(entry.title.trim())) continue;
+                            if (bookmark == null || entry.updated > bookmark.updated) bookmark = entry;
+                        }
+                    }
                     final WatchHistory.Entry remembered = bookmark;
 
                     // Full-Width White Capsule Play Button (matches iPhone `▶ 播放 · 第 1 季 · E01`)
@@ -950,7 +958,7 @@ final class MobileDetailScreen {
                                 resumePos > 0
                                         ? "▶   播放 · "
                                                 + remDisp.cleanTitle
-                                                + " · 续播 "
+                                                + " · 继续上次位置 · "
                                                 + PlaybackController.formatTime(resumePos)
                                         : "▶   播放 · " + remDisp.cleanTitle;
                     } else if (v.lines.get(SourcePreferences.lineIndex(a, v)).episodes.size() > 1) {

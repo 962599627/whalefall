@@ -505,6 +505,32 @@ final class SettingsScreen {
                 "settings-account-advanced",
                 () -> AccountPanel.show(a, null));
         link(
+                "安全模式",
+                SafeMode.enabled(a)
+                        ? "已开启：壁纸与重绘动效已精简；点此关闭"
+                        : "崩溃连续 2 次自动开启；开启后禁用壁纸与重绘动效",
+                "settings-safe-mode",
+                () ->
+                        new AppDialog.Builder(a)
+                                .setTitle("安全模式")
+                                .setMessage(
+                                        SafeMode.enabled(a)
+                                                ? "当前已开启。关闭后恢复壁纸与加载动画，"
+                                                        + "下次启动生效。"
+                                                : "未开启。连续 2 次崩溃后会自动开启，"
+                                                        + "用于避免壁纸/动效导致的再次崩溃。")
+                                .setPositiveButton(
+                                        SafeMode.enabled(a) ? "退出安全模式" : "知道了",
+                                        (d, i) -> {
+                                            if (SafeMode.enabled(a)) {
+                                                SafeMode.exit(a);
+                                                a.toast("已退出安全模式，下次启动生效");
+                                                AppLog.i("SafeMode", "exit from settings");
+                                            }
+                                        })
+                                .setNegativeButton("取消", null)
+                                .show());
+        link(
                 "备份配置与偏好",
                 "导出配置与偏好，请妥善保管；不含插件单独保存的登录状态",
                 "settings-backup",

@@ -171,6 +171,26 @@ final class PlaybackController {
                 break;
             }
         }
+        // 1.8.0 跨源续播：换线路/换源后按「影片名+集名（或集序号）」匹配最近进度
+        String title = v.title == null ? "" : v.title.trim();
+        String epName = ep.name == null ? "" : ep.name.trim();
+        if (!title.isEmpty()) {
+            WatchHistory.Entry best = null;
+            for (WatchHistory.Entry entry : a.watchHistory()) {
+                if (entry.title == null || !title.equals(entry.title.trim())) continue;
+                boolean sameEp =
+                        (!epName.isEmpty() && epName.equals(entry.episode))
+                                || (epIdx >= 0 && epIdx == entry.index);
+                if (!sameEp) continue;
+                if (best == null || entry.updated > best.updated) best = entry;
+            }
+            if (best != null) {
+                AppLog.i(
+                        "PlaybackController",
+                        "cross-source resume title=" + title + " ep=" + epName);
+                return best;
+            }
+        }
         return null;
     }
 

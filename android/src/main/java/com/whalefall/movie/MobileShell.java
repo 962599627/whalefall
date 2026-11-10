@@ -889,8 +889,8 @@ final class MobileShell {
         // 1. Scrollable Top Header Row (Brand + Site Capsule + Netdisk Capsule + Search Icon)
         body.addView(buildHomeTopHeaderRow(), new LinearLayout.LayoutParams(-1, -2));
 
-        // 2. History shelf; the newest entry remains first and resumes on tap.
-        List<WatchHistory.Entry> history = a.watchHistory();
+        // 2. History shelf; 同一部剧折叠为最近一集，点击直接续播
+        List<WatchHistory.Entry> history = WatchHistory.collapsed(a.watchHistory());
         if (a.prefs.getBoolean(Prefs.HOME_SHOW_HISTORY, true) && !history.isEmpty()) {
             LinearLayout histHeader = a.row();
             histHeader.setGravity(Gravity.CENTER_VERTICAL);
@@ -3285,7 +3285,7 @@ final class MobileShell {
                 favorites = Favorites.read(a.prefs.getString(Prefs.FAVORITES, "[]"));
                 empty = favorites.isEmpty();
             } else {
-                history = a.watchHistory();
+                history = WatchHistory.collapsed(a.watchHistory());
                 empty = history.isEmpty();
             }
             notifyDataSetChanged();
@@ -4062,6 +4062,30 @@ final class MobileShell {
                 "账号设置（清除凭据 / 原生网盘登录）",
                 "清除本机凭据，或使用 App 内官方扫码登录（可选）",
                 () -> AccountPanel.show(a, null));
+        addSettingCard(
+                body,
+                2,
+                "安全模式",
+                SafeMode.enabled(a)
+                        ? "已开启：点此关闭（下次启动恢复壁纸/动效）"
+                        : "崩溃连续 2 次自动开启；禁用壁纸与重绘动效",
+                () ->
+                        new AppDialog.Builder(a)
+                                .setTitle("安全模式")
+                                .setMessage(
+                                        SafeMode.enabled(a)
+                                                ? "当前已开启。关闭后恢复壁纸与加载动画，下次启动生效。"
+                                                : "未开启。连续 2 次崩溃后会自动开启。")
+                                .setPositiveButton(
+                                        SafeMode.enabled(a) ? "退出安全模式" : "知道了",
+                                        (d, i) -> {
+                                            if (SafeMode.enabled(a)) {
+                                                SafeMode.exit(a);
+                                                a.toast("已退出安全模式，下次启动生效");
+                                            }
+                                        })
+                                .setNegativeButton("取消", null)
+                                .show());
     }
 
     /** 设置 → 关于鲸落：版本、开源信息、上游归属与相关操作。 */
