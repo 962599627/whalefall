@@ -25,7 +25,11 @@ final class CloudInlineView {
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(2));
         parent.addView(title);
-        TextView sub = a.text("登录/清除原生网盘，或调用源动作（真实操作）", 11.5f, MainActivity.MUTED);
+        TextView sub =
+                a.text(
+                        "App 内登录与源插件登录是两套：这里管理 App 内登录，源内账号请用源面板",
+                        11.5f,
+                        MainActivity.MUTED);
         sub.setPadding(a.dp(16), 0, a.dp(16), a.dp(10));
         parent.addView(sub);
 
@@ -62,10 +66,10 @@ final class CloudInlineView {
                                                                                 onChanged, 200)))
                                         .setNegativeButton("取消", null)
                                         .show()));
-        cards.add(clearCard(a, NetdiskQrLogin.QUARK, "清除夸克 Cookie", QUARK_TINT, onChanged));
-        cards.add(clearCard(a, NetdiskQrLogin.UC, "清除优汐 Cookie", UC_TINT, onChanged));
-        cards.add(clearCard(a, NetdiskQrLogin.BAIDU, "清除嘟嘟 Cookie", BAIDU_TINT, onChanged));
-        cards.add(clearCard(a, NetdiskQrLogin.ALI, "清除阿狸 token", ALI_TINT, onChanged));
+        cards.add(clearCard(a, NetdiskQrLogin.QUARK, "清除 App 内夸克登录", QUARK_TINT, onChanged));
+        cards.add(clearCard(a, NetdiskQrLogin.UC, "清除 App 内优汐登录", UC_TINT, onChanged));
+        cards.add(clearCard(a, NetdiskQrLogin.BAIDU, "清除 App 内嘟嘟登录", BAIDU_TINT, onChanged));
+        cards.add(clearCard(a, NetdiskQrLogin.ALI, "清除 App 内阿狸登录", ALI_TINT, onChanged));
         cards.add(sourceCard(a, UiIcon.LAYERS, 0xFFFFB3C8, "自定网盘排序", "源动作 panSortShow", "panSortShow", onChanged));
         cards.add(sourceCard(a, UiIcon.SWAP, 0xFFFFB3C8, "网盘线路前后排序", "源动作 panSourceSortShow", "panSourceSortShow", onChanged));
         cards.add(sourceCard(a, UiIcon.TV, 0xFFFF8FB1, "手动推送网盘授权", "源动作 pushCkShow", "pushCkShow", onChanged));
@@ -106,8 +110,10 @@ final class CloudInlineView {
         boolean logged = NetdiskQrLogin.isLoggedIn(a, drive);
         String state =
                 logged
-                        ? "已登录" + NetdiskQrLogin.capacityText(a, drive)
-                        : NetdiskQrLogin.hasCredential(a, drive) ? "未通过验证" : "未登录";
+                        ? "App 内已登录" + NetdiskQrLogin.capacityText(a, drive)
+                        : NetdiskQrLogin.hasCredential(a, drive)
+                                ? "App 内登录未通过验证"
+                                : "App 内未登录 · 源内状态请在源面板查看";
         return new Card(
                 UiIcon.CLOUD,
                 tint,
@@ -115,13 +121,28 @@ final class CloudInlineView {
                 state,
                 () -> {
                     if (!NetdiskQrLogin.hasCredential(a, drive)) {
-                        a.toast("该盘当前未登录");
+                        AppLog.i(
+                                "CloudConfig",
+                                "clear no-credential drive=" + drive + " prompt=source-panel");
+                        new AppDialog.Builder(a)
+                                .setTitle("App 内没有该盘登录")
+                                .setMessage(
+                                        "App 内没有"
+                                                + NetdiskQrLogin.name(drive)
+                                                + "登录。源内账号（你之前扫码登录的）需在源面板退出。要现在打开源面板吗？")
+                                .setPositiveButton(
+                                        "打开源面板",
+                                        (d, i) ->
+                                                new SettingsScreen(a)
+                                                        .sourceAccountAction("LoginShow", null))
+                                .setNegativeButton("取消", null)
+                                .show();
                         return;
                     }
                     NetdiskQrLogin.logout(a, drive);
                     CloudConfigScreen.clearWebCookies(drive);
-                    a.toast("已清除" + NetdiskQrLogin.name(drive) + "登录");
-                    AppLog.i("CloudConfig", "cleared drive=" + drive);
+                    a.toast("已清除 App 内" + NetdiskQrLogin.name(drive) + "登录");
+                    AppLog.i("CloudConfig", "cleared app-login drive=" + drive);
                     if (onChanged != null) onChanged.run();
                 });
     }
@@ -185,7 +206,7 @@ final class CloudInlineView {
         view.addView(title, titleLp);
         TextView sub = a.text(card.subtitle, 10.5f, MainActivity.MUTED);
         sub.setGravity(Gravity.CENTER);
-        sub.setSingleLine(true);
+        sub.setMaxLines(2);
         sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
         subLp.topMargin = a.dp(3);
