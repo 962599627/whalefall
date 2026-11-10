@@ -99,7 +99,7 @@ final class BaiduDrive {
                                 PASSPORT
                                         + "/v2/api/getqrcode?lp=pc&qrloginfrom=pc&gid="
                                         + gid
-                                        + "&callback=cb";
+                                        + "&tpl=netdisk&callback=cb";
                         String body =
                                 DriveApi.get(
                                         generate,
@@ -108,18 +108,25 @@ final class BaiduDrive {
                                                 "User-Agent", PanDriveLogin.DESKTOP_UA));
                         JSONObject json = new JSONObject(PanQr.stripJsonp(body));
                         String imgurl = json.optString("imgurl", "");
-                        String channel = json.optString("channel_id", "");
+                        String sign = json.optString("sign", "");
+                        // 百度 getqrcode 没有 channel_id：用 sign 作为 channel_id
+                        String channel = json.optString("channel_id", sign);
+                        if (!imgurl.isEmpty() && !imgurl.startsWith("http"))
+                            imgurl = "https://" + imgurl;
                         AppLog.i(
                                 "BaiduQr",
                                 "generate imgurl="
                                         + !imgurl.isEmpty()
+                                        + " signLen="
+                                        + sign.length()
                                         + " channel="
                                         + !channel.isEmpty()
                                         + " errno="
                                         + json.optInt("errno", 0));
                         if (imgurl.isEmpty() || channel.isEmpty())
-                            throw new java.io.IOException("getqrcode 缺少 imgurl/channel_id");
-                        a.ui.post(() -> ui.showImageUrl(imgurl));
+                            throw new java.io.IOException("getqrcode 缺少 imgurl/sign");
+                        final String imageUrl = imgurl;
+                        a.ui.post(() -> ui.showImageUrl(imageUrl));
                         long deadline = System.currentTimeMillis() + 120000;
                         while (System.currentTimeMillis() < deadline && !ui.closed) {
                             Thread.sleep(2000);

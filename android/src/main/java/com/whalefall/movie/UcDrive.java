@@ -118,10 +118,17 @@ final class UcDrive {
                         }
                     }
                     a.ui.post(
-                            () -> {
-                                a.toast("UC 未提供稳定公共扫码 API，正在用网页扫码尝试");
-                                login(a, onChanged);
-                            });
+                            () ->
+                                    new AppDialog.Builder(a)
+                                            .setTitle("UC 登录限制")
+                                            .setMessage(
+                                                    "UC 官方限制 WebView 登录：可能只返回防御页、拿不到二维码。"
+                                                            + "如遇此情况，请在官方 UC App 登录后再使用夸克/百度网盘。"
+                                                            + "本页仍会尝试一次网页扫码。")
+                                            .setPositiveButton(
+                                                    "继续尝试", (d, i) -> login(a, onChanged))
+                                            .setNegativeButton("取消", null)
+                                            .show());
                 });
     }
 

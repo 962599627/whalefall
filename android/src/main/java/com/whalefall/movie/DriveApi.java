@@ -20,11 +20,21 @@ final class DriveApi {
     }
 
     static String post(String url, Map<String, String> headers, String body) throws Exception {
-        return request("POST", url, headers, body);
+        return request("POST", url, headers, body, "application/json; charset=UTF-8");
+    }
+
+    /** 表单 POST（阿里 passport 等要求 x-www-form-urlencoded）。 */
+    static String postForm(String url, Map<String, String> headers, String form) throws Exception {
+        return request(
+                "POST",
+                url,
+                headers,
+                form == null ? "" : form,
+                "application/x-www-form-urlencoded; charset=UTF-8");
     }
 
     private static String request(
-            String method, String url, Map<String, String> headers, String body)
+            String method, String url, Map<String, String> headers, String body, String contentType)
             throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         try {
@@ -42,7 +52,7 @@ final class DriveApi {
             if (body != null) {
                 byte[] bytes = body.getBytes("UTF-8");
                 connection.setDoOutput(true);
-                connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                connection.setRequestProperty("Content-Type", contentType);
                 connection.setFixedLengthStreamingMode(bytes.length);
                 try (java.io.OutputStream out = connection.getOutputStream()) {
                     out.write(bytes);

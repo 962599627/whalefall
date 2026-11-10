@@ -354,7 +354,7 @@ final class AccountPanel {
                                                 + "）"
                                         : nativePending
                                                 ? "登录信息已保存 · 验证失败（点此重试）"
-                                                : "未登录 · App 内登录 UC（独立于插件）";
+                                                : "未登录 · UC 限制 WebView 登录（建议用官方 App，或改用夸克/百度）";
                         nativeAction = nativeLogged ? "管理" : nativePending ? "重试验证" : "App 内登录";
                         nativeClick = () -> {
                             PanLoginState.invalidate();

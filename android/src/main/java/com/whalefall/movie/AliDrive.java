@@ -120,7 +120,11 @@ final class AliDrive {
                         JSONObject content = json.optJSONObject("content");
                         JSONObject data = content == null ? null : content.optJSONObject("data");
                         if (data == null) throw new java.io.IOException("generate 返回缺少 content.data");
-                        String qrContent = data.optString("qrCodeUrl", "");
+                        // 阿里真实字段：codeContent（二维码链接），不是 qrCodeUrl
+                        String qrContent =
+                                data.optString(
+                                        "codeContent",
+                                        data.optString("qrCodeUrl", data.optString("codeContentUrl", "")));
                         String t = data.optString("t", "");
                         String ck = data.optString("ck", "");
                         AppLog.i(
@@ -130,9 +134,13 @@ final class AliDrive {
                                         + " t="
                                         + !t.isEmpty()
                                         + " ck="
-                                        + !ck.isEmpty());
+                                        + !ck.isEmpty()
+                                        + " code="
+                                        + content.optString("code", "")
+                                        + " resultCode="
+                                        + data.optInt("resultCode", -1));
                         if (qrContent.isEmpty() || t.isEmpty() || ck.isEmpty())
-                            throw new java.io.IOException("generate 缺少 qrCodeUrl/t/ck");
+                            throw new java.io.IOException("generate 缺少 codeContent/t/ck");
                         android.graphics.Bitmap bitmap = PanQr.render(qrContent, 640);
                         a.ui.post(() -> ui.showBitmap(bitmap));
                         long deadline = System.currentTimeMillis() + 120000;
@@ -141,26 +149,31 @@ final class AliDrive {
                             String query =
                                     PASSPORT
                                             + "/newlogin/qrcode/query.do?appName=aliyun_drive"
-                                            + "&fromSite=52&t="
+                                            + "&fromSite=52";
+                            String form =
+                                    "t="
                                             + android.net.Uri.encode(t)
                                             + "&ck="
                                             + android.net.Uri.encode(ck);
                             String queryBody =
-                                    DriveApi.post(
+                                    DriveApi.postForm(
                                             query,
                                             DriveApi.headers(
                                                     "Referer", "https://www.alipan.com/",
                                                     "User-Agent", PanDriveLogin.DESKTOP_UA),
-                                            "");
+                                            form);
                             JSONObject q = new JSONObject(queryBody);
                             JSONObject qContent = q.optJSONObject("content");
                             JSONObject qData = qContent == null ? null : qContent.optJSONObject("data");
                             if (qData == null) continue;
                             String status = qData.optString("qrCodeStatus", "");
+                            String resultCode = qData.optString("resultCode", "");
                             AppLog.i(
                                     "AliQr",
                                     "poll status="
                                             + status
+                                            + " resultCode="
+                                            + resultCode
                                             + " code="
                                             + qContent.optString("code", ""));
                             if ("CONFIRMED".equalsIgnoreCase(status)) {
