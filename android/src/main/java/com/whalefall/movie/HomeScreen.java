@@ -800,9 +800,10 @@ final class HomeScreen {
         String category = state.category;
         if (category.isEmpty() && !snapshot.categories.isEmpty())
             category = snapshot.categories.get(0).id;
+        // 1.9.46：type3 JS 源只用 spider 返回的 key
         List<VideoFilters.Definition> definitions =
-                VideoFilters.definitions(snapshot.filterSchema, category, snapshot.videos);
-        if (site.supported())
+                VideoFilters.definitionsFor(site, snapshot.filterSchema, category, snapshot.videos);
+        if (site.supported() && site.type != 3)
             for (VideoFilters.Definition def : definitions) {
                 if (!VideoFilters.allowedKey(def.key)) def.remote = false;
             }
@@ -818,14 +819,17 @@ final class HomeScreen {
                                 ? snapshot.categories.get(0).id
                                 : state.category)
                         : catId;
-        boolean schema = VideoFilters.hasSchemaFilters(snapshot.filterSchema, category);
+        boolean schema =
+                VideoFilters.hasSchemaFiltersFor(
+                        site, snapshot.filterSchema, category, snapshot.videos);
         int remoteDefs = 0;
         if (schema) {
             List<VideoFilters.Definition> defs =
-                    VideoFilters.definitions(snapshot.filterSchema, category, snapshot.videos);
-            boolean supported = site != null && site.supported();
+                    VideoFilters.definitionsFor(
+                            site, snapshot.filterSchema, category, snapshot.videos);
+            boolean restrict = site != null && site.supported() && site.type != 3;
             for (VideoFilters.Definition def : defs) {
-                if (supported && !VideoFilters.allowedKey(def.key)) continue;
+                if (restrict && !VideoFilters.allowedKey(def.key)) continue;
                 if (def.remote && def.choices.size() > 1) remoteDefs++;
             }
         }

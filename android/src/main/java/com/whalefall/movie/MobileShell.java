@@ -2200,9 +2200,10 @@ final class MobileShell {
                 selectedCategoryId.isEmpty() && !currentCategories.isEmpty()
                         ? currentCategories.get(0).id
                         : selectedCategoryId;
+        // 1.9.46：type3 JS 源只用 spider 返回的 filters key，不做本地兜底
         List<VideoFilters.Definition> defs =
-                VideoFilters.definitions(filterSchema, category, currentVideos);
-        if (currentSite != null && currentSite.supported())
+                VideoFilters.definitionsFor(currentSite, filterSchema, category, currentVideos);
+        if (currentSite != null && currentSite.supported() && currentSite.type != 3)
             for (VideoFilters.Definition def : defs)
                 if (!VideoFilters.allowedKey(def.key)) def.remote = false;
         return defs;
@@ -2230,14 +2231,18 @@ final class MobileShell {
             boolean schema =
                     currentSite != null
                             && currentSite.key.equals(filterSchemaSite)
-                            && VideoFilters.hasSchemaFilters(filterSchema, category);
+                            && VideoFilters.hasSchemaFiltersFor(
+                                    currentSite, filterSchema, category, currentVideos);
             int remoteDefs = 0;
             if (schema) {
                 List<VideoFilters.Definition> defs =
-                        VideoFilters.definitions(filterSchema, category, currentVideos);
-                boolean supported = currentSite != null && currentSite.supported();
+                        VideoFilters.definitionsFor(
+                                currentSite, filterSchema, category, currentVideos);
+                boolean restrict = currentSite != null
+                        && currentSite.supported()
+                        && currentSite.type != 3;
                 for (VideoFilters.Definition def : defs) {
-                    if (supported && !VideoFilters.allowedKey(def.key)) continue;
+                    if (restrict && !VideoFilters.allowedKey(def.key)) continue;
                     if (def.remote && def.choices.size() > 1) remoteDefs++;
                 }
             }

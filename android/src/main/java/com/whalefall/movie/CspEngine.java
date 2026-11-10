@@ -380,7 +380,50 @@ public final class CspEngine implements SourceEngine {
 
     public String category(String id, int page, Map<String, String> filters) throws Exception {
         HashMap<String, String> values = new HashMap<>(filters);
-        return call("category", () -> spider.categoryContent(id, "" + page, true, values));
+        AppLog.i(
+                "Filter",
+                "csp category="
+                        + id
+                        + " page="
+                        + page
+                        + " extend="
+                        + values
+                        + " engine=type3");
+        String filtered = call("category", () -> spider.categoryContent(id, "" + page, true, values));
+        if (values.isEmpty()) return filtered;
+        // 1.9.46：校验 spider 是否真的应用了 extend
+        try {
+            int filteredCount = new org.json.JSONObject(filtered).optJSONArray("list") == null
+                    ? 0
+                    : new org.json.JSONObject(filtered).optJSONArray("list").length();
+            String plain =
+                    call("category_baseline", () -> spider.categoryContent(
+                            id, "" + page, true, new HashMap<String, String>()));
+            int plainCount = new org.json.JSONObject(plain).optJSONArray("list") == null
+                    ? 0
+                    : new org.json.JSONObject(plain).optJSONArray("list").length();
+            if (filteredCount == plainCount) {
+                AppLog.i(
+                        "Filter",
+                        "csp ignored key="
+                                + values.keySet()
+                                + " count="
+                                + filteredCount
+                                + " category="
+                                + id);
+            } else {
+                AppLog.i(
+                        "Filter",
+                        "csp applied extend="
+                                + values
+                                + " count="
+                                + filteredCount
+                                + " plain="
+                                + plainCount);
+            }
+        } catch (Throwable ignoredCheck) {
+        }
+        return filtered;
     }
 
     public String detail(String id) throws Exception {

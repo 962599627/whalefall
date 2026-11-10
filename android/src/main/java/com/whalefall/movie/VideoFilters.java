@@ -60,6 +60,78 @@ final class VideoFilters {
         return "";
     }
 
+    /** 1.9.46：解析 spider 返回的远程 filters；rawKeys=true 时保留任意 key（type3 JS 源）。 */
+    static Map<String, Definition> parseRemote(String home, String category, boolean rawKeys) {
+        Map<String, Definition> remote = new LinkedHashMap<>();
+        try {
+            Object filters = new JSONObject(home).opt("filters");
+            JSONArray groups =
+                    filters instanceof JSONArray
+                            ? (JSONArray) filters
+                            : filters instanceof JSONObject
+                                    ? ((JSONObject) filters).optJSONArray(category)
+                                    : null;
+            if (groups == null) return remote;
+            for (int i = 0; i < Math.min(groups.length(), 32); i++) {
+                JSONObject group = groups.optJSONObject(i);
+                if (group == null) continue;
+                String key = group.optString("key"), label = group.optString("name");
+                String dim = dimension(key, label);
+                if (dim.isEmpty()) {
+                    if (!rawKeys) continue;
+                    dim = key;
+                }
+                if (dim.isEmpty() || key.isEmpty() || key.length() > 64) continue;
+                JSONArray values = group.optJSONArray("value");
+                if (values == null) values = group.optJSONArray("values");
+                Definition def =
+                        new Definition(
+                                dim,
+                                key,
+                                rawKeys && dim.equals(key) ? (label.isEmpty() ? key : label)
+                                        : LABELS[Arrays.asList(DIMENSIONS).indexOf(dim)],
+                                true);
+                Set<String> seen = new HashSet<>();
+                seen.add("");
+                if (values != null)
+                    for (int n = 0; n < Math.min(values.length(), 256); n++) {
+                        JSONObject item = values.optJSONObject(n);
+                        String value =
+                                item == null
+                                        ? values.optString(n)
+                                        : item.optString("v", item.optString("value"));
+                        String name =
+                                item == null
+                                        ? value
+                                        : item.optString("n", item.optString("name", value));
+                        if (name.equals("全部") || name.equals("不限")) continue;
+                        if (!value.isEmpty() && !name.isEmpty() && seen.add(value))
+                            def.choices.add(new Choice(name, value));
+                    }
+                if (def.choices.size() > 1) remote.put(dim, def);
+            }
+        } catch (Throwable ignored) {
+        }
+        return remote;
+    }
+
+    /** 1.9.46：type3 JS 源只用 spider 返回的 key，不做本地兜底；其它源保持原行为。 */
+    static List<Definition> definitionsFor(
+            Cms.Site site, String home, String category, List<Cms.Video> videos) {
+        if (site != null && site.type == 3) return new ArrayList<>(parseRemote(home, category, true).values());
+        return definitions(home, category, videos);
+    }
+
+    static boolean hasSchemaFiltersFor(
+            Cms.Site site, String home, String category, List<Cms.Video> videos) {
+        if (site != null && site.type == 3) {
+            for (Definition def : parseRemote(home, category, true).values())
+                if (def.choices.size() > 1) return true;
+            return false;
+        }
+        return hasSchemaFilters(home, category);
+    }
+
     static List<Definition> definitions(String home, String category, List<Cms.Video> videos) {
         Map<String, Definition> remote = new LinkedHashMap<>();
         try {
