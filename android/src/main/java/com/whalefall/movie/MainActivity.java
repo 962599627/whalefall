@@ -1799,6 +1799,14 @@ public final class MainActivity extends Activity {
                         + " player="
                         + (current != null && current.player));
         if (tvPlayer != null && tvPlayer.back()) return;
+        // 1.9.33：首页筛选层 BACK 逐层收起（L3 → L2）
+        if (!isTvDevice()
+                && MobileShell.activeShell != null
+                && MobileShell.activeShell.backFilterUi()) return;
+        if (isTvDevice()
+                && current != null
+                && current.retainedHome != null
+                && current.retainedHome.backFilterUi()) return;
         String tag = body == null ? null : String.valueOf(body.getTag());
         // 1.9.30：先给页面自己的 handleBack 机会（退全屏/子目录/多选），再按入栈记录 pop
         if ("file-manager".equals(tag) && FileManagerScreen.handleBack()) return;

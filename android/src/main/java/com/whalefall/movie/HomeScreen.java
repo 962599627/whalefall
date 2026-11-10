@@ -26,6 +26,8 @@ final class HomeScreen {
     final List<View> historyCards = new ArrayList<>(), tabs = new ArrayList<>();
     final List<List<View>> rows = new ArrayList<>();
     LinearLayout content;
+    /** 1.9.33：L2 筛选标签行 / L3 选项行（分类 chip 之下）。 */
+    LinearLayout filterTagRow, filterOptionRow;
     /** 1.8.12 云盘配置原地容器（首页分类栏下方，默认隐藏）。 */
     LinearLayout cloudInline;
     View cloudContent;
@@ -151,6 +153,15 @@ final class HomeScreen {
         filters = new CategoryFlow(a, this::wireNavigation);
         filters.setPadding(0, a.dp(2), 0, a.dp(8));
         a.body.addView(filters);
+        // 1.9.33：分类 chip 下方的筛选标签行 / 选项行（默认隐藏，按需展开）
+        filterTagRow = a.row();
+        filterTagRow.setClipChildren(false);
+        filterTagRow.setVisibility(View.GONE);
+        a.body.addView(filterTagRow);
+        filterOptionRow = a.row();
+        filterOptionRow.setClipChildren(false);
+        filterOptionRow.setVisibility(View.GONE);
+        a.body.addView(filterOptionRow);
         status = a.text("正在整理片单…", 13, MainActivity.MUTED);
         status.setPadding(a.dp(4), a.dp(12), 0, a.dp(12));
         a.body.addView(status);
@@ -702,11 +713,11 @@ final class HomeScreen {
         filters.lines.clear();
         tabs.clear();
         tabIds.clear();
-        addTab("推荐", "", 0);
+        addTab("推荐" + (categoryHasFilters("") ? "  ≡" : ""), "", 0);
         int visible = Math.min(4, snapshot.categories.size());
         for (int i = 0; i < visible; i++) {
             Cms.Category c = snapshot.categories.get(i);
-            addTab(c.name, c.id, i + 1);
+            addTab(c.name + (categoryHasFilters(c.id) ? "  ≡" : ""), c.id, i + 1);
         }
         if (snapshot.categories.size() > visible) {
             TextView extra =
@@ -736,9 +747,8 @@ final class HomeScreen {
                     (v, f) -> outline(extra, f, 17, extra.isSelected() ? 0xffeef2fb : 0xff172742));
             addTabView(extra);
         }
-        addTabView(pill("筛选", "home-filters", this::showFilters));
-        updateTabs();
-        wireNavigation();
+        // 1.9.33：移除旧的「筛选」按钮，筛选入口改到带 ≡ 的分类 chip
+        updateTabs();        wireNavigation();
     }
 
     List<VideoFilters.Definition> filterDefinitions() {
@@ -754,9 +764,116 @@ final class HomeScreen {
         return definitions;
     }
 
+    /** 1.9.33：该分类是否有筛选能力（片源 filters 配置或本地资料）。 */
+    boolean categoryHasFilters(String catId) {
+        if (snapshot == null) return false;
+        String category =
+                catId == null || catId.isEmpty()
+                        ? (state.category.isEmpty() && !snapshot.categories.isEmpty()
+                                ? snapshot.categories.get(0).id
+                                : state.category)
+                        : catId;
+        return !VideoFilters.definitions(snapshot.filterSchema, category, snapshot.videos).isEmpty();
+    }
+
+    void toggleFilterTags() {
+        if (filterTagRow == null) return;
+        if (filterTagRow.getVisibility() == View.VISIBLE) {
+            filterTagRow.setVisibility(View.GONE);
+            if (filterOptionRow != null) filterOptionRow.setVisibility(View.GONE);
+            return;
+        }
+        renderFilterTags();
+    }
+
+    /** L2：每个筛选维度一个标签，显示当前值。 */
+    void renderFilterTags() {
+        if (filterTagRow == null) return;
+        filterTagRow.removeAllViews();
+        if (filterOptionRow != null) filterOptionRow.setVisibility(View.GONE);
+        List<VideoFilters.Definition> defs = filterDefinitions();
+        if (defs.isEmpty()) {
+            filterTagRow.setVisibility(View.GONE);
+            return;
+        }
+        filterTagRow.setVisibility(View.VISIBLE);
+        TextView label = a.text("筛选：", 13, MainActivity.MUTED);
+        label.setGravity(Gravity.CENTER_VERTICAL);
+        label.setPadding(0, 0, a.dp(6), 0);
+        filterTagRow.addView(label);
+        for (final VideoFilters.Definition def : defs) {
+            String value = state.selectedFilters.get(def.dimension);
+            boolean active = value != null && !value.isEmpty();
+            TextView chip =
+                    pill(
+                            def.label + " · " + (active ? def.labelFor(value) : "全部"),
+                            "home-filter-tag:" + def.dimension,
+                            () -> showFilterOptions(def));
+            chip.setSelected(active);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(40));
+            lp.rightMargin = a.dp(8);
+            filterTagRow.addView(chip, lp);
+        }
+    }
+
+    /** L3：某维度的全部选项；点选项立即应用并收起。 */
+    void showFilterOptions(final VideoFilters.Definition def) {
+        if (filterOptionRow == null) return;
+        if (filterOptionRow.getVisibility() == View.VISIBLE
+                && String.valueOf(filterOptionRow.getTag()).equals(def.dimension)) {
+            filterOptionRow.setVisibility(View.GONE);
+            filterOptionRow.setTag("");
+            return;
+        }
+        filterOptionRow.removeAllViews();
+        filterOptionRow.setTag(def.dimension);
+        filterOptionRow.setVisibility(View.VISIBLE);
+        for (final VideoFilters.Choice choice : def.choices) {
+            String current = state.selectedFilters.get(def.dimension);
+            boolean active = choice.value.equals(current == null ? "" : current);
+            TextView chip =
+                    pill(
+                            choice.label,
+                            "home-filter-opt:" + def.dimension + ":" + choice.value,
+                            () -> {
+                                if (choice.value.isEmpty())
+                                    state.selectedFilters.remove(def.dimension);
+                                else
+                                    state.selectedFilters.put(def.dimension, choice.value);
+                                AppLog.i(
+                                        "Filter",
+                                        "category="
+                                                + state.category
+                                                + " tab="
+                                                + def.label
+                                                + " value="
+                                                + choice.value);
+                                filterOptionRow.setVisibility(View.GONE);
+                                applyFilters();
+                                renderFilterTags();
+                            });
+            chip.setSelected(active);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(40));
+            lp.rightMargin = a.dp(8);
+            filterOptionRow.addView(chip, lp);
+        }
+    }
+
+    /** BACK 逐层收起 L3 → L2。 */
+    boolean backFilterUi() {
+        if (filterOptionRow != null && filterOptionRow.getVisibility() == View.VISIBLE) {
+            filterOptionRow.setVisibility(View.GONE);
+            return true;
+        }
+        if (filterTagRow != null && filterTagRow.getVisibility() == View.VISIBLE) {
+            filterTagRow.setVisibility(View.GONE);
+            return true;
+        }
+        return false;
+    }
+
     void showFilters() {
-        if (snapshot == null) return;
-        List<VideoFilters.Definition> definitions = filterDefinitions();
+        if (snapshot == null) return;        List<VideoFilters.Definition> definitions = filterDefinitions();
         String[] labels = new String[definitions.size() + 1];
         for (int i = 0; i < definitions.size(); i++) {
             VideoFilters.Definition def = definitions.get(i);
@@ -884,7 +1001,12 @@ final class HomeScreen {
                                 return;
                             }
                             hideCloudHomeInline();
+                            if (id.equals(state.category) && categoryHasFilters(id)) {
+                                toggleFilterTags();
+                                return;
+                            }
                             choose(id, true);
+                            renderFilterTags();
                         });
         tabIds.put(button, id);
         button.setOnKeyListener(

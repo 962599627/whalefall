@@ -191,6 +191,8 @@ final class MobileShell {
     private List<Cms.Category> currentCategories = new ArrayList<>();
     private String filterSchema = "{}";
     private final java.util.Map<String, String> selectedFilters = new java.util.LinkedHashMap<>();
+    /** 1.9.33：手机首页 L2/L3 筛选行。 */
+    private LinearLayout homeFilterTagRow, homeFilterOptionRow;
     private String lastChipTap = "";
     private long lastChipTapAt;
     private Runnable homeFilterApply;
@@ -1033,23 +1035,9 @@ final class MobileShell {
         final boolean sideRailLayout = a.windowWidth() / homeDensity >= 640 && !a.isPortrait();
         final float homeNavScale =
                 Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
-        filterBarBottomDp =
-                sideRailLayout ? 16 : Math.round(16 + 64 * homeNavScale + 10);
-        filterSummaryBar =
-                new FilterSummaryBar(a, selectedFilters, () -> showHomeFilters(null));
-        FrameLayout.LayoutParams filterBarLp =
-                new FrameLayout.LayoutParams(
-                        -1, a.dp(FilterSummaryBar.HEIGHT_DP), Gravity.BOTTOM);
-        filterBarLp.leftMargin = a.dp(UiTokens.SP_16);
-        filterBarLp.rightMargin = a.dp(UiTokens.SP_16);
-        filterBarLp.bottomMargin = a.dp(filterBarBottomDp);
-        contentContainer.addView(filterSummaryBar.view(), filterBarLp);
-
-        recycler.setPadding(
-                0,
-                statusBarHeight() + a.dp(8),
-                0,
-                a.dp(filterBarBottomDp + FilterSummaryBar.HEIGHT_DP + 18));
+        // 1.9.33：删除底部常驻筛选条，底部留给 Dock（64+16+8）
+        filterSummaryBar = null;
+        recycler.setPadding(0, statusBarHeight() + a.dp(8), 0, a.dp(88));
         final LinearLayout body = a.vertical();
         a.body = body;
         homeBody = body;
@@ -1329,6 +1317,7 @@ final class MobileShell {
         final LinearLayout catRow = a.row();
         catRow.setGravity(Gravity.CENTER_VERTICAL);
         catScroll.addView(catRow);
+        filterButton.setVisibility(View.GONE); // 1.9.33：右上「筛选」按钮不再显示
         LinearLayout categoryBar = a.row();
         categoryBar.setClipChildren(true);
         categoryBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -1348,6 +1337,15 @@ final class MobileShell {
         filterSize.topMargin = a.dp(2);
         categoryBar.addView(filterButton, filterSize);
         body.addView(categoryBar, new LinearLayout.LayoutParams(-1, -2));
+        // 1.9.33：L2 筛选标签行 / L3 选项行
+        homeFilterTagRow = a.row();
+        homeFilterTagRow.setClipChildren(false);
+        homeFilterTagRow.setVisibility(View.GONE);
+        body.addView(homeFilterTagRow, new LinearLayout.LayoutParams(-1, -2));
+        homeFilterOptionRow = a.row();
+        homeFilterOptionRow.setClipChildren(false);
+        homeFilterOptionRow.setVisibility(View.GONE);
+        body.addView(homeFilterOptionRow, new LinearLayout.LayoutParams(-1, -2));
 
         // 1.8.9 云盘配置内容原地容器（仅动作型 chip 使用，默认隐藏）
         homeCloudHolder = a.vertical();
@@ -1603,6 +1601,11 @@ final class MobileShell {
                                                         filterSummaryBar
                                                                 .view()
                                                                 .setVisibility(View.GONE);
+                                                    if (homeFilterTagRow != null)
+                                                        homeFilterTagRow.setVisibility(View.GONE);
+                                                    if (homeFilterOptionRow != null)
+                                                        homeFilterOptionRow.setVisibility(
+                                                                View.GONE);
                                                     a.toast("该片源不支持筛选，已隐藏筛选入口");
                                                 });
                                     }
@@ -1992,6 +1995,122 @@ final class MobileShell {
         return text.contains("云盘") || text.contains("云盤") || text.contains("网盘配置");
     }
 
+    /** 1.9.33：手机首页 L2 标签行 / L3 选项行。 */
+    boolean hasMobileFilters() {
+        try {
+            return !mobileFilterDefinitions().isEmpty();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    void toggleMobileFilterTags() {
+        if (homeFilterTagRow == null) return;
+        if (homeFilterTagRow.getVisibility() == View.VISIBLE) {
+            homeFilterTagRow.setVisibility(View.GONE);
+            if (homeFilterOptionRow != null) homeFilterOptionRow.setVisibility(View.GONE);
+            return;
+        }
+        renderMobileFilterTags();
+    }
+
+    void renderMobileFilterTags() {
+        if (homeFilterTagRow == null) return;
+        homeFilterTagRow.removeAllViews();
+        if (homeFilterOptionRow != null) homeFilterOptionRow.setVisibility(View.GONE);
+        List<VideoFilters.Definition> defs = mobileFilterDefinitions();
+        if (defs.isEmpty()) {
+            homeFilterTagRow.setVisibility(View.GONE);
+            return;
+        }
+        homeFilterTagRow.setVisibility(View.VISIBLE);
+        TextView label = a.text("筛选：", 12, MainActivity.MUTED);
+        label.setGravity(Gravity.CENTER_VERTICAL);
+        label.setPadding(0, 0, a.dp(6), 0);
+        homeFilterTagRow.addView(label);
+        for (final VideoFilters.Definition def : defs) {
+            String value = selectedFilters.get(def.dimension);
+            boolean active = value != null && !value.isEmpty();
+            TextView chip =
+                    a.text(
+                            def.label + " · " + (active ? def.labelFor(value) : "全部"),
+                            12,
+                            active ? 0xff0b1220 : 0xffe6edfb);
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+            chip.setBackground(
+                    active
+                            ? a.bg(0xffff8fb1, 999)
+                            : glassBg(0x14ffffff, 0x33ffffff, a.dp(999), a.dp(0.8f), 0x33ffffff));
+            MobileDetailScreen.bindTouchFeedback(chip);
+            chip.setFocusable(true);
+            chip.setMinHeight(a.dp(32));
+            chip.setOnClickListener(v -> showMobileFilterOptions(def));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(32));
+            lp.rightMargin = a.dp(6);
+            homeFilterTagRow.addView(chip, lp);
+        }
+    }
+
+    void showMobileFilterOptions(final VideoFilters.Definition def) {
+        if (homeFilterOptionRow == null) return;
+        if (homeFilterOptionRow.getVisibility() == View.VISIBLE
+                && String.valueOf(homeFilterOptionRow.getTag()).equals(def.dimension)) {
+            homeFilterOptionRow.setVisibility(View.GONE);
+            homeFilterOptionRow.setTag("");
+            return;
+        }
+        homeFilterOptionRow.removeAllViews();
+        homeFilterOptionRow.setTag(def.dimension);
+        homeFilterOptionRow.setVisibility(View.VISIBLE);
+        for (final VideoFilters.Choice choice : def.choices) {
+            String current = selectedFilters.get(def.dimension);
+            boolean active = choice.value.equals(current == null ? "" : current);
+            TextView chip = a.text(choice.label, 12, active ? 0xff0b1220 : 0xffe6edfb);
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+            chip.setBackground(
+                    active
+                            ? a.bg(0xffff8fb1, 999)
+                            : glassBg(0x14ffffff, 0x33ffffff, a.dp(999), a.dp(0.8f), 0x33ffffff));
+            MobileDetailScreen.bindTouchFeedback(chip);
+            chip.setFocusable(true);
+            chip.setMinHeight(a.dp(32));
+            chip.setOnClickListener(
+                    v -> {
+                        if (choice.value.isEmpty()) selectedFilters.remove(def.dimension);
+                        else selectedFilters.put(def.dimension, choice.value);
+                        AppLog.i(
+                                "Filter",
+                                "category="
+                                        + selectedCategoryId
+                                        + " tab="
+                                        + def.label
+                                        + " value="
+                                        + choice.value);
+                        homeFilterOptionRow.setVisibility(View.GONE);
+                        currentPage = 1;
+                        if (homeFilterApply != null) homeFilterApply.run();
+                        renderMobileFilterTags();
+                    });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(32));
+            lp.rightMargin = a.dp(6);
+            homeFilterOptionRow.addView(chip, lp);
+        }
+    }
+
+    boolean backFilterUi() {
+        if (homeFilterOptionRow != null && homeFilterOptionRow.getVisibility() == View.VISIBLE) {
+            homeFilterOptionRow.setVisibility(View.GONE);
+            return true;
+        }
+        if (homeFilterTagRow != null && homeFilterTagRow.getVisibility() == View.VISIBLE) {
+            homeFilterTagRow.setVisibility(View.GONE);
+            return true;
+        }
+        return false;
+    }
+
     private void addCategoryChip(
             LinearLayout row,
             String label,
@@ -1999,8 +2118,13 @@ final class MobileShell {
             Runnable refreshChips,
             Runnable loadPage) {
         boolean active = selectedCategoryId.equals(catId);
+        boolean hasFilters = hasMobileFilters();
         float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
-        TextView chip = a.text(label, 13 * navScale, active ? 0xff000000 : 0xfff3f4f6);
+        TextView chip =
+                a.text(
+                        hasFilters ? label + "  ≡" : label,
+                        13 * navScale,
+                        active ? 0xff000000 : 0xfff3f4f6);
         chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
         chip.setGravity(Gravity.CENTER);
         chip.setPadding(
@@ -2022,20 +2146,9 @@ final class MobileShell {
                         return;
                     }
                     hideCloudConfigInline();
-                    long now = android.os.SystemClock.uptimeMillis();
-                    boolean doubleTap =
-                            catId.equals(lastChipTap) && now - lastChipTapAt < 350;
-                    lastChipTap = catId;
-                    lastChipTapAt = now;
-                    if (doubleTap) {
-                        if (!selectedCategoryId.equals(catId)) {
-                            selectedCategoryId = catId;
-                            selectedFilters.clear();
-                            currentPage = 1;
-                            refreshChips.run();
-                            loadPage.run();
-                        }
-                        showHomeFilters(null);
+                    // 1.9.33：有筛选能力时，点击分类 = 选中并展开 L2；已选中 = 展开/收起 L2
+                    if (hasFilters && catId.equals(selectedCategoryId)) {
+                        toggleMobileFilterTags();
                         return;
                     }
                     if (selectedCategoryId.equals(catId)) return;
@@ -2044,6 +2157,7 @@ final class MobileShell {
                     currentPage = 1;
                     refreshChips.run();
                     loadPage.run();
+                    if (hasFilters) renderMobileFilterTags();
                 });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
         lp.rightMargin = a.dp(8);
