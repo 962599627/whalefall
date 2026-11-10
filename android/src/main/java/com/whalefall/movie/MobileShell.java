@@ -172,8 +172,8 @@ final class MobileShell {
     private final MainActivity a;
     private FrameLayout contentContainer;
     private final View[] navTabs = new View[7];
-    private final TextView[] navLabels = new TextView[6];
-    private final NavGlyph[] navIcons = new NavGlyph[6];
+    private final TextView[] navLabels = new TextView[7];
+    private final NavGlyph[] navIcons = new NavGlyph[7];
     private static final String[] TAB_NAMES = {"主页", "搜索", "直播", "片库", "设置", "电视", "云盘专区"};
     private static final int[] DOCK_TAB_INDICES = {0, 2, 5, 3, 6, 4};
 
