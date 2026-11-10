@@ -42,6 +42,19 @@ final class AddressInput extends LinearLayout {
         input.setText(value);
         input.setSelection(input.length());
         addView(input, new LinearLayout.LayoutParams(-1, a.dp(48)));
+        if (a.isTvDevice()) {
+            // 1.9.26：电视端可扫码用手机输入
+            TextView remote = a.text("📱 手机扫码输入", 12.5f, 0xff0b1220);
+            remote.setGravity(android.view.Gravity.CENTER);
+            remote.setPadding(a.dp(12), a.dp(9), a.dp(12), a.dp(9));
+            remote.setBackground(a.bg(0xffff8fb1, 999));
+            remote.setFocusable(true);
+            MobileDetailScreen.bindTouchFeedback(remote);
+            remote.setOnClickListener(v -> RemoteInputScreen.show(a));
+            LinearLayout.LayoutParams remoteLp = new LinearLayout.LayoutParams(-1, a.dp(40));
+            remoteLp.topMargin = a.dp(8);
+            addView(remote, remoteLp);
+        }
         input.setLongClickable(!a.isTvDevice());
         input.setTextIsSelectable(!a.isTvDevice());
         error = a.text("", 12, 0xffffb4ad);

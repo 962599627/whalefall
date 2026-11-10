@@ -22,6 +22,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
     SearchCoordinator coordinator, retryCoordinator;
     List<String> searchVariants = Collections.emptyList();
     int sourceCount, columns = 4;
+    private long searchStartMs;
     Button retrySource;
     boolean closed;
     int pageTicket, searchSerial, candidatePage, finished, failed, timedOut, busy, matched;
@@ -43,14 +44,35 @@ public final class GlobalSearchScreen implements AutoCloseable {
     final Map<String, LinearLayout> posterCards = new HashMap<>();
     final Map<PinyinKeyboardModel.Mode, Button> modeButtons = new LinkedHashMap<>();
 
+    /** 1.9.27：跨源按标题归一化合并后的条目。 */
+    static final class Merged {
+        final String norm;
+        String title;
+        Cms.Video primaryVideo;
+        Cms.Site primarySite;
+        final List<Cms.Site> sites = new ArrayList<>();
+        final List<Cms.Video> videos = new ArrayList<>();
+        boolean playable;
+        int sourceCount;
+        String bestPoster;
+
+        Merged(String norm) {
+            this.norm = norm;
+        }
+    }
+
+    int sortMode; // 0来源数 1可播优先 2相关度
+    LinearLayout statusChips, sortRow;
+    TextView mergeHint;
+    boolean mergedLogged;
+
     static String staticSubmitted = "";
     static Cms.Config staticConfig;
     static long staticTime;
     static int staticMatched;
     static final LinkedHashMap<String, SourceResult> staticResults = new LinkedHashMap<>();
 
-    static final class SourceResult {
-        final Cms.Site site;
+    static final class SourceResult {        final Cms.Site site;
         final List<Cms.Video> videos;
         final SearchCoordinator.Outcome outcome;
 
@@ -745,6 +767,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
 
     void startSources(List<Cms.Site> sources, String query, List<String> variants, int serial) {
         final int total = sources.size();
+        searchStartMs = System.currentTimeMillis();
         searchVariants = variants;
         if (variants.size() > 1) {
             String joined =
@@ -780,6 +803,20 @@ public final class GlobalSearchScreen implements AutoCloseable {
                                             staticResults.clear();
                                             staticResults.putAll(results);
                                             updateStatus(total);
+                                            if (finished >= total)
+                                                AppLog.i(
+                                                        "SearchAgg",
+                                                        "sites="
+                                                                + total
+                                                                + " ok="
+                                                                + matched
+                                                                + " fail="
+                                                                + failed
+                                                                + " timeout="
+                                                                + timedOut
+                                                                + " ms="
+                                                                + (System.currentTimeMillis()
+                                                                        - searchStartMs));
                                             scheduleRender();
                                         }),
                         Prefs.clampSearchTimeoutSeconds(a.prefs.getInt(Prefs.SEARCH_TIMEOUT, 20))
@@ -976,6 +1013,9 @@ public final class GlobalSearchScreen implements AutoCloseable {
     void resetGrid() {
         resultBody.removeAllViews();
         displayed.clear();
+        sortRow = null;
+        statusChips = null;
+        mergeHint = null;
         lastRow = null;
         resultGrid = a.vertical();
         resultGrid.setClipChildren(false);
@@ -1002,58 +1042,292 @@ public final class GlobalSearchScreen implements AutoCloseable {
         resultBody.addView(resultHint);
     }
 
+    /** 1.9.27：标题归一化（去空格/标点/清晰度/版本词；保留季/集/年份，避免不同季被合并）。 */
+    static String normalizeTitle(String title) {
+        if (title == null) return "";
+        String text = title.toLowerCase(Locale.ROOT);
+        text = text.replaceAll("[\\s\\p{Punct}，。！？、·：；“”‘’（）【】《》—…]+", "");
+        text = text.replaceAll("[0-9]{3,4}p", "");
+        text = text.replaceAll("(hd|bd|4k|8k|国语|粤语|中字|中文字幕|高清|完整版|未删减)", "");
+        return text.trim();
+    }
+
+    List<Merged> buildMerged() {
+        LinkedHashMap<String, Merged> map = new LinkedHashMap<>();
+        int before = 0;
+        for (SourceResult source : results.values()) {
+            if (source.videos == null) continue;
+            for (Cms.Video video : source.videos) {
+                before++;
+                String norm = normalizeTitle(video.title);
+                if (norm.isEmpty()) norm = video.title == null ? "" : video.title;
+                Merged merged = map.get(norm);
+                if (merged == null) {
+                    merged = new Merged(norm);
+                    merged.title = video.title;
+                    merged.primaryVideo = video;
+                    merged.primarySite = source.site;
+                    merged.bestPoster = video.poster;
+                    // 1.9.27：primary 同时进入成对列表，保证 sites.size()==videos.size()
+                    merged.sites.add(source.site);
+                    merged.videos.add(video);
+                    merged.sourceCount = 1;
+                    if (video.lines != null && !video.lines.isEmpty()) merged.playable = true;
+                    map.put(norm, merged);
+                    continue;
+                }
+                if (merged.sites.contains(source.site)) continue; // 同源同标题保留首条
+                merged.sites.add(source.site);
+                merged.videos.add(video);
+                merged.sourceCount = merged.sites.size();
+                if ((merged.bestPoster == null || merged.bestPoster.isEmpty())
+                        && video.poster != null
+                        && !video.poster.isEmpty()) merged.bestPoster = video.poster;
+                if (!merged.playable && video.lines != null && !video.lines.isEmpty())
+                    merged.playable = true;
+                if (merged.sites.size() != merged.videos.size())
+                    AppLog.w(
+                            "SearchAgg",
+                            "pair mismatch sites="
+                                    + merged.sites.size()
+                                    + " videos="
+                                    + merged.videos.size(),
+                            null);
+            }
+        }
+        List<Merged> list = new ArrayList<>(map.values());
+        Comparator<Merged> comparator =
+                (x, y) -> {
+                    if (sortMode == 1 && x.playable != y.playable) return x.playable ? -1 : 1;
+                    if (sortMode == 2) {
+                        String q = normalizeTitle(submitted);
+                        boolean xm = !q.isEmpty() && x.norm.contains(q);
+                        boolean ym = !q.isEmpty() && y.norm.contains(q);
+                        if (xm != ym) return xm ? -1 : 1;
+                    }
+                    int byCount = Integer.compare(y.sourceCount, x.sourceCount);
+                    return byCount != 0 ? byCount : x.norm.compareTo(y.norm);
+                };
+        Collections.sort(list, comparator);
+        AppLog.i(
+                "SearchAgg",
+                "sites="
+                        + sourceCount
+                        + " merged="
+                        + list.size()
+                        + " before="
+                        + before
+                        + " after="
+                        + list.size());
+        return list;
+    }
+
+    /** 1.9.27：排序 chips + 失败源状态徽章。 */
+    void ensureMergeControls() {
+        if (sortRow == null) {
+            sortRow = a.row();
+            sortRow.setPadding(0, a.dp(2), 0, a.dp(4));
+            String[] labels = {"来源数", "可播优先", "相关度"};
+            for (int i = 0; i < labels.length; i++) {
+                final int mode = i;
+                Button b =
+                        a.button(
+                                labels[i],
+                                "search-sort:" + i,
+                                () -> {
+                                    sortMode = mode;
+                                    updateSortLabels();
+                                    resetGrid();
+                                    renderResults();
+                                });
+                b.setTextSize(11);
+                b.setMinWidth(0);
+                b.setMinimumWidth(0);
+                b.setMinHeight(0);
+                b.setMinimumHeight(0);
+                b.setPadding(a.dp(10), 0, a.dp(10), 0);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(30));
+                lp.setMargins(a.dp(2), 0, a.dp(6), 0);
+                sortRow.addView(b, lp);
+            }
+            a.addButton(resultBody, sortRow);
+            resultBody.removeView(sortRow);
+            resultBody.addView(sortRow, 0);
+        }
+        updateSortLabels();
+        if (mergeHint == null) {
+            mergeHint =
+                    a.text(
+                            a.isTvDevice()
+                                    ? "OK 进详情 · 长按 OK（或下方「切换来源」）选来源"
+                                    : "长按卡片或点「切换来源」可切换来源",
+                            12,
+                            UiTokens.TEXT_TERTIARY);
+            mergeHint.setPadding(0, 0, 0, a.dp(4));
+            resultBody.addView(mergeHint, Math.min(1, resultBody.getChildCount()));
+        }
+        if (statusChips == null) {
+            statusChips = a.row();
+            statusChips.setPadding(0, 0, 0, a.dp(6));
+            resultBody.addView(statusChips, Math.min(1, resultBody.getChildCount()));
+        }
+        statusChips.removeAllViews();
+        for (SourceResult source : results.values()) {
+            boolean ok = source.outcome == SearchCoordinator.Outcome.RESULT;
+            boolean fail =
+                    source.outcome == SearchCoordinator.Outcome.FAILED
+                            || source.outcome == SearchCoordinator.Outcome.VERIFICATION_REQUIRED;
+            boolean timeout = source.outcome == SearchCoordinator.Outcome.TIMEOUT;
+            if (!fail && !timeout && !ok) continue;
+            int dotColor = ok ? 0xff2ad47a : timeout ? 0xffffb454 : 0xff9aa3b2;
+            LinearLayout chip = a.row();
+            chip.setGravity(Gravity.CENTER_VERTICAL);
+            chip.setPadding(a.dp(8), a.dp(4), a.dp(8), a.dp(4));
+            chip.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+            View dotView = new View(a);
+            android.graphics.drawable.GradientDrawable dotDrawable =
+                    new android.graphics.drawable.GradientDrawable();
+            dotDrawable.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            dotDrawable.setColor(dotColor);
+            dotView.setBackground(dotDrawable);
+            LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(a.dp(6), a.dp(6));
+            dotLp.rightMargin = a.dp(5);
+            chip.addView(dotView, dotLp);
+            TextView chipText =
+                    a.text(
+                            clean(source.site.name) + (fail ? " 失败" : timeout ? " 超时" : ""),
+                            10.5f,
+                            dotColor);
+            chip.addView(chipText);
+            chip.setMinimumHeight(a.dp(a.isTvDevice() ? 40 : 28));
+            chip.setFocusable(true);
+            MobileDetailScreen.bindTouchFeedback(chip);
+            final SourceResult selected = source;
+            chip.setOnClickListener(
+                    v -> {
+                        String reason;
+                        switch (selected.outcome) {
+                            case FAILED:
+                                reason = "请求失败或返回无效响应";
+                                break;
+                            case TIMEOUT:
+                                reason = "请求超时（" + Prefs.clampSearchTimeoutSeconds(
+                                                a.prefs.getInt(Prefs.SEARCH_TIMEOUT, 20))
+                                        + " 秒）";
+                                break;
+                            case VERIFICATION_REQUIRED:
+                                reason = "需要网站验证码";
+                                break;
+                            case EMPTY:
+                                reason = "已响应但没有匹配结果";
+                                break;
+                            default:
+                                reason = "正常";
+                                break;
+                        }
+                        new AppDialog.Builder(a)
+                                .setTitle(clean(selected.site.name))
+                                .setMessage(reason)
+                                .setPositiveButton("关闭", (d, i) -> {})
+                                .show();
+                    });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.setMargins(0, 0, a.dp(6), 0);
+            statusChips.addView(chip, lp);
+        }
+    }
+
+    void updateSortLabels() {
+        if (sortRow == null) return;
+        for (int i = 0; i < sortRow.getChildCount(); i++) {
+            View child = sortRow.getChildAt(i);
+            if (!(child instanceof TextView)) continue;
+            TextView view = (TextView) child;
+            boolean active = i == sortMode;
+            view.setTextColor(active ? 0xff0b1220 : MainActivity.WHITE);
+            view.setBackground(
+                    active
+                            ? UiTokens.round(a, 999, UiTokens.ACCENT)
+                            : MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+        }
+    }
+
     void renderResults() {
         if (resultGrid == null) return;
         renderFilters();
+        ensureMergeControls();
         renderPasses++;
         int available = 0, added = 0;
         boolean remaining = false;
-        for (SourceResult source : results.values())
-            if (activeFilter.isEmpty() || source.site.key.equals(activeFilter))
-                for (int i = 0;
-                        i < Math.min(activeFilter.isEmpty() ? 12 : 24, source.videos.size())
-                                && available < 120;
-                        i++) {
-                    available++;
-                    if (available > shownLimit) continue;
-                    Cms.Video video = source.videos.get(i);
-                    String key = source.site.key + ":" + video.id;
-                    if (displayed.contains(key)) continue;
-                    if (added >= 4) {
-                        remaining = true;
-                        continue;
-                    }
-                    if (displayed.size() % columns == 0) {
-                        lastRow = a.row();
-                        lastRow.setGravity(Gravity.TOP);
-                        lastRow.setClipChildren(false);
-                        resultGrid.addView(lastRow);
-                        for (int column = 0; column < columns; column++) {
-                            LinearLayout.LayoutParams blank =
-                                    new LinearLayout.LayoutParams(0, 1, 1);
-                            blank.setMargins(a.dp(3), a.dp(3), a.dp(8), a.dp(13));
-                            lastRow.addView(new View(a), blank);
+        if (activeFilter.isEmpty()) {
+            // 1.9.27：全部视图用跨源合并去重后的列表
+            List<Merged> mergedList = buildMerged();
+            for (int i = 0; i < mergedList.size() && available < 120; i++) {
+                available++;
+                if (available > shownLimit) continue;
+                Merged merged = mergedList.get(i);
+                String key = "merged:" + merged.norm;
+                if (displayed.contains(key)) continue;
+                if (added >= 4) {
+                    remaining = true;
+                    continue;
+                }
+                if (displayed.size() % columns == 0) newResultRow();
+                LinearLayout card = posterCards.get(key);
+                if (card == null) {
+                    card = makeMergedCard(merged);
+                    posterCards.put(key, card);
+                }
+                if (card.getParent() instanceof ViewGroup)
+                    ((ViewGroup) card.getParent()).removeView(card);
+                int column = displayed.size() % columns;
+                lastRow.removeViewAt(column);
+                LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, -2, 1);
+                cell.setMargins(a.dp(3), a.dp(3), a.dp(8), a.dp(13));
+                lastRow.addView(card, column, cell);
+                displayed.add(key);
+                added++;
+                if (focusNewResults) {
+                    card.requestFocus();
+                    focusNewResults = false;
+                }
+            }
+        } else {
+            for (SourceResult source : results.values())
+                if (source.site.key.equals(activeFilter))
+                    for (int i = 0;
+                            i < Math.min(24, source.videos.size()) && available < 120;
+                            i++) {
+                        available++;
+                        if (available > shownLimit) continue;
+                        Cms.Video video = source.videos.get(i);
+                        String key = source.site.key + ":" + video.id;
+                        if (displayed.contains(key)) continue;
+                        if (added >= 4) {
+                            remaining = true;
+                            continue;
+                        }
+                        if (displayed.size() % columns == 0) newResultRow();
+                        LinearLayout card = posterCards.get(key);
+                        if (card == null) {
+                            card = makeCard(source, video);
+                            posterCards.put(key, card);
+                        }
+                        if (card.getParent() instanceof ViewGroup)
+                            ((ViewGroup) card.getParent()).removeView(card);
+                        int column = displayed.size() % columns;
+                        lastRow.removeViewAt(column);
+                        LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, -2, 1);
+                        cell.setMargins(a.dp(3), a.dp(3), a.dp(8), a.dp(13));
+                        lastRow.addView(card, column, cell);
+                        displayed.add(key);
+                        added++;
+                        if (focusNewResults) {
+                            card.requestFocus();
+                            focusNewResults = false;
                         }
                     }
-                    LinearLayout card = posterCards.get(key);
-                    if (card == null) {
-                        card = makeCard(source, video);
-                        posterCards.put(key, card);
-                    }
-                    if (card.getParent() instanceof ViewGroup)
-                        ((ViewGroup) card.getParent()).removeView(card);
-                    int column = displayed.size() % columns;
-                    lastRow.removeViewAt(column);
-                    LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, -2, 1);
-                    cell.setMargins(a.dp(3), a.dp(3), a.dp(8), a.dp(13));
-                    lastRow.addView(card, column, cell);
-                    displayed.add(key);
-                    added++;
-                    if (focusNewResults) {
-                        card.requestFocus();
-                        focusNewResults = false;
-                    }
-                }
+        }
         emptyResult.setVisibility(displayed.isEmpty() ? View.VISIBLE : View.GONE);
         if (displayed.isEmpty()) {
             SourceResult selected = results.get(activeFilter);
@@ -1096,17 +1370,106 @@ public final class GlobalSearchScreen implements AutoCloseable {
         }
     }
 
+    void newResultRow() {
+        lastRow = a.row();
+        lastRow.setGravity(Gravity.TOP);
+        lastRow.setClipChildren(false);
+        resultGrid.addView(lastRow);
+        for (int column = 0; column < columns; column++) {
+            LinearLayout.LayoutParams blank = new LinearLayout.LayoutParams(0, 1, 1);
+            blank.setMargins(a.dp(3), a.dp(3), a.dp(8), a.dp(13));
+            lastRow.addView(new View(a), blank);
+        }
+    }
+
+    /** 1.9.27：合并结果卡片（N 个来源 · 当前：来源名，长按选源）。 */
+    LinearLayout makeMergedCard(final Merged merged) {
+        Cms.Video video = merged.primaryVideo;
+        LinearLayout card = makeCard(merged.primarySite, video, merged.sourceCount);
+        // P1：来源信息不截断，改为 2 行小字 + 可聚焦「N 个来源」按钮
+        TextView count =
+                a.text(
+                        merged.sourceCount
+                                + " 个来源 · 首选："
+                                + clean(merged.primarySite.name),
+                        10f,
+                        UiTokens.TEXT_TERTIARY);
+        count.setMaxLines(2);
+        count.setEllipsize(null);
+        card.addView(count);
+        final String[] names = new String[merged.sites.size()];
+        for (int i = 0; i < names.length; i++) names[i] = clean(merged.sites.get(i).name);
+        Button sources =
+                a.button(
+                        "切换来源（" + merged.sourceCount + "）",
+                        "search-merged-sources:" + merged.norm,
+                        () -> showSourcePicker(merged, names));
+        sources.setTextSize(11);
+        sources.setMinHeight(0);
+        sources.setMinimumHeight(0);
+        sources.setPadding(0, 0, 0, 0);
+        card.addView(
+                sources, new LinearLayout.LayoutParams(-1, a.isTvDevice() ? a.dp(44) : a.dp(36)));
+        card.setTag("global-merged:" + merged.norm);
+        card.setOnLongClickListener(
+                v -> {
+                    if (names.length == 0) return true;
+                    showSourcePicker(merged, names);
+                    return true;
+                });
+        return card;
+    }
+
+    void showSourcePicker(final Merged merged, String[] names) {
+        if (names.length == 0) return;
+        int current = merged.sites.indexOf(merged.primarySite);
+        String[] labels = new String[names.length];
+        for (int i = 0; i < names.length; i++)
+            labels[i] = names[i] + (i == current ? "  ✓ 当前" : "");
+        new AppDialog.Builder(a)
+                .setTitle(merged.title)
+                .setItems(
+                        labels,
+                        (dialog, which) -> {
+                            Cms.Site site = merged.sites.get(which);
+                            Cms.Video target =
+                                    which < merged.videos.size()
+                                            ? merged.videos.get(which)
+                                            : merged.primaryVideo;
+                            saveHistory(submitted);
+                            a.openListing(site, target);
+                        })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
     LinearLayout makeCard(SourceResult source, Cms.Video video) {
+        return makeCard(source, video, 0);
+    }
+
+    LinearLayout makeCard(SourceResult source, Cms.Video video, int sourceCount) {
         LinearLayout card = a.vertical();
         card.setPadding(a.dp(4), a.dp(4), a.dp(4), a.dp(8));
+        FrameLayout posterWrap = new FrameLayout(a);
         ImageView poster = new ImageView(a);
         poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
         poster.setBackground(a.bg(0xff182a45, 9));
         poster.setClipToOutline(true);
+        posterWrap.addView(poster, new FrameLayout.LayoutParams(-1, -1));
+        if (sourceCount > 1) {
+            TextView badge = a.text(sourceCount + " 源", 10.5f, MainActivity.WHITE);
+            badge.setPadding(a.dp(6), a.dp(2), a.dp(6), a.dp(2));
+            badge.setBackground(MobileDetailScreen.glassBg(a, 0x99000000, 0x40ffffff, 999));
+            FrameLayout.LayoutParams badgeLp =
+                    new FrameLayout.LayoutParams(-2, a.dp(24), Gravity.TOP | Gravity.END);
+            badgeLp.topMargin = a.dp(4);
+            badgeLp.rightMargin = a.dp(4);
+            posterWrap.addView(badge, badgeLp);
+        }
+        a.poster(video.poster, poster);
         LinearLayout.LayoutParams posterSize = new LinearLayout.LayoutParams(a.dp(110), a.dp(165));
         posterSize.gravity = Gravity.CENTER_HORIZONTAL;
-        card.addView(poster, posterSize);
-        a.poster(video.poster, poster);
+        card.addView(posterWrap, posterSize);
         TextView title = a.text(video.title, 14, MainActivity.WHITE);
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);

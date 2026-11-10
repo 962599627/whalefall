@@ -1666,6 +1666,8 @@ public final class MainActivity extends Activity {
     }
 
     boolean available(Cms.Site s) {
+        // 1.9.26：体检中被禁用的源在加载/搜索时跳过
+        if (SourceCheckScreen.isDisabled(this, s)) return false;
         return SourceController.available(this, s);
     }
 
@@ -1761,6 +1763,31 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (tvPlayer != null && tvPlayer.back()) return;
+        // 1.9.26：片源体检返回设置
+        if (body != null && "source-check".equals(body.getTag())) {
+            if (isTvDevice()) {
+                current = new MainActivity.Screen(this::home);
+                current.home = true;
+                renderReturn(current);
+            } else {
+                MobileShell.show(this);
+                if (MobileShell.activeShell != null) MobileShell.activeShell.switchTab(4);
+            }
+            return;
+        }
+        // 1.9.26：手机遥控页退出时关闭服务
+        if (body != null && "lan-remote".equals(body.getTag())) {
+            RemoteInputScreen.stop();
+            if (isTvDevice()) {
+                current = new MainActivity.Screen(this::home);
+                current.home = true;
+                renderReturn(current);
+            } else {
+                MobileShell.show(this);
+                if (MobileShell.activeShell != null) MobileShell.activeShell.switchTab(4);
+            }
+            return;
+        }
         // 1.9.19：网页直播 BACK（先退全屏，再回直播 tab）
         if (body != null && "web-live".equals(body.getTag())) {
             if (WebLiveScreen.handleBack(this)) return;
@@ -2506,6 +2533,8 @@ public final class MainActivity extends Activity {
     @Override
     protected void onStop() {
         PrivacySpace.cancelPrompt(this);
+        if (body != null && "lan-remote".equals(body.getTag()))
+            RemoteInputScreen.stop("onStop");
         finishSeek(false);
         if (playbackLoading != null) {
             clearPlaybackLoading();
@@ -2544,6 +2573,10 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        RemoteInputScreen.stop("destroy");
+        BgPlay.cancel(this);
+        releaseAudioFocus();
+        AppLog.i("BgPlay", "stop reason=destroy");
         if (privateMode && isFinishing() && !switchingPrivacy) PrivacySpace.active = false;
         if (activeActivity == this) activeActivity = null;
         clearPlaybackLoading();

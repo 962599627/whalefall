@@ -24,42 +24,64 @@ final class FontStyleDialog {
 
     static void show(final MainActivity a) {
         final String current = a.fontStyleName();
+        boolean tv = a.isTvDevice();
         LinearLayout box = a.vertical();
-        box.setPadding(0, a.dp(4), 0, a.dp(4));
+        box.setPadding(0, a.dp(4), 0, a.dp(8));
         for (int i = 0; i < NAMES.length; i++) {
             final String name = NAMES[i];
             boolean active = name.equals(current);
-            LinearLayout row = a.vertical();
-            row.setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8));
-            row.setBackground(
-                    MobileDetailScreen.glassBg(
-                            a, active ? 0xcc1d3350 : 0xcc16283f, active ? UiTokens.ACCENT : 0x33ffffff, 14));
+            LinearLayout row = a.row();
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
+            row.setMinimumHeight(a.dp(tv ? 64 : 56));
+            android.graphics.drawable.GradientDrawable rowBg =
+                    new android.graphics.drawable.GradientDrawable();
+            rowBg.setColor(active ? 0x1aff8fb1 : 0x14ffffff);
+            rowBg.setCornerRadius(a.dp(14));
+            rowBg.setStroke(a.dp(active ? 2 : 1), active ? UiTokens.ACCENT : 0x33ffffff);
+            row.setBackground(rowBg);
             row.setFocusable(true);
             MobileDetailScreen.bindTouchFeedback(row);
+            LinearLayout texts = a.vertical();
             TextView label =
-                    a.text(LABELS[i] + (active ? " · 当前" : ""), 12, active ? UiTokens.ACCENT : UiTokens.TEXT_SECONDARY);
-            row.addView(label);
+                    a.text(
+                            LABELS[i],
+                            tv ? 15f : 13f,
+                            active ? UiTokens.ACCENT : UiTokens.TEXT_SECONDARY);
+            texts.addView(label);
             TextView sample =
-                    a.text("鲸落 WhaleFall 字体样例 0123", 17, UiTokens.TEXT_PRIMARY);
+                    a.text(
+                            "鲸落 WhaleFall 字体样例 0123",
+                            tv ? 22f : 18f,
+                            UiTokens.TEXT_PRIMARY);
             sample.setGravity(Gravity.START);
-            // 1.9.25：必须显式设置该行字体的双参 typeface，避免被 a.text 的全局字体覆盖
+            // 1.9.25：显式双参 typeface，避免被 a.text 全局字体覆盖
             try {
                 sample.setTypeface(Typeface.create(name, Typeface.NORMAL), Typeface.NORMAL);
             } catch (Throwable ignored) {
             }
             sample.setPadding(0, a.dp(4), 0, 0);
-            row.addView(sample);
+            texts.addView(sample);
+            TextView second =
+                    a.text("次要文字示例 Secondary 0123", tv ? 15f : 13f, UiTokens.TEXT_TERTIARY);
+            texts.addView(second);
+            row.addView(texts, new LinearLayout.LayoutParams(0, -2, 1f));
+            if (active) {
+                TextView check = a.text("✓ 当前", tv ? 15f : 13f, UiTokens.ACCENT);
+                check.setPadding(a.dp(8), 0, 0, 0);
+                row.addView(check);
+            }
             row.setOnClickListener(v -> save(a, name));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
             lp.bottomMargin = a.dp(10);
             box.addView(row, lp);
         }
+        // 1.9.27：去掉固定 460dp 内层滚动，交由 AppDialog 单层滚动
         ScrollView scroll = new ScrollView(a);
         scroll.addView(box, new ScrollView.LayoutParams(-1, -2));
-        scroll.setLayoutParams(new LinearLayout.LayoutParams(-1, a.dp(460)));
         new AppDialog.Builder(a)
                 .setTitle("字体样式")
-                .setMessage("选择后立即预览并保存，返回设置即全量生效。")
+                .setMessage("点击即保存并生效（界面会重启一次）。")
                 .setView(scroll)
                 .setNegativeButton("取消", null)
                 .show();

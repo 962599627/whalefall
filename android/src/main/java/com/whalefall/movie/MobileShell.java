@@ -4620,6 +4620,18 @@ final class MobileShell {
                         "下载中心",
                         "查看下载进度、暂停/继续/取消/重试与完成历史",
                         () -> DownloadCenterScreen.show(a));
+                addSettingCard(
+                        body,
+                        1,
+                        "片源体检 / 失效源清理",
+                        "检测每个片源可用性与耗时，失效源可禁用或恢复",
+                        () -> SourceCheckScreen.show(a));
+                addSettingCard(
+                        body,
+                        1,
+                        "手机遥控 / 扫码输入",
+                        "电视端扫码用手机浏览器当遥控器/输入法（也可在本机打开二维码）",
+                        () -> RemoteInputScreen.show(a));
                 a.gap(body, 12);
                 addSectionHeader(body, "新手教程");
                 addSettingCard(

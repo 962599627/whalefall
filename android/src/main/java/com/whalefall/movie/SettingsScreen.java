@@ -115,6 +115,16 @@ final class SettingsScreen {
                     "settings-files",
                     () -> FilesScreen.show(a));
             link(
+                    "片源体检 / 失效源清理",
+                    "逐个检测片源可用性与耗时，可禁用/恢复失效源",
+                    "settings-source-check",
+                    () -> SourceCheckScreen.show(a));
+            link(
+                    "手机遥控 / 扫码输入",
+                    "手机浏览器扫码当遥控器和输入法，无需安装 App",
+                    "settings-lan-remote",
+                    () -> RemoteInputScreen.show(a));
+            link(
                     "管理员后台（手机/电脑）",
                     "扫码或用浏览器打开，用手机/电脑管理文件与设置",
                     "settings-admin",

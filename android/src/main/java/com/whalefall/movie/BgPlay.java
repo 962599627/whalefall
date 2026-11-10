@@ -73,7 +73,17 @@ final class BgPlay {
         @Override
         public void onReceive(Context context, Intent intent) {
             MainActivity a = MainActivity.activeActivity;
-            if (a == null || intent == null || intent.getAction() == null) return;
+            if (a == null || a.isFinishing() || a.isDestroyed()) {
+                // 1.9.27：无有效 Activity 时取消常驻假控制
+                try {
+                    ((NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE))
+                            .cancel(ID);
+                } catch (Throwable ignored) {
+                }
+                AppLog.i("BgPlay", "receive ignored reason=no-activity");
+                return;
+            }
+            if (intent == null || intent.getAction() == null) return;
             AppLog.i("BgPlay", "action=" + intent.getAction());
             if (ACTION_STOP.equals(intent.getAction())) {
                 a.stopBackgroundPlayback();
