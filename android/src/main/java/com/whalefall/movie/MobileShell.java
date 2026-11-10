@@ -2012,7 +2012,7 @@ final class MobileShell {
         return text.contains("云盘") || text.contains("云盤") || text.contains("网盘配置");
     }
 
-    /** 1.9.33：按分类判断是否有筛选能力（不再按当前分类一刀切）。 */
+    /** 1.9.33：按分类判断是否有筛选能力（1.9.35：只看片源 schema，不用本地兜底）。 */
     boolean hasMobileFiltersFor(String catId) {
         try {
             String category =
@@ -2021,7 +2021,16 @@ final class MobileShell {
                                     ? currentCategories.get(0).id
                                     : selectedCategoryId)
                             : catId;
-            return !VideoFilters.definitions(filterSchema, category, currentVideos).isEmpty();
+            boolean has = VideoFilters.hasSchemaFilters(filterSchema, category);
+            AppLog.i(
+                    "Filter",
+                    "capability category="
+                            + category
+                            + " schema="
+                            + has
+                            + " site="
+                            + (currentSite == null ? "null" : currentSite.key));
+            return has;
         } catch (Throwable ignored) {
             return false;
         }

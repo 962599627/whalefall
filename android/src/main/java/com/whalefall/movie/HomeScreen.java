@@ -795,7 +795,7 @@ final class HomeScreen {
         return definitions;
     }
 
-    /** 1.9.33：该分类是否有筛选能力（片源 filters 配置或本地资料）。 */
+    /** 1.9.33：该分类是否有筛选能力（1.9.35：只看片源 schema，不用本地兜底）。 */
     boolean categoryHasFilters(String catId) {
         if (snapshot == null) return false;
         String category =
@@ -804,7 +804,16 @@ final class HomeScreen {
                                 ? snapshot.categories.get(0).id
                                 : state.category)
                         : catId;
-        return !VideoFilters.definitions(snapshot.filterSchema, category, snapshot.videos).isEmpty();
+        boolean has = VideoFilters.hasSchemaFilters(snapshot.filterSchema, category);
+        AppLog.i(
+                "Filter",
+                "capability category="
+                        + category
+                        + " schema="
+                        + has
+                        + " site="
+                        + (site == null ? "null" : site.key));
+        return has;
     }
 
     private android.graphics.drawable.Drawable funnelDrawable(int color, int sizeDp) {

@@ -132,6 +132,50 @@ final class VideoFilters {
         return result;
     }
 
+    /** 1.9.35：分类是否有真实筛选能力（只看片源 filters schema，不用本地兜底推导）。 */
+    static boolean hasSchemaFilters(String home, String category) {
+        try {
+            Object filters = new JSONObject(home).opt("filters");
+            JSONArray groups =
+                    filters instanceof JSONArray
+                            ? (JSONArray) filters
+                            : filters instanceof JSONObject
+                                    ? ((JSONObject) filters).optJSONArray(category)
+                                    : null;
+            if (groups == null) return false;
+            for (int i = 0; i < Math.min(groups.length(), 32); i++) {
+                JSONObject group = groups.optJSONObject(i);
+                if (group == null) continue;
+                String key = group.optString("key"), label = group.optString("name");
+                String dim = dimension(key, label);
+                if (dim.isEmpty() || key.isEmpty() || key.length() > 64) continue;
+                JSONArray values = group.optJSONArray("value");
+                if (values == null) values = group.optJSONArray("values");
+                if (values == null) continue;
+                int usable = 0;
+                for (int n = 0; n < Math.min(values.length(), 256); n++) {
+                    JSONObject item = values.optJSONObject(n);
+                    String value =
+                            item == null
+                                    ? values.optString(n)
+                                    : item.optString("v", item.optString("value"));
+                    if (item != null && value.isEmpty())
+                        value = item.optString("v", item.optString("value"));
+                    if (value == null || value.isEmpty()) continue;
+                    String name =
+                            item == null
+                                    ? value
+                                    : item.optString("n", item.optString("name", value));
+                    if ("全部".equals(name) || "不限".equals(name)) continue;
+                    usable++;
+                }
+                if (usable > 0) return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
     static Map<String, String> remoteValues(
             List<Definition> definitions, Map<String, String> selected) {
         Map<String, String> values = new LinkedHashMap<>();
