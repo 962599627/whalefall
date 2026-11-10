@@ -31,6 +31,9 @@ final class FileManagerScreen {
     private final java.util.Set<File> selFiles = new java.util.HashSet<>();
     private final java.util.Set<String> selFids = new java.util.HashSet<>();
     private int sort; // 0 名称 1 时间 2 大小
+    /** 1.9.13：0全部 1文件夹 2视频 3图片 4文本·文档 5其他。 */
+    private int filter;
+    private LinearLayout filterChips;
     private String providerKey = NetdiskQrLogin.QUARK;
     private String netdiskCookie = "", netdiskPath = "根目录", netdiskFid = "0";
     private boolean netdiskFromSource;
@@ -94,6 +97,7 @@ final class FileManagerScreen {
         buildStorageCard();
         buildSegment();
         buildToolbar();
+        buildFilterChips();
         if (tab == 1) buildProviderChips();
         content = a.vertical();
         a.body.addView(content);
@@ -308,6 +312,158 @@ final class FileManagerScreen {
 
     // ---------------- 刷新内容 ----------------
 
+    private static final String[] FILTER_NAMES = {
+        "全部", "文件夹", "视频", "图片", "文本·文档", "其他"
+    };
+
+    private void buildFilterChips() {
+        android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(a);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.setClipToPadding(false);
+        filterChips = a.row();
+        filterChips.setPadding(a.dp(16), 0, a.dp(16), 0);
+        scroll.addView(filterChips, new android.widget.HorizontalScrollView.LayoutParams(-2, -2));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.bottomMargin = a.dp(6);
+        a.body.addView(scroll, lp);
+        updateFilterChips();
+    }
+
+    private int[] filterCounts() {
+        int[] counts = new int[6];
+        synchronized (items) {
+            for (Object item : items) {
+                boolean folder;
+                String name;
+                if (item instanceof FileManagerCore.LocalEntry) {
+                    FileManagerCore.LocalEntry entry = (FileManagerCore.LocalEntry) item;
+                    folder = entry.folder;
+                    name = entry.name;
+                } else if (item instanceof QuarkUcApi.FileItem) {
+                    QuarkUcApi.FileItem file = (QuarkUcApi.FileItem) item;
+                    folder = file.folder;
+                    name = file.name;
+                } else continue;
+                int type = folder ? 1 : fileType(name);
+                counts[0]++;
+                counts[type]++;
+            }
+        }
+        return counts;
+    }
+
+    /** 扩展名分类：视频/图片/文本·文档/其他。 */
+    static int fileType(String name) {
+        if (name == null) return 5;
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        int dot = lower.lastIndexOf('.');
+        String ext = dot >= 0 ? lower.substring(dot + 1) : "";
+        switch (ext) {
+            case "mp4": case "mkv": case "avi": case "mov": case "wmv": case "flv":
+            case "ts": case "m4v": case "webm": case "rmvb": case "rm": case "3gp":
+            case "m3u8": case "mpg": case "mpeg":
+                return 2;
+            case "jpg": case "jpeg": case "png": case "webp": case "gif": case "bmp":
+                return 3;
+            case "txt": case "md": case "json": case "log": case "xml": case "ini":
+            case "conf": case "srt": case "ass": case "js": case "pdf": case "doc":
+            case "docx": case "epub":
+                return 4;
+            default:
+                return 5;
+        }
+    }
+
+    private void updateFilterChips() {
+        if (filterChips == null) return;
+        filterChips.removeAllViews();
+        int[] counts = filterCounts();
+        for (int i = 0; i < FILTER_NAMES.length; i++) {
+            final int index = i;
+            String label = FILTER_NAMES[i] + (i == 0 ? "" : " " + counts[i]);
+            TextView chip =
+                    a.text(label, 11.5f, filter == i ? 0xff0b1220 : UiTokens.TEXT_PRIMARY);
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
+            chip.setBackground(
+                    filter == i
+                            ? UiTokens.round(a, 999, UiTokens.ACCENT)
+                            : MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+            chip.setFocusable(true);
+            focusable(chip);
+            chip.setOnClickListener(
+                    v -> {
+                        filter = index;
+                        updateFilterChips();
+                        renderFiltered();
+                        AppLog.i(
+                                "FileMgr",
+                                "filter="
+                                        + FILTER_NAMES[index]
+                                        + " items="
+                                        + (filterCounts()[index]));
+                    });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            if (i > 0) lp.leftMargin = a.dp(6);
+            filterChips.addView(chip, lp);
+        }
+    }
+
+    /** 1.9.13：本地/网盘都按已加载数据本地过滤，不重新请求。 */
+    private void renderFiltered() {
+        if (content == null) return;
+        content.removeAllViews();
+        cardMap.clear();
+        if (tab == 0) {
+            List<FileManagerCore.LocalEntry> visible = new ArrayList<>();
+            synchronized (items) {
+                for (Object item : items) {
+                    if (!(item instanceof FileManagerCore.LocalEntry)) continue;
+                    FileManagerCore.LocalEntry entry = (FileManagerCore.LocalEntry) item;
+                    if (filter == 0 || (filter == 1 ? entry.folder : (!entry.folder && fileType(entry.name) == filter)))
+                        visible.add(entry);
+                }
+                sortEntries(visible);
+            }
+            if (visible.isEmpty()) {
+                showEmpty(
+                        "该类型下没有文件",
+                        "换一个类型，或清除筛选",
+                        "清除筛选",
+                        () -> {
+                            filter = 0;
+                            updateFilterChips();
+                            renderFiltered();
+                        });
+                return;
+            }
+            buildGrid(visible.size(), index -> buildLocalCard(visible.get(index), index));
+        } else {
+            List<QuarkUcApi.FileItem> visible = new ArrayList<>();
+            synchronized (items) {
+                for (Object item : items) {
+                    if (!(item instanceof QuarkUcApi.FileItem)) continue;
+                    QuarkUcApi.FileItem file = (QuarkUcApi.FileItem) item;
+                    if (filter == 0 || (filter == 1 ? file.folder : (!file.folder && fileType(file.name) == filter)))
+                        visible.add(file);
+                }
+            }
+            if (visible.isEmpty()) {
+                showEmpty(
+                        "该类型下没有文件",
+                        "换一个类型，或清除筛选",
+                        "清除筛选",
+                        () -> {
+                            filter = 0;
+                            updateFilterChips();
+                            renderFiltered();
+                        });
+                return;
+            }
+            buildGrid(visible.size(), index -> buildNetdiskCard(visible.get(index)));
+        }
+    }
+
     private void refresh() {
         if (content == null) return;
         if (selecting) exitSelection();
@@ -350,6 +506,7 @@ final class FileManagerScreen {
         List<FileManagerCore.LocalEntry> entries = FileManagerCore.scan(localDir);
         items.addAll(entries);
         sortEntries(entries);
+        updateFilterChips();
         AppLog.i("FileMgr", "page=FileManager tab=local items=" + entries.size() + " dir=" + localDir.getName());
         if (entries.isEmpty()) {
             showEmpty(
@@ -359,7 +516,8 @@ final class FileManagerScreen {
                     () -> refresh());
             return;
         }
-        buildGrid(entries.size(), (index) -> buildLocalCard(entries.get(index), index));
+        renderFiltered();
+        updateFilterChips();
     }
 
     private void sortEntries(List<FileManagerCore.LocalEntry> entries) {
@@ -439,7 +597,8 @@ final class FileManagerScreen {
                                 AppLog.i(
                                         "FileMgr",
                                         "page=FileManager tab=netdisk items=" + result.size());
-                                buildGrid(result.size(), (index) -> buildNetdiskCard(result.get(index)));
+                                renderFiltered();
+                                updateFilterChips();
                             });
                 });
     }
@@ -483,6 +642,7 @@ final class FileManagerScreen {
                         providerKey = key;
                         netdiskFid = "0";
                         netdiskPath = "根目录";
+                        filter = 0;
                         netdiskCookie = chosen[0];
                         netdiskFromSource = Boolean.parseBoolean(chosen[1]);
                         exitSelection();
@@ -914,6 +1074,7 @@ final class FileManagerScreen {
                         applySelectionVisuals();
                     } else if (entry.folder) {
                         localDir = entry.file;
+                        filter = 0;
                         exitSelection();
                         refresh();
                     } else if (entry.video) FileManagerCore.playLocal(a, entry.file);
@@ -967,6 +1128,7 @@ final class FileManagerScreen {
                     } else if (item.folder) {
                         netdiskFid = item.fid;
                         netdiskPath = netdiskPath + " / " + item.name;
+                        filter = 0;
                         exitSelection();
                         refresh();
                     } else if (item.video) {
@@ -1072,7 +1234,11 @@ final class FileManagerScreen {
             return;
         }
         selectionBar.setVisibility(View.VISIBLE);
-        selectionCount.setText("已选 " + (selFiles.size() + selFids.size()) + " 项");
+        selectionCount.setText(
+                "已选 "
+                        + (selFiles.size() + selFids.size())
+                        + " 项"
+                        + (filter != 0 ? "（筛选外的选择已保留）" : ""));
         while (selectionBar.getChildCount() > 1) selectionBar.removeViewAt(1);
         selectionBar.addView(selAction("全选", () -> selectAllCards()));
         selectionBar.addView(selAction("取消全选", () -> clearSelectionOnly()));
@@ -1607,6 +1773,7 @@ final class FileManagerScreen {
         if (tab == 1 && !"0".equals(netdiskFid)) {
             netdiskFid = "0";
             netdiskPath = "根目录";
+            filter = 0;
             refresh();
             return true;
         }
@@ -1618,6 +1785,7 @@ final class FileManagerScreen {
                 localDir.getParentFile() != null
                         ? localDir.getParentFile()
                         : FileManagerCore.downloadDir(a);
+        filter = 0;
         refresh();
     }
 
