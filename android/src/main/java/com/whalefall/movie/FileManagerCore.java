@@ -191,6 +191,14 @@ final class FileManagerCore {
         }
     }
 
+    private static String hostOf(String url) {
+        try {
+            return android.net.Uri.parse(url).getHost();
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
     private static void start(final Task task) {
         if (task.state != Task.RUNNING) return;
         task.a.worker.execute(() -> run(task));
@@ -221,7 +229,8 @@ final class FileManagerCore {
         InputStream in = null;
         HttpURLConnection connection = null;
         try {
-            String direct = QuarkUcApi.downloadUrl(task.p, task.cookie, task.item.fid);
+            // 1.9.3：PC 下载接口 + 跟随重定向 + UA 变体（提升夸克风控通过率）
+            String direct = QuarkUcApi.resolveUrl(task.p, task.cookie, task.item.fid);
             connection = (HttpURLConnection) new URL(direct).openConnection();
             task.connection = connection;
             connection.setInstanceFollowRedirects(true);
@@ -229,17 +238,44 @@ final class FileManagerCore {
             connection.setReadTimeout(30000);
             connection.setRequestProperty("Cookie", task.cookie == null ? "" : task.cookie);
             connection.setRequestProperty("Referer", task.p.referer);
-            connection.setRequestProperty("User-Agent", task.p.ua);
-            // 断点续传：已有 .part 时带 Range
+            connection.setRequestProperty("User-Agent", QuarkUcApi.UA_CHROME);
+            connection.setRequestProperty("Accept", "*/*");
             long existing = task.part.isFile() ? task.part.length() : 0;
             if (existing > 0) connection.setRequestProperty("Range", "bytes=" + existing + "-");
             int status = connection.getResponseCode();
+            AppLog.i(
+                    "QuarkGet",
+                    "stream status=" + status + " ua=chrome host=" + hostOf(direct));
+            if (status == 403 || status == 412) {
+                // 换 okhttp UA 重试一次
+                try {
+                    connection.disconnect();
+                } catch (Throwable ignored) {
+                }
+                connection = (HttpURLConnection) new URL(direct).openConnection();
+                task.connection = connection;
+                connection.setInstanceFollowRedirects(true);
+                connection.setConnectTimeout(15000);
+                connection.setReadTimeout(30000);
+                connection.setRequestProperty("Cookie", task.cookie == null ? "" : task.cookie);
+                connection.setRequestProperty("Referer", task.p.referer);
+                connection.setRequestProperty("User-Agent", QuarkUcApi.UA_OKHTTP);
+                connection.setRequestProperty("Accept", "*/*");
+                connection.setRequestProperty("x-requested-with", "XMLHttpRequest");
+                if (existing > 0) connection.setRequestProperty("Range", "bytes=" + existing + "-");
+                status = connection.getResponseCode();
+                AppLog.i(
+                        "QuarkGet",
+                        "stream retry status=" + status + " ua=okhttp host=" + hostOf(direct));
+            }
             boolean append = existing > 0 && status == 206;
             if (status == 200 && existing > 0) {
                 // 服务端不支持 Range：从头覆盖 .part
                 AppLog.i("FileMgr", "resume provider=" + task.p.key + " fid=" + task.item.fid + " range=unsupported");
                 append = false;
                 existing = 0;
+            } else if (status == 403 || status == 412) {
+                throw new IOException("HTTP " + status + "（" + task.p.name + "直链风控，可稍后重试或换 UA）");
             } else if (status != 200 && status != 206) {
                 throw new IOException("HTTP " + status);
             } else if (append) {
@@ -320,9 +356,10 @@ final class FileManagerCore {
                 enterPaused(task);
                 return;
             }
-            String message = task.cancelled ? "已取消下载" : "下载失败：" + friendly(error);
+            String detail = friendly(error);
+            String message = task.cancelled ? "已取消下载" : "下载失败：" + detail;
             task.state = Task.FAILED;
-            task.error = task.cancelled ? "已取消" : message;
+            task.error = task.cancelled ? "已取消" : detail;
             // 1.9.2 下载中心保留失败任务用于重试
             if (!task.cancelled) {
                 AppLog.i("FileMgr", "download failed kept task=" + task.id + " error=" + message);

@@ -585,8 +585,8 @@ final class FileManagerScreen {
         int margin = widthDp < 600 ? a.dp(16) : a.dp(24);
         int gap = tv ? a.dp(18) : widthDp < 420 ? a.dp(12) : widthDp < 600 ? a.dp(12) : a.dp(16);
         int inner = avail - margin * 2;
-        int cardW = cardWidth();
-        lastCardW = cardW;
+        while (cols > 1 && (inner - gap * (cols - 1)) / cols < a.dp(110)) cols--;
+        int cardW = Math.max(a.dp(100), (inner - gap * (cols - 1)) / cols);
         int thumbH = Math.round(cardW * 0.625f);
         int cardH = thumbH + a.dp(90);
         AppLog.i(
@@ -647,6 +647,7 @@ final class FileManagerScreen {
         int margin = widthDp < 600 ? a.dp(16) : a.dp(24);
         int gap = tv ? a.dp(18) : widthDp < 600 ? a.dp(12) : a.dp(16);
         int inner = avail - margin * 2;
+        while (cols > 1 && (inner - gap * (cols - 1)) / cols < a.dp(110)) cols--;
         return Math.max(a.dp(100), (inner - gap * (cols - 1)) / cols);
     }
 
@@ -1199,7 +1200,13 @@ final class FileManagerScreen {
         downloadStrip.setGravity(Gravity.CENTER_VERTICAL);
         downloadStrip.setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8));
         downloadStrip.setBackground(MobileDetailScreen.glassBg(a, 0xee2a1016, 0x33ff6b81, 14));
-        TextView text = a.text("下载失败：" + message, 11, 0xffff8fa3);
+        TextView text =
+                a.text(
+                        message != null && message.startsWith("下载失败")
+                                ? message
+                                : "下载失败：" + (message == null ? "" : message),
+                        11,
+                        0xffff8fa3);
         text.setMaxLines(2);
         text.setEllipsize(android.text.TextUtils.TruncateAt.END);
         downloadStrip.addView(text, new LinearLayout.LayoutParams(0, -2, 1f));

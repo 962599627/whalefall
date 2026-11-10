@@ -227,62 +227,153 @@ final class QuarkUcApi {
         return out;
     }
 
-    static String downloadUrl(Provider p, String cookie, String fid) throws Exception {
-        JSONObject json =
-                request(
-                        p,
-                        "/file/download",
-                        null,
-                        new JSONObject().put("fids", new org.json.JSONArray().put(fid)).toString(),
-                        cookie);
-        org.json.JSONArray data = json.optJSONArray("data");
-        if (data == null || data.length() == 0) throw new IOException("没有下载地址");
-        String url = data.optJSONObject(0).optString("download_url", "");
-        if (url.isEmpty()) throw new IOException("download_url 为空");
-        return url;
-    }
+    static final String UA_CHROME =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    static final String UA_OKHTTP = "okhttp/3.15";
+    static final String UA_QUARK_APP =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    + "(KHTML, like Gecko) quark-cloud-drive/2.5.20 Chrome/100.0 Safari/537.36";
 
-    /** 1.9.1：跟随 302/重定向拿最终直链（播放器需要最终 URL；日志脱敏只打 host）。 */
-    static String resolveUrl(Provider p, String cookie, String fid) throws Exception {
-        String url = downloadUrl(p, cookie, fid);
-        String host = "";
-        try {
-            host = android.net.Uri.parse(url).getHost();
-        } catch (Throwable ignored) {
-        }
-        for (int hop = 0; hop < 6; hop++) {
-            HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+    /** 1.9.3：夸克/UC PC 下载接口（drive-pc / pc-api），避免风控 403/412。 */
+    static String downloadUrl(Provider p, String cookie, String fid) throws Exception {
+        String[] endpoints =
+                "quark".equals(p.key)
+                        ? new String[] {
+                            "https://drive-pc.quark.cn/1/clouddrive/file/download?pr=ucpro&fr=pc",
+                            "https://drive.quark.cn/1/clouddrive/file/download?pr=ucpro&fr=pc"
+                        }
+                        : new String[] {
+                            "https://pc-api.uc.cn/1/clouddrive/file/download?pr=UCBrowser&fr=pc",
+                            "https://drive.uc.cn/1/clouddrive/file/download?pr=UCBrowser&fr=pc"
+                        };
+        String body = new JSONObject().put("fids", new org.json.JSONArray().put(fid)).toString();
+        Exception last = null;
+        for (String endpoint : endpoints) {
+            HttpURLConnection connection = null;
             try {
-                connection.setInstanceFollowRedirects(false);
-                connection.setConnectTimeout(10000);
-                connection.setReadTimeout(12000);
+                connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(12000);
+                connection.setReadTimeout(15000);
+                connection.setDoOutput(true);
                 connection.setRequestProperty("Cookie", cookie == null ? "" : cookie);
+                connection.setRequestProperty("Content-Type", "application/json");
+                connection.setRequestProperty("Accept", "*/*");
+                connection.setRequestProperty("User-Agent", UA_CHROME);
                 connection.setRequestProperty("Referer", p.referer);
-                connection.setRequestProperty("User-Agent", p.ua);
-                connection.setRequestProperty("Range", "bytes=0-0");
-                int code = connection.getResponseCode();
-                String location = connection.getHeaderField("Location");
+                java.io.OutputStream out = connection.getOutputStream();
+                out.write(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                out.close();
+                int status = connection.getResponseCode();
                 AppLog.i(
-                        "QuarkPlay",
-                        "url=" + host + " code=" + code + " redirect=" + (location != null));
-                if (code >= 300 && code < 400 && location != null && !location.isEmpty()) {
-                    url = location.startsWith("http") ? location : new URL(new URL(url), location).toString();
-                    try {
-                        host = android.net.Uri.parse(url).getHost();
-                    } catch (Throwable ignored) {
-                    }
+                        "QuarkGet",
+                        "download-api status="
+                                + status
+                                + " ua=chrome host="
+                                + android.net.Uri.parse(endpoint).getHost());
+                String text = read(status >= 200 && status < 400 ? connection.getInputStream() : connection.getErrorStream());
+                if (status == 403 || status == 412) {
+                    last = new IOException("HTTP " + status + "（夸克风控）");
                     continue;
                 }
-                if (code != 200 && code != 206)
-                    throw new IOException("HTTP " + code);
+                if (status < 200 || status >= 300) {
+                    last = new IOException("HTTP " + status);
+                    continue;
+                }
+                JSONObject json = new JSONObject(text);
+                org.json.JSONArray data = json.optJSONArray("data");
+                if (data == null || data.length() == 0) {
+                    last = new IOException("没有下载地址");
+                    continue;
+                }
+                String url = data.optJSONObject(0).optString("download_url", "");
+                if (url.isEmpty()) {
+                    last = new IOException("download_url 为空");
+                    continue;
+                }
                 return url;
+            } catch (Throwable error) {
+                last = new IOException(error.getClass().getSimpleName());
             } finally {
-                connection.disconnect();
+                if (connection != null) connection.disconnect();
             }
         }
-        AppLog.i("QuarkPlay", "redirect limit url=" + host);
-        return url;
+        throw last == null ? new IOException("没有下载地址") : last;
     }
+
+    static String[] uaVariants(Provider p) {
+        return new String[] {UA_CHROME, UA_OKHTTP, p.ua == null ? UA_QUARK_APP : p.ua};
+    }
+
+    /** 1.9.3：跟随 302 拿最终直链；403/412 依次换 UA / 加 x-requested-with 重试。 */
+    static String resolveUrl(Provider p, String cookie, String fid) throws Exception {
+        String url = downloadUrl(p, cookie, fid);
+        Exception last = null;
+        String[] uas = uaVariants(p);
+        for (String ua : uas) {
+            for (int extra = 0; extra < 2; extra++) {
+                String current = url;
+                try {
+                    for (int hop = 0; hop < 6; hop++) {
+                        HttpURLConnection connection = (HttpURLConnection) new URL(current).openConnection();
+                        try {
+                            connection.setInstanceFollowRedirects(false);
+                            connection.setConnectTimeout(10000);
+                            connection.setReadTimeout(12000);
+                            connection.setRequestProperty("Cookie", cookie == null ? "" : cookie);
+                            connection.setRequestProperty("Referer", p.referer);
+                            connection.setRequestProperty("User-Agent", ua);
+                            connection.setRequestProperty("Accept", "*/*");
+                            connection.setRequestProperty("Range", "bytes=0-0");
+                            if (extra == 1) connection.setRequestProperty("x-requested-with", "XMLHttpRequest");
+                            int code = connection.getResponseCode();
+                            String location = connection.getHeaderField("Location");
+                            String host = "";
+                            try {
+                                host = android.net.Uri.parse(current).getHost();
+                            } catch (Throwable ignored) {
+                            }
+                            AppLog.i("QuarkGet", "status=" + code + " ua=" + uaTag(ua) + " urlHost=" + host);
+                            if (code == 403 || code == 412) {
+                                last = new IOException("HTTP " + code + "（夸克直链风控）");
+                                break;
+                            }
+                            if (code >= 300 && code < 400 && location != null && !location.isEmpty()) {
+                                current =
+                                        location.startsWith("http")
+                                                ? location
+                                                : new URL(new URL(current), location).toString();
+                                continue;
+                            }
+                            if (code != 200 && code != 206)
+                                throw new IOException("HTTP " + code);
+                            return current;
+                        } finally {
+                            connection.disconnect();
+                        }
+                    }
+                } catch (Throwable error) {
+                    last = new IOException(friendly(error));
+                }
+            }
+        }
+        throw last == null ? new IOException("直链不可用") : last;
+    }
+
+    static String uaTag(String ua) {
+        if (ua == null) return "none";
+        if (ua.contains("okhttp")) return "okhttp";
+        if (ua.contains("Chrome/120")) return "chrome";
+        return "quark-app";
+    }
+
+    private static String friendly(Throwable error) {
+        return error == null
+                ? "未知错误"
+                : error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+    }
+
 
     static Status member(Provider p, String cookie) throws Exception {        JSONObject json =
                 request(
