@@ -1307,24 +1307,43 @@ final class FileManagerScreen {
                         overwrite);
     }
 
+    static void copyQuarkLogs(MainActivity a) {
+        try {
+            String text = QuarkUcApi.recentQuarkLog(30);
+            android.content.ClipboardManager manager =
+                    (android.content.ClipboardManager)
+                            a.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+            manager.setPrimaryClip(
+                    android.content.ClipData.newPlainText("QuarkLog", text == null ? "" : text));
+            a.toast("已复制，可发给开发者");
+        } catch (Throwable error) {
+            a.toast("复制失败：" + error.getMessage());
+        }
+    }
+
     private void notifyDownloadFailure(String message, final String providerKey) {
         String text = message == null ? "" : message;
-        if (text.startsWith("下载失败")) text = text;
-        else text = "下载失败：" + text;
-        if (text.contains("登录状态过期") || text.contains("重新扫码")) {
-            new AppDialog.Builder(a)
-                    .setTitle("登录状态过期")
-                    .setMessage("夸克/UC 登录已过期，请重新扫码登录后再试。")
-                    .setPositiveButton(
+        if (!text.startsWith("下载失败")) text = "下载失败：" + text;
+        final boolean auth = text.contains("登录状态过期") || text.contains("重新扫码");
+        AppDialog.Builder builder =
+                new AppDialog.Builder(a)
+                        .setTitle(auth ? "登录状态过期" : "下载失败")
+                        .setMessage(
+                                auth
+                                        ? "夸克/UC 登录已过期，请重新扫码登录后再试。"
+                                        : text)
+                        .setNeutralButton("复制日志", (d, i) -> copyQuarkLogs(a));
+        if (auth) {
+            builder.setPositiveButton(
                             "去扫码",
                             (d, i) ->
                                     NetdiskQrLogin.show(
                                             a, providerKey, () -> a.ui.postDelayed(this::refresh, 300)))
-                    .setNegativeButton("取消", null)
-                    .show();
+                    .setNegativeButton("取消", null);
         } else {
-            a.toast(text);
+            builder.setPositiveButton("关闭", null);
         }
+        builder.show();
     }
 
     private void downloadForView(final QuarkUcApi.FileItem item, final boolean image) {

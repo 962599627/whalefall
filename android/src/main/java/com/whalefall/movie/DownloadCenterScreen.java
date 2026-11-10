@@ -27,6 +27,14 @@ final class DownloadCenterScreen {
         MobileDetailScreen.bindTouchFeedback(back);
         back.setOnClickListener(v -> FileManagerScreen.show(a));
         actions.addView(back);
+        TextView copyLogs = a.text("复制日志", 12, UiTokens.ACCENT);
+        copyLogs.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
+        copyLogs.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+        MobileDetailScreen.bindTouchFeedback(copyLogs);
+        copyLogs.setOnClickListener(v -> FileManagerScreen.copyQuarkLogs(a));
+        LinearLayout.LayoutParams copyLp = new LinearLayout.LayoutParams(-2, -2);
+        copyLp.leftMargin = a.dp(8);
+        actions.addView(copyLogs, copyLp);
         a.body.addView(actions);
         final LinearLayout container = a.vertical();
         a.body.addView(container);
