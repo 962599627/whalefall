@@ -4595,6 +4595,12 @@ final class MobileShell {
                         "文件管理器（本地 / 网盘）",
                         "浏览本地文件、直接从网盘播放视频并下载到 Download/鲸落/",
                         () -> FileManagerScreen.show(a));
+                addSettingCard(
+                        body,
+                        1,
+                        "下载中心",
+                        "查看下载进度、暂停/继续/取消/重试与完成历史",
+                        () -> DownloadCenterScreen.show(a));
                 a.gap(body, 12);
                 addSectionHeader(body, "新手教程");
                 addSettingCard(

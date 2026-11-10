@@ -1600,6 +1600,11 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (tvPlayer != null && tvPlayer.back()) return;
+        // 1.9.2：下载中心返回文件管理器
+        if (body != null && "download-center".equals(body.getTag())) {
+            FileManagerScreen.show(this);
+            return;
+        }
         // 1.9.1：图片/文本查看器返回文件管理器
         if (body != null
                 && ("image-viewer".equals(body.getTag()) || "text-viewer".equals(body.getTag()))) {

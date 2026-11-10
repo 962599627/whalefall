@@ -36,6 +36,9 @@ final class FileManagerScreen {
     private String activeTaskId;
     private boolean stripPaused;
     private long lastPauseToggle;
+    private TextView downCenterBtn;
+    private LinearLayout globalStrip;
+    private TextView globalText;
     private TextView stripPause;
     private LinearLayout stripProgressWrap;
 
@@ -63,6 +66,8 @@ final class FileManagerScreen {
         if (a.body == null) return;
         a.body.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         a.body.setTag("file-manager");
+        // 1.9.2：自行控制左右留白，避免 renderPage 默认 padding 与网格 margin 叠加导致超宽/贴边
+        a.body.setPadding(0, statusBarHeightSafe() + a.dp(8), 0, a.dp(24));
         selectionBar = null;
         downloadStrip = null;
         stripProgressWrap = null;
@@ -77,6 +82,40 @@ final class FileManagerScreen {
         if (tab == 1) buildProviderChips();
         content = a.vertical();
         a.body.addView(content);
+        // 1.9.2：全局下载入口/常驻条
+        downCenterBtn = a.text("下载中心", 11.5f, UiTokens.ACCENT_SOFT);
+        downCenterBtn.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
+        downCenterBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+        MobileDetailScreen.bindTouchFeedback(downCenterBtn);
+        downCenterBtn.setOnClickListener(v -> DownloadCenterScreen.show(a));
+        LinearLayout.LayoutParams dclp = new LinearLayout.LayoutParams(-2, -2);
+        dclp.leftMargin = a.dp(16);
+        dclp.rightMargin = a.dp(16);
+        dclp.bottomMargin = a.dp(6);
+        a.body.addView(downCenterBtn, dclp);
+        globalStrip = a.row();
+        globalStrip.setGravity(Gravity.CENTER_VERTICAL);
+        globalStrip.setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8));
+        globalStrip.setBackground(MobileDetailScreen.glassBg(a, 0xee0d1a2b, 0x33ffffff, 14));
+        globalText = a.text("", 11, UiTokens.TEXT_SECONDARY);
+        globalStrip.addView(globalText, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView centerGo = a.text("查看", 12, UiTokens.ACCENT);
+        centerGo.setPadding(a.dp(8), a.dp(4), a.dp(8), a.dp(4));
+        MobileDetailScreen.bindTouchFeedback(centerGo);
+        centerGo.setOnClickListener(v -> DownloadCenterScreen.show(a));
+        globalStrip.addView(centerGo);
+        LinearLayout.LayoutParams gslp = new LinearLayout.LayoutParams(-1, -2);
+        gslp.leftMargin = a.dp(16);
+        gslp.rightMargin = a.dp(16);
+        gslp.bottomMargin = a.dp(8);
+        a.body.addView(globalStrip, gslp);
+        // 放到内容区上方（顶部「下载中心」入口）
+        int contentIndex = a.body.indexOfChild(content);
+        a.body.removeView(downCenterBtn);
+        a.body.removeView(globalStrip);
+        a.body.addView(downCenterBtn, Math.max(0, contentIndex));
+        a.body.addView(globalStrip, Math.max(0, contentIndex));
+        startDownloadPoll();
         refresh();
         tvFocusFirst();
     }
@@ -113,16 +152,24 @@ final class FileManagerScreen {
         TextView label = a.text("存储空间", 12, UiTokens.TEXT_SECONDARY);
         left.addView(label);
         long total = 0, available = 0;
+        boolean ok = false;
         try {
-            android.os.StatFs stat = new android.os.StatFs(localDir.getAbsolutePath());
-            total = stat.getTotalBytes();
-            available = stat.getAvailableBytes();
+            File statDir = a.getExternalFilesDir(null);
+            if (statDir == null) statDir = android.os.Environment.getDataDirectory();
+            if (statDir != null) {
+                android.os.StatFs stat = new android.os.StatFs(statDir.getAbsolutePath());
+                total = stat.getTotalBytes();
+                available = stat.getAvailableBytes();
+                ok = total > 0;
+            }
         } catch (Throwable ignored) {
         }
         long used = Math.max(0, total - available);
         TextView value =
                 a.text(
-                        "已用 " + QuarkUcApi.formatSize(used) + " · 可用 " + QuarkUcApi.formatSize(available),
+                        ok
+                                ? "已用 " + QuarkUcApi.formatSize(used) + " · 可用 " + QuarkUcApi.formatSize(available)
+                                : "存储信息不可用",
                         15,
                         UiTokens.TEXT_PRIMARY);
         value.setPadding(0, a.dp(3), 0, 0);
@@ -506,16 +553,54 @@ final class FileManagerScreen {
         View build(int index);
     }
 
+    private int statusBarHeightSafe() {
+        try {
+            int id =
+                    a.getResources()
+                            .getIdentifier("status_bar_height", "dimen", "android");
+            if (id > 0) return a.getResources().getDimensionPixelSize(id);
+        } catch (Throwable ignored) {
+        }
+        return a.dp(24);
+    }
+
+    private int gridUsedAvail = -1;
+    private boolean gridRecalcPosted;
+    private int lastGridCount;
+    private CardBuilder lastGridBuilder;
+
     private void buildGrid(int count, CardBuilder builder) {
-        int widthDp = Math.round(a.windowWidth() / a.getResources().getDisplayMetrics().density);
+        lastGridCount = count;
+        lastGridBuilder = builder;
+        int avail = content != null ? content.getWidth() : 0;
+        if (avail <= 0) {
+            // 首帧尚未布局：用窗口宽兜底，post 后再按实测宽重建
+            avail = a.windowWidth();
+        }
+        gridUsedAvail = avail;
+        float density = a.getResources().getDisplayMetrics().density;
+        int widthDp = Math.round(avail / density);
         boolean tv = a.isTvDevice();
         int cols = tv ? 5 : widthDp < 420 ? 2 : widthDp < 600 ? 3 : 4;
         int margin = widthDp < 600 ? a.dp(16) : a.dp(24);
-        int gap = tv ? a.dp(18) : widthDp < 600 ? a.dp(12) : a.dp(16);
-        int contentW = a.windowWidth() - margin * 2;
-        int cardW = (contentW - gap * (cols - 1)) / cols;
+        int gap = tv ? a.dp(18) : widthDp < 420 ? a.dp(12) : widthDp < 600 ? a.dp(12) : a.dp(16);
+        int inner = avail - margin * 2;
+        int cardW = cardWidth();
+        lastCardW = cardW;
         int thumbH = Math.round(cardW * 0.625f);
-        int cardH = thumbH + a.dp(74);
+        int cardH = thumbH + a.dp(90);
+        AppLog.i(
+                "FileMgr",
+                "grid avail="
+                        + avail
+                        + " cols="
+                        + cols
+                        + " cardW="
+                        + cardW
+                        + " cardH="
+                        + cardH
+                        + " margin="
+                        + margin);
         LinearLayout wrapper = a.vertical();
         wrapper.setPadding(margin, 0, margin, a.dp(20));
         for (int i = 0; i < count; i += cols) {
@@ -532,6 +617,37 @@ final class FileManagerScreen {
             wrapper.addView(row, lp);
         }
         content.addView(wrapper);
+        // 布局后按真实 content 宽再算一次（仅首帧，避免死循环）
+        if (!gridRecalcPosted && content != null) {
+            gridRecalcPosted = true;
+            content.post(
+                    () -> {
+                        if (content == null || lastGridBuilder == null) return;
+                        int measured = content.getWidth();
+                        if (measured > 0 && Math.abs(measured - gridUsedAvail) > a.dp(8)) {
+                            AppLog.i("FileMgr", "grid relayout measured=" + measured);
+                            content.removeAllViews();
+                            buildGrid(lastGridCount, lastGridBuilder);
+                        }
+                        gridRecalcPosted = false;
+                    });
+        }
+    }
+
+    private int lastCardW;
+
+    /** 1.9.2：按实测 content 宽计算列数与卡宽（与 buildGrid 一致）。 */
+    private int cardWidth() {
+        int avail = content != null ? content.getWidth() : 0;
+        if (avail <= 0) avail = a.windowWidth();
+        float density = a.getResources().getDisplayMetrics().density;
+        int widthDp = Math.round(avail / density);
+        boolean tv = a.isTvDevice();
+        int cols = tv ? 5 : widthDp < 420 ? 2 : widthDp < 600 ? 3 : 4;
+        int margin = widthDp < 600 ? a.dp(16) : a.dp(24);
+        int gap = tv ? a.dp(18) : widthDp < 600 ? a.dp(12) : a.dp(16);
+        int inner = avail - margin * 2;
+        return Math.max(a.dp(100), (inner - gap * (cols - 1)) / cols);
     }
 
     private LinearLayout cardShell(int thumbH) {
@@ -560,23 +676,21 @@ final class FileManagerScreen {
         info.setPadding(a.dp(8), a.dp(4), a.dp(8), a.dp(4));
         TextView name = a.text(title, 12.5f, UiTokens.TEXT_PRIMARY);
         name.setMaxLines(2);
+        name.setMinHeight(a.dp(30));
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        name.setLineSpacing(a.dp(1), 1f);
         info.addView(name);
         TextView sub = a.text(meta, 10.5f, UiTokens.TEXT_TERTIARY);
         sub.setMaxLines(1);
         sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
         info.addView(sub);
-        card.addView(info, new LinearLayout.LayoutParams(-1, 0, 1f));
+        // 1.9.2：固定信息区高度（卡高 = 缩略区 + 90dp），不被内容撑开
+        card.addView(info, new LinearLayout.LayoutParams(-1, a.dp(90)));
     }
 
     private View buildLocalCard(final FileManagerCore.LocalEntry entry, final int index) {
         LinearLayout card = cardShell(0);
-        int widthDp = Math.round(a.windowWidth() / a.getResources().getDisplayMetrics().density);
-        boolean tv = a.isTvDevice();
-        int cols = tv ? 5 : widthDp < 420 ? 2 : widthDp < 600 ? 3 : 4;
-        int margin = widthDp < 600 ? a.dp(16) : a.dp(24);
-        int gap = tv ? a.dp(18) : widthDp < 600 ? a.dp(12) : a.dp(16);
-        int cardW = (a.windowWidth() - margin * 2 - gap * (cols - 1)) / cols;
+        int cardW = cardWidth();
         int thumbH = Math.round(cardW * 0.625f);
         addThumb(card, thumbH, entry.folder ? "📁" : entry.video ? "▶" : fileSymbol(entry.name));
         String meta =
@@ -618,12 +732,7 @@ final class FileManagerScreen {
 
     private View buildNetdiskCard(final QuarkUcApi.FileItem item) {
         LinearLayout card = cardShell(0);
-        int widthDp = Math.round(a.windowWidth() / a.getResources().getDisplayMetrics().density);
-        boolean tv = a.isTvDevice();
-        int cols = tv ? 5 : widthDp < 420 ? 2 : widthDp < 600 ? 3 : 4;
-        int margin = widthDp < 600 ? a.dp(16) : a.dp(24);
-        int gap = tv ? a.dp(18) : widthDp < 600 ? a.dp(12) : a.dp(16);
-        int cardW = (a.windowWidth() - margin * 2 - gap * (cols - 1)) / cols;
+        int cardW = cardWidth();
         int thumbH = Math.round(cardW * 0.625f);
         addThumb(card, thumbH, item.folder ? "📁" : item.video ? "▶" : fileSymbol(item.name));
         String dateText = "网盘";
@@ -1119,6 +1228,51 @@ final class FileManagerScreen {
         }
         downloadStrip = null;
         stripProgressWrap = null;
+    }
+
+    private void startDownloadPoll() {
+        final Runnable poll =
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        if (a.body == null || !"file-manager".equals(a.body.getTag())) return;
+                        updateDownloadUi();
+                        if (downCenterBtn != null) a.ui.postDelayed(this, 800);
+                    }
+                };
+        poll.run();
+    }
+
+    private void updateDownloadUi() {
+        List<FileManagerCore.Info> tasks = FileManagerCore.tasks();
+        int active = 0;
+        for (FileManagerCore.Info info : tasks)
+            if (info.state == 0 || info.state == 1 || info.state == 2) active++;
+        if (downCenterBtn != null)
+            downCenterBtn.setText(active > 0 ? "下载中心 · 下载中 " + active : "下载中心");
+        if (globalStrip != null && globalText != null) {
+            if (tasks.isEmpty()) {
+                globalStrip.setVisibility(View.GONE);
+            } else {
+                globalStrip.setVisibility(View.VISIBLE);
+                FileManagerCore.Info first = tasks.get(0);
+                int percent =
+                        first.total > 0 ? (int) Math.min(100, first.bytes * 100 / first.total) : -1;
+                String state =
+                        first.state == 2
+                                ? "已暂停"
+                                : first.state == 4
+                                        ? "失败"
+                                        : percent >= 0 ? percent + "%" : "下载中";
+                globalText.setText(
+                        first.name
+                                + " · "
+                                + state
+                                + " · 共 "
+                                + tasks.size()
+                                + " 个任务");
+            }
+        }
     }
 
     private void updateDownloadStrip() {

@@ -140,7 +140,7 @@ final class FileManagerCore {
     }
 
     private static final class Task {
-        static final int RUNNING = 0, PAUSING = 1, PAUSED = 2, FINISHED = 3;
+        static final int RUNNING = 0, PAUSING = 1, PAUSED = 2, FINISHED = 3, FAILED = 4;
         final String id;
         final MainActivity a;
         final QuarkUcApi.Provider p;
@@ -158,6 +158,11 @@ final class FileManagerCore {
         volatile boolean cancelled;
         volatile HttpURLConnection connection;
         volatile long written;
+        volatile long speed;
+        volatile long lastTick;
+        volatile long lastBytes;
+        volatile String error = "";
+        volatile long total = -1;
 
         Task(
                 String id,
@@ -243,6 +248,7 @@ final class FileManagerCore {
             task.written = existing;
             int contentLength = connection.getContentLength();
             long total = contentLength > 0 ? existing + contentLength : -1;
+            task.total = total;
             in = connection.getInputStream();
             out = new FileOutputStream(task.part, append);
             byte[] buffer = new byte[64 * 1024];
@@ -263,6 +269,11 @@ final class FileManagerCore {
                 long now = System.currentTimeMillis();
                 if (task.progress != null && now - lastReport > 400) {
                     lastReport = now;
+                    if (task.lastTick > 0) {
+                        task.speed = (task.written - task.lastBytes) * 1000L / Math.max(1, now - task.lastTick);
+                    }
+                    task.lastTick = now;
+                    task.lastBytes = task.written;
                     final int percent =
                             total > 0 ? (int) Math.min(100, task.written * 100 / total) : -1;
                     final long bytes = task.written;
@@ -285,6 +296,7 @@ final class FileManagerCore {
             }
             if (!task.part.renameTo(target)) throw new IOException("写入目标文件失败");
             task.state = Task.FINISHED;
+            recordHistory(a, task, target);
             TASKS.remove(task.id);
             long bytes = task.written;
             AppLog.i(
@@ -308,9 +320,15 @@ final class FileManagerCore {
                 enterPaused(task);
                 return;
             }
-            task.state = Task.FINISHED;
             String message = task.cancelled ? "已取消下载" : "下载失败：" + friendly(error);
-            TASKS.remove(task.id);
+            task.state = Task.FAILED;
+            task.error = task.cancelled ? "已取消" : message;
+            // 1.9.2 下载中心保留失败任务用于重试
+            if (!task.cancelled) {
+                AppLog.i("FileMgr", "download failed kept task=" + task.id + " error=" + message);
+            } else {
+                TASKS.remove(task.id);
+            }
             try {
                 if (task.part.exists()) task.part.delete();
             } catch (Throwable ignored) {
@@ -386,6 +404,147 @@ final class FileManagerCore {
             TASKS.remove(taskId);
         }
         AppLog.i("FileMgr", "download cancel task=" + taskId);
+    }
+
+    // ---------------- 1.9.2 下载中心：任务快照 / 历史 ----------------
+
+    static final String HISTORY_KEY = "download_history";
+    private static final int HISTORY_MAX = 60;
+
+    static final class Info {
+        final String id, name, provider, path, error;
+        final int state;
+        final long bytes, total, speed, time;
+        final boolean fromSource;
+
+        Info(
+                String id,
+                String name,
+                String provider,
+                String path,
+                String error,
+                int state,
+                long bytes,
+                long total,
+                long speed,
+                long time,
+                boolean fromSource) {
+            this.id = id;
+            this.name = name;
+            this.provider = provider;
+            this.path = path;
+            this.error = error;
+            this.state = state;
+            this.bytes = bytes;
+            this.total = total;
+            this.speed = speed;
+            this.time = time;
+            this.fromSource = fromSource;
+        }
+    }
+
+    /** 当前全局任务（进行中/暂停/失败；完成的历史见 history()）。 */
+    static List<Info> tasks() {
+        List<Info> out = new ArrayList<>();
+        for (Task task : TASKS.values()) {
+            if (task.cancelled) continue;
+            out.add(
+                    new Info(
+                            task.id,
+                            task.item.name,
+                            task.p.name,
+                            task.state == Task.FINISHED && task.target != null
+                                    ? task.target.getAbsolutePath()
+                                    : "",
+                            task.error,
+                            task.state,
+                            task.written,
+                            task.total,
+                            task.speed,
+                            System.currentTimeMillis(),
+                            task.cookie != null && task.cookie.contains("quark_st")));
+        }
+        return out;
+    }
+
+    /** 完成历史（持久化 prefs，脱敏：只存文件名/本地路径/大小/时间/来源盘）。 */
+    static List<Info> history(MainActivity a) {
+        List<Info> out = new ArrayList<>();
+        try {
+            String raw = a.prefs.getString(HISTORY_KEY, "[]");
+            org.json.JSONArray array = new org.json.JSONArray(raw);
+            for (int i = 0; i < array.length() && out.size() < HISTORY_MAX; i++) {
+                org.json.JSONObject item = array.optJSONObject(i);
+                if (item == null) continue;
+                out.add(
+                        new Info(
+                                "",
+                                item.optString("name", ""),
+                                item.optString("provider", ""),
+                                item.optString("path", ""),
+                                "",
+                                Task.FINISHED,
+                                item.optLong("size", 0),
+                                item.optLong("size", 0),
+                                0,
+                                item.optLong("time", 0),
+                                item.optBoolean("source", false)));
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    static void recordHistory(MainActivity a, Task task, File target) {
+        try {
+            org.json.JSONArray array = new org.json.JSONArray(a.prefs.getString(HISTORY_KEY, "[]"));
+            org.json.JSONArray next = new org.json.JSONArray();
+            org.json.JSONObject item = new org.json.JSONObject();
+            item.put("name", task.item.name);
+            item.put("path", target.getAbsolutePath());
+            item.put("size", target.length());
+            item.put("time", System.currentTimeMillis());
+            item.put("provider", task.p.name);
+            item.put("source", task.cookie != null && task.cookie.contains("quark_st"));
+            next.put(item);
+            for (int i = 0; i < array.length() && next.length() < HISTORY_MAX; i++) {
+                next.put(array.opt(i));
+            }
+            a.prefs.edit().putString(HISTORY_KEY, next.toString()).apply();
+            AppLog.i("DownCenter", "history add name=" + task.item.name + " total=" + next.length());
+        } catch (Throwable ignored) {
+        }
+    }
+
+    static void removeHistory(MainActivity a, String path) {
+        try {
+            org.json.JSONArray array = new org.json.JSONArray(a.prefs.getString(HISTORY_KEY, "[]"));
+            org.json.JSONArray next = new org.json.JSONArray();
+            for (int i = 0; i < array.length(); i++) {
+                org.json.JSONObject item = array.optJSONObject(i);
+                if (item != null && path.equals(item.optString("path", ""))) continue;
+                next.put(array.opt(i));
+            }
+            a.prefs.edit().putString(HISTORY_KEY, next.toString()).apply();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 重试失败任务（用原盘/原 cookie/原目标目录）。 */
+    static String retry(String taskId) {
+        Task task = TASKS.get(taskId);
+        if (task == null) return "";
+        TASKS.remove(taskId);
+        return download(
+                task.a,
+                task.p,
+                task.cookie,
+                task.item,
+                task.progress,
+                task.done,
+                task.failure,
+                task.target.getParentFile(),
+                task.overwrite);
     }
 
     static String relativePath(File file) {
