@@ -22,29 +22,79 @@ final class QuarkUcFiles {
             final QuarkUcApi.Provider p,
             final String cookieOverride,
             final boolean fromSource) {
+        show(a, p, cookieOverride, fromSource, "", false);
+    }
+
+    /** 1.8.26：首选凭据 + 备用凭据；401/403 自动换另一套重试一次，标签按实际来源显示。 */
+    static void show(
+            final MainActivity a,
+            final QuarkUcApi.Provider p,
+            final String primaryCookie,
+            final boolean primaryFromSource,
+            final String altCookie,
+            final boolean altFromSource) {
         final int pageGen = a.generation;
         a.toast("正在读取" + p.name + "网盘文件…");
-        final String cookie = cookieOverride == null ? "" : cookieOverride;
+        final String first = primaryCookie == null ? "" : primaryCookie;
+        final String second = altCookie == null ? "" : altCookie;
         a.worker.execute(
                 () -> {
                     java.util.List<QuarkUcApi.FileItem> files = new java.util.ArrayList<>();
                     String error = "";
+                    String usedCookie = first;
+                    boolean usedSource = primaryFromSource;
                     try {
-                        files = QuarkUcApi.list(p, cookie, "0");
                         AppLog.i(
                                 "QuarkUc",
-                                "list provider="
-                                        + p.key
-                                        + " items="
-                                        + files.size()
-                                        + " sourceCookie="
-                                        + fromSource);
-                    } catch (Throwable failure) {
-                        error = failure.getMessage();
-                        AppLog.i("QuarkUc", "list provider=" + p.key + " error=" + error);
+                                "pick credential="
+                                        + (primaryFromSource ? "source" : "app")
+                                        + " reason="
+                                        + (first.isEmpty() ? "absent" : "verified"));
+                        if (!first.isEmpty()) files = QuarkUcApi.list(p, first, "0");
+                        else if (!second.isEmpty()) {
+                            files = QuarkUcApi.list(p, second, "0");
+                            usedCookie = second;
+                            usedSource = altFromSource;
+                        } else {
+                            throw new java.io.IOException("没有可用登录凭据");
+                        }
+                    } catch (Throwable firstError) {
+                        boolean authError = isAuthError(firstError);
+                        if (authError && !second.isEmpty() && !first.isEmpty()) {
+                            AppLog.i(
+                                    "QuarkUc",
+                                    "list auth failed provider="
+                                            + p.key
+                                            + " fallback="
+                                            + (altFromSource ? "source" : "app"));
+                            try {
+                                files = QuarkUcApi.list(p, second, "0");
+                                usedCookie = second;
+                                usedSource = altFromSource;
+                                error = "";
+                            } catch (Throwable secondError) {
+                                error =
+                                        "App 内凭据验证失败，源插件凭据也不可用；请重新登录或回源面板检查。"
+                                                + "（"
+                                                + friendly(secondError)
+                                                + "）";
+                                AppLog.i(
+                                        "QuarkUc",
+                                        "list both failed provider=" + p.key + " error=" + error);
+                            }
+                        } else {
+                            error = friendly(firstError);
+                            AppLog.i("QuarkUc", "list provider=" + p.key + " error=" + error);
+                        }
                     }
                     final java.util.List<QuarkUcApi.FileItem> result = files;
-                    final String failure = error;
+                    String failure = error;
+                    final String cookieUsed = usedCookie;
+                    final boolean sourceUsed = usedSource;
+                    if (result.isEmpty() && failure.isEmpty()) {
+                        // 根目录为空也是成功，保持 label 来源
+                    }
+                    final String finalFailure = failure;
                     final int gen = pageGen;
                     a.ui.post(
                             () -> {
@@ -52,13 +102,36 @@ final class QuarkUcFiles {
                                     AppLog.i("QuarkUc", "list callback skipped gen=" + gen);
                                     return;
                                 }
-                                if (!failure.isEmpty()) {
-                                    a.notice("读取文件失败：" + failure);
+                                if (!finalFailure.isEmpty()) {
+                                    a.notice("读取文件失败：" + finalFailure);
                                     return;
                                 }
-                                dialog(a, p, result, cookie, fromSource);
+                                AppLog.i(
+                                        "QuarkUc",
+                                        "list provider="
+                                                + p.key
+                                                + " items="
+                                                + result.size()
+                                                + " credential="
+                                                + (sourceUsed ? "source" : "app"));
+                                dialog(a, p, result, cookieUsed, sourceUsed);
                             });
                 });
+    }
+
+    private static boolean isAuthError(Throwable error) {
+        String message = error == null ? "" : String.valueOf(error.getMessage());
+        return message.contains("HTTP 401")
+                || message.contains("HTTP 403")
+                || message.contains("code=401")
+                || message.contains("code=403");
+    }
+
+    private static String friendly(Throwable error) {
+        return error == null
+                ? "未知错误"
+                : error.getClass().getSimpleName()
+                        + (error.getMessage() == null ? "" : "：" + error.getMessage());
     }
 
     private static void dialog(

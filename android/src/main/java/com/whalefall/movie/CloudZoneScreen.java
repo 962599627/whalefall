@@ -33,6 +33,8 @@ final class CloudZoneScreen {
         TextView note = a.text("本页是 App 本地直连登录，不经过源插件", 11.5f, MainActivity.MUTED);
         note.setPadding(a.dp(16), 0, a.dp(16), a.dp(8));
         body.addView(note);
+        // 1.8.27：源插件登录（只读状态 + 退出本机登录数据）
+        addSourceSection(a, body, onChanged);
 
         float density = a.getResources().getDisplayMetrics().density;
         int widthDp = Math.round(a.windowWidth() / density);
@@ -220,10 +222,48 @@ final class CloudZoneScreen {
     private static LinearLayout fileRow(
             MainActivity a, final QuarkUcApi.Provider provider, boolean alwaysVisible) {
         final String appCookie = QuarkUcApi.cookie(a, provider);
-        final boolean hasApp = QuarkUcApi.hasCookie(a, provider);
-        final String sourceCookie = hasApp ? "" : sourceCookie(a, provider);
-        final String cookie = hasApp ? appCookie : sourceCookie;
-        final boolean fromSource = !hasApp && !sourceCookie.isEmpty();
+        final boolean appVerified = QuarkUcApi.verified(a, provider);
+        final String sourceCookie = sourceCookie(a, provider);
+        String primary;
+        boolean primarySource;
+        String alt;
+        boolean altSource;
+        String reason;
+        if (!appCookie.isEmpty() && appVerified) {
+            primary = appCookie;
+            primarySource = false;
+            alt = sourceCookie;
+            altSource = true;
+            reason = "verified";
+        } else if (!sourceCookie.isEmpty()) {
+            primary = sourceCookie;
+            primarySource = true;
+            alt = appCookie;
+            altSource = false;
+            reason = appCookie.isEmpty() ? "absent" : "no-verify";
+        } else if (!appCookie.isEmpty()) {
+            primary = appCookie;
+            primarySource = false;
+            alt = "";
+            altSource = false;
+            reason = "no-verify";
+        } else {
+            primary = "";
+            primarySource = false;
+            alt = "";
+            altSource = false;
+            reason = "absent";
+        }
+        AppLog.i(
+                "QuarkUc",
+                "pick credential="
+                        + (primary.isEmpty() ? "none" : primarySource ? "source" : "app")
+                        + " reason="
+                        + reason);
+        final String chosen = primary;
+        final boolean chosenSource = primarySource;
+        final String backup = alt;
+        final boolean backupSource = altSource;
         LinearLayout row = a.row();
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(a.dp(14), a.dp(12), a.dp(14), a.dp(12));
@@ -231,25 +271,30 @@ final class CloudZoneScreen {
         TextView name =
                 a.text(
                         "查看" + provider.name + "网盘文件"
-                                + (hasApp ? "（App 内）" : fromSource ? "（源插件）" : ""),
+                                + (chosen.isEmpty()
+                                        ? ""
+                                        : chosenSource ? "（源插件）" : "（App 内）"),
                         13,
                         MainActivity.WHITE);
         row.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView go = a.text(cookie.isEmpty() ? "未登录" : "打开", 12, 0xFFFFB3C8);
+        TextView go = a.text(chosen.isEmpty() ? "未登录" : "打开", 12, 0xFFFFB3C8);
         go.setPadding(a.dp(10), a.dp(4), a.dp(10), a.dp(4));
         row.addView(go);
         row.setFocusable(true);
         MobileDetailScreen.bindTouchFeedback(row);
         row.setOnClickListener(
                 v -> {
-                    if (!cookie.isEmpty()) {
+                    if (!chosen.isEmpty()) {
                         AppLog.i(
-                                "CloudZone",
+                                "QuarkUc",
                                 "open files provider="
                                         + provider.key
-                                        + " source="
-                                        + fromSource);
-                        QuarkUcFiles.show(a, provider, cookie, fromSource);
+                                        + " credential="
+                                        + (chosenSource ? "source" : "app")
+                                        + " fallback="
+                                        + (!backup.isEmpty()));
+                        QuarkUcFiles.show(
+                                a, provider, chosen, chosenSource, backup, backupSource);
                         return;
                     }
                     new AppDialog.Builder(a)
@@ -259,7 +304,9 @@ final class CloudZoneScreen {
                                     "去登录",
                                     (d, i) ->
                                             NetdiskQrLogin.show(
-                                                    a, provider.key, () -> a.ui.postDelayed(() -> show(a), 200)))
+                                                    a,
+                                                    provider.key,
+                                                    () -> a.ui.postDelayed(() -> show(a), 200)))
                             .setNegativeButton("取消", null)
                             .show();
                 });
@@ -269,5 +316,170 @@ final class CloudZoneScreen {
         lp.bottomMargin = a.dp(8);
         row.setLayoutParams(lp);
         return row;
+    }
+
+    // ---------------- 源插件登录（本机 spUtils，可退出） ----------------
+
+    private static void addSourceSection(
+            final MainActivity a, final LinearLayout body, final Runnable onChanged) {
+        TextView head = a.text("源插件登录（本机数据，可退出）", 14, UiTokens.ACCENT_SOFT);
+        head.setTypeface(null, android.graphics.Typeface.BOLD);
+        head.setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(8));
+        body.addView(head);
+        for (final String drive : DRIVES) {
+            final java.util.List<String> keys = sourceKeys(a, drive);
+            LinearLayout row = a.row();
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(a.dp(14), a.dp(8), a.dp(14), a.dp(8));
+            row.setBackground(MobileDetailScreen.glassBg(a, 0xcc16283f, 0xb3121d2e, 14));
+            TextView name = a.text(NetdiskQrLogin.name(drive) + "网盘", 13, MainActivity.WHITE);
+            row.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+            TextView state =
+                    a.text(
+                            keys.isEmpty() ? "未检测到登录" : "已登录（本机键 " + keys.size() + "）",
+                            11,
+                            keys.isEmpty() ? MainActivity.MUTED : 0xff2ad47a);
+            row.addView(state);
+            TextView exit =
+                    a.text("退出源插件登录", 11.5f, keys.isEmpty() ? 0x66ffffff : 0xFFFFB3C8);
+            exit.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+            exit.setBackground(
+                    MobileDetailScreen.glassBg(
+                            a, keys.isEmpty() ? 0x14ffffff : 0x24ff8fb1, 0x1affffff, 999));
+            exit.setFocusable(!keys.isEmpty());
+            LinearLayout.LayoutParams exitLp = new LinearLayout.LayoutParams(-2, -2);
+            exitLp.leftMargin = a.dp(8);
+            row.addView(exit, exitLp);
+            if (keys.isEmpty()) {
+                exit.setAlpha(0.6f);
+                exit.setOnClickListener(
+                        v -> a.toast("源插件未检测到" + NetdiskQrLogin.name(drive) + "登录"));
+            } else {
+                MobileDetailScreen.bindTouchFeedback(exit);
+                exit.setOnClickListener(
+                        v ->
+                                new AppDialog.Builder(a)
+                                        .setTitle("退出源插件" + NetdiskQrLogin.name(drive) + "登录？")
+                                        .setMessage(
+                                                "将删除本机保存的源插件登录数据（"
+                                                        + join(keys)
+                                                        + "），并重载插件使其显示未登录。"
+                                                        + "可能需要在源面板重新扫码。此操作只影响本机，不影响云端账号。")
+                                        .setPositiveButton(
+                                                "退出",
+                                                (d, i) -> sourceLogout(a, drive, keys, onChanged))
+                                        .setNegativeButton("取消", null)
+                                        .show());
+            }
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+            rowLp.leftMargin = a.dp(16);
+            rowLp.rightMargin = a.dp(16);
+            rowLp.topMargin = a.dp(6);
+            body.addView(row, rowLp);
+        }
+        TextView all = a.text("清除全部源插件登录数据", 12, 0xffef4444);
+        all.setGravity(Gravity.CENTER);
+        all.setPadding(a.dp(12), a.dp(9), a.dp(12), a.dp(9));
+        all.setBackground(MobileDetailScreen.glassBg(a, 0x14ff6b81, 0x66ff6b81, 999));
+        all.setFocusable(true);
+        MobileDetailScreen.bindTouchFeedback(all);
+        all.setOnClickListener(
+                v -> {
+                    final java.util.List<String> allKeys = new java.util.ArrayList<>();
+                    for (String drive : DRIVES) allKeys.addAll(sourceKeys(a, drive));
+                    if (allKeys.isEmpty()) {
+                        a.toast("未检测到源插件登录数据");
+                        return;
+                    }
+                    new AppDialog.Builder(a)
+                            .setTitle("清除全部源插件登录数据？")
+                            .setMessage(
+                                    "将删除四个盘在本机保存的源插件登录键（"
+                                            + join(allKeys)
+                                            + "），并重载插件。可能需要在源面板重新扫码；只影响本机。")
+                            .setPositiveButton(
+                                    "全部清除",
+                                    (d, i) -> {
+                                        int removed = removeSourceKeys(a, allKeys);
+                                        AppLog.i(
+                                                "SourceLogout",
+                                                "drive=all keys=" + allKeys + " removed=" + removed);
+                                        reloadPlugin(a);
+                                        a.toast("已清除，源插件状态已刷新；如仍显示已登录请重启 App");
+                                        if (onChanged != null) onChanged.run();
+                                    })
+                            .setNegativeButton("取消", null)
+                            .show();
+                });
+        LinearLayout.LayoutParams allLp = new LinearLayout.LayoutParams(-1, -2);
+        allLp.leftMargin = a.dp(16);
+        allLp.rightMargin = a.dp(16);
+        allLp.topMargin = a.dp(8);
+        body.addView(all, allLp);
+    }
+
+    /** 精确匹配该盘登录键：quark_ck/quarkSt、uc_ck/ucSt、bdSt/bd_ck/baidu_*、aliSt/ali_ck/ali_*。 */
+    static java.util.List<String> sourceKeys(MainActivity a, String drive) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        try {
+            android.content.SharedPreferences prefs =
+                    a.getSharedPreferences("spUtils", android.content.Context.MODE_PRIVATE);
+            for (String key : prefs.getAll().keySet())
+                if (CloudInlineView.isSourceCredentialKey(key, drive)) out.add(key);
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    private static void sourceLogout(
+            final MainActivity a,
+            final String drive,
+            final java.util.List<String> keys,
+            final Runnable onChanged) {
+        int removed = removeSourceKeys(a, keys);
+        AppLog.i("SourceLogout", "drive=" + drive + " keys=" + keys + " removed=" + removed);
+        reloadPlugin(a);
+        try {
+            android.content.SharedPreferences prefs =
+                    a.getSharedPreferences("spUtils", android.content.Context.MODE_PRIVATE);
+            AppLog.i(
+                    "SourceLogout",
+                    "drive=" + drive + " remainingSpUtilsKeys=" + prefs.getAll().keySet());
+        } catch (Throwable ignored) {
+        }
+        a.toast("已清除，源插件状态已刷新；如仍显示已登录请重启 App");
+        if (onChanged != null) onChanged.run();
+    }
+
+    private static int removeSourceKeys(MainActivity a, java.util.List<String> keys) {
+        int removed = 0;
+        try {
+            android.content.SharedPreferences prefs =
+                    a.getSharedPreferences("spUtils", android.content.Context.MODE_PRIVATE);
+            android.content.SharedPreferences.Editor edit = prefs.edit();
+            for (String key : keys) {
+                edit.remove(key);
+                removed++;
+            }
+            edit.apply();
+        } catch (Throwable ignored) {
+        }
+        return removed;
+    }
+
+    private static void reloadPlugin(MainActivity a) {
+        try {
+            a.closeEngines();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static String join(java.util.List<String> keys) {
+        StringBuilder out = new StringBuilder();
+        for (String key : keys) {
+            if (out.length() > 0) out.append(", ");
+            out.append(key);
+        }
+        return out.toString();
     }
 }

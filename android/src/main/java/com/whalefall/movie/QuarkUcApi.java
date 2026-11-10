@@ -76,6 +76,11 @@ final class QuarkUcApi {
         return hasCookie(a, p) && a.prefs.getBoolean("quark_uc_verified_" + p.key, false);
     }
 
+    /** 1.8.26：仅代表该盘 App 内凭据是否已通过 API 验证（过期/401 时为 false）。 */
+    static boolean verified(MainActivity a, Provider p) {
+        return hasCookie(a, p) && a.prefs.getBoolean("quark_uc_verified_" + p.key, false);
+    }
+
     static long total(MainActivity a, Provider p) {
         return a.prefs.getLong("quark_uc_total_" + p.key, 0);
     }
