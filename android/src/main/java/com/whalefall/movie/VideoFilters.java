@@ -86,13 +86,12 @@ final class VideoFilters {
                 if (dim.isEmpty() || key.isEmpty() || key.length() > 64) continue;
                 JSONArray values = group.optJSONArray("value");
                 if (values == null) values = group.optJSONArray("values");
-                // 1.9.47：标签用爬虫返回的中文 name；没有 name 才回退 key
+                // 1.9.50：逐条读内部字段 name/label/title；缺失时按 key 中文兜底
+                String sourceLabel = label;
                 String displayLabel =
-                        !label.isEmpty()
-                                ? label
-                                : (Arrays.asList(DIMENSIONS).contains(dim)
-                                        ? LABELS[Arrays.asList(DIMENSIONS).indexOf(dim)]
-                                        : key);
+                        !sourceLabel.isEmpty() ? sourceLabel : fallbackLabel(key, dim);
+                if (sourceLabel.isEmpty() && displayLabel.equals(key))
+                    AppLog.i("Filter", "labelFallback key=" + key + " dim=" + dim);
                 Definition def = new Definition(dim, key, displayLabel, true);
                 Set<String> seen = new HashSet<>();
                 seen.add("");
@@ -118,7 +117,9 @@ final class VideoFilters {
                                 + " key="
                                 + def.key
                                 + " label="
-                                + def.label
+                                + displayLabel
+                                + " source="
+                                + (sourceLabel.isEmpty() ? "fallback" : "name")
                                 + " options="
                                 + (def.choices.size() - 1));
                 if (def.choices.size() > 1) remote.put(dim, def);
@@ -128,11 +129,44 @@ final class VideoFilters {
         return remote;
     }
 
+    /** 1.9.50：源未提供 name 时的中文兜底（按 key/dimension 映射）。 */
+    static String fallbackLabel(String key, String dim) {
+        String k = (key == null ? "" : key).toLowerCase(Locale.ROOT);
+        String d = dim == null ? "" : dim;
+        if (Arrays.asList("type", "class", "genre", "category").contains(k) || "class".equals(d))
+            return "类型";
+        if (Arrays.asList("area", "region", "country").contains(k) || "area".equals(d)) return "地区";
+        if ("year".equals(k) || "year".equals(d)) return "年份";
+        if (Arrays.asList("sort", "by", "order").contains(k)) return "排序";
+        if (Arrays.asList("lang", "language").contains(k)) return "语言";
+        if ("letter".equals(k)) return "字母";
+        if ("state".equals(k)) return "状态";
+        return key == null ? "" : key;
+    }
+
+    /** 1.9.50：显示用标签：优先源 name；无 name 的已知识别 key 回退中文，避免出现英文 key。 */
+    static String displayLabel(Definition def) {
+        if (def == null) return "";
+        String label = def.label == null ? "" : def.label.trim();
+        if (!label.isEmpty() && !label.equals(def.key)) return label;
+        return fallbackLabel(def.key, def.dimension);
+    }
+
     /** 1.9.46：type3 JS 源只用 spider 返回的 key，不做本地兜底；其它源保持原行为。 */
     static List<Definition> definitionsFor(
             Cms.Site site, String home, String category, List<Cms.Video> videos) {
-        if (site != null && site.type == 3) return new ArrayList<>(parseRemote(home, category, true).values());
-        return definitions(home, category, videos);
+        if (site != null && site.type == 3)
+            return new ArrayList<>(parseRemote(home, category, true).values());
+        List<Definition> defs = definitions(home, category, videos);
+        // 1.9.50：普通源若解析不到远程维度，但原始 schema 有 filters，则按 raw key 使用
+        boolean hasRemote = false;
+        for (Definition def : defs) if (def.remote) { hasRemote = true; break; }
+        if (!hasRemote) {
+            List<Definition> raw =
+                    new ArrayList<>(parseRemote(home, category, true).values());
+            if (!raw.isEmpty()) return raw;
+        }
+        return defs;
     }
 
     static boolean hasSchemaFiltersFor(

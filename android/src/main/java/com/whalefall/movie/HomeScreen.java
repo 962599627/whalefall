@@ -1114,7 +1114,11 @@ final class HomeScreen {
             tagWrap.setGravity(Gravity.CENTER_HORIZONTAL);
             TextView chip =
                     a.text(
-                            active ? def.label + " · " + filterLabel(def, value) : def.label,
+                            active
+                                    ? VideoFilters.displayLabel(def)
+                                            + " · "
+                                            + filterLabel(def, value)
+                                    : VideoFilters.displayLabel(def),
                             14,
                             active || open ? UiTokens.ACCENT_SOFT : 0xffa9b7d0);
             chip.setTypeface(null, (active || open) ? Typeface.BOLD : Typeface.NORMAL);
