@@ -22,6 +22,7 @@ final class QuarkUcFiles {
             final QuarkUcApi.Provider p,
             final String cookieOverride,
             final boolean fromSource) {
+        final int pageGen = a.generation;
         a.toast("正在读取" + p.name + "网盘文件…");
         final String cookie = cookieOverride == null ? "" : cookieOverride;
         a.worker.execute(
@@ -44,8 +45,13 @@ final class QuarkUcFiles {
                     }
                     final java.util.List<QuarkUcApi.FileItem> result = files;
                     final String failure = error;
+                    final int gen = pageGen;
                     a.ui.post(
                             () -> {
+                                if (a.isFinishing() || a.isDestroyed() || gen != a.generation) {
+                                    AppLog.i("QuarkUc", "list callback skipped gen=" + gen);
+                                    return;
+                                }
                                 if (!failure.isEmpty()) {
                                     a.notice("读取文件失败：" + failure);
                                     return;
