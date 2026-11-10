@@ -1835,23 +1835,23 @@ public final class MainActivity extends Activity {
         // 1.9.17：网页播放（先退全屏再离开）
         if (body != null && "web-player".equals(body.getTag())) {
             if (WebPlayerScreen.handleBack(this)) return;
-            FileManagerScreen.show(this);
+            FileManagerScreen.resume(this);
             return;
         }
         // 1.9.11：网盘诊断返回文件管理器
         if (body != null && "netdisk-diag".equals(body.getTag())) {
-            FileManagerScreen.show(this);
+            FileManagerScreen.resume(this);
             return;
         }
         // 1.9.2：下载中心返回文件管理器
         if (body != null && "download-center".equals(body.getTag())) {
-            FileManagerScreen.show(this);
+            FileManagerScreen.resume(this);
             return;
         }
         // 1.9.1：图片/文本查看器返回文件管理器
         if (body != null
                 && ("image-viewer".equals(body.getTag()) || "text-viewer".equals(body.getTag()))) {
-            FileManagerScreen.show(this);
+            FileManagerScreen.resume(this);
             return;
         }
         // 1.9.0：文件管理器先交给页面处理（多选→上级），再离开页面

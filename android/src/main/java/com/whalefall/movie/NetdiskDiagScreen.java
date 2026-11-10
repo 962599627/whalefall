@@ -29,7 +29,7 @@ final class NetdiskDiagScreen {
         back.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
         back.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(back);
-        back.setOnClickListener(v -> FileManagerScreen.show(a));
+        back.setOnClickListener(v -> FileManagerScreen.resume(a));
         actions.addView(back);
         actions.addView(action(a, "复制全部日志", () -> copyAll(a)));
         actions.addView(action(a, "清空", () -> {
@@ -96,7 +96,7 @@ final class NetdiskDiagScreen {
             }
         }
         a.toast(retried > 0 ? "已重试 " + retried + " 个失败任务" : "没有失败任务可重试");
-        if (retried > 0) FileManagerScreen.show(a);
+        if (retried > 0) FileManagerScreen.resume(a);
     }
 
     private static int statusBar(MainActivity a) {

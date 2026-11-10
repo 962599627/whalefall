@@ -1154,14 +1154,8 @@ public final class GlobalSearchScreen implements AutoCloseable {
         }
         filterClearChip.setVisibility(filtering() ? View.VISIBLE : View.GONE);
         if (filterSummaryText != null) {
-            if (filtering()) {
-                filterSummaryText.setVisibility(View.VISIBLE);
-                filterSummaryText.setText(
-                        "已筛选 " + selectedSources.size() + " 个来源 · 清除");
-                filterSummaryText.setFocusable(true);
-            } else {
-                filterSummaryText.setVisibility(View.GONE);
-            }
+            // 1.9.30：固定筛选行已有「清除」入口，摘要行仅保留隐藏状态，避免两个清除
+            filterSummaryText.setVisibility(View.GONE);
         }
     }
 

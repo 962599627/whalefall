@@ -25,7 +25,7 @@ final class DownloadCenterScreen {
         back.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
         back.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(back);
-        back.setOnClickListener(v -> FileManagerScreen.show(a));
+        back.setOnClickListener(v -> FileManagerScreen.resume(a));
         actions.addView(back);
         TextView copyLogs = a.text("复制日志", 12, UiTokens.ACCENT);
         copyLogs.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));

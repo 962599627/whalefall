@@ -60,7 +60,7 @@ final class TextViewerScreen {
         back.setPadding(a.dp(12), a.dp(7), a.dp(12), a.dp(7));
         back.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(back);
-        back.setOnClickListener(v -> FileManagerScreen.show(a));
+        back.setOnClickListener(v -> FileManagerScreen.resume(a));
         LinearLayout.LayoutParams backLp = new LinearLayout.LayoutParams(-2, -2);
         backLp.leftMargin = a.dp(8);
         actions.addView(back, backLp);

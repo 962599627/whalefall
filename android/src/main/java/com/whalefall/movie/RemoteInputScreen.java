@@ -61,6 +61,7 @@ final class RemoteInputScreen {
                                 + " tokenLen="
                                 + server.token.length());
             } else {
+                server.resetIdle();
                 AppLog.i("LanRemote", "keepalive start reason=reuse port=" + server.socket.getLocalPort());
             }
             address = server.address();

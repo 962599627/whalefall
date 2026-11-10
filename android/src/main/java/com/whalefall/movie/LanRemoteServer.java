@@ -30,14 +30,21 @@ final class LanRemoteServer implements Closeable {
     volatile long lastSeen;
     volatile boolean sawClient;
     private final long createdAt = System.currentTimeMillis();
+    private volatile long idleAnchor = createdAt;
     private static final long TTL_MS = 30 * 60_000L;
+
+    /** 1.9.30：重新打开遥控页时重置空闲计时，避免刚打开就被判定 20 分钟超时。 */
+    void resetIdle() {
+        idleAnchor = System.currentTimeMillis();
+        lastSeen = idleAnchor;
+    }
 
     boolean expired() {
         return System.currentTimeMillis() - createdAt > TTL_MS;
     }
 
     long startedAt() {
-        return createdAt;
+        return idleAnchor;
     }
     private final Deque<String[]> queue = new ArrayDeque<>();
     private final ThreadPoolExecutor requests =

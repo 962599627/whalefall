@@ -79,7 +79,7 @@ final class ImageViewerScreen {
                         new GestureDetector.SimpleOnGestureListener() {
                             @Override
                             public boolean onSingleTapConfirmed(MotionEvent e) {
-                                FileManagerScreen.show(a);
+                                FileManagerScreen.resume(a);
                                 return true;
                             }
                         });
