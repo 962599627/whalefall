@@ -115,8 +115,14 @@ final class AddressInput extends LinearLayout {
                 });
     }
 
-    void key(LinearLayout row, String label, Runnable action) {
-        Button button = a.button(label, "address-key:" + label, action);
+    /** 1.8.7 配置地址历史入口（追加到最后一行键盘键，TV 可聚焦）。 */
+    void historyButton(String label, Runnable action) {
+        LinearLayout row = a.row();
+        keys.addView(row);
+        key(row, label, action);
+    }
+
+    void key(LinearLayout row, String label, Runnable action) {        Button button = a.button(label, "address-key:" + label, action);
         button.setTextSize(12);
         button.setMinWidth(0);
         button.setMinimumWidth(0);

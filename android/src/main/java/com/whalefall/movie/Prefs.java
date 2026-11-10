@@ -65,6 +65,8 @@ final class Prefs {
 
     // Runtime state & user data keys (excluded from settings-only reset/restore).
     static final String ORIGIN = "origin";
+    /** 1.8.7 配置地址历史（JSON 数组，最多 10 条，最新在前）。 */
+    static final String CONFIG_HISTORY = "config_history";
     static final String LIVE_URL = "live_url";
     static final String LIVE_NAME = "live_name";
     static final String SELECTED_SITE = "selected_site";

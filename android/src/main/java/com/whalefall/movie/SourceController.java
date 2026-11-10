@@ -537,7 +537,7 @@ final class SourceController {
     static void addressImportDialog(MainActivity a) {
         AddressInput input =
                 new AddressInput(a, "https://…/config.json", a.prefs.getString(Prefs.ORIGIN, ""));
-        AppDialog d =
+        final AppDialog d =
                 new AppDialog.Builder(a)
                         .setTitle("导入配置")
                         .setView(input)
@@ -545,6 +545,16 @@ final class SourceController {
                         .setNeutralButton("选择本地文件", (x, y) -> a.pickConfig())
                         .setPositiveButton("导入地址", null)
                         .create();
+        // 1.8.7 配置地址历史：填入并执行导入（只复用现有导入逻辑）
+        input.historyButton(
+                "历史",
+                () ->
+                        ConfigHistory.showDialog(
+                                a,
+                                address -> {
+                                    d.dismiss();
+                                    importAddress(a, address);
+                                }));
         d.setOnShowListener(
                 x ->
                         d.getButton(-1)
@@ -556,33 +566,26 @@ final class SourceController {
                                                 return;
                                             }
                                             d.dismiss();
-                                            a.open(
-                                                    new MainActivity.Screen(
-                                                            () -> {
-                                                                a.renderPage(
-                                                                        "正在导入",
-                                                                        "IMPORT CONFIGURATION");
-                                                                a.load(
-                                                                        "连接配置并读取来源…",
-                                                                        () -> {
-                                                                            String raw =
-                                                                                    fetchImport(
-                                                                                            a,
-                                                                                            address);
-                                                                            return Cms.parseConfig(
-                                                                                    raw,
-                                                                                    importOrigin(
-                                                                                            address));
-                                                                        },
-                                                                        c ->
-                                                                                a.saveConfig(
-                                                                                        c,
-                                                                                        importOrigin(
-                                                                                                address)));
-                                                            }),
-                                                    true);
+                                            importAddress(a, address);
                                         }));
         d.show();
+    }
+
+    /** 按地址导入（历史记录/手动输入共用；成功导入后由 saveConfig 写入历史）。 */
+    static void importAddress(final MainActivity a, final String address) {
+        a.open(
+                new MainActivity.Screen(
+                        () -> {
+                            a.renderPage("正在导入", "IMPORT CONFIGURATION");
+                            a.load(
+                                    "连接配置并读取来源…",
+                                    () -> {
+                                        String raw = fetchImport(a, address);
+                                        return Cms.parseConfig(raw, importOrigin(address));
+                                    },
+                                    c -> a.saveConfig(c, importOrigin(address)));
+                        }),
+                true);
     }
 
     static void onActivityResult(MainActivity a, int request, int result, Intent data) {
@@ -1050,6 +1053,7 @@ final class SourceController {
         else if (!c.origin.isEmpty()) origin = c.origin;
         a.configStore.write(c.raw);
         SourcePicker.applyEdits(a, c, origin);
+        ConfigHistory.add(a, origin);
         a.closeEngines();
         a.config = c;
         a.configOrigin = origin;

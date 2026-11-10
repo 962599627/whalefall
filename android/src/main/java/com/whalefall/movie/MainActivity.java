@@ -688,6 +688,7 @@ public final class MainActivity extends Activity {
         prefs = getSharedPreferences(privateMode ? "movie-private" : Prefs.FILE, MODE_PRIVATE);
         reduced = prefs.getBoolean(Prefs.REDUCED, false);
         configOrigin = prefs.getString("origin", "");
+        ConfigHistory.backfill(this);
         try {
             ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
             if (am != null) images.resize(ImageDecodePolicy.cacheBytes(am.getMemoryClass()));
