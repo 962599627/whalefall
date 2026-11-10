@@ -284,6 +284,8 @@ final class FileManagerScreen {
 
     private void refresh() {
         if (content == null) return;
+        if (selecting) exitSelection();
+        cardMap.clear();
         content.removeAllViews();
         if (tab == 0) refreshLocal();
         else refreshNetdisk();
@@ -569,6 +571,69 @@ final class FileManagerScreen {
     private boolean gridRecalcPosted;
     private int lastGridCount;
     private CardBuilder lastGridBuilder;
+    private final java.util.Map<Object, MemoCard> cardMap = new java.util.HashMap<>();
+
+    /** 1.9.6：卡片外壳 = 内容 + 右上角选中标记（覆盖层）。 */
+    private final class MemoCard extends FrameLayout {
+        final LinearLayout content;
+        final TextView marker;
+        final File file;
+        final String fid;
+        boolean selected;
+
+        MemoCard(File file, String fid) {
+            super(a);
+            this.file = file;
+            this.fid = fid;
+            content = a.vertical();
+            content.setBackground(MobileDetailScreen.glassBg(a, 0xcc16283f, 0xb3121d2e, 16));
+            addView(content, new FrameLayout.LayoutParams(-1, -1));
+            marker = a.text("✓", 14, 0xff0b1220);
+            marker.setGravity(Gravity.CENTER);
+            marker.setVisibility(View.INVISIBLE);
+            FrameLayout.LayoutParams mlp =
+                    new FrameLayout.LayoutParams(a.dp(22), a.dp(22), Gravity.TOP | Gravity.END);
+            mlp.topMargin = a.dp(6);
+            mlp.rightMargin = a.dp(6);
+            addView(marker, mlp);
+            setFocusable(true);
+            focusable(this);
+        }
+
+        void apply(boolean selecting, boolean selected) {
+            this.selected = selected;
+            marker.setVisibility(selecting ? View.VISIBLE : View.INVISIBLE);
+            if (!selecting) {
+                content.setBackground(MobileDetailScreen.glassBg(a, 0xcc16283f, 0xb3121d2e, 16));
+                setAlpha(1f);
+                return;
+            }
+            marker.setText(selected ? "✓" : "");
+            android.graphics.drawable.GradientDrawable circle = new android.graphics.drawable.GradientDrawable();
+            circle.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            circle.setColor(selected ? UiTokens.ACCENT : 0x44000000);
+            circle.setStroke(Math.max(1, a.dp(1.5f)), selected ? 0xffffffff : 0x66ffffff);
+            marker.setBackground(circle);
+            android.graphics.drawable.GradientDrawable border = new android.graphics.drawable.GradientDrawable();
+            border.setColor(0xcc16283f);
+            border.setCornerRadius(a.dp(16));
+            border.setStroke(Math.max(1, a.dp(1.5f)), selected ? UiTokens.ACCENT : 0x33ffffff);
+            content.setBackground(border);
+            setAlpha(selected ? 1f : 0.92f);
+        }
+    }
+
+    private void applySelectionVisuals() {
+        for (MemoCard card : cardMap.values()) {
+            boolean selected = card.file != null ? selFiles.contains(card.file) : selFids.contains(card.fid);
+            card.apply(selecting, selected);
+        }
+    }
+
+    private void registerCard(MemoCard card) {
+        cardMap.put(card.file != null ? (Object) card.file : card.fid, card);
+        card.apply(selecting, false);
+    }
 
     private void buildGrid(int count, CardBuilder builder) {
         lastGridCount = count;
@@ -667,16 +732,97 @@ final class FileManagerScreen {
         return card;
     }
 
-    private void addThumb(LinearLayout card, int thumbH, String symbol) {
+    /** 1.9.6：本地图片/视频首帧缩略图（96px 采样，LruCache 缓存）。 */
+    private static final class ThumbCache {
+        static final android.util.LruCache<String, android.graphics.Bitmap> CACHE =
+                new android.util.LruCache<String, android.graphics.Bitmap>(8 * 1024 * 1024) {
+                    @Override
+                    protected int sizeOf(String key, android.graphics.Bitmap value) {
+                        return value.getByteCount();
+                    }
+                };
+
+        static android.graphics.Bitmap image(File file) {
+            String key = "img:" + file.getAbsolutePath() + ":" + file.lastModified();
+            android.graphics.Bitmap cached = CACHE.get(key);
+            if (cached != null) return cached;
+            try {
+                android.graphics.BitmapFactory.Options bounds =
+                        new android.graphics.BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+                android.graphics.BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+                int sample = 1;
+                while (bounds.outWidth / sample > 192 || bounds.outHeight / sample > 192)
+                    sample *= 2;
+                android.graphics.BitmapFactory.Options decode =
+                        new android.graphics.BitmapFactory.Options();
+                decode.inSampleSize = sample;
+                android.graphics.Bitmap bitmap =
+                        android.graphics.BitmapFactory.decodeFile(file.getAbsolutePath(), decode);
+                if (bitmap != null) CACHE.put(key, bitmap);
+                return bitmap;
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+
+        static android.graphics.Bitmap video(File file) {
+            String key = "vid:" + file.getAbsolutePath() + ":" + file.lastModified();
+            android.graphics.Bitmap cached = CACHE.get(key);
+            if (cached != null) return cached;
+            try {
+                android.media.MediaMetadataRetriever retriever =
+                        new android.media.MediaMetadataRetriever();
+                retriever.setDataSource(file.getAbsolutePath());
+                android.graphics.Bitmap frame =
+                        retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                retriever.release();
+                if (frame != null) {
+                    android.graphics.Bitmap scaled =
+                            android.graphics.Bitmap.createScaledBitmap(frame, 192, 120, true);
+                    CACHE.put(key, scaled);
+                    return scaled;
+                }
+            } catch (Throwable ignored) {
+            }
+            return null;
+        }
+    }
+
+    private void addThumb(
+            LinearLayout card, int thumbH, final FileManagerCore.LocalEntry entry, String name) {
         FrameLayout thumb = new FrameLayout(a);
         thumb.setBackground(
                 MobileDetailScreen.glassBg(a, 0xdd0d1a2b, 0x33000000, 16));
-        TextView glyph = a.text(symbol, 34, UiTokens.ACCENT_SOFT);
+        final TextView glyph = a.text(entry == null ? fileSymbol(name) : entry.folder ? "📁" : entry.video ? "▶" : fileSymbol(entry.name), 34, UiTokens.ACCENT_SOFT);
         glyph.setGravity(Gravity.CENTER);
         thumb.addView(glyph, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
-        card.addView(
-                thumb,
-                new LinearLayout.LayoutParams(-1, thumbH));
+        if (entry != null && !entry.folder && (entry.video || TextViewerScreen.isImageName(entry.name))) {
+            final ImageView image = new ImageView(a);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            thumb.addView(image, new FrameLayout.LayoutParams(-1, -1));
+            if (entry.video) {
+                a.worker.execute(
+                        () -> {
+                            final android.graphics.Bitmap bitmap = ThumbCache.video(entry.file);
+                            if (bitmap != null)
+                                a.ui.post(
+                                        () -> {
+                                            if (image.getParent() != null) {
+                                                image.setImageBitmap(bitmap);
+                                                glyph.setVisibility(View.GONE);
+                                            }
+                                        });
+                        });
+            } else {
+                android.graphics.Bitmap bitmap = ThumbCache.image(entry.file);
+                if (bitmap != null) {
+                    image.setImageBitmap(bitmap);
+                    glyph.setVisibility(View.GONE);
+                }
+            }
+        }
+        card.addView(thumb, new LinearLayout.LayoutParams(-1, thumbH));
     }
 
     private void addTitleAndMeta(LinearLayout card, String title, String meta) {
@@ -697,22 +843,25 @@ final class FileManagerScreen {
     }
 
     private View buildLocalCard(final FileManagerCore.LocalEntry entry, final int index) {
-        LinearLayout card = cardShell(0);
+        MemoCard holder = new MemoCard(entry.file, null);
+        LinearLayout card = holder.content;
+        registerCard(holder);
         int cardW = cardWidth();
         int thumbH = Math.round(cardW * 0.625f);
-        addThumb(card, thumbH, entry.folder ? "📁" : entry.video ? "▶" : fileSymbol(entry.name));
+        addThumb(card, thumbH, entry, "");
         String meta =
                 entry.folder
                         ? (countChildren(entry.file) + " 项")
                         : QuarkUcApi.formatSize(entry.size);
         meta += " · " + FileManagerCore.formatDate(entry.modified);
         addTitleAndMeta(card, entry.name, meta);
-        if (selecting && selFiles.contains(entry.file)) card.setAlpha(0.6f);
-        final View cardView = card;
-        card.setOnClickListener(
+        final MemoCard finalHolder = holder;
+        holder.setOnClickListener(
                 v -> {
-                    if (selecting) toggleSelection(entry.file, null, cardView);
-                    else if (entry.folder) {
+                    if (selecting) {
+                        toggleSelection(entry.file, null);
+                        applySelectionVisuals();
+                    } else if (entry.folder) {
                         localDir = entry.file;
                         exitSelection();
                         refresh();
@@ -723,26 +872,29 @@ final class FileManagerScreen {
                         TextViewerScreen.show(a, entry.file);
                     else a.toast("当前仅支持视频/图片/文本查看与下载");
                 });
-        card.setOnLongClickListener(
+        holder.setOnLongClickListener(
                 v -> {
                     if (!selecting) {
                         selecting = true;
                         selFiles.clear();
                         selFids.clear();
                     }
-                    toggleSelection(entry.file, null, cardView);
+                    toggleSelection(entry.file, null);
+                    applySelectionVisuals();
                     updateSelectionBar();
                     return true;
                 });
-        card.setTag("filemgr-card:" + index);
-        return card;
+        holder.setTag("filemgr-card:" + index);
+        return finalHolder;
     }
 
     private View buildNetdiskCard(final QuarkUcApi.FileItem item) {
-        LinearLayout card = cardShell(0);
+        MemoCard holder = new MemoCard(null, item.fid);
+        LinearLayout card = holder.content;
+        registerCard(holder);
         int cardW = cardWidth();
         int thumbH = Math.round(cardW * 0.625f);
-        addThumb(card, thumbH, item.folder ? "📁" : item.video ? "▶" : fileSymbol(item.name));
+        addThumb(card, thumbH, null, item.name);
         String dateText = "网盘";
         if (item.updated > 0) {
             long ms = item.updated > 1000000000000L ? item.updated : item.updated * 1000L;
@@ -755,12 +907,13 @@ final class FileManagerScreen {
                         + " · "
                         + (netdiskFromSource ? "源插件" : "App 内");
         addTitleAndMeta(card, item.name, meta);
-        if (selecting && selFids.contains(item.fid)) card.setAlpha(0.6f);
-        final View cardView = card;
-        card.setOnClickListener(
+        final MemoCard finalHolder = holder;
+        holder.setOnClickListener(
                 v -> {
-                    if (selecting) toggleSelection(null, item.fid, cardView);
-                    else if (item.folder) {
+                    if (selecting) {
+                        toggleSelection(null, item.fid);
+                        applySelectionVisuals();
+                    } else if (item.folder) {
                         netdiskFid = item.fid;
                         netdiskPath = netdiskPath + " / " + item.name;
                         exitSelection();
@@ -779,18 +932,19 @@ final class FileManagerScreen {
                         downloadForView(item, false);
                     } else a.toast("当前仅支持视频/图片/文本查看与下载");
                 });
-        card.setOnLongClickListener(
+        holder.setOnLongClickListener(
                 v -> {
                     if (!selecting) {
                         selecting = true;
                         selFiles.clear();
                         selFids.clear();
                     }
-                    toggleSelection(null, item.fid, cardView);
+                    toggleSelection(null, item.fid);
+                    applySelectionVisuals();
                     updateSelectionBar();
                     return true;
                 });
-        return card;
+        return finalHolder;
     }
 
     private String fileSymbol(String name) {
@@ -814,15 +968,40 @@ final class FileManagerScreen {
 
     // ---------------- 多选 ----------------
 
-    private void toggleSelection(File file, String fid, View card) {
-        boolean added;
-        if (file != null) added = selFiles.add(file);
-        else added = selFids.add(fid);
-        if (!added) {
-            if (file != null) selFiles.remove(file);
-            else selFids.remove(fid);
+    private void toggleSelection(File file, String fid, View ignored) {
+        toggleSelection(file, fid);
+    }
+
+    private void toggleSelection(File file, String fid) {
+        if (file != null) {
+            if (!selFiles.remove(file)) selFiles.add(file);
+        } else {
+            if (!selFids.remove(fid)) selFids.add(fid);
         }
-        card.setAlpha(added ? 0.9f : 1f);
+        applySelectionVisuals();
+        updateSelectionBar();
+    }
+
+    /** 1.9.6：全选 / 取消全选。 */
+    private void selectAllCards() {
+        selFiles.clear();
+        selFids.clear();
+        synchronized (items) {
+            for (Object item : items) {
+                if (item instanceof FileManagerCore.LocalEntry)
+                    selFiles.add(((FileManagerCore.LocalEntry) item).file);
+                else if (item instanceof QuarkUcApi.FileItem)
+                    selFids.add(((QuarkUcApi.FileItem) item).fid);
+            }
+        }
+        applySelectionVisuals();
+        updateSelectionBar();
+    }
+
+    private void clearSelectionOnly() {
+        selFiles.clear();
+        selFids.clear();
+        applySelectionVisuals();
         updateSelectionBar();
     }
 
@@ -844,6 +1023,8 @@ final class FileManagerScreen {
         selectionBar.setVisibility(View.VISIBLE);
         selectionCount.setText("已选 " + (selFiles.size() + selFids.size()) + " 项");
         while (selectionBar.getChildCount() > 1) selectionBar.removeViewAt(1);
+        selectionBar.addView(selAction("全选", () -> selectAllCards()));
+        selectionBar.addView(selAction("取消全选", () -> clearSelectionOnly()));
         if (tab == 0) {
             selectionBar.addView(selAction("删除", () -> deleteSelected()));
             selectionBar.addView(selAction("重命名", () -> renameSelected()));
@@ -875,12 +1056,7 @@ final class FileManagerScreen {
         selFiles.clear();
         selFids.clear();
         if (selectionBar != null) selectionBar.setVisibility(View.GONE);
-        for (int i = 0; i < content.getChildCount(); i++) {
-            View child = content.getChildAt(i);
-            if (child instanceof LinearLayout)
-                for (int j = 0; j < ((LinearLayout) child).getChildCount(); j++)
-                    ((LinearLayout) child).getChildAt(j).setAlpha(1f);
-        }
+        applySelectionVisuals();
     }
 
     private void deleteSelected() {
