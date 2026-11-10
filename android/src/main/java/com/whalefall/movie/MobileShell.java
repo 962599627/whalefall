@@ -1373,7 +1373,7 @@ final class MobileShell {
                 });
         filterHeader.addView(clearAll);
         homeFilterPanel.addView(filterHeader, new LinearLayout.LayoutParams(-1, -2));
-        panelLp.setMargins(a.dp(16), a.dp(8), a.dp(16), a.dp(8));
+        panelLp.setMargins(a.dp(16), a.dp(8), a.dp(16), a.dp(12));
         body.addView(homeFilterPanel, panelLp);
         homeFilterTagScroll = new android.widget.HorizontalScrollView(a);
         homeFilterTagScroll.setHorizontalScrollBarEnabled(false);
@@ -2288,7 +2288,7 @@ final class MobileShell {
         if (panel == null) return;
         if (homeFilterHeightAnim != null) homeFilterHeightAnim.cancel();
         android.view.ViewGroup.LayoutParams lp = panel.getLayoutParams();
-        int start = Math.max(0, lp.height);
+        int start = panel.getHeight() > 0 ? panel.getHeight() : Math.max(0, lp.height);
         if (a.reduced || durationMs <= 0) {
             lp.height = targetHeight;
             panel.setLayoutParams(lp);

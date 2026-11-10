@@ -1024,7 +1024,7 @@ final class HomeScreen {
         if (panel == null) return;
         if (filterHeightAnim != null) filterHeightAnim.cancel();
         ViewGroup.LayoutParams lp = panel.getLayoutParams();
-        int start = Math.max(0, lp.height);
+        int start = panel.getHeight() > 0 ? panel.getHeight() : Math.max(0, lp.height);
         boolean collapse = targetHeight == 0;
         if (a.reduced || durationMs <= 0) {
             lp.height = collapse ? 0 : ViewGroup.LayoutParams.WRAP_CONTENT;
