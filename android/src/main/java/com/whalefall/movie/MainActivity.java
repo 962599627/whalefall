@@ -1126,6 +1126,7 @@ public final class MainActivity extends Activity {
     }
 
     static final String BACKDROP_TAG = "whale-backdrop";
+    static final String SAFE_BACKDROP_TAG = "safe-mode-backdrop";
     /** 用户壁纸层（静态 Images/Atmosphere）专用 tag：与 base 渐变分开，便于幂等维护。 */
     static final String WALLPAPER_TAG = "whale-wallpaper-image";
     /** applyWallpaper 的日志签名：只在状态变化时写一条，避免刷屏。 */
@@ -1158,6 +1159,7 @@ public final class MainActivity extends Activity {
                             + System.identityHashCode(target)
                             + " layers="
                             + removed);
+            applySafeBackdrop(target);
             return;
         }
         // 播放页是纯黑视频页（root 由 PlaybackController 创建并打 player-surface tag）：
@@ -1263,7 +1265,20 @@ public final class MainActivity extends Activity {
         applyWallpaper(target);
     }
 
-    /** 设置里手动切换安全模式后立即刷新壁纸/动效（无需重启）。 */
+    /** 1.8.21：安全模式下的深色渐变底（不是纯黑），避免黑屏感。 */
+    void applySafeBackdrop(android.widget.FrameLayout target) {
+        if (target == null) return;
+        for (int i = 0; i < target.getChildCount(); i++)
+            if (SAFE_BACKDROP_TAG.equals(target.getChildAt(i).getTag())) return;
+        View view = new View(this);
+        view.setTag(SAFE_BACKDROP_TAG);
+        view.setBackground(
+                new android.graphics.drawable.GradientDrawable(
+                        android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[] {0xFF0B1220, 0xFF141C2A, 0xFF0B1220}));
+        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        target.addView(view, 0, new android.widget.FrameLayout.LayoutParams(-1, -1));
+    }
     void applySafeModeVisual() {
         final FrameLayout target = root;
         if (target == null) {
@@ -1288,10 +1303,11 @@ public final class MainActivity extends Activity {
                 }
                 videoWallpaper = null;
             }
+            applySafeBackdrop(target);
             AppLog.i("SafeMode", "visual applied root=" + System.identityHashCode(target));
             return;
         }
-        // 1.8.2：关闭安全模式 → 强制重建壁纸层（静态/动态都重建），并下一帧再补一次
+        // 1.8.21：关闭安全模式 → 清掉深色安全底 + 强制重建壁纸层，并在 150/400ms 后再补
         lastWallpaperLog = "";
         try {
             if (videoWallpaper != null) videoWallpaper.release();
@@ -1301,26 +1317,50 @@ public final class MainActivity extends Activity {
         for (int i = target.getChildCount() - 1; i >= 0; i--) {
             View child = target.getChildAt(i);
             Object tag = child.getTag();
-            if (WALLPAPER_TAG.equals(tag) || BACKDROP_TAG.equals(tag))
-                target.removeViewAt(i);
+            if (WALLPAPER_TAG.equals(tag)
+                    || BACKDROP_TAG.equals(tag)
+                    || SAFE_BACKDROP_TAG.equals(tag)) target.removeViewAt(i);
         }
         applyWallpaper(target);
         ui.post(
                 () -> {
                     if (root != null) applyWallpaper(root);
                 });
+        ui.postDelayed(
+                () -> {
+                    if (root != null && !SafeMode.enabled(this)) applyWallpaper(root);
+                },
+                150);
+        ui.postDelayed(
+                () -> {
+                    if (root != null && !SafeMode.enabled(this)) {
+                        applyWallpaper(root);
+                        AppLog.i(
+                                "SafeMode",
+                                "restore retry root="
+                                        + System.identityHashCode(root)
+                                        + " wallpaper="
+                                        + ((root.findViewWithTag(BACKDROP_TAG) != null)
+                                                ? "ok"
+                                                : "black"));
+                    }
+                },
+                400);
         boolean staticOn = prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false);
         boolean videoOn = videoWallpaperEnabled();
         AppLog.i(
                 "SafeMode",
-                "visual restore root="
+                "restore root="
                         + System.identityHashCode(target)
                         + " static="
                         + staticOn
                         + " video="
                         + videoOn
                         + " wallpaper="
-                        + ((staticOn || videoOn) ? "ok" : "empty"));
+                        + ((target.findViewWithTag(BACKDROP_TAG) != null
+                                        || target.findViewWithTag(WALLPAPER_TAG) != null)
+                                ? "ok"
+                                : "black"));
     }
 
     void renderPage(String title, String eyebrow, boolean navigation) {

@@ -22,16 +22,27 @@ final class CloudInlineView {
     private static final int ALI_TINT = 0xFF8A6BFF;
 
     static void build(final MainActivity a, final LinearLayout parent, final Runnable onChanged) {
+        build(
+                a,
+                parent,
+                onChanged,
+                "云盘配置",
+                "源插件配置：登录/停用请用源面板；下方为 App 内登录（第二套）");
+    }
+
+    /** 1.8.21：可自定义标题/副标题，供「云盘专区（本地）」复用同一套 8 卡网格。 */
+    static void build(
+            final MainActivity a,
+            final LinearLayout parent,
+            final Runnable onChanged,
+            String heading,
+            String subtitle) {
         parent.removeAllViews();
-        TextView title = a.text("云盘配置", 17, MainActivity.WHITE);
+        TextView title = a.text(heading, 17, MainActivity.WHITE);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(2));
         parent.addView(title);
-        TextView sub =
-                a.text(
-                        "源插件配置：登录/停用请用源面板；下方为 App 内登录（第二套）",
-                        11.5f,
-                        MainActivity.MUTED);
+        TextView sub = a.text(subtitle, 11.5f, MainActivity.MUTED);
         sub.setPadding(a.dp(16), 0, a.dp(16), a.dp(10));
         parent.addView(sub);
 
