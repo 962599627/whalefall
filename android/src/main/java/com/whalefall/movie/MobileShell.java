@@ -4622,11 +4622,13 @@ final class MobileShell {
                         1,
                         "文件管理器（本地 / 网盘 / 下载）",
                         "浏览本地与网盘文件、播放、下载到 Download/鲸落/、查看下载中心",
-                        () ->
-                                a.open(
-                                        new MainActivity.Screen(
-                                                () -> FileManagerScreen.show(a)),
-                                        true));
+                        () -> {
+                            MainActivity.Screen s =
+                                    new MainActivity.Screen(
+                                            () -> FileManagerScreen.show(a));
+                            s.resume = () -> FileManagerScreen.resume(a);
+                            a.open(s, true);
+                        });
                 addSettingCard(
                         body,
                         1,

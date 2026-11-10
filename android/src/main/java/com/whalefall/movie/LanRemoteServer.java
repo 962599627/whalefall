@@ -35,6 +35,10 @@ final class LanRemoteServer implements Closeable {
     boolean expired() {
         return System.currentTimeMillis() - createdAt > TTL_MS;
     }
+
+    long startedAt() {
+        return createdAt;
+    }
     private final Deque<String[]> queue = new ArrayDeque<>();
     private final ThreadPoolExecutor requests =
             new ThreadPoolExecutor(

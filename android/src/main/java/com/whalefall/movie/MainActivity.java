@@ -283,6 +283,10 @@ public final class MainActivity extends Activity {
 
         /** True while a listing redirect (folder / action / cross-search) has not drawn a page. */
         boolean redirect;
+        /** 1.9.30：该 Screen 入栈时的页面 body tag，用于精确判断能否 pop。 */
+        String pushedTag;
+        /** 1.9.30：pop 回该页面时的恢复渲染（保留目录/列表状态）。 */
+        Runnable resume;
 
         Screen(Runnable r) {
             render = r;
@@ -1690,6 +1694,7 @@ public final class MainActivity extends Activity {
         if (history && current != null) back.push(current);
         current = s;
         s.render.run();
+        s.pushedTag = body == null ? null : String.valueOf(body.getTag());
         if (root != null && !"player-surface".equals(root.getTag())) ensureBackdrop(root);
         restore(s);
     }
@@ -1756,6 +1761,11 @@ public final class MainActivity extends Activity {
     void renderReturn(Screen screen) {
         if (!isTvDevice() && screen.mobileHome != null && screen.mobileHome.resume()) return;
         if (isTvDevice() && screen.retainedHome != null && screen.retainedHome.resume()) return;
+        if (screen.resume != null) {
+            screen.resume.run();
+            if (root != null && !"player-surface".equals(root.getTag())) ensureBackdrop(root);
+            return;
+        }
         screen.render.run();
         if (root != null && !"player-surface".equals(root.getTag())) ensureBackdrop(root);
     }
@@ -1773,12 +1783,17 @@ public final class MainActivity extends Activity {
                         + " player="
                         + (current != null && current.player));
         if (tvPlayer != null && tvPlayer.back()) return;
-        // 1.9.30：入栈页面优先 pop（手势返回与硬件 BACK 同一路径）；未入栈的原地页面走下方自定义分支
+        String tag = body == null ? null : String.valueOf(body.getTag());
+        // 1.9.30：先给页面自己的 handleBack 机会（退全屏/子目录/多选），再按入栈记录 pop
+        if ("file-manager".equals(tag) && FileManagerScreen.handleBack()) return;
+        if ("web-live".equals(tag) && WebLiveScreen.handleBack(this)) return;
+        if ("web-player".equals(tag) && WebPlayerScreen.handleBack(this)) return;
         if (!back.isEmpty()
                 && current != null
                 && !current.home
                 && !current.player
-                && isPushedPage(body == null ? null : String.valueOf(body.getTag()))) {
+                && current.pushedTag != null
+                && current.pushedTag.equals(tag)) {
             logBackAction("pop");
             capture();
             current = back.pop();
@@ -1786,9 +1801,7 @@ public final class MainActivity extends Activity {
             restore(current);
             return;
         }
-        if (isPushedPage(body == null ? null : String.valueOf(body.getTag()))
-                || (body != null && "file-manager".equals(body.getTag())))
-            logBackAction("custom");
+        logBackAction("custom");
         if (body != null && "source-check".equals(body.getTag())) {
             if (isTvDevice()) {
                 current = new MainActivity.Screen(this::home);
@@ -1845,16 +1858,8 @@ public final class MainActivity extends Activity {
         if ((current == null || !current.player)
                 && body != null
                 && "file-manager".equals(body.getTag())) {
-            // 1.9.30：先处理子目录/多选，再按入栈记录返回上一级
+            // 1.9.30：先处理子目录/多选，再按入栈记录返回上一级（栈 pop 已在方法开头处理）
             if (FileManagerScreen.handleBack()) return;
-            if (!back.isEmpty() && current != null && !current.home) {
-                logBackAction("pop");
-                capture();
-                current = back.pop();
-                renderReturn(current);
-                restore(current);
-                return;
-            }
             if (isTvDevice()) {
                 current = new MainActivity.Screen(this::home);
                 current.home = true;

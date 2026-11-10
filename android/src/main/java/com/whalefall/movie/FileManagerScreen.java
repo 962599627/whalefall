@@ -59,6 +59,13 @@ final class FileManagerScreen {
         current = screen;
     }
 
+    /** 1.9.30：pop 回文件管理器时保留当前目录/筛选状态。 */
+    static void resume(MainActivity a) {
+        FileManagerScreen screen = current;
+        if (screen != null && screen.a == a) screen.open();
+        else show(a);
+    }
+
     /** 1.9.10：BACK 回到来源（设置或云盘专区）。 */
     static void exitToSource(MainActivity a) {
         MobileShell.show(a);

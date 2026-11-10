@@ -108,7 +108,13 @@ final class SettingsScreen {
                     "文件管理器（本地 / 网盘 / 下载）",
                     "浏览本地/网盘、播放与下载；支持多选与下载中心",
                     "settings-file-manager",
-                    () -> open(() -> FileManagerScreen.showFrom(a, 0)));
+                    () -> {
+                        MainActivity.Screen s =
+                                new MainActivity.Screen(
+                                        () -> FileManagerScreen.showFrom(a, 0));
+                        s.resume = () -> FileManagerScreen.resume(a);
+                        a.open(s, true);
+                    });
             link(
                     "App 内置文件（教程 / 配置 / 上传）",
                     "仅 App 内置配置/教程与管理员后台上传文件",

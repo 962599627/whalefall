@@ -73,7 +73,10 @@ final class RemoteInputScreen {
         startNotification(a);
         a.renderPage("手机遥控 / 扫码输入", "LAN REMOTE");
         if (a.root != null) a.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-        if (a.body == null) return;
+        if (a.body == null) {
+            stop("render-failed");
+            return;
+        }
         a.body.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         a.body.setTag("lan-remote");
         boolean tv = a.isTvDevice();
@@ -166,7 +169,8 @@ final class RemoteInputScreen {
                 v -> {
                     stop("button");
                     a.toast("已停止手机遥控");
-                    back(a);
+                    // 1.9.30：统一走返回逻辑，避免页面栈残留
+                    a.onBackPressed();
                 });
         LinearLayout.LayoutParams stopLp = new LinearLayout.LayoutParams(-1, a.dp(48));
         stopLp.leftMargin = a.dp(16);
@@ -194,23 +198,36 @@ final class RemoteInputScreen {
                         final LanRemoteServer snapshot = server;
                         if (snapshot == null) return;
                         snapshot.pump();
-                        final boolean sawClient = snapshot.sawClient;
-                        final long lastSeen = snapshot.lastSeen;
-                        boolean waiting = !sawClient;
-                        boolean connected =
-                                sawClient && System.currentTimeMillis() - lastSeen < 6000;
-                        if (waiting) {
-                            statusRef.setText("等待手机连接");
-                            statusRef.setTextColor(UiTokens.TEXT_TERTIARY);
-                            circleRef.setColor(UiTokens.TEXT_TERTIARY);
-                        } else if (connected) {
-                            statusRef.setText("已连接");
-                            statusRef.setTextColor(0xff2ad47a);
-                            circleRef.setColor(0xff2ad47a);
-                        } else {
-                            statusRef.setText("连接中断（重新打开网页即可）");
-                            statusRef.setTextColor(0xffffb454);
-                            circleRef.setColor(0xffffb454);
+                        // 1.9.30：无客户端 20 分钟自动停止并释放端口
+                        long idle =
+                                snapshot.sawClient
+                                        ? System.currentTimeMillis() - snapshot.lastSeen
+                                        : System.currentTimeMillis() - snapshot.startedAt();
+                        if (idle > 20 * 60_000L) {
+                            stop("idle-timeout");
+                            return;
+                        }
+                        final boolean pageVisible =
+                                a.body != null && "lan-remote".equals(a.body.getTag());
+                        if (pageVisible) {
+                            final boolean sawClient = snapshot.sawClient;
+                            final long lastSeen = snapshot.lastSeen;
+                            boolean waiting = !sawClient;
+                            boolean connected =
+                                    sawClient && System.currentTimeMillis() - lastSeen < 6000;
+                            if (waiting) {
+                                statusRef.setText("等待手机连接");
+                                statusRef.setTextColor(UiTokens.TEXT_TERTIARY);
+                                circleRef.setColor(UiTokens.TEXT_TERTIARY);
+                            } else if (connected) {
+                                statusRef.setText("已连接");
+                                statusRef.setTextColor(0xff2ad47a);
+                                circleRef.setColor(0xff2ad47a);
+                            } else {
+                                statusRef.setText("连接中断（重新打开网页即可）");
+                                statusRef.setTextColor(0xffffb454);
+                                circleRef.setColor(0xffffb454);
+                            }
                         }
                         // stop() 可能在 snapshot.pump() 内被同步触发；此时不再续跑
                         if (server != snapshot) return;

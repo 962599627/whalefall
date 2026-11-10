@@ -68,6 +68,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
     /** 1.9.29：多来源筛选（空 = 全部）。 */
     final LinkedHashSet<String> selectedSources = new LinkedHashSet<>();
     TextView filterSummaryText;
+    Button filterClearChip;
     final Map<String, TextView> groupHeaders = new HashMap<>();
     int realCardCount;
 
@@ -368,6 +369,9 @@ public final class GlobalSearchScreen implements AutoCloseable {
         sourceFilters.setClipChildren(false);
         sourceFilters.setClipToPadding(false);
         sourceFilters.setPadding(a.dp(4), a.dp(5), a.dp(4), a.dp(5));
+        // 1.9.30：重建筛选行时清空旧按钮引用，避免 chips 消失/焦点丢失
+        filterButtons.clear();
+        filterClearChip = null;
         filterScroll.addView(sourceFilters);
         right.addView(filterScroll, new LinearLayout.LayoutParams(-1, a.dp(46)));
         filterSummaryText = a.text("", 12, UiTokens.ACCENT_SOFT);
@@ -1000,6 +1004,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         if (sourceFilters.getChildCount() == 0 || !"source-filter-label".equals(
                 String.valueOf(sourceFilters.getChildAt(0).getTag()))) {
             sourceFilters.removeAllViews();
+            filterClearChip = null;
             TextView label = a.text("来源筛选：", 12, UiTokens.TEXT_TERTIARY);
             label.setTag("source-filter-label");
             label.setPadding(0, 0, a.dp(4), 0);
@@ -1111,24 +1116,30 @@ public final class GlobalSearchScreen implements AutoCloseable {
                 }
             }
         }
-        View oldClear = sourceFilters.findViewWithTag("source-filter-clear");
-        if (oldClear != null) sourceFilters.removeView(oldClear);
-        if (filtering()) {
-            Button clear =
-                    a.button("清除", "source-filter-clear", () -> toggleFilter(""));
-            clear.setTextSize(12);
-            clear.setMinHeight(0);
-            clear.setMinimumHeight(0);
-            clear.setPadding(a.dp(14), 0, a.dp(14), 0);
-            clear.setGravity(Gravity.CENTER);
-            clear.setTextColor(0xffff8fb1);
+        if (filterClearChip == null) {
+            filterClearChip = a.button("清除", "source-filter-clear", () -> toggleFilter(""));
+            filterClearChip.setTextSize(12);
+            filterClearChip.setMinHeight(0);
+            filterClearChip.setMinimumHeight(0);
+            filterClearChip.setPadding(a.dp(14), 0, a.dp(14), 0);
+            filterClearChip.setGravity(Gravity.CENTER);
+            filterClearChip.setTextColor(0xffff8fb1);
             FocusMotion.style(
-                    a, clear, false, 0x003a1d2a, 0x55ff8fb1, 999, 0xffff8fb1, 0xff0b1220, false, 1.02f);
-            clear.setOnFocusChangeListener(
+                    a,
+                    filterClearChip,
+                    false,
+                    0x003a1d2a,
+                    0x55ff8fb1,
+                    999,
+                    0xffff8fb1,
+                    0xff0b1220,
+                    false,
+                    1.02f);
+            filterClearChip.setOnFocusChangeListener(
                     (v, focused) ->
                             FocusMotion.style(
                                     a,
-                                    clear,
+                                    filterClearChip,
                                     focused,
                                     0x003a1d2a,
                                     0x55ff8fb1,
@@ -1137,11 +1148,11 @@ public final class GlobalSearchScreen implements AutoCloseable {
                                     0xff0b1220,
                                     focused,
                                     1.04f));
-            LinearLayout.LayoutParams clearLp =
-                    new LinearLayout.LayoutParams(-2, a.dp(34));
+            LinearLayout.LayoutParams clearLp = new LinearLayout.LayoutParams(-2, a.dp(34));
             clearLp.setMargins(a.dp(2), 0, a.dp(8), 0);
-            sourceFilters.addView(clear, clearLp);
+            sourceFilters.addView(filterClearChip, clearLp);
         }
+        filterClearChip.setVisibility(filtering() ? View.VISIBLE : View.GONE);
         if (filterSummaryText != null) {
             if (filtering()) {
                 filterSummaryText.setVisibility(View.VISIBLE);
