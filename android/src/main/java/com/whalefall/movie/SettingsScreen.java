@@ -542,6 +542,17 @@ final class SettingsScreen {
                     () -> SourcePicker.showWarehouses(a));
         }
         toggle("启用来源扩展", Prefs.EXPERIMENTAL_CSP, true, a::closeEngines);
+        toggle(
+                "聚合搜索（跨源合并）",
+                "search_aggregate_enabled",
+                true,
+                () ->
+                        AppLog.i(
+                                "SearchAgg",
+                                "aggregate="
+                                        + (a.prefs.getBoolean("search_aggregate_enabled", true)
+                                                ? "on"
+                                                : "off")));
         link(
                 "网盘与账号",
                 "直接打开配置源自带的账号面板",

@@ -65,6 +65,19 @@ public final class GlobalSearchScreen implements AutoCloseable {
     LinearLayout statusChips, sortRow;
     TextView mergeHint;
     private String lastAggregateMode = "";
+    /** 1.9.29：多来源筛选（空 = 全部）。 */
+    final LinkedHashSet<String> selectedSources = new LinkedHashSet<>();
+    TextView filterSummaryText;
+    final Map<String, TextView> groupHeaders = new HashMap<>();
+    int realCardCount;
+
+    boolean filtering() {
+        return !selectedSources.isEmpty();
+    }
+
+    boolean sourceSelected(String key) {
+        return selectedSources.isEmpty() || selectedSources.contains(key);
+    }
     boolean mergedLogged;
 
     static String staticSubmitted = "";
@@ -357,6 +370,19 @@ public final class GlobalSearchScreen implements AutoCloseable {
         sourceFilters.setPadding(a.dp(4), a.dp(5), a.dp(4), a.dp(5));
         filterScroll.addView(sourceFilters);
         right.addView(filterScroll, new LinearLayout.LayoutParams(-1, a.dp(46)));
+        filterSummaryText = a.text("", 12, UiTokens.ACCENT_SOFT);
+        filterSummaryText.setPadding(a.dp(6), 0, a.dp(6), a.dp(2));
+        filterSummaryText.setVisibility(View.GONE);
+        filterSummaryText.setFocusable(true);
+        filterSummaryText.setOnClickListener(
+                v -> {
+                    selectedSources.clear();
+                    activeFilter = "";
+                    resetGrid();
+                    renderFilters();
+                    renderResults();
+                });
+        right.addView(filterSummaryText);
         resultScroll = new TvScrollView(a);
         resultScroll.setTag("global-search-results");
         resultScroll.setClipToPadding(false);
@@ -722,6 +748,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         clearCards();
         finished = failed = timedOut = busy = matched = 0;
         activeFilter = "";
+        selectedSources.clear();
         filterButtons.clear();
         sourceFilters.removeAllViews();
         shownLimit = 24;
@@ -956,6 +983,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         for (SourceResult source : results.values())
             if (!filterButtons.containsKey(source.site.key))
                 addFilter(clean(source.site.name), source.site.key);
+        updateFilterLabels();
     }
 
     void addFilter(String label, String key) {
@@ -963,13 +991,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
                 a.button(
                         label,
                         "search-filter:" + key,
-                        () -> {
-                            activeFilter = key;
-                            shownLimit = 24;
-                            updateFilterLabels();
-                            resetGrid();
-                            renderResults();
-                        });
+                        () -> toggleFilter(key));
         b.setTextSize(12);
         b.setMinWidth(a.dp(64));
         b.setMinimumWidth(a.dp(64));
@@ -980,6 +1002,11 @@ public final class GlobalSearchScreen implements AutoCloseable {
         b.setGravity(Gravity.CENTER);
         b.setContentDescription(label);
         b.setOnFocusChangeListener((v, focus) -> styleFilter(b, key, focus));
+        b.setOnLongClickListener(
+                v -> {
+                    toggleFilter(key);
+                    return true;
+                });
         LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(-2, a.dp(34));
         size.setMargins(a.dp(2), 0, a.dp(8), 0);
         sourceFilters.addView(b, size);
@@ -987,8 +1014,30 @@ public final class GlobalSearchScreen implements AutoCloseable {
         styleFilter(b, key, false);
     }
 
+    /** 1.9.29：来源筛选（多选）；「全部」清空筛选。 */
+    void toggleFilter(String key) {
+        if (key.isEmpty()) {
+            selectedSources.clear();
+        } else if (!selectedSources.remove(key)) {
+            selectedSources.add(key);
+        }
+        activeFilter = selectedSources.size() == 1 ? selectedSources.iterator().next() : "";
+        shownLimit = 24;
+        AppLog.i(
+                "SearchFilter",
+                "sources=" + selectedSources + " count=" + selectedSources.size());
+        updateFilterLabels();
+        resetGrid();
+        renderResults();
+    }
+
+    String firstSelectedSource() {
+        if (selectedSources.isEmpty()) return activeFilter;
+        return selectedSources.iterator().next();
+    }
+
     void styleFilter(Button b, String key, boolean focused) {
-        boolean selected = key.equals(activeFilter);
+        boolean selected = key.isEmpty() ? selectedSources.isEmpty() : selectedSources.contains(key);
         b.setSelected(selected);
         b.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
         FocusMotion.style(
@@ -1006,14 +1055,50 @@ public final class GlobalSearchScreen implements AutoCloseable {
 
     void updateFilterLabels() {
         for (Map.Entry<String, Button> entry : filterButtons.entrySet()) {
+            String key = entry.getKey();
             Button b = entry.getValue();
-            styleFilter(b, entry.getKey(), b.hasFocus());
+            if (!key.isEmpty()) {
+                SourceResult source = results.get(key);
+                String label = clean(key.isEmpty() ? "" : (source == null ? key : source.site.name));
+                if (source != null && source.videos != null) label += " " + source.videos.size();
+                if (source != null) {
+                    if (source.outcome == SearchCoordinator.Outcome.FAILED
+                            || source.outcome == SearchCoordinator.Outcome.VERIFICATION_REQUIRED)
+                        label += " 失败";
+                    else if (source.outcome == SearchCoordinator.Outcome.TIMEOUT) label += " 超时";
+                }
+                b.setText(label);
+            }
+            styleFilter(b, key, b.hasFocus());
+            if (!key.isEmpty()) {
+                SourceResult source = results.get(key);
+                if (source != null) {
+                    if (source.outcome == SearchCoordinator.Outcome.FAILED
+                            || source.outcome == SearchCoordinator.Outcome.VERIFICATION_REQUIRED) {
+                        b.setTextColor(0xff9aa3b2);
+                    } else if (source.outcome == SearchCoordinator.Outcome.TIMEOUT) {
+                        b.setTextColor(0xffffb454);
+                    }
+                }
+            }
+        }
+        if (filterSummaryText != null) {
+            if (filtering()) {
+                filterSummaryText.setVisibility(View.VISIBLE);
+                filterSummaryText.setText(
+                        "已筛选 " + selectedSources.size() + " 个来源 · 清除");
+                filterSummaryText.setFocusable(true);
+            } else {
+                filterSummaryText.setVisibility(View.GONE);
+            }
         }
     }
 
     void resetGrid() {
         resultBody.removeAllViews();
         displayed.clear();
+        groupHeaders.clear();
+        realCardCount = 0;
         sortRow = null;
         statusChips = null;
         mergeHint = null;
@@ -1208,8 +1293,22 @@ public final class GlobalSearchScreen implements AutoCloseable {
                             dotColor);
             chip.addView(chipText);
             chip.setMinimumHeight(a.dp(a.isTvDevice() ? 40 : 28));
-            chip.setFocusable(true);
             MobileDetailScreen.bindTouchFeedback(chip);
+            chip.setFocusable(true);
+            chip.setFocusableInTouchMode(true);
+            chip.setOnFocusChangeListener(
+                    (v, focused) ->
+                            FocusMotion.style(
+                                    a,
+                                    v,
+                                    focused,
+                                    0x0016283f,
+                                    0x3333ffffff,
+                                    999,
+                                    0xffd7e0ee,
+                                    0xff0b1220,
+                                    focused,
+                                    1.02f));
             final SourceResult selected = source;
             chip.setOnClickListener(
                     v -> {
@@ -1273,7 +1372,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         int available = 0, added = 0;
         boolean remaining = false;
         boolean aggregate = aggregateEnabled();
-        if (activeFilter.isEmpty() && aggregate) {
+        if (!filtering() && aggregate) {
             // 1.9.27：全部视图用跨源合并去重后的列表
             List<Merged> mergedList = buildMerged();
             int[] state = {0, 0, 0};
@@ -1290,24 +1389,28 @@ public final class GlobalSearchScreen implements AutoCloseable {
             available = state[0];
             added = state[1];
             remaining = state[2] == 1;
-        } else if (activeFilter.isEmpty()) {
-            // 1.9.29：聚合关闭 → 按来源分组逐源展示
+        } else if (!filtering()) {
+            // 1.9.29：聚合关闭 → 按来源分组逐源展示（标题只创建一次，避免 pending 重渲染叠加）
             int[] state = {0, 0, 0};
             for (SourceResult source : results.values()) {
                 if (source.videos == null || source.videos.isEmpty()) continue;
-                // 先补齐当前行，再插入来源标题
-                padCurrentRow();
-                TextView header =
-                        a.text(
-                                clean(source.site.name)
-                                        + " · "
-                                        + source.videos.size()
-                                        + " 条",
-                                13,
-                                UiTokens.ACCENT_SOFT);
-                header.setPadding(a.dp(4), a.dp(10), a.dp(4), a.dp(4));
-                resultGrid.addView(header, new LinearLayout.LayoutParams(-1, -2));
-                lastRow = null;
+                String groupKey = source.site.key;
+                TextView header = groupHeaders.get(groupKey);
+                if (header == null) {
+                    padCurrentRow();
+                    header =
+                            a.text(
+                                    clean(source.site.name)
+                                            + " · "
+                                            + source.videos.size()
+                                            + " 条",
+                                    13,
+                                    UiTokens.ACCENT_SOFT);
+                    header.setPadding(a.dp(4), a.dp(10), a.dp(4), a.dp(4));
+                    resultGrid.addView(header, new LinearLayout.LayoutParams(-1, -2));
+                    groupHeaders.put(groupKey, header);
+                    lastRow = null;
+                }
                 for (int i = 0; i < Math.min(24, source.videos.size()); i++) {
                     Cms.Video video = source.videos.get(i);
                     String key = source.site.key + ":" + video.id;
@@ -1325,29 +1428,31 @@ public final class GlobalSearchScreen implements AutoCloseable {
             added = state[1];
             remaining = state[2] == 1;
         } else {
+            // 1.9.29：按来源筛选（可多选）→ 只显示选中来源的原始结果，不做合并
             int[] state = {0, 0, 0};
-            for (SourceResult source : results.values())
-                if (source.site.key.equals(activeFilter))
-                    for (int i = 0;
-                            i < Math.min(24, source.videos.size()) && state[0] < 120;
-                            i++) {
-                        Cms.Video video = source.videos.get(i);
-                        String key = source.site.key + ":" + video.id;
-                        LinearLayout card = posterCards.get(key);
-                        if (card == null) {
-                            card = makeCard(source, video);
-                            posterCards.put(key, card);
-                        }
-                        placeResult(key, card, state);
-                        if (state[2] == 1 || state[0] >= 120) break;
+            for (SourceResult source : results.values()) {
+                if (!sourceSelected(source.site.key)) continue;
+                if (source.videos == null || source.videos.isEmpty()) continue;
+                for (int i = 0; i < Math.min(24, source.videos.size()); i++) {
+                    Cms.Video video = source.videos.get(i);
+                    String key = source.site.key + ":" + video.id;
+                    LinearLayout card = posterCards.get(key);
+                    if (card == null) {
+                        card = makeCard(source, video);
+                        posterCards.put(key, card);
                     }
+                    placeResult(key, card, state);
+                    if (state[2] == 1 || state[0] >= 120) break;
+                }
+                if (state[2] == 1 || state[0] >= 120) break;
+            }
             available = state[0];
             added = state[1];
             remaining = state[2] == 1;
         }
-        emptyResult.setVisibility(displayed.isEmpty() ? View.VISIBLE : View.GONE);
-        if (displayed.isEmpty()) {
-            SourceResult selected = results.get(activeFilter);
+        emptyResult.setVisibility(realCardCount == 0 ? View.VISIBLE : View.GONE);
+        if (realCardCount == 0) {
+            SourceResult selected = results.get(firstSelectedSource());
             emptyResult.setText(
                     selected == null
                             ? (finished == sourceCount ? "本次未获得可显示的结果。可选择上方来源查看具体状态。" : "正在等待其他来源…")
@@ -1364,10 +1469,10 @@ public final class GlobalSearchScreen implements AutoCloseable {
                                                             : "此源已响应，但没有匹配结果。可更换关键词再试。");
         }
         retrySource.setVisibility(
-                !activeFilter.isEmpty() && displayed.isEmpty() ? View.VISIBLE : View.GONE);
+                filtering() && realCardCount == 0 ? View.VISIBLE : View.GONE);
         retrySource.setEnabled(retryCoordinator == null);
         moreResults.setVisibility(available > shownLimit ? View.VISIBLE : View.GONE);
-        resultHint.setVisibility(displayed.size() >= 120 ? View.VISIBLE : View.GONE);
+        resultHint.setVisibility(realCardCount >= 120 ? View.VISIBLE : View.GONE);
         if (!remaining && restoringResults) {
             restoringResults = false;
             View saved =
@@ -1393,9 +1498,9 @@ public final class GlobalSearchScreen implements AutoCloseable {
 
     /** 1.9.29：统一卡片落位（合并/按源分组/单源三模式共用）。state = {available, added, remaining}。 */
     void placeResult(String key, LinearLayout card, int[] state) {
+        if (displayed.contains(key)) return;
         state[0]++;
         if (state[0] > shownLimit) return;
-        if (displayed.contains(key)) return;
         if (state[1] >= 4) {
             state[2] = 1;
             return;
@@ -1409,6 +1514,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         cell.setMargins(a.dp(3), a.dp(3), a.dp(8), a.dp(13));
         lastRow.addView(card, column, cell);
         displayed.add(key);
+        realCardCount++;
         state[1]++;
         if (focusNewResults) {
             card.requestFocus();
