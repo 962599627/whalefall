@@ -15,13 +15,40 @@ import java.util.Locale;
 /**
  * 通用「网盘扫码登录」弹窗：深色外壳 + 白底二维码（只保留二维码，隐藏网页其余部分），
  * 登录成功后通过 Cookie 名或页面 JS token 捕获登录态，回调给各原生网盘模块。
+ *
+ * <p>可配置桌面 UA、二维码注入延迟/重试次数/连续命中次数、「扫码登录」tab 点击。
  */
 final class PanDriveLogin {
     interface Success {
         void onValue(String cookieOrToken);
     }
 
+    static final String DESKTOP_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+    /** 登录弹窗配置：每个网盘按自己的页面特点填。 */
+    static final class Config {
+        String title = "扫码登录";
+        String hint = "请使用对应网盘 App 扫码登录";
+        String loginUrl = "";
+        String[] cookieNames = new String[0];
+        String tokenScript;
+        String userAgent;
+        long injectDelayMs;
+        int maxAttempts = 7;
+        int requiredHits = 1;
+        boolean clickScanTab;
+    }
+
     private PanDriveLogin() {}
+
+    /** 点击「扫码登录/二维码」tab（若页面有），再找二维码。 */
+    private static final String CLICK_SCAN_JS =
+            "(function(){try{var els=document.querySelectorAll('button,a,div,span,li');"
+                    + "for(var i=0;i<els.length;i++){var el=els[i];var t=(el.textContent||'').trim();"
+                    + "if((t==='扫码登录'||t==='二维码登录'||t==='扫码'||t==='二维码')&&el.offsetParent!==null){"
+                    + "el.click();return 'clicked';}}}catch(e){}return 'no';})()";
 
     /** 只保留登录二维码的注入脚本（与 QuarkDrive 相同策略）。 */
     private static final String QR_JS =
@@ -47,19 +74,7 @@ final class PanDriveLogin {
                     + "wrap.appendChild(tip);document.body.appendChild(wrap);return 'true';"
                     + "}catch(e){return 'false';}})()";
 
-    /**
-     * @param cookieNames 登录成功的 Cookie 名（任一出现即视为登录）
-     * @param tokenScript 可选的 JS 表达式（如 localStorage.getItem('token')），返回 JSON 字符串；
-     *                    非空时每次轮询执行，值非空即捕获
-     */
-    static void show(
-            final MainActivity a,
-            final String title,
-            final String hint,
-            final String loginUrl,
-            final String[] cookieNames,
-            final String tokenScript,
-            final Success success) {
+    static void show(final MainActivity a, final Config config, final Success success) {
         final Dialog dialog = new Dialog(a);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout page = a.vertical();
@@ -67,14 +82,14 @@ final class PanDriveLogin {
         LinearLayout header = a.row();
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(a.dp(16), a.dp(12), a.dp(12), a.dp(8));
-        TextView heading = a.text(title, UiTokens.TYPE_TITLE, UiTokens.TEXT_PRIMARY);
+        TextView heading = a.text(config.title, UiTokens.TYPE_TITLE, UiTokens.TEXT_PRIMARY);
         heading.setTypeface(null, Typeface.BOLD);
         header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1f));
         header.addView(
                 a.button("关闭", "pan-login-close", dialog::dismiss),
                 new LinearLayout.LayoutParams(-2, a.dp(40)));
         page.addView(header);
-        TextView tip = a.text(hint, UiTokens.TYPE_MICRO, UiTokens.TEXT_TERTIARY);
+        TextView tip = a.text(config.hint, UiTokens.TYPE_MICRO, UiTokens.TEXT_TERTIARY);
         tip.setPadding(a.dp(16), 0, a.dp(16), a.dp(8));
         page.addView(tip);
 
@@ -83,8 +98,12 @@ final class PanDriveLogin {
         web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false);
         web.getSettings().setAllowContentAccess(false);
+        if (config.userAgent != null && !config.userAgent.isEmpty())
+            web.getSettings().setUserAgentString(config.userAgent);
+        final int[] qrHits = {0};
         final boolean[] qrFound = {false};
         final boolean[] qrWarned = {false};
+        final boolean[] scanClicked = {false};
         web.setWebViewClient(
                 new WebViewClient() {
                     @Override
@@ -96,9 +115,22 @@ final class PanDriveLogin {
                     @Override
                     public void onPageFinished(WebView view, String url) {
                         super.onPageFinished(view, url);
+                        qrHits[0] = 0;
                         qrFound[0] = false;
                         qrWarned[0] = false;
-                        injectQr(view, a, 0, qrFound, qrWarned);
+                        scanClicked[0] = false;
+                        a.ui.postDelayed(
+                                () ->
+                                        injectQr(
+                                                view,
+                                                a,
+                                                config,
+                                                0,
+                                                qrHits,
+                                                qrFound,
+                                                qrWarned,
+                                                scanClicked),
+                                Math.max(0, config.injectDelayMs));
                     }
                 });
         page.addView(web, new LinearLayout.LayoutParams(-1, 0, 1f));
@@ -116,7 +148,21 @@ final class PanDriveLogin {
             window.setGravity(Gravity.CENTER);
             window.getDecorView().setSystemUiVisibility(5894);
         }
-        web.loadUrl(loginUrl);
+        AppLog.i(
+                "PanLoginWeb",
+                "open title="
+                        + config.title
+                        + " url="
+                        + config.loginUrl
+                        + " desktopUA="
+                        + (config.userAgent != null && config.userAgent.contains("Windows"))
+                        + " delay="
+                        + config.injectDelayMs
+                        + " cookieNames="
+                        + java.util.Arrays.toString(config.cookieNames)
+                        + " tokenScript="
+                        + (config.tokenScript != null));
+        web.loadUrl(config.loginUrl);
 
         final boolean[] active = {true};
         final boolean[] busy = {false};
@@ -125,16 +171,16 @@ final class PanDriveLogin {
         poll[0] =
                 () -> {
                     if (!active[0] || !dialog.isShowing() || busy[0]) return;
-                    String cookie = readCookies(cookieNames);
+                    String cookie = readCookies(config.cookieNames);
                     if (!cookie.isEmpty()) {
                         finish(a, dialog, active, success, cookie);
                         return;
                     }
-                    if (tokenScript != null) {
+                    if (config.tokenScript != null) {
                         busy[0] = true;
                         try {
                             web.evaluateJavascript(
-                                    tokenScript,
+                                    config.tokenScript,
                                     value -> {
                                         busy[0] = false;
                                         String token = unfence(value);
@@ -160,23 +206,29 @@ final class PanDriveLogin {
         success.onValue(value);
     }
 
-    /** 读系统 CookieManager：返回含指定登录 Cookie 名的完整 Cookie 串，否则空。 */
     static String readCookies(String[] names) {
+        if (names == null || names.length == 0) return "";
         try {
             CookieManager manager = CookieManager.getInstance();
-            String[] urls = {"https://pan.quark.cn/", "https://drive.uc.cn/", "https://pan.baidu.com/", "https://www.alipan.com/"};
+            String[] urls = {
+                "https://pan.quark.cn/",
+                "https://drive.uc.cn/",
+                "https://pc-api.uc.cn/",
+                "https://pan.baidu.com/",
+                "https://www.alipan.com/"
+            };
             for (String url : urls) {
                 String cookie = manager.getCookie(url);
                 if (cookie == null || cookie.trim().isEmpty()) continue;
                 String lower = cookie.toLowerCase(Locale.ROOT);
-                for (String name : names) if (lower.contains(name.toLowerCase(Locale.ROOT) + "=")) return cookie;
+                for (String name : names)
+                    if (lower.contains(name.toLowerCase(Locale.ROOT) + "=")) return cookie;
             }
         } catch (Throwable ignored) {
         }
         return "";
     }
 
-    /** evaluateJavascript 返回值是带引号的 JSON 字符串，去掉引号/转义。 */
     static String unfence(String value) {
         if (value == null) return "";
         String text = value.trim();
@@ -191,27 +243,77 @@ final class PanDriveLogin {
     private static void injectQr(
             final WebView web,
             final MainActivity a,
+            final Config config,
             final int attempt,
+            final int[] hits,
             final boolean[] found,
-            final boolean[] warned) {
+            final boolean[] warned,
+            final boolean[] scanClicked) {
         if (web == null || found[0]) return;
-        if (attempt > 6) {
+        if (attempt > Math.max(1, config.maxAttempts)) {
             if (!warned[0]) {
                 warned[0] = true;
                 a.toast("未找到二维码容器，请在网盘页面完成登录");
             }
             return;
         }
+        final String script;
+        if (config.clickScanTab && !scanClicked[0]) {
+            script = CLICK_SCAN_JS + ";" + QR_JS;
+        } else {
+            script = QR_JS;
+        }
         try {
             web.evaluateJavascript(
-                    QR_JS,
+                    script,
                     value -> {
                         boolean ok = value != null && value.contains("true");
-                        if (ok) found[0] = true;
-                        else a.ui.postDelayed(() -> injectQr(web, a, attempt + 1, found, warned), 700);
+                        if (config.clickScanTab && !scanClicked[0] && value != null)
+                            scanClicked[0] = value.contains("clicked");
+                        if (ok) {
+                            hits[0]++;
+                            // 阿里等页面需要连续多次命中（等二维码稳定渲染）才简化
+                            if (hits[0] >= Math.max(1, config.requiredHits)) found[0] = true;
+                            else
+                                a.ui.postDelayed(
+                                        () ->
+                                                injectQr(
+                                                        web,
+                                                        a,
+                                                        config,
+                                                        attempt + 1,
+                                                        hits,
+                                                        found,
+                                                        warned,
+                                                        scanClicked),
+                                        600);
+                        } else
+                            a.ui.postDelayed(
+                                    () ->
+                                            injectQr(
+                                                    web,
+                                                    a,
+                                                    config,
+                                                    attempt + 1,
+                                                    hits,
+                                                    found,
+                                                    warned,
+                                                    scanClicked),
+                                    800);
                     });
         } catch (Throwable error) {
-            a.ui.postDelayed(() -> injectQr(web, a, attempt + 1, found, warned), 800);
+            a.ui.postDelayed(
+                    () ->
+                            injectQr(
+                                    web,
+                                    a,
+                                    config,
+                                    attempt + 1,
+                                    hits,
+                                    found,
+                                    warned,
+                                    scanClicked),
+                    900);
         }
     }
 }

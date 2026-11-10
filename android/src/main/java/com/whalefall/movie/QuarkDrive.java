@@ -107,12 +107,17 @@ final class QuarkDrive {
         return a != null && a.prefs.getString(Prefs.QUARK_COOKIE, "").contains("=");
     }
 
+    /** 必须通过 member API 验证才算已登录。 */
+    static boolean isLoggedIn(MainActivity a) {
+        return hasCookie(a) && a.prefs.getBoolean(Prefs.QUARK_VERIFIED, false);
+    }
+
     static String cookie(MainActivity a) {
         return a == null ? "" : a.prefs.getString(Prefs.QUARK_COOKIE, "");
     }
 
     static String cachedAccount(MainActivity a) {
-        return a == null ? "" : a.prefs.getString(Prefs.QUARK_ACCOUNT, "");
+        return a == null || !isLoggedIn(a) ? "" : a.prefs.getString(Prefs.QUARK_ACCOUNT, "");
     }
 
     static long cachedTotal(MainActivity a) {
@@ -131,6 +136,7 @@ final class QuarkDrive {
     static void clear(MainActivity a) {
         a.prefs.edit()
                 .remove(Prefs.QUARK_COOKIE)
+                .remove(Prefs.QUARK_VERIFIED)
                 .remove(Prefs.QUARK_ACCOUNT)
                 .remove(Prefs.QUARK_TOTAL)
                 .remove(Prefs.QUARK_USED)
@@ -318,7 +324,10 @@ final class QuarkDrive {
     }
 
     static void saveCookie(MainActivity a, String cookie) {
-        a.prefs.edit().putString(Prefs.QUARK_COOKIE, cookie == null ? "" : cookie).apply();
+        a.prefs.edit()
+                .putString(Prefs.QUARK_COOKIE, cookie == null ? "" : cookie)
+                .putBoolean(Prefs.QUARK_VERIFIED, false)
+                .apply();
     }
 
     // ---------------- 真实状态验证（夸克 API） ----------------
@@ -340,10 +349,12 @@ final class QuarkDrive {
                             status = parseMember(body);
                             if (status.logged)
                                 a.prefs.edit()
+                                        .putBoolean(Prefs.QUARK_VERIFIED, true)
                                         .putString(Prefs.QUARK_ACCOUNT, status.account)
                                         .putLong(Prefs.QUARK_TOTAL, status.total)
                                         .putLong(Prefs.QUARK_USED, status.used)
                                         .apply();
+                            else a.prefs.edit().putBoolean(Prefs.QUARK_VERIFIED, false).apply();
                         }
                     } catch (Throwable error) {
                         status = new Status(false, "", 0, 0, friendly(error));
@@ -443,12 +454,18 @@ final class QuarkDrive {
                 status -> {
                     if (!status.logged) {
                         new AppDialog.Builder(a)
-                                .setTitle("夸克登录已失效")
+                                .setTitle("夸克登录验证失败")
                                 .setMessage(
-                                        "验证失败："
+                                        "登录信息已保存，但验证失败："
                                                 + status.error
-                                                + "\n\n请重新打开夸克页面完成登录。")
-                                .setPositiveButton("重新登录", (d, i) -> login(a, onChanged))
+                                                + "\n\n可重试验证，或重新扫码登录。")
+                                .setPositiveButton(
+                                        "重试验证",
+                                        (d, i) -> {
+                                            PanLoginState.invalidate();
+                                            showPanel(a, onChanged);
+                                        })
+                                .setNeutralButton("重新登录", (d, i) -> login(a, onChanged))
                                 .setNegativeButton("取消", null)
                                 .show();
                         return;

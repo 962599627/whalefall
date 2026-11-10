@@ -4,17 +4,27 @@ import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** 阿里云盘原生直连（Phase 4，登录态在 localStorage.token，独立于插件）。 */
+/** 阿里云盘原生直连（Phase 4；登录态在 localStorage.token，桌面 UA + 扫码 tab）。 */
 final class AliDrive {
     static final String API = "https://api.alipan.com";
-    static final String LOGIN_URL = "https://www.alipan.com/";
+    static final String LOGIN_URL = "https://www.alipan.com/signin";
     static final String DEVICE_ID = "whalefall-pan-0001";
-    static final String TOKEN_JS = "(function(){try{return localStorage.getItem('token')||'';}catch(e){return '';}})()";
+    static final String TOKEN_JS =
+            "(function(){try{return localStorage.getItem('token')||'';}catch(e){return '';}})()";
 
     private AliDrive() {}
 
     static boolean hasToken(MainActivity a) {
         return a != null && !a.prefs.getString(Prefs.ALI_TOKEN, "").trim().isEmpty();
+    }
+
+    /** 必须通过 getDriveInfo 验证才算已登录。 */
+    static boolean isLoggedIn(MainActivity a) {
+        return hasToken(a) && a.prefs.getBoolean(Prefs.ALI_VERIFIED, false);
+    }
+
+    static String cachedAccount(MainActivity a) {
+        return isLoggedIn(a) ? a.prefs.getString(Prefs.ALI_ACCOUNT, "") : "";
     }
 
     static String rawToken(MainActivity a) {
@@ -33,60 +43,26 @@ final class AliDrive {
         return "";
     }
 
-    static String refreshToken(MainActivity a) {
-        String raw = rawToken(a).trim();
-        if (!raw.startsWith("{")) return "";
-        try {
-            return new JSONObject(raw).optString("refresh_token", "");
-        } catch (Throwable ignored) {
-            return "";
-        }
-    }
-
-    static String cachedAccount(MainActivity a) {
-        return a == null ? "" : a.prefs.getString(Prefs.ALI_ACCOUNT, "");
-    }
-
     static String cachedDriveId(MainActivity a) {
-        return a == null ? "" : a.prefs.getString(Prefs.ALI_DRIVE_ID, "root");
+        String id = a == null ? "" : a.prefs.getString(Prefs.ALI_DRIVE_ID, "");
+        return id.isEmpty() ? "root" : id;
     }
 
     static void deviceLogout(MainActivity a) {
         a.prefs.edit()
                 .remove(Prefs.ALI_TOKEN)
+                .remove(Prefs.ALI_VERIFIED)
                 .remove(Prefs.ALI_ACCOUNT)
                 .remove(Prefs.ALI_DRIVE_ID)
                 .remove(Prefs.ALI_TOTAL)
                 .remove(Prefs.ALI_USED)
                 .apply();
-        AppLog.i("AliDrive", "logout cleared token=false account=true");
+        AppLog.i("AliDrive", "logout cleared token=false verified=false");
     }
 
     static void showPanel(final MainActivity a, final Runnable onChanged) {
         if (!hasToken(a)) {
-            PanDriveLogin.show(
-                    a,
-                    "阿里云盘扫码登录",
-                    "用阿里云盘 App 扫码登录；成功后 App 会验证真实账号与容量。",
-                    LOGIN_URL,
-                    new String[] {},
-                    TOKEN_JS,
-                    value -> {
-                        a.prefs.edit().putString(Prefs.ALI_TOKEN, value).apply();
-                        verifyAsync(
-                                a,
-                                status -> {
-                                    if (status.logged)
-                                        a.toast(
-                                                "阿里登录成功"
-                                                        + (status.account.isEmpty()
-                                                                ? ""
-                                                                : "：" + status.account));
-                                    else
-                                        a.notice("阿里登录验证失败：" + status.error);
-                                    if (onChanged != null) onChanged.run();
-                                });
-                    });
+            login(a, onChanged);
             return;
         }
         verifyAsync(
@@ -94,20 +70,66 @@ final class AliDrive {
                 status -> {
                     if (!status.logged) {
                         new AppDialog.Builder(a)
-                                .setTitle("阿里登录已失效")
-                                .setMessage("验证失败：" + status.error + "\n\n请重新扫码登录。")
+                                .setTitle("阿里登录验证失败")
+                                .setMessage(
+                                        "登录信息已保存，但验证失败："
+                                                + status.error
+                                                + "\n\n可重试验证，或重新扫码登录。")
                                 .setPositiveButton(
-                                        "重新登录",
+                                        "重试验证",
                                         (d, i) -> {
                                             PanLoginState.invalidate();
                                             showPanel(a, onChanged);
                                         })
+                                .setNeutralButton("重新登录", (d, i) -> login(a, onChanged))
                                 .setNegativeButton("取消", null)
                                 .show();
                         return;
                     }
                     menu(a, status, onChanged);
                 });
+    }
+
+    static void login(final MainActivity a, final Runnable onChanged) {
+        PanDriveLogin.Config config = new PanDriveLogin.Config();
+        config.title = "阿里云盘扫码登录";
+        config.hint = "等待二维码加载（桌面 UA）；用阿里云盘 App 扫码，成功后 App 会验证真实账号。";
+        config.loginUrl = LOGIN_URL;
+        config.tokenScript = TOKEN_JS;
+        config.userAgent = PanDriveLogin.DESKTOP_UA;
+        config.injectDelayMs = 2500;
+        config.maxAttempts = 20;
+        config.requiredHits = 2;
+        config.clickScanTab = true;
+        PanDriveLogin.show(
+                a,
+                config,
+                value -> {
+                    a.prefs.edit()
+                            .putString(Prefs.ALI_TOKEN, value)
+                            .putBoolean(Prefs.ALI_VERIFIED, false)
+                            .apply();
+                    verifyAsync(
+                            a,
+                            status -> {
+                                if (status.logged)
+                                    a.toast(
+                                            "阿里登录成功"
+                                                    + (status.account.isEmpty()
+                                                            ? ""
+                                                            : "：" + status.account));
+                                else a.notice("登录信息已保存，但验证失败：" + status.error);
+                                if (onChanged != null) onChanged.run();
+                            });
+                });
+    }
+
+    static java.util.Map<String, String> authHeaders(String token) {
+        return DriveApi.headers(
+                "Authorization", "Bearer " + token,
+                "x-device-id", DEVICE_ID,
+                "Referer", "https://www.alipan.com/",
+                "User-Agent", PanDriveLogin.DESKTOP_UA);
     }
 
     static void verifyAsync(final MainActivity a, final QuarkDrive.Callback<QuarkDrive.Status> cb) {
@@ -119,8 +141,7 @@ final class AliDrive {
                         if (token.isEmpty()) throw new java.io.IOException("没有保存的 access_token");
                         String body =
                                 DriveApi.get(
-                                        API + "/adrive/v1.0/user/getDriveInfo",
-                                        authHeaders(token));
+                                        API + "/adrive/v1.0/user/getDriveInfo", authHeaders(token));
                         JSONObject json = new JSONObject(body);
                         String account =
                                 json.optString(
@@ -136,25 +157,24 @@ final class AliDrive {
                         if (driveId.isEmpty()) throw new java.io.IOException("getDriveInfo 缺少 drive_id");
                         status = new QuarkDrive.Status(true, account, total, used, "");
                         a.prefs.edit()
+                                .putBoolean(Prefs.ALI_VERIFIED, true)
                                 .putString(Prefs.ALI_ACCOUNT, account)
                                 .putString(Prefs.ALI_DRIVE_ID, driveId)
                                 .putLong(Prefs.ALI_TOTAL, total)
                                 .putLong(Prefs.ALI_USED, used)
                                 .apply();
+                        AppLog.i(
+                                "AliDrive",
+                                "verify host=api.alipan.com ua=desktop result=ok driveId="
+                                        + (!driveId.isEmpty()));
                     } catch (Throwable error) {
                         status = new QuarkDrive.Status(false, "", 0, 0, DriveApi.friendly(error));
-                        AppLog.i("AliDrive", "verify failed " + status.error);
+                        a.prefs.edit().putBoolean(Prefs.ALI_VERIFIED, false).apply();
+                        AppLog.i("AliDrive", "verify host=api.alipan.com ua=desktop error=" + status.error);
                     }
                     final QuarkDrive.Status result = status;
                     a.ui.post(() -> cb.ready(result));
                 });
-    }
-
-    static java.util.Map<String, String> authHeaders(String token) {
-        return DriveApi.headers(
-                "Authorization", "Bearer " + token,
-                "x-device-id", DEVICE_ID,
-                "Referer", LOGIN_URL);
     }
 
     static void menu(final MainActivity a, final QuarkDrive.Status status, final Runnable onChanged) {
@@ -223,9 +243,10 @@ final class AliDrive {
                                         authHeaders(token),
                                         body.toString());
                         files = parseFiles(response);
+                        AppLog.i("AliDrive", "list host=api.alipan.com items=" + files.size());
                     } catch (Throwable failure) {
                         error = DriveApi.friendly(failure);
-                        AppLog.i("AliDrive", "list failed " + error);
+                        AppLog.i("AliDrive", "list host=api.alipan.com error=" + error);
                     }
                     final List<QuarkDrive.FileItem> result = files;
                     final String failure = error;
@@ -236,7 +257,7 @@ final class AliDrive {
                                     PanDriveUi.showFiles(
                                             a,
                                             "我的阿里云盘",
-                                            "根目录前 50 项（原生直连）",
+                                            "根目录前 50 项（原生直连 · 桌面 UA）",
                                             result);
                             });
                 });
@@ -253,7 +274,8 @@ final class AliDrive {
             String name = item.optString("name", "");
             String fileId = item.optString("file_id", "");
             long size = item.optLong("size", 0);
-            boolean folder = "folder".equals(item.optString("type", "")) || item.optBoolean("folder", false);
+            boolean folder =
+                    "folder".equals(item.optString("type", "")) || item.optBoolean("folder", false);
             out.add(new QuarkDrive.FileItem(name, fileId, size, folder));
         }
         return out;
