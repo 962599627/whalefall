@@ -1303,7 +1303,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
                                     v,
                                     focused,
                                     0x0016283f,
-                                    0x3333ffffff,
+                                    0x33ffffff,
                                     999,
                                     0xffd7e0ee,
                                     0xff0b1220,
