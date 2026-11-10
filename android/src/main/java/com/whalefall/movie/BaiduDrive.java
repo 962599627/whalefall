@@ -122,34 +122,59 @@ final class BaiduDrive {
         final String cookie = cookie(a);
         a.worker.execute(
                 () -> {
-                    try {
-                        String url =
-                                API
-                                        + "/api/gettemplatevariable?fields=%5B%22bdstoken%22%5D"
-                                        + "&channel=chunlei&clienttype=0&web=1";
-                        String body =
-                                DriveApi.get(
-                                        url,
-                                        DriveApi.headers(
-                                                "Cookie", cookie,
-                                                "Referer", LOGIN_URL,
-                                                "User-Agent", PanDriveLogin.DESKTOP_UA));
-                        JSONObject json = new JSONObject(body);
-                        JSONObject result = json.optJSONObject("result");
-                        String token =
-                                result == null
-                                        ? json.optString("bdstoken", "")
-                                        : result.optString("bdstoken", "");
-                        if (!token.isEmpty()) a.prefs.edit().putString(Prefs.BAIDU_STOKEN, token).apply();
-                        AppLog.i("BaiduDrive", "bdstoken url=gettemplatevariable ok=" + !token.isEmpty());
-                    } catch (Throwable error) {
-                        AppLog.i(
-                                "BaiduDrive",
-                                "bdstoken url=gettemplatevariable error=" + DriveApi.friendly(error));
-                    } finally {
-                        a.ui.post(done);
-                    }
+                    fetchBdstokenBlocking(a, cookie);
+                    a.ui.post(done);
                 });
+    }
+
+    static String fetchBdstokenBlocking(MainActivity a, String cookie) {
+        try {
+            String url =
+                    API
+                            + "/api/gettemplatevariable?fields=%5B%22bdstoken%22%5D"
+                            + "&channel=chunlei&clienttype=0&web=1";
+            String body =
+                    DriveApi.get(
+                            url,
+                            DriveApi.headers(
+                                    "Cookie", cookie,
+                                    "Referer", LOGIN_URL,
+                                    "User-Agent", PanDriveLogin.DESKTOP_UA));
+            JSONObject json = new JSONObject(body);
+            JSONObject result = json.optJSONObject("result");
+            String token =
+                    result == null
+                            ? json.optString("bdstoken", "")
+                            : result.optString("bdstoken", "");
+            if (!token.isEmpty()) a.prefs.edit().putString(Prefs.BAIDU_STOKEN, token).apply();
+            AppLog.i("BaiduDrive", "bdstoken url=gettemplatevariable ok=" + !token.isEmpty());
+            return token;
+        } catch (Throwable error) {
+            AppLog.i(
+                    "BaiduDrive",
+                    "bdstoken url=gettemplatevariable error=" + DriveApi.friendly(error));
+            return "";
+        }
+    }
+
+    static String accountFrom(JSONObject data, JSONObject root) {
+        String[] keys = {
+            "username", "user_name", "display_name", "baidu_name", "netdisk_name", "name",
+            "nickname"
+        };
+        if (data != null)
+            for (String key : keys) {
+                String value = data.optString(key, "");
+                if (!value.isEmpty()) return value;
+            }
+        if (root != null)
+            for (String key : keys) {
+                String value = root.optString(key, "");
+                if (!value.isEmpty()) return value;
+            }
+        long uk = data == null ? 0 : data.optLong("uk", 0);
+        if (uk <= 0 && root != null) uk = root.optLong("uk", 0);
+        return uk > 0 ? "百度用户" + uk : "";
     }
 
     static void verifyAsync(final MainActivity a, final QuarkDrive.Callback<QuarkDrive.Status> cb) {
@@ -157,59 +182,126 @@ final class BaiduDrive {
         a.worker.execute(
                 () -> {
                     QuarkDrive.Status status;
+                    String error = "";
                     try {
-                        String infoBody =
-                                DriveApi.get(
-                                        API
-                                                + "/api/user/getinfo?channel=chunlei&clienttype=0&web=1",
-                                        DriveApi.headers(
-                                                "Cookie", cookie,
-                                                "Referer", LOGIN_URL,
-                                                "User-Agent", PanDriveLogin.DESKTOP_UA));
-                        JSONObject info = new JSONObject(infoBody);
-                        int errno = info.optInt("errno", -1);
-                        if (errno != 0) {
-                            AppLog.i("BaiduDrive", "verify host=pan.baidu.com ua=desktop errno=" + errno);
-                            throw new java.io.IOException("getinfo errno=" + errno);
+                        // 1) 先取 bdstoken（所有接口都带）
+                        String bdstoken = stoken(a);
+                        if (bdstoken.isEmpty()) bdstoken = fetchBdstokenBlocking(a, cookie);
+                        AppLog.i("BaiduDrive", "verify bdstoken=" + !bdstoken.isEmpty());
+                        final String[][] candidates = {
+                            {
+                                "/api/user/getinfo?channel=chunlei&clienttype=0&web=1&app_id=250528&bdstoken=",
+                                "getinfo-full"
+                            },
+                            {
+                                "/api/user/getinfo?web=1&app_id=250528&bdstoken=",
+                                "getinfo-min"
+                            },
+                            {
+                                "/rest/2.0/xpan/nas?method=uinfo&web=1&app_id=250528&bdstoken=",
+                                "xpan-uinfo"
+                            },
+                        };
+                        String account = "";
+                        for (String[] candidate : candidates) {
+                            String url = API + candidate[0] + bdstoken;
+                            try {
+                                String body =
+                                        DriveApi.get(
+                                                url,
+                                                DriveApi.headers(
+                                                        "Cookie", cookie,
+                                                        "Referer", LOGIN_URL,
+                                                        "User-Agent", PanDriveLogin.DESKTOP_UA));
+                                JSONObject json = new JSONObject(body);
+                                int errno = json.optInt("errno", -1);
+                                String msg = json.optString("errmsg", json.optString("msg", ""));
+                                AppLog.i(
+                                        "BaiduDrive",
+                                        "verify try="
+                                                + candidate[1]
+                                                + " result=errno="
+                                                + errno
+                                                + (msg.isEmpty() ? "" : " msg=" + msg));
+                                if (errno != 0) {
+                                    error = "errno=" + errno + (msg.isEmpty() ? "" : " " + msg);
+                                    continue;
+                                }
+                                account = accountFrom(json.optJSONObject("data"), json);
+                                if (!account.isEmpty()) break;
+                            } catch (Throwable failure) {
+                                error = DriveApi.friendly(failure);
+                                AppLog.i(
+                                        "BaiduDrive",
+                                        "verify try=" + candidate[1] + " error=" + error);
+                            }
                         }
-                        JSONObject data = info.optJSONObject("data");
-                        String account =
-                                data == null
-                                        ? ""
-                                        : data.optString(
-                                                "username",
-                                                data.optString(
-                                                        "user_name",
-                                                        data.optString("display_name", "")));
-                        long total = 0, used = 0;
-                        try {
-                            String quotaBody =
-                                    DriveApi.get(
-                                            API
-                                                    + "/api/quota?checkfree=1&checkexpire=1"
-                                                    + "&channel=chunlei&clienttype=0&web=1",
-                                            DriveApi.headers(
-                                                    "Cookie", cookie,
-                                                    "Referer", LOGIN_URL,
-                                                    "User-Agent", PanDriveLogin.DESKTOP_UA));
-                            JSONObject quota = new JSONObject(quotaBody);
-                            total = quota.optLong("total", 0);
-                            used = quota.optLong("quota", quota.optLong("used", 0));
-                        } catch (Throwable ignored) {
+                        if (account.isEmpty() && error.isEmpty())
+                            error = "getinfo 返回 eno=0 但未取到账号名";
+                        if (!account.isEmpty()) {
+                            long total = 0, used = 0;
+                            String[][] quotaCandidates = {
+                                {
+                                    "/api/quota?checkfree=1&checkexpire=1&channel=chunlei&clienttype=0&web=1&app_id=250528&bdstoken=",
+                                    "quota-full"
+                                },
+                                {
+                                    "/api/quota?checkfree=1&checkexpire=1&web=1&app_id=250528&bdstoken=",
+                                    "quota-min"
+                                },
+                            };
+                            for (String[] quotaCandidate : quotaCandidates) {
+                                try {
+                                    String quotaBody =
+                                            DriveApi.get(
+                                                    API + quotaCandidate[0] + bdstoken,
+                                                    DriveApi.headers(
+                                                            "Cookie", cookie,
+                                                            "Referer", LOGIN_URL,
+                                                            "User-Agent", PanDriveLogin.DESKTOP_UA));
+                                    JSONObject quota = new JSONObject(quotaBody);
+                                    int errno = quota.optInt("errno", 0);
+                                    AppLog.i(
+                                            "BaiduDrive",
+                                            "quota try="
+                                                    + quotaCandidate[1]
+                                                    + " result=errno="
+                                                    + errno);
+                                    if (errno != 0) continue;
+                                    total = quota.optLong("total", 0);
+                                    used = quota.optLong("quota", quota.optLong("used", 0));
+                                    break;
+                                } catch (Throwable failure) {
+                                    AppLog.i(
+                                            "BaiduDrive",
+                                            "quota try="
+                                                    + quotaCandidate[1]
+                                                    + " error="
+                                                    + DriveApi.friendly(failure));
+                                }
+                            }
+                            status = new QuarkDrive.Status(true, account, total, used, "");
+                            a.prefs.edit()
+                                    .putBoolean(Prefs.BAIDU_VERIFIED, true)
+                                    .putString(Prefs.BAIDU_ACCOUNT, account)
+                                    .putLong(Prefs.BAIDU_TOTAL, total)
+                                    .putLong(Prefs.BAIDU_USED, used)
+                                    .apply();
+                            AppLog.i(
+                                    "BaiduDrive",
+                                    "verify result=ok account="
+                                            + account
+                                            + " quota="
+                                            + (total > 0));
+                        } else {
+                            status = new QuarkDrive.Status(false, "", 0, 0, error);
+                            a.prefs.edit().putBoolean(Prefs.BAIDU_VERIFIED, false).apply();
+                            AppLog.i("BaiduDrive", "verify failed " + status.error);
                         }
-                        status = new QuarkDrive.Status(true, account, total, used, "");
-                        a.prefs.edit()
-                                .putBoolean(Prefs.BAIDU_VERIFIED, true)
-                                .putString(Prefs.BAIDU_ACCOUNT, account)
-                                .putLong(Prefs.BAIDU_TOTAL, total)
-                                .putLong(Prefs.BAIDU_USED, used)
-                                .apply();
-                        AppLog.i(
-                                "BaiduDrive",
-                                "verify host=pan.baidu.com ua=desktop result=ok account="
-                                        + (account.isEmpty() ? "?" : account));
-                    } catch (Throwable error) {
-                        status = new QuarkDrive.Status(false, "", 0, 0, DriveApi.friendly(error));
+                    } catch (Throwable errorThrown) {
+                        status =
+                                new QuarkDrive.Status(
+                                        false, "", 0, 0, DriveApi.friendly(errorThrown));
                         a.prefs.edit().putBoolean(Prefs.BAIDU_VERIFIED, false).apply();
                         AppLog.i("BaiduDrive", "verify failed " + status.error);
                     }
@@ -268,15 +360,17 @@ final class BaiduDrive {
     static void listFiles(final MainActivity a) {
         a.toast("正在读取百度网盘文件…");
         final String cookie = cookie(a);
-        final String bdstoken = stoken(a);
         a.worker.execute(
                 () -> {
                     List<QuarkDrive.FileItem> files = new java.util.ArrayList<>();
                     String error = "";
                     try {
+                        String bdstoken = stoken(a);
+                        if (bdstoken.isEmpty()) bdstoken = fetchBdstokenBlocking(a, cookie);
                         String url =
                                 API
-                                        + "/api/list?dir=%2F&start=0&limit=50&order=time&desc=1&web=1&bdstoken="
+                                        + "/api/list?dir=%2F&start=0&limit=50&order=time&desc=1"
+                                        + "&web=1&app_id=250528&bdstoken="
                                         + bdstoken;
                         String body =
                                 DriveApi.get(
