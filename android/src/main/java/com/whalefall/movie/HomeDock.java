@@ -9,10 +9,17 @@ final class HomeDock {
     final MainActivity a;
     final LinearLayout rail;
     final TextView hint;
-    final View[] items = new View[7];
-    final String[] labels = {"首页", "搜索", "直播", "电视", "收藏", "网盘", "设置"};
+    final View[] items = new View[8];
+    final String[] labels = {"首页", "搜索", "直播", "电视", "收藏", "网盘", "云盘专区", "设置"};
     final String[] keys = {
-        "nav-home", "nav-search", "nav-live", "nav-tv", "nav-favorites", "nav-accounts", "nav-settings"
+        "nav-home",
+        "nav-search",
+        "nav-live",
+        "nav-tv",
+        "nav-favorites",
+        "nav-accounts",
+        "nav-cloud-zone",
+        "nav-settings"
     };
 
     final boolean bottomMode;
@@ -25,9 +32,8 @@ final class HomeDock {
         navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
         cellDp = Math.round(38 * navScale);
         crossDp = Math.round(50 * navScale);
-        // 7 项实占：7×38 + 7×8（上下间距）+ 2×8（padding）= 338dp
-        // 140% navScale 时约 473dp < 960×540 的安全高 504dp
-        mainDp = Math.round(338 * navScale);
+        // 8 项实占：8×38 + 8×8（上下间距）+ 2×8（padding）≈ 384dp
+        mainDp = Math.min(Math.round(384 * navScale), a.isTvDevice() ? a.dp(500) : Math.round(384 * navScale));
         hintHeightDp = Math.round(28 * navScale);
         rail = bottomMode ? a.row() : a.vertical();
         rail.setTag("home-dock");
@@ -79,6 +85,7 @@ final class HomeDock {
             () -> a.open(new MainActivity.Screen(() -> TvLive.show(a)), true),
             () -> a.open(new MainActivity.Screen(() -> new FavoritesScreen(a).show()), true),
             () -> a.openSourceAccountPanel(),
+            () -> a.open(new MainActivity.Screen(() -> CloudZoneScreen.show(a)), true),
             () -> a.open(new MainActivity.Screen(a::settings), true)
         };
         for (int i = 0; i < items.length; i++) {
@@ -316,6 +323,8 @@ final class HomeDock {
                 return UiIcon.FAVORITE;
             case 5:
                 return UiIcon.CLOUD;
+            case 6:
+                return UiIcon.LIBRARY;
             default:
                 return UiIcon.TUNE;
         }

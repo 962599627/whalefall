@@ -1929,12 +1929,12 @@ final class MobileShell {
         MobileDetailScreen.bindTouchFeedback(chip);
         chip.setOnClickListener(
                 v -> {
-                    // 1.8.9：云盘配置内容原地渲染在 chips 下方，不跳新页面
+                    // 1.8.18：云盘配置 chip 直接打开源插件自己的账号面板（不再渲染仿制页）
                     if (isCloudConfigCategory(label, catId)) {
                         AppLog.i(
-                                "Catalog",
-                                "cloud-config inline chip label=" + label + " id=" + catId);
-                        showCloudConfigInline();
+                                "CloudConfig",
+                                "chip -> source panel label=" + label + " id=" + catId);
+                        new SettingsScreen(a).sourceAccountAction("LoginShow", null);
                         return;
                     }
                     hideCloudConfigInline();

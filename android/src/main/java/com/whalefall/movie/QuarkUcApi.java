@@ -143,6 +143,91 @@ final class QuarkUcApi {
                 });
     }
 
+    static final class FileItem {
+        final String fid, name;
+        final long size;
+        final boolean folder;
+        final boolean video;
+
+        FileItem(String fid, String name, long size, boolean folder) {
+            this.fid = fid == null ? "" : fid;
+            this.name = name == null ? "" : name;
+            this.size = size;
+            this.folder = folder;
+            this.video = !folder && isVideoName(this.name);
+        }
+    }
+
+    static boolean isVideoName(String name) {
+        if (name == null) return false;
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        return lower.endsWith(".mp4")
+                || lower.endsWith(".mkv")
+                || lower.endsWith(".webm")
+                || lower.endsWith(".mov")
+                || lower.endsWith(".avi")
+                || lower.endsWith(".ts")
+                || lower.endsWith(".m3u8")
+                || lower.endsWith(".flv");
+    }
+
+    static java.util.List<FileItem> list(Provider p, String cookie, String dirFid) throws Exception {
+        java.util.List<FileItem> out = new java.util.ArrayList<>();
+        int page = 1;
+        int size = 100;
+        int total = Integer.MAX_VALUE;
+        while (page <= 20) {
+            JSONObject json =
+                    request(
+                            p,
+                            "/file/sort",
+                            mapOf(
+                                    "pdir_fid", dirFid,
+                                    "_page", String.valueOf(page),
+                                    "_size", String.valueOf(size),
+                                    "_fetch_total", "1",
+                                    "fetch_all_file", "1",
+                                    "fetch_risk_file_name", "1",
+                                    "_sort", "file_type:asc,updated_at:desc"),
+                            null,
+                            cookie);
+            JSONObject data = json.optJSONObject("data");
+            org.json.JSONArray array = data == null ? null : data.optJSONArray("list");
+            if (array != null)
+                for (int i = 0; i < array.length(); i++) {
+                    JSONObject item = array.optJSONObject(i);
+                    if (item == null) continue;
+                    out.add(
+                            new FileItem(
+                                    item.optString("fid", ""),
+                                    item.optString("file_name", ""),
+                                    item.optLong("size", 0),
+                                    !item.optBoolean("file", true)));
+                }
+            JSONObject metadata = json.optJSONObject("metadata");
+            if (metadata != null) total = metadata.optInt("_total", total);
+            if (array == null || array.length() == 0 || page * size >= total) break;
+            page++;
+            if (out.size() >= 300) break;
+        }
+        return out;
+    }
+
+    static String downloadUrl(Provider p, String cookie, String fid) throws Exception {
+        JSONObject json =
+                request(
+                        p,
+                        "/file/download",
+                        null,
+                        new JSONObject().put("fids", new org.json.JSONArray().put(fid)).toString(),
+                        cookie);
+        org.json.JSONArray data = json.optJSONArray("data");
+        if (data == null || data.length() == 0) throw new IOException("没有下载地址");
+        String url = data.optJSONObject(0).optString("download_url", "");
+        if (url.isEmpty()) throw new IOException("download_url 为空");
+        return url;
+    }
+
     static Status member(Provider p, String cookie) throws Exception {        JSONObject json =
                 request(
                         p,

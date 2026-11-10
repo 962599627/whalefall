@@ -853,19 +853,20 @@ final class HomeScreen {
                         label,
                         "home-tab:" + index,
                         () -> {
-                            // 1.8.12：首页分类栏的云盘 tab 原地渲染四盘卡片，不走默认分类加载
-                            boolean cloud =
-                                    MobileShell.isCloudConfigCategory(label, id);
+                            // 1.8.18：云盘配置 tab 直接打开源插件账号面板，不再渲染仿制页
+                            boolean cloud = MobileShell.isCloudConfigCategory(label, id);
                             AppLog.i(
                                     "CloudConfig",
-                                    "homeTab click label="
+                                    "homeTab -> source panel label="
                                             + label
                                             + " id="
                                             + id
-                                            + " handled="
+                                            + " cloud="
                                             + cloud);
                             if (cloud) {
-                                showCloudHomeInline();
+                                hideCloudHomeInline();
+                                new SettingsScreen(a)
+                                        .sourceAccountAction("LoginShow", null);
                                 return;
                             }
                             hideCloudHomeInline();
