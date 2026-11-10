@@ -4216,6 +4216,8 @@ final class MobileShell {
                 (v, checked) -> {
                     SafeMode.set(a, checked);
                     a.applySafeModeVisual();
+                    if (checked && retainedRoot != null) a.applyWallpaper(retainedRoot);
+                    if (!checked && retainedRoot != null) a.ensureBackdrop(retainedRoot);
                     a.toast(checked ? "已开启安全模式（壁纸与加载动效已禁用）" : "已关闭安全模式（已恢复）");
                     // 1.8.2：下一帧再补一次，覆盖页面重建/返回首页的时序
                     a.ui.postDelayed(a::applySafeModeVisual, 120);

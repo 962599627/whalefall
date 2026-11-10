@@ -65,6 +65,21 @@ final class WhaleLoadingView extends FrameLayout {
                         a.ui.removeCallbacks(this);
                         return;
                     }
+                    // 1.8.5：安全模式/减少动画开启后立即退化为静态帧并停 ticker
+                    if (SafeMode.enabled(a) || reduced) {
+                        java.util.List<Bitmap> cache =
+                                frames == null ? null : java.util.Arrays.asList(frames);
+                        if (cache != null && !cache.isEmpty() && frameA != null) {
+                            frameA.setImageBitmap(cache.get(0));
+                            frameA.setAlpha(1f);
+                            frameB.setAlpha(0f);
+                        }
+                        running = false;
+                        a.ui.removeCallbacks(this);
+                        if (glowAnimator != null) glowAnimator.cancel();
+                        if (floatAnimator != null) floatAnimator.cancel();
+                        return;
+                    }
                     crossFade();
                     a.ui.postDelayed(this, FRAME_MS);
                 }

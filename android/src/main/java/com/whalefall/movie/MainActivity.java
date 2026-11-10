@@ -1133,7 +1133,32 @@ public final class MainActivity extends Activity {
     /** 幂等：确保 base 渐变 + 用户壁纸层（静态图或动态视频）都存在且唯一；缺则补、多则删。 */
     void applyWallpaper(android.widget.FrameLayout target) {
         if (target == null) return;
-        if (SafeMode.enabled(this)) return; // 安全模式：禁用壁纸层，减少重绘
+        if (SafeMode.enabled(this)) {
+            // 1.8.5：安全模式下不仅阻止新增，还要清掉目标页已有的壁纸层（幂等，任何页面渲染都生效）
+            int removed = 0;
+            for (int i = target.getChildCount() - 1; i >= 0; i--) {
+                View child = target.getChildAt(i);
+                Object tag = child.getTag();
+                if (BACKDROP_TAG.equals(tag) || WALLPAPER_TAG.equals(tag)) {
+                    target.removeViewAt(i);
+                    removed++;
+                }
+            }
+            if (videoWallpaper != null) {
+                try {
+                    videoWallpaper.release();
+                } catch (Throwable ignored) {
+                }
+                videoWallpaper = null;
+            }
+            AppLog.i(
+                    "SafeMode",
+                    "apply wallpaper cleared root="
+                            + System.identityHashCode(target)
+                            + " layers="
+                            + removed);
+            return;
+        }
         // 播放页是纯黑视频页（root 由 PlaybackController 创建并打 player-surface tag）：
         // 绝不铺壁纸，否则壁纸层会插到 playbackLayer 之上盖住视频。
         if ("player-surface".equals(target.getTag())) return;
