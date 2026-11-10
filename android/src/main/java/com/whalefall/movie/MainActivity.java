@@ -1800,9 +1800,8 @@ public final class MainActivity extends Activity {
             }
             return;
         }
-        // 1.9.26：手机遥控页退出时关闭服务
+        // 1.9.30：手机遥控页退出不再关闭服务（常驻通知停止/进程销毁才关闭）
         if (body != null && "lan-remote".equals(body.getTag())) {
-            RemoteInputScreen.stop();
             if (isTvDevice()) {
                 current = new MainActivity.Screen(this::home);
                 current.home = true;
@@ -2621,8 +2620,6 @@ public final class MainActivity extends Activity {
     @Override
     protected void onStop() {
         PrivacySpace.cancelPrompt(this);
-        if (body != null && "lan-remote".equals(body.getTag()))
-            RemoteInputScreen.stop("onStop");
         finishSeek(false);
         if (playbackLoading != null) {
             clearPlaybackLoading();

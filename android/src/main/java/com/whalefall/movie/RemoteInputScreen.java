@@ -21,7 +21,7 @@ final class RemoteInputScreen {
         stop("explicit");
     }
 
-    /** 1.9.27：所有离开路径统一关闭服务、移除 pump、日志原因。 */
+    /** 1.9.30：只由「停止手机遥控」按钮、通知停止或进程销毁调用；离开页面不再关闭服务。 */
     static void stop(String reason) {
         if (pumpRunnable != null && pumpHost != null) {
             try {
@@ -38,34 +38,49 @@ final class RemoteInputScreen {
             }
             server = null;
         }
-        AppLog.i("LanRemote", "stop reason=" + reason);
+        cancelNotification(MainActivity.activeActivity);
+        AppLog.i("LanRemote", "keepalive stop reason=" + reason);
     }
 
     static void show(final MainActivity a) {
-        stop("restart");
         String address;
+        boolean reuse = server != null && !server.closed && !server.expired();
         try {
-            server = new LanRemoteServer(a);
+            if (!reuse) {
+                if (server != null) {
+                    try {
+                        server.close();
+                    } catch (Throwable ignored) {
+                    }
+                }
+                server = new LanRemoteServer(a);
+                AppLog.i(
+                        "LanRemote",
+                        "keepalive start reason=reopen port="
+                                + server.socket.getLocalPort()
+                                + " tokenLen="
+                                + server.token.length());
+            } else {
+                AppLog.i("LanRemote", "keepalive start reason=reuse port=" + server.socket.getLocalPort());
+            }
             address = server.address();
         } catch (Throwable error) {
             a.toast("无法启动手机遥控：" + error.getMessage());
             AppLog.i("LanRemote", "start failed error=" + error.getMessage());
             return;
         }
-        AppLog.i("LanRemote", "start port=" + server.socket.getLocalPort() + " tokenLen=" + server.token.length());
+        pumpHost = a;
+        startNotification(a);
         a.renderPage("手机遥控 / 扫码输入", "LAN REMOTE");
         if (a.root != null) a.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-        if (a.body == null) {
-            stop("no-body");
-            return;
-        }
+        if (a.body == null) return;
         a.body.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         a.body.setTag("lan-remote");
         boolean tv = a.isTvDevice();
         float tipSize = tv ? 15f : 11.5f;
         TextView tip =
                 a.text(
-                        "手机浏览器扫码即可遥控/输入，无需安装 App；需与电视连接同一 WiFi。",
+                        "手机浏览器扫码即可遥控/输入；可离开本页继续用手机遥控，点「停止手机遥控」才关闭。",
                         tipSize,
                         UiTokens.TEXT_SECONDARY);
         tip.setGravity(Gravity.CENTER);
@@ -158,7 +173,10 @@ final class RemoteInputScreen {
         stopLp.rightMargin = a.dp(16);
         a.body.addView(stop, stopLp);
         TextView foot =
-                a.text("按返回键或点击停止都会关闭服务", 11.5f, UiTokens.TEXT_TERTIARY);
+                a.text(
+                        "可离开本页继续用手机遥控；点「停止手机遥控」或通知里的停止才关闭",
+                        11.5f,
+                        UiTokens.TEXT_TERTIARY);
         foot.setGravity(Gravity.CENTER);
         foot.setPadding(0, a.dp(6), 0, a.dp(4));
         a.body.addView(foot);
@@ -172,12 +190,7 @@ final class RemoteInputScreen {
                 new Runnable() {
                     @Override
                     public void run() {
-                        if (a.body == null || !"lan-remote".equals(a.body.getTag())) {
-                            stop("page-left");
-                            return;
-                        }
-                        // 1.9.28 修复 NPE：先取局部快照；pump 内 dispatchKeyEvent 可能同步
-                        // 触发 BACK→stop()，导致 server 被置 null，之后不能再访问字段。
+                        // 1.9.30：离开页面后服务与 pump 继续，方便边浏览边遥控
                         final LanRemoteServer snapshot = server;
                         if (snapshot == null) return;
                         snapshot.pump();
@@ -204,13 +217,80 @@ final class RemoteInputScreen {
                         a.ui.postDelayed(this, 100);
                     }
                 };
-        pumpRunnable = pump;
         pumpHost = a;
-        a.ui.postDelayed(pump, 100);
+        if (a.ui != null) {
+            if (pumpRunnable != null) a.ui.removeCallbacks(pumpRunnable);
+            pumpRunnable = pump;
+            a.ui.postDelayed(pump, 100);
+        }
+    }
+
+    // 1.9.30：常驻通知（服务保持运行，点停止或通知停止才关闭）
+    static final int NOTIF_ID = 7320;
+    static final String CHANNEL = "whalefall_lan_remote";
+
+    static void startNotification(MainActivity a) {
+        if (a == null) return;
+        try {
+            android.app.NotificationManager nm =
+                    (android.app.NotificationManager)
+                            a.getSystemService(android.content.Context.NOTIFICATION_SERVICE);
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                nm.createNotificationChannel(
+                        new android.app.NotificationChannel(
+                                CHANNEL,
+                                "手机遥控",
+                                android.app.NotificationManager.IMPORTANCE_LOW));
+            }
+            android.content.Intent stop =
+                    new android.content.Intent(LanRemoteReceiver.ACTION_STOP)
+                            .setPackage(a.getPackageName());
+            android.app.PendingIntent stopPi =
+                    android.app.PendingIntent.getBroadcast(
+                            a,
+                            11,
+                            stop,
+                            android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                                    | android.app.PendingIntent.FLAG_IMMUTABLE);
+            android.content.Intent open =
+                    new android.content.Intent(a, MainActivity.class);
+            android.app.PendingIntent openPi =
+                    android.app.PendingIntent.getActivity(
+                            a,
+                            12,
+                            open,
+                            android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                                    | android.app.PendingIntent.FLAG_IMMUTABLE);
+            android.app.Notification.Builder builder =
+                    android.os.Build.VERSION.SDK_INT >= 26
+                            ? new android.app.Notification.Builder(a, CHANNEL)
+                            : new android.app.Notification.Builder(a);
+            builder.setSmallIcon(android.R.drawable.ic_menu_compass)
+                    .setContentTitle("手机遥控服务运行中")
+                    .setContentText("手机浏览器可继续遥控 · 点击停止")
+                    .setContentIntent(openPi)
+                    .setOnlyAlertOnce(true)
+                    .setOngoing(true)
+                    .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stopPi);
+            nm.notify(NOTIF_ID, builder.build());
+        } catch (Throwable error) {
+            AppLog.i("LanRemote", "notify failed error=" + error.getClass().getSimpleName());
+        }
+    }
+
+    static void cancelNotification(android.content.Context context) {
+        if (context == null) return;
+        try {
+            ((android.app.NotificationManager)
+                            context.getSystemService(android.content.Context.NOTIFICATION_SERVICE))
+                    .cancel(NOTIF_ID);
+        } catch (Throwable ignored) {
+        }
     }
 
     static boolean handleBack(MainActivity a) {
-        stop("back");
+        // 1.9.30：BACK 只离开页面，服务保持；仅停止按钮/通知/进程销毁才关闭
+        AppLog.i("LanRemote", "keepalive continue reason=back");
         return false;
     }
 

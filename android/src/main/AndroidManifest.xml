@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.whalefall.movie" android:versionCode="19029" android:versionName="1.9.29">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.whalefall.movie" android:versionCode="19030" android:versionName="1.9.30">
   <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="28" />
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -17,6 +17,11 @@
       <intent-filter>
         <action android:name="com.whalefall.movie.BG_TOGGLE" />
         <action android:name="com.whalefall.movie.BG_STOP" />
+      </intent-filter>
+    </receiver>
+    <receiver android:name=".LanRemoteReceiver" android:exported="false">
+      <intent-filter>
+        <action android:name="com.whalefall.movie.LAN_REMOTE_STOP" />
       </intent-filter>
     </receiver>
     <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="unspecified" android:configChanges="keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout">
