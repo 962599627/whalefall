@@ -63,6 +63,7 @@ final class MobileShell {
     static final class CachedSearchHit {
         final Cms.Site site;
         final Cms.Video video;
+        int sources = 1;
 
         CachedSearchHit(Cms.Site site, Cms.Video video) {
             this.site = site;
@@ -1026,10 +1027,10 @@ final class MobileShell {
         MobileDetailScreen.bindTouchFeedback(tonightShuffle);
         tonightHeader.addView(tonightShuffle);
         tonightCard.addView(tonightHeader, new LinearLayout.LayoutParams(-1, -2));
-        final LinearLayout tonightRow = a.row();
-        LinearLayout.LayoutParams tonightRowLp = new LinearLayout.LayoutParams(-1, -2);
-        tonightRowLp.topMargin = a.dp(12);
-        tonightCard.addView(tonightRow, tonightRowLp);
+        final LinearLayout tonightGrid = a.vertical();
+        LinearLayout.LayoutParams tonightGridLp = new LinearLayout.LayoutParams(-1, -2);
+        tonightGridLp.topMargin = a.dp(12);
+        tonightCard.addView(tonightGrid, tonightGridLp);
         LinearLayout.LayoutParams tonightCardLp =
                 new LinearLayout.LayoutParams(-1, -2);
         tonightCardLp.leftMargin = a.dp(16);
@@ -1047,44 +1048,94 @@ final class MobileShell {
                         tonightCard.setVisibility(View.GONE);
                         return;
                     }
-                    tonightRow.removeAllViews();
+                    tonightGrid.removeAllViews();
                     java.util.List<Cms.Video> pool =
                             new java.util.ArrayList<>(currentVideos);
                     java.util.Collections.shuffle(pool, new java.util.Random(System.nanoTime()));
                     int picks = Math.min(3, pool.size());
                     float d = a.getResources().getDisplayMetrics().density;
-                    int cardW = Math.max(96, Math.round((a.windowWidth() / d - 64) / 3f) - 8);
-                    for (int i = 0; i < picks; i++) {
-                        final Cms.Video v = pool.get(i);
-                        LinearLayout pick = a.vertical();
-                        MobileDetailScreen.bindTouchFeedback(pick);
-                        pick.setOnClickListener(x -> a.openListing(currentSite, v));
-                        FrameLayout art = new FrameLayout(a);
-                        art.setBackground(glassBg(0xff1a2c45, 0xff13233a, a.dp(12), a.dp(0.6f), 0x33ffffff));
-                        art.setClipToOutline(true);
-                        TextView ph = a.text(v.title == null || v.title.isEmpty() ? "鲸" : v.title.substring(0, 1), 26, 0x40ffffff);
-                        ph.setTypeface(null, Typeface.BOLD);
-                        ph.setGravity(Gravity.CENTER);
-                        art.addView(ph, new FrameLayout.LayoutParams(-1, -1));
-                        ImageView poster = new ImageView(a);
-                        poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                        art.addView(poster, new FrameLayout.LayoutParams(-1, -1));
-                        if (v.poster != null && !v.poster.isEmpty()) a.poster(v.poster, poster);
-                        pick.addView(
-                                art,
-                                new LinearLayout.LayoutParams(-1, a.dp(Math.round(cardW * 1.42f))));
-                        TextView tt = a.text(v.title, 11.5f, 0xffeaf1fb);
-                        tt.setSingleLine(true);
-                        tt.setEllipsize(TextUtils.TruncateAt.END);
-                        tt.setPadding(a.dp(1), a.dp(6), a.dp(1), 0);
-                        pick.addView(tt);
-                        LinearLayout.LayoutParams pickLp =
-                                new LinearLayout.LayoutParams(
-                                        a.dp(cardW), -2);
-                        pickLp.rightMargin = a.dp(8);
-                        tonightRow.addView(pick, pickLp);
+                    int widthDp = Math.round(a.windowWidth() / d);
+                    int cols, gap, capW, capH, sideBudget;
+                    if (widthDp < 360) {
+                        cols = 2; gap = 10; capW = 120; capH = 180; sideBudget = 64;
+                    } else if (widthDp < 600) {
+                        cols = 3; gap = 10; capW = 120; capH = 180; sideBudget = 64;
+                    } else if (widthDp < 900) {
+                        cols = 4; gap = 12; capW = 150; capH = 225; sideBudget = 72;
+                    } else {
+                        cols = 5; gap = 16; sideBudget = 88;
+                        capW = a.isTvDevice() ? 170 : 150;
+                        capH = a.isTvDevice() ? 255 : 225;
+                    }
+                    int contentW = Math.max(0, widthDp - sideBudget);
+                    int cardWdp = Math.min((contentW - gap * (cols - 1)) / cols, capW);
+                    cardWdp = Math.max(96, cardWdp);
+                    final int cardHdp = Math.min(Math.round(cardWdp * 1.5f), capH);
+                    int rows = (picks + cols - 1) / cols;
+                    for (int r = 0; r < rows; r++) {
+                        LinearLayout row = a.row();
+                        if (r > 0) row.setPadding(0, a.dp(gap), 0, 0);
+                        for (int c = 0; c < cols; c++) {
+                            int index = r * cols + c;
+                            if (index >= picks) break;
+                            final Cms.Video v = pool.get(index);
+                            FrameLayout pick = new FrameLayout(a);
+                            pick.setFocusable(true);
+                            pick.setClipToOutline(true);
+                            pick.setBackground(
+                                    glassBg(
+                                            0xff1a2c45,
+                                            0xff13233a,
+                                            a.dp(widthDp < 600 ? 12 : 14),
+                                            a.dp(0.6f),
+                                            0x33ffffff));
+                            MobileDetailScreen.bindTouchFeedback(pick);
+                            pick.setOnClickListener(x -> a.openListing(currentSite, v));
+                            ImageView poster = new ImageView(a);
+                            poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                            pick.addView(poster, new FrameLayout.LayoutParams(-1, -1));
+                            TextView ph =
+                                    a.text(
+                                            v.title == null || v.title.isEmpty()
+                                                    ? "鲸"
+                                                    : v.title.substring(0, 1),
+                                            26,
+                                            0x40ffffff);
+                            ph.setTypeface(null, Typeface.BOLD);
+                            ph.setGravity(Gravity.CENTER);
+                            pick.addView(ph, new FrameLayout.LayoutParams(-1, -1));
+                            if (v.poster != null && !v.poster.isEmpty())
+                                a.poster(v.poster, poster);
+                            View shade = new View(a);
+                            android.graphics.drawable.GradientDrawable bottomFade =
+                                    new android.graphics.drawable.GradientDrawable(
+                                            android.graphics.drawable.GradientDrawable.Orientation
+                                                    .TOP_BOTTOM,
+                                            new int[] {0x00000000, 0xcc000000});
+                            shade.setBackground(bottomFade);
+                            pick.addView(
+                                    shade,
+                                    new FrameLayout.LayoutParams(
+                                            -1, a.dp(48), Gravity.BOTTOM));
+                            TextView tt = a.text(v.title, widthDp < 600 ? 12 : (a.isTvDevice() ? 14 : 13), MainActivity.WHITE);
+                            tt.setSingleLine(true);
+                            tt.setEllipsize(TextUtils.TruncateAt.END);
+                            tt.setTypeface(null, Typeface.BOLD);
+                            tt.setPadding(a.dp(8), 0, a.dp(8), a.dp(8));
+                            pick.addView(tt, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
+                            LinearLayout.LayoutParams pickLp =
+                                    new LinearLayout.LayoutParams(
+                                            a.dp(cardWdp), a.dp(cardHdp));
+                            if (c > 0) pickLp.leftMargin = a.dp(gap);
+                            row.addView(pick, pickLp);
+                        }
+                        tonightGrid.addView(row, new LinearLayout.LayoutParams(-1, -2));
                     }
                     tonightCard.setVisibility(View.VISIBLE);
+                    if (a.isTvDevice() && tonightGrid.getChildCount() > 0) {
+                        LinearLayout firstRow = (LinearLayout) tonightGrid.getChildAt(0);
+                        if (firstRow.getChildCount() > 0) firstRow.getChildAt(0).requestFocus();
+                    }
                 };
         tonightShuffle.setOnClickListener(v -> refreshTonight[0].run());
 
@@ -2591,11 +2642,24 @@ final class MobileShell {
 
         void setHits(List<CachedSearchHit> source) {
             hits.clear();
-            hits.addAll(source);
+            for (CachedSearchHit hit : source) add(hit);
             notifyDataSetChanged();
         }
 
         void add(CachedSearchHit hit) {
+            String key = SearchAggregator.normalize(hit.video == null ? "" : hit.video.title);
+            if (!key.isEmpty()) {
+                for (int i = 0; i < hits.size(); i++) {
+                    CachedSearchHit existing = hits.get(i);
+                    if (key.equals(
+                            SearchAggregator.normalize(
+                                    existing.video == null ? "" : existing.video.title))) {
+                        existing.sources++;
+                        notifyItemChanged(i + 1);
+                        return;
+                    }
+                }
+            }
             hits.add(hit);
             notifyItemInserted(hits.size());
         }
@@ -2636,12 +2700,14 @@ final class MobileShell {
             }
             CachedSearchHit hit = hits.get(position - 1);
             cell.addView(
-                    buildSearchResultRow(hit.site, hit.video),
+                    buildSearchResultRow(hit),
                     new FrameLayout.LayoutParams(-1, -2));
         }
     }
 
-    private View buildSearchResultRow(final Cms.Site site, final Cms.Video v) {
+    private View buildSearchResultRow(final CachedSearchHit hit) {
+        final Cms.Site site = hit.site;
+        final Cms.Video v = hit.video;
         LinearLayout row = a.row();
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
@@ -2651,6 +2717,37 @@ final class MobileShell {
                 view -> {
                     activeTab = 1;
                     a.openListing(site, v);
+                });
+        row.setOnLongClickListener(
+                view -> {
+                    // 1.8.1 #6：长按选择来源（同名片合并后的真实来源列表）
+                    String key = SearchAggregator.normalize(v.title);
+                    java.util.List<CachedSearchHit> matched = new java.util.ArrayList<>();
+                    for (CachedSearchHit candidate : cachedSearchHits)
+                        if (key.equals(
+                                SearchAggregator.normalize(
+                                        candidate.video == null ? "" : candidate.video.title)))
+                            matched.add(candidate);
+                    if (matched.size() <= 1) return false;
+                    String[] names = new String[matched.size()];
+                    for (int i = 0; i < matched.size(); i++)
+                        names[i] =
+                                matched.get(i).site.name
+                                        + (matched.get(i).site.key.equals(site.key)
+                                                ? "（当前）"
+                                                : "");
+                    new AppDialog.Builder(a)
+                            .setTitle("选择来源 · " + v.title)
+                            .setItems(
+                                    names,
+                                    (d, index) -> {
+                                        CachedSearchHit chosen = matched.get(index);
+                                        activeTab = 1;
+                                        a.openListing(chosen.site, chosen.video);
+                                    })
+                            .setNegativeButton("取消", null)
+                            .show();
+                    return true;
                 });
 
         ImageView poster = new ImageView(a);
@@ -2671,7 +2768,13 @@ final class MobileShell {
         title.setEllipsize(TextUtils.TruncateAt.END);
         info.addView(title);
 
-        TextView badge = a.text("来源：" + site.name, 12, 0xffff8fb1);
+        TextView badge =
+                a.text(
+                        hit.sources > 1
+                                ? hit.sources + " 个来源 · 当前：" + site.name
+                                : "来源：" + site.name,
+                        12,
+                        0xffff8fb1);
         badge.setTypeface(null, Typeface.BOLD);
         badge.setPadding(0, a.dp(4), 0, 0);
         info.addView(badge);
@@ -4056,36 +4159,32 @@ final class MobileShell {
                     });
         }
         addSettingCard(body, 2, "网盘与账号（源面板）", "直接打开配置源自带的账号面板", a::openSourceAccountPanel);
-        addSettingCard(
-                body,
-                2,
-                "账号设置（清除凭据 / 原生网盘登录）",
-                "清除本机凭据，或使用 App 内官方扫码登录（可选）",
-                () -> AccountPanel.show(a, null));
-        addSettingCard(
-                body,
-                2,
-                "安全模式",
-                SafeMode.enabled(a)
-                        ? "已开启：点此关闭（下次启动恢复壁纸/动效）"
-                        : "崩溃连续 2 次自动开启；禁用壁纸与重绘动效",
-                () ->
-                        new AppDialog.Builder(a)
-                                .setTitle("安全模式")
-                                .setMessage(
-                                        SafeMode.enabled(a)
-                                                ? "当前已开启。关闭后恢复壁纸与加载动画，下次启动生效。"
-                                                : "未开启。连续 2 次崩溃后会自动开启。")
-                                .setPositiveButton(
-                                        SafeMode.enabled(a) ? "退出安全模式" : "知道了",
-                                        (d, i) -> {
-                                            if (SafeMode.enabled(a)) {
-                                                SafeMode.exit(a);
-                                                a.toast("已退出安全模式，下次启动生效");
-                                            }
-                                        })
-                                .setNegativeButton("取消", null)
-                                .show());
+        // 1.8.1 安全模式：Switch 手动开关（开=立即禁用壁纸/加载动效，持久化）
+        LinearLayout safeRow = a.row();
+        safeRow.setGravity(Gravity.CENTER_VERTICAL);
+        safeRow.setPadding(a.dp(6), a.dp(12), a.dp(6), a.dp(12));
+        safeRow.setBackground(glassBg(0xcc16283f, 0xb3121d2e, a.dp(16), a.dp(0.8f), 0x33ffffff));
+        LinearLayout safeText = a.vertical();
+        TextView safeTitle = a.text("安全模式", 15, MainActivity.WHITE);
+        safeTitle.setTypeface(null, Typeface.BOLD);
+        safeText.addView(safeTitle);
+        TextView safeDetail =
+                a.text("开启后禁用壁纸与加载动效，减少崩溃/卡顿", 12, MainActivity.MUTED);
+        safeDetail.setPadding(0, a.dp(3), 0, 0);
+        safeText.addView(safeDetail);
+        safeRow.addView(safeText, new LinearLayout.LayoutParams(0, -2, 1f));
+        android.widget.Switch safeSwitch = new android.widget.Switch(a);
+        safeSwitch.setChecked(SafeMode.enabled(a));
+        safeSwitch.setOnCheckedChangeListener(
+                (v, checked) -> {
+                    SafeMode.set(a, checked);
+                    a.applySafeModeVisual();
+                    a.toast(checked ? "已开启安全模式（壁纸与加载动效已禁用）" : "已关闭安全模式（已恢复）");
+                });
+        safeRow.addView(safeSwitch, new LinearLayout.LayoutParams(-2, a.dp(44)));
+        LinearLayout.LayoutParams safeRowLp = new LinearLayout.LayoutParams(-1, -2);
+        safeRowLp.topMargin = a.dp(10);
+        body.addView(safeRow, safeRowLp);
     }
 
     /** 设置 → 关于鲸落：版本、开源信息、上游归属与相关操作。 */

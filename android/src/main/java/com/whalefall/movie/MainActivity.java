@@ -1237,6 +1237,29 @@ public final class MainActivity extends Activity {
         applyWallpaper(target);
     }
 
+    /** 设置里手动切换安全模式后立即刷新壁纸/动效（无需重启）。 */
+    void applySafeModeVisual() {
+        if (root == null) return;
+        if (!SafeMode.enabled(this)) {
+            applyWallpaper(root);
+            AppLog.i("SafeMode", "visual restored (wallpaper re-applied)");
+            return;
+        }
+        for (int i = root.getChildCount() - 1; i >= 0; i--) {
+            View child = root.getChildAt(i);
+            Object tag = child.getTag();
+            if (BACKDROP_TAG.equals(tag) || WALLPAPER_TAG.equals(tag)) root.removeViewAt(i);
+        }
+        if (videoWallpaper != null) {
+            try {
+                videoWallpaper.release();
+            } catch (Throwable ignored) {
+            }
+            videoWallpaper = null;
+        }
+        AppLog.i("SafeMode", "visual applied (wallpaper removed)");
+    }
+
     void renderPage(String title, String eyebrow, boolean navigation) {
         VideoFilterDialog.dismiss(this);
         preparePage(navigation);
@@ -1571,8 +1594,9 @@ public final class MainActivity extends Activity {
      * 避免任何菜单/旧入口直接弹出配置源的白底登录面板。
      */
     void sourceAction(Cms.Site site, String action, Runnable finished) {
+        // 1.8.1：登录/账号一律直达源插件面板，不再经过我方引导层
         if ("LoginShow".equals(action)) {
-            PanLoginGuide.show(this, site, "", finished);
+            new SettingsScreen(this).sourceAccountAction(action, finished);
             return;
         }
         SourceController.sourceAction(this, site, action, finished);

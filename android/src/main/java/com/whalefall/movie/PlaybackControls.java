@@ -1167,6 +1167,35 @@ final class PlaybackControls {
         showSkipAdjuster(a, intro, curPos, curDur, this::updateLabels);
     }
 
+    /** 1.8.1 标记本剧片头/片尾（当前进度/剩余时长）。 */
+    void markSkip(boolean intro) {
+        if (a.player == null || !a.prepared) {
+            a.toast("加载完成后可标记");
+            return;
+        }
+        int posSec = Math.max(0, a.player.getCurrentPosition() / 1000);
+        int durSec = Math.max(0, a.player.getDuration() / 1000);
+        SkipMemory.Mem mem = SkipMemory.read(a, video.title);
+        if (intro) mem.intro = Math.min(SkipMemory.MAX_SECONDS, posSec);
+        else mem.outro = Math.min(SkipMemory.MAX_SECONDS, Math.max(1, durSec - posSec));
+        if (mem.intro + mem.outro > 0 && durSec > 0 && mem.intro + mem.outro >= durSec) {
+            a.toast("片头+片尾超过时长，未保存");
+            return;
+        }
+        SkipMemory.save(a, video.title, mem.intro, mem.outro);
+        a.toast(
+                intro
+                        ? "已标记本剧片头 " + PlaybackController.formatTime(mem.intro * 1000)
+                        : "已标记本剧片尾 " + PlaybackController.formatTime(mem.outro * 1000));
+        updateLabels();
+    }
+
+    void clearSkipMemory() {
+        SkipMemory.clear(a, video.title);
+        a.toast("已清除本剧片头片尾记忆");
+        updateLabels();
+    }
+
     static void showSkipAdjuster(
             MainActivity a,
             boolean intro,
@@ -1374,6 +1403,15 @@ final class PlaybackControls {
             items.add(
                     new PlayerToolsSheet.Tool(
                             UiIcon.SKIP_OUTRO, "跳片尾", () -> skip(false)));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.SKIP_INTRO, "标记片头", () -> markSkip(true)));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.SKIP_OUTRO, "标记片尾", () -> markSkip(false)));
+            items.add(
+                    new PlayerToolsSheet.Tool(
+                            UiIcon.REFRESH, "清除片头片尾", this::clearSkipMemory));
             items.add(new PlayerToolsSheet.Tool(UiIcon.REPLAY, "重播", this::restartPlayback));
             items.add(
                     new PlayerToolsSheet.Tool(
@@ -1522,10 +1560,17 @@ final class PlaybackControls {
         timeline.setKeyTimeIncrement(15000);
         boolean explicitRestart = a.resumeAt < 0;
         boolean historyResume = a.resumeAt > 0;
+        SkipMemory.Mem memo = SkipMemory.read(a, video.title);
+        int configuredIntro = a.prefs.getInt(Prefs.SKIP_INTRO, 0) * 1000;
+        if (configuredIntro <= 0 && memo.intro > 0) configuredIntro = memo.intro * 1000;
         int seek =
                 ("live".equals(site.key) || explicitRestart)
                         ? 0
-                        : historyResume ? a.resumeAt : a.prefs.getInt(Prefs.SKIP_INTRO, 0) * 1000;
+                        : historyResume ? a.resumeAt : configuredIntro;
+        // 1.8.1 智能片头：首次进入按本剧记忆跳过（误差 ≤2s）
+        if (!historyResume && !explicitRestart && memo.intro > 0 && seek > 0) {
+            a.toast("已自动跳过片头 · " + PlaybackController.formatTime(memo.intro * 1000));
+        }
         // 1.8.0 跨源续播：源间时长差异 >10% 时按百分比兜底
         if (historyResume
                 && duration > 0
@@ -1595,6 +1640,8 @@ final class PlaybackControls {
             timeline.setBufferedPosition(0);
         }
         int tail = a.prefs.getInt(Prefs.SKIP_OUTRO, 0) * 1000;
+        SkipMemory.Mem memoOutro = SkipMemory.read(a, video.title);
+        if (memoOutro.outro > 0) tail = memoOutro.outro * 1000;
         if (!transitioning
                 && a.playing
                 && duration > 0

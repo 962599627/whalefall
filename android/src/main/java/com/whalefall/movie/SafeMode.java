@@ -100,6 +100,19 @@ final class SafeMode {
         }
     }
 
+    /** 1.8.1 手动开关：持久化并立即生效（壁纸/动效由调用方刷新）。 */
+    static void set(Context context, boolean enabled) {
+        try {
+            android.content.SharedPreferences.Editor edit =
+                    context.getSharedPreferences("movie", Context.MODE_PRIVATE).edit();
+            edit.putBoolean(SAFE, enabled);
+            if (!enabled) edit.putInt(STREAK, 0);
+            edit.apply();
+            AppLog.i("SafeMode", "manual set enabled=" + enabled);
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** 包装系统默认崩溃处理器：先记录计数，再交回原处理器（不吞崩溃）。 */
     static void installCrashHandler(final Application app) {
         if (handlerInstalled) return;

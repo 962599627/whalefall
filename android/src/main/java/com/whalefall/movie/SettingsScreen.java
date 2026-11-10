@@ -180,7 +180,8 @@ final class SettingsScreen {
                         return;
                     }
                     if ("LoginShow".equals(action)) {
-                        PanLoginGuide.show(a, site, "", finished);
+                        // 1.8.1：直达源面板，不再经过我方引导层
+                        sourceAccountAction(action, finished);
                         return;
                     }
                     a.sourceAction(site, action, finished);
@@ -499,37 +500,30 @@ final class SettingsScreen {
                     AppLog.i("AccountEntrance", "direct source=LoginShow");
                     sourceAccountAction("LoginShow", null);
                 });
-        link(
-                "账号设置（清除凭据 / 原生网盘登录）",
-                "清除本机凭据，或使用 App 内官方扫码登录（可选）",
-                "settings-account-advanced",
-                () -> AccountPanel.show(a, null));
-        link(
-                "安全模式",
-                SafeMode.enabled(a)
-                        ? "已开启：壁纸与重绘动效已精简；点此关闭"
-                        : "崩溃连续 2 次自动开启；开启后禁用壁纸与重绘动效",
-                "settings-safe-mode",
-                () ->
-                        new AppDialog.Builder(a)
-                                .setTitle("安全模式")
-                                .setMessage(
-                                        SafeMode.enabled(a)
-                                                ? "当前已开启。关闭后恢复壁纸与加载动画，"
-                                                        + "下次启动生效。"
-                                                : "未开启。连续 2 次崩溃后会自动开启，"
-                                                        + "用于避免壁纸/动效导致的再次崩溃。")
-                                .setPositiveButton(
-                                        SafeMode.enabled(a) ? "退出安全模式" : "知道了",
-                                        (d, i) -> {
-                                            if (SafeMode.enabled(a)) {
-                                                SafeMode.exit(a);
-                                                a.toast("已退出安全模式，下次启动生效");
-                                                AppLog.i("SafeMode", "exit from settings");
-                                            }
-                                        })
-                                .setNegativeButton("取消", null)
-                                .show());
+        // 1.8.1 安全模式：Switch 手动开关（开=立即禁用壁纸/加载动效，持久化）
+        LinearLayout safeRow = a.row();
+        safeRow.setGravity(Gravity.CENTER_VERTICAL);
+        safeRow.setPadding(a.dp(4), a.dp(10), a.dp(4), a.dp(10));
+        LinearLayout safeText = a.vertical();
+        TextView safeTitle = a.text("安全模式", 15, MainActivity.WHITE);
+        safeTitle.setTypeface(null, Typeface.BOLD);
+        safeText.addView(safeTitle);
+        TextView safeDetail =
+                a.text("开启后禁用壁纸与加载动效，减少崩溃/卡顿", 12, MainActivity.MUTED);
+        safeDetail.setPadding(0, a.dp(3), 0, 0);
+        safeText.addView(safeDetail);
+        safeRow.addView(safeText, new LinearLayout.LayoutParams(0, -2, 1f));
+        android.widget.Switch safeSwitch = new android.widget.Switch(a);
+        safeSwitch.setChecked(SafeMode.enabled(a));
+        safeSwitch.setOnCheckedChangeListener(
+                (v, checked) -> {
+                    SafeMode.set(a, checked);
+                    a.applySafeModeVisual();
+                    a.toast(checked ? "已开启安全模式（壁纸与加载动效已禁用）" : "已关闭安全模式（已恢复）");
+                    a.refresh();
+                });
+        safeRow.addView(safeSwitch, new LinearLayout.LayoutParams(-2, a.dp(44)));
+        a.body.addView(safeRow, new LinearLayout.LayoutParams(-1, -2));
         link(
                 "备份配置与偏好",
                 "导出配置与偏好，请妥善保管；不含插件单独保存的登录状态",
