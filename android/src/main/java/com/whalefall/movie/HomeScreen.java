@@ -44,6 +44,8 @@ final class HomeScreen {
     String filterPendingTag = "";
     boolean filterSkipAnim;
     int filterAnimSeq;
+    /** 1.9.43：远程单选提示只弹一次。 */
+    boolean remoteSingleToastShown;
     android.animation.ValueAnimator filterHeightAnim;
     /** 1.8.12 云盘配置原地容器（首页分类栏下方，默认隐藏）。 */
     LinearLayout cloudInline;
@@ -909,6 +911,12 @@ final class HomeScreen {
         return TextUtils.join(",", values);
     }
 
+    static String firstFilterValue(String raw) {
+        java.util.Set<String> set = filterValueSet(raw);
+        if (set.isEmpty()) return "";
+        return set.iterator().next();
+    }
+
     static String filterLabel(VideoFilters.Definition def, String raw) {
         java.util.Set<String> values = filterValueSet(raw);
         if (values.isEmpty()) return "全部";
@@ -920,11 +928,41 @@ final class HomeScreen {
         return out.toString();
     }
 
+    /** 1.9.43：远程维度默认单选；本地维度多选。 */
+    boolean remoteMultiAllowed(VideoFilters.Definition def) {
+        return a.prefs.getBoolean("filter_remote_multi_enabled", false);
+    }
+
     void toggleHomeFilterValue(VideoFilters.Definition def, VideoFilters.Choice choice) {
         java.util.LinkedHashSet<String> values =
                 filterValueSet(state.selectedFilters.get(def.dimension));
-        if (choice.value.isEmpty()) values.clear();
-        else if (!values.remove(choice.value)) values.add(choice.value);
+        boolean remoteSingle = def.remote && !remoteMultiAllowed(def);
+        if (remoteSingle) {
+            if (choice.value.isEmpty()) {
+                values.clear();
+            } else if (values.size() == 1 && values.contains(choice.value)) {
+                values.clear();
+            } else {
+                values.clear();
+                values.add(choice.value);
+                if (!remoteSingleToastShown) {
+                    remoteSingleToastShown = true;
+                    a.toast(
+                            "该源仅支持单条件筛选，已切换为「"
+                                    + def.labelFor(choice.value)
+                                    + "」");
+                }
+                AppLog.i(
+                        "Filter",
+                        "remote single dim="
+                                + def.dimension
+                                + " value="
+                                + choice.value);
+            }
+        } else {
+            if (choice.value.isEmpty()) values.clear();
+            else if (!values.remove(choice.value)) values.add(choice.value);
+        }
         if (values.isEmpty()) state.selectedFilters.remove(def.dimension);
         else state.selectedFilters.put(def.dimension, joinFilterValues(values));
         String joined =
@@ -945,9 +983,8 @@ final class HomeScreen {
                         + labels
                         + " joined="
                         + joined);
-        if (filterValueSet(joined).size() > 1 && def.remote) {
-            AppLog.i("Filter", "multi unsupported dim=" + def.dimension + " site=remote");
-            a.toast("该源筛选可能只取第一个值");
+        if (filterValueSet(joined).size() > 1 && def.remote && remoteMultiAllowed(def)) {
+            AppLog.i("Filter", "multi enabled dim=" + def.dimension);
         }
         filterPendingTag = def.dimension;
         final int scroll = a.scroll == null ? 0 : a.scroll.getScrollY();
@@ -983,6 +1020,9 @@ final class HomeScreen {
         }
         for (final VideoFilters.Definition def : defs) {
             String value = state.selectedFilters.get(def.dimension);
+            // 1.9.43：远程维度只显示单值
+            if (def.remote && !remoteMultiAllowed(def))
+                value = firstFilterValue(value);
             boolean active = value != null && !value.isEmpty();
             boolean open = def.dimension.equals(filterOpenDim);
             LinearLayout tagWrap = a.vertical();

@@ -105,6 +105,8 @@ final class MobileShell {
     FrameLayout homeLoadingOverlay;
     WhaleLoadingView homeLoadingWhale;
     long homeLoadingShownAt;
+    /** 1.9.43：远程单选提示只弹一次。 */
+    private boolean remoteSingleToastShown;
 
     void showHomeLoading(String reason) {
         if (homeLoadingVisible) return;
@@ -2242,14 +2244,47 @@ final class MobileShell {
         return out.toString();
     }
 
-    /** 1.9.36：L3 选项 toggle（同维度多选）；「全部」清空该维度。 */
+    /** 1.9.43：远程维度默认单选（该源只接受单条件）；本地维度仍多选。 */
+    boolean remoteMultiAllowed(VideoFilters.Definition def) {
+        return a.prefs.getBoolean("filter_remote_multi_enabled", false);
+    }
+
+    static String firstFilterValue(String raw) {
+        java.util.Set<String> set = filterValueSet(raw);
+        if (set.isEmpty()) return "";
+        return set.iterator().next();
+    }
+
+    /** 1.9.43：远程单选 toggle / 本地多选 toggle。 */
     void toggleMobileFilterValue(VideoFilters.Definition def, VideoFilters.Choice choice) {
         java.util.LinkedHashSet<String> values =
                 filterValueSet(selectedFilters.get(def.dimension));
-        if (choice.value.isEmpty()) {
-            values.clear();
-        } else if (!values.remove(choice.value)) {
-            values.add(choice.value);
+        boolean remoteSingle = def.remote && !remoteMultiAllowed(def);
+        if (remoteSingle) {
+            if (choice.value.isEmpty()) {
+                values.clear();
+            } else if (values.size() == 1 && values.contains(choice.value)) {
+                values.clear(); // 再点已选值 = 取消回全部
+            } else {
+                values.clear(); // 远程单条件：替换旧值（旧多选自动收敛为最新一个）
+                values.add(choice.value);
+                if (!remoteSingleToastShown) {
+                    remoteSingleToastShown = true;
+                    a.toast(
+                            "该源仅支持单条件筛选，已切换为「"
+                                    + def.labelFor(choice.value)
+                                    + "」");
+                }
+                AppLog.i(
+                        "Filter",
+                        "remote single dim="
+                                + def.dimension
+                                + " value="
+                                + choice.value);
+            }
+        } else {
+            if (choice.value.isEmpty()) values.clear();
+            else if (!values.remove(choice.value)) values.add(choice.value);
         }
         if (values.isEmpty()) selectedFilters.remove(def.dimension);
         else selectedFilters.put(def.dimension, joinFilterValues(values));
@@ -2270,9 +2305,8 @@ final class MobileShell {
                         + labels
                         + " joined="
                         + joined);
-        if (filterValueSet(joined).size() > 1 && def.remote) {
-            AppLog.i("Filter", "multi unsupported dim=" + def.dimension + " site=remote");
-            a.toast("该源筛选可能只取第一个值");
+        if (filterValueSet(joined).size() > 1 && def.remote && remoteMultiAllowed(def)) {
+            AppLog.i("Filter", "multi enabled dim=" + def.dimension);
         }
         homePendingTagFocus = def.dimension;
         currentPage = 1;
@@ -2406,6 +2440,8 @@ final class MobileShell {
         int tagHeight = homeFilterWide ? 36 : 34;
         for (final VideoFilters.Definition def : defs) {
             String value = selectedFilters.get(def.dimension);
+            // 1.9.43：远程维度只显示单值（旧多选自动收敛展示最新一个）
+            if (def.remote && !remoteMultiAllowed(def)) value = firstFilterValue(value);
             boolean active = value != null && !value.isEmpty();
             boolean open = def.dimension.equals(homeOpenTagDim);
             LinearLayout tagWrap = a.vertical();
