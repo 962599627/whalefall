@@ -1422,7 +1422,7 @@ final class MobileShell {
         homeRecyclerRef = recycler;
         homeStatusWrapRef = statusWrap;
         homeLoadMoreRef = loadMoreBtn;
-        homeFilterBtnRef = filterButton;
+        homeFilterBtnRef = null; // 1.9.34：旧「筛选」按钮彻底移除
         loadMoreBtn.setTag("home-load-more");
         loadMoreBtn.setTypeface(null, Typeface.BOLD);
         loadMoreBtn.setGravity(Gravity.CENTER);
@@ -1460,12 +1460,6 @@ final class MobileShell {
                 new Runnable() {
                     @Override
                     public void run() {
-                        filterButton.setText(
-                                selectedFilters.isEmpty()
-                                        ? "筛选"
-                                        : "筛选 · " + selectedFilters.size());
-                        if (filterSummaryBar != null)
-                            filterSummaryBar.refresh(mobileFilterDefinitions());
                         catRow.removeAllViews();
                         addCategoryChip(catRow, "推荐", "", this, fetchCategoryPage[0]);
                         for (Cms.Category c : currentCategories) {
@@ -1474,13 +1468,6 @@ final class MobileShell {
                     }
                 };
 
-        filterButton.setOnClickListener(
-                v ->
-                        showHomeFilters(
-                                () -> {
-                                    if (fetchCategoryPage[0] != null)
-                                        fetchCategoryPage[0].run();
-                                }));
         homeFilterApply = () -> fetchCategoryPage[0].run();
         fetchCategoryPage[0] =
                 () -> {
@@ -2196,12 +2183,10 @@ final class MobileShell {
         if (wide) {
             homeFilterOptionGrid.removeAllViews();
             homeFilterOptionGrid.setVisibility(View.VISIBLE);
-            animateFilterRow(homeFilterOptionGrid, 180, 6);
             target = null;
         } else {
             homeFilterOptionRow.removeAllViews();
             homeFilterOptionScroll.setVisibility(View.VISIBLE);
-            animateFilterRow(homeFilterOptionScroll, 180, 6);
             target = homeFilterOptionRow;
         }
         LinearLayout currentRow = wide ? a.row() : target;

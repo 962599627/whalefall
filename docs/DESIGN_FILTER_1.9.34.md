@@ -19,8 +19,12 @@
 
 ## 视觉/尺寸（1.9.34）
 
+- **面板**：L2+L3 共用单色玻璃面板 `#E6141C2A`、圆角 20dp、描边 1dp `#33FFFFFF`；
+  - 手机：padding 14/12，外边距左右 16 / 上 8 / 下 12；顶部 24dp header「筛选」+ 右侧「清除全部」；
+  - TV：padding 16/14，外边距 24 / 8 / 24 / 14，底部 14；顶部同 header（「筛选」+「清除全部」）。
 - L1：分类 chip 带漏斗图标；选中分类漏斗 `BG_DEEP #070D18`；未选中但有筛选 `ACCENT #FF8FB1`；无筛选 `TEXT_TERTIARY`；选中底为 `ACCENT → ACCENT_SOFT` 渐变 + 深色字；不加粉点。
-- L2：独立玻璃面板内横向滚动；未选 `#14FFFFFF` 底 + `#1AFFFFFF` 边；展开/已选 `#33FF8FB1` 底 + `#66FFB3C8` 边；文字 `ACCENT_SOFT` / `TEXT_SECONDARY`；文案「类型 / 地区 / 年份」，已选显示「类型 · 动作」。
-- L3：手机单行横滚、chip `wrap_content`（padding 12–14dp）；平板/TV 换行网格（8/6 列），chip 同样 `wrap_content` 不按 weight 拉伸；选中 `ACCENT` 底 + `#0B1220` 字 + `#66FFB3C8` 描边。
-- 动效：L2 展开 160ms 淡入 + 上移 6dp；L3 180ms；收起 140ms；`Prefs.REDUCED` 时瞬时。
-- 日志：`I/Filter expand tab=… options=N layout=scroll|grid`；`I/Filter category=… tab=… value=…`。
+- L2：面板内横向滚动；未选 `#14FFFFFF` 底 + `#1AFFFFFF` 边；展开/已选 `#26FF8FB1` 底 + `#66FFB3C8` 边；文字 `ACCENT_SOFT` / `TEXT_SECONDARY`；手机 34dp/12sp，TV 40dp/14sp；文案「类型 / 地区 / 年份」，已选显示「类型 · 动作」。
+- L3：手机单行横滚、chip `wrap_content`（padding 12–14dp、高 34dp）；平板/TV 换行网格（8/6 列），chip 同样 `wrap_content` 不按 weight 拉伸；TV 高 56dp/15sp；选中 `ACCENT` 底 + `#0B1220` 字 + `#66FFB3C8` 描边；TV 行距/列距 8/10。
+- 动效（禁止 scaleY）：面板高度 `ValueAnimator` 0↔measured，展开 180ms、L3 160ms、收起 140ms；`Prefs.REDUCED` 时瞬时（直接 WRAP_CONTENT / 0）。
+- 日志：`I/Filter expand tab=… options=N layout=scroll|grid`；`I/Filter category=… tab=… value=…`；`I/Filter clear-all category=…`。
+

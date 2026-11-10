@@ -7,6 +7,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -947,7 +948,6 @@ final class HomeScreen {
         filterTagScroll.setVisibility(View.VISIBLE);
         filterOptionGrid.removeAllViews();
         filterOptionGrid.setVisibility(View.VISIBLE);
-        animateFilterRow(filterOptionGrid, 180, 6);
         LinearLayout row = null;
         int perRow = 6;
         int count = 0;
@@ -977,7 +977,7 @@ final class HomeScreen {
             LinearLayout.LayoutParams lp =
                     new LinearLayout.LayoutParams(-2, a.dp(56));
             lp.rightMargin = a.dp(8);
-            lp.bottomMargin = a.dp(8);
+            lp.bottomMargin = a.dp(10);
             row.addView(chip, lp);
             if (count == 0) chip.requestFocus();
             count++;
@@ -989,6 +989,7 @@ final class HomeScreen {
                         + " options="
                         + def.choices.size()
                         + " layout=grid");
+        animateFilterPanelHeight(filterPanel, measureFilterPanelHeight(filterPanel), 160);
     }
 
     void applyFilterChoice(VideoFilters.Definition def, VideoFilters.Choice choice) {
