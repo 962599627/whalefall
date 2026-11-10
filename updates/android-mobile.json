@@ -1,40 +1,40 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.4.12",
-  "versionCode": 14012,
+  "versionName": "1.7.5",
+  "versionCode": 17005,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.4.12（手机 / 平板 / 电视）\n\n- 网盘登录态终于可读：源把登录 Cookie 以 Base64 存在 prefs（`spUtils.quark_ck` 等），本版支持 Base64 解码后识别，面板直接显示「源已登录（源存储登录凭据 · spUtils · quark_ck）」\n- 防误报：解码结果必须同时满足 cookie 形态/强 token（`kps=`/`__puus`/`bduss`/`uc_st`/`refresh_token` 等），设备 ID/随机串不会被误判\n- 诊断新增 `diagnose decode …` 行（不含值），便于确认解码路径\n- 含 1.4.11/1.4.10/1.4.9 诊断与 Cookie 库/DB 解析等全部内容\n- 本版未真机验证（V37），发布说明须保留未验证标注",
-  "size": 62041387,
-  "sha256": "c7973213be3be96973d9fc796f88676a28a39455fae7e78e3e3c8cbc85962502",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.12/WhaleFall-1.4.12-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.12/WhaleFall-1.4.12-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.12",
+  "notes": "# 鲸落 1.7.5 稳定版（手机 / 平板 / 电视）\n\n- 网盘账号入口直达源插件面板：首页「网盘」胶囊 / 设置「网盘与账号」点一次即打开源插件账号面板（去掉中间两层 UI）\n- 源插件弹窗外框套用 App 深色玻璃主题（圆角、描边、标题与底部按钮粉色系；插件内部写死的绿/红块不变，插件源码未公开）\n- 保留「账号设置」可选高级入口（清除凭据 / 原生网盘扫码登录：夸克/UC/百度/阿里，按上游开源实现移植）\n- 含 1.4.x–1.7.x 全部修复：播放页点按/铺满、运行日志复制、检查更新多包体选择、字体颜色自定义、壁纸生命周期、TV 功能对齐与详情页重排等\n- 说明：源插件面板内部配色由插件决定，App 侧仅能改外框/主题",
+  "size": 62070138,
+  "sha256": "d46794c26e4c0d2e2039379f1295ab1d341a0212e77441fee576616161197f64",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.7.5/WhaleFall-1.7.5-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.7.5/WhaleFall-1.7.5-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.7.5",
   "variants": [
     {
       "kind": "mobile",
       "label": "标准版（双 ABI，推荐）",
-      "size": 62041387,
-      "sha256": "c7973213be3be96973d9fc796f88676a28a39455fae7e78e3e3c8cbc85962502",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.12/WhaleFall-1.4.12-android-mobile.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.12/WhaleFall-1.4.12-android-mobile.apk"
+      "size": 62070138,
+      "sha256": "d46794c26e4c0d2e2039379f1295ab1d341a0212e77441fee576616161197f64",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.7.5/WhaleFall-1.7.5-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.7.5/WhaleFall-1.7.5-android-mobile.apk"
     },
     {
       "kind": "arm64",
       "label": "arm64 精简版（约 35MB）",
-      "size": 35609174,
-      "sha256": "fc57844f3a779990c58c79ad771dc614c93096603256adacbeb9a9af129be721",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.12/WhaleFall-1.4.12-android-mobile-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.12/WhaleFall-1.4.12-android-mobile-arm64.apk"
+      "size": 35633829,
+      "sha256": "cf1b25305a1b3241cf1cdcc8d8de3a5b7c5764969cbd9330a33d4f61593ccfee",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.7.5/WhaleFall-1.7.5-android-mobile-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.7.5/WhaleFall-1.7.5-android-mobile-arm64.apk"
     },
     {
       "kind": "r8",
       "label": "R8 精简版（约 33MB，未单独真机验证）",
-      "size": 33122024,
-      "sha256": "1c5a49c4e89c440d0b9960e193ea9b932a724792cf88e778907cc340af055415",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.12/WhaleFall-1.4.12-android-mobile-r8-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.12/WhaleFall-1.4.12-android-mobile-r8-arm64.apk"
+      "size": 33146644,
+      "sha256": "80ec23f6dce2961dc670d761627aa5ef3bc2684ec8e4ddae3e2931f0c74bc3cd",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.7.5/WhaleFall-1.7.5-android-mobile-r8-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.7.5/WhaleFall-1.7.5-android-mobile-r8-arm64.apk"
     }
   ]
 }

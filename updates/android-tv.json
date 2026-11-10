@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.4.12",
-  "versionCode": 14012,
+  "versionName": "1.7.5",
+  "versionCode": 17005,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.4.12（手机 / 平板 / 电视）\n\n- 网盘登录态终于可读：源把登录 Cookie 以 Base64 存在 prefs（`spUtils.quark_ck` 等），本版支持 Base64 解码后识别，面板直接显示「源已登录（源存储登录凭据 · spUtils · quark_ck）」\n- 防误报：解码结果必须同时满足 cookie 形态/强 token（`kps=`/`__puus`/`bduss`/`uc_st`/`refresh_token` 等），设备 ID/随机串不会被误判\n- 诊断新增 `diagnose decode …` 行（不含值），便于确认解码路径\n- 含 1.4.11/1.4.10/1.4.9 诊断与 Cookie 库/DB 解析等全部内容\n- 本版未真机验证（V37），发布说明须保留未验证标注",
-  "size": 36268870,
-  "sha256": "adc09b2cd7b293a726cc5cd75d461e99c78a262ef39fc39112f23a1e521103f2",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.12/WhaleFall-1.4.12-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.12/WhaleFall-1.4.12-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.12",
+  "notes": "# 鲸落 1.7.5 稳定版（手机 / 平板 / 电视）\n\n- 网盘账号入口直达源插件面板：首页「网盘」胶囊 / 设置「网盘与账号」点一次即打开源插件账号面板（去掉中间两层 UI）\n- 源插件弹窗外框套用 App 深色玻璃主题（圆角、描边、标题与底部按钮粉色系；插件内部写死的绿/红块不变，插件源码未公开）\n- 保留「账号设置」可选高级入口（清除凭据 / 原生网盘扫码登录：夸克/UC/百度/阿里，按上游开源实现移植）\n- 含 1.4.x–1.7.x 全部修复：播放页点按/铺满、运行日志复制、检查更新多包体选择、字体颜色自定义、壁纸生命周期、TV 功能对齐与详情页重排等\n- 说明：源插件面板内部配色由插件决定，App 侧仅能改外框/主题",
+  "size": 36293525,
+  "sha256": "f1de0ff1a8c550d177b04aeed05363efd0ddc8176322262873eb4106d8722a12",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.7.5/WhaleFall-1.7.5-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.7.5/WhaleFall-1.7.5-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.7.5",
   "variants": [
     {
       "kind": "tv",
       "label": "电视版（TV/盒子）",
-      "size": 36268870,
-      "sha256": "adc09b2cd7b293a726cc5cd75d461e99c78a262ef39fc39112f23a1e521103f2",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.12/WhaleFall-1.4.12-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.12/WhaleFall-1.4.12-android-tv.apk"
+      "size": 36293525,
+      "sha256": "f1de0ff1a8c550d177b04aeed05363efd0ddc8176322262873eb4106d8722a12",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.7.5/WhaleFall-1.7.5-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.7.5/WhaleFall-1.7.5-android-tv.apk"
     }
   ]
 }
