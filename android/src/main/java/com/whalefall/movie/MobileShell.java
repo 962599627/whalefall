@@ -171,11 +171,11 @@ final class MobileShell {
 
     private final MainActivity a;
     private FrameLayout contentContainer;
-    private final View[] navTabs = new View[6];
+    private final View[] navTabs = new View[7];
     private final TextView[] navLabels = new TextView[6];
     private final NavGlyph[] navIcons = new NavGlyph[6];
-    private static final String[] TAB_NAMES = {"主页", "搜索", "直播", "片库", "设置", "电视"};
-    private static final int[] DOCK_TAB_INDICES = {0, 2, 5, 3, 4};
+    private static final String[] TAB_NAMES = {"主页", "搜索", "直播", "片库", "设置", "电视", "云盘专区"};
+    private static final int[] DOCK_TAB_INDICES = {0, 2, 5, 3, 6, 4};
 
     // Home tab state
     private Cms.Site currentSite;
@@ -762,8 +762,12 @@ final class MobileShell {
                         if (action == android.view.MotionEvent.ACTION_UP
                                 || action == android.view.MotionEvent.ACTION_CANCEL) {
                             sliding = false;
-                            if (action == android.view.MotionEvent.ACTION_UP && pendingTab >= 0)
-                                switchTab(pendingTab);
+                            if (action == android.view.MotionEvent.ACTION_UP && pendingTab >= 0) {
+                                if (pendingTab == 6) {
+                                    AppLog.i("Nav", "cloud-zone open rail=shell");
+                                    CloudZoneScreen.show(a);
+                                } else switchTab(pendingTab);
+                            }
                             pendingTab = -1;
                             return true;
                         }
@@ -777,7 +781,15 @@ final class MobileShell {
         a.glass(bar, 26);
         bar.setElevation(a.dp(18));
 
-        String[] navKeys = {"nav-home", "nav-search", "nav-live", "nav-favorites", "nav-settings", "nav-tv"};
+        String[] navKeys = {
+            "nav-home",
+            "nav-search",
+            "nav-live",
+            "nav-favorites",
+            "nav-settings",
+            "nav-tv",
+            "nav-cloud-zone"
+        };
         float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
 
         for (int pos = 0; pos < DOCK_TAB_INDICES.length; pos++) {
@@ -793,14 +805,25 @@ final class MobileShell {
             tab.addView(
                     glyph, new LinearLayout.LayoutParams(a.dp(22 * navScale), a.dp(22 * navScale)));
 
-            TextView label = a.text(TAB_NAMES[tabIdx], 10.5f * navScale, UiTokens.TEXT_PRIMARY);
+            TextView label =
+                    a.text(
+                            TAB_NAMES[tabIdx],
+                            (tabIdx == 6 ? 9f : 10.5f) * navScale,
+                            UiTokens.TEXT_PRIMARY);
             label.setGravity(Gravity.CENTER);
+            label.setSingleLine(true);
             // 图标与文字之间 +2dp，避免 Dock 里文字贴着图标底部
             label.setPadding(0, a.dp(4), 0, 0);
             navLabels[tabIdx] = label;
             tab.addView(label, new LinearLayout.LayoutParams(-2, -2));
 
-            tab.setOnClickListener(v -> switchTab(tabIdx));
+            tab.setOnClickListener(
+                    v -> {
+                        if (tabIdx == 6) {
+                            AppLog.i("Nav", "cloud-zone open rail=shell");
+                            CloudZoneScreen.show(a);
+                        } else switchTab(tabIdx);
+                    });
             navTabs[tabIdx] = tab;
 
             LinearLayout.LayoutParams lp =
@@ -5369,6 +5392,8 @@ final class MobileShell {
                     return UiIcon.LIBRARY;
                 case 5:
                     return UiIcon.TV;
+                case 6:
+                    return UiIcon.CLOUD;
                 default:
                     return UiIcon.TUNE;
             }
