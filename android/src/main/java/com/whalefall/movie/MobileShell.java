@@ -899,6 +899,8 @@ final class MobileShell {
     }
 
     void switchTab(int index) {
+        // 1.9.31：切换 tab 重置「再按一次退出」窗口，避免跨页误退出
+        a.lastRootBackAt = 0;
         ++homeRequest;
         homeReady = false;
         ++a.generation;
@@ -2739,6 +2741,10 @@ final class MobileShell {
                         showMobileImportDialog(a);
                         return;
                     }
+                    // 1.9.31：新搜索先清空来源筛选/失败源（手动搜索、历史词、清空后重搜均走这里）
+                    cachedSearchSourceFilter.clear();
+                    failedSourceNames.clear();
+                    renderMobileFilters[0].run();
                     // Hide keyboard
                     try {
                         InputMethodManager imm =

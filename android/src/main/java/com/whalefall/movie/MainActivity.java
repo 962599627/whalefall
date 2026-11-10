@@ -1533,6 +1533,7 @@ public final class MainActivity extends Activity {
     }
 
     void renderPage(String title, String eyebrow, boolean navigation) {
+        lastRootBackAt = 0; // 1.9.31：任何页面渲染都重置「再按一次退出」窗口
         VideoFilterDialog.dismiss(this);
         preparePage(navigation);
         root = new FrameLayout(this);
@@ -1694,6 +1695,7 @@ public final class MainActivity extends Activity {
         if (history && current != null) back.push(current);
         current = s;
         s.render.run();
+        lastRootBackAt = 0; // 1.9.31：进入新页面时重置「再按一次退出」计时
         s.pushedTag = body == null ? null : String.valueOf(body.getTag());
         if (root != null && !"player-surface".equals(root.getTag())) ensureBackdrop(root);
         restore(s);
@@ -1940,10 +1942,10 @@ public final class MainActivity extends Activity {
                 MobileShell.show(this);
                 return;
             }
-            releasePlayer();
-        releaseWallpaper();
-            // 1.9.31：根页面返回需 2 秒内再按一次才退出
+            // 1.9.31：根页面返回需 2 秒内再按一次才退出；首次只提示，不释放播放/壁纸
             if (!rootExitGuard()) return;
+            releasePlayer();
+            releaseWallpaper();
             finish();
             return;
         }
@@ -1955,9 +1957,10 @@ public final class MainActivity extends Activity {
             restore(current);
         } else {
             logBackAction("finish");
-            releasePlayer();
-        releaseWallpaper();
+            // 1.9.31：首次返回只提示，确认退出前才释放资源
             if (!rootExitGuard()) return;
+            releasePlayer();
+            releaseWallpaper();
             finish();
         }
     }
