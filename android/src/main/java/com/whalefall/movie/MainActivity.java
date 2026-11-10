@@ -459,6 +459,7 @@ public final class MainActivity extends Activity {
         }
         final String content = text;
         TextView view = new TextView(this);
+        view.setTypeface(typeface());
         view.setTextSize(11f);
         view.setTypeface(android.graphics.Typeface.MONOSPACE);
         view.setTextColor(userTextColor(0xffd5e1f2));
@@ -1101,6 +1102,7 @@ public final class MainActivity extends Activity {
         if (typeface == null) typeface = android.graphics.Typeface.DEFAULT;
         cachedTypeface = typeface;
         cachedTypefaceName = name;
+        AppLog.i("Font", "applied name=" + name + " fallback=" + (typeface == android.graphics.Typeface.DEFAULT));
         return typeface;
     }
 
@@ -1129,20 +1131,16 @@ public final class MainActivity extends Activity {
         if (color == WHITE) return 0xff000000 | rgb;
         if (color == MUTED) return 0xb3000000 | rgb;
         if (color == UiTokens.TEXT_TERTIARY) return 0x8f000000 | rgb;
-        // 1.9.21：按灰阶/亮度识别正文/次要文字（覆盖裸色值 0xffe6edf9/0xff8d9cb6 等）
+        // 1.9.25：HSV 判定偏蓝灰/灰白文字（S<=0.42 且 V>=0.35）
         int alpha = (color >>> 24) & 0xff;
-        int r = (color >> 16) & 0xff;
-        int g = (color >> 8) & 0xff;
-        int b = color & 0xff;
-        int max = Math.max(r, Math.max(g, b));
-        int min = Math.min(r, Math.min(g, b));
-        boolean grey = max - min <= 28;
-        boolean readable = max >= 90;
-        if (grey && readable) {
+        float[] hsv = new float[3];
+        android.graphics.Color.colorToHSV(color & 0x00ffffff, hsv);
+        boolean grayText = hsv[1] <= 0.42f && hsv[2] >= 0.35f;
+        if (grayText) {
             int outAlpha = alpha >= 0xF0 ? 0xff : alpha >= 0x80 ? 0xb3 : 0x8f;
             return (outAlpha << 24) | rgb;
         }
-        // 饱和色（粉/红/绿/蓝等强调色）保持原样
+        // 高饱和强调色（粉/红/绿/蓝）保持原样
         return color;
     }
 

@@ -40,17 +40,18 @@ final class FontStyleDialog {
                     a.text(LABELS[i] + (active ? " · 当前" : ""), 12, active ? UiTokens.ACCENT : UiTokens.TEXT_SECONDARY);
             row.addView(label);
             TextView sample =
-                    a.text("鲸落 WhaleFall 字体样例 0123", 16, UiTokens.TEXT_PRIMARY);
+                    a.text("鲸落 WhaleFall 字体样例 0123", 17, UiTokens.TEXT_PRIMARY);
             sample.setGravity(Gravity.START);
+            // 1.9.25：必须显式设置该行字体的双参 typeface，避免被 a.text 的全局字体覆盖
             try {
-                sample.setTypeface(Typeface.create(name, Typeface.NORMAL));
+                sample.setTypeface(Typeface.create(name, Typeface.NORMAL), Typeface.NORMAL);
             } catch (Throwable ignored) {
             }
-            sample.setPadding(0, a.dp(3), 0, 0);
+            sample.setPadding(0, a.dp(4), 0, 0);
             row.addView(sample);
             row.setOnClickListener(v -> save(a, name));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.bottomMargin = a.dp(6);
+            lp.bottomMargin = a.dp(10);
             box.addView(row, lp);
         }
         ScrollView scroll = new ScrollView(a);
