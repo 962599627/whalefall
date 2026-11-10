@@ -451,7 +451,7 @@ final class AccountPanel {
                     a.text("账号与网盘设置", UiTokens.TYPE_MICRO, UiTokens.TEXT_TERTIARY);
             label.setPadding(a.dp(2), a.dp(20), a.dp(2), a.dp(8));
             body.addView(label, new LinearLayout.LayoutParams(-1, -2));
-            addFunction(body, UiIcon.LAYERS, "源凭据配置（Cookie / Token）", "由源提供的凭据配置面板；登录请用上方网盘登录引导", "pushCkShow");
+            addFunction(body, UiIcon.LAYERS, "源凭据配置（Cookie / Token）", "登录/退出一律在源面板操作", "pushCkShow");
             addFunction(
                     body,
                     UiIcon.TUNE,
@@ -551,7 +551,7 @@ final class AccountPanel {
             body.addView(label, new LinearLayout.LayoutParams(-1, -2));
             Button clear =
                     a.button(
-                            "清除账号与凭据",
+                            "清除 App 内登录（不影响源插件）",
                             "account-clear",
                             this::confirmClear);
             clear.setTextSize(UiTokens.TYPE_BODY_SM);
@@ -578,7 +578,7 @@ final class AccountPanel {
             body.addView(clear, new LinearLayout.LayoutParams(-1, a.dp(48)));
             TextView note =
                     a.text(
-                            "仅清除本机保存的网盘登录数据（夸父/优汐/嘟嘟/阿狸），不影响其它设置。",
+                            "只清除 App 内原生扫码保存的登录；源插件的登录请到源面板退出。",
                             UiTokens.TYPE_MICRO,
                             UiTokens.TEXT_TERTIARY);
             note.setPadding(a.dp(2), a.dp(6), a.dp(2), 0);
@@ -818,28 +818,40 @@ final class AccountPanel {
         }
 
         void confirmClear() {
-            if (credentials.isEmpty()) {
+            java.util.List<String> nativeLabels = new ArrayList<>();
+            for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES)
+                if (NetdiskQrLogin.hasCredential(a, drive.key))
+                    nativeLabels.add(drive.alias);
+            if (credentials.isEmpty() && nativeLabels.isEmpty()) {
                 showNoticeDialog(
-                        "没有可清除的凭据",
-                        "本机没有检测到网盘登录凭据。若源内仍显示已登录，请在“登录”面板内退出。",
+                        "App 内没有原生登录",
+                        "源插件的账号请在「网盘」面板里停用/退出。",
                         null);
                 return;
             }
             StringBuilder message = new StringBuilder();
-            message.append("将清除本机保存的 ")
-                    .append(credentials.size())
-                    .append(" 项网盘登录数据（Cookie / Token / 账号缓存）。\n\n")
-                    .append("此操作不可恢复；其它设置不受影响。\n")
-                    .append("若来源扩展没有提供退出登录接口，源端可能仍保留登录态。\n\n本机待清除项：");
-            int shown = 0;
-            for (Credential credential : credentials) {
-                if (shown >= 3) {
-                    message.append("\n… 另有 ").append(credentials.size() - shown).append(" 项");
-                    break;
+            message.append("将清除 App 内保存的登录：\n\n");
+            if (!credentials.isEmpty()) {
+                message.append("· 本机凭据 ").append(credentials.size()).append(" 项\n");
+                int shown = 0;
+                for (Credential credential : credentials) {
+                    if (shown >= 3) {
+                        message.append("· … 另有 ").append(credentials.size() - shown).append(" 项\n");
+                        break;
+                    }
+                    message.append("· ").append(credential.display()).append('\n');
+                    shown++;
                 }
-                message.append("\n· ").append(credential.display());
-                shown++;
             }
+            if (!nativeLabels.isEmpty()) {
+                message.append("· App 内原生扫码登录：");
+                for (int i = 0; i < nativeLabels.size(); i++) {
+                    if (i > 0) message.append('、');
+                    message.append(nativeLabels.get(i));
+                }
+                message.append('\n');
+            }
+            message.append("\n此操作不可恢复；不影响源插件账号——源插件的登录请到源面板退出。");
             showClearConfirm(message.toString());
         }
 
@@ -852,7 +864,7 @@ final class AccountPanel {
             card.setBackground(
                     UiTokens.round(a, UiTokens.RADIUS_20, 0xf2141c2a, UiTokens.STROKE));
             UiCompat.setElevation(card, a.dp(18));
-            TextView title = a.text("清除账号与凭据？", UiTokens.TYPE_TITLE, UiTokens.TEXT_PRIMARY);
+            TextView title = a.text("清除 App 内登录？", UiTokens.TYPE_TITLE, UiTokens.TEXT_PRIMARY);
             title.setTypeface(null, Typeface.BOLD);
             card.addView(title);
             TextView body = a.text(message, UiTokens.TYPE_BODY_SM, UiTokens.TEXT_SECONDARY);
@@ -986,7 +998,7 @@ final class AccountPanel {
                 PanLoginState.invalidate();
                 refresh(true);
             }
-            a.toast(removed > 0 ? "已清除账号与凭据" : "未找到可清除的本机凭据");
+            a.toast("已清除 App 内登录");
         }
 
         // ---------------- 小部件 ----------------
