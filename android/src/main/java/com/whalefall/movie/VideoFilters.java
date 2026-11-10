@@ -132,6 +132,32 @@ final class VideoFilters {
         return result;
     }
 
+    /** 1.9.37：脱敏打印 schema 结构，便于确认能力判定来源。 */
+    static String schemaKinds(String home) {
+        try {
+            Object filters = new JSONObject(home).opt("filters");
+            if (filters instanceof JSONArray) {
+                JSONArray arr = (JSONArray) filters;
+                return "array groups=" + arr.length();
+            }
+            if (filters instanceof JSONObject) {
+                JSONObject obj = (JSONObject) filters;
+                Iterator<String> keys = obj.keys();
+                StringBuilder out = new StringBuilder("object keys=[");
+                int count = 0;
+                while (keys.hasNext() && count < 16) {
+                    if (count > 0) out.append(",");
+                    out.append(keys.next());
+                    count++;
+                }
+                out.append("]");
+                return out.toString();
+            }
+        } catch (Throwable ignored) {
+        }
+        return "none";
+    }
+
     /** 1.9.35：分类是否有真实筛选能力（只看片源 filters schema，不用本地兜底推导）。 */
     static boolean hasSchemaFilters(String home, String category) {
         try {

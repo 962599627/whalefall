@@ -812,7 +812,9 @@ final class HomeScreen {
                         + " schema="
                         + has
                         + " site="
-                        + (site == null ? "null" : site.key));
+                        + (site == null ? "null" : site.key)
+                        + " types="
+                        + VideoFilters.schemaKinds(snapshot.filterSchema));
         return has;
     }
 
@@ -830,12 +832,14 @@ final class HomeScreen {
         if (filterPanel == null) return;
         if (filterPanel.getVisibility() != View.VISIBLE) {
             List<VideoFilters.Definition> defs = filterDefinitions();
+            final int scrollY = a.scroll == null ? 0 : a.scroll.getScrollY();
             AppLog.i(
                     "Filter",
                     "tap state=expand category="
                             + state.category
                             + " mode=both options="
-                            + (defs.isEmpty() ? 0 : defs.get(0).choices.size()));
+                            + (defs.isEmpty() ? 0 : defs.get(0).choices.size())
+                            + " zeroLoad=true");
             renderFilterTags();
             if (!defs.isEmpty()) {
                 VideoFilters.Definition target = defs.get(0);
@@ -846,6 +850,9 @@ final class HomeScreen {
                     }
                 showFilterOptions(target);
             }
+            a.ui.post(() -> {
+                if (a.scroll != null) a.scroll.scrollTo(0, scrollY);
+            });
             return;
         }
         AppLog.i("Filter", "tap state=collapse category=" + state.category);
@@ -989,7 +996,6 @@ final class HomeScreen {
         }
         if (!state.selectedFilters.isEmpty()) {
             TextView clear = a.text("清除", 13, 0xff8d9cb6);
-            clear.setTextColor(0xff8d9cb6);
             clear.setPadding(a.dp(4), 0, a.dp(4), 0);
             clear.setMinHeight(a.dp(40));
             clear.setGravity(Gravity.CENTER);
@@ -1439,8 +1445,8 @@ final class HomeScreen {
                 selected ? 0xffeef2fb : 0xff16243c,
                 selected ? 0xffeef2fb : 0xff22375a,
                 Math.round(17 * navScale),
-                selected ? 0xff101a2e : MainActivity.WHITE,
-                selected ? 0xff101a2e : MainActivity.WHITE,
+                selected ? 0xff101a2e : a.userTextColor(MainActivity.WHITE),
+                selected ? 0xff101a2e : a.userTextColor(MainActivity.WHITE),
                 true,
                 1.02f);
         if (selected && !b.hasFocus()) {

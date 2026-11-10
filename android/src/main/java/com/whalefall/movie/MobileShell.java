@@ -93,26 +93,49 @@ final class MobileShell {
     WhaleLoadingView homeWhale;
     TextView homeStatusText;
     boolean homeLoadingVisible;
+    FrameLayout homeLoadingOverlay;
+    WhaleLoadingView homeLoadingWhale;
+    long homeLoadingShownAt;
 
     void showHomeLoading(String reason) {
         if (homeLoadingVisible) return;
         homeLoadingVisible = true;
+        homeLoadingShownAt = android.os.SystemClock.uptimeMillis();
         AppLog.i("Loading", "show reason=" + reason);
-        if (homeStatusWrap != null) homeStatusWrap.setVisibility(View.VISIBLE);
-        if (homeWhale != null) {
-            homeWhale.setVisibility(View.VISIBLE);
-            homeWhale.setText("加载中…");
-            homeWhale.start();
-        }
+        if (homeStatusWrap != null) homeStatusWrap.setVisibility(View.GONE);
         if (homeStatusText != null) homeStatusText.setVisibility(View.GONE);
-        if (homeRecyclerRef != null) homeRecyclerRef.setAlpha(0f);
+        if (homeLoadingOverlay != null) {
+            homeLoadingOverlay.setVisibility(View.VISIBLE);
+            homeLoadingOverlay.bringToFront();
+            if (homeLoadingWhale != null) {
+                homeLoadingWhale.setVisibility(View.VISIBLE);
+                homeLoadingWhale.post(homeLoadingWhale::start);
+            }
+        }
+        // 保留旧列表（半透明）避免白屏；loading 真正挂载后再淡出列表
+        if (homeRecyclerRef != null && !a.reduced)
+            homeRecyclerRef.animate().alpha(0.35f).setDuration(120).start();
     }
 
     void hideHomeLoading(String reason) {
         if (!homeLoadingVisible) return;
+        long elapsed = android.os.SystemClock.uptimeMillis() - homeLoadingShownAt;
+        long minShow = 400;
+        if (elapsed < minShow) {
+            final String why = reason;
+            // 保证 loading 至少可见 ~400ms，避免一闪而过/看不到
+            homeRecyclerRef.postDelayed(() -> doHideHomeLoading(why), minShow - elapsed);
+            return;
+        }
+        doHideHomeLoading(reason);
+    }
+
+    private void doHideHomeLoading(String reason) {
+        if (!homeLoadingVisible) return;
         homeLoadingVisible = false;
         AppLog.i("Loading", "hide reason=" + reason);
-        if (homeWhale != null) homeWhale.stop();
+        if (homeLoadingWhale != null) homeLoadingWhale.stop();
+        if (homeLoadingOverlay != null) homeLoadingOverlay.setVisibility(View.GONE);
         if (homeStatusWrap != null) homeStatusWrap.setVisibility(View.GONE);
         if (homeRecyclerRef != null) {
             if (a.reduced) homeRecyclerRef.setAlpha(1f);
@@ -221,6 +244,8 @@ final class MobileShell {
     private final List<Cms.Video> currentVideos = new ArrayList<>();
     private List<Cms.Category> currentCategories = new ArrayList<>();
     private String filterSchema = "{}";
+    /** 1.9.37：filterSchema 归属的片源，避免切换源后沿用旧 schema 误判筛选能力。 */
+    private String filterSchemaSite = "";
     private final java.util.Map<String, String> selectedFilters = new java.util.LinkedHashMap<>();
     /** 1.9.33：手机首页 L2 标签订 / L3 选项（横向滚动或换行网格）。 */
     private LinearLayout homeFilterTagRow, homeFilterOptionRow, homeFilterOptionGrid;
@@ -1067,6 +1092,25 @@ final class MobileShell {
         recycler.setClipToPadding(false);
         a.scroll = recycler;
         contentContainer.addView(recycler, new FrameLayout.LayoutParams(-1, -1));
+        // 1.9.37：居中 loading overlay（独立于 header，滚动到任何位置都能看到）
+        homeLoadingOverlay = new FrameLayout(a);
+        homeLoadingOverlay.setTag("home-loading-overlay");
+        homeLoadingOverlay.setClickable(false);
+        homeLoadingOverlay.setVisibility(View.GONE);
+        FrameLayout.LayoutParams overlayLp =
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        Gravity.CENTER);
+        homeLoadingWhale = new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
+        homeLoadingWhale.setText("加载中…");
+        homeLoadingOverlay.addView(
+                homeLoadingWhale,
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        Gravity.CENTER));
+        contentContainer.addView(homeLoadingOverlay, overlayLp);
         if (filterSummaryBar != null) filterSummaryBar.view().bringToFront();
 
         // 底部常驻筛选摘要条：未选时是入口，已选时展示条件 chips，点击展开筛选浮层
@@ -1685,6 +1729,7 @@ final class MobileShell {
                                                 homeReady = true;
                                                 if (finalHomeSnapshot != null) {
                                                     filterSchema = finalHomeSnapshot.filterSchema;
+                                                    filterSchemaSite = siteSnapshot.key;
                                                     a.homeData.put(
                                                             siteSnapshot.key, finalHomeSnapshot);
                                                 }
@@ -2063,7 +2108,10 @@ final class MobileShell {
                                     ? currentCategories.get(0).id
                                     : selectedCategoryId)
                             : catId;
-            boolean has = VideoFilters.hasSchemaFilters(filterSchema, category);
+            boolean has =
+                    currentSite != null
+                            && currentSite.key.equals(filterSchemaSite)
+                            && VideoFilters.hasSchemaFilters(filterSchema, category);
             AppLog.i(
                     "Filter",
                     "capability category="
@@ -2071,7 +2119,9 @@ final class MobileShell {
                             + " schema="
                             + has
                             + " site="
-                            + (currentSite == null ? "null" : currentSite.key));
+                            + (currentSite == null ? "null" : currentSite.key)
+                            + " types="
+                            + VideoFilters.schemaKinds(filterSchema));
             return has;
         } catch (Throwable ignored) {
             return false;
@@ -2174,7 +2224,7 @@ final class MobileShell {
                     450);
     }
 
-    /** 1.9.35：同分类点击循环：第二次一次性展开 L2+L3，第三次收起。 */
+    /** 1.9.35：同分类点击循环：第二次一次性展开 L2+L3，第三次收起；展开过程零加载、零跳顶。 */
     void handleMobileCategoryFilterTap() {
         if (homeFilterPanel == null) return;
         if (homeFilterPanel.getVisibility() != View.VISIBLE) {
@@ -2184,7 +2234,19 @@ final class MobileShell {
                     "tap state=expand category="
                             + selectedCategoryId
                             + " mode=both options="
-                            + (defs.isEmpty() ? 0 : defs.get(0).choices.size()));
+                            + (defs.isEmpty() ? 0 : defs.get(0).choices.size())
+                            + " zeroLoad=true");
+            // 记录滚动锚点，展开面板的高度变化不得把列表顶回顶部
+            androidx.recyclerview.widget.LinearLayoutManager lm =
+                    recycler.getLayoutManager()
+                                    instanceof androidx.recyclerview.widget.LinearLayoutManager
+                            ? (androidx.recyclerview.widget.LinearLayoutManager)
+                                    recycler.getLayoutManager()
+                            : null;
+            final int pos = lm == null ? -1 : lm.findFirstVisibleItemPosition();
+            final android.view.View av =
+                    lm == null || pos < 0 ? null : lm.findViewByPosition(pos);
+            final int off = av == null ? 0 : av.getTop() - recycler.getPaddingTop();
             renderMobileFilterTags();
             if (!defs.isEmpty()) {
                 VideoFilters.Definition target = defs.get(0);
@@ -2195,6 +2257,12 @@ final class MobileShell {
                     }
                 showMobileFilterOptions(target);
             }
+            if (lm != null && pos >= 0)
+                recycler.post(
+                        () -> {
+                            if (recycler.getLayoutManager() == lm)
+                                lm.scrollToPositionWithOffset(pos, off);
+                        });
             return;
         }
         AppLog.i("Filter", "tap state=collapse category=" + selectedCategoryId);
@@ -2270,7 +2338,6 @@ final class MobileShell {
         }
         if (!selectedFilters.isEmpty()) {
             TextView clear = a.text("清除", 11, 0xff8d9cb6);
-            clear.setTextColor(0xff8d9cb6);
             clear.setPadding(a.dp(4), 0, a.dp(4), 0);
             clear.setMinHeight(a.dp(tagHeight));
             clear.setGravity(Gravity.CENTER);
@@ -2549,8 +2616,8 @@ final class MobileShell {
             android.graphics.drawable.Drawable funnel = funnelDrawable(funnelColor, 14);
             chip.setCompoundDrawables(null, null, funnel, null);
             chip.setCompoundDrawablePadding(a.dp(6));
-            if (!filtered)
-                chip.setTextColor(active ? 0xff000000 : 0xffc2cbd7);
+            // 1.9.37：未选中分类文字跟随用户字体颜色（a.text 已应用），仅选中态保留深色字
+            if (active) chip.setTextColor(0xff000000);
         }
         MobileDetailScreen.bindTouchFeedback(chip);
         chip.setOnClickListener(
