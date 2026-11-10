@@ -139,9 +139,8 @@ final class FileManagerCore {
         return taskId;
     }
 
-    private static final ConcurrentHashMap<String, Task> TASKS = new ConcurrentHashMap<>();
-
     private static final class Task {
+        static final int RUNNING = 0, PAUSING = 1, PAUSED = 2, FINISHED = 3;
         final String id;
         final MainActivity a;
         final QuarkUcApi.Provider p;
@@ -154,7 +153,8 @@ final class FileManagerCore {
         final File part;
         final boolean overwrite;
         final int notifyId;
-        volatile boolean paused;
+        volatile int state = RUNNING;
+        volatile boolean resumeAfterPause;
         volatile boolean cancelled;
         volatile HttpURLConnection connection;
         volatile long written;
@@ -187,7 +187,27 @@ final class FileManagerCore {
     }
 
     private static void start(final Task task) {
+        if (task.state != Task.RUNNING) return;
         task.a.worker.execute(() -> run(task));
+    }
+
+    /** 暂停状态机：旧 run 退出后进入 PAUSED；若期间已点继续则延后自动续传。 */
+    private static void enterPaused(final Task task) {
+        task.state = Task.PAUSED;
+        AppLog.i(
+                "FileMgr",
+                "download provider=" + task.p.key + " fid=" + task.item.fid + " bytes=" + task.written + " state=paused");
+        if (task.resumeAfterPause) {
+            task.resumeAfterPause = false;
+            task.a.ui.postDelayed(
+                    () -> {
+                        if (task.state == Task.PAUSED && !task.cancelled) {
+                            task.state = Task.RUNNING;
+                            start(task);
+                        }
+                    },
+                    50);
+        }
     }
 
     private static void run(final Task task) {
@@ -230,14 +250,12 @@ final class FileManagerCore {
             int n;
             while ((n = in.read(buffer)) != -1) {
                 if (task.cancelled) throw new IOException("已取消");
-                if (task.paused) {
-                    AppLog.i(
-                            "FileMgr",
-                            "download provider=" + task.p.key + " fid=" + task.item.fid + " bytes=" + task.written + " state=paused");
+                if (task.state == Task.PAUSING || task.state == Task.PAUSED) {
                     try {
                         out.flush();
                     } catch (Throwable ignored) {
                     }
+                    enterPaused(task);
                     return;
                 }
                 out.write(buffer, 0, n);
@@ -266,6 +284,7 @@ final class FileManagerCore {
                 else target.delete();
             }
             if (!task.part.renameTo(target)) throw new IOException("写入目标文件失败");
+            task.state = Task.FINISHED;
             TASKS.remove(task.id);
             long bytes = task.written;
             AppLog.i(
@@ -284,12 +303,12 @@ final class FileManagerCore {
                         });
             }
         } catch (Throwable error) {
-            if (task.paused && !task.cancelled) {
-                AppLog.i(
-                        "FileMgr",
-                        "download provider=" + task.p.key + " fid=" + task.item.fid + " bytes=" + task.written + " state=paused");
+            if (!task.cancelled
+                    && (task.state == Task.PAUSING || task.state == Task.PAUSED)) {
+                enterPaused(task);
                 return;
             }
+            task.state = Task.FINISHED;
             String message = task.cancelled ? "已取消下载" : "下载失败：" + friendly(error);
             TASKS.remove(task.id);
             try {
@@ -320,8 +339,8 @@ final class FileManagerCore {
 
     static void pause(String taskId) {
         Task task = TASKS.get(taskId);
-        if (task == null) return;
-        task.paused = true;
+        if (task == null || task.state != Task.RUNNING) return;
+        task.state = Task.PAUSING;
         HttpURLConnection connection = task.connection;
         if (connection != null) {
             try {
@@ -329,23 +348,30 @@ final class FileManagerCore {
             } catch (Throwable ignored) {
             }
         }
-        AppLog.i("FileMgr", "download pause task=" + taskId + " part=" + task.part.length());
+        AppLog.i("FileMgr", "download pause task=" + taskId + " part=" + task.part.length() + " state=pausing");
     }
 
     static void resume(String taskId) {
         Task task = TASKS.get(taskId);
-        if (task == null || !task.paused) return;
-        task.paused = false;
-        AppLog.i(
-                "FileMgr",
-                "download resume task=" + taskId + " offset=" + (task.part.isFile() ? task.part.length() : 0));
-        start(task);
+        if (task == null) return;
+        if (task.state == Task.PAUSED) {
+            task.state = Task.RUNNING;
+            AppLog.i(
+                    "FileMgr",
+                    "download resume task=" + taskId + " offset=" + (task.part.isFile() ? task.part.length() : 0));
+            start(task);
+        } else if (task.state == Task.PAUSING) {
+            // 旧 run 尚未退出：等它 finally 进入 PAUSED 后再续传，避免双写 .part
+            task.resumeAfterPause = true;
+            AppLog.i("FileMgr", "download resume deferred task=" + taskId);
+        }
     }
 
     static void cancel(String taskId) {
         Task task = TASKS.get(taskId);
         if (task != null) {
             task.cancelled = true;
+            task.state = Task.FINISHED;
             HttpURLConnection connection = task.connection;
             if (connection != null) {
                 try {

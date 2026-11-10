@@ -1601,7 +1601,9 @@ public final class MainActivity extends Activity {
     public void onBackPressed() {
         if (tvPlayer != null && tvPlayer.back()) return;
         // 1.9.0：文件管理器先交给页面处理（多选→上级），再离开页面
-        if (body != null && "file-manager".equals(body.getTag())) {
+        if ((current == null || !current.player)
+                && body != null
+                && "file-manager".equals(body.getTag())) {
             if (FileManagerScreen.handleBack()) return;
             if (isTvDevice()) {
                 current = new MainActivity.Screen(this::home);

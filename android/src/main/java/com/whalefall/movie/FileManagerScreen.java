@@ -67,10 +67,14 @@ final class FileManagerScreen {
         selectionBar = null;
         downloadStrip = null;
         stripProgressWrap = null;
-        AppLog.i("FileMgr", "page=FileManager tab=local items=0");
+        providerBar = null;
+        AppLog.i(
+                "FileMgr",
+                "page=FileManager tab=" + (tab == 0 ? "local" : "netdisk") + " items=0");
         buildStorageCard();
         buildSegment();
         buildToolbar();
+        if (tab == 1) buildProviderChips();
         content = a.vertical();
         a.body.addView(content);
         refresh();
@@ -78,6 +82,26 @@ final class FileManagerScreen {
     }
 
     // ---------------- 顶部：存储概览 ----------------
+
+    /** 1.9.0：bindTouchFeedback 会关闭 focusable，必须先绑定再打开焦点。 */
+    private void focusable(View view) {
+        MobileDetailScreen.bindTouchFeedback(view);
+        view.setFocusable(true);
+        view.setFocusableInTouchMode(true);
+        view.setOnFocusChangeListener(
+                (v, focused) ->
+                        FocusMotion.style(
+                                a,
+                                v,
+                                focused,
+                                0x00000000,
+                                0x33ffffff,
+                                16,
+                                UiTokens.TEXT_PRIMARY,
+                                UiTokens.TEXT_PRIMARY,
+                                focused,
+                                1.02f));
+    }
 
     private void buildStorageCard() {
         LinearLayout card = a.vertical();
@@ -138,7 +162,7 @@ final class FileManagerScreen {
                             ? UiTokens.round(a, 999, UiTokens.ACCENT)
                             : MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
             chip.setFocusable(true);
-            MobileDetailScreen.bindTouchFeedback(chip);
+            focusable(chip);
             chip.setOnClickListener(
                     v -> {
                         if (tab == mode) return;
@@ -170,7 +194,7 @@ final class FileManagerScreen {
         sortChip.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
         sortChip.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
         sortChip.setFocusable(true);
-        MobileDetailScreen.bindTouchFeedback(sortChip);
+        focusable(sortChip);
         final TextView sortRef = sortChip;
         sortChip.setOnClickListener(
                 v -> {
@@ -185,7 +209,7 @@ final class FileManagerScreen {
             newDir.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
             newDir.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
             newDir.setFocusable(true);
-            MobileDetailScreen.bindTouchFeedback(newDir);
+            focusable(newDir);
             newDir.setOnClickListener(v -> createFolderDialog());
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
             lp.leftMargin = a.dp(6);
@@ -235,7 +259,7 @@ final class FileManagerScreen {
             TextView up = a.text("‹ 上级", 12, UiTokens.ACCENT);
             up.setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5));
             up.setFocusable(true);
-            MobileDetailScreen.bindTouchFeedback(up);
+            focusable(up);
             up.setOnClickListener(v -> goUp());
             breadcrumbRow.addView(up);
         }
@@ -282,6 +306,14 @@ final class FileManagerScreen {
                         + netdiskFid
                         + " credential="
                         + (netdiskCookie.isEmpty() ? "none" : netdiskFromSource ? "source" : "app"));
+        // 1.9.0：进入网盘分段时先按凭据优先级初始化 cookie（否则永远提示未登录）
+        if (netdiskCookie.isEmpty()) {
+            String[] picked = pickCookie(providerKey, null);
+            if (picked != null && picked.length >= 2 && picked[0] != null && !picked[0].isEmpty()) {
+                netdiskCookie = picked[0];
+                netdiskFromSource = Boolean.parseBoolean(picked[1]);
+            }
+        }
         if (!NetdiskQrLogin.QUARK.equals(providerKey) && !NetdiskQrLogin.UC.equals(providerKey)) {
             showEmpty(
                     "暂不支持浏览" + providerName(),
@@ -337,8 +369,13 @@ final class FileManagerScreen {
                 });
     }
 
+    private LinearLayout providerBar;
+
     private void buildProviderChips() {
-        LinearLayout row = a.row();
+        if (providerBar != null && providerBar.getParent() instanceof android.view.ViewGroup)
+            ((android.view.ViewGroup) providerBar.getParent()).removeView(providerBar);
+        final LinearLayout row = a.row();
+        providerBar = row;
         row.setPadding(0, 0, 0, a.dp(6));
         String[] names = {"夸克", "UC", "百度", "阿里"};
         String[] keys = {NetdiskQrLogin.QUARK, NetdiskQrLogin.UC, NetdiskQrLogin.BAIDU, NetdiskQrLogin.ALI};
@@ -359,7 +396,7 @@ final class FileManagerScreen {
                             ? UiTokens.round(a, 999, UiTokens.ACCENT)
                             : MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
             chip.setFocusable(true);
-            MobileDetailScreen.bindTouchFeedback(chip);
+            focusable(chip);
             chip.setOnClickListener(
                     v -> {
                         if (key.equals(providerKey)) return;
@@ -482,7 +519,7 @@ final class FileManagerScreen {
         card.setBackground(MobileDetailScreen.glassBg(a, 0xcc16283f, 0xb3121d2e, 16));
         card.setFocusable(true);
         card.setClipToOutline(false);
-        MobileDetailScreen.bindTouchFeedback(card);
+        focusable(card);
         return card;
     }
 
@@ -677,7 +714,7 @@ final class FileManagerScreen {
         view.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
         view.setBackground(MobileDetailScreen.glassBg(a, 0x24ffffff, 0x33ffffff, 999));
         view.setFocusable(true);
-        MobileDetailScreen.bindTouchFeedback(view);
+        focusable(view);
         view.setOnClickListener(v -> action.run());
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
         lp.leftMargin = a.dp(6);
@@ -953,7 +990,7 @@ final class FileManagerScreen {
         stripPause = a.text("暂停", 12, UiTokens.TEXT_PRIMARY);
         stripPause.setPadding(a.dp(8), a.dp(6), a.dp(8), a.dp(6));
         stripPause.setFocusable(true);
-        MobileDetailScreen.bindTouchFeedback(stripPause);
+        focusable(stripPause);
         stripPause.setOnClickListener(
                 v -> {
                     if (activeTaskId == null) return;
@@ -975,7 +1012,7 @@ final class FileManagerScreen {
         TextView cancel = a.text("取消", 12, 0xffef4444);
         cancel.setPadding(a.dp(8), a.dp(6), a.dp(8), a.dp(6));
         cancel.setFocusable(true);
-        MobileDetailScreen.bindTouchFeedback(cancel);
+        focusable(cancel);
         cancel.setOnClickListener(
                 v -> {
                     if (activeTaskId != null) FileManagerCore.cancel(activeTaskId);
@@ -1002,13 +1039,13 @@ final class FileManagerScreen {
         TextView retryBtn = a.text("重试", 12, UiTokens.ACCENT);
         retryBtn.setPadding(a.dp(8), a.dp(6), a.dp(8), a.dp(6));
         retryBtn.setFocusable(true);
-        MobileDetailScreen.bindTouchFeedback(retryBtn);
+        focusable(retryBtn);
         retryBtn.setOnClickListener(v -> retry.run());
         downloadStrip.addView(retryBtn);
         TextView close = a.text("关闭", 12, UiTokens.TEXT_TERTIARY);
         close.setPadding(a.dp(8), a.dp(6), a.dp(8), a.dp(6));
         close.setFocusable(true);
-        MobileDetailScreen.bindTouchFeedback(close);
+        focusable(close);
         close.setOnClickListener(v -> removeDownloadStrip());
         downloadStrip.addView(close);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
@@ -1054,7 +1091,7 @@ final class FileManagerScreen {
             button.setPadding(a.dp(16), a.dp(10), a.dp(16), a.dp(10));
             button.setBackground(UiTokens.round(a, 999, UiTokens.ACCENT));
             button.setFocusable(true);
-            MobileDetailScreen.bindTouchFeedback(button);
+            focusable(button);
             button.setOnClickListener(v -> run.run());
             box.addView(button, new LinearLayout.LayoutParams(-2, -2));
             a.ui.post(button::requestFocus);
