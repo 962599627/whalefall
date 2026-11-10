@@ -1563,6 +1563,7 @@ final class MobileShell {
                     final java.util.Map<String, String> filterSnapshot =
                             new java.util.LinkedHashMap<>(selectedFilters);
                     final List<VideoFilters.Definition> definitions = mobileFilterDefinitions();
+                    final boolean[] usedRemoteVariants = {false};
                     final int ticket = a.generation;
                     final HomeScreen.Snapshot cached =
                             siteSnapshot == null ? null : a.homeData.get(siteSnapshot.key);
@@ -1617,6 +1618,7 @@ final class MobileShell {
                                                         : catSnapshot;
                                         java.util.List<java.util.Map<String, String>> variants =
                                                 filterVariants(definitions, filterSnapshot);
+                                        usedRemoteVariants[0] = variants.size() > 1;
                                         if (variants.size() <= 1) {
                                             list =
                                                     Cms.listing(
@@ -1642,9 +1644,16 @@ final class MobileShell {
                                                                         targetCat,
                                                                         pageSnapshot,
                                                                         variant));
-                                                for (Cms.Video v : part.videos)
-                                                    if (!merged.containsKey(v.id))
-                                                        merged.put(v.id, v);
+                                                for (Cms.Video v : part.videos) {
+                                                    String dedupeKey =
+                                                            (v.id == null || v.id.isEmpty())
+                                                                    ? (v.title == null
+                                                                            ? ""
+                                                                            : v.title)
+                                                                    : v.id;
+                                                    if (!merged.containsKey(dedupeKey))
+                                                        merged.put(dedupeKey, v);
+                                                }
                                                 pageCount = Math.max(pageCount, part.pageCount);
                                             }
                                             list = new Cms.Listing();
@@ -1656,8 +1665,12 @@ final class MobileShell {
                                     final List<Cms.Category> finalCats = cats;
                                     final Cms.Listing finalList = list;
                                     List<Cms.Video> filtered =
-                                            VideoFilters.apply(
-                                                    list.videos, definitions, filterSnapshot);
+                                            usedRemoteVariants[0]
+                                                    ? new java.util.ArrayList<>(list.videos)
+                                                    : VideoFilters.apply(
+                                                            list.videos,
+                                                            definitions,
+                                                            filterSnapshot);
                                     java.util.Map<String, String> remoteSent =
                                             VideoFilters.remoteValues(
                                                     definitions, filterSnapshot);
@@ -1677,7 +1690,8 @@ final class MobileShell {
                                                                 "该片源远程筛选只支持单选，多选时先用第一个条件"));
                                     }
                                     boolean remoteIgnored =
-                                            !remoteSent.isEmpty()
+                                            !usedRemoteVariants[0]
+                                                    && !remoteSent.isEmpty()
                                                     && !list.videos.isEmpty()
                                                     && filtered.size() == list.videos.size();
                                     if (remoteIgnored) {
@@ -1710,9 +1724,21 @@ final class MobileShell {
                                                                 ? "null"
                                                                 : currentSite.key));
                                     }
+                                    if (usedRemoteVariants[0] && list.videos.isEmpty()) {
+                                        AppLog.i(
+                                                "Filter",
+                                                "multi unsupported dim="
+                                                        + filterSnapshot
+                                                        + " empty=true site="
+                                                        + (currentSite == null
+                                                                ? "null"
+                                                                : currentSite.key));
+                                    }
                                     final boolean filterEmpty =
                                             filtered.isEmpty() && !filterSnapshot.isEmpty();
-                                    if (filterEmpty) filtered = list.videos;
+                                    // 1.9.41：多选远程请求已返回真相结果，空就是无匹配，不再回填未筛选列表
+                                    if (filterEmpty && !usedRemoteVariants[0])
+                                        filtered = list.videos;
                                     final List<Cms.Video> finalFiltered = filtered;
                                     a.learnTitles(finalList.videos);
                                     a.ui.post(
@@ -2048,8 +2074,8 @@ final class MobileShell {
                 0);
     }
 
-    /** 多选筛选拆成多个单值请求（片源只支持单值），最多展开第一个多选维度的 3 个值。 */
-    private static java.util.List<java.util.Map<String, String>> filterVariants(
+    /** 1.9.41：多选远程维度拆成 N 个单值请求（笛卡尔积 ≤6），合并去重后就是真相结果。 */
+    static java.util.List<java.util.Map<String, String>> filterVariants(
             List<VideoFilters.Definition> definitions,
             java.util.Map<String, String> snapshot) {
         java.util.List<java.util.Map<String, String>> out = new java.util.ArrayList<>();
@@ -2057,25 +2083,59 @@ final class MobileShell {
             out.add(new java.util.LinkedHashMap<String, String>());
             return out;
         }
-        java.util.Map<String, String> first = VideoFilters.remoteValues(definitions, snapshot);
-        java.util.Map<String, String> base = new java.util.LinkedHashMap<>(first);
+        java.util.Map<String, String> base = new java.util.LinkedHashMap<>();
+        java.util.List<String> multiDims = new java.util.ArrayList<>();
+        java.util.List<java.util.List<String>> multiValues = new java.util.ArrayList<>();
+        for (VideoFilters.Definition def : definitions) {
+            String selected = snapshot.get(def.dimension);
+            if (selected == null || selected.isEmpty()) continue;
+            String[] parts = selected.split(",");
+            if (def.remote) {
+                base.put(def.key, parts[0]);
+                if (parts.length > 1) {
+                    multiDims.add(def.key);
+                    java.util.List<String> values = new java.util.ArrayList<>();
+                    for (int i = 0; i < Math.min(parts.length, 6); i++)
+                        if (!parts[i].trim().isEmpty()) values.add(parts[i].trim());
+                    multiValues.add(values);
+                }
+            }
+        }
         if (base.isEmpty()) {
-            // 无远程维度：直接返回空 map，交给本地筛选
+            // 无远程维度：交给本地筛选
             out.add(new java.util.LinkedHashMap<String, String>());
             return out;
         }
-        out.add(base);
-        for (VideoFilters.Definition def : definitions) {
-            String selected = snapshot.get(def.dimension);
-            if (selected == null || !selected.contains(",")) continue;
-            String[] parts = selected.split(",");
-            for (int i = 1; i < Math.min(parts.length, 3); i++) {
-                java.util.Map<String, String> variant =
-                        new java.util.LinkedHashMap<>(base);
-                variant.put(def.key, parts[i]);
-                out.add(variant);
+        out.add(new java.util.LinkedHashMap<>(base));
+        if (!multiDims.isEmpty()) {
+            java.util.List<java.util.Map<String, String>> combos = new java.util.ArrayList<>();
+            combos.add(new java.util.LinkedHashMap<>(base));
+            int cap = 6;
+            for (int d = 0; d < multiDims.size(); d++) {
+                String key = multiDims.get(d);
+                java.util.List<String> values = multiValues.get(d);
+                java.util.List<java.util.Map<String, String>> next = new java.util.ArrayList<>();
+                for (java.util.Map<String, String> combo : combos) {
+                    for (String value : values) {
+                        if (next.size() >= cap) break;
+                        java.util.Map<String, String> variant =
+                                new java.util.LinkedHashMap<>(combo);
+                        variant.put(key, value);
+                        next.add(variant);
+                    }
+                    if (next.size() >= cap) break;
+                }
+                combos = next;
             }
-            break;
+            out.clear();
+            out.addAll(combos);
+            AppLog.i(
+                    "Filter",
+                    "multi plan dims="
+                            + multiDims
+                            + " variants="
+                            + out.size()
+                            + (out.size() >= cap ? " capped=6" : ""));
         }
         return out;
     }

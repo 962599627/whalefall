@@ -1615,20 +1615,48 @@ final class HomeScreen {
         int page = first ? 1 : state.page + 1;
         List<VideoFilters.Definition> definitions = filterDefinitions();
         Map<String, String> selections = new LinkedHashMap<>(state.selectedFilters);
+        List<Map<String, String>> variants = MobileShell.filterVariants(definitions, selections);
+        boolean multiRemote = variants.size() > 1;
         Map<String, String> remoteFilters = VideoFilters.remoteValues(definitions, selections);
         status.setVisibility(first ? View.VISIBLE : View.GONE);
-        status.setText("正在读取分类…");
+        status.setText(first ? "正在读取分类…" : "");
         more.setText("正在加载…");
         more.setVisibility(first ? View.GONE : View.VISIBLE);
         a.submitPage(
                 () -> {
                     try {
-                        Cms.Listing list =
-                                Cms.listing(a.engine(site).category(category, page, remoteFilters));
+                        Cms.Listing list;
+                        if (multiRemote) {
+                            LinkedHashMap<String, Cms.Video> merged = new LinkedHashMap<>();
+                            int pageCount = 1;
+                            for (Map<String, String> variant : variants) {
+                                Cms.Listing part =
+                                        Cms.listing(
+                                                a.engine(site).category(category, page, variant));
+                                for (Cms.Video v : part.videos) {
+                                    String key =
+                                            (v.id == null || v.id.isEmpty())
+                                                    ? (v.title == null ? "" : v.title)
+                                                    : v.id;
+                                    merged.putIfAbsent(key, v);
+                                }
+                                pageCount = Math.max(pageCount, part.pageCount);
+                            }
+                            list = new Cms.Listing();
+                            list.videos.addAll(merged.values());
+                            list.pageCount = pageCount;
+                        } else {
+                            list =
+                                    Cms.listing(
+                                            a.engine(site)
+                                                    .category(category, page, remoteFilters));
+                        }
                         clean(list.videos);
                         int received = list.videos.size();
                         List<Cms.Video> matching =
-                                VideoFilters.apply(list.videos, definitions, selections);
+                                multiRemote
+                                        ? new java.util.ArrayList<>(list.videos)
+                                        : VideoFilters.apply(list.videos, definitions, selections);
                         a.ui.post(
                                 () -> {
                                     if (!active() || token != request) return;
