@@ -116,12 +116,36 @@ final class RemoteInputScreen {
         statusSub.setGravity(Gravity.CENTER);
         statusSub.setPadding(0, a.dp(2), 0, a.dp(10));
         a.body.addView(statusSub);
-        TextView stop = a.text("停止手机遥控", tv ? 15f : 12.5f, 0xffffffff);
+        TextView stop = a.text("停止手机遥控", tv ? 15f : 12.5f, 0xff0b1220);
         stop.setGravity(Gravity.CENTER);
         stop.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
-        stop.setBackground(UiTokens.round(a, 999, 0xffff6b81));
         stop.setFocusable(true);
+        stop.setFocusableInTouchMode(true);
         MobileDetailScreen.bindTouchFeedback(stop);
+        FocusMotion.style(
+                a,
+                stop,
+                false,
+                0xffff6b81,
+                0xffff9aaa,
+                999,
+                0xff0b1220,
+                0xff0b1220,
+                false,
+                1.004f);
+        stop.setOnFocusChangeListener(
+                (v, focused) ->
+                        FocusMotion.style(
+                                a,
+                                stop,
+                                focused,
+                                0xffff6b81,
+                                0xffff9aaa,
+                                999,
+                                0xff0b1220,
+                                0xff0b1220,
+                                focused,
+                                1.04f));
         stop.setOnClickListener(
                 v -> {
                     stop("button");

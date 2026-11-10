@@ -169,6 +169,7 @@ final class AppDialog extends Dialog {
         w.getDecorView().setSystemUiVisibility(5894);
         w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         View first = selected;
+        if (first == null && spec.focusNegative) first = actions.get(-2);
         if (first == null)
             first = content.getChildCount() > 0 ? content.getChildAt(0) : actions.get(-1);
         if (first != null) first.requestFocus();
@@ -198,6 +199,12 @@ final class AppDialog extends Dialog {
         DialogInterface.OnCancelListener cancel;
         final Map<Integer, String> buttons = new HashMap<>();
         final Map<Integer, DialogInterface.OnClickListener> callbacks = new HashMap<>();
+        boolean focusNegative;
+
+        Builder setNegativeDefaultFocus() {
+            focusNegative = true;
+            return this;
+        }
 
         Builder(MainActivity activity) {
             a = activity;

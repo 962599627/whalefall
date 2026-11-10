@@ -175,6 +175,7 @@ final class SourceCheckScreen {
                                         refreshList(a);
                                     })
                             .setNegativeButton("取消", null)
+                            .setNegativeDefaultFocus()
                             .show();
                 });
         LinearLayout.LayoutParams allLp = new LinearLayout.LayoutParams(-2, -2);
@@ -205,6 +206,7 @@ final class SourceCheckScreen {
                                         refreshList(a);
                                     })
                             .setNegativeButton("取消", null)
+                            .setNegativeDefaultFocus()
                             .show();
                 });
         LinearLayout.LayoutParams restoreLp = new LinearLayout.LayoutParams(-2, -2);
@@ -287,6 +289,8 @@ final class SourceCheckScreen {
             return;
         }
         running = true;
+        completed = false;
+        updateBulk(a, order);
         final int runId = RUN_ID.incrementAndGet();
         cancelled[0] = false;
         AppLog.i("SourceCheck", "run id=" + runId + " sites=" + order.size());
