@@ -1799,12 +1799,18 @@ public final class MainActivity extends Activity {
                         + " player="
                         + (current != null && current.player));
         if (tvPlayer != null && tvPlayer.back()) return;
-        // 1.9.33：首页筛选层 BACK 逐层收起（L3 → L2）
+        // 1.9.33：只在首页筛选层展开时优先收起（L3 → L2），避免误拦播放页/二级页/其它 tab 的 BACK
         if (!isTvDevice()
+                && current != null
+                && current.home
+                && !current.player
+                && MobileShell.activeTab == 0
                 && MobileShell.activeShell != null
                 && MobileShell.activeShell.backFilterUi()) return;
         if (isTvDevice()
                 && current != null
+                && current.home
+                && !current.player
                 && current.retainedHome != null
                 && current.retainedHome.backFilterUi()) return;
         String tag = body == null ? null : String.valueOf(body.getTag());

@@ -191,8 +191,12 @@ final class MobileShell {
     private List<Cms.Category> currentCategories = new ArrayList<>();
     private String filterSchema = "{}";
     private final java.util.Map<String, String> selectedFilters = new java.util.LinkedHashMap<>();
-    /** 1.9.33：手机首页 L2/L3 筛选行。 */
-    private LinearLayout homeFilterTagRow, homeFilterOptionRow;
+    /** 1.9.33：手机首页 L2 标签订 / L3 选项（横向滚动或换行网格）。 */
+    private LinearLayout homeFilterTagRow, homeFilterOptionRow, homeFilterOptionGrid;
+    private android.widget.HorizontalScrollView homeFilterTagScroll, homeFilterOptionScroll;
+    private boolean homeFilterWide;
+    private String homeOpenTagDim = "";
+    private String homePendingTagFocus = "";
     private String lastChipTap = "";
     private long lastChipTapAt;
     private Runnable homeFilterApply;
@@ -1035,9 +1039,13 @@ final class MobileShell {
         final boolean sideRailLayout = a.windowWidth() / homeDensity >= 640 && !a.isPortrait();
         final float homeNavScale =
                 Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
-        // 1.9.33：删除底部常驻筛选条，底部留给 Dock（64+16+8）
+        // 1.9.33：删除底部常驻筛选条，底部留给 Dock（64+16+8）；平板/TV 侧栏布局 24dp
         filterSummaryBar = null;
-        recycler.setPadding(0, statusBarHeight() + a.dp(8), 0, a.dp(88));
+        boolean wideBottom =
+                a.windowWidth() / a.getResources().getDisplayMetrics().density >= 640
+                        && !a.isPortrait();
+        recycler.setPadding(
+                0, statusBarHeight() + a.dp(8), 0, a.dp(wideBottom ? 24 : 88));
         final LinearLayout body = a.vertical();
         a.body = body;
         homeBody = body;
@@ -1337,15 +1345,34 @@ final class MobileShell {
         filterSize.topMargin = a.dp(2);
         categoryBar.addView(filterButton, filterSize);
         body.addView(categoryBar, new LinearLayout.LayoutParams(-1, -2));
-        // 1.9.33：L2 筛选标签行 / L3 选项行
+        // 1.9.33：L2 筛选标签行（横向滚动） / L3 选项（手机横滚、平板/TV 换行网格）
+        float filterDensity = a.getResources().getDisplayMetrics().density;
+        homeFilterWide = a.windowWidth() / filterDensity >= 640 && !a.isPortrait();
+        homeFilterTagScroll = new android.widget.HorizontalScrollView(a);
+        homeFilterTagScroll.setHorizontalScrollBarEnabled(false);
+        homeFilterTagScroll.setClipChildren(false);
+        homeFilterTagScroll.setClipToPadding(false);
+        homeFilterTagScroll.setPadding(
+                a.dp(homeFilterWide ? 24 : 16), a.dp(4), a.dp(homeFilterWide ? 24 : 16), a.dp(4));
+        homeFilterTagScroll.setVisibility(View.GONE);
         homeFilterTagRow = a.row();
-        homeFilterTagRow.setClipChildren(false);
-        homeFilterTagRow.setVisibility(View.GONE);
-        body.addView(homeFilterTagRow, new LinearLayout.LayoutParams(-1, -2));
+        homeFilterTagScroll.addView(homeFilterTagRow);
+        body.addView(homeFilterTagScroll, new LinearLayout.LayoutParams(-1, -2));
+        homeFilterOptionScroll = new android.widget.HorizontalScrollView(a);
+        homeFilterOptionScroll.setHorizontalScrollBarEnabled(false);
+        homeFilterOptionScroll.setClipChildren(false);
+        homeFilterOptionScroll.setClipToPadding(false);
+        homeFilterOptionScroll.setPadding(
+                a.dp(homeFilterWide ? 24 : 16), 0, a.dp(homeFilterWide ? 24 : 16), a.dp(6));
+        homeFilterOptionScroll.setVisibility(View.GONE);
         homeFilterOptionRow = a.row();
-        homeFilterOptionRow.setClipChildren(false);
-        homeFilterOptionRow.setVisibility(View.GONE);
-        body.addView(homeFilterOptionRow, new LinearLayout.LayoutParams(-1, -2));
+        homeFilterOptionScroll.addView(homeFilterOptionRow);
+        body.addView(homeFilterOptionScroll, new LinearLayout.LayoutParams(-1, -2));
+        homeFilterOptionGrid = a.vertical();
+        homeFilterOptionGrid.setPadding(
+                a.dp(24), 0, a.dp(24), a.dp(8));
+        homeFilterOptionGrid.setVisibility(View.GONE);
+        body.addView(homeFilterOptionGrid, new LinearLayout.LayoutParams(-1, -2));
 
         // 1.8.9 云盘配置内容原地容器（仅动作型 chip 使用，默认隐藏）
         homeCloudHolder = a.vertical();
@@ -1995,20 +2022,34 @@ final class MobileShell {
         return text.contains("云盘") || text.contains("云盤") || text.contains("网盘配置");
     }
 
-    /** 1.9.33：手机首页 L2 标签行 / L3 选项行。 */
-    boolean hasMobileFilters() {
+    /** 1.9.33：按分类判断是否有筛选能力（不再按当前分类一刀切）。 */
+    boolean hasMobileFiltersFor(String catId) {
         try {
-            return !mobileFilterDefinitions().isEmpty();
+            String category =
+                    catId == null || catId.isEmpty()
+                            ? (selectedCategoryId.isEmpty() && !currentCategories.isEmpty()
+                                    ? currentCategories.get(0).id
+                                    : selectedCategoryId)
+                            : catId;
+            return !VideoFilters.definitions(filterSchema, category, currentVideos).isEmpty();
         } catch (Throwable ignored) {
             return false;
         }
     }
 
+    private android.graphics.drawable.Drawable funnelDrawable(int color, int sizeDp) {
+        android.graphics.drawable.Drawable glyph = UiIcon.drawable(a, UiIcon.FILTER);
+        if (glyph == null) return null;
+        UiIcon.tintDrawable(glyph, color);
+        int size = a.dp(sizeDp);
+        glyph.setBounds(0, 0, size, size);
+        return glyph;
+    }
+
     void toggleMobileFilterTags() {
-        if (homeFilterTagRow == null) return;
-        if (homeFilterTagRow.getVisibility() == View.VISIBLE) {
-            homeFilterTagRow.setVisibility(View.GONE);
-            if (homeFilterOptionRow != null) homeFilterOptionRow.setVisibility(View.GONE);
+        if (homeFilterTagScroll == null) return;
+        if (homeFilterTagScroll.getVisibility() == View.VISIBLE) {
+            collapseMobileFilterUi();
             return;
         }
         renderMobileFilterTags();
@@ -2017,95 +2058,185 @@ final class MobileShell {
     void renderMobileFilterTags() {
         if (homeFilterTagRow == null) return;
         homeFilterTagRow.removeAllViews();
-        if (homeFilterOptionRow != null) homeFilterOptionRow.setVisibility(View.GONE);
         List<VideoFilters.Definition> defs = mobileFilterDefinitions();
         if (defs.isEmpty()) {
-            homeFilterTagRow.setVisibility(View.GONE);
+            collapseMobileFilterUi();
             return;
         }
-        homeFilterTagRow.setVisibility(View.VISIBLE);
-        TextView label = a.text("筛选：", 12, MainActivity.MUTED);
-        label.setGravity(Gravity.CENTER_VERTICAL);
-        label.setPadding(0, 0, a.dp(6), 0);
-        homeFilterTagRow.addView(label);
+        homeFilterTagScroll.setVisibility(View.VISIBLE);
+        animateFilterRow(homeFilterTagScroll, 160, 6);
         for (final VideoFilters.Definition def : defs) {
             String value = selectedFilters.get(def.dimension);
             boolean active = value != null && !value.isEmpty();
+            boolean open = def.dimension.equals(homeOpenTagDim);
             TextView chip =
                     a.text(
-                            def.label + " · " + (active ? def.labelFor(value) : "全部"),
+                            active ? def.label + " · " + def.labelFor(value) : def.label,
                             12,
-                            active ? 0xff0b1220 : 0xffe6edfb);
+                            active || open ? UiTokens.ACCENT_SOFT : 0xffc2cbd7);
             chip.setGravity(Gravity.CENTER);
-            chip.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
-            chip.setBackground(
-                    active
-                            ? a.bg(0xffff8fb1, 999)
-                            : glassBg(0x14ffffff, 0x33ffffff, a.dp(999), a.dp(0.8f), 0x33ffffff));
+            chip.setPadding(a.dp(12), a.dp(5), a.dp(12), a.dp(5));
+            android.graphics.drawable.GradientDrawable bg =
+                    new android.graphics.drawable.GradientDrawable();
+            bg.setCornerRadius(a.dp(999));
+            bg.setColor(open ? 0x33ff8fb1 : 0x14ffffff);
+            bg.setStroke(a.dp(1), open ? 0x66ffb3c8 : 0x1affffff);
+            chip.setBackground(bg);
             MobileDetailScreen.bindTouchFeedback(chip);
             chip.setFocusable(true);
-            chip.setMinHeight(a.dp(32));
+            chip.setFocusableInTouchMode(true);
+            chip.setMinHeight(a.dp(homeFilterWide ? 36 : 32));
+            chip.setNextFocusDownId(View.generateViewId());
             chip.setOnClickListener(v -> showMobileFilterOptions(def));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(32));
-            lp.rightMargin = a.dp(6);
+            LinearLayout.LayoutParams lp =
+                    new LinearLayout.LayoutParams(-2, a.dp(homeFilterWide ? 36 : 32));
+            lp.rightMargin = a.dp(8);
             homeFilterTagRow.addView(chip, lp);
+            if (def.dimension.equals(homePendingTagFocus)) {
+                chip.requestFocus();
+                homePendingTagFocus = "";
+            }
         }
+        if (homePendingTagFocus.isEmpty() && defs.size() > 0 && !mobileOptionsVisible()) {
+            // 首次展开把焦点交给第一个标签（TV/键盘）；选项层打开时不抢焦点
+            View first = homeFilterTagRow.getChildAt(0);
+            if (first != null && a.isTvDevice()) first.requestFocus();
+        }
+    }
+
+    private boolean mobileOptionsVisible() {
+        return (homeFilterOptionScroll != null
+                        && homeFilterOptionScroll.getVisibility() == View.VISIBLE)
+                || (homeFilterOptionGrid != null
+                        && homeFilterOptionGrid.getVisibility() == View.VISIBLE);
+    }
+
+    void hideMobileFilterOptions() {
+        homeOpenTagDim = "";
+        if (homeFilterOptionScroll != null)
+            homeFilterOptionScroll.setVisibility(View.GONE);
+        if (homeFilterOptionGrid != null) homeFilterOptionGrid.setVisibility(View.GONE);
     }
 
     void showMobileFilterOptions(final VideoFilters.Definition def) {
-        if (homeFilterOptionRow == null) return;
-        if (homeFilterOptionRow.getVisibility() == View.VISIBLE
-                && String.valueOf(homeFilterOptionRow.getTag()).equals(def.dimension)) {
-            homeFilterOptionRow.setVisibility(View.GONE);
-            homeFilterOptionRow.setTag("");
+        if (homeFilterOptionScroll == null) return;
+        if (def.dimension.equals(homeOpenTagDim)) {
+            hideMobileFilterOptions();
+            renderMobileFilterTags();
             return;
         }
-        homeFilterOptionRow.removeAllViews();
-        homeFilterOptionRow.setTag(def.dimension);
-        homeFilterOptionRow.setVisibility(View.VISIBLE);
+        hideMobileFilterOptions();
+        homeOpenTagDim = def.dimension;
+        boolean wide = homeFilterWide;
+        LinearLayout target;
+        if (wide) {
+            homeFilterOptionGrid.removeAllViews();
+            homeFilterOptionGrid.setVisibility(View.VISIBLE);
+            animateFilterRow(homeFilterOptionGrid, 180, 6);
+            target = null;
+        } else {
+            homeFilterOptionRow.removeAllViews();
+            homeFilterOptionScroll.setVisibility(View.VISIBLE);
+            animateFilterRow(homeFilterOptionScroll, 180, 6);
+            target = homeFilterOptionRow;
+        }
+        LinearLayout currentRow = wide ? a.row() : target;
+        int perRow = wide ? 8 : Integer.MAX_VALUE;
+        int count = 0;
         for (final VideoFilters.Choice choice : def.choices) {
             String current = selectedFilters.get(def.dimension);
             boolean active = choice.value.equals(current == null ? "" : current);
-            TextView chip = a.text(choice.label, 12, active ? 0xff0b1220 : 0xffe6edfb);
+            TextView chip =
+                    a.text(
+                            choice.label,
+                            12,
+                            active ? 0xff0b1220 : 0xffc2cbd7);
             chip.setGravity(Gravity.CENTER);
-            chip.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
-            chip.setBackground(
-                    active
-                            ? a.bg(0xffff8fb1, 999)
-                            : glassBg(0x14ffffff, 0x33ffffff, a.dp(999), a.dp(0.8f), 0x33ffffff));
+            chip.setPadding(a.dp(12), a.dp(5), a.dp(12), a.dp(5));
+            android.graphics.drawable.GradientDrawable bg =
+                    new android.graphics.drawable.GradientDrawable();
+            bg.setCornerRadius(a.dp(999));
+            bg.setColor(active ? 0xffff8fb1 : 0x14ffffff);
+            bg.setStroke(a.dp(1), active ? 0x66ffb3c8 : 0x1affffff);
+            chip.setBackground(bg);
             MobileDetailScreen.bindTouchFeedback(chip);
             chip.setFocusable(true);
-            chip.setMinHeight(a.dp(32));
+            chip.setFocusableInTouchMode(true);
+            int h = a.dp(wide ? 48 : 32);
+            chip.setMinHeight(h);
             chip.setOnClickListener(
-                    v -> {
-                        if (choice.value.isEmpty()) selectedFilters.remove(def.dimension);
-                        else selectedFilters.put(def.dimension, choice.value);
-                        AppLog.i(
-                                "Filter",
-                                "category="
-                                        + selectedCategoryId
-                                        + " tab="
-                                        + def.label
-                                        + " value="
-                                        + choice.value);
-                        homeFilterOptionRow.setVisibility(View.GONE);
-                        currentPage = 1;
-                        if (homeFilterApply != null) homeFilterApply.run();
-                        renderMobileFilterTags();
-                    });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(32));
-            lp.rightMargin = a.dp(6);
-            homeFilterOptionRow.addView(chip, lp);
+                    v -> applyMobileFilterChoice(def, choice));
+            LinearLayout.LayoutParams lp =
+                    new LinearLayout.LayoutParams(wide ? 0 : -2, h, wide ? 1f : 0f);
+            lp.rightMargin = a.dp(8);
+            lp.bottomMargin = wide ? a.dp(8) : 0;
+            if (wide) {
+                if (count % perRow == 0) {
+                    currentRow = a.row();
+                    currentRow.setClipChildren(false);
+                    homeFilterOptionGrid.addView(
+                            currentRow, new LinearLayout.LayoutParams(-1, -2));
+                }
+                currentRow.addView(chip, lp);
+            } else target.addView(chip, lp);
+            count++;
+            if (count == 1) chip.requestFocus();
+        }
+        renderMobileFilterTags();
+    }
+
+    void applyMobileFilterChoice(VideoFilters.Definition def, VideoFilters.Choice choice) {
+        String current = selectedFilters.get(def.dimension);
+        if (choice.value.isEmpty()) selectedFilters.remove(def.dimension);
+        else if (choice.value.equals(current == null ? "" : current))
+            selectedFilters.remove(def.dimension); // 再点已选项 = 取消回全部
+        else selectedFilters.put(def.dimension, choice.value);
+        AppLog.i(
+                "Filter",
+                "category="
+                        + selectedCategoryId
+                        + " tab="
+                        + def.label
+                        + " value="
+                        + choice.value);
+        homePendingTagFocus = def.dimension;
+        hideMobileFilterOptions();
+        currentPage = 1;
+        if (homeFilterApply != null) homeFilterApply.run();
+        renderMobileFilterTags();
+    }
+
+    void collapseMobileFilterUi() {
+        hideMobileFilterOptions();
+        if (homeFilterTagScroll != null) {
+            homeFilterTagScroll.animate().cancel();
+            homeFilterTagScroll.setVisibility(View.GONE);
         }
     }
 
+    private void animateFilterRow(View view, int durationMs, float offsetDp) {
+        if (view == null) return;
+        if (a.reduced) {
+            view.setAlpha(1f);
+            view.setTranslationY(0);
+            return;
+        }
+        view.setAlpha(0f);
+        view.setTranslationY(-a.dp((int) offsetDp));
+        view.animate().alpha(1f).translationY(0).setDuration(durationMs).start();
+    }
+
     boolean backFilterUi() {
-        if (homeFilterOptionRow != null && homeFilterOptionRow.getVisibility() == View.VISIBLE) {
-            homeFilterOptionRow.setVisibility(View.GONE);
+        if (homeFilterOptionScroll != null
+                && (homeFilterOptionScroll.getVisibility() == View.VISIBLE
+                        || (homeFilterOptionGrid != null
+                                && homeFilterOptionGrid.getVisibility() == View.VISIBLE))) {
+            hideMobileFilterOptions();
+            renderMobileFilterTags();
             return true;
         }
-        if (homeFilterTagRow != null && homeFilterTagRow.getVisibility() == View.VISIBLE) {
-            homeFilterTagRow.setVisibility(View.GONE);
+        if (homeFilterTagScroll != null && homeFilterTagScroll.getVisibility() == View.VISIBLE) {
+            collapseMobileFilterUi();
             return true;
         }
         return false;
@@ -2118,21 +2249,32 @@ final class MobileShell {
             Runnable refreshChips,
             Runnable loadPage) {
         boolean active = selectedCategoryId.equals(catId);
-        boolean hasFilters = hasMobileFilters();
+        boolean hasFilters = hasMobileFiltersFor(catId);
         float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
         TextView chip =
-                a.text(
-                        hasFilters ? label + "  ≡" : label,
-                        13 * navScale,
-                        active ? 0xff000000 : 0xfff3f4f6);
+                a.text(label, 13 * navScale, active ? 0xff000000 : 0xfff3f4f6);
         chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
         chip.setGravity(Gravity.CENTER);
         chip.setPadding(
                 a.dp(15 * navScale), a.dp(7 * navScale), a.dp(15 * navScale), a.dp(7 * navScale));
         if (active) {
-            chip.setBackground(glassBg(0xffffffff, 0xffe9eef9, a.dp(999), a.dp(0.7f), 0xffffffff));
+            android.graphics.drawable.GradientDrawable grad =
+                    new android.graphics.drawable.GradientDrawable(
+                            android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+                            new int[] {UiTokens.ACCENT, 0xffffb3c8});
+            grad.setCornerRadius(a.dp(999));
+            chip.setBackground(grad);
         } else {
             chip.setBackground(glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
+        }
+        if (hasFilters) {
+            boolean filtered = !selectedFilters.isEmpty();
+            android.graphics.drawable.Drawable funnel =
+                    funnelDrawable(filtered ? UiTokens.ACCENT : 0xff8d9cb6, 14);
+            chip.setCompoundDrawables(null, null, funnel, null);
+            chip.setCompoundDrawablePadding(a.dp(6));
+            if (!filtered)
+                chip.setTextColor(active ? 0xff000000 : 0xffc2cbd7);
         }
         MobileDetailScreen.bindTouchFeedback(chip);
         chip.setOnClickListener(
@@ -2146,7 +2288,7 @@ final class MobileShell {
                         return;
                     }
                     hideCloudConfigInline();
-                    // 1.9.33：有筛选能力时，点击分类 = 选中并展开 L2；已选中 = 展开/收起 L2
+                    // 1.9.33：有筛选能力的分类点击 = 选中+展开 L2；已选中 = 展开/收起 L2
                     if (hasFilters && catId.equals(selectedCategoryId)) {
                         toggleMobileFilterTags();
                         return;
@@ -2154,6 +2296,7 @@ final class MobileShell {
                     if (selectedCategoryId.equals(catId)) return;
                     selectedCategoryId = catId;
                     selectedFilters.clear();
+                    collapseMobileFilterUi();
                     currentPage = 1;
                     refreshChips.run();
                     loadPage.run();

@@ -27,7 +27,10 @@ final class HomeScreen {
     final List<List<View>> rows = new ArrayList<>();
     LinearLayout content;
     /** 1.9.33：L2 筛选标签行 / L3 选项行（分类 chip 之下）。 */
-    LinearLayout filterTagRow, filterOptionRow;
+    LinearLayout filterTagRow, filterOptionRow, filterOptionGrid;
+    android.widget.HorizontalScrollView filterTagScroll, filterOptionScroll;
+    String filterOpenDim = "";
+    String filterPendingTag = "";
     /** 1.8.12 云盘配置原地容器（首页分类栏下方，默认隐藏）。 */
     LinearLayout cloudInline;
     View cloudContent;
@@ -153,15 +156,26 @@ final class HomeScreen {
         filters = new CategoryFlow(a, this::wireNavigation);
         filters.setPadding(0, a.dp(2), 0, a.dp(8));
         a.body.addView(filters);
-        // 1.9.33：分类 chip 下方的筛选标签行 / 选项行（默认隐藏，按需展开）
+        // 1.9.33：L2 筛选标签行（横向滚动） / L3 选项（TV 换行网格，每行 6）
+        filterTagScroll = new android.widget.HorizontalScrollView(a);
+        filterTagScroll.setHorizontalScrollBarEnabled(false);
+        filterTagScroll.setClipChildren(false);
+        filterTagScroll.setPadding(a.dp(24), a.dp(4), a.dp(24), a.dp(4));
+        filterTagScroll.setVisibility(View.GONE);
         filterTagRow = a.row();
-        filterTagRow.setClipChildren(false);
-        filterTagRow.setVisibility(View.GONE);
-        a.body.addView(filterTagRow);
+        filterTagScroll.addView(filterTagRow);
+        a.body.addView(filterTagScroll, new LinearLayout.LayoutParams(-1, -2));
+        filterOptionScroll = new android.widget.HorizontalScrollView(a);
+        filterOptionScroll.setHorizontalScrollBarEnabled(false);
+        filterOptionScroll.setPadding(a.dp(24), 0, a.dp(24), a.dp(8));
+        filterOptionScroll.setVisibility(View.GONE);
         filterOptionRow = a.row();
-        filterOptionRow.setClipChildren(false);
-        filterOptionRow.setVisibility(View.GONE);
-        a.body.addView(filterOptionRow);
+        filterOptionScroll.addView(filterOptionRow);
+        a.body.addView(filterOptionScroll, new LinearLayout.LayoutParams(-1, -2));
+        filterOptionGrid = a.vertical();
+        filterOptionGrid.setPadding(a.dp(24), 0, a.dp(24), a.dp(10));
+        filterOptionGrid.setVisibility(View.GONE);
+        a.body.addView(filterOptionGrid, new LinearLayout.LayoutParams(-1, -2));
         status = a.text("正在整理片单…", 13, MainActivity.MUTED);
         status.setPadding(a.dp(4), a.dp(12), 0, a.dp(12));
         a.body.addView(status);
@@ -713,11 +727,11 @@ final class HomeScreen {
         filters.lines.clear();
         tabs.clear();
         tabIds.clear();
-        addTab("推荐" + (categoryHasFilters("") ? "  ≡" : ""), "", 0);
+        addTab("推荐", "", 0);
         int visible = Math.min(4, snapshot.categories.size());
         for (int i = 0; i < visible; i++) {
             Cms.Category c = snapshot.categories.get(i);
-            addTab(c.name + (categoryHasFilters(c.id) ? "  ≡" : ""), c.id, i + 1);
+            addTab(c.name, c.id, i + 1);
         }
         if (snapshot.categories.size() > visible) {
             TextView extra =
@@ -776,11 +790,19 @@ final class HomeScreen {
         return !VideoFilters.definitions(snapshot.filterSchema, category, snapshot.videos).isEmpty();
     }
 
+    private android.graphics.drawable.Drawable funnelDrawable(int color, int sizeDp) {
+        android.graphics.drawable.Drawable glyph = UiIcon.drawable(a, UiIcon.FILTER);
+        if (glyph == null) return null;
+        UiIcon.tintDrawable(glyph, color);
+        int size = a.dp(sizeDp);
+        glyph.setBounds(0, 0, size, size);
+        return glyph;
+    }
+
     void toggleFilterTags() {
-        if (filterTagRow == null) return;
-        if (filterTagRow.getVisibility() == View.VISIBLE) {
-            filterTagRow.setVisibility(View.GONE);
-            if (filterOptionRow != null) filterOptionRow.setVisibility(View.GONE);
+        if (filterTagScroll == null) return;
+        if (filterTagScroll.getVisibility() == View.VISIBLE) {
+            collapseFilterUi();
             return;
         }
         renderFilterTags();
@@ -788,46 +810,63 @@ final class HomeScreen {
 
     /** L2：每个筛选维度一个标签，显示当前值。 */
     void renderFilterTags() {
-        if (filterTagRow == null) return;
+        if (filterTagScroll == null) return;
         filterTagRow.removeAllViews();
-        if (filterOptionRow != null) filterOptionRow.setVisibility(View.GONE);
+        hideFilterOptions();
         List<VideoFilters.Definition> defs = filterDefinitions();
         if (defs.isEmpty()) {
-            filterTagRow.setVisibility(View.GONE);
+            collapseFilterUi();
             return;
         }
-        filterTagRow.setVisibility(View.VISIBLE);
-        TextView label = a.text("筛选：", 13, MainActivity.MUTED);
-        label.setGravity(Gravity.CENTER_VERTICAL);
-        label.setPadding(0, 0, a.dp(6), 0);
-        filterTagRow.addView(label);
+        filterTagScroll.setVisibility(View.VISIBLE);
+        animateFilterRow(filterTagScroll, 160, 6);
         for (final VideoFilters.Definition def : defs) {
             String value = state.selectedFilters.get(def.dimension);
             boolean active = value != null && !value.isEmpty();
+            boolean open = def.dimension.equals(filterOpenDim);
             TextView chip =
                     pill(
-                            def.label + " · " + (active ? def.labelFor(value) : "全部"),
+                            active ? def.label + " · " + def.labelFor(value) : def.label,
                             "home-filter-tag:" + def.dimension,
                             () -> showFilterOptions(def));
-            chip.setSelected(active);
+            chip.setSelected(active || open);
+            if (open || active) chip.setTextColor(UiTokens.ACCENT_SOFT);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(40));
             lp.rightMargin = a.dp(8);
             filterTagRow.addView(chip, lp);
+            if (def.dimension.equals(filterPendingTag)) {
+                chip.requestFocus();
+                filterPendingTag = "";
+            }
+        }
+        if (filterTagRow.getChildCount() > 0 && a.isTvDevice()) {
+            View first = filterTagRow.getChildAt(0);
+            if (!first.hasFocus() && filterPendingTag.isEmpty()) first.requestFocus();
         }
     }
 
-    /** L3：某维度的全部选项；点选项立即应用并收起。 */
+    void hideFilterOptions() {
+        filterOpenDim = "";
+        if (filterOptionScroll != null) filterOptionScroll.setVisibility(View.GONE);
+        if (filterOptionGrid != null) filterOptionGrid.setVisibility(View.GONE);
+    }
+
+    /** L3：某维度的全部选项；手机横滚、TV 换行网格；点选项立即应用并收起。 */
     void showFilterOptions(final VideoFilters.Definition def) {
-        if (filterOptionRow == null) return;
-        if (filterOptionRow.getVisibility() == View.VISIBLE
-                && String.valueOf(filterOptionRow.getTag()).equals(def.dimension)) {
-            filterOptionRow.setVisibility(View.GONE);
-            filterOptionRow.setTag("");
+        if (filterOptionScroll == null) return;
+        if (def.dimension.equals(filterOpenDim)) {
+            hideFilterOptions();
+            renderFilterTags();
             return;
         }
-        filterOptionRow.removeAllViews();
-        filterOptionRow.setTag(def.dimension);
-        filterOptionRow.setVisibility(View.VISIBLE);
+        hideFilterOptions();
+        filterOpenDim = def.dimension;
+        filterOptionGrid.removeAllViews();
+        filterOptionGrid.setVisibility(View.VISIBLE);
+        animateFilterRow(filterOptionGrid, 180, 6);
+        LinearLayout row = null;
+        int perRow = 6;
+        int count = 0;
         for (final VideoFilters.Choice choice : def.choices) {
             String current = state.selectedFilters.get(def.dimension);
             boolean active = choice.value.equals(current == null ? "" : current);
@@ -835,38 +874,72 @@ final class HomeScreen {
                     pill(
                             choice.label,
                             "home-filter-opt:" + def.dimension + ":" + choice.value,
-                            () -> {
-                                if (choice.value.isEmpty())
-                                    state.selectedFilters.remove(def.dimension);
-                                else
-                                    state.selectedFilters.put(def.dimension, choice.value);
-                                AppLog.i(
-                                        "Filter",
-                                        "category="
-                                                + state.category
-                                                + " tab="
-                                                + def.label
-                                                + " value="
-                                                + choice.value);
-                                filterOptionRow.setVisibility(View.GONE);
-                                applyFilters();
-                                renderFilterTags();
-                            });
+                            () -> applyFilterChoice(def, choice));
             chip.setSelected(active);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(40));
+            if (count % perRow == 0) {
+                row = a.row();
+                row.setClipChildren(false);
+                filterOptionGrid.addView(row, new LinearLayout.LayoutParams(-1, -2));
+            }
+            LinearLayout.LayoutParams lp =
+                    new LinearLayout.LayoutParams(0, a.dp(48), 1f);
             lp.rightMargin = a.dp(8);
-            filterOptionRow.addView(chip, lp);
+            lp.bottomMargin = a.dp(8);
+            row.addView(chip, lp);
+            if (count == 0) chip.requestFocus();
+            count++;
         }
+    }
+
+    void applyFilterChoice(VideoFilters.Definition def, VideoFilters.Choice choice) {
+        String current = state.selectedFilters.get(def.dimension);
+        if (choice.value.isEmpty()) state.selectedFilters.remove(def.dimension);
+        else if (choice.value.equals(current == null ? "" : current))
+            state.selectedFilters.remove(def.dimension);
+        else state.selectedFilters.put(def.dimension, choice.value);
+        AppLog.i(
+                "Filter",
+                "category="
+                        + state.category
+                        + " tab="
+                        + def.label
+                        + " value="
+                        + choice.value);
+        filterPendingTag = def.dimension;
+        hideFilterOptions();
+        applyFilters();
+        renderFilterTags();
+    }
+
+    void collapseFilterUi() {
+        hideFilterOptions();
+        if (filterTagScroll != null) {
+            filterTagScroll.animate().cancel();
+            filterTagScroll.setVisibility(View.GONE);
+        }
+    }
+
+    private void animateFilterRow(View view, int durationMs, float offsetDp) {
+        if (view == null) return;
+        if (a.reduced) {
+            view.setAlpha(1f);
+            view.setTranslationY(0);
+            return;
+        }
+        view.setAlpha(0f);
+        view.setTranslationY(-a.dp((int) offsetDp));
+        view.animate().alpha(1f).translationY(0).setDuration(durationMs).start();
     }
 
     /** BACK 逐层收起 L3 → L2。 */
     boolean backFilterUi() {
-        if (filterOptionRow != null && filterOptionRow.getVisibility() == View.VISIBLE) {
-            filterOptionRow.setVisibility(View.GONE);
+        if (filterOptionGrid != null && filterOptionGrid.getVisibility() == View.VISIBLE) {
+            hideFilterOptions();
+            renderFilterTags();
             return true;
         }
-        if (filterTagRow != null && filterTagRow.getVisibility() == View.VISIBLE) {
-            filterTagRow.setVisibility(View.GONE);
+        if (filterTagScroll != null && filterTagScroll.getVisibility() == View.VISIBLE) {
+            collapseFilterUi();
             return true;
         }
         return false;
@@ -1001,14 +1074,23 @@ final class HomeScreen {
                                 return;
                             }
                             hideCloudHomeInline();
-                            if (id.equals(state.category) && categoryHasFilters(id)) {
-                                toggleFilterTags();
+                            if (id.equals(state.category)) {
+                                if (categoryHasFilters(id)) toggleFilterTags();
                                 return;
                             }
                             choose(id, true);
-                            renderFilterTags();
+                            if (categoryHasFilters(id)) renderFilterTags();
                         });
         tabIds.put(button, id);
+        if (categoryHasFilters(id)) {
+            boolean filtered = !state.selectedFilters.isEmpty();
+            button.setCompoundDrawables(
+                    null,
+                    null,
+                    funnelDrawable(filtered ? UiTokens.ACCENT : 0xff8d9cb6, 16),
+                    null);
+            button.setCompoundDrawablePadding(a.dp(8));
+        }
         button.setOnKeyListener(
                 (v, keyCode, event) -> {
                     FocusMotion.key(a, v, keyCode, event);
@@ -1119,7 +1201,10 @@ final class HomeScreen {
         a.cancelPageRequests();
         request++;
         busy = false;
-        if (!state.category.equals(category)) state.selectedFilters.clear();
+        if (!state.category.equals(category)) {
+            state.selectedFilters.clear();
+            collapseFilterUi();
+        }
         state.category = category;
         state.ready = false;
         state.videos.clear();
