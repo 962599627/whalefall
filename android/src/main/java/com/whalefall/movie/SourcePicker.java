@@ -52,22 +52,23 @@ final class SourcePicker {
             a.notice("暂无可管理的线路");
             return;
         }
-        java.util.List<Cms.Site> visible = new java.util.ArrayList<>();
-        for (Cms.Site site : config.sites)
-            if (!SourceCheckScreen.isDisabled(a, site)) visible.add(site);
-        if (visible.isEmpty()) {
-            a.notice("所有片源都已禁用，请先在片源体检中恢复");
-            return;
+        // 1.9.28 P1-C：管理列表展示全部源（禁用源标注，不隐藏），避免重排索引错位
+        java.util.List<Cms.Site> all = new java.util.ArrayList<>(config.sites);
+        String[] names = new String[all.size()];
+        int disabled = 0;
+        for (int i = 0; i < names.length; i++) {
+            boolean off = SourceCheckScreen.isDisabled(a, all.get(i));
+            if (off) disabled++;
+            names[i] = (off ? "⛔ " : "") + all.get(i).name + (off ? "（已禁用）" : "");
         }
-        String[] names = new String[visible.size()];
-        for (int i = 0; i < names.length; i++) names[i] = visible.get(i).name;
-        new AppDialog.Builder(a)
-                .wrapChoices()
-                .setTitle("管理线路")
-                .setItems(
-                        names,
-                        (d, index) -> {
-                            Cms.Site site = visible.get(index);
+        AppDialog.Builder builder =
+                new AppDialog.Builder(a)
+                        .wrapChoices()
+                        .setTitle("管理线路" + (disabled > 0 ? "（" + disabled + " 个已禁用）" : ""))
+                        .setItems(
+                                names,
+                                (d, index) -> {
+                                    Cms.Site site = all.get(index);
                             new AppDialog.Builder(a)
                                     .wrapChoices()
                                     .setTitle(site.name)
@@ -104,8 +105,16 @@ final class SourcePicker {
                                                 }
                                             })
                                     .show();
-                        })
-                .show();
+                        });
+        if (disabled > 0) {
+            builder.setNeutralButton(
+                    "去恢复已禁用源",
+                    (d, i) -> {
+                        d.dismiss();
+                        SourceCheckScreen.show(a);
+                    });
+        }
+        builder.show();
     }
 
     private static void edit(MainActivity a, Cms.Config config, Cms.Site site, int target) {
@@ -116,17 +125,8 @@ final class SourcePicker {
             java.util.List<Cms.Site> sites = new java.util.ArrayList<>(config.sites);
             sites.remove(site);
             if (target >= 0) {
-                // 1.9.28：target 来自可见列表下标，需映射回全量列表真实位置（禁用源占位不参与排序）
-                java.util.List<Cms.Site> visible = new java.util.ArrayList<>();
-                for (Cms.Site s : sites)
-                    if (!SourceCheckScreen.isDisabled(a, s)) visible.add(s);
-                int realIndex;
-                if (target >= visible.size()) realIndex = sites.size();
-                else {
-                    realIndex = sites.indexOf(visible.get(target));
-                    if (realIndex < 0) realIndex = sites.size();
-                }
-                sites.add(realIndex, site);
+                // 1.9.28 P1-C：管理列表与配置列表一致（含禁用源），target 即真实下标
+                sites.add(Math.max(0, Math.min(sites.size(), target)), site);
             } else {
                 org.json.JSONArray hidden = saved.optJSONArray("removed");
                 if (hidden == null) hidden = new org.json.JSONArray();
@@ -251,31 +251,50 @@ final class SourcePicker {
             else visible.add(site);
         }
         AppLog.i("SourcePicker", "hidden=" + hidden + " total=" + a.config.sites.size());
+        final StringBuilder fallbackMessage = new StringBuilder();
         if (hidden > 0) {
-            Cms.Site fallback = visible.isEmpty() ? null : visible.get(0);
             boolean selectedDisabled = false;
             for (Cms.Site site : a.config.sites)
                 if (site.key.equals(selected) && SourceCheckScreen.isDisabled(a, site))
                     selectedDisabled = true;
-            if (selectedDisabled && fallback != null) {
-                a.prefs.edit()
-                        .putString(Prefs.SELECTED_SITE, fallback.key)
-                        .putString(Prefs.LOADING_SITE, fallback.key)
-                        .apply();
-                selected = fallback.key;
-                a.notice("当前片源已被禁用，已自动回退到「" + fallback.name + "」");
-            }
             boolean preferredDisabled = false;
             for (Cms.Site site : a.config.sites)
                 if (SourceCheckScreen.isDisabled(a, site)
                         && SourcePreferences.isPreferred(a, site)) preferredDisabled = true;
-            if (preferredDisabled && fallback != null) {
-                a.prefs.edit()
-                        .putString(Prefs.PREFERRED_SITE, fallback.key + "\n" + fallback.api)
-                        .apply();
-                a.notice("默认偏好源已被禁用，已自动改为「" + fallback.name + "」");
+            // 1.9.28 P1-B：fallback 必须是可用源；优先默认偏好源
+            Cms.Site fallback = null;
+            for (Cms.Site site : visible) {
+                if (!a.available(site)) continue;
+                if (fallback == null) fallback = site;
+                if (SourcePreferences.isPreferred(a, site)) {
+                    fallback = site;
+                    break;
+                }
+            }
+            if (fallback != null && (selectedDisabled || preferredDisabled)) {
+                android.content.SharedPreferences.Editor editor = a.prefs.edit();
+                if (selectedDisabled) {
+                    editor.putString(Prefs.SELECTED_SITE, fallback.key)
+                            .putString(Prefs.LOADING_SITE, fallback.key);
+                    selected = fallback.key;
+                }
+                if (preferredDisabled)
+                    editor.putString(Prefs.PREFERRED_SITE, fallback.key + "\n" + fallback.api);
+                editor.apply();
+                fallbackMessage.append(
+                        (selectedDisabled ? "当前片源" : "默认偏好源")
+                                + "已被禁用，已回退到「"
+                                + fallback.name
+                                + "」");
+            } else if (selectedDisabled || preferredDisabled) {
+                fallbackMessage.append("当前/默认偏好源已被禁用，且没有可用片源，请去片源体检恢复");
             }
         }
+        if (visible.isEmpty()) {
+            if (fallbackMessage.length() > 0) fallbackMessage.append("；");
+            fallbackMessage.append("所有片源已禁用，请先去恢复");
+        }
+        final String fallbackToast = fallbackMessage.toString();
         Button selectedButton = null;
         LinearLayout row = null;
         float fontScale = a.getResources().getConfiguration().fontScale;
@@ -361,18 +380,21 @@ final class SourcePicker {
         a.gap(panel, 10);
         TextView count = a.text(visible.size() + " 个片源", 12, MainActivity.MUTED);
         panel.addView(count);
+        Button restoreButton = null;
         if (hidden > 0) {
-            TextView hiddenRow =
-                    a.text("已隐藏 " + hidden + " 个已禁用源 · 去恢复", 12, 0xffffb454);
-            hiddenRow.setPadding(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
-            hiddenRow.setFocusable(true);
-            MobileDetailScreen.bindTouchFeedback(hiddenRow);
-            hiddenRow.setOnClickListener(
-                    v -> {
-                        dialog.dismiss();
-                        SourceCheckScreen.show(a);
-                    });
-            panel.addView(hiddenRow);
+            Button hiddenRow =
+                    a.navButton(
+                            "已隐藏 " + hidden + " 个已禁用源 · 去恢复",
+                            "source-restore-disabled",
+                            () -> {
+                                dialog.dismiss();
+                                SourceCheckScreen.show(a);
+                            });
+            hiddenRow.setTextColor(0xffffb454);
+            hiddenRow.setMinHeight(a.dp(44));
+            hiddenRow.setMinimumHeight(a.dp(44));
+            panel.addView(hiddenRow, new LinearLayout.LayoutParams(-1, a.dp(44)));
+            restoreButton = hiddenRow;
         }
         a.gap(panel, 6);
         LinearLayout footer = a.row();
@@ -436,11 +458,14 @@ final class SourcePicker {
             window.setAttributes(params);
         }
         Button focus = selectedButton;
+        final Button restoreFocus = restoreButton;
         dialog.setOnShowListener(
                 d -> {
                     if (focus != null) focus.requestFocus();
+                    else if (restoreFocus != null) restoreFocus.requestFocus();
                     else if (grid.getChildCount() > 0)
                         ((LinearLayout) grid.getChildAt(0)).getChildAt(0).requestFocus();
+                    if (!fallbackToast.isEmpty()) a.toast(fallbackToast);
                 });
         dialog.show();
         if (window != null) window.setLayout(Math.min(a.dp(720), a.root.getWidth() - marginH), -2);

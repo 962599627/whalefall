@@ -2015,6 +2015,19 @@ public final class MainActivity extends Activity {
             for (Cms.Site s : config.sites)
                 if (s.key.equals(prefs.getString(Prefs.SELECTED_SITE, "")) && available(s))
                     selected = s;
+        if (selected == null && config != null) {
+            // 1.9.28：当前源被禁用/不可用时回退到第一个可用源（与 MobileShell 口径一致）
+            for (Cms.Site s : config.sites)
+                if (available(s)) {
+                    selected = s;
+                    prefs.edit()
+                            .putString(Prefs.SELECTED_SITE, s.key)
+                            .putString(Prefs.LOADING_SITE, s.key)
+                            .apply();
+                    toast("当前片源已不可用，已回退到「" + s.name + "」");
+                    break;
+                }
+        }
         if (selected != null) {
             contentHome(selected);
             return;
