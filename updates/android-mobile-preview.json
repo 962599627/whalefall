@@ -1,40 +1,40 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.4.10",
-  "versionCode": 14010,
+  "versionName": "1.4.11",
+  "versionCode": 14011,
   "minSdk": 23,
   "prerelease": true,
-  "notes": "# 鲸落 1.4.10（手机 / 平板 / 电视）\n\n- 网盘登录态精确读取：直接读 WebView Cookies SQLite 库（CookieManager 读不到时）、解析 databases/*.db 表内容、原始字节扫描含 NUL 的数据库文件，命中登录 Cookie/凭据即在面板显示「源已登录（WebView Cookie 库 host=… name=…）」或「源存储凭据（db/文件）」\n- 诊断输出按目录精简（databases/files/cache/app_webview 各 Top5），新增 cookie-db/dbhit/bytescan 日志（不含敏感值）\n- 含 1.4.9/1.4.8 的诊断与手动标记兜底\n- 本版未真机验证（V35），发布说明须保留未验证标注\n- 预览通道：与稳定版同包，仅通道标记不同",
+  "notes": "# 鲸落 1.4.11（手机 / 平板 / 电视）\n\n- 网盘登录诊断 v3：Cookie 库逐行 host/name、全部 prefs 键名（值不打印）、databases 表名、files/ 大文件名与前后 2MB 采样；用于判定插件登录数据到底存哪\n- Cookie 库 host/登录 Cookie 名匹配范围放宽（.quark.cn、login.quark.cn 等变体）\n- 不可读时明确写技术边界（可能存源服务端/加密存储）+ 手动标记兜底\n- 含 1.4.10 Cookie 库/DB 解析、1.4.9 诊断 v2、1.4.7 三态检测等全部内容\n- 本版未真机验证（V36），发布说明须保留未验证标注\n- 预览通道：与稳定版同包，仅通道标记不同",
   "size": 62041387,
-  "sha256": "a60f81b18ec9d997d4e080604c6e241fc05ae356c5b44265e78207902c78ce87",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.10/WhaleFall-1.4.10-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.10/WhaleFall-1.4.10-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.10",
+  "sha256": "ecc94e3746071c7a3f2b7987ff1334b5eb31857203daf0c1c60c483f78a6e589",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.11/WhaleFall-1.4.11-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.11/WhaleFall-1.4.11-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.4.11",
   "variants": [
     {
       "kind": "mobile",
       "label": "标准版（双 ABI，推荐）",
       "size": 62041387,
-      "sha256": "a60f81b18ec9d997d4e080604c6e241fc05ae356c5b44265e78207902c78ce87",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.10/WhaleFall-1.4.10-android-mobile.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.10/WhaleFall-1.4.10-android-mobile.apk"
+      "sha256": "ecc94e3746071c7a3f2b7987ff1334b5eb31857203daf0c1c60c483f78a6e589",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.11/WhaleFall-1.4.11-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.11/WhaleFall-1.4.11-android-mobile.apk"
     },
     {
       "kind": "arm64",
       "label": "arm64 精简版（约 35MB）",
       "size": 35605078,
-      "sha256": "211583a77d4ae26098b2da42f906fb076757387f3927a1f8e74c97b16f3a828f",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.10/WhaleFall-1.4.10-android-mobile-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.10/WhaleFall-1.4.10-android-mobile-arm64.apk"
+      "sha256": "f3c81a604b3a60573e8a8c2cc7cf2f69ad21cd6ff1d226308778e3b6a1cc0724",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.11/WhaleFall-1.4.11-android-mobile-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.11/WhaleFall-1.4.11-android-mobile-arm64.apk"
     },
     {
       "kind": "r8",
       "label": "R8 精简版（约 33MB，未单独真机验证）",
-      "size": 33120998,
-      "sha256": "e4153e43a30f150a1426ee4703a6b020434d59ec4349b320d3389c1b52fbcf59",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.10/WhaleFall-1.4.10-android-mobile-r8-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.10/WhaleFall-1.4.10-android-mobile-r8-arm64.apk"
+      "size": 33121825,
+      "sha256": "6cf6d198a0e802d1362d1e82f5c64a1f9c34296712c596e6b1bb24ab37251427",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.4.11/WhaleFall-1.4.11-android-mobile-r8-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.4.11/WhaleFall-1.4.11-android-mobile-r8-arm64.apk"
     }
   ]
 }
