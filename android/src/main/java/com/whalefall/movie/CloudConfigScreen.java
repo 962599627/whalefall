@@ -112,7 +112,7 @@ final class CloudConfigScreen {
     }
 
     /** 同步清 WebView CookieManager 对应域，避免网页登录态残留。 */
-    private static void clearWebCookies(String drive) {
+    static void clearWebCookies(String drive) {
         try {
             android.webkit.CookieManager manager = android.webkit.CookieManager.getInstance();
             String[] urls;
