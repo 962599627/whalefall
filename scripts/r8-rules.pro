@@ -10,3 +10,6 @@
 -keep class kotlinx.** { *; }
 -keep class androidx.core.** { *; }
 -keepclassmembers class **.R$* { public static <fields>; }
+
+# 1.9.50: RecyclerView 等 androidx 组件由 media3 布局 inflate，构造器不能被裁剪
+-keep class androidx.** { *; }
