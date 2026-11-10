@@ -351,12 +351,17 @@ final class CloudZoneScreen {
                 v -> {
                     AppLog.i("SourceLogout", "open source panel login");
                     new SettingsScreen(a).sourceAccountAction("LoginShow", null);
-                    // 1.9.14：从源面板返回后自动重读一次
+                    // 1.9.14/1.9.15：从源面板返回后自动重读（插件写入可能延迟）
                     a.ui.postDelayed(
                             () -> {
                                 if (onChanged != null) onChanged.run();
                             },
                             1500);
+                    a.ui.postDelayed(
+                            () -> {
+                                if (onChanged != null) onChanged.run();
+                            },
+                            3000);
                 });
         headRow.addView(panelLogin);
         TextView refreshState = a.text("刷新源插件状态", 11, UiTokens.TEXT_PRIMARY);
@@ -377,7 +382,33 @@ final class CloudZoneScreen {
         LinearLayout.LayoutParams refreshLp = new LinearLayout.LayoutParams(-2, -2);
         refreshLp.leftMargin = a.dp(8);
         headRow.addView(refreshState, refreshLp);
+        // 1.9.15：插件本机键诊断
+        TextView viewKeys = a.text("查看插件本机键", 11, 0xff0b1220);
+        viewKeys.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+        viewKeys.setBackground(UiTokens.round(a, 999, UiTokens.ACCENT_SOFT));
+        viewKeys.setFocusable(true);
+        MobileDetailScreen.bindTouchFeedback(viewKeys);
+        viewKeys.setOnClickListener(v -> showSourceKeysDialog(a));
+        LinearLayout.LayoutParams keysLp = new LinearLayout.LayoutParams(-2, -2);
+        keysLp.leftMargin = a.dp(8);
+        headRow.addView(viewKeys, keysLp);
         body.addView(headRow);
+        // 未识别登录键提示（仅当没有任何已知盘键命中时）
+        java.util.List<String> unknown = unknownLongKeys(a);
+        boolean anyKnown = false;
+        for (String drive : DRIVES) if (!sourceKeys(a, drive).isEmpty()) anyKnown = true;
+        if (!unknown.isEmpty() && !anyKnown) {
+            TextView hint =
+                    a.text(
+                            "检测到 " + unknown.size() + " 个未识别键（值较长），点此查看",
+                            11,
+                            0xffffb454);
+            hint.setPadding(a.dp(16), a.dp(2), a.dp(16), a.dp(4));
+            hint.setFocusable(true);
+            MobileDetailScreen.bindTouchFeedback(hint);
+            hint.setOnClickListener(v -> showSourceKeysDialog(a));
+            body.addView(hint);
+        }
         for (final String drive : DRIVES) {
             final java.util.List<String> keys = sourceKeys(a, drive);
             LinearLayout row = a.row();
@@ -407,6 +438,11 @@ final class CloudZoneScreen {
                                     if (onChanged != null) onChanged.run();
                                 },
                                 1500);
+                        a.ui.postDelayed(
+                                () -> {
+                                    if (onChanged != null) onChanged.run();
+                                },
+                                3000);
                     });
             LinearLayout.LayoutParams loginLp = new LinearLayout.LayoutParams(-2, -2);
             loginLp.leftMargin = a.dp(8);
@@ -503,11 +539,10 @@ final class CloudZoneScreen {
                                                 "SourceLogout",
                                                 "refresh drive=all keys=" + allKeys);
                                         a.toast("已清除，正在刷新源插件状态…");
-                                        a.ui.postDelayed(
-                                                () -> {
-                                                    if (onChanged != null) onChanged.run();
-                                                },
-                                                200);
+                                        if (onChanged != null) {
+                                            onChanged.run();
+                                            a.ui.postDelayed(onChanged, 300);
+                                        }
                                     })
                             .setNegativeButton("取消", null)
                             .show();
@@ -520,6 +555,85 @@ final class CloudZoneScreen {
     }
 
     /** 精确匹配该盘登录键：quark_ck/quarkSt、uc_ck/ucSt、bdSt/bd_ck/baidu_*、aliSt/ali_ck/ali_*。 */
+    /** 1.9.15：未识别但值较长（>20）的 spUtils 键，供用户反馈真实键名。 */
+    static java.util.List<String> unknownLongKeys(MainActivity a) {
+        java.util.List<String> unknown = new java.util.ArrayList<>();
+        try {
+            android.content.SharedPreferences prefs =
+                    a.getSharedPreferences("spUtils", android.content.Context.MODE_PRIVATE);
+            for (java.util.Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+                String key = entry.getKey();
+                Object value = entry.getValue();
+                if (value == null) continue;
+                String text = String.valueOf(value);
+                if (text.length() <= 20) continue;
+                boolean known = false;
+                for (String drive : DRIVES) {
+                    if (CloudInlineView.loginKeys(a, drive).contains(key)) {
+                        known = true;
+                        break;
+                    }
+                }
+                if (!known) unknown.add(key);
+            }
+        } catch (Throwable ignored) {
+        }
+        if (!unknown.isEmpty())
+            AppLog.i("SourceKeys", "unknownLong=" + unknown.size() + " keys=" + unknown);
+        return unknown;
+    }
+
+    /** 1.9.15：列出 spUtils 全部键名 + 值长度/前4位（脱敏，绝不显示完整值）。 */
+    static void showSourceKeysDialog(final MainActivity a) {
+        final java.util.List<String> lines = new java.util.ArrayList<>();
+        final java.util.List<String> names = new java.util.ArrayList<>();
+        try {
+            android.content.SharedPreferences prefs =
+                    a.getSharedPreferences("spUtils", android.content.Context.MODE_PRIVATE);
+            for (java.util.Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+                String key = entry.getKey();
+                Object value = entry.getValue();
+                String text = value == null ? "" : String.valueOf(value);
+                names.add(key);
+                String preview;
+                if (text.isEmpty()) preview = "<empty>";
+                else preview = text.substring(0, Math.min(4, text.length())) + "…";
+                lines.add(key + " · len=" + text.length() + " · " + preview);
+            }
+        } catch (Throwable ignored) {
+        }
+        AppLog.i("SourceKeys", "all=" + names);
+        StringBuilder text = new StringBuilder();
+        if (lines.isEmpty()) text.append("spUtils 为空（未检测到插件写入的键）");
+        else for (String line : lines) text.append(line).append('\n');
+        android.widget.ScrollView scroll = new android.widget.ScrollView(a);
+        TextView view = a.text(text.toString(), 10.5f, UiTokens.TEXT_SECONDARY);
+        view.setTypeface(android.graphics.Typeface.MONOSPACE);
+        view.setTextIsSelectable(true);
+        view.setLineSpacing(a.dp(1), 1f);
+        view.setPadding(a.dp(8), a.dp(6), a.dp(8), a.dp(6));
+        scroll.addView(view, new android.widget.ScrollView.LayoutParams(-1, -2));
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(-1, a.dp(420)));
+        new AppDialog.Builder(a)
+                .setTitle("插件本机键（" + names.size() + "）")
+                .setMessage("值仅显示长度与前 4 位，复制键名发给开发者即可按真实键名适配。")
+                .setView(scroll)
+                .setNeutralButton(
+                        "复制全部键名",
+                        (d, i) -> {
+                            android.content.ClipboardManager manager =
+                                    (android.content.ClipboardManager)
+                                            a.getSystemService(
+                                                    android.content.Context.CLIPBOARD_SERVICE);
+                            manager.setPrimaryClip(
+                                    android.content.ClipData.newPlainText(
+                                            "SourceKeys", android.text.TextUtils.join(", ", names)));
+                            a.toast("已复制全部键名");
+                        })
+                .setNegativeButton("关闭", null)
+                .show();
+    }
+
     static java.util.List<String> sourceKeys(MainActivity a, String drive) {
         // 1.9.14：精确键名优先（内含启发式兜底与 I/SourceLogin 日志）
         return CloudInlineView.loginKeys(a, drive);
@@ -552,7 +666,11 @@ final class CloudZoneScreen {
             AppLog.i("SourceLogout", "drive=" + drive + " stillDetected=" + remaining);
             a.toast("清除后仍检测到键：" + join(remaining) + "（插件可能重新写入）");
         }
-        if (onChanged != null) a.ui.postDelayed(() -> onChanged.run(), 200);
+        // 1.9.15：立即重建一次 + 300ms 再重建（不依赖 spUtils 缓存/静态变量）
+        if (onChanged != null) {
+            onChanged.run();
+            a.ui.postDelayed(onChanged, 300);
+        }
     }
 
     static int removeSourceKeys(MainActivity a, java.util.List<String> keys) {
