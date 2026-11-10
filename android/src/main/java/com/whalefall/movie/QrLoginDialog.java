@@ -62,11 +62,11 @@ final class QrLoginDialog {
         LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(-1, -2);
         btnLp.topMargin = a.dp(14);
         card.addView(buttons, btnLp);
-        Button refresh = a.button("刷新二维码", "qr-refresh", () -> {
+        Button refreshBtn = a.button("刷新二维码", "qr-refresh", () -> {
             if (this.onRefresh != null) this.onRefresh.run();
         });
-        refresh.setTextSize(13);
-        buttons.addView(refresh, new LinearLayout.LayoutParams(0, a.dp(44), 1f));
+        refreshBtn.setTextSize(13);
+        buttons.addView(refreshBtn, new LinearLayout.LayoutParams(0, a.dp(44), 1f));
         Button close = a.button("关闭", "qr-close", dialog::dismiss);
         close.setTextSize(13);
         LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(0, a.dp(44), 1f);
@@ -89,7 +89,7 @@ final class QrLoginDialog {
             window.setGravity(Gravity.CENTER);
             window.getDecorView().setSystemUiVisibility(5894);
         }
-        refresh.requestFocus();
+        refreshBtn.requestFocus();
     }
 
     void setRefresh(Runnable refresh) {
