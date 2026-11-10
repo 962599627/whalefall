@@ -2237,10 +2237,10 @@ final class MobileShell {
                             + (defs.isEmpty() ? 0 : defs.get(0).choices.size())
                             + " zeroLoad=true");
             // 记录滚动锚点，展开面板的高度变化不得把列表顶回顶部
-            androidx.homeRecyclerRefview.widget.LinearLayoutManager lm =
+            androidx.recyclerview.widget.LinearLayoutManager lm =
                     homeRecyclerRef.getLayoutManager()
-                                    instanceof androidx.homeRecyclerRefview.widget.LinearLayoutManager
-                            ? (androidx.homeRecyclerRefview.widget.LinearLayoutManager)
+                                    instanceof androidx.recyclerview.widget.LinearLayoutManager
+                            ? (androidx.recyclerview.widget.LinearLayoutManager)
                                     homeRecyclerRef.getLayoutManager()
                             : null;
             final int pos = lm == null ? -1 : lm.findFirstVisibleItemPosition();
