@@ -1146,18 +1146,19 @@ public final class MainActivity extends Activity {
             else AppLog.i("Theme", "defaultTextColor=#4CFF80");
         }
         if (color == WHITE) return 0xff000000 | rgb;
-        if (color == MUTED) return 0xb3000000 | rgb;
-        if (color == UiTokens.TEXT_TERTIARY) return 0x8f000000 | rgb;
+        if (color == MUTED) return 0xb8000000 | rgb; // 1.9.32：次要文字 72%
+        if (color == UiTokens.TEXT_TERTIARY) return 0xa8000000 | rgb; // 弱文字 66%
         // 1.9.25：HSV 判定偏蓝灰/灰白文字（S<=0.42 且 V>=0.35）
         int alpha = (color >>> 24) & 0xff;
         float[] hsv = new float[3];
         android.graphics.Color.colorToHSV(color & 0x00ffffff, hsv);
         boolean grayText = hsv[1] <= 0.42f && hsv[2] >= 0.35f;
         if (grayText) {
-            int outAlpha = alpha >= 0xF0 ? 0xff : alpha >= 0x80 ? 0xb3 : 0x8f;
+            // 1.9.32：主 100% / 次要 72%（0xB8）/ 弱 66%（0xA8）
+            int outAlpha = alpha >= 0xF0 ? 0xff : alpha >= 0x80 ? 0xb8 : 0xa8;
             return (outAlpha << 24) | rgb;
         }
-        // 高饱和强调色（粉/红/绿/蓝）保持原样
+        // 高饱和强调色（粉/红/绿/蓝）与成功/危险/警告状态色保持原样，不染绿
         return color;
     }
 

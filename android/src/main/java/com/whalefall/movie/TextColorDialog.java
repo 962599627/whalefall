@@ -16,7 +16,7 @@ import java.util.List;
  * 字体颜色自定义：9 格预设色板（默认 #4CFF80 亮绿 + 8 色）+ RGB 滑条（手机另有 HEX）+ 即时预览。
  *
  * <p>手机与 TV 共用：TV 用方向键在色块/滑条间移动，左右键每次调 5；手机滑条精度 1 并支持 HEX。
- * 设计规范见 docs/DESIGN_REVIEW_1.4.6.md：只改主色，次要 70%、弱文字 56% 自动派生。
+ * 设计规范见 docs/DESIGN_REVIEW_1.4.6.md：只改主色，次要 72%、弱文字 66% 自动派生。
  */
 final class TextColorDialog {
     /** 9 格色板：第 0 格是默认 #4CFF80 亮绿。 */
@@ -26,11 +26,11 @@ final class TextColorDialog {
         0xff43d17a, 0xffffd54f, 0xffa97bff
     };
     private static final String[] NAMES = {
-        "默认亮绿", "亮壁纸深灰", "樱粉",
+        "默认 · 亮绿 #4CFF80", "亮壁纸深灰", "樱粉",
         "樱花粉", "深海蓝", "青色",
         "绿色", "黄色", "紫色"
     };
-    /** 推荐组合：只改主色，次要/弱文字按 70%/56% 自动派生。 */
+    /** 推荐组合：只改主色，次要/弱文字按 72%/66% 自动派生。 */
     private static final int[] RECOMMENDED = {0xff4cff80, 0xff2b313b, 0xffffb3c8};
     private static final String[] RECOMMENDED_NAMES = {"亮绿", "亮壁纸深灰", "樱粉"};
 
@@ -101,9 +101,16 @@ final class TextColorDialog {
         preview.setFocusable(true);
         preview.setTag("textcolor-preview");
         box.addView(preview, new LinearLayout.LayoutParams(-1, -2));
+        final TextView contrastLabel =
+                a.text(
+                        "对比度（深色底）：" + contrastText(toRgb(rgb)),
+                        12,
+                        MainActivity.MUTED);
+        contrastLabel.setPadding(a.dp(4), a.dp(4), 0, 0);
+        box.addView(contrastLabel);
         TextView hint =
                 a.text(
-                        "亮色在浅色壁纸下可能不易看清 · 近黑字在深色界面对比度不足时会二次确认",
+                        "亮绿字在浅色壁纸下可能不易看清 · 近黑字在深色界面对比度不足时会二次确认",
                         12,
                         MainActivity.MUTED);
         hint.setPadding(0, a.dp(4), 0, 0);
@@ -269,7 +276,7 @@ final class TextColorDialog {
 
         Button reset =
                 a.button(
-                        "恢复默认（#4CFF80）",
+                        "恢复默认（亮绿）",
                         "textcolor-reset",
                         () -> {
                             // §2.1：只重置预览/滑条/HEX，不写 prefs；点「确定」才保存
@@ -289,6 +296,7 @@ final class TextColorDialog {
                     for (int i = 0; i < 3; i++)
                         if (bars[i] != null) bars[i].setProgress(rgb[i]);
                     paint(preview, rgb, values, hexField);
+                    contrastLabel.setText("对比度（深色底）：" + contrastText(toRgb(rgb)));
                 };
 
         AppDialog dialog =
@@ -326,6 +334,12 @@ final class TextColorDialog {
         for (int i = 0; i < values.length; i++)
             if (values[i] != null) values[i].setText(String.valueOf(rgb[i]));
         if (hexField[0] != null) hexField[0].setText(hexOf(rgb));
+    }
+
+    static String contrastText(int rgb) {
+        double ratio = contrastRatio(opaque(rgb), Skin.BG);
+        String grade = ratio >= 7 ? "AAA" : ratio >= 4.5 ? "AA" : "不足 4.5:1";
+        return String.format(java.util.Locale.ROOT, "%.1f:1 · %s", ratio, grade);
     }
 
     /** §4 对比度保护：以 App 深色底为基准，<4.5:1 时二次确认；取消则带当前颜色回到弹窗。 */
