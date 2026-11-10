@@ -351,8 +351,32 @@ final class CloudZoneScreen {
                 v -> {
                     AppLog.i("SourceLogout", "open source panel login");
                     new SettingsScreen(a).sourceAccountAction("LoginShow", null);
+                    // 1.9.14：从源面板返回后自动重读一次
+                    a.ui.postDelayed(
+                            () -> {
+                                if (onChanged != null) onChanged.run();
+                            },
+                            1500);
                 });
         headRow.addView(panelLogin);
+        TextView refreshState = a.text("刷新源插件状态", 11, UiTokens.TEXT_PRIMARY);
+        refreshState.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+        refreshState.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+        refreshState.setFocusable(true);
+        MobileDetailScreen.bindTouchFeedback(refreshState);
+        refreshState.setOnClickListener(
+                v -> {
+                    AppLog.i("SourceLogin", "manual refresh");
+                    a.toast("已刷新");
+                    a.ui.postDelayed(
+                            () -> {
+                                if (onChanged != null) onChanged.run();
+                            },
+                            200);
+                });
+        LinearLayout.LayoutParams refreshLp = new LinearLayout.LayoutParams(-2, -2);
+        refreshLp.leftMargin = a.dp(8);
+        headRow.addView(refreshState, refreshLp);
         body.addView(headRow);
         for (final String drive : DRIVES) {
             final java.util.List<String> keys = sourceKeys(a, drive);
@@ -378,6 +402,11 @@ final class CloudZoneScreen {
                     v -> {
                         AppLog.i("SourceLogout", "open source panel login drive=" + drive);
                         new SettingsScreen(a).sourceAccountAction("LoginShow", null);
+                        a.ui.postDelayed(
+                                () -> {
+                                    if (onChanged != null) onChanged.run();
+                                },
+                                1500);
                     });
             LinearLayout.LayoutParams loginLp = new LinearLayout.LayoutParams(-2, -2);
             loginLp.leftMargin = a.dp(8);
@@ -492,15 +521,8 @@ final class CloudZoneScreen {
 
     /** 精确匹配该盘登录键：quark_ck/quarkSt、uc_ck/ucSt、bdSt/bd_ck/baidu_*、aliSt/ali_ck/ali_*。 */
     static java.util.List<String> sourceKeys(MainActivity a, String drive) {
-        java.util.List<String> out = new java.util.ArrayList<>();
-        try {
-            android.content.SharedPreferences prefs =
-                    a.getSharedPreferences("spUtils", android.content.Context.MODE_PRIVATE);
-            for (String key : prefs.getAll().keySet())
-                if (CloudInlineView.isSourceCredentialKey(key, drive)) out.add(key);
-        } catch (Throwable ignored) {
-        }
-        return out;
+        // 1.9.14：精确键名优先（内含启发式兜底与 I/SourceLogin 日志）
+        return CloudInlineView.loginKeys(a, drive);
     }
 
     private static long lastLogoutAt;
@@ -524,6 +546,12 @@ final class CloudZoneScreen {
         a.toast("已清除，正在刷新源插件状态…");
         lastLogoutAt = System.currentTimeMillis();
         AppLog.i("SourceLogout", "refresh drive=" + drive + " keys=" + keys);
+        // 1.9.14：清除后立即核对；仍检测到则提示插件重新写入
+        java.util.List<String> remaining = CloudInlineView.loginKeys(a, drive);
+        if (!remaining.isEmpty()) {
+            AppLog.i("SourceLogout", "drive=" + drive + " stillDetected=" + remaining);
+            a.toast("清除后仍检测到键：" + join(remaining) + "（插件可能重新写入）");
+        }
         if (onChanged != null) a.ui.postDelayed(() -> onChanged.run(), 200);
     }
 

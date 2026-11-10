@@ -254,18 +254,49 @@ final class CloudInlineView {
 
     // ---------------- 源插件登录态（只读） ----------------
 
-    static boolean hasSourceLogin(MainActivity a, String drive) {
+    /** 1.9.14：每盘精确登录键白名单（优先），避免启发式误判。 */
+    static String[] exactLoginKeys(String drive) {
+        switch (drive) {
+            case NetdiskQrLogin.QUARK:
+                return new String[] {"quarkSt", "quark_ck", "quark_cookie", "quark_st", "quark_token"};
+            case NetdiskQrLogin.UC:
+                return new String[] {"ucSt", "uc_ck", "uc_st", "uc_token"};
+            case NetdiskQrLogin.BAIDU:
+                return new String[] {"bdSt", "bd_ck", "baidu_ck", "bduss", "baidu_st"};
+            default:
+                return new String[] {"aliSt", "ali_ck", "ali_token", "ali_st"};
+        }
+    }
+
+    /** 返回该盘本机登录键列表（只打键名，不打值）。 */
+    static java.util.List<String> loginKeys(MainActivity a, String drive) {
+        java.util.List<String> keys = new java.util.ArrayList<>();
         try {
             android.content.SharedPreferences prefs =
                     a.getSharedPreferences("spUtils", android.content.Context.MODE_PRIVATE);
-            for (java.util.Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
-                if (!isSourceCredentialKey(entry.getKey(), drive)) continue;
-                Object value = entry.getValue();
-                if (value != null && !String.valueOf(value).trim().isEmpty()) return true;
+            java.util.Map<String, ?> all = prefs.getAll();
+            for (String exact : exactLoginKeys(drive)) {
+                Object value = all.get(exact);
+                if (value != null && !String.valueOf(value).trim().isEmpty()) keys.add(exact);
+            }
+            if (keys.isEmpty()) {
+                for (java.util.Map.Entry<String, ?> entry : all.entrySet()) {
+                    String key = entry.getKey();
+                    if (!isSourceCredentialKey(key, drive)) continue;
+                    Object value = entry.getValue();
+                    if (value != null && !String.valueOf(value).trim().isEmpty()) keys.add(key);
+                }
             }
         } catch (Throwable ignored) {
         }
-        return false;
+        AppLog.i(
+                "SourceLogin",
+                "drive=" + drive + " keys=" + keys + " state=" + (keys.isEmpty() ? "absent" : "logged"));
+        return keys;
+    }
+
+    static boolean hasSourceLogin(MainActivity a, String drive) {
+        return !loginKeys(a, drive).isEmpty();
     }
 
     static boolean isSourceCredentialKey(String key, String drive) {
@@ -279,13 +310,20 @@ final class CloudInlineView {
                 || lower.contains("pid")) return false;
         boolean alias;
         switch (drive) {
-            case NetdiskQrLogin.QUARK: alias = lower.contains("quark"); break;
-            case NetdiskQrLogin.UC: alias = lower.contains("uc"); break;
+            case NetdiskQrLogin.QUARK:
+                alias = lower.startsWith("quark");
+                break;
+            case NetdiskQrLogin.UC:
+                // 1.9.14：不用 contains("uc")，避免 success_token 之类误判
+                alias = lower.startsWith("uc_") || lower.startsWith("ucst") || lower.startsWith("ucst");
+                break;
             case NetdiskQrLogin.BAIDU:
-                alias = lower.contains("baidu") || lower.contains("bduss") || lower.startsWith("bd");
+                alias = lower.startsWith("bd") || lower.startsWith("baidu") || lower.contains("bduss");
                 break;
             default:
-                alias = lower.contains("ali") || lower.contains("alipan") || lower.contains("adrive");
+                alias = lower.startsWith("ali")
+                        || lower.startsWith("alipan")
+                        || lower.startsWith("adrive");
                 break;
         }
         if (!alias) return false;
@@ -294,7 +332,8 @@ final class CloudInlineView {
                 || lower.contains("cookie")
                 || lower.contains("token")
                 || lower.contains("auth")
-                || lower.contains("pass");
+                || lower.contains("pass")
+                || lower.contains("bduss");
     }
 
     private static final class Card {
