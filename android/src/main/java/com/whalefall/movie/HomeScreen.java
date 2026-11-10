@@ -28,6 +28,7 @@ final class HomeScreen {
     LinearLayout content;
     /** 1.9.33：L2 筛选标签行 / L3 选项行（分类 chip 之下）。 */
     LinearLayout filterTagRow, filterOptionRow, filterOptionGrid;
+    LinearLayout filterPanel;
     android.widget.HorizontalScrollView filterTagScroll, filterOptionScroll;
     String filterOpenDim = "";
     String filterPendingTag = "";
@@ -157,26 +158,32 @@ final class HomeScreen {
         filters = new CategoryFlow(a, this::wireNavigation);
         filters.setPadding(0, a.dp(2), 0, a.dp(8));
         a.body.addView(filters);
-        // 1.9.33：L2 筛选标签行（横向滚动） / L3 选项（TV 换行网格，每行 6）
+        // 1.9.34：L2+L3 放进独立玻璃面板，避免与影片卡片重叠/裁切
+        filterPanel = a.vertical();
+        filterPanel.setPadding(a.dp(16), a.dp(12), a.dp(16), a.dp(12));
+        filterPanel.setBackground(
+                MobileDetailScreen.glassBg(a, 0xcc16283f, 0x33ffffff, 16));
+        filterPanel.setVisibility(View.GONE);
+        LinearLayout.LayoutParams filterPanelLp = new LinearLayout.LayoutParams(-1, -2);
+        filterPanelLp.setMargins(a.dp(24), a.dp(8), a.dp(24), a.dp(10));
+        a.body.addView(filterPanel, filterPanelLp);
         filterTagScroll = new android.widget.HorizontalScrollView(a);
         filterTagScroll.setHorizontalScrollBarEnabled(false);
         filterTagScroll.setClipChildren(false);
-        filterTagScroll.setPadding(a.dp(24), a.dp(4), a.dp(24), a.dp(4));
-        filterTagScroll.setVisibility(View.GONE);
+        filterTagScroll.setPadding(0, a.dp(2), 0, a.dp(4));
         filterTagRow = a.row();
         filterTagScroll.addView(filterTagRow);
-        a.body.addView(filterTagScroll, new LinearLayout.LayoutParams(-1, -2));
+        filterPanel.addView(filterTagScroll, new LinearLayout.LayoutParams(-1, -2));
         filterOptionScroll = new android.widget.HorizontalScrollView(a);
         filterOptionScroll.setHorizontalScrollBarEnabled(false);
-        filterOptionScroll.setPadding(a.dp(24), 0, a.dp(24), a.dp(8));
+        filterOptionScroll.setPadding(0, 0, 0, a.dp(8));
         filterOptionScroll.setVisibility(View.GONE);
         filterOptionRow = a.row();
         filterOptionScroll.addView(filterOptionRow);
-        a.body.addView(filterOptionScroll, new LinearLayout.LayoutParams(-1, -2));
+        filterPanel.addView(filterOptionScroll, new LinearLayout.LayoutParams(-1, -2));
         filterOptionGrid = a.vertical();
-        filterOptionGrid.setPadding(a.dp(24), 0, a.dp(24), a.dp(10));
         filterOptionGrid.setVisibility(View.GONE);
-        a.body.addView(filterOptionGrid, new LinearLayout.LayoutParams(-1, -2));
+        filterPanel.addView(filterOptionGrid, new LinearLayout.LayoutParams(-1, -2));
         status = a.text("正在整理片单…", 13, MainActivity.MUTED);
         status.setPadding(a.dp(4), a.dp(12), 0, a.dp(12));
         a.body.addView(status);
@@ -801,8 +808,8 @@ final class HomeScreen {
     }
 
     void toggleFilterTags() {
-        if (filterTagScroll == null) return;
-        if (filterTagScroll.getVisibility() == View.VISIBLE) {
+        if (filterPanel == null) return;
+        if (filterPanel.getVisibility() == View.VISIBLE) {
             collapseFilterUi();
             return;
         }
@@ -820,7 +827,8 @@ final class HomeScreen {
             return;
         }
         filterTagScroll.setVisibility(View.VISIBLE);
-        animateFilterRow(filterTagScroll, filterSkipAnim ? 0 : 160, filterSkipAnim ? 0 : 6);
+        filterPanel.setVisibility(View.VISIBLE);
+        animateFilterRow(filterPanel, filterSkipAnim ? 0 : 160, filterSkipAnim ? 0 : 6);
         filterSkipAnim = false;
         for (final VideoFilters.Definition def : defs) {
             String value = state.selectedFilters.get(def.dimension);
@@ -870,6 +878,8 @@ final class HomeScreen {
         }
         hideFilterOptions();
         filterOpenDim = def.dimension;
+        filterPanel.setVisibility(View.VISIBLE);
+        filterTagScroll.setVisibility(View.VISIBLE);
         filterOptionGrid.removeAllViews();
         filterOptionGrid.setVisibility(View.VISIBLE);
         animateFilterRow(filterOptionGrid, 180, 6);
@@ -900,13 +910,20 @@ final class HomeScreen {
                 filterOptionGrid.addView(row, new LinearLayout.LayoutParams(-1, -2));
             }
             LinearLayout.LayoutParams lp =
-                    new LinearLayout.LayoutParams(0, a.dp(56), 1f);
+                    new LinearLayout.LayoutParams(-2, a.dp(56));
             lp.rightMargin = a.dp(8);
             lp.bottomMargin = a.dp(8);
             row.addView(chip, lp);
             if (count == 0) chip.requestFocus();
             count++;
         }
+        AppLog.i(
+                "Filter",
+                "expand tab="
+                        + def.label
+                        + " options="
+                        + def.choices.size()
+                        + " layout=grid");
     }
 
     void applyFilterChoice(VideoFilters.Definition def, VideoFilters.Choice choice) {
@@ -932,16 +949,18 @@ final class HomeScreen {
 
     void collapseFilterUi() {
         hideFilterOptions();
-        if (filterTagScroll == null) return;
-        filterTagScroll.animate().cancel();
+        if (filterPanel == null) return;
+        filterPanel.animate().cancel();
         if (a.reduced) {
-            filterTagScroll.setVisibility(View.GONE);
-            filterTagScroll.setAlpha(1f);
+            filterPanel.setVisibility(View.GONE);
+            filterPanel.setAlpha(1f);
             return;
         }
-        filterTagScroll.animate().alpha(0f).setDuration(140).withEndAction(() -> {
-            filterTagScroll.setVisibility(View.GONE);
-            filterTagScroll.setAlpha(1f);
+        filterPanel.animate().alpha(0f).setDuration(140).withEndAction(() -> {
+            if (filterPanel != null) {
+                filterPanel.setVisibility(View.GONE);
+                filterPanel.setAlpha(1f);
+            }
         }).start();
     }
 
@@ -966,7 +985,7 @@ final class HomeScreen {
             focusFilterTag(dim);
             return true;
         }
-        if (filterTagScroll != null && filterTagScroll.getVisibility() == View.VISIBLE) {
+        if (filterPanel != null && filterPanel.getVisibility() == View.VISIBLE) {
             collapseFilterUi();
             if (selectedTab() != null) selectedTab().requestFocus();
             return true;

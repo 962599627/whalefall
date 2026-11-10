@@ -193,6 +193,7 @@ final class MobileShell {
     private final java.util.Map<String, String> selectedFilters = new java.util.LinkedHashMap<>();
     /** 1.9.33：手机首页 L2 标签订 / L3 选项（横向滚动或换行网格）。 */
     private LinearLayout homeFilterTagRow, homeFilterOptionRow, homeFilterOptionGrid;
+    private LinearLayout homeFilterPanel;
     private android.widget.HorizontalScrollView homeFilterTagScroll, homeFilterOptionScroll;
     private boolean homeFilterWide;
     private String homeOpenTagDim = "";
@@ -1345,36 +1346,39 @@ final class MobileShell {
         filterSize.leftMargin = a.dp(8);
         filterSize.rightMargin = a.dp(16);
         filterSize.topMargin = a.dp(2);
-        categoryBar.addView(filterButton, filterSize);
+        // 1.9.34：彻底移除 L1 行右侧「筛选」pill（不再 addView）
         body.addView(categoryBar, new LinearLayout.LayoutParams(-1, -2));
-        // 1.9.33：L2 筛选标签行（横向滚动） / L3 选项（手机横滚、平板/TV 换行网格）
+        // 1.9.34：L2+L3 放在同一个玻璃面板里，避免与影视卡片重叠/裁切
         float filterDensity = a.getResources().getDisplayMetrics().density;
         homeFilterWide = a.windowWidth() / filterDensity >= 640 && !a.isPortrait();
+        homeFilterPanel = a.vertical();
+        homeFilterPanel.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
+        homeFilterPanel.setBackground(
+                glassBg(0xcc16283f, 0x33ffffff, a.dp(16), a.dp(0.8f), 0x33ffffff));
+        homeFilterPanel.setVisibility(View.GONE);
+        LinearLayout.LayoutParams panelLp = new LinearLayout.LayoutParams(-1, -2);
+        panelLp.setMargins(a.dp(16), a.dp(8), a.dp(16), a.dp(8));
+        body.addView(homeFilterPanel, panelLp);
         homeFilterTagScroll = new android.widget.HorizontalScrollView(a);
         homeFilterTagScroll.setHorizontalScrollBarEnabled(false);
         homeFilterTagScroll.setClipChildren(false);
         homeFilterTagScroll.setClipToPadding(false);
-        homeFilterTagScroll.setPadding(
-                a.dp(homeFilterWide ? 24 : 16), a.dp(4), a.dp(homeFilterWide ? 24 : 16), a.dp(4));
-        homeFilterTagScroll.setVisibility(View.GONE);
+        homeFilterTagScroll.setPadding(0, a.dp(2), 0, a.dp(4));
         homeFilterTagRow = a.row();
         homeFilterTagScroll.addView(homeFilterTagRow);
-        body.addView(homeFilterTagScroll, new LinearLayout.LayoutParams(-1, -2));
+        homeFilterPanel.addView(homeFilterTagScroll, new LinearLayout.LayoutParams(-1, -2));
         homeFilterOptionScroll = new android.widget.HorizontalScrollView(a);
         homeFilterOptionScroll.setHorizontalScrollBarEnabled(false);
         homeFilterOptionScroll.setClipChildren(false);
         homeFilterOptionScroll.setClipToPadding(false);
-        homeFilterOptionScroll.setPadding(
-                a.dp(homeFilterWide ? 24 : 16), 0, a.dp(homeFilterWide ? 24 : 16), a.dp(6));
+        homeFilterOptionScroll.setPadding(0, 0, 0, a.dp(4));
         homeFilterOptionScroll.setVisibility(View.GONE);
         homeFilterOptionRow = a.row();
         homeFilterOptionScroll.addView(homeFilterOptionRow);
-        body.addView(homeFilterOptionScroll, new LinearLayout.LayoutParams(-1, -2));
+        homeFilterPanel.addView(homeFilterOptionScroll, new LinearLayout.LayoutParams(-1, -2));
         homeFilterOptionGrid = a.vertical();
-        homeFilterOptionGrid.setPadding(
-                a.dp(24), 0, a.dp(24), a.dp(8));
         homeFilterOptionGrid.setVisibility(View.GONE);
-        body.addView(homeFilterOptionGrid, new LinearLayout.LayoutParams(-1, -2));
+        homeFilterPanel.addView(homeFilterOptionGrid, new LinearLayout.LayoutParams(-1, -2));
 
         // 1.8.9 云盘配置内容原地容器（仅动作型 chip 使用，默认隐藏）
         homeCloudHolder = a.vertical();
@@ -2049,8 +2053,8 @@ final class MobileShell {
     }
 
     void toggleMobileFilterTags() {
-        if (homeFilterTagScroll == null) return;
-        if (homeFilterTagScroll.getVisibility() == View.VISIBLE) {
+        if (homeFilterPanel == null) return;
+        if (homeFilterPanel.getVisibility() == View.VISIBLE) {
             collapseMobileFilterUi();
             return;
         }
@@ -2066,8 +2070,9 @@ final class MobileShell {
             return;
         }
         homeFilterTagScroll.setVisibility(View.VISIBLE);
+        homeFilterPanel.setVisibility(View.VISIBLE);
         animateFilterRow(
-                homeFilterTagScroll, homeSkipFilterAnim ? 0 : 160, homeSkipFilterAnim ? 0 : 6);
+                homeFilterPanel, homeSkipFilterAnim ? 0 : 160, homeSkipFilterAnim ? 0 : 6);
         homeSkipFilterAnim = false;
         for (final VideoFilters.Definition def : defs) {
             String value = selectedFilters.get(def.dimension);
@@ -2131,6 +2136,8 @@ final class MobileShell {
         }
         hideMobileFilterOptions();
         homeOpenTagDim = def.dimension;
+        homeFilterPanel.setVisibility(View.VISIBLE);
+        homeFilterTagScroll.setVisibility(View.VISIBLE);
         boolean wide = homeFilterWide;
         LinearLayout target;
         if (wide) {
@@ -2171,7 +2178,7 @@ final class MobileShell {
             chip.setOnClickListener(
                     v -> applyMobileFilterChoice(def, choice));
             LinearLayout.LayoutParams lp =
-                    new LinearLayout.LayoutParams(wide ? 0 : -2, h, wide ? 1f : 0f);
+                    new LinearLayout.LayoutParams(-2, h);
             lp.rightMargin = a.dp(8);
             lp.bottomMargin = wide ? a.dp(8) : 0;
             if (wide) {
@@ -2186,6 +2193,14 @@ final class MobileShell {
             count++;
             if (count == 1) chip.requestFocus();
         }
+        AppLog.i(
+                "Filter",
+                "expand tab="
+                        + def.label
+                        + " options="
+                        + def.choices.size()
+                        + " layout="
+                        + (wide ? "grid" : "scroll"));
         renderMobileFilterTags();
     }
 
@@ -2213,17 +2228,17 @@ final class MobileShell {
 
     void collapseMobileFilterUi() {
         hideMobileFilterOptions();
-        if (homeFilterTagScroll == null) return;
-        homeFilterTagScroll.animate().cancel();
+        if (homeFilterPanel == null) return;
+        homeFilterPanel.animate().cancel();
         if (a.reduced) {
-            homeFilterTagScroll.setVisibility(View.GONE);
-            homeFilterTagScroll.setAlpha(1f);
+            homeFilterPanel.setVisibility(View.GONE);
+            homeFilterPanel.setAlpha(1f);
             return;
         }
-        homeFilterTagScroll.animate().alpha(0f).setDuration(140).withEndAction(() -> {
-            if (homeFilterTagScroll != null) {
-                homeFilterTagScroll.setVisibility(View.GONE);
-                homeFilterTagScroll.setAlpha(1f);
+        homeFilterPanel.animate().alpha(0f).setDuration(140).withEndAction(() -> {
+            if (homeFilterPanel != null) {
+                homeFilterPanel.setVisibility(View.GONE);
+                homeFilterPanel.setAlpha(1f);
             }
         }).start();
     }
@@ -2248,7 +2263,9 @@ final class MobileShell {
             renderMobileFilterTags();
             return true;
         }
-        if (homeFilterTagScroll != null && homeFilterTagScroll.getVisibility() == View.VISIBLE) {
+        if (homeFilterTagScroll != null
+                && homeFilterPanel != null
+                && homeFilterPanel.getVisibility() == View.VISIBLE) {
             collapseMobileFilterUi();
             if (homeActiveCategoryChip != null) homeActiveCategoryChip.requestFocus();
             return true;

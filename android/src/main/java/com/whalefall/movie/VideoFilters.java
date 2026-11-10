@@ -6,7 +6,7 @@ import org.json.*;
 /** Source-advertised filter values stay opaque; local filters use video metadata only. */
 final class VideoFilters {
     static final String[] DIMENSIONS = {"class", "area", "year"};
-    static final String[] LABELS = {"类型", "国家 / 地区", "年份"};
+    static final String[] LABELS = {"类型", "地区", "年份"};
 
     static final class Choice {
         final String label, value;
