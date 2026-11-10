@@ -31,6 +31,7 @@ final class HomeScreen {
     android.widget.HorizontalScrollView filterTagScroll, filterOptionScroll;
     String filterOpenDim = "";
     String filterPendingTag = "";
+    boolean filterSkipAnim;
     /** 1.8.12 云盘配置原地容器（首页分类栏下方，默认隐藏）。 */
     LinearLayout cloudInline;
     View cloudContent;
@@ -819,7 +820,8 @@ final class HomeScreen {
             return;
         }
         filterTagScroll.setVisibility(View.VISIBLE);
-        animateFilterRow(filterTagScroll, 160, 6);
+        animateFilterRow(filterTagScroll, filterSkipAnim ? 0 : 160, filterSkipAnim ? 0 : 6);
+        filterSkipAnim = false;
         for (final VideoFilters.Definition def : defs) {
             String value = state.selectedFilters.get(def.dimension);
             boolean active = value != null && !value.isEmpty();
@@ -830,7 +832,14 @@ final class HomeScreen {
                             "home-filter-tag:" + def.dimension,
                             () -> showFilterOptions(def));
             chip.setSelected(active || open);
-            if (open || active) chip.setTextColor(UiTokens.ACCENT_SOFT);
+            chip.setTextSize(14);
+            chip.setTextColor(active || open ? UiTokens.ACCENT_SOFT : 0xffc2cbd7);
+            android.graphics.drawable.GradientDrawable tagBg =
+                    new android.graphics.drawable.GradientDrawable();
+            tagBg.setCornerRadius(a.dp(999));
+            tagBg.setColor(active || open ? 0x33ff8fb1 : 0x14ffffff);
+            tagBg.setStroke(a.dp(1), active || open ? 0x66ffb3c8 : 0x33ffffff);
+            chip.setBackground(tagBg);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(40));
             lp.rightMargin = a.dp(8);
             filterTagRow.addView(chip, lp);
@@ -876,13 +885,22 @@ final class HomeScreen {
                             "home-filter-opt:" + def.dimension + ":" + choice.value,
                             () -> applyFilterChoice(def, choice));
             chip.setSelected(active);
+            chip.setTextSize(15);
+            chip.setMinHeight(a.dp(56));
+            android.graphics.drawable.GradientDrawable optBg =
+                    new android.graphics.drawable.GradientDrawable();
+            optBg.setCornerRadius(a.dp(999));
+            optBg.setColor(active ? UiTokens.ACCENT : 0x14ffffff);
+            optBg.setStroke(a.dp(1), active ? 0x66ffb3c8 : 0x33ffffff);
+            chip.setBackground(optBg);
+            chip.setTextColor(active ? 0xff0b1220 : 0xffc2cbd7);
             if (count % perRow == 0) {
                 row = a.row();
                 row.setClipChildren(false);
                 filterOptionGrid.addView(row, new LinearLayout.LayoutParams(-1, -2));
             }
             LinearLayout.LayoutParams lp =
-                    new LinearLayout.LayoutParams(0, a.dp(48), 1f);
+                    new LinearLayout.LayoutParams(0, a.dp(56), 1f);
             lp.rightMargin = a.dp(8);
             lp.bottomMargin = a.dp(8);
             row.addView(chip, lp);
@@ -892,6 +910,7 @@ final class HomeScreen {
     }
 
     void applyFilterChoice(VideoFilters.Definition def, VideoFilters.Choice choice) {
+        filterSkipAnim = true;
         String current = state.selectedFilters.get(def.dimension);
         if (choice.value.isEmpty()) state.selectedFilters.remove(def.dimension);
         else if (choice.value.equals(current == null ? "" : current))
@@ -913,15 +932,22 @@ final class HomeScreen {
 
     void collapseFilterUi() {
         hideFilterOptions();
-        if (filterTagScroll != null) {
-            filterTagScroll.animate().cancel();
+        if (filterTagScroll == null) return;
+        filterTagScroll.animate().cancel();
+        if (a.reduced) {
             filterTagScroll.setVisibility(View.GONE);
+            filterTagScroll.setAlpha(1f);
+            return;
         }
+        filterTagScroll.animate().alpha(0f).setDuration(140).withEndAction(() -> {
+            filterTagScroll.setVisibility(View.GONE);
+            filterTagScroll.setAlpha(1f);
+        }).start();
     }
 
     private void animateFilterRow(View view, int durationMs, float offsetDp) {
         if (view == null) return;
-        if (a.reduced) {
+        if (a.reduced || durationMs <= 0) {
             view.setAlpha(1f);
             view.setTranslationY(0);
             return;
@@ -934,15 +960,31 @@ final class HomeScreen {
     /** BACK 逐层收起 L3 → L2。 */
     boolean backFilterUi() {
         if (filterOptionGrid != null && filterOptionGrid.getVisibility() == View.VISIBLE) {
+            String dim = filterOpenDim;
             hideFilterOptions();
             renderFilterTags();
+            focusFilterTag(dim);
             return true;
         }
         if (filterTagScroll != null && filterTagScroll.getVisibility() == View.VISIBLE) {
             collapseFilterUi();
+            if (selectedTab() != null) selectedTab().requestFocus();
             return true;
         }
         return false;
+    }
+
+    /** BACK 从 L3 回到 L2 时焦点回到对应维度标签。 */
+    private void focusFilterTag(String dimension) {
+        if (filterTagRow == null) return;
+        for (int i = 0; i < filterTagRow.getChildCount(); i++) {
+            View child = filterTagRow.getChildAt(i);
+            if (child instanceof TextView
+                    && ("home-filter-tag:" + dimension).equals(String.valueOf(child.getTag()))) {
+                child.requestFocus();
+                return;
+            }
+        }
     }
 
     void showFilters() {
@@ -1083,7 +1125,7 @@ final class HomeScreen {
                         });
         tabIds.put(button, id);
         if (categoryHasFilters(id)) {
-            boolean filtered = !state.selectedFilters.isEmpty();
+            boolean filtered = id.equals(state.category) && !state.selectedFilters.isEmpty();
             button.setCompoundDrawables(
                     null,
                     null,
@@ -1152,6 +1194,16 @@ final class HomeScreen {
                 selected ? 0xff101a2e : MainActivity.WHITE,
                 true,
                 1.02f);
+        if (selected && !b.hasFocus()) {
+            // 1.9.33：TV 分类选中态同步手机（ACCENT→ACCENT_SOFT 渐变 + 深色字）
+            android.graphics.drawable.GradientDrawable grad =
+                    new android.graphics.drawable.GradientDrawable(
+                            android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+                            new int[] {UiTokens.ACCENT, 0xffffb3c8});
+            grad.setCornerRadius(a.dp(Math.round(17 * navScale)));
+            b.setBackground(grad);
+            b.setTextColor(0xff0b1220);
+        }
     }
 
     void updateTabs() {

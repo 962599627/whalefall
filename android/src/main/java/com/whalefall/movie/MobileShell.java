@@ -197,6 +197,8 @@ final class MobileShell {
     private boolean homeFilterWide;
     private String homeOpenTagDim = "";
     private String homePendingTagFocus = "";
+    private TextView homeActiveCategoryChip;
+    private boolean homeSkipFilterAnim;
     private String lastChipTap = "";
     private long lastChipTapAt;
     private Runnable homeFilterApply;
@@ -2064,7 +2066,9 @@ final class MobileShell {
             return;
         }
         homeFilterTagScroll.setVisibility(View.VISIBLE);
-        animateFilterRow(homeFilterTagScroll, 160, 6);
+        animateFilterRow(
+                homeFilterTagScroll, homeSkipFilterAnim ? 0 : 160, homeSkipFilterAnim ? 0 : 6);
+        homeSkipFilterAnim = false;
         for (final VideoFilters.Definition def : defs) {
             String value = selectedFilters.get(def.dimension);
             boolean active = value != null && !value.isEmpty();
@@ -2072,7 +2076,7 @@ final class MobileShell {
             TextView chip =
                     a.text(
                             active ? def.label + " · " + def.labelFor(value) : def.label,
-                            12,
+                            13,
                             active || open ? UiTokens.ACCENT_SOFT : 0xffc2cbd7);
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(a.dp(12), a.dp(5), a.dp(12), a.dp(5));
@@ -2085,11 +2089,11 @@ final class MobileShell {
             MobileDetailScreen.bindTouchFeedback(chip);
             chip.setFocusable(true);
             chip.setFocusableInTouchMode(true);
-            chip.setMinHeight(a.dp(homeFilterWide ? 36 : 32));
+            chip.setMinHeight(a.dp(homeFilterWide ? 40 : 32));
             chip.setNextFocusDownId(View.generateViewId());
             chip.setOnClickListener(v -> showMobileFilterOptions(def));
             LinearLayout.LayoutParams lp =
-                    new LinearLayout.LayoutParams(-2, a.dp(homeFilterWide ? 36 : 32));
+                    new LinearLayout.LayoutParams(-2, a.dp(homeFilterWide ? 40 : 32));
             lp.rightMargin = a.dp(8);
             homeFilterTagRow.addView(chip, lp);
             if (def.dimension.equals(homePendingTagFocus)) {
@@ -2149,7 +2153,7 @@ final class MobileShell {
             TextView chip =
                     a.text(
                             choice.label,
-                            12,
+                            13,
                             active ? 0xff0b1220 : 0xffc2cbd7);
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(a.dp(12), a.dp(5), a.dp(12), a.dp(5));
@@ -2200,6 +2204,7 @@ final class MobileShell {
                         + " value="
                         + choice.value);
         homePendingTagFocus = def.dimension;
+        homeSkipFilterAnim = true;
         hideMobileFilterOptions();
         currentPage = 1;
         if (homeFilterApply != null) homeFilterApply.run();
@@ -2208,10 +2213,19 @@ final class MobileShell {
 
     void collapseMobileFilterUi() {
         hideMobileFilterOptions();
-        if (homeFilterTagScroll != null) {
-            homeFilterTagScroll.animate().cancel();
+        if (homeFilterTagScroll == null) return;
+        homeFilterTagScroll.animate().cancel();
+        if (a.reduced) {
             homeFilterTagScroll.setVisibility(View.GONE);
+            homeFilterTagScroll.setAlpha(1f);
+            return;
         }
+        homeFilterTagScroll.animate().alpha(0f).setDuration(140).withEndAction(() -> {
+            if (homeFilterTagScroll != null) {
+                homeFilterTagScroll.setVisibility(View.GONE);
+                homeFilterTagScroll.setAlpha(1f);
+            }
+        }).start();
     }
 
     private void animateFilterRow(View view, int durationMs, float offsetDp) {
@@ -2227,16 +2241,16 @@ final class MobileShell {
     }
 
     boolean backFilterUi() {
-        if (homeFilterOptionScroll != null
-                && (homeFilterOptionScroll.getVisibility() == View.VISIBLE
-                        || (homeFilterOptionGrid != null
-                                && homeFilterOptionGrid.getVisibility() == View.VISIBLE))) {
+        if (mobileOptionsVisible()) {
+            String dim = homeOpenTagDim;
             hideMobileFilterOptions();
+            homePendingTagFocus = dim;
             renderMobileFilterTags();
             return true;
         }
         if (homeFilterTagScroll != null && homeFilterTagScroll.getVisibility() == View.VISIBLE) {
             collapseMobileFilterUi();
+            if (homeActiveCategoryChip != null) homeActiveCategoryChip.requestFocus();
             return true;
         }
         return false;
@@ -2268,7 +2282,7 @@ final class MobileShell {
             chip.setBackground(glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
         }
         if (hasFilters) {
-            boolean filtered = !selectedFilters.isEmpty();
+            boolean filtered = catId.equals(selectedCategoryId) && !selectedFilters.isEmpty();
             android.graphics.drawable.Drawable funnel =
                     funnelDrawable(filtered ? UiTokens.ACCENT : 0xff8d9cb6, 14);
             chip.setCompoundDrawables(null, null, funnel, null);
@@ -2305,6 +2319,7 @@ final class MobileShell {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
         lp.rightMargin = a.dp(8);
         row.addView(chip, lp);
+        if (active) homeActiveCategoryChip = chip;
     }
 
     // =========================================================================
