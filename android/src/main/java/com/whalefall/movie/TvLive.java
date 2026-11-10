@@ -727,7 +727,7 @@ final class TvLive {
         rail.addView(cap, new LinearLayout.LayoutParams(-1, -2));
 
         String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_WEB, GROUP_MINE};
-        int[] counts = {cctvCount, satCount, favCount};
+        int[] counts = {cctvCount, satCount, webCount, favCount};
         for (int i = 0; i < gs.length; i++) {
             final String g = gs[i];
             boolean on = page.query.isEmpty() && g.equals(page.group);
@@ -2283,7 +2283,7 @@ final class TvLive {
             if (groupStrip == null) return;
             groupStrip.removeAllViews();
             String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_WEB, GROUP_MINE};
-            String[] shortNames = {"央视", "卫视", "收藏"};
+            String[] shortNames = {"央视", "卫视", "网页", "收藏"};
             for (int i = 0; i < gs.length; i++) {
                 final String g = gs[i];
                 boolean on = g.equals(group);
