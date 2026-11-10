@@ -816,7 +816,7 @@ final class MobileShell {
                     || tabIdx >= navLabels.length
                     || tabIdx >= navIcons.length
                     || tabIdx >= navTabs.length) {
-                AppLog.w("Nav", "skip out-of-range tabIdx=" + tabIdx
+                AppLog.i("Nav", "skip out-of-range tabIdx=" + tabIdx
                         + " navKeys=" + navKeys.length + " TAB_NAMES=" + TAB_NAMES.length);
                 continue;
             }
