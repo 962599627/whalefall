@@ -2,6 +2,7 @@ package com.whalefall.movie;
 
 import android.app.Application;
 import android.content.Context;
+import android.view.ContextThemeWrapper;
 import dalvik.system.DexClassLoader;
 import com.github.catvod.crawler.Spider;
 import java.io.*;
@@ -58,13 +59,28 @@ public final class CspEngine implements SourceEngine {
             Object candidate = loader.loadClass(className).getDeclaredConstructor().newInstance();
             if (!(candidate instanceof Spider)) throw new IOException("插件父接口与当前宿主不兼容");
             spider = (Spider) candidate;
+            Context pluginContext = themedContext(app);
             synchronized (pluginLock) {
                 try {
                     spider.initApi(new com.github.catvod.crawler.SpiderApi());
                 } catch (Throwable ignored) {
                 }
-                spider.init(app, site.ext == null ? "" : site.ext.toString());
+                try {
+                    spider.init(pluginContext, site.ext == null ? "" : site.ext.toString());
+                } catch (Throwable themedError) {
+                    AppLog.w(
+                            "CspEngine",
+                            "plugin.init with themed context failed; retry plain Application",
+                            themedError);
+                    spider.init(app, site.ext == null ? "" : site.ext.toString());
+                }
             }
+            AppLog.i(
+                    "CspEngine",
+                    "plugin context themed="
+                            + (pluginContext != app)
+                            + " style=PluginDialogTheme"
+                            + " (frame/text/buttons themed; plugin self-drawn colors cannot be patched)");
             diagnostic("loaded", className, null);
         } catch (Throwable error) {
             Throwable cause = unwrap(error);
@@ -93,13 +109,34 @@ public final class CspEngine implements SourceEngine {
                         app.getClassLoader());
         prepareHostStorage(app);
         List<Object> before = lifecycleCallbacks(app);
-        loader.loadClass("com.github.catvod.spider.Init")
-                .getMethod("init", Context.class)
-                .invoke(null, app);
+        Context themed = themedContext(app);
+        try {
+            loader.loadClass("com.github.catvod.spider.Init")
+                    .getMethod("init", Context.class)
+                    .invoke(null, themed);
+        } catch (Throwable themedError) {
+            AppLog.w(
+                    "CspEngine",
+                    "Init.init themed context failed; retry plain Application",
+                    themedError);
+            loader.loadClass("com.github.catvod.spider.Init")
+                    .getMethod("init", Context.class)
+                    .invoke(null, app);
+        }
         syncPluginProxyPort(loader, ProxyAddress.port);
         replayForegroundActivity(app, before);
         LOADERS.put(sha, loader);
         return loader;
+    }
+
+    /** 给插件 Context 套玻璃对话框主题（只影响 AlertDialog/颜色，不改插件功能）。 */
+    static Context themedContext(Context base) {
+        try {
+            return new ContextThemeWrapper(base, R.style.PluginDialogTheme);
+        } catch (Throwable error) {
+            AppLog.w("CspEngine", "ContextThemeWrapper failed", error);
+            return base;
+        }
     }
 
     static void syncPluginProxyPort(ClassLoader loader, int port) {
