@@ -1,6 +1,8 @@
 package com.whalefall.movie;
 
 import android.content.res.ColorStateList;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
@@ -11,9 +13,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import java.io.InputStream;
 
 /**
  * 播放器悬浮 UI：顶部标题/清晰度 + 中央播放簇（-10s / 播放 / +10s）+ 底部控制区
@@ -35,7 +39,16 @@ final class PlayerChrome {
     final FrameLayout progress;
     final LinearLayout dock;
     final LinearLayout centerCluster;
+    /** 加载层：帧动画 + 「正在加载…」+ 剧集名（1.7.8）。 */
     final LinearLayout loadingPill;
+    ImageView loadingFrame;
+    TextView loadingEpisode;
+    static Bitmap[] loadingFrames;
+    static boolean loadingFramesLoading;
+    int loadingFrameIndex;
+    boolean loadingAnimating;
+    static final long LOADING_FRAME_MS = 125L;
+    final Runnable loadingTicker;
     final LinearLayout topActions;
     TextView loadingText, episodeLabel, titleView, seekHint, resolution;
     final TextView timeCurrent, timeTotal, clockBig, clockEnd, gesturePill;
@@ -52,6 +65,19 @@ final class PlayerChrome {
 
     PlayerChrome(MainActivity host, Cms.Video video, Cms.Episode episode, boolean live) {
         a = host;
+        loadingTicker =
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!loadingAnimating || loadingFrame == null) return;
+                        Bitmap[] cache = loadingFrames;
+                        if (cache != null && cache.length > 0) {
+                            loadingFrameIndex = (loadingFrameIndex + 1) % cache.length;
+                            loadingFrame.setImageBitmap(cache[loadingFrameIndex]);
+                        }
+                        a.ui.postDelayed(this, LOADING_FRAME_MS);
+                    }
+                };
         overlay = new FrameLayout(a);
         overlay.setTag("player-chrome");
         overlay.setClipChildren(true);
@@ -335,28 +361,44 @@ final class PlayerChrome {
 
         a.playbackLayer.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
 
-        // ---------------- 加载胶囊 ----------------
-        loadingPill = a.row();
+        // ---------------- 加载层（1.7.8：帧动画，不再用胶囊+转圈） ----------------
+        loadingPill = a.vertical();
         loadingPill.setTag("player-loading");
-        loadingPill.setGravity(Gravity.CENTER_VERTICAL);
-        loadingPill.setPadding(a.dp(20), a.dp(13), a.dp(20), a.dp(13));
-        loadingPill.setBackground(
-                UiTokens.round(
-                        a, UiTokens.RADIUS_20, 0xe60b1220, UiTokens.STROKE_SOFT));
-        UiCompat.setElevation(loadingPill, a.dp(10));
-        ProgressBar spinner = new ProgressBar(a);
-        spinner.setIndeterminate(true);
-        spinner.setIndeterminateTintList(ColorStateList.valueOf(UiTokens.ACCENT));
-        loadingPill.addView(spinner, new LinearLayout.LayoutParams(a.dp(22), a.dp(22)));
-        String epTitle =
-                episode != null && episode.name != null && !episode.name.isEmpty()
-                        ? " " + episode.name
-                        : "";
-        loadingText = a.text("正在加载" + epTitle + "…", UiTokens.TYPE_BODY_SM, UiTokens.TEXT_PRIMARY);
-        loadingText.setPadding(a.dp(12), 0, 0, 0);
-        loadingPill.addView(loadingText);
-        a.playbackLayer.addView(
-                loadingPill, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        loadingPill.setGravity(Gravity.CENTER_HORIZONTAL);
+        loadingFrame = new ImageView(a);
+        loadingFrame.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        int frameSide = loadingAnimationSize(a);
+        loadingPill.addView(
+                loadingFrame, new LinearLayout.LayoutParams(frameSide, frameSide));
+        loadingText = a.text("正在加载…", 12, UiTokens.TEXT_TERTIARY);
+        loadingText.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams loadingTextLp = new LinearLayout.LayoutParams(-2, -2);
+        loadingTextLp.topMargin = a.dp(10);
+        loadingPill.addView(loadingText, loadingTextLp);
+        String epTitle = episode != null && episode.name != null ? episode.name.trim() : "";
+        if (!epTitle.isEmpty()) {
+            loadingEpisode = a.text(epTitle, 11, UiTokens.TEXT_TERTIARY);
+            loadingEpisode.setGravity(Gravity.CENTER);
+            loadingEpisode.setMaxLines(1);
+            LinearLayout.LayoutParams epLp = new LinearLayout.LayoutParams(-2, -2);
+            epLp.topMargin = a.dp(3);
+            loadingPill.addView(loadingEpisode, epLp);
+        }
+        loadingPill.addOnAttachStateChangeListener(
+                new View.OnAttachStateChangeListener() {
+                    @Override
+                    public void onViewAttachedToWindow(View v) {
+                        if (loading && loadingPill.getVisibility() == View.VISIBLE)
+                            startLoadingAnimation();
+                    }
+
+                    @Override
+                    public void onViewDetachedFromWindow(View v) {
+                        stopLoadingAnimation();
+                        if (loadingFrame != null) loadingFrame.setImageBitmap(null);
+                    }
+                });
+        a.playbackLayer.addView(loadingPill, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
 
         a.playerOverlay = overlay;
         a.controlsVisible = true;
@@ -627,14 +669,74 @@ final class PlayerChrome {
         update();
     }
 
+    /** 手机/平板 min(180dp, 屏宽*0.5)；TV min(260dp, 屏宽*0.3)。 */
+    static int loadingAnimationSize(MainActivity a) {
+        int width = a.windowWidth();
+        if (a.isTvDevice()) return Math.min(a.dp(260), Math.round(width * 0.3f));
+        return Math.min(a.dp(180), Math.round(width * 0.5f));
+    }
+
+    void startLoadingAnimation() {
+        if (loadingAnimating || loadingFrame == null) return;
+        ensureLoadingFrames(a);
+        Bitmap[] cache = loadingFrames;
+        if (cache == null || cache.length == 0) return;
+        loadingAnimating = true;
+        loadingFrame.setImageBitmap(cache[loadingFrameIndex]);
+        a.ui.removeCallbacks(loadingTicker);
+        a.ui.postDelayed(loadingTicker, LOADING_FRAME_MS);
+    }
+
+    void stopLoadingAnimation() {
+        loadingAnimating = false;
+        a.ui.removeCallbacks(loadingTicker);
+    }
+
+    /** 切后台/页面暂停：停止动画省电；恢复时按 loading 状态决定是否继续。 */
+    void pauseLoadingAnimation() {
+        stopLoadingAnimation();
+    }
+
+    void resumeLoadingAnimation() {
+        if (loading && loadingPill.getVisibility() == View.VISIBLE
+                && loadingPill.isAttachedToWindow()) startLoadingAnimation();
+    }
+
+    static synchronized void ensureLoadingFrames(MainActivity a) {
+        if (loadingFrames != null || loadingFramesLoading) return;
+        loadingFramesLoading = true;
+        try {
+            Bitmap[] cache = new Bitmap[7];
+            for (int i = 0; i < cache.length; i++) {
+                String name =
+                        String.format(java.util.Locale.ROOT, "loading/frame_%02d.webp", i + 1);
+                try (InputStream in = a.getAssets().open(name)) {
+                    BitmapFactory.Options options = new BitmapFactory.Options();
+                    options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+                    cache[i] = BitmapFactory.decodeStream(in, null, options);
+                } catch (Throwable ignored) {
+                }
+            }
+            boolean ok = true;
+            for (Bitmap bitmap : cache) if (bitmap == null) ok = false;
+            if (ok) loadingFrames = cache;
+            AppLog.i(
+                    "PlayerChrome",
+                    "loading frames loaded=" + (loadingFrames != null) + " count=" + cache.length);
+        } finally {
+            loadingFramesLoading = false;
+        }
+    }
+
     void switchEpisode(Cms.Episode episode, Cms.Line line) {
         String lineName = line == null || line.name == null ? "" : line.name;
         String epName = episode == null || episode.name == null ? "" : episode.name;
         episodeLabel.setText(epName + (lineName.isEmpty() ? "" : "  ·  " + lineName));
         resolution.setText("");
-        String statusMsg = "正在加载" + (epName.isEmpty() ? "" : " " + epName) + "…";
+        String statusMsg = "正在加载…";
         if (a.playStatus != null) a.playStatus.setText(statusMsg);
         loadingText.setText(statusMsg);
+        if (loadingEpisode != null) loadingEpisode.setText(epName.isEmpty() ? "" : epName);
         loading = true;
         update();
     }
@@ -659,6 +761,8 @@ final class PlayerChrome {
         if (a.player != null && a.prepared) applyResolutionShort();
         boolean showSpinner = loading && !a.prepared && a.playbackLoading == null && !a.miniMode;
         loadingPill.setVisibility(showSpinner ? View.VISIBLE : View.GONE);
+        if (showSpinner) startLoadingAnimation();
+        else stopLoadingAnimation();
 
         // 中央播放钮：图标 + 描述跟随播放状态；未就绪时降透明度
         UiIcon.setIcon(state, a.playing ? UiIcon.PAUSE : UiIcon.PLAY);

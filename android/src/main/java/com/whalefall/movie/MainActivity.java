@@ -2103,7 +2103,14 @@ public final class MainActivity extends Activity {
     protected void onPause() {
         ui.removeCallbacks(screensaverTask);
         savePlaybackHistory(true);
+        if (playerChrome != null) playerChrome.pauseLoadingAnimation();
         super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (playerChrome != null) playerChrome.resumeLoadingAnimation();
     }
 
     @Override

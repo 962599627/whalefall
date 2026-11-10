@@ -172,7 +172,6 @@ final class AccountPanel {
                 buildStatusCard(body);
                 buildPanAccounts(body);
                 buildFunctions(body);
-                buildDanger(body);
                 refresh();
             }
 
@@ -541,48 +540,6 @@ final class AccountPanel {
                     "该设置面板由配置源提供，界面样式不受本 App 控制（可能为白底系统样式）。"
                             + "继续后会直接进入源面板。",
                     () -> runAction(action));
-        }
-
-        // ---------------- 危险区 ----------------
-
-        void buildDanger(LinearLayout body) {
-            TextView label = a.text("危险操作", UiTokens.TYPE_MICRO, UiTokens.TEXT_TERTIARY);
-            label.setPadding(a.dp(2), a.dp(20), a.dp(2), a.dp(8));
-            body.addView(label, new LinearLayout.LayoutParams(-1, -2));
-            Button clear =
-                    a.button(
-                            "清除 App 内登录（不影响源插件）",
-                            "account-clear",
-                            this::confirmClear);
-            clear.setTextSize(UiTokens.TYPE_BODY_SM);
-            clear.setTypeface(null, Typeface.BOLD);
-            clear.setTextColor(DANGER);
-            clear.setBackground(
-                    UiTokens.round(a, UiTokens.RADIUS_14, 0x14ff6b81, 0x66ff6b81));
-            clear.setMinHeight(a.dp(48));
-            clear.setMinimumHeight(a.dp(48));
-            clear.setPadding(a.dp(16), 0, a.dp(16), 0);
-            clear.setOnFocusChangeListener(
-                    (v, focused) ->
-                            FocusMotion.style(
-                                    a,
-                                    clear,
-                                    focused,
-                                    0x14ff6b81,
-                                    0x33ff6b81,
-                                    UiTokens.RADIUS_14,
-                                    DANGER,
-                                    0xff31141f,
-                                    true,
-                                    1.02f));
-            body.addView(clear, new LinearLayout.LayoutParams(-1, a.dp(48)));
-            TextView note =
-                    a.text(
-                            "只清除 App 内原生扫码保存的登录；源插件的登录请到源面板退出。",
-                            UiTokens.TYPE_MICRO,
-                            UiTokens.TEXT_TERTIARY);
-            note.setPadding(a.dp(2), a.dp(6), a.dp(2), 0);
-            body.addView(note, new LinearLayout.LayoutParams(-1, -2));
         }
 
         void buildEmpty(LinearLayout body) {
