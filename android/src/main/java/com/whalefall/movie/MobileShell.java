@@ -2105,21 +2105,21 @@ final class MobileShell {
         currentPage = 1;
         // 应用筛选才刷新；记录滚动位置，刷新后恢复
         final androidx.recyclerview.widget.LinearLayoutManager lm =
-                recycler.getLayoutManager() instanceof androidx.recyclerview.widget.LinearLayoutManager
+                homeRecyclerRef.getLayoutManager() instanceof androidx.recyclerview.widget.LinearLayoutManager
                         ? (androidx.recyclerview.widget.LinearLayoutManager)
-                                recycler.getLayoutManager()
+                                homeRecyclerRef.getLayoutManager()
                         : null;
         final int anchorPos = lm == null ? -1 : lm.findFirstVisibleItemPosition();
         final android.view.View anchorView =
                 lm == null || anchorPos < 0 ? null : lm.findViewByPosition(anchorPos);
         final int anchorOffset =
-                anchorView == null ? 0 : anchorView.getTop() - recycler.getPaddingTop();
+                anchorView == null ? 0 : anchorView.getTop() - homeRecyclerRef.getPaddingTop();
         homeSkipFilterAnim = false;
         if (homeFilterApply != null) homeFilterApply.run();
         if (lm != null && anchorPos >= 0)
             a.ui.postDelayed(
                     () -> {
-                        if (recycler.getLayoutManager() == lm)
+                        if (homeRecyclerRef.getLayoutManager() == lm)
                             lm.scrollToPositionWithOffset(anchorPos, anchorOffset);
                     },
                     450);
