@@ -936,7 +936,7 @@ final class HomeScreen {
     void toggleHomeFilterValue(VideoFilters.Definition def, VideoFilters.Choice choice) {
         java.util.LinkedHashSet<String> values =
                 filterValueSet(state.selectedFilters.get(def.dimension));
-        boolean remoteSingle = def.remote && !remoteMultiAllowed(def);
+        boolean remoteSingle = MobileShell.siteHasRemoteApi(site) && !remoteMultiAllowed(def);
         if (remoteSingle) {
             if (choice.value.isEmpty()) {
                 values.clear();
@@ -1020,8 +1020,8 @@ final class HomeScreen {
         }
         for (final VideoFilters.Definition def : defs) {
             String value = state.selectedFilters.get(def.dimension);
-            // 1.9.43：远程维度只显示单值
-            if (def.remote && !remoteMultiAllowed(def))
+            // 1.9.44：有远程接口的站点所有维度按单选展示
+            if (MobileShell.siteHasRemoteApi(site) && !remoteMultiAllowed(def))
                 value = firstFilterValue(value);
             boolean active = value != null && !value.isEmpty();
             boolean open = def.dimension.equals(filterOpenDim);
@@ -1655,9 +1655,29 @@ final class HomeScreen {
         int page = first ? 1 : state.page + 1;
         List<VideoFilters.Definition> definitions = filterDefinitions();
         Map<String, String> selections = new LinkedHashMap<>(state.selectedFilters);
-        List<Map<String, String>> variants = MobileShell.filterVariants(definitions, selections);
+        // 1.9.44：有远程接口时所有选中维度都作为请求参数
+        boolean remoteSite = MobileShell.siteHasRemoteApi(site);
+        boolean allowMulti = a.prefs.getBoolean("filter_remote_multi_enabled", false);
+        List<Map<String, String>> variants =
+                MobileShell.filterVariants(definitions, selections, remoteSite, allowMulti);
+        boolean remoteRequest =
+                remoteSite && !variants.isEmpty() && !variants.get(0).isEmpty();
         boolean multiRemote = variants.size() > 1;
-        Map<String, String> remoteFilters = VideoFilters.remoteValues(definitions, selections);
+        Map<String, String> remoteFilters = variants.isEmpty()
+                ? new LinkedHashMap<String, String>()
+                : new LinkedHashMap<>(variants.get(0));
+        if (remoteRequest) {
+            AppLog.i(
+                    "Filter",
+                    "request site="
+                            + (site == null ? "null" : site.key)
+                            + " filters="
+                            + remoteFilters
+                            + " multi="
+                            + multiRemote
+                            + " variants="
+                            + variants.size());
+        }
         status.setVisibility(first ? View.VISIBLE : View.GONE);
         status.setText(first ? "正在读取分类…" : "");
         more.setText("正在加载…");
@@ -1693,8 +1713,16 @@ final class HomeScreen {
                         }
                         clean(list.videos);
                         int received = list.videos.size();
+                        AppLog.i(
+                                "Filter",
+                                "raw="
+                                        + received
+                                        + " remoteRequest="
+                                        + remoteRequest
+                                        + " filters="
+                                        + remoteFilters);
                         List<Cms.Video> matching =
-                                multiRemote
+                                remoteRequest
                                         ? new java.util.ArrayList<>(list.videos)
                                         : VideoFilters.apply(list.videos, definitions, selections);
                         a.ui.post(

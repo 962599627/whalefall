@@ -1566,6 +1566,30 @@ final class MobileShell {
                             new java.util.LinkedHashMap<>(selectedFilters);
                     final List<VideoFilters.Definition> definitions = mobileFilterDefinitions();
                     final boolean[] usedRemoteVariants = {false};
+                    // 1.9.44：站点有远程接口时，所有选中维度都作为请求参数（不依赖 def.remote）
+                    final boolean remoteSite = siteHasRemoteApi(siteSnapshot);
+                    final boolean allowMulti =
+                            a.prefs.getBoolean("filter_remote_multi_enabled", false);
+                    final java.util.List<java.util.Map<String, String>> requestVariants =
+                            filterVariants(
+                                    definitions, filterSnapshot, remoteSite, allowMulti);
+                    final java.util.Map<String, String> requestFilters =
+                            requestVariants.isEmpty()
+                                    ? new java.util.LinkedHashMap<String, String>()
+                                    : requestVariants.get(0);
+                    if (remoteSite && !requestFilters.isEmpty()) {
+                        usedRemoteVariants[0] = true;
+                        AppLog.i(
+                                "Filter",
+                                "request site="
+                                        + (siteSnapshot == null ? "null" : siteSnapshot.key)
+                                        + " filters="
+                                        + requestFilters
+                                        + " multi="
+                                        + (requestVariants.size() > 1)
+                                        + " variants="
+                                        + requestVariants.size());
+                    }
                     final int ticket = a.generation;
                     final HomeScreen.Snapshot cached =
                             siteSnapshot == null ? null : a.homeData.get(siteSnapshot.key);
@@ -1619,8 +1643,7 @@ final class MobileShell {
                                                         ? cats.get(0).id
                                                         : catSnapshot;
                                         java.util.List<java.util.Map<String, String>> variants =
-                                                filterVariants(definitions, filterSnapshot);
-                                        usedRemoteVariants[0] = variants.size() > 1;
+                                                requestVariants;
                                         if (variants.size() <= 1) {
                                             list =
                                                     Cms.listing(
@@ -1666,6 +1689,14 @@ final class MobileShell {
                                     final HomeScreen.Snapshot finalHomeSnapshot = homeSnapshot;
                                     final List<Cms.Category> finalCats = cats;
                                     final Cms.Listing finalList = list;
+                                    AppLog.i(
+                                            "Filter",
+                                            "raw="
+                                                    + list.videos.size()
+                                                    + " remoteRequest="
+                                                    + usedRemoteVariants[0]
+                                                    + " filters="
+                                                    + requestFilters);
                                     List<Cms.Video> filtered =
                                             usedRemoteVariants[0]
                                                     ? new java.util.ArrayList<>(list.videos)
@@ -2076,10 +2107,12 @@ final class MobileShell {
                 0);
     }
 
-    /** 1.9.41：多选远程维度拆成 N 个单值请求（笛卡尔积 ≤6），合并去重后就是真相结果。 */
+    /** 1.9.44：有远程接口的站点，所有选中维度都作为请求参数；可选单值/多值。 */
     static java.util.List<java.util.Map<String, String>> filterVariants(
             List<VideoFilters.Definition> definitions,
-            java.util.Map<String, String> snapshot) {
+            java.util.Map<String, String> snapshot,
+            boolean allRemote,
+            boolean allowMulti) {
         java.util.List<java.util.Map<String, String>> out = new java.util.ArrayList<>();
         if (snapshot.isEmpty()) {
             out.add(new java.util.LinkedHashMap<String, String>());
@@ -2091,16 +2124,16 @@ final class MobileShell {
         for (VideoFilters.Definition def : definitions) {
             String selected = snapshot.get(def.dimension);
             if (selected == null || selected.isEmpty()) continue;
+            boolean remote = allRemote || def.remote;
+            if (!remote) continue;
             String[] parts = selected.split(",");
-            if (def.remote) {
-                base.put(def.key, parts[0]);
-                if (parts.length > 1) {
-                    multiDims.add(def.key);
-                    java.util.List<String> values = new java.util.ArrayList<>();
-                    for (int i = 0; i < Math.min(parts.length, 6); i++)
-                        if (!parts[i].trim().isEmpty()) values.add(parts[i].trim());
-                    multiValues.add(values);
-                }
+            base.put(def.key, parts[0]);
+            if (allowMulti && parts.length > 1) {
+                multiDims.add(def.key);
+                java.util.List<String> values = new java.util.ArrayList<>();
+                for (int i = 0; i < Math.min(parts.length, 6); i++)
+                    if (!parts[i].trim().isEmpty()) values.add(parts[i].trim());
+                multiValues.add(values);
             }
         }
         if (base.isEmpty()) {
@@ -2244,6 +2277,15 @@ final class MobileShell {
         return out.toString();
     }
 
+    /** 1.9.44：站点是否有远程接口（决定筛选是否作为请求参数、是否单选）。 */
+    static boolean siteHasRemoteApi(Cms.Site site) {
+        return site != null && site.api != null && !site.api.trim().isEmpty();
+    }
+
+    boolean currentSiteRemote() {
+        return siteHasRemoteApi(currentSite);
+    }
+
     /** 1.9.43：远程维度默认单选（该源只接受单条件）；本地维度仍多选。 */
     boolean remoteMultiAllowed(VideoFilters.Definition def) {
         return a.prefs.getBoolean("filter_remote_multi_enabled", false);
@@ -2259,7 +2301,7 @@ final class MobileShell {
     void toggleMobileFilterValue(VideoFilters.Definition def, VideoFilters.Choice choice) {
         java.util.LinkedHashSet<String> values =
                 filterValueSet(selectedFilters.get(def.dimension));
-        boolean remoteSingle = def.remote && !remoteMultiAllowed(def);
+        boolean remoteSingle = currentSiteRemote() && !remoteMultiAllowed(def);
         if (remoteSingle) {
             if (choice.value.isEmpty()) {
                 values.clear();
@@ -2440,8 +2482,9 @@ final class MobileShell {
         int tagHeight = homeFilterWide ? 36 : 34;
         for (final VideoFilters.Definition def : defs) {
             String value = selectedFilters.get(def.dimension);
-            // 1.9.43：远程维度只显示单值（旧多选自动收敛展示最新一个）
-            if (def.remote && !remoteMultiAllowed(def)) value = firstFilterValue(value);
+            // 1.9.44：有远程接口的站点所有维度按单选展示（旧多选收敛展示最新一个）
+            if (currentSiteRemote() && !remoteMultiAllowed(def))
+                value = firstFilterValue(value);
             boolean active = value != null && !value.isEmpty();
             boolean open = def.dimension.equals(homeOpenTagDim);
             LinearLayout tagWrap = a.vertical();
