@@ -266,6 +266,8 @@ final class MobileShell {
     private TextView homeActiveCategoryChip;
     private boolean homeSkipFilterAnim;
     private android.animation.ValueAnimator homeFilterHeightAnim;
+    /** 1.9.39：面板/收起动画代次，避免旧收起动画在面板重新展开后把面板隐藏。 */
+    private int homeFilterAnimSeq;
     private String lastChipTap = "";
     private long lastChipTapAt;
     private Runnable homeFilterApply;
@@ -2230,7 +2232,7 @@ final class MobileShell {
                 lm == null || anchorPos < 0 ? null : lm.findViewByPosition(anchorPos);
         final int anchorOffset =
                 anchorView == null ? 0 : anchorView.getTop() - homeRecyclerRef.getPaddingTop();
-        homeSkipFilterAnim = false;
+        homeSkipFilterAnim = true;
         // 1.9.36 P1：toggle 后立即刷新 L2 标签与已展开的 L3 选中态
         boolean optionsOpen = mobileOptionsVisible();
         renderMobileFilterTags();
@@ -2238,6 +2240,7 @@ final class MobileShell {
             hideMobileFilterOptions();
             showMobileFilterOptions(def);
         }
+        if (homeFilterPanel != null) homeFilterPanel.setVisibility(View.VISIBLE);
         if (homeFilterApply != null) homeFilterApply.run();
         if (lm != null && anchorPos >= 0)
             a.ui.postDelayed(
@@ -2307,7 +2310,8 @@ final class MobileShell {
         homeFilterTagRow.removeAllViews();
         List<VideoFilters.Definition> defs = mobileFilterDefinitions();
         if (defs.isEmpty()) {
-            collapseMobileFilterUi();
+            // 1.9.39：标签渲染绝不收起面板（能力判定在上层保证）
+            AppLog.i("Filter", "tags empty panelKeep=true");
             return;
         }
         homeFilterTagScroll.setVisibility(View.VISIBLE);
@@ -2411,9 +2415,27 @@ final class MobileShell {
 
     void showMobileFilterOptions(final VideoFilters.Definition def) {
         if (homeFilterOptionScroll == null) return;
+        int panelBefore =
+                homeFilterPanel != null && homeFilterPanel.getVisibility() == View.VISIBLE
+                        ? 1
+                        : 0;
+        boolean l3Before = mobileOptionsVisible();
         if (def.dimension.equals(homeOpenTagDim)) {
+            // 1.9.39：只收起 L3，L2 面板必须保持可见
             hideMobileFilterOptions();
             renderMobileFilterTags();
+            if (homeFilterPanel != null) homeFilterPanel.setVisibility(View.VISIBLE);
+            AppLog.i(
+                    "Filter",
+                    "tag click dim="
+                            + def.dimension
+                            + " panelBefore="
+                            + panelBefore
+                            + " panelAfter="
+                            + (homeFilterPanel.getVisibility() == View.VISIBLE ? 1 : 0)
+                            + " l3="
+                            + "closed before="
+                            + l3Before);
             return;
         }
         hideMobileFilterOptions();
@@ -2488,28 +2510,16 @@ final class MobileShell {
                         + " options="
                         + def.choices.size()
                         + " layout=scroll");
-        renderMobileFilterTags();
-    }
-
-    void applyMobileFilterChoice(VideoFilters.Definition def, VideoFilters.Choice choice) {
-        String current = selectedFilters.get(def.dimension);
-        if (choice.value.isEmpty()) selectedFilters.remove(def.dimension);
-        else if (choice.value.equals(current == null ? "" : current))
-            selectedFilters.remove(def.dimension); // 再点已选项 = 取消回全部
-        else selectedFilters.put(def.dimension, choice.value);
         AppLog.i(
                 "Filter",
-                "category="
-                        + selectedCategoryId
-                        + " tab="
-                        + def.label
-                        + " value="
-                        + choice.value);
-        homePendingTagFocus = def.dimension;
-        homeSkipFilterAnim = true;
-        hideMobileFilterOptions();
-        currentPage = 1;
-        if (homeFilterApply != null) homeFilterApply.run();
+                "tag click dim="
+                        + def.dimension
+                        + " panelBefore="
+                        + panelBefore
+                        + " panelAfter="
+                        + (homeFilterPanel.getVisibility() == View.VISIBLE ? 1 : 0)
+                        + " l3=open before="
+                        + l3Before);
         renderMobileFilterTags();
     }
 
@@ -2536,6 +2546,7 @@ final class MobileShell {
     void animatePanelHeight(
             android.view.View panel, int targetHeight, int durationMs, boolean collapse) {
         if (panel == null) return;
+        final int seq = ++homeFilterAnimSeq;
         if (homeFilterHeightAnim != null) {
             homeFilterHeightAnim.cancel();
             homeFilterHeightAnim = null;
@@ -2560,6 +2571,8 @@ final class MobileShell {
                     .setInterpolator(new android.view.animation.DecelerateInterpolator())
                     .withEndAction(
                             () -> {
+                                // 1.9.39：只有最新一次收起才允许隐藏，防止与展开动画竞争
+                                if (seq != homeFilterAnimSeq) return;
                                 panel.setVisibility(android.view.View.GONE);
                                 panel.setAlpha(1f);
                                 panel.setTranslationY(0);

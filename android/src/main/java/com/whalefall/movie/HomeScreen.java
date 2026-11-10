@@ -43,6 +43,7 @@ final class HomeScreen {
     String filterOpenDim = "";
     String filterPendingTag = "";
     boolean filterSkipAnim;
+    int filterAnimSeq;
     android.animation.ValueAnimator filterHeightAnim;
     /** 1.8.12 云盘配置原地容器（首页分类栏下方，默认隐藏）。 */
     LinearLayout cloudInline;
@@ -968,7 +969,8 @@ final class HomeScreen {
         filterTagRow.removeAllViews();
         List<VideoFilters.Definition> defs = filterDefinitions();
         if (defs.isEmpty()) {
-            collapseFilterUi();
+            // 1.9.39：标签渲染绝不收起面板
+            AppLog.i("Filter", "tags empty panelKeep=true");
             return;
         }
         filterTagScroll.setVisibility(View.VISIBLE);
@@ -1067,9 +1069,24 @@ final class HomeScreen {
     /** L3：单行横滚紧凑 chip（TV 34dp/10 间距）。 */
     void showFilterOptions(final VideoFilters.Definition def) {
         if (filterOptionScroll == null) return;
+        int panelBefore =
+                filterPanel != null && filterPanel.getVisibility() == View.VISIBLE ? 1 : 0;
+        boolean l3Before = filterOptionsVisible();
         if (def.dimension.equals(filterOpenDim)) {
+            // 1.9.39：只收起 L3，L2 面板必须保持可见
             hideFilterOptions();
             renderFilterTags();
+            if (filterPanel != null) filterPanel.setVisibility(View.VISIBLE);
+            AppLog.i(
+                    "Filter",
+                    "tag click dim="
+                            + def.dimension
+                            + " panelBefore="
+                            + panelBefore
+                            + " panelAfter="
+                            + (filterPanel.getVisibility() == View.VISIBLE ? 1 : 0)
+                            + " l3=closed before="
+                            + l3Before);
             return;
         }
         hideFilterOptions();
@@ -1141,6 +1158,16 @@ final class HomeScreen {
                         + " options="
                         + def.choices.size()
                         + " layout=scroll");
+        AppLog.i(
+                "Filter",
+                "tag click dim="
+                        + def.dimension
+                        + " panelBefore="
+                        + panelBefore
+                        + " panelAfter="
+                        + (filterPanel.getVisibility() == View.VISIBLE ? 1 : 0)
+                        + " l3=open before="
+                        + l3Before);
         animateFilterPanelHeight(filterPanel, measureFilterPanelHeight(filterPanel), 120);
     }
 
@@ -1174,6 +1201,7 @@ final class HomeScreen {
     /** 1.9.36：面板过渡改为 translationY+alpha（去掉逐帧 LayoutParams.height）。 */
     void animateFilterPanelHeight(View panel, int targetHeight, int durationMs) {
         if (panel == null) return;
+        final int seq = ++filterAnimSeq;
         boolean collapse = targetHeight == 0;
         if (filterHeightAnim != null) {
             filterHeightAnim.cancel();
@@ -1197,6 +1225,7 @@ final class HomeScreen {
                     .setInterpolator(new android.view.animation.DecelerateInterpolator())
                     .withEndAction(
                             () -> {
+                                if (seq != filterAnimSeq) return;
                                 panel.setVisibility(View.GONE);
                                 panel.setAlpha(1f);
                                 panel.setTranslationY(0);
