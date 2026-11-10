@@ -2059,13 +2059,15 @@ final class MobileShell {
     void handleMobileCategoryFilterTap() {
         if (homeFilterPanel == null) return;
         if (homeFilterPanel.getVisibility() != View.VISIBLE) {
+            AppLog.i("Filter", "tap state=tags category=" + selectedCategoryId);
             renderMobileFilterTags();
             return;
         }
         if (!mobileOptionsVisible()) {
             List<VideoFilters.Definition> defs = mobileFilterDefinitions();
             if (defs.isEmpty()) {
-                collapseMobileFilterUi();
+                AppLog.i("Filter", "tap state=tags category=" + selectedCategoryId + " reason=no-defs");
+                renderMobileFilterTags();
                 return;
             }
             VideoFilters.Definition target = defs.get(0);
@@ -2074,9 +2076,11 @@ final class MobileShell {
                     target = def;
                     break;
                 }
+            AppLog.i("Filter", "tap state=options category=" + selectedCategoryId + " tab=" + target.label);
             showMobileFilterOptions(target);
             return;
         }
+        AppLog.i("Filter", "tap state=collapse category=" + selectedCategoryId);
         collapseMobileFilterUi();
     }
 
@@ -2392,8 +2396,9 @@ final class MobileShell {
                         return;
                     }
                     hideCloudConfigInline();
-                    // 1.9.34：同一分类点击：第一次出 L2 → 第二次展开「类型」L3 → 第三次收起
-                    if (hasFilters && catId.equals(selectedCategoryId)) {
+                    // 1.9.35：点击时动态判断有筛选能力，避免刷新后 hasFilters 快照过期
+                    boolean liveHasFilters = hasMobileFiltersFor(catId);
+                    if (liveHasFilters && catId.equals(selectedCategoryId)) {
                         handleMobileCategoryFilterTap();
                         return;
                     }
@@ -2404,7 +2409,7 @@ final class MobileShell {
                     currentPage = 1;
                     refreshChips.run();
                     loadPage.run();
-                    if (hasFilters) renderMobileFilterTags();
+                    if (liveHasFilters) renderMobileFilterTags();
                 });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
         lp.rightMargin = a.dp(8);

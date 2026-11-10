@@ -838,6 +838,7 @@ final class HomeScreen {
     void handleCategoryFilterTap() {
         if (filterPanel == null) return;
         if (filterPanel.getVisibility() != View.VISIBLE) {
+            AppLog.i("Filter", "tap state=tags category=" + state.category);
             renderFilterTags();
             return;
         }
@@ -846,7 +847,8 @@ final class HomeScreen {
         if (!optionsVisible) {
             List<VideoFilters.Definition> defs = filterDefinitions();
             if (defs.isEmpty()) {
-                collapseFilterUi();
+                AppLog.i("Filter", "tap state=tags category=" + state.category + " reason=no-defs");
+                renderFilterTags();
                 return;
             }
             VideoFilters.Definition target = defs.get(0);
@@ -855,9 +857,11 @@ final class HomeScreen {
                     target = def;
                     break;
                 }
+            AppLog.i("Filter", "tap state=options category=" + state.category + " tab=" + target.label);
             showFilterOptions(target);
             return;
         }
+        AppLog.i("Filter", "tap state=collapse category=" + state.category);
         collapseFilterUi();
     }
 
