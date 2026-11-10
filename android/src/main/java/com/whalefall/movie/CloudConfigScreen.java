@@ -1,264 +1,170 @@
 package com.whalefall.movie;
 
-import android.content.ClipData;
-import android.content.ClipboardManager;
-import android.content.Context;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * 1.8.6「云盘配置」真数据页：读取 MDrive site 的 ext.Cloud-drive 相对地址，
- * 按配置源 origin 解析成完整 URL，worker 拉取文本并按行/JSON 解析网盘条目，
- * 显示真实「名称 + 地址」，支持复制地址与打开源面板；解析失败显示原文，不造假条目。
+ * 1.8.8「云盘配置」：友商风格的 5 张真实卡片（不再读 ext URL / 不展示 HTML 原文）：
+ * 登入自己网盘（四盘二维码）+ 清除夸克/UC/百度/阿里登录（真实清 prefs + WebView Cookie）。
+ * 源动作排序/推送卡因无法验证真实可用，已删除。
  */
 final class CloudConfigScreen {
     private CloudConfigScreen() {}
 
-    private static final class Item {
-        final String name;
-        final String address;
-
-        Item(String name, String address) {
-            this.name = name == null ? "" : name;
-            this.address = address == null ? "" : address;
-        }
-    }
+    private static final String[] DRIVES = {
+        NetdiskQrLogin.QUARK, NetdiskQrLogin.UC, NetdiskQrLogin.BAIDU, NetdiskQrLogin.ALI
+    };
 
     static void show(final MainActivity a) {
-        a.renderPage("云盘配置", "SOURCE · CLOUD DRIVE");
-        Cms.Site source = findSource(a);
-        String origin = a.configOrigin == null ? "" : a.configOrigin;
-        if (origin.isEmpty()) origin = a.prefs.getString(Prefs.ORIGIN, "");
-        String rel = extCloudDrive(source);
-        String extUrl = rel.isEmpty() ? "" : Cms.resolve(origin, rel);
-        AppLog.i(
-                "CloudConfig",
-                "origin=" + origin + " ext=" + rel + " extUrl=" + extUrl);
+        a.renderPage("云盘配置", "CLOUD DRIVE");
+        AppLog.i("CloudConfig", "cards=5 sourcePanel=true");
+        int widthDp = Math.round(a.windowWidth() / a.getResources().getDisplayMetrics().density);
+        int cols = widthDp < 360 ? 2 : widthDp < 600 ? 2 : widthDp < 900 ? 3 : 4;
+        LinearLayout grid = a.vertical();
+        LinearLayout row = a.row();
+        row.addView(loginCard(a), new LinearLayout.LayoutParams(0, a.dp(104), 1f));
+        int inRow = 1;
+        for (String drive : DRIVES) {
+            if (inRow >= cols) {
+                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+                rowLp.topMargin = a.dp(10);
+                grid.addView(row, rowLp);
+                row = a.row();
+                inRow = 0;
+            }
+            row.addView(clearCard(a, drive), new LinearLayout.LayoutParams(0, a.dp(104), 1f));
+            inRow++;
+        }
+        LinearLayout.LayoutParams lastLp = new LinearLayout.LayoutParams(-1, -2);
+        lastLp.topMargin = a.dp(10);
+        grid.addView(row, lastLp);
+        a.body.addView(grid, new LinearLayout.LayoutParams(-1, -2));
 
-        if (source == null) {
-            a.paragraph("未找到网盘来源（MDrive）站点。");
-            addSourcePanelButton(a);
+        TextView open = a.text("打开源插件账号面板", 13, 0xffffb3c8);
+        open.setGravity(Gravity.CENTER);
+        open.setPadding(a.dp(12), a.dp(12), a.dp(12), a.dp(12));
+        open.setBackground(MobileDetailScreen.glassBg(a, 0x24ff8fb1, 0x1affffff, 999));
+        open.setFocusable(true);
+        MobileDetailScreen.bindTouchFeedback(open);
+        open.setOnClickListener(
+                v -> new SettingsScreen(a).sourceAccountAction("LoginShow", null));
+        LinearLayout.LayoutParams openLp = new LinearLayout.LayoutParams(-1, a.dp(48));
+        openLp.topMargin = a.dp(16);
+        a.body.addView(open, openLp);
+    }
+
+    private static View loginCard(MainActivity a) {
+        return card(
+                a,
+                UiIcon.CLOUD,
+                "登入自己网盘",
+                "选择网盘后扫码登录",
+                () ->
+                        new AppDialog.Builder(a)
+                                .setTitle("选择要登录的网盘")
+                                .setItems(
+                                        new String[] {"夸克网盘", "UC 网盘", "百度网盘", "阿里云盘"},
+                                        (d, index) ->
+                                                NetdiskQrLogin.show(
+                                                        a,
+                                                        DRIVES[index],
+                                                        () ->
+                                                                a.ui.postDelayed(
+                                                                        () -> show(a), 200)))
+                                .setNegativeButton("取消", null)
+                                .show());
+    }
+
+    private static View clearCard(MainActivity a, final String drive) {
+        final boolean logged = NetdiskQrLogin.isLoggedIn(a, drive);
+        String status =
+                logged
+                        ? "已登录" + NetdiskQrLogin.capacityText(a, drive)
+                        : NetdiskQrLogin.hasCredential(a, drive) ? "登录信息未通过验证" : "未登录";
+        return card(
+                a,
+                logged ? UiIcon.INFO : UiIcon.REFRESH,
+                "清除" + NetdiskQrLogin.name(drive) + "登录",
+                status,
+                () -> clear(a, drive));
+    }
+
+    private static void clear(final MainActivity a, final String drive) {
+        if (!NetdiskQrLogin.hasCredential(a, drive)) {
+            a.toast("该盘当前未登录");
             return;
         }
-        if (extUrl.isEmpty()) {
-            a.paragraph("该来源没有配置 Cloud-drive 地址（ext.Cloud-drive 为空）。");
-            addOpenSourceButton(a, source);
-            return;
-        }
-        final TextView status = a.text("正在读取：" + extUrl, 11.5f, MainActivity.MUTED);
-        status.setSingleLine(false);
-        status.setPadding(0, a.dp(6), 0, a.dp(8));
-        a.body.addView(status);
-        final LinearLayout list = a.vertical();
-        a.body.addView(list, new LinearLayout.LayoutParams(-1, -2));
-        addOpenSourceButton(a, source);
-
-        a.worker.execute(
-                () -> {
-                    java.util.List<Item> items = new java.util.ArrayList<>();
-                    String raw = "";
-                    String error = "";
-                    try {
-                        raw = Cms.fetch(extUrl, source.headers);
-                        items = parse(raw);
-                        AppLog.i(
-                                "CloudConfig",
-                                "lines=" + countLines(raw) + " items=" + items.size());
-                    } catch (Throwable failure) {
-                        error = a.message(failure);
-                        AppLog.i("CloudConfig", "fetch error=" + failure.getClass().getSimpleName());
-                    }
-                    final java.util.List<Item> result = items;
-                    final String rawText = raw;
-                    final String failure = error;
-                    a.ui.post(
-                            () -> {
-                                if (a.body == null) return;
-                                status.setText(
-                                        failure.isEmpty()
-                                                ? "来源：" + extUrl + " · " + result.size() + " 条"
-                                                : "读取失败：" + failure);
-                                if (!failure.isEmpty()) {
-                                    if (!rawText.isEmpty()) {
-                                        TextView text = a.text(rawText, 11, MainActivity.MUTED);
-                                        text.setTextIsSelectable(true);
-                                        a.body.addView(text);
-                                    }
-                                    a.addButton(
-                                            a.body,
-                                            a.button(
-                                                    "重试",
-                                                    "cloud-config-retry",
-                                                    () -> show(a)));
-                                    return;
-                                }
-                                if (result.isEmpty()) {
-                                    a.paragraph("该地址没有解析到网盘条目。");
-                                    TextView text = a.text(rawText, 11, MainActivity.MUTED);
-                                    text.setTextIsSelectable(true);
-                                    a.body.addView(text);
-                                    return;
-                                }
-                                for (Item item : result) list.addView(row(a, item));
-                            });
-                });
+        NetdiskQrLogin.logout(a, drive);
+        clearWebCookies(drive);
+        a.toast("已清除" + NetdiskQrLogin.name(drive) + "登录");
+        AppLog.i("CloudConfig", "cleared drive=" + drive);
+        show(a);
     }
 
-    private static View row(MainActivity a, final Item item) {
-        LinearLayout row = a.vertical();
-        row.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
-        row.setBackground(MobileDetailScreen.glassBg(a, 0xcc16283f, 0xb3121d2e, 14));
-        TextView name = a.text(item.name, 14, MainActivity.WHITE);
-        name.setTypeface(null, android.graphics.Typeface.BOLD);
-        name.setMaxLines(1);
-        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        row.addView(name);
-        TextView address = a.text(item.address, 11, 0xff9fb0c9);
-        address.setMaxLines(2);
-        address.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams addressLp = new LinearLayout.LayoutParams(-1, -2);
-        addressLp.topMargin = a.dp(4);
-        row.addView(address, addressLp);
-        LinearLayout actions = a.row();
-        TextView copy = a.text("复制地址", 12, 0xffffb3c8);
-        copy.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
-        copy.setBackground(MobileDetailScreen.glassBg(a, 0x24ff8fb1, 0x1affffff, 999));
-        MobileDetailScreen.bindTouchFeedback(copy);
-        copy.setOnClickListener(
-                v -> {
-                    copyToClipboard(a, item.address);
-                    a.toast("已复制网盘地址");
-                });
-        LinearLayout.LayoutParams copyLp = new LinearLayout.LayoutParams(-2, -2);
-        copyLp.topMargin = a.dp(8);
-        actions.addView(copy, copyLp);
-        row.addView(actions);
-        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
-        rowLp.bottomMargin = a.dp(8);
-        row.setLayoutParams(rowLp);
-        return row;
-    }
-
-    private static void addSourcePanelButton(MainActivity a) {
-        a.addButton(
-                a.body,
-                a.button(
-                        "打开源面板",
-                        "cloud-config-source",
-                        () -> new SettingsScreen(a).sourceAccountAction("LoginShow", null)));
-    }
-
-    private static void addOpenSourceButton(final MainActivity a, final Cms.Site source) {
-        a.addButton(
-                a.body,
-                a.button(
-                        "打开源面板",
-                        "cloud-config-source",
-                        () -> new SettingsScreen(a).sourceAccountAction("LoginShow", null)));
-    }
-
-    private static void copyToClipboard(MainActivity a, String text) {
+    /** 同步清 WebView CookieManager 对应域，避免网页登录态残留。 */
+    private static void clearWebCookies(String drive) {
         try {
-            ClipboardManager manager =
-                    (ClipboardManager) a.getSystemService(Context.CLIPBOARD_SERVICE);
-            if (manager != null) manager.setPrimaryClip(ClipData.newPlainText("网盘地址", text));
-        } catch (Throwable ignored) {
-        }
-    }
-
-    static Cms.Site findSource(MainActivity a) {
-        if (a.config == null) return null;
-        for (Cms.Site site : a.config.sites) {
-            String api = site.api == null ? "" : site.api.toLowerCase(java.util.Locale.ROOT);
-            String name = site.name == null ? "" : site.name;
-            if (api.contains("mydrive") || name.contains("云盘") || name.contains("網盤")) {
-                return site;
+            android.webkit.CookieManager manager = android.webkit.CookieManager.getInstance();
+            String[] urls;
+            switch (drive) {
+                case NetdiskQrLogin.QUARK:
+                    urls = new String[] {"https://pan.quark.cn/", "https://quark.cn/"};
+                    break;
+                case NetdiskQrLogin.UC:
+                    urls = new String[] {"https://drive.uc.cn/", "https://pc-api.uc.cn/"};
+                    break;
+                case NetdiskQrLogin.BAIDU:
+                    urls = new String[] {"https://pan.baidu.com/", "https://passport.baidu.com/"};
+                    break;
+                default:
+                    urls = new String[] {"https://www.alipan.com/", "https://passport.aliyundrive.com/"};
+                    break;
             }
-        }
-        return null;
-    }
-
-    static String extCloudDrive(Cms.Site site) {
-        if (site == null || site.ext == null) return "";
-        try {
-            if (site.ext instanceof org.json.JSONObject) {
-                org.json.JSONObject ext = (org.json.JSONObject) site.ext;
-                for (String key : new String[] {"Cloud-drive", "cloud-drive", "CloudDrive", "cloud_drive"}) {
-                    String value = ext.optString(key, "").trim();
-                    if (!value.isEmpty()) return value;
-                }
-                return "";
-            }
-            String text = String.valueOf(site.ext).trim();
-            if (text.startsWith("{")) {
-                org.json.JSONObject ext = new org.json.JSONObject(text);
-                for (String key : new String[] {"Cloud-drive", "cloud-drive", "CloudDrive", "cloud_drive"}) {
-                    String value = ext.optString(key, "").trim();
-                    if (!value.isEmpty()) return value;
+            for (String url : urls) {
+                String cookie = manager.getCookie(url);
+                if (cookie == null || cookie.isEmpty()) continue;
+                for (String part : cookie.split(";")) {
+                    String name = part.split("=", 2)[0].trim();
+                    if (!name.isEmpty()) manager.setCookie(url, name + "=; Max-Age=0; path=/");
                 }
             }
-        } catch (Throwable ignored) {
+            manager.flush();
+        } catch (Throwable error) {
+            AppLog.w("CloudConfig", "clear web cookies failed", error);
         }
-        return "";
     }
 
-    /** 按行解析：支持 JSON（数组/对象）与「名称|地址|参数」纯文本。 */
-    static java.util.List<Item> parse(String raw) {
-        java.util.List<Item> items = new java.util.ArrayList<>();
-        if (raw == null) return items;
-        String text = raw.trim();
-        if (text.startsWith("[") || text.startsWith("{")) {
-            try {
-                Object parsed =
-                        text.startsWith("[")
-                                ? new org.json.JSONArray(text)
-                                : new org.json.JSONObject(text);
-                if (parsed instanceof org.json.JSONArray) {
-                    org.json.JSONArray arr = (org.json.JSONArray) parsed;
-                    for (int i = 0; i < arr.length(); i++) {
-                        org.json.JSONObject o = arr.optJSONObject(i);
-                        if (o == null) continue;
-                        String name = o.optString("name", o.optString("title", "网盘" + (i + 1)));
-                        String address = o.optString("url", o.optString("address", o.optString("path", "")));
-                        if (!name.isEmpty() || !address.isEmpty()) items.add(new Item(name, address));
-                    }
-                    if (!items.isEmpty()) return items;
-                } else {
-                    org.json.JSONObject o = (org.json.JSONObject) parsed;
-                    java.util.Iterator<String> keys = o.keys();
-                    while (keys.hasNext()) {
-                        String key = keys.next();
-                        Object value = o.opt(key);
-                        if (value instanceof String)
-                            items.add(new Item(key, String.valueOf(value)));
-                        else if (value instanceof org.json.JSONObject) {
-                            org.json.JSONObject obj = (org.json.JSONObject) value;
-                            String address =
-                                    obj.optString(
-                                            "url",
-                                            obj.optString(
-                                                    "address", obj.optString("path", "")));
-                            if (!address.isEmpty()) items.add(new Item(key, address));
-                        }
-                    }
-                    if (!items.isEmpty()) return items;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-        for (String line : raw.split("\r?\n")) {
-            String value = line.trim();
-            if (value.isEmpty() || value.startsWith("#") || value.startsWith("//")) continue;
-            String[] parts = value.split("\\s*[|｜]\\s*");
-            if (parts.length >= 2) items.add(new Item(parts[0], parts[1]));
-            else items.add(new Item(value, ""));
-        }
-        return items;
-    }
-
-    private static int countLines(String raw) {
-        return raw == null || raw.isEmpty() ? 0 : raw.split("\r?\n").length;
+    private static View card(
+            MainActivity a, int icon, String title, String subtitle, Runnable click) {
+        LinearLayout card = a.vertical();
+        card.setGravity(Gravity.CENTER);
+        card.setPadding(a.dp(10), a.dp(12), a.dp(10), a.dp(10));
+        card.setBackground(MobileDetailScreen.glassBg(a, 0xcc16283f, 0xb3121d2e, 16));
+        card.setFocusable(true);
+        MobileDetailScreen.bindTouchFeedback(card);
+        card.setOnClickListener(v -> click.run());
+        ImageView iconView = new ImageView(a);
+        iconView.setImageResource(UiIcon.res(icon));
+        iconView.setColorFilter(UiTokens.ACCENT, android.graphics.PorterDuff.Mode.SRC_IN);
+        card.addView(iconView, new LinearLayout.LayoutParams(a.dp(30), a.dp(30)));
+        TextView titleView = a.text(title, 13, MainActivity.WHITE);
+        titleView.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleView.setGravity(Gravity.CENTER);
+        titleView.setMaxLines(1);
+        titleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-1, -2);
+        titleLp.topMargin = a.dp(8);
+        card.addView(titleView, titleLp);
+        TextView sub = a.text(subtitle, 10.5f, MainActivity.MUTED);
+        sub.setGravity(Gravity.CENTER);
+        sub.setMaxLines(2);
+        sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
+        subLp.topMargin = a.dp(3);
+        card.addView(sub, subLp);
+        return card;
     }
 }

@@ -1,0 +1,245 @@
+package com.whalefall.movie;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import org.json.JSONObject;
+
+/** 夸克/UC 原生 API（OpenList quark_uc 移植；仅保留状态验证与容量）。 */
+final class QuarkUcApi {
+    static final class Provider {
+        final String key, name, api, pr, ua, referer, loginUrl;
+        final String[] cookieNames;
+
+        Provider(
+                String key,
+                String name,
+                String api,
+                String pr,
+                String ua,
+                String referer,
+                String loginUrl,
+                String[] cookieNames) {
+            this.key = key;
+            this.name = name;
+            this.api = api;
+            this.pr = pr;
+            this.ua = ua;
+            this.referer = referer;
+            this.loginUrl = loginUrl;
+            this.cookieNames = cookieNames;
+        }
+    }
+
+    static final Provider QUARK =
+            new Provider(
+                    "quark",
+                    "夸克",
+                    "https://drive.quark.cn/1/clouddrive",
+                    "ucpro",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                            + "(KHTML, like Gecko) quark-cloud-drive/2.5.20 Chrome/100.0 Safari/537.36",
+                    "https://pan.quark.cn",
+                    "https://pan.quark.cn/",
+                    new String[] {"__puus", "__pus"});
+    static final Provider UC =
+            new Provider(
+                    "uc",
+                    "UC",
+                    "https://pc-api.uc.cn/1/clouddrive",
+                    "UCBrowser",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                            + "(KHTML, like Gecko) uc-cloud-drive/2.5.20 Chrome/100.0 Safari/537.36",
+                    "https://drive.uc.cn",
+                    "https://drive.uc.cn/",
+                    new String[] {"__puus", "kps", "_uc_s"});
+
+    private QuarkUcApi() {}
+
+    static Provider of(String key) {
+        return "uc".equals(key) ? UC : QUARK;
+    }
+
+    static String cookie(MainActivity a, Provider p) {
+        return a.prefs.getString("quark_uc_cookie_" + p.key, "");
+    }
+
+    static boolean hasCookie(MainActivity a, Provider p) {
+        return cookie(a, p).contains("=");
+    }
+
+    static boolean isLoggedIn(MainActivity a, Provider p) {
+        return hasCookie(a, p) && a.prefs.getBoolean("quark_uc_verified_" + p.key, false);
+    }
+
+    static long total(MainActivity a, Provider p) {
+        return a.prefs.getLong("quark_uc_total_" + p.key, 0);
+    }
+
+    static long used(MainActivity a, Provider p) {
+        return a.prefs.getLong("quark_uc_used_" + p.key, 0);
+    }
+
+    static void saveCookie(MainActivity a, Provider p, String value) {
+        a.prefs.edit()
+                .putString("quark_uc_cookie_" + p.key, value)
+                .putBoolean("quark_uc_verified_" + p.key, false)
+                .apply();
+    }
+
+    static void logout(MainActivity a, Provider p) {
+        a.prefs.edit()
+                .remove("quark_uc_cookie_" + p.key)
+                .remove("quark_uc_verified_" + p.key)
+                .remove("quark_uc_total_" + p.key)
+                .remove("quark_uc_used_" + p.key)
+                .apply();
+        AppLog.i("QuarkUc", "logout provider=" + p.key);
+    }
+
+    static final class Status {
+        final boolean logged;
+        final long total, used;
+        final String error;
+
+        Status(boolean logged, long total, long used, String error) {
+            this.logged = logged;
+            this.total = total;
+            this.used = used;
+            this.error = error == null ? "" : error;
+        }
+    }
+
+    interface Callback {
+        void ready(Status status);
+    }
+
+    /** 异步验证（worker→UI），成功后写 verified/容量。 */
+    static void verify(final MainActivity a, final Provider p, final Callback callback) {
+        final String cookie = cookie(a, p);
+        a.worker.execute(
+                () -> {
+                    Status status;
+                    try {
+                        if (cookie.isEmpty()) throw new IOException("没有保存的 Cookie");
+                        status = member(p, cookie);
+                        a.prefs.edit()
+                                .putBoolean("quark_uc_verified_" + p.key, true)
+                                .putLong("quark_uc_total_" + p.key, status.total)
+                                .putLong("quark_uc_used_" + p.key, status.used)
+                                .apply();
+                        AppLog.i("QuarkUc", "verify provider=" + p.key + " result=ok");
+                    } catch (Throwable error) {
+                        status = new Status(false, 0, 0, error.getMessage());
+                        a.prefs.edit().putBoolean("quark_uc_verified_" + p.key, false).apply();
+                        AppLog.i("QuarkUc", "verify provider=" + p.key + " error=" + status.error);
+                    }
+                    final Status result = status;
+                    a.ui.post(() -> callback.ready(result));
+                });
+    }
+
+    static Status member(Provider p, String cookie) throws Exception {        JSONObject json =
+                request(
+                        p,
+                        "/member",
+                        mapOf("fetch_subscribe", "false", "_ch", "home", "fetch_identity", "false"),
+                        null,
+                        cookie);
+        JSONObject data = json.optJSONObject("data");
+        return new Status(
+                true,
+                data == null ? 0 : data.optLong("total_capacity", 0),
+                data == null ? 0 : data.optLong("use_capacity", 0),
+                "");
+    }
+
+    static JSONObject request(
+            Provider p,
+            String pathname,
+            Map<String, String> query,
+            String body,
+            String cookie)
+            throws Exception {
+        StringBuilder url = new StringBuilder(p.api).append(pathname);
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("pr", p.pr);
+        params.put("fr", "pc");
+        if (query != null) params.putAll(query);
+        boolean first = true;
+        for (Map.Entry<String, String> entry : params.entrySet()) {
+            url.append(first ? '?' : '&');
+            first = false;
+            url.append(java.net.URLEncoder.encode(entry.getKey(), "UTF-8"))
+                    .append('=')
+                    .append(java.net.URLEncoder.encode(entry.getValue(), "UTF-8"));
+        }
+        HttpURLConnection connection = (HttpURLConnection) new URL(url.toString()).openConnection();
+        try {
+            connection.setRequestMethod(body == null ? "GET" : "POST");
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(15000);
+            connection.setInstanceFollowRedirects(true);
+            connection.setRequestProperty("Cookie", cookie == null ? "" : cookie);
+            connection.setRequestProperty("Accept", "application/json, text/plain, */*");
+            connection.setRequestProperty("Referer", p.referer);
+            connection.setRequestProperty("User-Agent", p.ua);
+            if (body != null) {
+                byte[] bytes = body.getBytes("UTF-8");
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
+                connection.setFixedLengthStreamingMode(bytes.length);
+                try (java.io.OutputStream out = connection.getOutputStream()) {
+                    out.write(bytes);
+                }
+            }
+            int status = connection.getResponseCode();
+            InputStream input =
+                    status >= 200 && status < 400
+                            ? connection.getInputStream()
+                            : connection.getErrorStream();
+            String text = read(input);
+            if (status < 200 || status >= 300) throw new IOException("HTTP " + status);
+            JSONObject json = new JSONObject(text);
+            if (json.optInt("status", 200) >= 400 || json.optInt("code", 0) != 0)
+                throw new IOException("code=" + json.optInt("code", 0));
+            return json;
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private static String read(InputStream input) throws Exception {
+        if (input == null) return "";
+        try (InputStream in = input;
+                ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = in.read(buffer)) != -1) {
+                out.write(buffer, 0, n);
+                if (out.size() > 1024 * 1024) throw new IOException("响应过大");
+            }
+            return out.toString("UTF-8");
+        }
+    }
+
+    static Map<String, String> mapOf(String... pairs) {
+        Map<String, String> map = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < pairs.length; i += 2) map.put(pairs[i], pairs[i + 1]);
+        return map;
+    }
+
+    static String formatSize(long bytes) {
+        if (bytes <= 0) return "0 B";
+        if (bytes >= 1024L * 1024 * 1024)
+            return String.format(java.util.Locale.ROOT, "%.1f GB", bytes / 1073741824f);
+        if (bytes >= 1024L * 1024)
+            return String.format(java.util.Locale.ROOT, "%.1f MB", bytes / 1048576f);
+        if (bytes >= 1024) return String.format(java.util.Locale.ROOT, "%.1f KB", bytes / 1024f);
+        return bytes + " B";
+    }
+}

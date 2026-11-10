@@ -89,7 +89,11 @@ final class ConfigHistory {
                 MobileDetailScreen.bindTouchFeedback(text);
                 text.setOnClickListener(
                         v -> {
-                            onPick.ready(address);
+                            try {
+                                onPick.accept(address);
+                            } catch (Exception error) {
+                                a.toast("导入失败：" + a.message(error));
+                            }
                         });
                 row.addView(text, new LinearLayout.LayoutParams(0, a.dp(40), 1f));
                 TextView del = a.text("删除", 12, 0xffef4444);
