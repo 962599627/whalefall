@@ -85,6 +85,7 @@ final class MobileShell {
     LinearLayout homeStatusWrapRef;
     TextView homeLoadMoreRef;
     TextView homeFilterBtnRef;
+    boolean cloudInlineActive;
 
     /** 1.8.10：原地渲染 4 盘卡片（简化实现，不依赖 CloudConfigScreen 页面容器）。 */
     private void showCloudConfigInline() {
@@ -95,14 +96,36 @@ final class MobileShell {
         try {
             homeCloudHolder.removeAllViews();
             homeCloudHolder.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+            homeCloudHolder.setMinimumHeight(a.dp(360));
             homeCloudHolder.setVisibility(View.VISIBLE);
             homeCloudHolder.requestLayout();
-            if (homeRecyclerRef != null) homeRecyclerRef.setVisibility(View.GONE);
+            // 1.8.13 根因：holder 在 header item 内，隐藏 recycler 会连同 holder 一起隐藏。
+            // 改为 recycler 保持可见，仅让 adapter 只显示 header item（含 holder）。
+            cloudInlineActive = true;
             if (homeStatusWrapRef != null) homeStatusWrapRef.setVisibility(View.GONE);
             if (homeLoadMoreRef != null) homeLoadMoreRef.setVisibility(View.GONE);
             if (homeFilterBtnRef != null) homeFilterBtnRef.setVisibility(View.GONE);
+            if (homeAdapter != null) homeAdapter.notifyDataSetChanged();
+            if (homeList != null) homeList.scrollToPosition(0);
             buildCloudRowsInline();
-            int rows = homeCloudHolder.getChildCount();
+            final LinearLayout holder = homeCloudHolder;
+            holder.post(
+                    () -> AppLog.i(
+                            "CloudConfig",
+                            "holder parent="
+                                    + (holder.getParent() == null
+                                            ? "null"
+                                            : holder.getParent().getClass().getSimpleName())
+                                    + " w="
+                                    + holder.getWidth()
+                                    + " h="
+                                    + holder.getHeight()
+                                    + " y="
+                                    + holder.getY()
+                                    + " alpha="
+                                    + holder.getAlpha()
+                                    + " childCount="
+                                    + holder.getChildCount()));
             AppLog.i(
                     "CloudConfig",
                     "inline show holder="
@@ -110,7 +133,7 @@ final class MobileShell {
                             + " visible="
                             + (homeCloudHolder.getVisibility() == View.VISIBLE)
                             + " rows="
-                            + rows
+                            + homeCloudHolder.getChildCount()
                             + " error=");
         } catch (Throwable error) {
             AppLog.w("CloudConfig", "inline show failed", error);
@@ -133,7 +156,9 @@ final class MobileShell {
     private void hideCloudConfigInline() {
         if (homeCloudHolder == null) return;
         homeCloudHolder.setVisibility(View.GONE);
-        if (homeRecyclerRef != null) homeRecyclerRef.setVisibility(View.VISIBLE);
+        homeCloudHolder.setMinimumHeight(0);
+        cloudInlineActive = false;
+        if (homeAdapter != null) homeAdapter.notifyDataSetChanged();
         if (homeStatusWrapRef != null) homeStatusWrapRef.setVisibility(View.VISIBLE);
         if (homeFilterBtnRef != null) homeFilterBtnRef.setVisibility(View.VISIBLE);
     }
@@ -1964,6 +1989,7 @@ final class MobileShell {
 
         @Override
         public int getItemCount() {
+            if (cloudInlineActive) return 1; // 云盘配置：只显示 header item（holder 在其中）
             return 2 + rowCount;
         }
 
