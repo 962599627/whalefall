@@ -214,15 +214,35 @@ final class ExtraPages {
                 body,
                 "临时缓存（图片/网页/JS 模块/磁力临时文件）",
                 cacheBytes,
-                () -> clearDir(cache, false));
-        storageRow(a, body, "已下载的更新安装包", dirSize(updates), () -> clearDir(updates, true));
-        storageRow(a, body, "插件缓存（JS/PY/JAR 运行缓存）", cspBytes, () -> clearDir(csp, true));
-        storageRow(a, body, "运行日志", logBytes, () -> clearLogs(a));
+                "清理",
+                () -> cleanAction(a, "临时缓存", clearDir(cache, false)));
+        storageRow(
+                a,
+                body,
+                "已下载的更新安装包",
+                dirSize(updates),
+                "清理",
+                () -> cleanAction(a, "更新安装包", clearDir(updates, true)));
+        storageRow(
+                a,
+                body,
+                "插件缓存（JS/PY/JAR 运行缓存）",
+                cspBytes,
+                "清理",
+                () -> cleanAction(a, "插件缓存", clearDir(csp, true)));
+        storageRow(
+                a,
+                body,
+                "运行日志",
+                logBytes,
+                "清理",
+                () -> cleanAction(a, "运行日志", clearLogs(a)));
         storageRow(
                 a,
                 body,
                 "文件管理里上传的文件",
                 pushBytes,
+                "查看",
                 () -> FilesScreen.show(a));
         a.gap(body, 12);
         settingCard(
@@ -232,12 +252,32 @@ final class ExtraPages {
                 "一键清理全部缓存",
                 "清理临时缓存、插件缓存和日志；不会删除观看历史、收藏和上传的文件",
                 () -> {
-                    clearDir(cache, true);
-                    clearDir(csp, true);
-                    clearLogs(a);
-                    a.toast("缓存已清理");
+                    long freed = 0;
+                    freed += clearDir(cache, true);
+                    freed += clearDir(csp, true);
+                    freed += clearLogs(a);
+                    if (freed > 0) {
+                        a.toast(
+                                "已清理全部缓存，释放 "
+                                        + android.text.format.Formatter.formatFileSize(a, freed));
+                    } else {
+                        a.toast("没有可清理的内容");
+                    }
                     a.refresh();
                 });
+    }
+
+    /** 1.9.16：单行清理统一提示 + 刷新页面。 */
+    private static void cleanAction(MainActivity a, String what, long freed) {
+        AppLog.i("Storage", "clean what=" + what + " freed=" + freed);
+        if (freed > 0) {
+            a.toast(
+                    "已清理" + what + "，释放 "
+                            + android.text.format.Formatter.formatFileSize(a, freed));
+            a.refresh();
+        } else {
+            a.toast("没有可清理的内容");
+        }
     }
 
     /** 遥控器按键说明：电视端遥控器 / 键盘 / 手机手势对照。 */
@@ -629,7 +669,12 @@ final class ExtraPages {
     }
 
     private static void storageRow(
-            MainActivity a, LinearLayout body, String label, long bytes, Runnable action) {
+            MainActivity a,
+            LinearLayout body,
+            String label,
+            long bytes,
+            String actionLabel,
+            Runnable action) {
         LinearLayout row = a.row();
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setMinimumHeight(a.isTvDevice() ? a.dp(64) : 0);
@@ -648,7 +693,7 @@ final class ExtraPages {
         size.setPadding(0, a.dp(3), 0, 0);
         text.addView(size);
         row.addView(text, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView clean = a.text("清理", a.isTvDevice() ? 13 : 12, 0xffff8fb1);
+        TextView clean = a.text(actionLabel, a.isTvDevice() ? 13 : 12, 0xffff8fb1);
         clean.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
         if (a.isTvDevice()) clean.setMinHeight(a.dp(44));
         clean.setBackground(
@@ -746,23 +791,31 @@ final class ExtraPages {
         return bytes;
     }
 
-    private static void clearLogs(MainActivity a) {
+    private static long clearLogs(MainActivity a) {
+        long before = logBytes(a);
         java.io.File dir = a.getFilesDir();
         java.io.File[] files = dir == null ? null : dir.listFiles();
-        if (files == null) return;
+        if (files == null) return 0;
         for (java.io.File f : files) {
             String name = f.getName();
             if (f.isFile() && (name.endsWith(".log") || name.equals("crash-last.txt")))
                 f.delete();
         }
+        return Math.max(0, before - logBytes(a));
     }
 
-    private static void clearDir(java.io.File dir, boolean removeRoot) {
-        if (dir == null || !dir.exists()) return;
+    private static long clearDir(java.io.File dir, boolean removeRoot) {
+        if (dir == null || !dir.exists()) return 0;
+        long before = dirSize(dir);
+        deleteContents(dir, removeRoot);
+        return Math.max(0, before - dirSize(dir));
+    }
+
+    private static void deleteContents(java.io.File dir, boolean removeRoot) {
         java.io.File[] children = dir.listFiles();
         if (children != null)
             for (java.io.File child : children) {
-                if (child.isDirectory()) clearDir(child, true);
+                if (child.isDirectory()) deleteContents(child, true);
                 else child.delete();
             }
         if (removeRoot) dir.delete();

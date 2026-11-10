@@ -148,8 +148,8 @@ final class DownloadCenterScreen {
                                     new AppDialog.Builder(a)
                                             .setTitle("无法重试")
                                             .setMessage(
-                                                    "夸克非会员下载限制（code 23018）：该文件超过账号允许的下载大小，"
-                                                            + "开通会员或改在源里观看。")
+                                                    "夸克账号 API 下载限制（官方 App 可用）：浏览器 Cookie 调用 API 被限制（code 23018）。"
+                                                            + "可改用网页播放，或在官方 App 内下载。")
                                             .setPositiveButton("关闭", (d, i) -> {})
                                             .setNeutralButton(
                                                     "复制日志",

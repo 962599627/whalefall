@@ -1600,6 +1600,12 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (tvPlayer != null && tvPlayer.back()) return;
+        // 1.9.17：网页播放（先退全屏再离开）
+        if (body != null && "web-player".equals(body.getTag())) {
+            if (WebPlayerScreen.handleBack(this)) return;
+            FileManagerScreen.show(this);
+            return;
+        }
         // 1.9.11：网盘诊断返回文件管理器
         if (body != null && "netdisk-diag".equals(body.getTag())) {
             FileManagerScreen.show(this);

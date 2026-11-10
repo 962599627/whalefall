@@ -360,6 +360,10 @@ final class QuarkUcApi {
     static final String UA_CHROME =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    static final String UA_QUARK_DESKTOP =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    + "(KHTML, like Gecko) quark-cloud-drive/2.5.56 Chrome/100.0.4896.127 Safari/537.36";
+
     static final String UA_OKHTTP = "okhttp/3.15";
     static final String UA_QUARK_APP =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -388,12 +392,12 @@ final class QuarkUcApi {
         String[] endpoints =
                 "quark".equals(p.key)
                         ? new String[] {
-                            "https://drive-pc.quark.cn/1/clouddrive/file/download?pr=ucpro&fr=pc",
-                            "https://drive.quark.cn/1/clouddrive/file/download?pr=ucpro&fr=pc"
+                            "https://drive-pc.quark.cn/1/clouddrive/file/download?pr=ucpro&fr=pc&sys=win32&ve=2.5.56&ut=&guid=",
+                            "https://drive.quark.cn/1/clouddrive/file/download?pr=ucpro&fr=pc&sys=win32&ve=2.5.56&ut=&guid="
                         }
                         : new String[] {
-                            "https://pc-api.uc.cn/1/clouddrive/file/download?pr=UCBrowser&fr=pc",
-                            "https://drive.uc.cn/1/clouddrive/file/download?pr=UCBrowser&fr=pc"
+                            "https://pc-api.uc.cn/1/clouddrive/file/download?pr=UCBrowser&fr=pc&sys=win32&ve=2.5.56&ut=&guid=",
+                            "https://drive.uc.cn/1/clouddrive/file/download?pr=UCBrowser&fr=pc&sys=win32&ve=2.5.56&ut=&guid="
                         };
         java.util.List<String> bodies = new java.util.ArrayList<>();
         bodies.add(new JSONObject().put("fids", new org.json.JSONArray().put(fid)).toString());
@@ -423,7 +427,7 @@ final class QuarkUcApi {
                     connection.setRequestProperty(
                             "Content-Type", "application/json;charset=UTF-8");
                     connection.setRequestProperty("Accept", "application/json, text/plain, */*");
-                    connection.setRequestProperty("User-Agent", UA_CHROME);
+                    connection.setRequestProperty("User-Agent", UA_QUARK_DESKTOP);
                     connection.setRequestProperty("Referer", p.referer);
                     java.io.OutputStream out = connection.getOutputStream();
                     out.write(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -447,6 +451,7 @@ final class QuarkUcApi {
                                     + android.net.Uri.parse(endpoint).getHost()
                                     + " status="
                                     + status
+                                    + " params=sys-ve"
                                     + " body="
                                     + masked);
                     if (status == 403 || status == 412) {
@@ -457,8 +462,8 @@ final class QuarkUcApi {
                     if (text != null && (text.contains("23018") || text.contains("size limit"))) {
                         AppLog.i("QuarkGet", "download-api limit code=23018 fid=" + fid);
                         throw new LimitException(
-                                "该文件超过夸克非会员下载限制（code 23018），无法直接下载；"
-                                        + "可在源里观看或开通会员后重试。");
+                                "夸克账号 API 下载限制（官方 App 可用）：该文件超过浏览器 Cookie 调用 API 的下载限制（code 23018），"
+                                        + "可改用网页播放或在源里观看；开通会员后可在官方 App 下载。");
                     }
                     if (status < 200 || status >= 300) {
                         last =
@@ -531,7 +536,7 @@ final class QuarkUcApi {
                     connection.setRequestProperty("Cookie", fresh == null ? "" : fresh);
                     connection.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
                     connection.setRequestProperty("Accept", "application/json, text/plain, */*");
-                    connection.setRequestProperty("User-Agent", UA_CHROME);
+                    connection.setRequestProperty("User-Agent", UA_QUARK_DESKTOP);
                     connection.setRequestProperty("Referer", p.referer);
                     java.io.OutputStream out = connection.getOutputStream();
                     out.write(body.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));

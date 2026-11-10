@@ -776,8 +776,8 @@ final class FileManagerCore {
                         a.ui.post(
                                 () ->
                                         a.notice(
-                                                "该文件受账号限制（转码/直链均不可用），建议在源里观看；"
-                                                        + "如为超大文件也可能触发夸克非会员下载限制（code 23018）。"));
+                                                "该文件受账号/API 限制（转码、直链均不可用），建议改用「网页播放」或在源里观看；"
+                                                        + "超大文件也可能触发夸克 API 下载限制（code 23018，官方 App 正常）。"));
                         return;
                     }
                     final Map<String, String> headers = new LinkedHashMap<>();

@@ -1133,12 +1133,28 @@ final class FileManagerScreen {
                         refresh();
                     } else if (item.video) {
                         AppLog.i("FileMgr", "open netdisk video fid=" + item.fid);
-                        FileManagerCore.playRemote(
-                                a,
-                                QuarkUcApi.of(providerKey),
-                                netdiskCookie,
-                                item,
-                                netdiskFromSource);
+                        final QuarkUcApi.FileItem videoItem = item;
+                        new AppDialog.Builder(a)
+                                .setTitle("播放：" + item.name)
+                                .setItems(
+                                        new String[] {"播放（转码 / 直链）", "网页播放（推荐兜底）"},
+                                        (d, which) -> {
+                                            if (which == 0) {
+                                                FileManagerCore.playRemote(
+                                                        a,
+                                                        QuarkUcApi.of(providerKey),
+                                                        netdiskCookie,
+                                                        videoItem,
+                                                        netdiskFromSource);
+                                            } else {
+                                                WebPlayerScreen.show(
+                                                        a,
+                                                        providerKey,
+                                                        netdiskCookie,
+                                                        videoItem.fid);
+                                            }
+                                        })
+                                .show();
                     } else if (TextViewerScreen.isImageName(item.name)) {
                         downloadForView(item, true);
                     } else if (TextViewerScreen.isTextName(item.name)) {
