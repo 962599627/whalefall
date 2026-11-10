@@ -76,6 +76,8 @@ final class VideoFilters {
                 JSONObject group = groups.optJSONObject(i);
                 if (group == null) continue;
                 String key = group.optString("key"), label = group.optString("name");
+                if (label.isEmpty()) label = group.optString("label");
+                if (label.isEmpty()) label = group.optString("title");
                 String dim = dimension(key, label);
                 if (dim.isEmpty()) {
                     if (!rawKeys) continue;
@@ -84,13 +86,14 @@ final class VideoFilters {
                 if (dim.isEmpty() || key.isEmpty() || key.length() > 64) continue;
                 JSONArray values = group.optJSONArray("value");
                 if (values == null) values = group.optJSONArray("values");
-                Definition def =
-                        new Definition(
-                                dim,
-                                key,
-                                rawKeys && dim.equals(key) ? (label.isEmpty() ? key : label)
-                                        : LABELS[Arrays.asList(DIMENSIONS).indexOf(dim)],
-                                true);
+                // 1.9.47：标签用爬虫返回的中文 name；没有 name 才回退 key
+                String displayLabel =
+                        !label.isEmpty()
+                                ? label
+                                : (Arrays.asList(DIMENSIONS).contains(dim)
+                                        ? LABELS[Arrays.asList(DIMENSIONS).indexOf(dim)]
+                                        : key);
+                Definition def = new Definition(dim, key, displayLabel, true);
                 Set<String> seen = new HashSet<>();
                 seen.add("");
                 if (values != null)
@@ -108,6 +111,16 @@ final class VideoFilters {
                         if (!value.isEmpty() && !name.isEmpty() && seen.add(value))
                             def.choices.add(new Choice(name, value));
                     }
+                AppLog.i(
+                        "Filter",
+                        "schema dim="
+                                + def.dimension
+                                + " key="
+                                + def.key
+                                + " label="
+                                + def.label
+                                + " options="
+                                + (def.choices.size() - 1));
                 if (def.choices.size() > 1) remote.put(dim, def);
             }
         } catch (Throwable ignored) {
