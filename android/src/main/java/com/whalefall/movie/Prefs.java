@@ -222,7 +222,8 @@ final class Prefs {
     }
 
     static int clampWallpaperDim(int dim) {
-        return Math.max(0, Math.min(100, dim));
+        // 1.8.24：下限 20%，避免亮壁纸 + dim=0 时白字不可读
+        return Math.max(20, Math.min(100, dim));
     }
 
     static int clampSubtitleSize(int size) {

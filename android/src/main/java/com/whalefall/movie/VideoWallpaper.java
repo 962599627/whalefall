@@ -53,7 +53,7 @@ final class VideoWallpaper extends FrameLayout {
     }
 
     void applyDim(int percent) {
-        int level = Math.max(0, Math.min(100, percent));
+        int level = Math.max(20, Math.min(100, percent));
         dim.setBackgroundColor(Color.argb(Math.round(level * 2.55f), 4, 8, 18));
     }
 

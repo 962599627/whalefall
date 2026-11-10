@@ -809,6 +809,17 @@ final class MobileShell {
 
         for (int pos = 0; pos < DOCK_TAB_INDICES.length; pos++) {
             final int tabIdx = DOCK_TAB_INDICES[pos];
+            // 防御：任何数组长度不匹配都不允许崩溃（历史 AIOOBE length=6 index=6）
+            if (tabIdx < 0
+                    || tabIdx >= navKeys.length
+                    || tabIdx >= TAB_NAMES.length
+                    || tabIdx >= navLabels.length
+                    || tabIdx >= navIcons.length
+                    || tabIdx >= navTabs.length) {
+                AppLog.w("Nav", "skip out-of-range tabIdx=" + tabIdx
+                        + " navKeys=" + navKeys.length + " TAB_NAMES=" + TAB_NAMES.length);
+                continue;
+            }
             LinearLayout tab = a.vertical();
             tab.setTag(navKeys[tabIdx]);
             tab.setGravity(Gravity.CENTER);

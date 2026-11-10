@@ -266,8 +266,10 @@ final class NetdiskQrLogin {
         }
         refresh.requestFocus();
 
-        final boolean[] closed = {false};
-        dialog.setOnDismissListener(d -> closed[0] = true);
+        final int pageGen = a.generation;
+        final java.util.concurrent.atomic.AtomicBoolean closed =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        dialog.setOnDismissListener(d -> closed.set(true));
         a.worker.execute(
                 () -> {
                     try {
@@ -277,11 +279,12 @@ final class NetdiskQrLogin {
                         Bitmap bitmap = PanQr.render(session.content, 640);
                         a.ui.post(
                                 () -> {
+                                    if (!alive(a, pageGen, closed)) return;
                                     if (bitmap != null) qr.setImageBitmap(bitmap);
                                     status.setText("请使用" + name(drive) + " App 扫码");
                                 });
                         long deadline = System.currentTimeMillis() + 180000;
-                        while (System.currentTimeMillis() < deadline && !closed[0]) {
+                        while (System.currentTimeMillis() < deadline && alive(a, pageGen, closed)) {
                             Thread.sleep(1800);
                             int state = poll(drive, session);
                             AppLog.i("NetdiskQr", "poll drive=" + drive + " state=" + state);
@@ -289,6 +292,7 @@ final class NetdiskQrLogin {
                                 saveCredential(a, drive, session);
                                 a.ui.post(
                                         () -> {
+                                            if (!alive(a, pageGen, closed)) return;
                                             dialog.dismiss();
                                             a.toast(name(drive) + "扫码成功，正在验证…");
                                             validate(a, drive, onChanged);
@@ -296,16 +300,34 @@ final class NetdiskQrLogin {
                                 return;
                             }
                             if (state == 3) {
-                                a.ui.post(() -> status.setText("二维码已过期，请刷新"));
+                                a.ui.post(
+                                        () -> {
+                                            if (!alive(a, pageGen, closed)) return;
+                                            status.setText("二维码已过期，请刷新");
+                                        });
                                 return;
                             }
                         }
-                        a.ui.post(() -> status.setText("二维码已过期，请刷新"));
+                        a.ui.post(
+                                () -> {
+                                    if (!alive(a, pageGen, closed)) return;
+                                    status.setText("二维码已过期，请刷新");
+                                });
                     } catch (Throwable error) {
                         AppLog.i("NetdiskQr", "generate drive=" + drive + " error=" + error.getClass().getSimpleName());
-                        a.ui.post(() -> status.setText("获取二维码失败：" + error.getMessage()));
+                        a.ui.post(
+                                () -> {
+                                    if (!alive(a, pageGen, closed)) return;
+                                    status.setText("获取二维码失败：" + error.getMessage());
+                                });
                     }
                 });
+    }
+
+    /** 1.8.24：轮询生命周期守卫（弹窗关闭/App 结束/切页）。 */
+    private static boolean alive(
+            MainActivity a, int pageGen, java.util.concurrent.atomic.AtomicBoolean closed) {
+        return !closed.get() && !a.isFinishing() && !a.isDestroyed() && pageGen == a.generation;
     }
 
     private static final class QrSession {

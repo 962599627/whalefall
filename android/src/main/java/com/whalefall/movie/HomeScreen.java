@@ -341,6 +341,20 @@ final class HomeScreen {
         a.homeDock = retainedDock;
         a.homeAmbient = ambient;
         a.setContentView(retainedRoot);
+        // 1.8.24：resume 时按当前安全模式状态重铺壁纸/安全底，避免设置页开关后返回仍黑
+        if (retainedRoot != null) {
+            if (SafeMode.enabled(a)) {
+                a.applySafeModeVisual();
+            } else {
+                a.applySafeModeVisual();
+                a.applyWallpaper(retainedRoot);
+            }
+            AppLog.i(
+                    "Wallpaper",
+                    "page=HomeScreen resume safe="
+                            + SafeMode.enabled(a)
+                            + " bg=transparent");
+        }
         int drawn = state.windowStart;
         for (List<View> row : rows) drawn += row.size();
         if (drawn < windowEnd()) appendCards(drawn, gridEpoch, true);

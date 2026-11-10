@@ -1136,30 +1136,13 @@ public final class MainActivity extends Activity {
     void applyWallpaper(android.widget.FrameLayout target) {
         if (target == null) return;
         if (SafeMode.enabled(this)) {
-            // 1.8.5：安全模式下不仅阻止新增，还要清掉目标页已有的壁纸层（幂等，任何页面渲染都生效）
-            int removed = 0;
-            for (int i = target.getChildCount() - 1; i >= 0; i--) {
-                View child = target.getChildAt(i);
-                Object tag = child.getTag();
-                if (BACKDROP_TAG.equals(tag) || WALLPAPER_TAG.equals(tag)) {
+            // 1.8.5/1.8.24：安全模式下清掉已有壁纸层（含 wallpaper-video），并补深色安全底
+            clearWallpaperLayers(target, false);
+            for (int i = target.getChildCount() - 1; i >= 0; i--)
+                if (SAFE_BACKDROP_TAG.equals(target.getChildAt(i).getTag()))
                     target.removeViewAt(i);
-                    removed++;
-                }
-            }
-            if (videoWallpaper != null) {
-                try {
-                    videoWallpaper.release();
-                } catch (Throwable ignored) {
-                }
-                videoWallpaper = null;
-            }
-            AppLog.i(
-                    "SafeMode",
-                    "apply wallpaper cleared root="
-                            + System.identityHashCode(target)
-                            + " layers="
-                            + removed);
             applySafeBackdrop(target);
+            AppLog.i("SafeMode", "apply wallpaper cleared root=" + System.identityHashCode(target));
             return;
         }
         // 播放页是纯黑视频页（root 由 PlaybackController 创建并打 player-surface tag）：
@@ -1290,37 +1273,21 @@ public final class MainActivity extends Activity {
             return;
         }
         if (SafeMode.enabled(this)) {
-            for (int i = target.getChildCount() - 1; i >= 0; i--) {
-                View child = target.getChildAt(i);
-                Object tag = child.getTag();
-                if (BACKDROP_TAG.equals(tag) || WALLPAPER_TAG.equals(tag))
+            // 1.8.24：清壁纸层时把 VideoWallpaper 的 wallpaper-video 孤儿层一起摘掉
+            clearWallpaperLayers(target, false);
+            for (int i = target.getChildCount() - 1; i >= 0; i--)
+                if (SAFE_BACKDROP_TAG.equals(target.getChildAt(i).getTag()))
                     target.removeViewAt(i);
-            }
-            if (videoWallpaper != null) {
-                try {
-                    videoWallpaper.release();
-                } catch (Throwable ignored) {
-                }
-                videoWallpaper = null;
-            }
             applySafeBackdrop(target);
             AppLog.i("SafeMode", "visual applied root=" + System.identityHashCode(target));
             return;
         }
-        // 1.8.21：关闭安全模式 → 清掉深色安全底 + 强制重建壁纸层，并在 150/400ms 后再补
+        // 1.8.21/1.8.24：关闭安全模式 → 统一清层（含 wallpaper-video）→ 重建 → 150/400/800 补铺
         lastWallpaperLog = "";
-        try {
-            if (videoWallpaper != null) videoWallpaper.release();
-        } catch (Throwable ignored) {
-        }
-        videoWallpaper = null;
-        for (int i = target.getChildCount() - 1; i >= 0; i--) {
-            View child = target.getChildAt(i);
-            Object tag = child.getTag();
-            if (WALLPAPER_TAG.equals(tag)
-                    || BACKDROP_TAG.equals(tag)
-                    || SAFE_BACKDROP_TAG.equals(tag)) target.removeViewAt(i);
-        }
+        clearWallpaperLayers(target, true);
+        for (int i = target.getChildCount() - 1; i >= 0; i--)
+            if (SAFE_BACKDROP_TAG.equals(target.getChildAt(i).getTag()))
+                target.removeViewAt(i);
         applyWallpaper(target);
         ui.post(
                 () -> {
@@ -1482,7 +1449,34 @@ public final class MainActivity extends Activity {
     void releaseWallpaper() {
         if (videoWallpaper != null) {
             videoWallpaper.release();
+            try {
+                android.view.ViewParent parent = videoWallpaper.getParent();
+                if (parent instanceof android.view.ViewGroup)
+                    ((android.view.ViewGroup) parent).removeView(videoWallpaper);
+            } catch (Throwable ignored) {
+            }
             videoWallpaper = null;
+        }
+    }
+
+    /** 1.8.24：统一清理壁纸类层（含 VideoWallpaper 的 wallpaper-video 孤儿层）。 */
+    void clearWallpaperLayers(android.widget.FrameLayout target, boolean includeSafe) {
+        if (target == null) return;
+        for (int i = target.getChildCount() - 1; i >= 0; i--) {
+            View child = target.getChildAt(i);
+            Object tag = child.getTag();
+            if (WALLPAPER_TAG.equals(tag)
+                    || BACKDROP_TAG.equals(tag)
+                    || (includeSafe && SAFE_BACKDROP_TAG.equals(tag))
+                    || "wallpaper-video".equals(tag)) target.removeViewAt(i);
+        }
+        releaseWallpaper();
+        // 其它 root 上的孤儿视频壁纸也按 tag 摘掉
+        if (root != null && root != target) {
+            for (int i = root.getChildCount() - 1; i >= 0; i--) {
+                View child = root.getChildAt(i);
+                if ("wallpaper-video".equals(child.getTag())) root.removeViewAt(i);
+            }
         }
     }
 
