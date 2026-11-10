@@ -1079,6 +1079,49 @@ public final class MainActivity extends Activity {
         return d;
     }
 
+    /** 1.9.23：统一主题文字色入口（等同 userTextColor，供各页面调用）。 */
+    int themeColor(int color) {
+        return userTextColor(color);
+    }
+
+    private android.graphics.Typeface cachedTypeface;
+    private String cachedTypefaceName;
+
+    /** 1.9.24：当前字体样式（Android 内置 Typeface）。 */
+    android.graphics.Typeface typeface() {
+        String name = prefs.getString(Prefs.FONT_STYLE, "sans-serif");
+        if (name == null || name.isEmpty()) name = "sans-serif";
+        if (cachedTypeface != null && name.equals(cachedTypefaceName)) return cachedTypeface;
+        android.graphics.Typeface typeface;
+        try {
+            typeface = android.graphics.Typeface.create(name, android.graphics.Typeface.NORMAL);
+        } catch (Throwable error) {
+            typeface = android.graphics.Typeface.DEFAULT;
+        }
+        if (typeface == null) typeface = android.graphics.Typeface.DEFAULT;
+        cachedTypeface = typeface;
+        cachedTypefaceName = name;
+        return typeface;
+    }
+
+    /** 1.9.24：字体样式名（设置项用）。 */
+    String fontStyleName() {
+        return prefs.getString(Prefs.FONT_STYLE, "sans-serif");
+    }
+
+    /** 1.9.24：主题字体的 TextView，粗体设置自动保留自定义字体样式。 */
+    final class ThemedTextView extends TextView {
+        ThemedTextView(android.content.Context context) {
+            super(context);
+        }
+
+        @Override
+        public void setTypeface(android.graphics.Typeface tf, int style) {
+            android.graphics.Typeface base = tf == null ? typeface() : tf;
+            super.setTypeface(base, style);
+        }
+    }
+
     /** 用户自定义字体颜色：主文字用用户色、次要文字用同色降透明度；强调色（ACCENT 等）保持原样。 */
     int userTextColor(int color) {
         if (!prefs.getBoolean(Prefs.TEXT_COLOR_CUSTOM, false)) return color;
@@ -1104,10 +1147,11 @@ public final class MainActivity extends Activity {
     }
 
     TextView text(String s, float size, int color) {
-        TextView t = new TextView(this);
+        TextView t = new ThemedTextView(this);
         t.setText(s);
         t.setTextColor(userTextColor(color));
         t.setTextSize(size);
+        t.setTypeface(typeface());
         t.setFontFeatureSettings("kern");
         return t;
     }
@@ -1203,7 +1247,7 @@ public final class MainActivity extends Activity {
         GradientDrawable pill = bg(0xff1b2c49, 19);
         pill.setStroke(Math.max(1, dp(1)), 0x33ffffff);
         b.setBackground(pill);
-        b.setTextColor(0xffe6edfb);
+        b.setTextColor(themeColor(0xffe6edfb));
         b.setOnFocusChangeListener(
                 (v, f) ->
                         FocusMotion.style(

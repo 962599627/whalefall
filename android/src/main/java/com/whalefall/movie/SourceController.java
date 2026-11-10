@@ -688,7 +688,7 @@ final class SourceController {
 
         final android.widget.EditText input = new android.widget.EditText(a);
         input.setHint("https://…/live.txt 或 #EXTM3U…");
-        input.setHintTextColor(0xff7f90ad);
+        input.setHintTextColor(a.themeColor(0xff7f90ad));
         input.setTextColor(MainActivity.WHITE);
         input.setTextSize(14);
         input.setMaxLines(4);

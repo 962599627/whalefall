@@ -547,7 +547,7 @@ final class MobileDetailScreen {
                             Favorites.contains(
                                     a.prefs.getString(Prefs.FAVORITES, "[]"), s.key, listing.id);
                     favTopBtn.setText(faved ? "♥" : "♡");
-                    favTopBtn.setTextColor(faved ? 0xffff8fb1 : Color.WHITE);
+                    favTopBtn.setTextColor(faved ? 0xffff8fb1 : a.themeColor(Color.WHITE));
                     View actFav = a.root == null ? null : a.root.findViewWithTag("detail-act-favorite");
                     if (actFav instanceof TextView)
                         ((TextView) actFav).setText(faved ? "♥ 已收藏" : "♡ 收藏");
@@ -869,7 +869,7 @@ final class MobileDetailScreen {
                                                 s.key,
                                                 v.id);
                                 favTopBtn.setText(faved ? "♥" : "♡");
-                                favTopBtn.setTextColor(faved ? 0xffff8fb1 : Color.WHITE);
+                                favTopBtn.setTextColor(faved ? 0xffff8fb1 : a.themeColor(Color.WHITE));
                                 View actFav =
                                         a.root == null
                                                 ? null

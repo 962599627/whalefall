@@ -1455,7 +1455,7 @@ final class FileManagerScreen {
         prepareInput(input);
         input.setText(file.getName());
         input.setTextColor(MainActivity.WHITE);
-        input.setHintTextColor(MainActivity.MUTED);
+        input.setHintTextColor(a.themeColor(MainActivity.MUTED));
         new AppDialog.Builder(a)
                 .setTitle("重命名")
                 .setView(input)
@@ -1479,7 +1479,7 @@ final class FileManagerScreen {
         prepareInput(input);
         input.setText(localDir.getAbsolutePath());
         input.setTextColor(MainActivity.WHITE);
-        input.setHintTextColor(MainActivity.MUTED);
+        input.setHintTextColor(a.themeColor(MainActivity.MUTED));
         new AppDialog.Builder(a)
                 .setTitle("移动到目录（绝对路径）")
                 .setView(input)
@@ -1516,7 +1516,7 @@ final class FileManagerScreen {
         input.setSingleLine(true);
         prepareInput(input);
         input.setTextColor(MainActivity.WHITE);
-        input.setHintTextColor(MainActivity.MUTED);
+        input.setHintTextColor(a.themeColor(MainActivity.MUTED));
         input.setHint("文件夹名");
         new AppDialog.Builder(a)
                 .setTitle("新建文件夹")
@@ -1550,7 +1550,7 @@ final class FileManagerScreen {
                 a.prefs.getString("filemgr_target_" + providerKey, providerName());
         input.setText(remembered);
         input.setTextColor(MainActivity.WHITE);
-        input.setHintTextColor(MainActivity.MUTED);
+        input.setHintTextColor(a.themeColor(MainActivity.MUTED));
         new AppDialog.Builder(a)
                 .setTitle("下载到 Download/鲸落/<目录>")
                 .setMessage("目标目录可修改，不存在会自动创建。")

@@ -454,7 +454,7 @@ final class TvLive {
         input.setBackground(null);
         input.setSingleLine(true);
         input.setHint("搜索频道或拼音首字母，如 hnws、cctv5");
-        input.setHintTextColor(0xff7f8fa9);
+        input.setHintTextColor(a.themeColor(0xff7f8fa9));
         input.setTextColor(a.userTextColor(0xfff5f7fc));
         input.setTextSize(13.5f);
         input.setIncludeFontPadding(false);
@@ -1564,11 +1564,11 @@ final class TvLive {
         EditText nameInput = new EditText(a);
         nameInput.setHint("名称，如 深圳卫视");
         nameInput.setTextColor(a.userTextColor(0xfff5f7fc));
-        nameInput.setHintTextColor(0xff7f8fa9);
+        nameInput.setHintTextColor(a.themeColor(0xff7f8fa9));
         EditText urlInput = new EditText(a);
         urlInput.setHint("https://… 网页地址");
         urlInput.setTextColor(a.userTextColor(0xfff5f7fc));
-        urlInput.setHintTextColor(0xff7f8fa9);
+        urlInput.setHintTextColor(a.themeColor(0xff7f8fa9));
         LinearLayout box = a.vertical();
         box.addView(nameInput);
         box.addView(urlInput);

@@ -20,7 +20,7 @@ final class AddressInput extends LinearLayout {
         input.setSingleLine(true);
         input.setTextSize(16);
         input.setTextColor(MainActivity.WHITE);
-        input.setHintTextColor(MainActivity.MUTED);
+        input.setHintTextColor(a.themeColor(MainActivity.MUTED));
         input.setHint(hint);
         input.setInputType(17);
         input.setShowSoftInputOnFocus(!a.isTvDevice());

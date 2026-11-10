@@ -24,6 +24,8 @@ final class Prefs {
     static final String HOME_SECTIONS = "home_sections";
     static final String WALLPAPER_ENABLED = "wallpaper_enabled";
     static final String WALLPAPER_DIM = "wallpaper_dim";
+    /** 1.9.24：字体样式（Android 内置 Typeface 名）。 */
+    static final String FONT_STYLE = "font_style";
     static final String WALLPAPER_VIDEO = "wallpaper_video";
     static final String WALLPAPER_SOUND = "wallpaper_sound";
     static final String TV_ASPECT = "tv_aspect";

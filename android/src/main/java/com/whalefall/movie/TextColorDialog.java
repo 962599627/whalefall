@@ -235,7 +235,7 @@ final class TextColorDialog {
             hex.setSingleLine(true);
             hex.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
             hex.setTextColor(MainActivity.WHITE);
-            hex.setHintTextColor(MainActivity.MUTED);
+            hex.setHintTextColor(a.themeColor(MainActivity.MUTED));
             hex.setText(hexOf(rgb));
             hexField[0] = hex;
             row.addView(hex, new LinearLayout.LayoutParams(0, a.dp(46), 1f));

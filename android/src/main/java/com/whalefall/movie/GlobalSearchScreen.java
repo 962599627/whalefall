@@ -205,7 +205,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
                 };
         input.setTextSize(18);
         input.setTextColor(MainActivity.WHITE);
-        input.setHintTextColor(MainActivity.MUTED);
+        input.setHintTextColor(a.themeColor(MainActivity.MUTED));
         input.setHint("输入片名…（双击调出输入法）");
         input.setGravity(Gravity.CENTER_VERTICAL);
         input.setIncludeFontPadding(false);

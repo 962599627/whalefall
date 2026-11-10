@@ -16,6 +16,12 @@ final class SettingsScreen {
         a = activity;
     }
 
+    private static int styleIndex(String name) {
+        for (int i = 0; i < FontStyleDialog.NAMES.length; i++)
+            if (FontStyleDialog.NAMES[i].equals(name)) return i;
+        return 0;
+    }
+
     void page(String title, String note) {
         a.renderPage("", "");
         if (a.root != null) a.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -284,6 +290,11 @@ final class SettingsScreen {
                 TextColorDialog.summary(a),
                 "settings-text-color",
                 () -> TextColorDialog.show(a));
+        link(
+                "字体样式",
+                FontStyleDialog.LABELS[styleIndex(a.fontStyleName())],
+                "settings-font-style",
+                () -> FontStyleDialog.show(a));
         link(
                 "首页壁纸",
                 a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)

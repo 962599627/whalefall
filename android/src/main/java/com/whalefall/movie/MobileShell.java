@@ -307,7 +307,7 @@ final class MobileShell {
 
         final EditText input = new EditText(a);
         input.setHint("https://…/config.json 或 .js / .py / .txt / .zip");
-        input.setHintTextColor(0xff7f90ad);
+        input.setHintTextColor(a.themeColor(0xff7f90ad));
         input.setTextColor(MainActivity.WHITE);
         input.setTextSize(14);
         input.setSingleLine(true);
@@ -2404,7 +2404,7 @@ final class MobileShell {
         LinearLayout urlRow = a.row();
         final EditText urlInput = new EditText(a);
         urlInput.setHint("输入或长按粘贴配置网址 https://…");
-        urlInput.setHintTextColor(0xff7f90ad);
+        urlInput.setHintTextColor(a.themeColor(0xff7f90ad));
         urlInput.setTextColor(MainActivity.WHITE);
         urlInput.setTextSize(13);
         urlInput.setSingleLine(true);
@@ -2492,7 +2492,7 @@ final class MobileShell {
 
         final EditText input = new EditText(a);
         input.setHint("搜索片名、演员或拼音首字母…");
-        input.setHintTextColor(0xff8496b2);
+        input.setHintTextColor(a.themeColor(0xff8496b2));
         input.setTextColor(MainActivity.WHITE);
         input.setTextSize(14);
         input.setSingleLine(true);
@@ -3033,7 +3033,7 @@ final class MobileShell {
 
         final EditText searchInput = new EditText(a);
         searchInput.setHint("搜索频道…");
-        searchInput.setHintTextColor(0xff8496b2);
+        searchInput.setHintTextColor(a.themeColor(0xff8496b2));
         searchInput.setTextColor(Color.WHITE);
         searchInput.setTextSize(12.5f);
         searchInput.setSingleLine(true);
@@ -3475,7 +3475,7 @@ final class MobileShell {
         final EditText librarySearch = new EditText(a);
         librarySearch.setSingleLine(true);
         librarySearch.setHint("搜索片名 / 来源");
-        librarySearch.setHintTextColor(MainActivity.MUTED);
+        librarySearch.setHintTextColor(a.themeColor(MainActivity.MUTED));
         librarySearch.setTextColor(MainActivity.WHITE);
         librarySearch.setTextSize(13);
         librarySearch.setBackground(
@@ -4423,7 +4423,7 @@ final class MobileShell {
         EditText input = new EditText(a);
         input.setSingleLine(true);
         input.setHint("分组名（1–8 字）");
-        input.setHintTextColor(MainActivity.MUTED);
+        input.setHintTextColor(a.themeColor(MainActivity.MUTED));
         input.setTextColor(MainActivity.WHITE);
         input.setTextSize(14);
         return input;
@@ -4464,6 +4464,13 @@ final class MobileShell {
     // =========================================================================
     // TAB 4: MOBILE SETTINGS (2-Level Clean Architecture, Zero Emojis, Zero Ghosting)
     // =========================================================================
+    /** 1.9.24：字体样式名 → 显示下标。 */
+    private static int fontStyleIndex(String name) {
+        for (int i = 0; i < FontStyleDialog.NAMES.length; i++)
+            if (FontStyleDialog.NAMES[i].equals(name)) return i;
+        return 0;
+    }
+
     private void renderSettingsTab() {
         contentContainer.removeAllViews();
 
@@ -4845,6 +4852,12 @@ final class MobileShell {
                         "字体颜色",
                         TextColorDialog.summary(a),
                         () -> TextColorDialog.show(a));
+                addSettingCard(
+                        body,
+                        3,
+                        "字体样式",
+                        FontStyleDialog.LABELS[fontStyleIndex(a.fontStyleName())],
+                        () -> FontStyleDialog.show(a));
                 addSettingCard(
                         body,
                         3,

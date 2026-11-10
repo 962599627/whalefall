@@ -112,7 +112,7 @@ final class ChannelManagerScreen {
         search.setSingleLine(true);
         search.setTextSize(13);
         search.setTextColor(Color.WHITE);
-        search.setHintTextColor(0xff8d9cb6);
+        search.setHintTextColor(a.themeColor(0xff8d9cb6));
         search.setBackground(MobileDetailScreen.glassBg(a, 0x33ffffff, 0x33ffffff, 999));
         search.setPadding(a.dp(14), a.dp(8), a.dp(14), a.dp(8));
         page.addView(search, new LinearLayout.LayoutParams(-1, a.dp(42)));
@@ -577,7 +577,7 @@ final class ChannelManagerScreen {
         input.setHint("粘贴导出的全部频道配置 JSON…");
         input.setTextSize(11.5f);
         input.setTextColor(Color.WHITE);
-        input.setHintTextColor(0xff8d9cb6);
+        input.setHintTextColor(a.themeColor(0xff8d9cb6));
         input.setBackground(MobileDetailScreen.glassBg(a, 0x33ffffff, 0x33ffffff, 12));
         input.setPadding(a.dp(10), a.dp(10), a.dp(10), a.dp(10));
         input.setMinLines(10);
@@ -711,7 +711,7 @@ final class ChannelManagerScreen {
     private static void style(MainActivity a, EditText input) {
         input.setTextSize(13);
         input.setTextColor(Color.WHITE);
-        input.setHintTextColor(0xff8d9cb6);
+        input.setHintTextColor(a.themeColor(0xff8d9cb6));
         input.setBackground(MobileDetailScreen.glassBg(a, 0x33ffffff, 0x33ffffff, 12));
         input.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);

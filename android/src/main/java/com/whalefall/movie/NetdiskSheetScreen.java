@@ -206,7 +206,7 @@ final class NetdiskSheetScreen {
         input.setMinLines(2);
         input.setMaxLines(5);
         input.setTextColor(MainActivity.WHITE);
-        input.setHintTextColor(MainActivity.MUTED);
+        input.setHintTextColor(a.themeColor(MainActivity.MUTED));
         input.setHint("粘贴 Cookie 或 Token…");
         input.setTextSize(13);
         new AppDialog.Builder(a)
