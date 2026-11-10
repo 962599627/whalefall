@@ -1125,12 +1125,13 @@ final class HomeScreen {
                         });
         tabIds.put(button, id);
         if (categoryHasFilters(id)) {
-            boolean filtered = id.equals(state.category) && !state.selectedFilters.isEmpty();
+            boolean selected = id.equals(state.category);
+            boolean filtered = selected && !state.selectedFilters.isEmpty();
+            // 1.9.33：选中分类漏斗用 BG_DEEP，未选中：有筛选 ACCENT / 无筛选 TEXT_TERTIARY
+            int funnelColor =
+                    selected ? 0xff070d18 : filtered ? UiTokens.ACCENT : 0xff8d9cb6;
             button.setCompoundDrawables(
-                    null,
-                    null,
-                    funnelDrawable(filtered ? UiTokens.ACCENT : 0xff8d9cb6, 16),
-                    null);
+                    null, null, funnelDrawable(funnelColor, 16), null);
             button.setCompoundDrawablePadding(a.dp(8));
         }
         button.setOnKeyListener(

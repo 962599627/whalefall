@@ -2083,8 +2083,8 @@ final class MobileShell {
             android.graphics.drawable.GradientDrawable bg =
                     new android.graphics.drawable.GradientDrawable();
             bg.setCornerRadius(a.dp(999));
-            bg.setColor(open ? 0x33ff8fb1 : 0x14ffffff);
-            bg.setStroke(a.dp(1), open ? 0x66ffb3c8 : 0x1affffff);
+            bg.setColor((active || open) ? 0x33ff8fb1 : 0x14ffffff);
+            bg.setStroke(a.dp(1), (active || open) ? 0x66ffb3c8 : 0x1affffff);
             chip.setBackground(bg);
             MobileDetailScreen.bindTouchFeedback(chip);
             chip.setFocusable(true);
@@ -2283,8 +2283,10 @@ final class MobileShell {
         }
         if (hasFilters) {
             boolean filtered = catId.equals(selectedCategoryId) && !selectedFilters.isEmpty();
-            android.graphics.drawable.Drawable funnel =
-                    funnelDrawable(filtered ? UiTokens.ACCENT : 0xff8d9cb6, 14);
+            // 1.9.33：选中分类时漏斗用 BG_DEEP，避免与粉色选中底冲突
+            int funnelColor =
+                    active ? 0xff070d18 : filtered ? UiTokens.ACCENT : 0xff8d9cb6;
+            android.graphics.drawable.Drawable funnel = funnelDrawable(funnelColor, 14);
             chip.setCompoundDrawables(null, null, funnel, null);
             chip.setCompoundDrawablePadding(a.dp(6));
             if (!filtered)
