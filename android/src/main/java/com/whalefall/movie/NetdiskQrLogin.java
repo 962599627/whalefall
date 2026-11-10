@@ -160,6 +160,11 @@ final class NetdiskQrLogin {
 
     static final class Session {
         final String driveKey;
+
+        Session(String driveKey) {
+            this.driveKey = driveKey;
+        }
+
         String token = "";
         String extraT = "";
         String qrContent = "";
