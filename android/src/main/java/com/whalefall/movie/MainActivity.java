@@ -1621,7 +1621,7 @@ public final class MainActivity extends Activity {
                 current.home = true;
                 renderReturn(current);
             } else {
-                MobileShell.show(this);
+                FileManagerScreen.exitToSource(this);
             }
             return;
         }

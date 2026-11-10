@@ -123,6 +123,31 @@ final class FilesScreen {
         nav.addView(mkdir);
         column.addView(nav, new LinearLayout.LayoutParams(-1, -2));
         a.gap(column, 14);
+        if (path.isEmpty()) {
+            // 1.9.10：与新的「文件管理器」区分说明
+            LinearLayout tip = a.row();
+            tip.setGravity(Gravity.CENTER_VERTICAL);
+            tip.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
+            tip.setBackground(MobileDetailScreen.glassBg(a, 0xcc16283f, 0x26ffffff, 16));
+            TextView tipText =
+                    a.text(
+                            "这里是 App 内置配置/教程文件；本地与网盘文件请用「文件管理器」",
+                            11.5f,
+                            0xff9fb0c9);
+            tipText.setLineSpacing(a.dp(2), 1.05f);
+            tip.addView(tipText, new LinearLayout.LayoutParams(0, -2, 1f));
+            TextView openMgr = a.text("打开文件管理器", 12, 0xffffb3c8);
+            openMgr.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+            openMgr.setBackground(MobileDetailScreen.glassBg(a, 0x24ff8fb1, 0x33ffffff, 999));
+            MobileDetailScreen.bindTouchFeedback(openMgr);
+            ExtraPages.tvFocus(a, openMgr, 999);
+            openMgr.setOnClickListener(v -> FileManagerScreen.show(a));
+            LinearLayout.LayoutParams openLp = new LinearLayout.LayoutParams(-2, -2);
+            openLp.leftMargin = a.dp(8);
+            tip.addView(openMgr, openLp);
+            column.addView(tip, new LinearLayout.LayoutParams(-1, -2));
+            a.gap(column, 10);
+        }
 
         if (path.isEmpty()) {
             LinearLayout hint = a.vertical();

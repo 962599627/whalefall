@@ -43,10 +43,24 @@ final class FileManagerScreen {
     private TextView stripPause;
     private LinearLayout stripProgressWrap;
 
+    private static int lastSource = 0; // 0=设置 1=云盘专区
+
     static void show(MainActivity a) {
+        showFrom(a, lastSource);
+    }
+
+    static void showFrom(MainActivity a, int source) {
+        lastSource = source;
         FileManagerScreen screen = new FileManagerScreen(a);
         screen.open();
         current = screen;
+    }
+
+    /** 1.9.10：BACK 回到来源（设置或云盘专区）。 */
+    static void exitToSource(MainActivity a) {
+        MobileShell.show(a);
+        if (MobileShell.activeShell == null) return;
+        MobileShell.activeShell.switchTab(lastSource == 1 ? 6 : 4);
     }
 
     static boolean handleBack() {
@@ -1366,6 +1380,7 @@ final class FileManagerScreen {
     }
 
     static void showNetdisk(MainActivity a, String providerKey) {
+        lastSource = 1;
         FileManagerScreen screen = new FileManagerScreen(a);
         screen.tab = 1;
         if (providerKey != null && !providerKey.isEmpty()) screen.providerKey = providerKey;

@@ -99,8 +99,13 @@ final class SettingsScreen {
         if (a.isTvDevice()) {
             section("本机与工具");
             link(
-                    "文件管理",
-                    "浏览 / 重命名 / 预览 / 删除；上传建议用管理员后台或 FTP",
+                    "文件管理器（本地 / 网盘 / 下载）",
+                    "浏览本地/网盘、播放与下载；支持多选与下载中心",
+                    "settings-file-manager",
+                    () -> FileManagerScreen.showFrom(a, 0));
+            link(
+                    "App 内置文件（教程 / 配置 / 上传）",
+                    "仅 App 内置配置/教程与管理员后台上传文件",
                     "settings-files",
                     () -> FilesScreen.show(a));
             link(

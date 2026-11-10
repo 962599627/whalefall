@@ -4592,9 +4592,15 @@ final class MobileShell {
                 addSettingCard(
                         body,
                         1,
-                        "文件管理器（本地 / 网盘）",
-                        "浏览本地文件、直接从网盘播放视频并下载到 Download/鲸落/",
+                        "文件管理器（本地 / 网盘 / 下载）",
+                        "浏览本地与网盘文件、播放、下载到 Download/鲸落/、查看下载中心",
                         () -> FileManagerScreen.show(a));
+                addSettingCard(
+                        body,
+                        1,
+                        "App 内置文件（教程 / 配置 / 上传）",
+                        "App 内置配置/教程文件与管理员后台上传；本地与网盘文件请用「文件管理器」",
+                        () -> FilesScreen.show(a));
                 addSettingCard(
                         body,
                         1,
@@ -4882,12 +4888,6 @@ final class MobileShell {
                 ExtraPages.storage(a, body);
             } else {
                 addSectionHeader(body, "更新、备份与诊断");
-                addSettingCard(
-                        body,
-                        5,
-                        "文件管理（上传 / Markdown 阅读）",
-                        "内置文件管理 / Markdown 阅读；右上角可打开「管理员后台」上传文件",
-                        () -> FilesScreen.show(a));
                 addSettingCard(
                         body,
                         5,
