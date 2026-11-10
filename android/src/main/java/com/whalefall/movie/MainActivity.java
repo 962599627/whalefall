@@ -1600,6 +1600,18 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (tvPlayer != null && tvPlayer.back()) return;
+        // 1.9.0：文件管理器先交给页面处理（多选→上级），再离开页面
+        if (body != null && "file-manager".equals(body.getTag())) {
+            if (FileManagerScreen.handleBack()) return;
+            if (isTvDevice()) {
+                current = new MainActivity.Screen(this::home);
+                current.home = true;
+                renderReturn(current);
+            } else {
+                MobileShell.show(this);
+            }
+            return;
+        }
         // 1.8.25/1.8.28：云盘相关独立页不直接退出；TV 回 TV 首页，手机回片库 tab
         if (body != null
                 && ("netdisk-sheet".equals(body.getTag())

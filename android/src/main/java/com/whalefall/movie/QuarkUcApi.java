@@ -151,13 +151,19 @@ final class QuarkUcApi {
     static final class FileItem {
         final String fid, name;
         final long size;
+        final long updated;
         final boolean folder;
         final boolean video;
 
         FileItem(String fid, String name, long size, boolean folder) {
+            this(fid, name, size, 0L, folder);
+        }
+
+        FileItem(String fid, String name, long size, long updated, boolean folder) {
             this.fid = fid == null ? "" : fid;
             this.name = name == null ? "" : name;
             this.size = size;
+            this.updated = updated;
             this.folder = folder;
             this.video = !folder && isVideoName(this.name);
         }
@@ -207,6 +213,9 @@ final class QuarkUcApi {
                                     item.optString("fid", ""),
                                     item.optString("file_name", ""),
                                     item.optLong("size", 0),
+                                    item.optLong(
+                                            "updated_at",
+                                            item.optLong("l_updated_at", 0)),
                                     !item.optBoolean("file", true)));
                 }
             JSONObject metadata = json.optJSONObject("metadata");

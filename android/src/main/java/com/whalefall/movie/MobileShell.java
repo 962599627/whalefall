@@ -4588,6 +4588,14 @@ final class MobileShell {
                             a.toast(!cspEnabled ? "已开启扩展片源支持" : "已关闭扩展片源支持");
                         });
                 a.gap(body, 12);
+                addSectionHeader(body, "文件与存储");
+                addSettingCard(
+                        body,
+                        1,
+                        "文件管理器（本地 / 网盘）",
+                        "浏览本地文件、直接从网盘播放视频并下载到 Download/鲸落/",
+                        () -> FileManagerScreen.show(a));
+                a.gap(body, 12);
                 addSectionHeader(body, "新手教程");
                 addSettingCard(
                         body,

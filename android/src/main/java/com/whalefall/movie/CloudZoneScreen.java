@@ -33,6 +33,19 @@ final class CloudZoneScreen {
         TextView note = a.text("本页是 App 本地直连登录，不经过源插件", 11.5f, MainActivity.MUTED);
         note.setPadding(a.dp(16), 0, a.dp(16), a.dp(8));
         body.addView(note);
+        // 1.9.0：文件管理器入口
+        TextView fileMgr = a.text("📁  文件管理（本地/网盘下载）", 12.5f, UiTokens.TEXT_PRIMARY);
+        fileMgr.setGravity(Gravity.CENTER);
+        fileMgr.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
+        fileMgr.setBackground(MobileDetailScreen.glassBg(a, 0x24ffffff, 0x33ffffff, 999));
+        fileMgr.setFocusable(true);
+        MobileDetailScreen.bindTouchFeedback(fileMgr);
+        fileMgr.setOnClickListener(v -> FileManagerScreen.show(a));
+        LinearLayout.LayoutParams fileMgrLp = new LinearLayout.LayoutParams(-1, -2);
+        fileMgrLp.leftMargin = a.dp(16);
+        fileMgrLp.rightMargin = a.dp(16);
+        fileMgrLp.topMargin = a.dp(8);
+        body.addView(fileMgr, fileMgrLp);
         // 1.8.27：源插件登录（只读状态 + 退出本机登录数据）
         addSourceSection(a, body, onChanged);
 
