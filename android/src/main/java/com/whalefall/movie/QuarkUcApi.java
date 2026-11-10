@@ -130,6 +130,7 @@ final class QuarkUcApi {
                 () -> {
                     Status status;
                     try {
+                        checkBlocked(a);
                         if (cookie.isEmpty()) throw new IOException("没有保存的 Cookie");
                         status = member(p, cookie);
                         a.prefs.edit()
@@ -261,18 +262,45 @@ final class QuarkUcApi {
     private static final java.util.Map<String, Integer> LAST_ENDPOINT = new java.util.concurrent.ConcurrentHashMap<>();
     private static final long COOLDOWN_MS = 60_000L;
 
+    /** 1.9.20：全局风控冷却（持久化到 prefs `quark_block_until`）。 */
+    static final String BLOCK_KEY = "quark_block_until";
+
+    static long blockRemaining(MainActivity a) {
+        if (a == null) return 0;
+        long until = a.prefs.getLong(BLOCK_KEY, 0);
+        return Math.max(0, until - System.currentTimeMillis());
+    }
+
+    static void checkBlocked(MainActivity a) throws IOException {
+        long remaining = blockRemaining(a);
+        if (remaining > 0) {
+            AppLog.i("LocalPan", "blocked remaining=" + remaining);
+            throw new IOException(
+                    "夸克接口临时受限（风控），请 " + (remaining / 60000 + 1) + " 分钟后再试");
+        }
+    }
+
+    static void blockFor(MainActivity a, long millis) {
+        if (a == null) return;
+        long until = System.currentTimeMillis() + millis;
+        a.prefs.edit().putLong(BLOCK_KEY, until).apply();
+        AppLog.i("QuarkGet", "blocked until=" + until + " minutes=" + (millis / 60000));
+    }
+
     static long cooldownRemaining(Provider p) {
         Long until = COOLDOWN_UNTIL.get(p.key);
         return until == null ? 0 : Math.max(0, until - System.currentTimeMillis());
     }
 
-    static void noteFailure(Provider p) {
+    static boolean noteFailure(Provider p) {
         int count = FAIL_COUNT.merge(p.key, 1, Integer::sum);
         if (count >= 2) {
             COOLDOWN_UNTIL.put(p.key, System.currentTimeMillis() + COOLDOWN_MS);
             FAIL_COUNT.put(p.key, 0);
             AppLog.i("QuarkGet", "cooldown=60s reason=io provider=" + p.key);
+            return true;
         }
+        return false;
     }
 
     static void noteSuccess(Provider p) {
@@ -295,6 +323,12 @@ final class QuarkUcApi {
 
     /** 1.9.4：刷新 Cookie（OpenList 同款：从 Set-Cookie 取 __puus/__pus 合并回 Cookie）。 */
     static String doRefreshCookie(MainActivity a, Provider p, String cookie) {
+        try {
+            checkBlocked(a);
+        } catch (IOException blocked) {
+            AppLog.i("QuarkGet", "refresh skipped blocked");
+            return cookie == null ? "" : cookie;
+        }
         if (cookie == null || cookie.isEmpty()) return cookie == null ? "" : cookie;
         String merged = cookie;
         boolean puus = false;
@@ -431,6 +465,7 @@ final class QuarkUcApi {
         if (cooldown > 0)
             throw new IOException(
                     "夸克暂时限制访问（风控/限流），请 " + (cooldown / 1000 + 1) + " 秒后再试");
+        checkBlocked(a);
         String fresh = cookie;
         if (a != null) fresh = refreshCookie(a, p, cookie);
         String[] endpoints =
@@ -503,12 +538,14 @@ final class QuarkUcApi {
                                     + " body="
                                     + masked);
                     if (status == 403 || status == 412) {
+                        blockFor(a, 10 * 60_000L);
                         last = new IOException("HTTP " + status + "（夸克风控）");
                         continue;
                     }
                     // 1.9.12：23018 = 非会员下载大小限制，短路，不再尝试其它变体
                     if (text != null && (text.contains("23018") || text.contains("size limit"))) {
                         AppLog.i("QuarkGet", "download-api limit code=23018 fid=" + fid);
+                        blockFor(a, 10 * 60_000L);
                         throw new LimitException(
                                 "夸克账号 API 下载限制（官方 App 可用）：该文件超过浏览器 Cookie 调用 API 的下载限制（code 23018），"
                                         + "可改用网页播放或在源里观看；开通会员后可在官方 App 下载。");
@@ -540,7 +577,7 @@ final class QuarkUcApi {
                 } catch (Throwable error) {
                     if (error instanceof LimitException) throw (LimitException) error;
                     last = new IOException(error.getClass().getSimpleName());
-                    noteFailure(p);
+                    if (a != null && noteFailure(p)) blockFor(a, 10 * 60_000L);
                 } finally {
                     if (connection != null) connection.disconnect();
                 }
@@ -556,6 +593,7 @@ final class QuarkUcApi {
         if (cooldown > 0)
             throw new IOException(
                     "夸克暂时限制访问（风控/限流），请 " + (cooldown / 1000 + 1) + " 秒后再试");
+        checkBlocked(a);
         String fresh = a == null ? cookie : refreshCookie(a, p, cookie);
         String[] endpoints =
                 "quark".equals(p.key)
@@ -651,7 +689,7 @@ final class QuarkUcApi {
                     last = new IOException("转码列表为空");
                 } catch (Throwable error) {
                     last = new IOException(friendly(error));
-                    noteFailure(p);
+                    if (a != null && noteFailure(p)) blockFor(a, 10 * 60_000L);
                 } finally {
                     if (connection != null) connection.disconnect();
                 }
@@ -727,6 +765,7 @@ final class QuarkUcApi {
             MainActivity a, Provider p, String cookie, String fid, String shareFidToken)
             throws Exception {
         // 1.9.18：不在 resolveUrl 重复 refresh（downloadUrl 内已做，且有限流）
+        checkBlocked(a);
         String fresh = cookie == null ? "" : cookie;
         String url = downloadUrl(a, p, fresh, fid, shareFidToken);
         // 若刷新后的 Cookie 已保存到 App 存储，取最新值用于 GET

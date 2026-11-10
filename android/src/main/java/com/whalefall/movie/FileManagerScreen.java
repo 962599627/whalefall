@@ -531,6 +531,98 @@ final class FileManagerScreen {
                 });
     }
 
+    private void showLocalPanDisabled() {
+        LinearLayout box = a.vertical();
+        box.setPadding(a.dp(16), a.dp(20), a.dp(16), a.dp(16));
+        box.setBackground(MobileDetailScreen.glassBg(a, 0xcc16283f, 0xb3121d2e, 16));
+        TextView title = a.text("本地网盘直连默认关闭", 15, MainActivity.WHITE);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        box.addView(title);
+        TextView desc =
+                a.text(
+                        "本地网盘直连（浏览器 Cookie 调夸克 API）可能触发风控/限流，默认关闭；"
+                                + "日常请用源插件观看。开启后仍需遵守全局冷却。",
+                        11.5f,
+                        UiTokens.TEXT_TERTIARY);
+        desc.setPadding(0, a.dp(6), 0, a.dp(10));
+        box.addView(desc);
+        TextView enable = a.text("启用本地网盘直连", 12.5f, 0xff0b1220);
+        enable.setGravity(Gravity.CENTER);
+        enable.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
+        enable.setBackground(UiTokens.round(a, 999, UiTokens.ACCENT));
+        enable.setFocusable(true);
+        focusable(enable);
+        enable.setOnClickListener(
+                v -> {
+                    a.prefs.edit().putBoolean("local_pan_enabled", true).apply();
+                    AppLog.i("LocalPan", "enabled=true");
+                    refresh();
+                });
+        box.addView(enable, new LinearLayout.LayoutParams(-1, a.dp(44)));
+        TextView panel = a.text("打开源面板登录", 12, 0xffffb3c8);
+        panel.setGravity(Gravity.CENTER);
+        panel.setPadding(a.dp(12), a.dp(9), a.dp(12), a.dp(9));
+        panel.setBackground(MobileDetailScreen.glassBg(a, 0x24ff8fb1, 0x33ffffff, 999));
+        panel.setFocusable(true);
+        focusable(panel);
+        panel.setOnClickListener(
+                v -> new SettingsScreen(a).sourceAccountAction("LoginShow", null));
+        LinearLayout.LayoutParams panelLp = new LinearLayout.LayoutParams(-1, a.dp(44));
+        panelLp.topMargin = a.dp(8);
+        box.addView(panel, panelLp);
+        content.addView(box, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private void showPanCooldown(long remaining) {
+        final LinearLayout box = a.vertical();
+        box.setPadding(a.dp(16), a.dp(20), a.dp(16), a.dp(16));
+        box.setBackground(MobileDetailScreen.glassBg(a, 0xcc16283f, 0xb3121d2e, 16));
+        TextView title = a.text("夸克接口冷却中", 15, 0xffffb454);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        box.addView(title);
+        final TextView countdown =
+                a.text("冷却中：剩余 " + formatRemaining(remaining), 13, UiTokens.TEXT_PRIMARY);
+        countdown.setPadding(0, a.dp(6), 0, a.dp(10));
+        box.addView(countdown);
+        TextView desc =
+                a.text(
+                        "连续失败/风控后暂停请求 10 分钟，期间不会向夸克发送任何 API 请求。",
+                        11.5f,
+                        UiTokens.TEXT_TERTIARY);
+        desc.setPadding(0, 0, 0, a.dp(10));
+        box.addView(desc);
+        TextView retry = a.text("刷新", 12.5f, 0xff0b1220);
+        retry.setGravity(Gravity.CENTER);
+        retry.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
+        retry.setBackground(UiTokens.round(a, 999, UiTokens.ACCENT));
+        retry.setFocusable(true);
+        focusable(retry);
+        retry.setOnClickListener(v -> refresh());
+        box.addView(retry, new LinearLayout.LayoutParams(-1, a.dp(44)));
+        content.addView(box, new LinearLayout.LayoutParams(-1, -2));
+        // 每秒倒计时，结束后自动刷新
+        final Runnable[] tick = new Runnable[1];
+        tick[0] =
+                () -> {
+                    if (a.body == null
+                            || !"file-manager".equals(a.body.getTag())
+                            || tab != 1) return;
+                    long left = QuarkUcApi.blockRemaining(a);
+                    if (left <= 0) {
+                        refresh();
+                        return;
+                    }
+                    countdown.setText("冷却中：剩余 " + formatRemaining(left));
+                    a.ui.postDelayed(tick[0], 1000);
+                };
+        a.ui.postDelayed(tick[0], 1000);
+    }
+
+    private static String formatRemaining(long millis) {
+        long seconds = Math.max(0, millis / 1000);
+        return String.format(java.util.Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60);
+    }
+
     private void refreshNetdisk() {
         AppLog.i(
                 "FileMgr",
@@ -540,6 +632,18 @@ final class FileManagerScreen {
                         + netdiskFid
                         + " credential="
                         + (netdiskCookie.isEmpty() ? "none" : netdiskFromSource ? "source" : "app"));
+        // 1.9.20：本地网盘直连默认关闭 + 全局风控冷却
+        if (!a.prefs.getBoolean("local_pan_enabled", false)) {
+            showLocalPanDisabled();
+            return;
+        }
+        AppLog.i("LocalPan", "enabled=true");
+        long blocked = QuarkUcApi.blockRemaining(a);
+        if (blocked > 0) {
+            AppLog.i("LocalPan", "blocked remaining=" + blocked);
+            showPanCooldown(blocked);
+            return;
+        }
         // 1.9.0：进入网盘分段时先按凭据优先级初始化 cookie（否则永远提示未登录）
         if (netdiskCookie.isEmpty()) {
             String[] picked = pickCookie(providerKey, null);
@@ -1139,7 +1243,6 @@ final class FileManagerScreen {
                                 .setItems(
                                         new String[] {
                                             "播放（转码 / 直链）",
-                                            "网页播放（推荐兜底）",
                                             "用源插件缓存地址播放"
                                         },
                                         (d, which) -> {
@@ -1150,12 +1253,6 @@ final class FileManagerScreen {
                                                         netdiskCookie,
                                                         videoItem,
                                                         netdiskFromSource);
-                                            } else if (which == 1) {
-                                                WebPlayerScreen.show(
-                                                        a,
-                                                        providerKey,
-                                                        netdiskCookie,
-                                                        videoItem.fid);
                                             } else {
                                                 String[] cached =
                                                         QuarkUcApi.cachedPluginUrl(
