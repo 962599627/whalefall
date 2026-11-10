@@ -123,6 +123,20 @@ final class PlaybackController {
                     });
             return;
         }
+        if (a.playerChrome != null && a.playerChrome.isLoadingVisible()) {
+            final Cms.Site site = a.playbackControls == null ? null : a.playbackControls.site;
+            final Cms.Video video = a.playbackControls == null ? null : a.playbackControls.video;
+            final Cms.Line line = a.activeLine;
+            final Cms.Episode ep = a.activeEpisode;
+            AppLog.i("PlaybackController", "chrome loading failed: " + message);
+            a.playerChrome.showLoadingError(
+                    message,
+                    () -> {
+                        if (site != null && video != null && ep != null)
+                            a.resolvePlayer(site, video, line, ep);
+                    });
+            return;
+        }
         if (a.current != null && a.current.player) {
             if (a.playStatus != null) a.playStatus.setText(message);
             showControls(a, true);

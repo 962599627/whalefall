@@ -1,16 +1,24 @@
 package com.whalefall.movie;
 
+import android.animation.ValueAnimator;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.RectF;
+import android.graphics.RadialGradient;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -39,18 +47,10 @@ final class PlayerChrome {
     final FrameLayout progress;
     final LinearLayout dock;
     final LinearLayout centerCluster;
-    /** 加载层：帧动画 + 「正在加载…」+ 剧集名（1.7.8）。 */
-    final LinearLayout loadingPill;
-    ImageView loadingFrame;
-    TextView loadingEpisode;
-    static Bitmap[] loadingFrames;
-    static boolean loadingFramesLoading;
-    int loadingFrameIndex;
-    boolean loadingAnimating;
-    static final long LOADING_FRAME_MS = 125L;
-    final Runnable loadingTicker;
+    /** 1.7.9 加载层：圆形帧动画 + 双层光晕 + 浮动 + 动态文字（播放器内嵌）。 */
+    final LoadingLayer loadingLayer;
     final LinearLayout topActions;
-    TextView loadingText, episodeLabel, titleView, seekHint, resolution;
+    TextView episodeLabel, titleView, seekHint, resolution;
     final TextView timeCurrent, timeTotal, clockBig, clockEnd, gesturePill;
     final ImageButton backBtn, moreBtn, foldBtn, state, seekBack, seekFwd;
     final TextView seekBubble;
@@ -65,19 +65,6 @@ final class PlayerChrome {
 
     PlayerChrome(MainActivity host, Cms.Video video, Cms.Episode episode, boolean live) {
         a = host;
-        loadingTicker =
-                new Runnable() {
-                    @Override
-                    public void run() {
-                        if (!loadingAnimating || loadingFrame == null) return;
-                        Bitmap[] cache = loadingFrames;
-                        if (cache != null && cache.length > 0) {
-                            loadingFrameIndex = (loadingFrameIndex + 1) % cache.length;
-                            loadingFrame.setImageBitmap(cache[loadingFrameIndex]);
-                        }
-                        a.ui.postDelayed(this, LOADING_FRAME_MS);
-                    }
-                };
         overlay = new FrameLayout(a);
         overlay.setTag("player-chrome");
         overlay.setClipChildren(true);
@@ -361,44 +348,9 @@ final class PlayerChrome {
 
         a.playbackLayer.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
 
-        // ---------------- 加载层（1.7.8：帧动画，不再用胶囊+转圈） ----------------
-        loadingPill = a.vertical();
-        loadingPill.setTag("player-loading");
-        loadingPill.setGravity(Gravity.CENTER_HORIZONTAL);
-        loadingFrame = new ImageView(a);
-        loadingFrame.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        int frameSide = loadingAnimationSize(a);
-        loadingPill.addView(
-                loadingFrame, new LinearLayout.LayoutParams(frameSide, frameSide));
-        loadingText = a.text("正在加载…", 12, UiTokens.TEXT_TERTIARY);
-        loadingText.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams loadingTextLp = new LinearLayout.LayoutParams(-2, -2);
-        loadingTextLp.topMargin = a.dp(10);
-        loadingPill.addView(loadingText, loadingTextLp);
-        String epTitle = episode != null && episode.name != null ? episode.name.trim() : "";
-        if (!epTitle.isEmpty()) {
-            loadingEpisode = a.text(epTitle, 11, UiTokens.TEXT_TERTIARY);
-            loadingEpisode.setGravity(Gravity.CENTER);
-            loadingEpisode.setMaxLines(1);
-            LinearLayout.LayoutParams epLp = new LinearLayout.LayoutParams(-2, -2);
-            epLp.topMargin = a.dp(3);
-            loadingPill.addView(loadingEpisode, epLp);
-        }
-        loadingPill.addOnAttachStateChangeListener(
-                new View.OnAttachStateChangeListener() {
-                    @Override
-                    public void onViewAttachedToWindow(View v) {
-                        if (loading && loadingPill.getVisibility() == View.VISIBLE)
-                            startLoadingAnimation();
-                    }
-
-                    @Override
-                    public void onViewDetachedFromWindow(View v) {
-                        stopLoadingAnimation();
-                        if (loadingFrame != null) loadingFrame.setImageBitmap(null);
-                    }
-                });
-        a.playbackLayer.addView(loadingPill, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        // ---------------- 加载层（1.7.9：圆形帧动画 + 光晕 + 浮动） ----------------
+        loadingLayer = new LoadingLayer(a, episode);
+        a.playbackLayer.addView(loadingLayer, new FrameLayout.LayoutParams(-1, -1));
 
         a.playerOverlay = overlay;
         a.controlsVisible = true;
@@ -669,63 +621,25 @@ final class PlayerChrome {
         update();
     }
 
-    /** 手机/平板 min(180dp, 屏宽*0.5)；TV min(260dp, 屏宽*0.3)。 */
-    static int loadingAnimationSize(MainActivity a) {
-        int width = a.windowWidth();
-        if (a.isTvDevice()) return Math.min(a.dp(260), Math.round(width * 0.3f));
-        return Math.min(a.dp(180), Math.round(width * 0.5f));
-    }
-
-    void startLoadingAnimation() {
-        if (loadingAnimating || loadingFrame == null) return;
-        ensureLoadingFrames(a);
-        Bitmap[] cache = loadingFrames;
-        if (cache == null || cache.length == 0) return;
-        loadingAnimating = true;
-        loadingFrame.setImageBitmap(cache[loadingFrameIndex]);
-        a.ui.removeCallbacks(loadingTicker);
-        a.ui.postDelayed(loadingTicker, LOADING_FRAME_MS);
-    }
-
-    void stopLoadingAnimation() {
-        loadingAnimating = false;
-        a.ui.removeCallbacks(loadingTicker);
-    }
-
-    /** 切后台/页面暂停：停止动画省电；恢复时按 loading 状态决定是否继续。 */
     void pauseLoadingAnimation() {
-        stopLoadingAnimation();
+        loadingLayer.pause();
     }
 
     void resumeLoadingAnimation() {
-        if (loading && loadingPill.getVisibility() == View.VISIBLE
-                && loadingPill.isAttachedToWindow()) startLoadingAnimation();
+        loadingLayer.resume();
     }
 
-    static synchronized void ensureLoadingFrames(MainActivity a) {
-        if (loadingFrames != null || loadingFramesLoading) return;
-        loadingFramesLoading = true;
-        try {
-            Bitmap[] cache = new Bitmap[7];
-            for (int i = 0; i < cache.length; i++) {
-                String name =
-                        String.format(java.util.Locale.ROOT, "loading/frame_%02d.webp", i + 1);
-                try (InputStream in = a.getAssets().open(name)) {
-                    BitmapFactory.Options options = new BitmapFactory.Options();
-                    options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-                    cache[i] = BitmapFactory.decodeStream(in, null, options);
-                } catch (Throwable ignored) {
-                }
-            }
-            boolean ok = true;
-            for (Bitmap bitmap : cache) if (bitmap == null) ok = false;
-            if (ok) loadingFrames = cache;
-            AppLog.i(
-                    "PlayerChrome",
-                    "loading frames loaded=" + (loadingFrames != null) + " count=" + cache.length);
-        } finally {
-            loadingFramesLoading = false;
-        }
+    /** 预留：仅当拿到缓冲百分比（0..1）时才显示 2dp 细进度条。 */
+    void setLoadingProgress(Float fraction) {
+        loadingLayer.setProgress(fraction);
+    }
+
+    boolean isLoadingVisible() {
+        return loadingLayer.isActiveVisible();
+    }
+
+    void showLoadingError(String message, Runnable retry) {
+        loadingLayer.showError(message, retry);
     }
 
     void switchEpisode(Cms.Episode episode, Cms.Line line) {
@@ -733,10 +647,8 @@ final class PlayerChrome {
         String epName = episode == null || episode.name == null ? "" : episode.name;
         episodeLabel.setText(epName + (lineName.isEmpty() ? "" : "  ·  " + lineName));
         resolution.setText("");
-        String statusMsg = "正在加载…";
-        if (a.playStatus != null) a.playStatus.setText(statusMsg);
-        loadingText.setText(statusMsg);
-        if (loadingEpisode != null) loadingEpisode.setText(epName.isEmpty() ? "" : epName);
+        if (a.playStatus != null) a.playStatus.setText("正在加载");
+        loadingLayer.setEpisode(epName);
         loading = true;
         update();
     }
@@ -760,9 +672,7 @@ final class PlayerChrome {
         if (a.prepared) loading = false;
         if (a.player != null && a.prepared) applyResolutionShort();
         boolean showSpinner = loading && !a.prepared && a.playbackLoading == null && !a.miniMode;
-        loadingPill.setVisibility(showSpinner ? View.VISIBLE : View.GONE);
-        if (showSpinner) startLoadingAnimation();
-        else stopLoadingAnimation();
+        loadingLayer.setActive(showSpinner);
 
         // 中央播放钮：图标 + 描述跟随播放状态；未就绪时降透明度
         UiIcon.setIcon(state, a.playing ? UiIcon.PAUSE : UiIcon.PLAY);
@@ -837,5 +747,475 @@ final class PlayerChrome {
 
     private String DateFormatHour(long millis) {
         return android.text.format.DateFormat.format("HH:mm:ss", millis).toString();
+    }
+
+    // ====================== 1.7.9 加载层 ======================
+
+    /**
+     * 播放器内嵌加载层（按 docs/DESIGN_LOADING_1.7.9.md）：
+     * 圆形帧动画 280ms/帧 + 140ms 交叉淡入、双层光晕呼吸 2.4s、整体浮动 ±4dp/3.2s、
+     * 「正在加载」+ 400ms 省略号（TV 无）、条件进度条、失败态、150ms 进出场。
+     */
+    static final class LoadingLayer extends FrameLayout {
+        static final long FRAME_MS = 280L;
+        static final long CROSS_MS = 140L;
+        static final long GLOW_MS = 2400L;
+        static final long FLOAT_MS = 3200L;
+        static final long DOTS_MS = 400L;
+        static final long FADE_MS = 150L;
+
+        private static Bitmap[] frames;
+        private static boolean framesLoading;
+
+        final MainActivity a;
+        final boolean tv;
+        LinearLayout column;
+        FrameLayout glowBox, frameBox;
+        Glow glow;
+        ImageView frameA, frameB;
+        TextView status, episode, reason;
+        LoadingBar bar;
+        Button retry;
+
+        int frameIndex;
+        boolean showingA = true;
+        boolean active;
+        boolean paused;
+        boolean failed;
+        float baseOffsetY;
+        int dots;
+
+        ValueAnimator crossAnimator, glowAnimator, floatAnimator, fadeAnimator;
+
+        final Runnable frameTicker =
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!active || paused) return;
+                        crossFade();
+                        a.ui.postDelayed(this, FRAME_MS);
+                    }
+                };
+        final Runnable dotsTicker =
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!active || paused || tv) return;
+                        dots = (dots + 1) % 4;
+                        StringBuilder text = new StringBuilder("正在加载");
+                        for (int i = 0; i < dots; i++) text.append('.');
+                        status.setText(text.toString());
+                        a.ui.postDelayed(this, DOTS_MS);
+                    }
+                };
+
+        LoadingLayer(MainActivity host, Cms.Episode ep) {
+            super(host);
+            a = host;
+            tv = host.isTvDevice();
+            setTag("player-loading");
+            setBackgroundColor(0x66000000);
+            setClickable(true);
+            setFocusable(false);
+            setAlpha(0f);
+
+            int avatar = a.dp(tv ? 260 : 168);
+            int glowSize = a.dp(tv ? 340 : 220);
+            column = a.vertical();
+            column.setGravity(Gravity.CENTER_HORIZONTAL);
+
+            glowBox = new FrameLayout(a);
+            glow = new Glow(a);
+            glowBox.addView(glow, new FrameLayout.LayoutParams(-1, -1));
+            frameBox = new FrameLayout(a);
+            frameA = frame(a, avatar);
+            frameB = frame(a, avatar);
+            frameB.setAlpha(0f);
+            frameBox.addView(frameA, new FrameLayout.LayoutParams(-1, -1));
+            frameBox.addView(frameB, new FrameLayout.LayoutParams(-1, -1));
+            FrameLayout.LayoutParams frameLp =
+                    new FrameLayout.LayoutParams(avatar, avatar, Gravity.CENTER);
+            glowBox.addView(frameBox, frameLp);
+            column.addView(glowBox, new LinearLayout.LayoutParams(glowSize, glowSize));
+
+            status = a.text(tv ? "正在加载" : "正在加载", tv ? 15 : 13, UiTokens.TEXT_PRIMARY);
+            status.setGravity(Gravity.CENTER);
+            status.setMinWidth(a.dp(tv ? 150 : 96));
+            LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(-2, -2);
+            statusLp.topMargin = a.dp(tv ? 18 : 16);
+            column.addView(status, statusLp);
+
+            String epName = ep == null || ep.name == null ? "" : ep.name.trim();
+            episode = a.text(epName, tv ? 13 : 11, UiTokens.TEXT_SECONDARY);
+            episode.setGravity(Gravity.CENTER);
+            episode.setMaxLines(1);
+            episode.setEllipsize(TextUtils.TruncateAt.END);
+            episode.setVisibility(epName.isEmpty() ? View.GONE : View.VISIBLE);
+            LinearLayout.LayoutParams epLp = new LinearLayout.LayoutParams(-2, -2);
+            epLp.topMargin = a.dp(tv ? 5 : 4);
+            column.addView(episode, epLp);
+
+            bar = new LoadingBar(a);
+            bar.setVisibility(View.GONE);
+            LinearLayout.LayoutParams barLp =
+                    new LinearLayout.LayoutParams(a.dp(tv ? 260 : 168), a.dp(2));
+            barLp.topMargin = a.dp(8);
+            column.addView(bar, barLp);
+
+            reason = a.text("", tv ? 13 : 11, UiTokens.TEXT_SECONDARY);
+            reason.setGravity(Gravity.CENTER);
+            reason.setMaxLines(2);
+            reason.setEllipsize(TextUtils.TruncateAt.END);
+            reason.setVisibility(View.GONE);
+            LinearLayout.LayoutParams reasonLp = new LinearLayout.LayoutParams(-2, -2);
+            reasonLp.topMargin = a.dp(6);
+            reasonLp.leftMargin = a.dp(24);
+            reasonLp.rightMargin = a.dp(24);
+            column.addView(reason, reasonLp);
+
+            retry =
+                    a.button(
+                            "重试", "player-loading-retry", () -> {
+                                if (retryAction != null) retryAction.run();
+                            });
+            retry.setTextSize(tv ? 14 : 13);
+            retry.setTextColor(UiTokens.TEXT_PRIMARY);
+            retry.setBackground(UiTokens.round(a, 20, 0x1affffff, 0x33ffffff));
+            retry.setVisibility(View.GONE);
+            LinearLayout.LayoutParams retryLp =
+                    new LinearLayout.LayoutParams(
+                            a.dp(tv ? 160 : 120), a.dp(tv ? 48 : 44));
+            retryLp.topMargin = a.dp(12);
+            column.addView(retry, retryLp);
+
+            addView(column, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+            addOnAttachStateChangeListener(
+                    new View.OnAttachStateChangeListener() {
+                        @Override
+                        public void onViewAttachedToWindow(View v) {
+                            refreshBaseOffset();
+                            if (active) resume();
+                        }
+
+                        @Override
+                        public void onViewDetachedFromWindow(View v) {
+                            pause();
+                            frameA.setImageBitmap(null);
+                            frameB.setImageBitmap(null);
+                        }
+                    });
+        }
+
+        private static ImageView frame(MainActivity a, int size) {
+            ImageView view = new ImageView(a);
+            view.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            return view;
+        }
+
+        Runnable retryAction;
+
+        // ---------------- 状态 ----------------
+
+        void setEpisode(String epName) {
+            String value = epName == null ? "" : epName.trim();
+            episode.setText(value);
+            episode.setVisibility(value.isEmpty() ? View.GONE : View.VISIBLE);
+        }
+
+        void setActive(boolean value) {
+            if (active == value) return;
+            active = value;
+            if (value) showLayer();
+            else hideLayer();
+        }
+
+        boolean isActiveVisible() {
+            return active && getVisibility() == View.VISIBLE;
+        }
+
+        void setProgress(Float fraction) {
+            if (fraction == null || fraction < 0f || fraction > 1f) {
+                bar.setVisibility(View.GONE);
+                return;
+            }
+            bar.setProgress(fraction);
+            bar.setVisibility(View.VISIBLE);
+        }
+
+        void showError(String message, Runnable retryRunnable) {
+            failed = true;
+            retryAction = retryRunnable;
+            pause();
+            frameBox.setAlpha(0.55f);
+            status.setText("加载失败");
+            reason.setText(message == null ? "" : message);
+            reason.setVisibility(message == null || message.trim().isEmpty() ? View.GONE : View.VISIBLE);
+            bar.setVisibility(View.GONE);
+            retry.setVisibility(View.VISIBLE);
+            retry.requestFocus();
+        }
+
+        private void showLayer() {
+            failed = false;
+            frameBox.setAlpha(1f);
+            status.setText("正在加载");
+            reason.setVisibility(View.GONE);
+            retry.setVisibility(View.GONE);
+            bar.setVisibility(View.GONE);
+            setVisibility(View.VISIBLE);
+            fadeTo(1f);
+            start();
+        }
+
+        private void hideLayer() {
+            if (getVisibility() != View.VISIBLE) return;
+            fadeTo(0f);
+            a.ui.postDelayed(
+                    () -> {
+                        if (!active) {
+                            pause();
+                            setVisibility(View.GONE);
+                        }
+                    },
+                    FADE_MS);
+        }
+
+        private void fadeTo(float target) {
+            if (fadeAnimator != null) fadeAnimator.cancel();
+            float from = getAlpha();
+            fadeAnimator = ValueAnimator.ofFloat(from, target);
+            fadeAnimator.setDuration(FADE_MS);
+            fadeAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
+            fadeAnimator.addUpdateListener(v -> setAlpha((float) v.getAnimatedValue()));
+            fadeAnimator.start();
+        }
+
+        // ---------------- 动效 ----------------
+
+        void pause() {
+            paused = true;
+            a.ui.removeCallbacks(frameTicker);
+            a.ui.removeCallbacks(dotsTicker);
+            if (crossAnimator != null) crossAnimator.cancel();
+            if (glowAnimator != null) glowAnimator.cancel();
+            if (floatAnimator != null) floatAnimator.cancel();
+        }
+
+        void resume() {
+            paused = false;
+            if (!active || failed) return;
+            start();
+            refreshBaseOffset();
+        }
+
+        private void start() {
+            paused = false;
+            ensureFrames(a);
+            if (frames == null || frames.length == 0) return;
+            if (frameA.getDrawable() == null) {
+                frameIndex = 0;
+                frameA.setImageBitmap(frames[0]);
+                frameA.setAlpha(1f);
+                frameB.setAlpha(0f);
+                showingA = true;
+            }
+            refreshBaseOffset();
+            a.ui.removeCallbacks(frameTicker);
+            a.ui.postDelayed(frameTicker, FRAME_MS);
+            if (!tv) {
+                a.ui.removeCallbacks(dotsTicker);
+                a.ui.postDelayed(dotsTicker, DOTS_MS);
+            }
+            boolean reduced = false;
+            try {
+                reduced = a.prefs.getBoolean(Prefs.REDUCED, false);
+            } catch (Throwable ignored) {
+            }
+            if (!reduced) startGlow();
+            else {
+                glow.setBreath(0.5f);
+                glowBox.setScaleX(1f);
+                glowBox.setScaleY(1f);
+            }
+            if (!reduced) startFloat();
+        }
+
+        private void crossFade() {
+            Bitmap[] cache = frames;
+            if (cache == null || cache.length == 0) return;
+            final ImageView next = showingA ? frameB : frameA;
+            final ImageView old = showingA ? frameA : frameB;
+            frameIndex = (frameIndex + 1) % cache.length;
+            next.setImageBitmap(cache[frameIndex]);
+            next.setAlpha(0f);
+            next.bringToFront();
+            if (crossAnimator != null) crossAnimator.cancel();
+            crossAnimator = ValueAnimator.ofFloat(0f, 1f);
+            crossAnimator.setDuration(CROSS_MS);
+            crossAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
+            crossAnimator.addUpdateListener(v -> next.setAlpha((float) v.getAnimatedValue()));
+            crossAnimator.start();
+            old.setAlpha(1f);
+            showingA = !showingA;
+        }
+
+        private void startGlow() {
+            if (glowAnimator != null) glowAnimator.cancel();
+            glowAnimator = ValueAnimator.ofFloat(0f, 1f);
+            glowAnimator.setDuration(GLOW_MS);
+            glowAnimator.setRepeatCount(ValueAnimator.INFINITE);
+            glowAnimator.setRepeatMode(ValueAnimator.REVERSE);
+            glowAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
+            glowAnimator.addUpdateListener(
+                    v -> {
+                        float t = (float) v.getAnimatedValue();
+                        glow.setBreath(t);
+                        float scale = 0.96f + 0.08f * t;
+                        glowBox.setScaleX(scale);
+                        glowBox.setScaleY(scale);
+                    });
+            glowAnimator.start();
+        }
+
+        private void startFloat() {
+            if (floatAnimator != null) floatAnimator.cancel();
+            floatAnimator = ValueAnimator.ofFloat(0f, 1f);
+            floatAnimator.setDuration(FLOAT_MS);
+            floatAnimator.setRepeatCount(ValueAnimator.INFINITE);
+            floatAnimator.setRepeatMode(ValueAnimator.REVERSE);
+            floatAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
+            floatAnimator.addUpdateListener(
+                    v -> {
+                        float t = (float) v.getAnimatedValue();
+                        float offset = (t * 2f - 1f) * a.dp(4);
+                        column.setTranslationY(baseOffsetY + offset);
+                    });
+            floatAnimator.start();
+        }
+
+        private void refreshBaseOffset() {
+            int height = getHeight();
+            if (height <= 0) return;
+            baseOffsetY = -(height * (tv ? 0.03f : 0.04f));
+            column.setTranslationY(baseOffsetY);
+        }
+
+        @Override
+        protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+            super.onSizeChanged(w, h, oldw, oldh);
+            refreshBaseOffset();
+        }
+
+        @Override
+        protected void onWindowVisibilityChanged(int visibility) {
+            super.onWindowVisibilityChanged(visibility);
+            if (visibility == View.VISIBLE) {
+                if (active) resume();
+            } else {
+                pause();
+            }
+        }
+
+        static synchronized void ensureFrames(MainActivity a) {
+            if (frames != null || framesLoading) return;
+            framesLoading = true;
+            try {
+                Bitmap[] cache = new Bitmap[7];
+                for (int i = 0; i < cache.length; i++) {
+                    String name =
+                            String.format(
+                                    java.util.Locale.ROOT, "loading/frame_%02d.webp", i + 1);
+                    try (InputStream in = a.getAssets().open(name)) {
+                        BitmapFactory.Options options = new BitmapFactory.Options();
+                        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+                        cache[i] = BitmapFactory.decodeStream(in, null, options);
+                    } catch (Throwable ignored) {
+                    }
+                }
+                boolean ok = true;
+                for (Bitmap bitmap : cache) if (bitmap == null) ok = false;
+                if (ok) frames = cache;
+                AppLog.i(
+                        "PlayerChrome",
+                        "loading frames loaded=" + (frames != null) + " count=" + cache.length);
+            } finally {
+                framesLoading = false;
+            }
+        }
+    }
+
+    /** 双层径向光晕：蓝紫 #8FA8FF + 粉 #FFB3C8，呼吸由 LoadingLayer 驱动。 */
+    static final class Glow extends View {
+        final Paint blue = new Paint(Paint.ANTI_ALIAS_FLAG);
+        final Paint pink = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float breath = 0.5f;
+
+        Glow(MainActivity a) {
+            super(a);
+        }
+
+        void setBreath(float value) {
+            breath = Math.max(0f, Math.min(1f, value));
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            super.onDraw(c);
+            float cx = getWidth() / 2f;
+            float cy = getHeight() / 2f;
+            float radius = Math.min(getWidth(), getHeight()) / 2f;
+            float blueAlpha = 0.35f + 0.35f * breath;
+            float pinkAlpha = 0.10f + 0.08f * breath;
+            blue.setShader(
+                    new RadialGradient(
+                            cx,
+                            cy,
+                            radius,
+                            new int[] {0xFF8FA8FF, 0x008FA8FF},
+                            null,
+                            Shader.TileMode.CLAMP));
+            blue.setAlpha((int) (255 * blueAlpha));
+            c.drawCircle(cx, cy, radius, blue);
+            pink.setShader(
+                    new RadialGradient(
+                            cx,
+                            cy,
+                            radius * 1.12f,
+                            new int[] {0xFFFFB3C8, 0x00FFB3C8},
+                            null,
+                            Shader.TileMode.CLAMP));
+            pink.setAlpha((int) (255 * pinkAlpha));
+            c.drawCircle(cx, cy, radius * 1.12f, pink);
+        }
+    }
+
+    /** 2dp 条件进度条：轨道 #33FFFFFF、已缓冲 #FF8FB1。 */
+    static final class LoadingBar extends View {
+        final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG);
+        final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float progress;
+
+        LoadingBar(MainActivity a) {
+            super(a);
+            track.setColor(0x33FFFFFF);
+            fill.setColor(0xFFFF8FB1);
+        }
+
+        void setProgress(float value) {
+            progress = Math.max(0f, Math.min(1f, value));
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            super.onDraw(c);
+            float h = getHeight();
+            float r = h / 2f;
+            c.drawRoundRect(new RectF(0, 0, getWidth(), h), r, r, track);
+            if (progress > 0f)
+                c.drawRoundRect(
+                        new RectF(0, 0, getWidth() * progress, h), r, r, fill);
+        }
     }
 }
