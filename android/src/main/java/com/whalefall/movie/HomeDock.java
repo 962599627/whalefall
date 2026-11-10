@@ -85,7 +85,13 @@ final class HomeDock {
             () -> a.open(new MainActivity.Screen(() -> TvLive.show(a)), true),
             () -> a.open(new MainActivity.Screen(() -> new FavoritesScreen(a).show()), true),
             () -> a.openSourceAccountPanel(),
-            () -> a.open(new MainActivity.Screen(() -> CloudZoneScreen.show(a)), true),
+            () -> {
+                AppLog.i("Nav", "cloud-zone open rail=dock");
+                if (!MobileShell.switchToCloudZone(a))
+                    a.open(
+                            new MainActivity.Screen(
+                                    () -> CloudZoneScreen.show(a)), true);
+            },
             () -> a.open(new MainActivity.Screen(a::settings), true)
         };
         for (int i = 0; i < items.length; i++) {

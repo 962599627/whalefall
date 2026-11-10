@@ -1328,7 +1328,19 @@ public final class MainActivity extends Activity {
                 });
         ui.postDelayed(
                 () -> {
-                    if (root != null && !SafeMode.enabled(this)) applyWallpaper(root);
+                    if (root != null && !SafeMode.enabled(this)) {
+                        applyWallpaper(root);
+                        AppLog.i(
+                                "SafeMode",
+                                "restore retry phase=150 root="
+                                        + System.identityHashCode(root)
+                                        + " wallpaper="
+                                        + ((root.findViewWithTag(BACKDROP_TAG) != null)
+                                                ? "ok"
+                                                : "black")
+                                        + " videoAttached="
+                                        + (videoWallpaper != null && videoWallpaper.getParent() == root));
+                    }
                 },
                 150);
         ui.postDelayed(
@@ -1337,15 +1349,34 @@ public final class MainActivity extends Activity {
                         applyWallpaper(root);
                         AppLog.i(
                                 "SafeMode",
-                                "restore retry root="
+                                "restore retry phase=400 root="
                                         + System.identityHashCode(root)
                                         + " wallpaper="
                                         + ((root.findViewWithTag(BACKDROP_TAG) != null)
                                                 ? "ok"
-                                                : "black"));
+                                                : "black")
+                                        + " videoAttached="
+                                        + (videoWallpaper != null && videoWallpaper.getParent() == root));
                     }
                 },
                 400);
+        ui.postDelayed(
+                () -> {
+                    if (root != null && !SafeMode.enabled(this)) {
+                        applyWallpaper(root);
+                        AppLog.i(
+                                "SafeMode",
+                                "restore retry phase=800 root="
+                                        + System.identityHashCode(root)
+                                        + " wallpaper="
+                                        + ((root.findViewWithTag(BACKDROP_TAG) != null)
+                                                ? "ok"
+                                                : "black")
+                                        + " videoAttached="
+                                        + (videoWallpaper != null && videoWallpaper.getParent() == root));
+                    }
+                },
+                800);
         boolean staticOn = prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false);
         boolean videoOn = videoWallpaperEnabled();
         AppLog.i(
@@ -1604,6 +1635,10 @@ public final class MainActivity extends Activity {
             }
         }
         if (current != null && current.home) {
+            if (MobileShell.activeTab == 6) {
+                if (MobileShell.activeShell != null) MobileShell.activeShell.switchTab(0);
+                return;
+            }
             if (!isTvDevice() && MobileShell.activeTab == 4 && MobileShell.settingsSubPage != 0) {
                 MobileShell.settingsSubPage = 0;
                 MobileShell.show(this);

@@ -225,6 +225,18 @@ final class MobileShell {
 
     MobileShell(MainActivity activity) {
         this.a = activity;
+        activeShell = this;
+    }
+
+    /** 1.8.22：Dock「云盘专区」切到 shell 内嵌 tab（不打开新 Screen）。 */
+    static MobileShell activeShell;
+
+    static boolean switchToCloudZone(MainActivity activity) {
+        MobileShell shell = activeShell;
+        if (shell == null || shell.a != activity) return false;
+        AppLog.i("Nav", "cloud-zone open rail=shell tab");
+        shell.switchTab(6);
+        return true;
     }
 
     static void show(MainActivity a) {
@@ -509,6 +521,7 @@ final class MobileShell {
             a.root.addView(mainRow, new FrameLayout.LayoutParams(-1, -1));
 
             contentContainer = new FrameLayout(a);
+            contentContainer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             mainRow.addView(contentContainer, new LinearLayout.LayoutParams(0, -1, 1));
 
             FrameLayout railWrap = new FrameLayout(a);
@@ -522,6 +535,7 @@ final class MobileShell {
         } else {
             // Layer 1: Full-bleed page container
             contentContainer = new FrameLayout(a);
+            contentContainer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             a.root.addView(contentContainer, new FrameLayout.LayoutParams(-1, -1));
 
             // Layer 2: Soft top status-bar edge fade (matching iPhone ShaderMask)
@@ -764,8 +778,8 @@ final class MobileShell {
                             sliding = false;
                             if (action == android.view.MotionEvent.ACTION_UP && pendingTab >= 0) {
                                 if (pendingTab == 6) {
-                                    AppLog.i("Nav", "cloud-zone open rail=shell");
-                                    CloudZoneScreen.show(a);
+                                    AppLog.i("Nav", "cloud-zone open rail=shell tab");
+                                    switchTab(6);
                                 } else switchTab(pendingTab);
                             }
                             pendingTab = -1;
@@ -820,8 +834,8 @@ final class MobileShell {
             tab.setOnClickListener(
                     v -> {
                         if (tabIdx == 6) {
-                            AppLog.i("Nav", "cloud-zone open rail=shell");
-                            CloudZoneScreen.show(a);
+                            AppLog.i("Nav", "cloud-zone open rail=shell tab");
+                            switchTab(6);
                         } else switchTab(tabIdx);
                     });
             navTabs[tabIdx] = tab;
@@ -866,7 +880,7 @@ final class MobileShell {
         homeReady = false;
         ++a.generation;
         if (activeTab == 0) captureHomeAnchor();
-        activeTab = Math.max(0, Math.min(5, index));
+        activeTab = Math.max(0, Math.min(6, index));
         a.cancelPageRequests();
         // When on Search tab (1), highlight Home (0) in the 4-tab dock
         int highlightedDockTab = activeTab == 1 ? 0 : activeTab;
@@ -911,7 +925,29 @@ final class MobileShell {
             case 5:
                 renderTvTab();
                 break;
+            case 6:
+                renderCloudZoneTab();
+                break;
         }
+    }
+
+    /** 1.8.22 内嵌「云盘专区」tab：标题 + 图三 8 卡网格 + 查看文件入口。 */
+    private void renderCloudZoneTab() {
+        contentContainer.removeAllViews();
+        ScrollView sv = new ScrollView(a);
+        sv.setFillViewport(true);
+        sv.setVerticalScrollBarEnabled(false);
+        sv.setClipToPadding(false);
+        LinearLayout body = a.vertical();
+        body.setPadding(0, statusBarHeight() + a.dp(10), 0, a.dp(24));
+        sv.addView(body, new ScrollView.LayoutParams(-1, -2));
+        contentContainer.addView(sv, new FrameLayout.LayoutParams(-1, -1));
+        TextView title = a.text("云盘专区 · 本地", 22, Color.WHITE);
+        title.setTypeface(null, Typeface.BOLD);
+        title.setPadding(a.dp(16), 0, a.dp(16), a.dp(6));
+        body.addView(title);
+        AppLog.i("CloudZone", "render tab inline");
+        CloudZoneScreen.renderInto(a, body, this::renderCloudZoneTab);
     }
 
     /** TAB 5：电视台直播（官方网页直播，内置央视 + 自定义频道）。 */

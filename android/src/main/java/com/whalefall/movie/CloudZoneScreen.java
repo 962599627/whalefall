@@ -13,15 +13,20 @@ final class CloudZoneScreen {
 
     static void show(final MainActivity a) {
         a.renderPage("云盘专区 · 本地", "LOCAL CLOUD");
-        AppLog.i("CloudZone", "open local zone grid");
-        LinearLayout body = a.body;
+        renderInto(a, a.body, () -> show(a));
+    }
+
+    /** 1.8.22：供 MobileShell 内嵌 tab 调用（不新建页面）。 */
+    static void renderInto(
+            final MainActivity a, final LinearLayout body, final Runnable onChanged) {
+        AppLog.i("CloudZone", "renderInto inline");
         TextView note = a.text("本页是 App 本地直连登录，不经过源插件", 11.5f, MainActivity.MUTED);
         note.setPadding(a.dp(16), 0, a.dp(16), a.dp(6));
         body.addView(note);
         CloudInlineView.build(
                 a,
                 body,
-                () -> show(a),
+                onChanged,
                 "云盘专区 · 本地",
                 "本 App 直连登录（不经过源插件）：扫码/清除均为本地凭据");
         // 查看文件（夸克/UC 已登录才有）
