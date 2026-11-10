@@ -2,6 +2,7 @@ package com.whalefall.movie;
 
 import android.graphics.Bitmap;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;

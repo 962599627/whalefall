@@ -1150,8 +1150,6 @@ public final class GlobalSearchScreen implements AutoCloseable {
                 lp.setMargins(a.dp(2), 0, a.dp(6), 0);
                 sortRow.addView(b, lp);
             }
-            a.addButton(resultBody, sortRow);
-            resultBody.removeView(sortRow);
             resultBody.addView(sortRow, 0);
         }
         updateSortLabels();
@@ -1385,7 +1383,10 @@ public final class GlobalSearchScreen implements AutoCloseable {
     /** 1.9.27：合并结果卡片（N 个来源 · 当前：来源名，长按选源）。 */
     LinearLayout makeMergedCard(final Merged merged) {
         Cms.Video video = merged.primaryVideo;
-        LinearLayout card = makeCard(merged.primarySite, video, merged.sourceCount);
+        SourceResult primary =
+                new SourceResult(
+                        merged.primarySite, merged.videos, SearchCoordinator.Outcome.RESULT);
+        LinearLayout card = makeCard(primary, video, merged.sourceCount);
         // P1：来源信息不截断，改为 2 行小字 + 可聚焦「N 个来源」按钮
         TextView count =
                 a.text(
