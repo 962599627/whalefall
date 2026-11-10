@@ -38,7 +38,9 @@ final class MarkdownScreen {
         a.applyMobileSystemBars(false);
 
         a.root = new android.widget.FrameLayout(a);
+        a.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         a.installBackdrop(a.root);
+        AppLog.i("Wallpaper", "page=MarkdownScreen bg=transparent");
         a.setContentView(a.root);
 
         LinearLayout column = a.vertical();

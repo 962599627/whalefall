@@ -105,7 +105,8 @@ public final class GlobalSearchScreen implements AutoCloseable {
         emptyResult = null;
         moreResults = null;
         pageTicket = a.generation;
-        a.root.setBackgroundColor(0xff0b1220);
+        a.root.setBackgroundColor(0x00000000);
+        AppLog.i("Wallpaper", "page=GlobalSearchScreen bg=transparent");
         if (a.root.getChildAt(0) instanceof ImageLoader.Atmosphere) a.root.removeViewAt(0);
         a.body.setPadding(a.dp(32), a.dp(14), a.dp(32), a.dp(16));
         try {

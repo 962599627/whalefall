@@ -53,6 +53,7 @@ final class ChannelManagerScreen {
         a.generation++;
         a.applyMobileSystemBars(false);
         a.root = new FrameLayout(a);
+        a.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         a.installBackdrop(a.root);
         a.setContentView(a.root);
 

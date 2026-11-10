@@ -21,6 +21,13 @@ final class NetdiskSheetScreen {
 
     static void show(final MainActivity a) {
         a.renderPage("我的云盘 · 扫码与账号配置", "NETDISK · ACCOUNT");
+        if (a.root != null) a.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        if (a.scroll != null) a.scroll.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        if (a.body != null) {
+            a.body.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            a.body.setTag("netdisk-sheet");
+        }
+        AppLog.i("Wallpaper", "page=NetdiskSheetScreen bg=transparent");
         AppLog.i("NetdiskSheet", "open order=" + a.prefs.getInt(ORDER_KEY, 0));
         final int order = ((a.prefs.getInt(ORDER_KEY, 0) % 4) + 4) % 4;
         final String selectedDrive = DRIVES[order];
@@ -99,10 +106,11 @@ final class NetdiskSheetScreen {
         qrLp.topMargin = a.dp(12);
         a.body.addView(qrCard, qrLp);
 
-        // 四盘 tile
+        // 四盘 tile：按显示顺序取真实盘索引，名称/状态/清除全用同一个真实 drive
         for (int i = 0; i < DRIVES.length; i++) {
-            final String drive = DRIVES[i];
-            final int displayIndex = (order + i) % 4;
+            final int actualIndex = (order + i) % 4;
+            final String drive = DRIVES[actualIndex];
+            final String alias = ALIAS[actualIndex];
             LinearLayout tile = a.row();
             tile.setGravity(Gravity.CENTER_VERTICAL);
             tile.setPadding(a.dp(14), a.dp(12), a.dp(14), a.dp(12));
@@ -110,7 +118,7 @@ final class NetdiskSheetScreen {
             tile.setBackground(
                     MobileDetailScreen.glassBg(
                             a, active ? 0xcc1d3350 : 0xcc16283f, 0xb3121d2e, 14));
-            TextView name = a.text(ALIAS[displayIndex] + " · " + NetdiskQrLogin.name(drive), 13, MainActivity.WHITE);
+            TextView name = a.text(alias + " · " + NetdiskQrLogin.name(drive), 13, MainActivity.WHITE);
             name.setTypeface(null, android.graphics.Typeface.BOLD);
             LinearLayout info = a.vertical();
             info.addView(name);
@@ -151,14 +159,25 @@ final class NetdiskSheetScreen {
             clear.setOnClickListener(
                     v -> {
                         if (!NetdiskQrLogin.hasCredential(a, drive)) {
-                            a.toast(ALIAS[displayIndex] + " 未登录");
+                            a.toast(alias + " 未登录");
                             return;
                         }
-                        NetdiskQrLogin.logout(a, drive);
-                        CloudConfigScreen.clearWebCookies(drive);
-                        a.toast("已清除 " + ALIAS[displayIndex]);
-                        AppLog.i("NetdiskSheet", "clear drive=" + drive);
-                        show(a);
+                        new AppDialog.Builder(a)
+                                .setTitle("清除 " + alias + " 本地登录？")
+                                .setMessage("将删除本机保存的该盘 Cookie/Token，可能需要重新扫码登录。")
+                                .setPositiveButton(
+                                        "清除",
+                                        (d, i2) -> {
+                                            NetdiskQrLogin.logout(a, drive);
+                                            CloudConfigScreen.clearWebCookies(drive);
+                                            a.toast("已清除 " + alias);
+                                            AppLog.i(
+                                                    "NetdiskSheet",
+                                                    "clear drive=" + drive + " alias=" + alias);
+                                            show(a);
+                                        })
+                                .setNegativeButton("取消", null)
+                                .show();
                     });
             LinearLayout.LayoutParams clearLp = new LinearLayout.LayoutParams(-2, -2);
             clearLp.leftMargin = a.dp(6);

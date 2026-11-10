@@ -148,13 +148,14 @@ final class HomeDock {
                         }
                     });
         }
+        int last = items.length - 1;
         for (int i = 0; i < items.length; i++) {
             if (bottomMode) {
                 items[i].setNextFocusLeftId(items[Math.max(0, i - 1)].getId());
-                items[i].setNextFocusRightId(items[Math.min(6, i + 1)].getId());
+                items[i].setNextFocusRightId(items[Math.min(last, i + 1)].getId());
             } else {
                 items[i].setNextFocusUpId(items[Math.max(0, i - 1)].getId());
-                items[i].setNextFocusDownId(items[Math.min(6, i + 1)].getId());
+                items[i].setNextFocusDownId(items[Math.min(last, i + 1)].getId());
                 items[i].setNextFocusRightId(items[i].getId());
             }
         }

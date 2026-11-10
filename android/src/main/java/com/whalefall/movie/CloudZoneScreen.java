@@ -13,12 +13,17 @@ final class CloudZoneScreen {
 
     static void show(final MainActivity a) {
         a.renderPage("云盘专区 · 本地", "LOCAL CLOUD");
+        if (a.root != null) a.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        if (a.scroll != null) a.scroll.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        if (a.body != null) a.body.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         renderInto(a, a.body, () -> show(a));
     }
 
     /** 1.8.22：供 MobileShell 内嵌 tab 调用（不新建页面）。 */
     static void renderInto(
             final MainActivity a, final LinearLayout body, final Runnable onChanged) {
+        body.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        AppLog.i("Wallpaper", "page=CloudZone bg=transparent");
         AppLog.i("CloudZone", "renderInto inline");
         TextView note = a.text("本页是 App 本地直连登录，不经过源插件", 11.5f, MainActivity.MUTED);
         note.setPadding(a.dp(16), 0, a.dp(16), a.dp(6));

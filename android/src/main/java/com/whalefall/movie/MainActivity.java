@@ -1398,6 +1398,7 @@ public final class MainActivity extends Activity {
         VideoFilterDialog.dismiss(this);
         preparePage(navigation);
         root = new FrameLayout(this);
+        root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         root.setClipChildren(false);
         root.setClipToPadding(false);
         installBackdrop(root);
@@ -1599,6 +1600,12 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (tvPlayer != null && tvPlayer.back()) return;
+        // 1.8.23：云盘扫码页不直接退出，返回片库 tab
+        if (body != null && "netdisk-sheet".equals(body.getTag())) {
+            MobileShell.show(this);
+            if (MobileShell.activeShell != null) MobileShell.activeShell.switchTab(3);
+            return;
+        }
         if (MobileShell.exitLibrarySelection()) return;
         if (playbackLoading != null) {
             changingMiniEpisode = false;

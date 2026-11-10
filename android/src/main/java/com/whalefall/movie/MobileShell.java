@@ -505,6 +505,7 @@ final class MobileShell {
         resolveActiveSite();
 
         a.root = new FrameLayout(a);
+        a.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         a.installBackdrop(a.root);
         a.setContentView(a.root);
 
@@ -4453,9 +4454,12 @@ final class MobileShell {
         sv.setFillViewport(true);
         sv.setVerticalScrollBarEnabled(false);
         sv.setClipToPadding(false);
+        sv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         contentContainer.addView(sv, new FrameLayout.LayoutParams(-1, -1));
+        AppLog.i("Wallpaper", "page=MobileShellSettings bg=transparent");
 
         final LinearLayout body = a.vertical();
+        body.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         body.setPadding(a.dp(16), statusBarHeight() + a.dp(10), a.dp(16), a.dp(108));
         sv.addView(body, new ScrollView.LayoutParams(-1, -2));
 

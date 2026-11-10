@@ -18,6 +18,10 @@ final class SettingsScreen {
 
     void page(String title, String note) {
         a.renderPage("", "");
+        if (a.root != null) a.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        if (a.scroll != null) a.scroll.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        if (a.body != null) a.body.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        AppLog.i("Wallpaper", "page=SettingsScreen bg=transparent");
         a.body.addView(a.text(title, 28, MainActivity.WHITE));
         a.gap(a.body, 8);
         if (!note.isEmpty()) a.paragraph(note);
