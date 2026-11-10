@@ -70,6 +70,63 @@ final class MarkdownScreen {
         nav.addView(title, titleLp);
         TextView time = a.text(PushFiles.sizeLabel(text.length()), 11.5f, 0xff8d9cb6);
         nav.addView(time);
+        // 1.8.6：文本查看页加复制/分享；TV 无剪贴板时显示文件位置
+        if (!a.isTvDevice()) {
+            TextView copy = a.text("复制", 12, MainActivity.WHITE);
+            copy.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+            copy.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+            MobileDetailScreen.bindTouchFeedback(copy);
+            final String content = text;
+            copy.setOnClickListener(
+                    v -> {
+                        try {
+                            android.content.ClipboardManager manager =
+                                    (android.content.ClipboardManager)
+                                            a.getSystemService(
+                                                    android.content.Context.CLIPBOARD_SERVICE);
+                            if (manager != null)
+                                manager.setPrimaryClip(
+                                        android.content.ClipData.newPlainText(
+                                                baseName(fileName), content));
+                            a.toast("已复制");
+                        } catch (Throwable error) {
+                            a.toast("复制失败：" + error.getMessage());
+                        }
+                    });
+            LinearLayout.LayoutParams copyLp = new LinearLayout.LayoutParams(-2, -2);
+            copyLp.leftMargin = a.dp(8);
+            nav.addView(copy, copyLp);
+
+            TextView share = a.text("分享", 12, MainActivity.WHITE);
+            share.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+            share.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+            MobileDetailScreen.bindTouchFeedback(share);
+            share.setOnClickListener(
+                    v -> {
+                        try {
+                            android.content.Intent intent =
+                                    new android.content.Intent(
+                                            android.content.Intent.ACTION_SEND);
+                            intent.setType("text/plain");
+                            intent.putExtra(android.content.Intent.EXTRA_TEXT, content);
+                            a.startActivity(
+                                    android.content.Intent.createChooser(intent, "分享文本"));
+                        } catch (Throwable error) {
+                            a.toast("分享失败：" + error.getMessage());
+                        }
+                    });
+            LinearLayout.LayoutParams shareLp = new LinearLayout.LayoutParams(-2, -2);
+            shareLp.leftMargin = a.dp(6);
+            nav.addView(share, shareLp);
+        } else {
+            TextView saved = a.text("文件位置", 12, 0xffffb3c8);
+            saved.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+            MobileDetailScreen.bindTouchFeedback(saved);
+            saved.setOnClickListener(v -> a.toast("已保存在文件管理：" + fileName));
+            LinearLayout.LayoutParams savedLp = new LinearLayout.LayoutParams(-2, -2);
+            savedLp.leftMargin = a.dp(8);
+            nav.addView(saved, savedLp);
+        }
         column.addView(nav, new LinearLayout.LayoutParams(-1, -2));
         a.gap(column, 14);
 

@@ -1835,9 +1835,11 @@ final class MobileShell {
         MobileDetailScreen.bindTouchFeedback(chip);
         chip.setOnClickListener(
                 v -> {
-                    // 1.8.4：源里的「云盘配置」是动作页而不是影片列表，直接打开操作页，避免空白
+                    // 1.8.6：读取源真实 Cloud-drive 地址展示网盘条目（不再自绘假卡片）
                     if (isCloudConfigCategory(label, catId)) {
-                        AppLog.i("Catalog", "cloud-config chip clicked label=" + label + " id=" + catId);
+                        AppLog.i(
+                                "Catalog",
+                                "cloud-config chip clicked label=" + label + " id=" + catId);
                         CloudConfigScreen.show(a);
                         return;
                     }
@@ -3290,13 +3292,234 @@ final class MobileShell {
         headerRow.addView(tabScroll, new LinearLayout.LayoutParams(0, -2, 1));
         headerRow.addView(clearBtn);
         page.addView(headerRow, new LinearLayout.LayoutParams(-1, -2));
-        a.gap(page, 12);
+        a.gap(page, 8);
+
+        final MyListAdapter[] adapterRef = {null};
+
+        // 1.8.6 本地搜索：收藏/历史内关键词过滤
+        LinearLayout searchRow = a.row();
+        searchRow.setGravity(Gravity.CENTER_VERTICAL);
+        final EditText librarySearch = new EditText(a);
+        librarySearch.setSingleLine(true);
+        librarySearch.setHint("搜索片名 / 来源");
+        librarySearch.setHintTextColor(MainActivity.MUTED);
+        librarySearch.setTextColor(MainActivity.WHITE);
+        librarySearch.setTextSize(13);
+        librarySearch.setBackground(
+                glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
+        librarySearch.setPadding(a.dp(14), a.dp(8), a.dp(14), a.dp(8));
+        searchRow.addView(librarySearch, new LinearLayout.LayoutParams(0, a.dp(40), 1f));
+        final TextView clearSearch = a.text("×", 16, 0xffef4444);
+        clearSearch.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
+        MobileDetailScreen.bindTouchFeedback(clearSearch);
+        searchRow.addView(clearSearch);
+        page.addView(searchRow, new LinearLayout.LayoutParams(-1, -2));
+        Runnable clearSearchAction =
+                () -> {
+                    librarySearch.setText("");
+                    if (adapterRef[0] != null) adapterRef[0].setQuery("");
+                };
+        clearSearch.setOnClickListener(v -> clearSearchAction.run());
+        librarySearch.addTextChangedListener(
+                new android.text.TextWatcher() {
+                    public void beforeTextChanged(CharSequence s, int a1, int b, int c) {}
+
+                    public void onTextChanged(CharSequence s, int a1, int b, int c) {}
+
+                    public void afterTextChanged(android.text.Editable s) {
+                        if (adapterRef[0] != null) adapterRef[0].setQuery(s.toString());
+                        clearSearch.setVisibility(s.length() == 0 ? View.GONE : View.VISIBLE);
+                    }
+                });
+        clearSearch.setVisibility(View.GONE);
+
+        // 1.8.6 收藏分组胶囊（仅收藏页签）
+        final LinearLayout groupBar = a.row();
+        HorizontalScrollView groupScroll = new HorizontalScrollView(a);
+        groupScroll.setHorizontalScrollBarEnabled(false);
+        groupScroll.addView(groupBar);
+        final Runnable[] renderGroups = new Runnable[1];
+        renderGroups[0] =
+                () -> {
+                    groupBar.removeAllViews();
+                    String current = adapterRef[0] == null ? "" : adapterRef[0].groupFilter;
+                    java.util.LinkedHashMap<String, String> chips = new java.util.LinkedHashMap<>();
+                    chips.put("全部", "");
+                    chips.put("默认", "__default");
+                    for (String g : favoriteGroups(a)) chips.put(g, g);
+                    for (java.util.Map.Entry<String, String> entry : chips.entrySet()) {
+                        TextView chip = a.text(entry.getKey(), 12, MainActivity.WHITE);
+                        chip.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+                        chip.setBackground(
+                                glassBg(
+                                        entry.getValue().equals(current)
+                                                ? 0xffffffff
+                                                : 0xcc172842,
+                                        entry.getValue().equals(current)
+                                                ? 0xffe9eef9
+                                                : 0xcc182b4c,
+                                        a.dp(999),
+                                        a.dp(0.7f),
+                                        entry.getValue().equals(current)
+                                                ? 0xffffffff
+                                                : 0x38ffffff));
+                        chip.setTextColor(
+                                entry.getValue().equals(current) ? 0xff000000 : 0xffe6edf9);
+                        chip.setFocusable(true);
+                        MobileDetailScreen.bindTouchFeedback(chip);
+                        chip.setOnClickListener(
+                                v -> {
+                                    if (adapterRef[0] != null)
+                                        adapterRef[0].setGroupFilter(entry.getValue());
+                                    renderGroups[0].run();
+                                });
+                        LinearLayout.LayoutParams lp =
+                                new LinearLayout.LayoutParams(-2, -2);
+                        lp.rightMargin = a.dp(6);
+                        groupBar.addView(chip, lp);
+                    }
+                    TextView manage = a.text("管理分组", 12, 0xffffb3c8);
+                    manage.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+                    MobileDetailScreen.bindTouchFeedback(manage);
+                    manage.setOnClickListener(v -> manageFavoriteGroups(a, renderGroups[0]));
+                    groupBar.addView(manage);
+                };
+        page.addView(groupScroll, new LinearLayout.LayoutParams(-1, -2));
+        groupScroll.setVisibility(View.GONE);
+
+        // 1.8.6 多选操作栏
+        final LinearLayout selectBar = a.row();
+        selectBar.setGravity(Gravity.CENTER_VERTICAL);
+        selectBar.setPadding(0, a.dp(4), 0, a.dp(4));
+        final TextView selectStatus = a.text("已选 0 项", 12, MainActivity.MUTED);
+        selectBar.addView(selectStatus, new LinearLayout.LayoutParams(0, -2, 1f));
+        final TextView selectAllBtn = a.text("全选", 12, MainActivity.WHITE);
+        final TextView batchBtn = a.text("删除", 12, 0xffef4444);
+        final TextView moveBtn = a.text("移动分组", 12, 0xffffb3c8);
+        final TextView exitSelect = a.text("退出", 12, MainActivity.MUTED);
+        for (TextView b : new TextView[] {selectAllBtn, batchBtn, moveBtn, exitSelect}) {
+            b.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
+            b.setFocusable(true);
+            MobileDetailScreen.bindTouchFeedback(b);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.leftMargin = a.dp(6);
+            selectBar.addView(b, lp);
+        }
+        page.addView(selectBar, new LinearLayout.LayoutParams(-1, -2));
+        selectBar.setVisibility(View.GONE);
 
         // RecyclerView：长列表虚拟化（观看历史 / 我的收藏）
         final FrameLayout listHost = new FrameLayout(a);
         page.addView(listHost, new LinearLayout.LayoutParams(-1, 0, 1f));
+        final Runnable[] updateSelectBar = new Runnable[1];
+        updateSelectBar[0] =
+                () -> {
+                    MyListAdapter ad = adapterRef[0];
+                    boolean sel = ad != null && ad.selecting;
+                    librarySelecting = sel;
+                    selectBar.setVisibility(sel ? View.VISIBLE : View.GONE);
+                    if (sel) {
+                        selectStatus.setText("已选 " + ad.selectedCount() + " 项");
+                        batchBtn.setText(showFavorites[0] ? "取消收藏" : "删除");
+                        moveBtn.setVisibility(showFavorites[0] ? View.VISIBLE : View.GONE);
+                    }
+                };
+        exitSelectionAction =
+                () -> {
+                    if (adapterRef[0] != null) adapterRef[0].exitSelecting();
+                };
+        selectAllBtn.setOnClickListener(
+                v -> {
+                    if (adapterRef[0] != null) adapterRef[0].selectAll();
+                });
+        exitSelect.setOnClickListener(
+                v -> {
+                    if (adapterRef[0] != null) adapterRef[0].exitSelecting();
+                });
+        batchBtn.setOnClickListener(
+                v -> {
+                    MyListAdapter ad = adapterRef[0];
+                    if (ad == null || ad.selectedCount() == 0) return;
+                    final boolean fav = showFavorites[0];
+                    final String rawKey = fav ? Prefs.FAVORITES : Prefs.WATCH_HISTORY;
+                    final String snapshot = a.prefs.getString(rawKey, "[]");
+                    final int n = ad.selectedCount();
+                    final java.util.Set<String> keys =
+                            new java.util.LinkedHashSet<>(ad.selected);
+                    new AppDialog.Builder(a)
+                            .setTitle(fav ? "取消收藏？" : "删除观看记录？")
+                            .setMessage("将对 " + n + " 项执行操作，可撤销。")
+                            .setPositiveButton(
+                                    fav ? "取消收藏" : "删除",
+                                    (d, i) -> {
+                                        if (fav) {
+                                            a.prefs.edit()
+                                                    .putString(
+                                                            Prefs.FAVORITES,
+                                                            Favorites.removeKeys(snapshot, keys))
+                                                    .apply();
+                                        } else {
+                                            String hist = snapshot;
+                                            for (WatchHistory.Entry e :
+                                                    WatchHistory.read(snapshot)) {
+                                                if (keys.contains(e.key()))
+                                                    hist = WatchHistory.removeGroup(hist, e);
+                                            }
+                                            a.prefs.edit()
+                                                    .putString(Prefs.WATCH_HISTORY, hist)
+                                                    .apply();
+                                        }
+                                        ad.exitSelecting();
+                                        ad.reload();
+                                        new AppDialog.Builder(a)
+                                                .setTitle("已处理 " + n + " 项")
+                                                .setPositiveButton(
+                                                        "撤销",
+                                                        (dd, ii) -> {
+                                                            a.prefs.edit()
+                                                                    .putString(rawKey, snapshot)
+                                                                    .apply();
+                                                            ad.reload();
+                                                        })
+                                                .setNegativeButton("知道了", null)
+                                                .show();
+                                    })
+                            .setNegativeButton("取消", null)
+                            .show();
+                });
+        moveBtn.setOnClickListener(
+                v -> {
+                    MyListAdapter ad = adapterRef[0];
+                    if (ad == null || ad.selectedCount() == 0) return;
+                    java.util.List<String> groups = favoriteGroups(a);
+                    String[] options = new String[groups.size() + 1];
+                    options[0] = "默认分组";
+                    for (int i = 0; i < groups.size(); i++) options[i + 1] = groups.get(i);
+                    final java.util.Set<String> keys = new java.util.LinkedHashSet<>(ad.selected);
+                    new AppDialog.Builder(a)
+                            .setTitle("移动 " + keys.size() + " 项到…")
+                            .setItems(
+                                    options,
+                                    (d, index) -> {
+                                        String group = index == 0 ? "" : options[index];
+                                        a.prefs.edit()
+                                                .putString(
+                                                        Prefs.FAVORITES,
+                                                        Favorites.moveGroup(
+                                                                a.prefs.getString(
+                                                                        Prefs.FAVORITES, "[]"),
+                                                                keys,
+                                                                group))
+                                                .apply();
+                                        ad.exitSelecting();
+                                        ad.reload();
+                                        renderGroups[0].run();
+                                        a.toast("已移动到" + (index == 0 ? "默认分组" : "「" + group + "」"));
+                                    })
+                            .setNegativeButton("取消", null)
+                            .show();
+                });
 
-        final MyListAdapter[] adapterRef = {null};
         final Runnable renderSubTab =
                 new Runnable() {
                     @Override
@@ -3309,7 +3532,14 @@ final class MobileShell {
                         styleLibraryPill(tabFav, favMode);
                         styleLibraryPill(tabDown, downMode);
                         clearBtn.setVisibility(histMode ? View.VISIBLE : View.GONE);
+                        searchRow.setVisibility(downMode ? View.GONE : View.VISIBLE);
+                        groupScroll.setVisibility(favMode ? View.VISIBLE : View.GONE);
+                        if (adapterRef[0] != null) adapterRef[0].exitSelecting();
                         listHost.removeAllViews();
+                        if (librarySearch.length() > 0) {
+                            librarySearch.setText("");
+                            if (adapterRef[0] != null) adapterRef[0].setQuery("");
+                        }
 
                         if (downMode) {
                             ScrollView sv = new ScrollView(a);
@@ -3330,7 +3560,15 @@ final class MobileShell {
 
                         final boolean favModeFinal = favMode;
                         listHost.post(
-                                () -> buildLibraryList(listHost, favModeFinal, adapterRef));
+                                () -> {
+                                    buildLibraryList(
+                                            listHost,
+                                            favModeFinal,
+                                            adapterRef,
+                                            updateSelectBar[0],
+                                            clearSearchAction);
+                                    renderGroups[0].run();
+                                });
                     }
                 };
 
@@ -3367,7 +3605,11 @@ final class MobileShell {
 
     /** 片库列表：手机单列行，平板/TV 自适应网格（列数按内容宽度计算）。 */
     private void buildLibraryList(
-            FrameLayout host, boolean favoritesMode, MyListAdapter[] adapterRef) {
+            FrameLayout host,
+            boolean favoritesMode,
+            MyListAdapter[] adapterRef,
+            Runnable onSelection,
+            Runnable onClearQuery) {
         int avail = host.getWidth();
         if (avail <= 0) avail = a.usableWidth > 0 ? a.usableWidth : a.windowWidth();
         boolean phone = a.formFactor == TvLayoutPolicy.FORM_PHONE;
@@ -3383,6 +3625,8 @@ final class MobileShell {
         int cardW = cols > 1 ? (avail - sidePad * 2 - gap * (cols - 1)) / cols : avail;
         RecyclerView rv = new RecyclerView(a);
         final MyListAdapter adapter = new MyListAdapter(favoritesMode, cols, cardW, gap);
+        adapter.onSelectionChanged = onSelection;
+        adapter.onClearQuery = onClearQuery;
         if (cols > 1) {
             final int spanCount = cols;
             GridLayoutManager glm = new GridLayoutManager(a, spanCount);
@@ -3412,6 +3656,11 @@ final class MobileShell {
         private List<WatchHistory.Entry> history = new ArrayList<>();
         private List<Favorites.Entry> favorites = new ArrayList<>();
         private boolean empty;
+        String query = "";
+        String groupFilter = "";
+        boolean selecting;
+        final java.util.LinkedHashSet<String> selected = new java.util.LinkedHashSet<>();
+        Runnable onSelectionChanged;
 
         MyListAdapter(boolean favoritesMode, int cols, int cardW, int gap) {
             this.favoritesMode = favoritesMode;
@@ -3420,15 +3669,100 @@ final class MobileShell {
             this.gap = gap;
         }
 
+        void setQuery(String value) {
+            String next = value == null ? "" : value.trim();
+            if (next.equals(query)) return;
+            query = next;
+            selected.clear();
+            selecting = false;
+            reload();
+        }
+
+        void setGroupFilter(String value) {
+            String next = value == null ? "" : value;
+            if (next.equals(groupFilter)) return;
+            groupFilter = next;
+            selected.clear();
+            reload();
+        }
+
         void reload() {
             if (favoritesMode) {
                 favorites = Favorites.read(a.prefs.getString(Prefs.FAVORITES, "[]"));
+                if (!groupFilter.isEmpty()) {
+                    for (java.util.Iterator<Favorites.Entry> it = favorites.iterator();
+                            it.hasNext(); ) {
+                        Favorites.Entry f = it.next();
+                        String g = f.group == null ? "" : f.group;
+                        boolean match =
+                                "__default".equals(groupFilter)
+                                        ? g.isEmpty()
+                                        : groupFilter.equals(g);
+                        if (!match) it.remove();
+                    }
+                }
+                if (!query.isEmpty()) {
+                    for (java.util.Iterator<Favorites.Entry> it = favorites.iterator();
+                            it.hasNext(); ) {
+                        Favorites.Entry f = it.next();
+                        if (!f.title.toLowerCase(java.util.Locale.ROOT)
+                                .contains(query.toLowerCase(java.util.Locale.ROOT)))
+                            it.remove();
+                    }
+                }
                 empty = favorites.isEmpty();
             } else {
                 history = WatchHistory.collapsed(a.watchHistory());
+                if (!query.isEmpty()) {
+                    for (java.util.Iterator<WatchHistory.Entry> it = history.iterator();
+                            it.hasNext(); ) {
+                        WatchHistory.Entry e = it.next();
+                        String text =
+                                ((e.title == null ? "" : e.title)
+                                                + " "
+                                                + (e.site == null ? "" : e.site))
+                                        .toLowerCase(java.util.Locale.ROOT);
+                        if (!text.contains(query.toLowerCase(java.util.Locale.ROOT)))
+                            it.remove();
+                    }
+                }
                 empty = history.isEmpty();
             }
             notifyDataSetChanged();
+        }
+
+        int selectedCount() {
+            return selected.size();
+        }
+
+        void toggleSelect(String key) {
+            if (!selected.remove(key)) selected.add(key);
+            selecting = !selected.isEmpty();
+            notifyDataSetChanged();
+            if (onSelectionChanged != null) onSelectionChanged.run();
+        }
+
+        void selectAll() {
+            if (empty) return;
+            selected.clear();
+            for (int i = 0; i < getItemCount(); i++) {
+                if (favoritesMode) selected.add(favorites.get(i).key());
+                else selected.add(history.get(i).key());
+            }
+            selecting = !selected.isEmpty();
+            notifyDataSetChanged();
+            if (onSelectionChanged != null) onSelectionChanged.run();
+        }
+
+        void exitSelecting() {
+            selected.clear();
+            selecting = false;
+            notifyDataSetChanged();
+            if (onSelectionChanged != null) onSelectionChanged.run();
+        }
+
+        String keyAt(int position) {
+            return favoritesMode ? favorites.get(position).key() : history.get(position).key();
         }
 
         @Override
@@ -3467,6 +3801,7 @@ final class MobileShell {
             row.setBackground(
                     glassBg(0xcc1e3557, 0xcc17294a, a.dp(16), a.dp(0.7f), 0x33ffffff));
             MobileDetailScreen.bindTouchFeedback(row);
+            row.setFocusable(true);
             RowHolder holder = new RowHolder(row);
 
             ImageView thumb = new ImageView(a);
@@ -3559,6 +3894,7 @@ final class MobileShell {
             meta.setEllipsize(TextUtils.TruncateAt.END);
             card.addView(meta, new LinearLayout.LayoutParams(-1, a.dp(18)));
             card.setTag("library-card");
+            card.setFocusable(true);
             return holder;
         }
 
@@ -3579,7 +3915,9 @@ final class MobileShell {
             box.addView(iconWrap, new LinearLayout.LayoutParams(a.dp(64), a.dp(64)));
             TextView title =
                     a.text(
-                            favoritesMode ? "还没有收藏任何影片" : "还没有观看记录",
+                            !query.isEmpty()
+                                    ? "没有匹配的收藏/历史"
+                                    : (favoritesMode ? "还没有收藏任何影片" : "还没有观看记录"),
                             17,
                             MainActivity.WHITE);
             title.setTypeface(null, Typeface.BOLD);
@@ -3588,65 +3926,108 @@ final class MobileShell {
             box.addView(title, titleLp);
             TextView desc =
                     a.text(
-                            favoritesMode
-                                    ? "在影片详情页点「收藏」，这里就会显示"
-                                    : "看过的影片会自动记录，方便继续播放",
+                            !query.isEmpty()
+                                    ? "换个关键词，或点下方「清除搜索」恢复"
+                                    : (favoritesMode
+                                            ? "在影片详情页点「收藏」，这里就会显示"
+                                            : "看过的影片会自动记录，方便继续播放"),
                             13,
                             MainActivity.MUTED);
             LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(-2, -2);
             descLp.topMargin = a.dp(8);
             box.addView(desc, descLp);
-            TextView go = a.text("去首页看看", 13, 0xffffb3c8);
+            TextView go = a.text(!query.isEmpty() ? "清除搜索" : "去首页看看", 13, 0xffffb3c8);
             go.setPadding(a.dp(18), a.dp(10), a.dp(18), a.dp(10));
             go.setBackground(glassBg(0x24ff8fb1, 0x1affffff, 999, a.dp(0.8f), 0x40ffb3c8));
             MobileDetailScreen.bindTouchFeedback(go);
             LinearLayout.LayoutParams goLp = new LinearLayout.LayoutParams(-2, -2);
             goLp.topMargin = a.dp(18);
-            go.setOnClickListener(v -> switchTab(0));
+            go.setOnClickListener(
+                    v -> {
+                        if (!query.isEmpty()) {
+                            setQuery("");
+                            if (onClearQuery != null) onClearQuery.run();
+                        } else switchTab(0);
+                    });
             box.addView(go, goLp);
             RowHolder holder = new RowHolder(box);
             holder.emptyRow = true;
             return holder;
         }
 
+        Runnable onClearQuery;
+
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
             RowHolder h = (RowHolder) holder;
             if (h.emptyRow || empty) return;
-            if (h.title == null || h.sub == null) return; // 防御：布局未完整构建时不绑定
+            if (h.title == null || h.sub == null) return;
             if (favoritesMode) {
                 final Favorites.Entry f = favorites.get(position);
-                h.title.setText(f.title);
+                bindSelection(h, f.key());
+                h.title.setText((selected.contains(f.key()) ? "✓ " : "") + f.title);
                 h.sub.setText("已收藏 · 点击查看详情");
                 if (h.progress != null) h.progress.setVisibility(View.GONE);
-                if (f.poster != null && !f.poster.isEmpty()) {
-                    int coverH = cols > 1 ? Math.round(cardW * 1.5f) : a.dp(80);
-                    a.poster(f.poster, h.thumb);
+                if (f.poster != null && !f.poster.isEmpty()) a.poster(f.poster, h.thumb);
+                h.itemView.setOnLongClickListener(
+                        v -> {
+                            toggleSelect(f.key());
+                            return true;
+                        });
+                if (selecting) {
+                    h.itemView.setOnClickListener(v -> toggleSelect(f.key()));
+                } else {
+                    h.itemView.setOnClickListener(v -> openFavorite(f));
                 }
-                h.itemView.setOnClickListener(v -> openFavorite(f));
-                if (h.action != null) h.action.setOnClickListener(v -> removeFavorite(f));
-                if (h.action != null && cols == 1) h.action.setText("详情");
-                if (h.action != null && cols == 1) h.action.setTextColor(0xffc9d4e6);
+                if (h.action != null) {
+                    h.action.setVisibility(selecting ? View.GONE : View.VISIBLE);
+                    if (!selecting) {
+                        h.action.setOnClickListener(v -> removeFavorite(f));
+                        if (cols == 1) {
+                            h.action.setText("详情");
+                            h.action.setTextColor(0xffc9d4e6);
+                        }
+                    }
+                }
             } else {
                 final WatchHistory.Entry e = history.get(position);
-                h.title.setText(e.title);
+                bindSelection(h, e.key());
+                h.title.setText((selected.contains(e.key()) ? "✓ " : "") + e.title);
                 h.sub.setText(a.historyLabel(e));
-                if (e.poster != null && !e.poster.isEmpty()) {
-                    int coverH = cols > 1 ? Math.round(cardW * 1.5f) : a.dp(80);
-                    a.poster(e.poster, h.thumb);
-                }
+                if (e.poster != null && !e.poster.isEmpty()) a.poster(e.poster, h.thumb);
                 if (h.progress != null) {
                     int total = Math.max(1, e.duration);
                     float frac = Math.max(0f, Math.min(1f, (float) e.position / total));
-                    FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) h.progress.getLayoutParams();
+                    FrameLayout.LayoutParams lp =
+                            (FrameLayout.LayoutParams) h.progress.getLayoutParams();
                     lp.width = Math.round(cardW * frac);
                     h.progress.setLayoutParams(lp);
                 }
-                h.itemView.setOnClickListener(v -> a.resumeHistory(e));
-                if (h.action != null) h.action.setOnClickListener(v -> removeHistory(e));
-                if (h.action != null && cols == 1) h.action.setText("删除");
-                if (h.action != null && cols == 1) h.action.setTextColor(0xffef4444);
+                h.itemView.setOnLongClickListener(
+                        v -> {
+                            toggleSelect(e.key());
+                            return true;
+                        });
+                if (selecting) {
+                    h.itemView.setOnClickListener(v -> toggleSelect(e.key()));
+                } else {
+                    h.itemView.setOnClickListener(v -> a.resumeHistory(e));
+                }
+                if (h.action != null) {
+                    h.action.setVisibility(selecting ? View.GONE : View.VISIBLE);
+                    if (!selecting) {
+                        h.action.setOnClickListener(v -> removeHistory(e));
+                        if (cols == 1) {
+                            h.action.setText("删除");
+                            h.action.setTextColor(0xffef4444);
+                        }
+                    }
+                }
             }
+        }
+
+        private void bindSelection(RowHolder h, String key) {
+            h.itemView.setAlpha(selected.contains(key) ? 0.72f : 1f);
         }
 
         private void openFavorite(Favorites.Entry f) {
@@ -3696,7 +4077,205 @@ final class MobileShell {
         }
     }
 
-    private void styleLibraryPill(TextView pill, boolean active) {
+    /** 1.8.6 片库多选状态（供 BACK 退出多选）。 */
+    static boolean librarySelecting;
+    static Runnable exitSelectionAction;
+
+    static boolean exitLibrarySelection() {
+        if (!librarySelecting) return false;
+        if (exitSelectionAction != null) exitSelectionAction.run();
+        librarySelecting = false;
+        return true;
+    }
+
+    private static java.util.List<String> favoriteGroups(MainActivity a) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        try {
+            org.json.JSONArray arr =
+                    new org.json.JSONArray(a.prefs.getString("fav_groups", "[]"));
+            for (int i = 0; i < arr.length(); i++) {
+                String g = arr.optString(i, "").trim();
+                if (!g.isEmpty() && !out.contains(g)) out.add(g);
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    private static void saveFavoriteGroups(MainActivity a, java.util.List<String> groups) {
+        org.json.JSONArray arr = new org.json.JSONArray();
+        for (String g : groups) arr.put(g);
+        a.prefs.edit().putString("fav_groups", arr.toString()).apply();
+    }
+
+    /** 收藏分组管理：新建 / 重命名 / 删除（删除不删收藏，回到默认组）。 */
+    private void manageFavoriteGroups(final MainActivity a, final Runnable onChanged) {
+        String[] options = {"新建分组", "重命名分组", "删除分组"};
+        new AppDialog.Builder(a)
+                .setTitle("管理收藏分组")
+                .setItems(
+                        options,
+                        (d, index) -> {
+                            if (index == 0) {
+                                final EditText input = groupNameInput(a);
+                                new AppDialog.Builder(a)
+                                        .setTitle("新建分组")
+                                        .setView(input)
+                                        .setPositiveButton(
+                                                "创建",
+                                                (dd, ii) -> {
+                                                    String name =
+                                                            input.getText().toString().trim();
+                                                    if (name.isEmpty() || name.length() > 8) {
+                                                        a.toast("分组名需 1–8 个字");
+                                                        return;
+                                                    }
+                                                    java.util.List<String> groups =
+                                                            favoriteGroups(a);
+                                                    if (!groups.contains(name)) groups.add(name);
+                                                    saveFavoriteGroups(a, groups);
+                                                    a.toast("已创建「" + name + "」");
+                                                    if (onChanged != null) onChanged.run();
+                                                })
+                                        .setNegativeButton("取消", null)
+                                        .show();
+                            } else {
+                                java.util.List<String> groups = favoriteGroups(a);
+                                if (groups.isEmpty()) {
+                                    a.toast("还没有自定义分组");
+                                    return;
+                                }
+                                String[] names = groups.toArray(new String[0]);
+                                new AppDialog.Builder(a)
+                                        .setTitle(index == 1 ? "选择要重命名的分组" : "选择要删除的分组")
+                                        .setItems(
+                                                names,
+                                                (dd, sel) -> {
+                                                    String target = names[sel];
+                                                    if (index == 1) {
+                                                        final EditText input = groupNameInput(a);
+                                                        input.setText(target);
+                                                        new AppDialog.Builder(a)
+                                                                .setTitle("重命名分组")
+                                                                .setView(input)
+                                                                .setPositiveButton(
+                                                                        "保存",
+                                                                        (ddd, iii) -> {
+                                                                            String name =
+                                                                                    input.getText()
+                                                                                            .toString()
+                                                                                            .trim();
+                                                                            if (name.isEmpty()
+                                                                                    || name
+                                                                                            .length()
+                                                                                            > 8) {
+                                                                                a.toast(
+                                                                                        "分组名需 1–8 个字");
+                                                                                return;
+                                                                            }
+                                                                            java.util.List<String>
+                                                                                    list =
+                                                                                            favoriteGroups(
+                                                                                                    a);
+                                                                            int at =
+                                                                                    list.indexOf(
+                                                                                            target);
+                                                                            if (at >= 0)
+                                                                                list.set(at, name);
+                                                                            saveFavoriteGroups(
+                                                                                    a, list);
+                                                                            a.prefs.edit()
+                                                                                    .putString(
+                                                                                            Prefs.FAVORITES,
+                                                                                            moveGroupName(
+                                                                                                    a.prefs
+                                                                                                            .getString(
+                                                                                                                    Prefs.FAVORITES,
+                                                                                                                    "[]"),
+                                                                                                    target,
+                                                                                                    name))
+                                                                                    .apply();
+                                                                            a.toast(
+                                                                                    "已重命名为「"
+                                                                                            + name
+                                                                                            + "」");
+                                                                            if (onChanged != null)
+                                                                                onChanged.run();
+                                                                        })
+                                                                .setNegativeButton("取消", null)
+                                                                .show();
+                                                    } else {
+                                                        new AppDialog.Builder(a)
+                                                                .setTitle("删除分组「" + target + "」？")
+                                                                .setMessage(
+                                                                        "组内收藏会回到默认分组，不会删除收藏。")
+                                                                .setPositiveButton(
+                                                                        "删除",
+                                                                        (ddd, iii) -> {
+                                                                            java.util.List<String>
+                                                                                    list =
+                                                                                            favoriteGroups(
+                                                                                                    a);
+                                                                            list.remove(target);
+                                                                            saveFavoriteGroups(
+                                                                                    a, list);
+                                                                            a.prefs.edit()
+                                                                                    .putString(
+                                                                                            Prefs.FAVORITES,
+                                                                                            moveGroupName(
+                                                                                                    a.prefs
+                                                                                                            .getString(
+                                                                                                                    Prefs.FAVORITES,
+                                                                                                                    "[]"),
+                                                                                                    target,
+                                                                                                    ""))
+                                                                                    .apply();
+                                                                            a.toast("已删除分组");
+                                                                            if (onChanged != null)
+                                                                                onChanged.run();
+                                                                        })
+                                                                .setNegativeButton("取消", null)
+                                                                .show();
+                                                    }
+                                                })
+                                        .setNegativeButton("取消", null)
+                                        .show();
+                            }
+                        })
+                .setNegativeButton("关闭", null)
+                .show();
+    }
+
+    private static EditText groupNameInput(MainActivity a) {
+        EditText input = new EditText(a);
+        input.setSingleLine(true);
+        input.setHint("分组名（1–8 字）");
+        input.setHintTextColor(MainActivity.MUTED);
+        input.setTextColor(MainActivity.WHITE);
+        input.setTextSize(14);
+        return input;
+    }
+
+    private static String moveGroupName(String raw, String from, String to) {
+        java.util.List<Favorites.Entry> list = Favorites.read(raw);
+        for (Favorites.Entry e : list)
+            if (from.equals(e.group == null ? "" : e.group)) e.group = to;
+        // 复用 Favorites 的写回：通过 moveGroup 全量匹配
+        java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+        for (Favorites.Entry e : list) keys.add(e.key());
+        java.util.List<Favorites.Entry> changed = Favorites.read(raw);
+        for (Favorites.Entry e : changed) {
+            if (from.equals(e.group == null ? "" : e.group)) e.group = to;
+        }
+        return Favorites.moveGroup(raw, keysForGroup(raw, from), to);
+    }
+
+    private static java.util.Set<String> keysForGroup(String raw, String group) {
+        java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+        for (Favorites.Entry e : Favorites.read(raw))
+            if (group.equals(e.group == null ? "" : e.group)) keys.add(e.key());
+        return keys;
+    }
         pill.setTextColor(active ? 0xff000000 : 0xffe6edf9);
         pill.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
         pill.setPadding(a.dp(15), a.dp(7), a.dp(15), a.dp(7));

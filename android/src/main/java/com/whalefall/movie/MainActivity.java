@@ -1527,6 +1527,7 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (tvPlayer != null && tvPlayer.back()) return;
+        if (MobileShell.exitLibrarySelection()) return;
         if (playbackLoading != null) {
             changingMiniEpisode = false;
             clearPlaybackLoading();

@@ -9,6 +9,7 @@ final class Favorites {
 
     static final class Entry {
         String site, id, title, poster;
+        String group = "";
 
         String key() {
             return site + "\n" + id;
@@ -30,7 +31,8 @@ final class Favorites {
                     .put("site", site)
                     .put("id", id)
                     .put("title", title)
-                    .put("poster", poster);
+                    .put("poster", poster)
+                    .put("group", group == null ? "" : group);
         }
     }
 
@@ -47,6 +49,7 @@ final class Favorites {
                 e.id = o.optString("id");
                 e.title = o.optString("title");
                 e.poster = o.optString("poster");
+                e.group = o.optString("group", "");
                 if (!e.site.isEmpty() && !e.id.isEmpty() && seen.add(e.key())) out.add(e);
             }
         } catch (Exception ignored) {
@@ -77,6 +80,10 @@ final class Favorites {
             e.poster = video.poster;
             list.add(0, e);
         }
+        return write(list);
+    }
+
+    private static String write(List<Entry> list) {
         JSONArray out = new JSONArray();
         for (int i = 0; i < Math.min(LIMIT, list.size()); i++)
             try {
@@ -84,5 +91,21 @@ final class Favorites {
             } catch (Exception ignored) {
             }
         return out.toString();
+    }
+
+    /** 1.8.6 批量取消收藏（按 key 集合），返回新 JSON。 */
+    static String removeKeys(String raw, java.util.Set<String> keys) {
+        List<Entry> list = read(raw);
+        for (Iterator<Entry> it = list.iterator(); it.hasNext(); )
+            if (keys.contains(it.next().key())) it.remove();
+        return write(list);
+    }
+
+    /** 1.8.6 批量移动到分组（group="" 表示默认组）。 */
+    static String moveGroup(String raw, java.util.Set<String> keys, String group) {
+        List<Entry> list = read(raw);
+        for (Entry e : list)
+            if (keys.contains(e.key())) e.group = group == null ? "" : group;
+        return write(list);
     }
 }
