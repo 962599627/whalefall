@@ -60,7 +60,27 @@ final class AccountPanel {
 
     static void show(MainActivity a, View anchor) {
         if (a == null) return;
+        purgeLegacyNativePrefs(a);
         new Panel(a, anchor).show();
+    }
+
+    /** 1.7.0：下线原生网盘后，清掉旧版本遗留的 quark_native_/uc_native_/baidu_native_/ali_native_ 键。 */
+    static void purgeLegacyNativePrefs(MainActivity a) {
+        try {
+            android.content.SharedPreferences.Editor edit = null;
+            for (String key : a.prefs.getAll().keySet()) {
+                if (key == null) continue;
+                if (key.startsWith("quark_native_")
+                        || key.startsWith("uc_native_")
+                        || key.startsWith("baidu_native_")
+                        || key.startsWith("ali_native_")) {
+                    if (edit == null) edit = a.prefs.edit();
+                    edit.remove(key);
+                }
+            }
+            if (edit != null) edit.apply();
+        } catch (Throwable ignored) {
+        }
     }
 
     // ====================== 主面板 ======================
@@ -314,107 +334,6 @@ final class AccountPanel {
             if (panRows == null) return;
             panRows.removeAllViews();
             for (PanLoginGuide.Drive drive : PanLoginGuide.DRIVES) {
-                // 四个盘全部走 App 内原生直连（真实 API 验证），不再依赖插件登录态
-                boolean nativeLogged = false;
-                boolean nativePending = false;
-                String account = "";
-                String nativeStatus = "";
-                String nativeAction = "";
-                Runnable nativeClick = null;
-                switch (drive.key) {
-                    case "quark": {
-                        boolean credential = QuarkDrive.hasCookie(a);
-                        nativeLogged = QuarkDrive.isLoggedIn(a);
-                        nativePending = credential && !nativeLogged;
-                        account = nativeLogged ? QuarkDrive.cachedAccount(a) : "";
-                        nativeStatus =
-                                nativeLogged
-                                        ? "已登录（夸克原生"
-                                                + (account.isEmpty() ? "" : " · " + account)
-                                                + "）"
-                                        : nativePending
-                                                ? "登录信息已保存 · 验证失败（点此重试）"
-                                                : "未登录 · App 内登录夸克（独立于插件）";
-                        nativeAction = nativeLogged ? "管理" : nativePending ? "重试验证" : "App 内登录";
-                        nativeClick = () -> {
-                            PanLoginState.invalidate();
-                            QuarkDrive.showPanel(a, () -> refresh(true));
-                        };
-                        break;
-                    }
-                    case "uc": {
-                        boolean credential = UcDrive.hasCookie(a);
-                        nativeLogged = UcDrive.isLoggedIn(a);
-                        nativePending = credential && !nativeLogged;
-                        account = nativeLogged ? UcDrive.cachedAccount(a) : "";
-                        nativeStatus =
-                                nativeLogged
-                                        ? "已登录（UC 原生"
-                                                + (account.isEmpty() ? "" : " · " + account)
-                                                + "）"
-                                        : nativePending
-                                                ? "登录信息已保存 · 验证失败（点此重试）"
-                                                : "未登录 · UC 限制 WebView 登录（建议用官方 App，或改用夸克/百度）";
-                        nativeAction = nativeLogged ? "管理" : nativePending ? "重试验证" : "App 内登录";
-                        nativeClick = () -> {
-                            PanLoginState.invalidate();
-                            UcDrive.showPanel(a, () -> refresh(true));
-                        };
-                        break;
-                    }
-                    case "baidu": {
-                        boolean credential = BaiduDrive.hasCookie(a);
-                        nativeLogged = BaiduDrive.isLoggedIn(a);
-                        nativePending = credential && !nativeLogged;
-                        account = nativeLogged ? BaiduDrive.cachedAccount(a) : "";
-                        nativeStatus =
-                                nativeLogged
-                                        ? "已登录（百度原生"
-                                                + (account.isEmpty() ? "" : " · " + account)
-                                                + "）"
-                                        : nativePending
-                                                ? "登录信息已保存 · 验证失败（点此重试）"
-                                                : "未登录 · App 内登录百度（独立于插件）";
-                        nativeAction = nativeLogged ? "管理" : nativePending ? "重试验证" : "App 内登录";
-                        nativeClick = () -> {
-                            PanLoginState.invalidate();
-                            BaiduDrive.showPanel(a, () -> refresh(true));
-                        };
-                        break;
-                    }
-                    case "ali": {
-                        boolean credential = AliDrive.hasToken(a);
-                        nativeLogged = AliDrive.isLoggedIn(a);
-                        nativePending = credential && !nativeLogged;
-                        account = nativeLogged ? AliDrive.cachedAccount(a) : "";
-                        nativeStatus =
-                                nativeLogged
-                                        ? "已登录（阿里原生"
-                                                + (account.isEmpty() ? "" : " · " + account)
-                                                + "）"
-                                        : nativePending
-                                                ? "登录信息已保存 · 验证失败（点此重试）"
-                                                : "未登录 · App 内登录阿里（独立于插件）";
-                        nativeAction = nativeLogged ? "管理" : nativePending ? "重试验证" : "App 内登录";
-                        nativeClick = () -> {
-                            PanLoginState.invalidate();
-                            AliDrive.showPanel(a, () -> refresh(true));
-                        };
-                        break;
-                    }
-                    default:
-                        break;
-                }
-                if (nativeClick != null) {
-                    addPanRow(
-                            drive,
-                            nativeStatus,
-                            nativeLogged ? 0xff2ad47a : 0xffffb454,
-                            nativeLogged,
-                            nativePending ? "重试验证" : nativeAction,
-                            nativeClick);
-                    continue;
-                }
                 PanLoginState pan = panStates.get(drive.key);
                 boolean logged = pan != null && pan.known();
                 String statusText = pan == null ? "由源管理 · 无法读取" : pan.detail;
@@ -720,12 +639,6 @@ final class AccountPanel {
                 state = STATE_DISABLED;
             } else if (!credentials.isEmpty()) {
                 state = STATE_LOCAL;
-            } else if (QuarkDrive.isLoggedIn(a)
-                    || UcDrive.isLoggedIn(a)
-                    || BaiduDrive.isLoggedIn(a)
-                    || AliDrive.isLoggedIn(a)) {
-                // 只有原生 API 验证通过的盘才计入「已登录（原生直连）」
-                state = STATE_LOCAL;
             } else if (sourceKnown > 0) {
                 state = STATE_SOURCE;
             } else if (manualDrives > 0) {
@@ -747,50 +660,13 @@ final class AccountPanel {
                     break;
                 case STATE_LOCAL:
                     dotColor = DOT_GREEN;
-                    StringBuilder nativeSummary = new StringBuilder();
-                    if (QuarkDrive.isLoggedIn(a))
-                        nativeSummary
-                                .append("夸克")
-                                .append(
-                                        QuarkDrive.cachedAccount(a).isEmpty()
-                                                ? ""
-                                                : "（" + QuarkDrive.cachedAccount(a) + "）");
-                    if (UcDrive.isLoggedIn(a))
-                        nativeSummary
-                                .append(nativeSummary.length() > 0 ? "、" : "")
-                                .append("UC")
-                                .append(
-                                        UcDrive.cachedAccount(a).isEmpty()
-                                                ? ""
-                                                : "（" + UcDrive.cachedAccount(a) + "）");
-                    if (BaiduDrive.isLoggedIn(a))
-                        nativeSummary
-                                .append(nativeSummary.length() > 0 ? "、" : "")
-                                .append("百度")
-                                .append(
-                                        BaiduDrive.cachedAccount(a).isEmpty()
-                                                ? ""
-                                                : "（" + BaiduDrive.cachedAccount(a) + "）");
-                    if (AliDrive.isLoggedIn(a))
-                        nativeSummary
-                                .append(nativeSummary.length() > 0 ? "、" : "")
-                                .append("阿里")
-                                .append(
-                                        AliDrive.cachedAccount(a).isEmpty()
-                                                ? ""
-                                                : "（" + AliDrive.cachedAccount(a) + "）");
-                    if (nativeSummary.length() > 0) {
-                        label = "已登录（原生直连）";
-                        detail = "真实登录态：已通过网盘 API 验证 · " + nativeSummary;
-                    } else {
-                        label = "已登录（本地凭据）";
-                        detail =
-                                accountName.isEmpty()
-                                        ? "本地检测到 "
-                                                + credentials.size()
-                                                + " 项登录数据 · 凭据是否仍有效以源返回为准"
-                                        : "账号：" + accountName + " · 凭据是否仍有效以源返回为准";
-                    }
+                    label = "已登录（本地凭据）";
+                    detail =
+                            accountName.isEmpty()
+                                    ? "本地检测到 "
+                                            + credentials.size()
+                                            + " 项登录数据 · 凭据是否仍有效以源返回为准"
+                                    : "账号：" + accountName + " · 凭据是否仍有效以源返回为准";
                     break;
                 case STATE_SOURCE:
                     dotColor = DOT_GREEN;
@@ -1061,14 +937,6 @@ final class AccountPanel {
             }
             credentials = new ArrayList<>();
             accountName = "";
-            // 连四个网盘原生直连的凭据一起清除（独立模块，不走插件）
-            try {
-                QuarkDrive.deviceLogout(a, null);
-                UcDrive.deviceLogout(a);
-                BaiduDrive.deviceLogout(a);
-                AliDrive.deviceLogout(a);
-            } catch (Throwable ignored) {
-            }
             if (dialog != null && dialog.isShowing()) {
                 PanLoginState.invalidate();
                 refresh(true);
@@ -1271,6 +1139,10 @@ final class AccountPanel {
     /** 只认 key 含 pan / drive / cookie / token / credential 的项，避免误删其它设置。 */
     static boolean credentialKey(String key) {
         if (key == null) return false;
+        if (key.startsWith("quark_native_")
+                || key.startsWith("uc_native_")
+                || key.startsWith("baidu_native_")
+                || key.startsWith("ali_native_")) return false;
         String k = key.toLowerCase(Locale.ROOT);
         return k.contains("pan")
                 || k.contains("drive")

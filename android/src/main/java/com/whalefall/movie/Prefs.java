@@ -79,34 +79,8 @@ final class Prefs {
     /** 字体颜色自定义：TEXT_COLOR_CUSTOM 开启时 TEXT_COLOR（ARGB）生效。 */
     static final String TEXT_COLOR_CUSTOM = "text_color_custom";
     static final String TEXT_COLOR = "text_color";
-    // ---------------- 夸克原生登录（不入 KEYS，避免备份导出凭据） ----------------
-    static final String QUARK_COOKIE = "quark_native_cookie";
-    static final String QUARK_VERIFIED = "quark_native_verified";
-    static final String QUARK_ACCOUNT = "quark_native_account";
-    static final String QUARK_TOTAL = "quark_native_total";
-    static final String QUARK_USED = "quark_native_used";
-    // UC 原生直连
-    static final String UC_COOKIE = "uc_native_cookie";
-    static final String UC_VERIFIED = "uc_native_verified";
-    static final String UC_ACCOUNT = "uc_native_account";
-    static final String UC_TOTAL = "uc_native_total";
-    static final String UC_USED = "uc_native_used";
-    static final String UC_API_BASE = "uc_native_api_base";
-    static final String UC_API_PR = "uc_native_api_pr";
-    // 百度原生直连
-    static final String BAIDU_COOKIE = "baidu_native_cookie";
-    static final String BAIDU_VERIFIED = "baidu_native_verified";
-    static final String BAIDU_STOKEN = "baidu_native_bdstoken";
-    static final String BAIDU_ACCOUNT = "baidu_native_account";
-    static final String BAIDU_TOTAL = "baidu_native_total";
-    static final String BAIDU_USED = "baidu_native_used";
-    // 阿里原生直连（localStorage token）
-    static final String ALI_TOKEN = "ali_native_token";
-    static final String ALI_VERIFIED = "ali_native_verified";
-    static final String ALI_ACCOUNT = "ali_native_account";
-    static final String ALI_DRIVE_ID = "ali_native_drive_id";
-    static final String ALI_TOTAL = "ali_native_total";
-    static final String ALI_USED = "ali_native_used";
+    // 1.7.0：原生网盘登录已下线（回退源插件流程）；旧版本残留的 *_native_* 键由
+    // AccountPanel.purgeLegacyNativePrefs 在打开网盘面板时清理。
 
     static final String[] KEYS = {
         UI_SCALE_PERCENT,

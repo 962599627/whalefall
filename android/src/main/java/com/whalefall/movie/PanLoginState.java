@@ -448,10 +448,17 @@ final class PanLoginState {
                     android.content.SharedPreferences prefs =
                             a.getSharedPreferences(name, android.content.Context.MODE_PRIVATE);
                     for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+                        String rawKey = entry.getKey();
+                        if (rawKey == null) continue;
+                        // 1.7.0 下线原生网盘：旧版遗留的原生登录凭据不参与插件状态判断
+                        if (rawKey.startsWith("quark_native_")
+                                || rawKey.startsWith("uc_native_")
+                                || rawKey.startsWith("baidu_native_")
+                                || rawKey.startsWith("ali_native_")) continue;
                         Object value = entry.getValue();
                         if (!(value instanceof String)) continue;
                         String raw = (String) value;
-                        String whereKey = name + " · " + entry.getKey();
+                        String whereKey = name + " · " + rawKey;
                         List<String> drives = drivesForToken(raw);
                         boolean decodedHit = false;
                         if (drives.isEmpty() && looksBase64(raw)) {
