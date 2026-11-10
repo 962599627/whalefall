@@ -558,6 +558,7 @@ final class TvLive {
 
         final int cctvCount = store.group(GROUP_CCTV).size();
         final int satCount = store.group(GROUP_SAT).size();
+        final int webCount = store.group(GROUP_WEB).size();
         final int favCount = store.favorites.size();
         final int total = store.every().size();
         if (page.subTitle != null) {
@@ -597,7 +598,7 @@ final class TvLive {
             chipScroll.addView(chipRow);
 
             String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_WEB, GROUP_MINE};
-            int[] counts = {cctvCount, satCount, favCount};
+            int[] counts = {cctvCount, satCount, webCount, favCount};
             for (int i = 0; i < gs.length; i++) {
                 final String g = gs[i];
                 boolean on = !searching && g.equals(page.group);
@@ -642,7 +643,7 @@ final class TvLive {
             page.contentSlot.addView(bodyRow, bodyLp);
 
             bodyRow.addView(
-                    buildCategoryRail(page, cctvCount, satCount, favCount),
+                    buildCategoryRail(page, cctvCount, satCount, webCount, favCount),
                     new LinearLayout.LayoutParams(page.railWidth, -1));
             View gap1 = new View(a);
             bodyRow.addView(gap1, new LinearLayout.LayoutParams(a.dp(12), 1));
@@ -714,7 +715,7 @@ final class TvLive {
 
     /** 左侧分组栏：名称 + 数量，选中项用樱花粉渐变块。 */
     static LinearLayout buildCategoryRail(
-            PageState page, int cctvCount, int satCount, int favCount) {
+            PageState page, int cctvCount, int satCount, int webCount, int favCount) {
         final MainActivity a = page.a;
         LinearLayout rail = a.vertical();
         rail.setPadding(a.dp(9), a.dp(12), a.dp(9), a.dp(12));
