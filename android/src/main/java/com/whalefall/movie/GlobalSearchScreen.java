@@ -1342,6 +1342,10 @@ public final class GlobalSearchScreen implements AutoCloseable {
             lp.setMargins(0, 0, a.dp(6), 0);
             statusChips.addView(chip, lp);
         }
+        // 1.9.29：resetGrid 重建 resultBody 后确保「前 120 条」提示仍在（且位于末尾）
+        if (resultHint != null && resultHint.getParent() == null && resultBody != null) {
+            resultBody.addView(resultHint);
+        }
     }
 
     void updateSortLabels() {
@@ -1384,7 +1388,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
                     posterCards.put(key, card);
                 }
                 placeResult(key, card, state);
-                if (state[2] == 1 || state[0] >= 120) break;
+                if (state[2] == 1 || realCardCount >= 120) break;
             }
             available = state[0];
             added = state[1];
@@ -1420,9 +1424,9 @@ public final class GlobalSearchScreen implements AutoCloseable {
                         posterCards.put(key, card);
                     }
                     placeResult(key, card, state);
-                    if (state[2] == 1 || state[0] >= 120) break;
+                    if (state[2] == 1 || realCardCount >= 120) break;
                 }
-                if (state[2] == 1 || state[0] >= 120) break;
+                if (state[2] == 1 || realCardCount >= 120) break;
             }
             available = state[0];
             added = state[1];
@@ -1442,9 +1446,9 @@ public final class GlobalSearchScreen implements AutoCloseable {
                         posterCards.put(key, card);
                     }
                     placeResult(key, card, state);
-                    if (state[2] == 1 || state[0] >= 120) break;
+                    if (state[2] == 1 || realCardCount >= 120) break;
                 }
-                if (state[2] == 1 || state[0] >= 120) break;
+                if (state[2] == 1 || realCardCount >= 120) break;
             }
             available = state[0];
             added = state[1];
