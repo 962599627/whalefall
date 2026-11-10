@@ -17,8 +17,6 @@ import java.util.List;
  * 本地操作接 FileManagerCore；网盘浏览复用 QuarkUcApi/QuarkUcFiles 的凭据选择与回退。
  */
 final class FileManagerScreen {
-    private FileManagerScreen() {}
-
     private static FileManagerScreen current;
 
     private final MainActivity a;
@@ -37,6 +35,7 @@ final class FileManagerScreen {
     private boolean netdiskFromSource;
     private String activeTaskId;
     private boolean stripPaused;
+    private long lastPauseToggle;
     private TextView stripPause;
     private LinearLayout stripProgressWrap;
 
@@ -330,8 +329,7 @@ final class FileManagerScreen {
                     () -> loginProvider(providerKey));
             return;
         }
-        // 先画来源 chips，再加载
-        buildProviderChips();
+        // 1.9.0：chips 已在工具栏区常驻，不随内容区清空
         final TextView loading = a.text("正在读取" + providerName() + "文件…", 13, UiTokens.TEXT_TERTIARY);
         loading.setPadding(a.dp(16), a.dp(10), a.dp(16), a.dp(10));
         content.addView(loading);
@@ -411,13 +409,20 @@ final class FileManagerScreen {
                         netdiskCookie = chosen[0];
                         netdiskFromSource = Boolean.parseBoolean(chosen[1]);
                         exitSelection();
+                        buildProviderChips();
                         refresh();
                     });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
             if (i > 0) lp.leftMargin = a.dp(6);
             row.addView(chip, lp);
         }
-        content.addView(row);
+        // 1.9.0：四盘 chips 固定在工具栏区，不随内容区 clear
+        if (content != null && content.getParent() == a.body) {
+            int index = a.body.indexOfChild(content);
+            a.body.addView(row, index >= 0 ? index : a.body.getChildCount());
+        } else {
+            a.body.addView(row);
+        }
     }
 
     /** 复用云盘专区凭据策略：App 已验证 > 源插件 > App 未验证。 */
@@ -465,7 +470,20 @@ final class FileManagerScreen {
     }
 
     private void loginProvider(String key) {
-        NetdiskQrLogin.show(a, key, () -> a.ui.postDelayed(this::refresh, 200));
+        NetdiskQrLogin.show(
+                a,
+                key,
+                () -> {
+                    // 1.9.0：登录成功后用新 cookie 重载网盘分段
+                    String[] picked = pickCookie(key, null);
+                    if (!picked[0].isEmpty()) {
+                        netdiskCookie = picked[0];
+                        netdiskFromSource = Boolean.parseBoolean(picked[1]);
+                        providerKey = key;
+                    }
+                    if (tab == 1) buildProviderChips();
+                    a.ui.postDelayed(this::refresh, 200);
+                });
     }
 
     private String providerName() {
@@ -503,6 +521,7 @@ final class FileManagerScreen {
             LinearLayout row = a.row();
             for (int c = 0; c < cols && i + c < count; c++) {
                 View card = builder.build(i + c);
+                card.setTag("filemgr-card:" + (i + c));
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(cardW, cardH);
                 if (c > 0) lp.leftMargin = gap;
                 row.addView(card, lp);
@@ -994,6 +1013,9 @@ final class FileManagerScreen {
         stripPause.setOnClickListener(
                 v -> {
                     if (activeTaskId == null) return;
+                    long now = android.os.SystemClock.uptimeMillis();
+                    if (now - lastPauseToggle < 300) return; // 1.9.0：300ms 防抖
+                    lastPauseToggle = now;
                     if (!stripPaused) {
                         FileManagerCore.pause(activeTaskId);
                         stripPaused = true;
