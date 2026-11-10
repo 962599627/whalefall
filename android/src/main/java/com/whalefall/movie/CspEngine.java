@@ -391,39 +391,68 @@ public final class CspEngine implements SourceEngine {
                         + " engine=type3");
         String filtered = call("category", () -> spider.categoryContent(id, "" + page, true, values));
         if (values.isEmpty()) return filtered;
-        // 1.9.46：校验 spider 是否真的应用了 extend
+        // 1.9.47：用内容指纹（id/title 集合）判断 extend 是否真的生效，避免「条数相同但内容已变」误判
         try {
-            int filteredCount = new org.json.JSONObject(filtered).optJSONArray("list") == null
-                    ? 0
-                    : new org.json.JSONObject(filtered).optJSONArray("list").length();
+            java.util.Set<String> filteredKeys = videoFingerprints(filtered);
             String plain =
-                    call("category_baseline", () -> spider.categoryContent(
-                            id, "" + page, true, new HashMap<String, String>()));
-            int plainCount = new org.json.JSONObject(plain).optJSONArray("list") == null
-                    ? 0
-                    : new org.json.JSONObject(plain).optJSONArray("list").length();
-            if (filteredCount == plainCount) {
-                AppLog.i(
-                        "Filter",
-                        "csp ignored key="
-                                + values.keySet()
-                                + " count="
-                                + filteredCount
-                                + " category="
-                                + id);
-            } else {
+                    call(
+                            "category_baseline",
+                            () -> spider.categoryContent(
+                                    id, "" + page, true, new HashMap<String, String>()));
+            java.util.Set<String> plainKeys = videoFingerprints(plain);
+            int overlap = 0;
+            for (String key : filteredKeys) if (plainKeys.contains(key)) overlap++;
+            boolean applied = !filteredKeys.equals(plainKeys);
+            if (applied) {
                 AppLog.i(
                         "Filter",
                         "csp applied extend="
                                 + values
-                                + " count="
-                                + filteredCount
+                                + " changed=yes overlap="
+                                + overlap
+                                + "/"
+                                + filteredKeys.size()
                                 + " plain="
-                                + plainCount);
+                                + plainKeys.size());
+            } else {
+                AppLog.i(
+                        "Filter",
+                        "csp ignored key="
+                                + values.keySet()
+                                + " changed=no overlap="
+                                + overlap
+                                + " category="
+                                + id);
             }
         } catch (Throwable ignoredCheck) {
         }
         return filtered;
+    }
+
+    /** 1.9.47：提取返回视频的稳定指纹集合（id 优先，无 id 用 title）。 */
+    private static java.util.Set<String> videoFingerprints(String raw) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        try {
+            org.json.JSONArray list =
+                    new org.json.JSONObject(raw).optJSONArray("list");
+            if (list == null) return out;
+            for (int i = 0; i < list.length(); i++) {
+                org.json.JSONObject item = list.optJSONObject(i);
+                if (item == null) continue;
+                String id =
+                        item.optString(
+                                "vod_id",
+                                item.optString("id", item.optString("ids", "")));
+                String title =
+                        item.optString(
+                                "vod_name",
+                                item.optString("name", item.optString("title", "")));
+                String key = id.isEmpty() ? title : id;
+                if (!key.isEmpty()) out.add(key);
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
     }
 
     public String detail(String id) throws Exception {
