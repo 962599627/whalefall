@@ -244,7 +244,20 @@ final class PlayerChrome {
  a.togglePlayback();
  a.showControls(true);
  });
- state.setTag("player-state");
+ state.setTag("play-pause");
+ if (a.isTvDevice()) {
+ state.setFocusable(true);
+ state.setFocusableInTouchMode(true);
+ TvNav.focusRing(a, state, 36);
+ state.setOnKeyListener(
+ (v, keyCode, event) -> {
+ if (event.getAction() == android.view.KeyEvent.ACTION_DOWN
+ && (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+ || keyCode == android.view.KeyEvent.KEYCODE_ENTER))
+ AppLog.i("PlayerFocus", "ok=play-pause action=toggle");
+ return false;
+ });
+ }
  UiCompat.setElevation(state, a.dp(4));
  centerCluster.addView(seekBack, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
  LinearLayout.LayoutParams stateLp =

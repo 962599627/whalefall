@@ -431,6 +431,15 @@ final class PlaybackControls {
  }
  }
  dockFirst = focusable.get(0);
+ // 1.9.99：默认焦点=播放/暂停（中央按钮），左右进入底部按钮行
+ if (a.playerChrome != null && a.playerChrome.state != null) {
+ View playPause = a.playerChrome.state;
+ if (playPause.getId() == View.NO_ID) playPause.setId(UiCompat.generateViewId());
+ playPause.setNextFocusRightId(dockFirst.getId());
+ playPause.setNextFocusUpId(timeline.getId());
+ focusable.get(0).setNextFocusLeftId(playPause.getId());
+ AppLog.i("PlayerFocus", "default=play-pause");
+ }
  }
  }
  }

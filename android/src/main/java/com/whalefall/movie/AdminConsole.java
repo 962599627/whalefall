@@ -142,10 +142,10 @@ final class AdminConsole implements Closeable {
  send(response, 400, "text/plain; charset=utf-8", "400 bad size");
  return;
  }
- final java.io.File target =
+ final java.io.File wallpaperFile =
  new java.io.File(a.getFilesDir(), video ? "wallpaper.mp4" : "wallpaper.jpg");
  try (InputStream raw = in;
- OutputStream out = new java.io.FileOutputStream(target)) {
+ OutputStream out = new java.io.FileOutputStream(wallpaperFile)) {
  byte[] chunk = new byte[64 * 1024];
  long remaining = length;
  int n;

@@ -1688,10 +1688,21 @@ final class PlaybackController {
  if (visible) {
  if (changed && a.playbackControls != null && a.isTvDevice()) {
  // 1.9.54：控制条默认焦点放「下一集」而不是进度条，方向键才能在按钮间移动
- View first = a.playbackControls.dockFirst;
+ View first = a.playerChrome == null ? null : a.playerChrome.state;
+ if (first == null) first = a.playbackControls.dockFirst;
  if (first == null) first = a.playbackControls.buttons.get("next-episode");
  if (first == null) first = a.playbackControls.timeline;
- if (first != null) first.requestFocus();
+ if (first != null) {
+ first.requestFocus();
+ AppLog.i(
+ "PlayerFocus",
+ "default="
+ + (first == a.playbackControls.timeline
+ ? "timeline"
+ : ("play-pause".equals(String.valueOf(first.getTag()))
+ ? "play-pause"
+ : String.valueOf(first.getTag()))));
+ }
  AppLog.i(
  "TvKey",
  "page=player controls=visible focus="
