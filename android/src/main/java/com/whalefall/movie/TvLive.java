@@ -657,7 +657,97 @@ final class TvLive {
                     buildPreview(page, chosen),
                     new LinearLayout.LayoutParams(page.previewWidth, -1));
         }
+        wireTvFocus(page);
         focusFirstTvItem(page);
+    }
+
+    /** 1.9.69：电视台直播页显式焦点链：分类 ↔ 频道列表 ↔ 右侧面板。 */
+    static void wireTvFocus(final PageState page) {
+        final MainActivity a = page.a;
+        if (!a.isTvDevice() || page.contentSlot == null) return;
+        View slot = page.contentSlot;
+        View search = slot.findViewWithTag("tv-focus-search");
+        java.util.List<View> cats = new java.util.ArrayList<>();
+        java.util.List<View> channels = new java.util.ArrayList<>();
+        collectByPrefix(slot, "tv-focus-cat:", cats, 32);
+        collectByPrefix(slot, "tv-focus-channel:", channels, 256);
+        View fav = slot.findViewWithTag("tv-focus-live-fav");
+        View watch = slot.findViewWithTag("tv-focus-live-watch");
+        View add = slot.findViewWithTag("tv-focus-live-add");
+        View imp = slot.findViewWithTag("tv-focus-live-import");
+        View manage = slot.findViewWithTag("tv-focus-live-manage");
+        for (View v : cats)
+            if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
+        for (View v : channels)
+            if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
+        for (int i = 0; i < cats.size(); i++) {
+            View cat = cats.get(i);
+            if (i > 0) cat.setNextFocusUpId(cats.get(i - 1).getId());
+            if (i + 1 < cats.size()) cat.setNextFocusDownId(cats.get(i + 1).getId());
+            if (!channels.isEmpty()) cat.setNextFocusRightId(channels.get(0).getId());
+        }
+        for (int i = 0; i < channels.size(); i++) {
+            View ch = channels.get(i);
+            if (i > 0) ch.setNextFocusUpId(channels.get(i - 1).getId());
+            if (i + 1 < channels.size()) ch.setNextFocusDownId(channels.get(i + 1).getId());
+            if (!cats.isEmpty()) ch.setNextFocusLeftId(cats.get(0).getId());
+            View right = watch != null ? watch : fav;
+            if (right != null) ch.setNextFocusRightId(right.getId());
+        }
+        if (fav != null && watch != null) {
+            fav.setNextFocusDownId(watch.getId());
+            watch.setNextFocusUpId(fav.getId());
+            if (!channels.isEmpty()) {
+                fav.setNextFocusLeftId(channels.get(0).getId());
+                watch.setNextFocusLeftId(channels.get(0).getId());
+            }
+        }
+        if (!channels.isEmpty()) {
+            View last = channels.get(channels.size() - 1);
+            if (watch != null) last.setNextFocusDownId(watch.getId());
+            else if (fav != null) last.setNextFocusDownId(fav.getId());
+        }
+        if (search != null) {
+            if (!channels.isEmpty()) search.setNextFocusDownId(channels.get(0).getId());
+            if (!cats.isEmpty()) search.setNextFocusLeftId(cats.get(0).getId());
+        }
+        AppLog.i(
+                "TvNav",
+                "page=live focus=channel cats="
+                        + cats.size()
+                        + " channels="
+                        + channels.size()
+                        + " panel="
+                        + (fav != null || watch != null));
+    }
+
+    private static void collectByPrefix(View view, String prefix, java.util.List<View> out, int limit) {
+        if (view == null || out.size() >= limit) return;
+        if (view.getTag() instanceof String
+                && ((String) view.getTag()).startsWith(prefix)
+                && view.isFocusable()) out.add(view);
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount() && out.size() < limit; i++)
+                collectByPrefix(group.getChildAt(i), prefix, out, limit);
+        }
+    }
+
+    /** 递归按 tag 前缀找第一个（焦点兜底用）。 */
+    static View findByPrefix(View view, String prefix) {
+        if (view == null) return null;
+        if (view.getTag() instanceof String
+                && ((String) view.getTag()).startsWith(prefix)
+                && view.isFocusable()
+                && view.isShown()) return view;
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View found = findByPrefix(group.getChildAt(i), prefix);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     /** TV 端：整块重绘后把焦点还给「当前分组」或频道首项，避免刷新/退出播放后焦点丢失。 */
@@ -688,9 +778,10 @@ final class TvLive {
         View target = null;
         if (page.selected != null && !page.selected.isEmpty())
             target = slot.findViewWithTag("tv-focus-channel:" + page.selected);
+        // 1.9.69：默认焦点必须是频道列表第一项（不是右侧导航/分类）
+        if (target == null) target = findByPrefix(slot, "tv-focus-channel:");
         if (target == null && page.wide)
             target = slot.findViewWithTag("tv-focus-cat:" + page.group);
-        if (target == null) target = slot.findViewWithTag("tv-focus-channel");
         if (target == null) target = firstFocusable(slot);
         if (target != null) {
             target.requestFocus();
@@ -772,6 +863,7 @@ final class TvLive {
         addPill.setBackground(MobileDetailScreen.glassBg(a, 0x24ff8fb1, 0x40ffb3c8, 999));
         MobileDetailScreen.bindTouchFeedback(addPill);
         ExtraPages.tvFocus(a, addPill, 999);
+        addPill.setTag("tv-focus-live-add");
         addPill.addView(
                 new TvUiKit.PlusGlyph(a, 0xffffb3c8),
                 new LinearLayout.LayoutParams(a.dp(11), a.dp(11)));
@@ -793,6 +885,7 @@ final class TvLive {
         impPill.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
         MobileDetailScreen.bindTouchFeedback(impPill);
         ExtraPages.tvFocus(a, impPill, 999);
+        impPill.setTag("tv-focus-live-import");
         impPill.addView(
                 new TvUiKit.ImportGlyph(a, 0xffc9d6ea),
                 new LinearLayout.LayoutParams(a.dp(11), a.dp(11)));
@@ -817,6 +910,7 @@ final class TvLive {
                     MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
             MobileDetailScreen.bindTouchFeedback(managePill);
             ExtraPages.tvFocus(a, managePill, 999);
+            managePill.setTag("tv-focus-live-manage");
             TextView manageTxt = a.text("管理", 11, 0xffc9d6ea);
             managePill.addView(manageTxt);
             managePill.setOnClickListener(
@@ -895,6 +989,9 @@ final class TvLive {
         recycler.setPadding(a.dp(5), 0, a.dp(5), a.dp(10));
         recycler.setVerticalScrollBarEnabled(false);
         recycler.setItemAnimator(null);
+        // 1.9.69：列表容器不抢焦点，子频道行可聚焦
+        recycler.setFocusable(false);
+        recycler.setDescendantFocusability(android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);
         recycler.setAdapter(
                 new RecyclerView.Adapter<RecyclerView.ViewHolder>() {
                     @Override
@@ -1212,6 +1309,7 @@ final class TvLive {
                         a, fav ? 0x2bff8fb1 : 0x1affffff, fav ? 0x66ffb3c8 : 0x33ffffff, 999));
         MobileDetailScreen.bindTouchFeedback(favBtn);
         ExtraPages.tvFocus(a, favBtn, 999);
+        favBtn.setTag("tv-focus-live-fav");
         favBtn.setOnClickListener(
                 v -> {
                     boolean now = toggleFavorite(page.a, page.store, sel);
@@ -1224,6 +1322,7 @@ final class TvLive {
 
         TextView watch = TvUiKit.pill(a, "▶  观看直播", 14, true);
         ExtraPages.tvFocus(a, watch, 999);
+        watch.setTag("tv-focus-live-watch");
         final String openGroup = page.query.isEmpty() ? page.group : sel.group;
         watch.setOnClickListener(
                 v -> {

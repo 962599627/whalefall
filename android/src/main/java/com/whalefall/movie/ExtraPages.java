@@ -404,21 +404,13 @@ final class ExtraPages {
      */
     static void tvFocus(final MainActivity a, final View view, final int radiusDp) {
         if (a == null || view == null || !a.isTvDevice()) return;
-        view.setFocusable(true);
-        view.setFocusableInTouchMode(true);
-        view.setOnFocusChangeListener(
-                (v, focused) ->
-                        FocusMotion.style(
-                                a,
-                                v,
-                                focused,
-                                0xcc16283f,
-                                0xff3b5273,
-                                radiusDp,
-                                0xffe8eff9,
-                                0xffffffff,
-                                true,
-                                1.02f));
+        // 1.9.69：所有自定义页统一走 TvNav 焦点动效（粉色叠加 + ACCENT 亮边 + 1.03×）
+        TvNav.focusRing(a, view, Math.min(999, Math.max(2, radiusDp)));
+        AppLog.i(
+                "TvNav",
+                "focus="
+                        + String.valueOf(view.getTag())
+                        + " style=ring+scale page=extra");
     }
 
     /** TV 崩溃日志整页（只读日志卡 + 另存到文件管理 / 清空记录）。 */
