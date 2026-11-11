@@ -460,6 +460,7 @@ final class ExtraPages {
                         0xffd5e1f2);
         logView.setTypeface(Typeface.MONOSPACE);
         logView.setLineSpacing(0, 1.2f);
+        logView.setTextIsSelectable(true);
         logView.setPadding(a.dp(12), a.dp(12), a.dp(12), a.dp(12));
         logView.setBackground(
                 MobileShell.glassBg(0x66000000, 0x33ffffff, a.dp(14), a.dp(0.8f), 0x33ffffff));
@@ -508,6 +509,17 @@ final class ExtraPages {
         a.gap(body, 14);
         LinearLayout actions = a.row();
         actions.setGravity(Gravity.CENTER_VERTICAL);
+        // 1.9.55：复制完整堆栈 + 最近运行日志
+        final String copyText = content + "\n\n--- recent app log ---\n" + AppLog.dump();
+        Button copy =
+                a.button(
+                        "复制日志",
+                        "crash-copy",
+                        () -> copyText(a, copyText, "崩溃日志"));
+        LinearLayout.LayoutParams copyLp =
+                new LinearLayout.LayoutParams(0, a.dp(a.isTvDevice() ? 48 : 44), 1f);
+        copyLp.rightMargin = a.dp(8);
+        actions.addView(copy, copyLp);
         Button save =
                 a.button(
                         "另存到文件管理",
@@ -547,6 +559,25 @@ final class ExtraPages {
         clearLp.leftMargin = a.dp(10);
         actions.addView(clear, clearLp);
         body.addView(actions, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    /** 1.9.55：复制文本到剪贴板（异常兜底，不崩）。 */
+    static void copyText(final MainActivity a, final String text, final String label) {
+        try {
+            android.content.ClipboardManager cm =
+                    (android.content.ClipboardManager)
+                            a.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+            if (cm == null) {
+                a.toast("当前设备不支持剪贴板，请用「另存到文件管理」");
+                return;
+            }
+            cm.setPrimaryClip(
+                    android.content.ClipData.newPlainText(label, text));
+            a.toast("日志已复制");
+        } catch (Throwable e) {
+            AppLog.w("Clipboard", "copy failed", e);
+            a.toast("复制失败：" + a.message(e));
+        }
     }
 
     /** 统一降级弹窗：需要键鼠的操作不唤起软键盘/文件选择器（默认焦点「知道了」）。 */

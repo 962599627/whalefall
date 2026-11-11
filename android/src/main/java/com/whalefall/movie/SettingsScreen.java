@@ -686,22 +686,12 @@ final class SettingsScreen {
                 new AppDialog.Builder(a)
                         .setTitle("运行日志")
                         .setMessage(hasText ? text : "当前运行正常，暂无异常或告警记录。");
-        if (hasText && !a.isTvDevice()) {
-            // 手机：复制到剪贴板
+        if (hasText) {
+            // 1.9.55：所有平台都可复制运行日志
             builder.setNeutralButton(
                     "复制",
-                    (d, i) -> {
-                        android.content.ClipboardManager cm =
-                                (android.content.ClipboardManager)
-                                        a.getSystemService(
-                                                android.content.Context.CLIPBOARD_SERVICE);
-                        cm.setPrimaryClip(
-                                android.content.ClipData.newPlainText("运行日志", text));
-                        a.toast("已复制");
-                    });
-        } else if (hasText) {
-            // TV 无剪贴板：另存到内置文件管理
-            builder.setNeutralButton(
+                    (d, i) -> ExtraPages.copyText(a, text, "运行日志"));
+            builder.setPositiveButton(
                     "另存到文件管理",
                     (d, i) -> {
                         try {
