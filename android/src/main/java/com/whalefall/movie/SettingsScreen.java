@@ -932,7 +932,64 @@ final class SettingsScreen {
  .putBoolean(Prefs.WALLPAPER_VIDEO, true)
  .putBoolean(Prefs.WALLPAPER_ENABLED, false)
  .apply();
- warnVideoWallpaperSpec(a, target);
+ String reason = videoWallpaperRejectReason(a, target);
+ if (reason != null) {
+ target.delete();
+ a.prefs.edit()
+ .putBoolean(Prefs.WALLPAPER_VIDEO, false)
+ .apply();
+ throw new java.io.IOException(reason);
+ }
+ }
+
+ /** 1.9.108：动态壁纸严格限制 H.264 + ≤1080p + ≤30fps，避免旧 TV 黑屏。 */
+ static String videoWallpaperRejectReason(MainActivity a, File target) {
+ String mime = "";
+ int width = 0, height = 0;
+ float fps = 0f;
+ try {
+ android.media.MediaExtractor extractor = new android.media.MediaExtractor();
+ extractor.setDataSource(target.getAbsolutePath());
+ for (int i = 0; i < extractor.getTrackCount(); i++) {
+ android.media.MediaFormat format = extractor.getTrackFormat(i);
+ String m = format.getString(android.media.MediaFormat.KEY_MIME);
+ if (m == null || !m.startsWith("video/")) continue;
+ mime = m;
+ width = format.getInteger(android.media.MediaFormat.KEY_WIDTH);
+ height = format.getInteger(android.media.MediaFormat.KEY_HEIGHT);
+ try {
+ if (format.containsKey(android.media.MediaFormat.KEY_FRAME_RATE))
+ fps = format.getInteger(android.media.MediaFormat.KEY_FRAME_RATE);
+ } catch (Throwable ignored) {
+ }
+ break;
+ }
+ extractor.release();
+ } catch (Throwable error) {
+ AppLog.w("Wallpaper", "video probe failed", error);
+ return "无法读取视频信息";
+ }
+ boolean h264 =
+ mime.contains("avc") || mime.contains("h264") || mime.contains("video/avc");
+ boolean tooLarge = width > 1920 || height > 1080;
+ boolean tooFast = fps > 30f;
+ boolean ok = h264 && !tooLarge && !tooFast;
+ AppLog.i(
+ "Wallpaper",
+ "video validate mime="
+ + mime
+ + " width="
+ + width
+ + " height="
+ + height
+ + " fps="
+ + fps
+ + " accepted="
+ + ok);
+ if (!h264) return "动态壁纸仅支持 H.264 视频（当前 " + mime + "）";
+ if (tooLarge) return "动态壁纸仅支持 ≤1080p（当前 " + width + "×" + height + "）";
+ if (tooFast) return "动态壁纸仅支持 ≤30fps（当前 " + Math.round(fps) + "fps）";
+ return null;
  }
 
  /** 1.9.107：动态壁纸分辨率/帧率提示（旧 TV 4K 解码易卡顿）。 */

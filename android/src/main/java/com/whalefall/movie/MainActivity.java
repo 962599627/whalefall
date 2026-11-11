@@ -1622,6 +1622,26 @@ public final class MainActivity extends Activity {
  private String lastWallpaperLog;
 
  /** 幂等：确保 base 渐变 + 用户壁纸层（静态图或动态视频）都存在且唯一；缺则补、多则删。 */
+ /** 1.9.108：动态壁纸失败自动回退默认/静态壁纸，避免整屏黑。 */
+ void videoWallpaperFailed(String reason) {
+ try {
+ prefs.edit()
+ .putBoolean(Prefs.WALLPAPER_VIDEO, false)
+ .putBoolean(
+ Prefs.WALLPAPER_ENABLED,
+ new File(getFilesDir(), "wallpaper.jpg").isFile())
+ .apply();
+ toast("动态壁纸播放失败，已恢复默认壁纸");
+ AppLog.i("Wallpaper", "video fallback reason=" + reason + " restored=true");
+ ui.post(
+ () -> {
+ if (root != null) applyWallpaper(root);
+ });
+ } catch (Throwable error) {
+ AppLog.w("Wallpaper", "fallback failed", error);
+ }
+ }
+
  void applyWallpaper(android.widget.FrameLayout target) {
  if (target == null) return;
  if (SafeMode.enabled(this)) {
