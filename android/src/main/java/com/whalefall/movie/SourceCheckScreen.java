@@ -42,11 +42,11 @@ final class SourceCheckScreen {
  int disabled = countDisabled(disabled(a));
  bulkDisableView.setText("一键禁用失效 (" + fail + ")");
  bulkDisableView.setAlpha(completed && fail > 0 ? 1f : 0.55f);
- bulkDisableView.setFocusable(completed && fail > 0);
+ bulkDisableView.setFocusable(true);
  if (restoreAllView != null) {
  restoreAllView.setText("全部恢复 (" + disabled + ")");
  restoreAllView.setAlpha(disabled > 0 ? 1f : 0.55f);
- restoreAllView.setFocusable(disabled > 0);
+ restoreAllView.setFocusable(true);
  }
  }
 
@@ -125,12 +125,18 @@ final class SourceCheckScreen {
  start.setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8));
  start.setBackground(UiTokens.round(a, 999, UiTokens.ACCENT));
  start.setFocusable(true);
+ start.setFocusableInTouchMode(true);
+ start.setTag("source-check-start");
+ TvNav.focusRing(a, start, 999);
  start.setOnClickListener(v -> runCheck(a, order, list, cancelled));
  actions.addView(start);
  TextView cancel = a.text("取消", a.isTvDevice() ? 14f : 12, UiTokens.TEXT_PRIMARY);
  cancel.setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8));
  cancel.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
  cancel.setFocusable(true);
+ cancel.setFocusableInTouchMode(true);
+ cancel.setTag("source-check-cancel");
+ TvNav.focusRing(a, cancel, 999);
  cancel.setOnClickListener(
  v -> {
  cancelled[0] = true;
@@ -148,7 +154,10 @@ final class SourceCheckScreen {
  a.text("一键禁用失效 (0)", a.isTvDevice() ? 14f : 12, 0xffff8fa3);
  disableAll.setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8));
  disableAll.setBackground(MobileDetailScreen.glassBg(a, 0x24ff6b81, 0x66ff6b81, 999));
- disableAll.setFocusable(false);
+ disableAll.setFocusable(true);
+ disableAll.setFocusableInTouchMode(true);
+ disableAll.setTag("source-check-disable-all");
+ TvNav.focusRing(a, disableAll, 999);
  disableAll.setAlpha(0.55f);
  bulkDisableView = disableAll;
  disableAll.setOnClickListener(
@@ -185,7 +194,10 @@ final class SourceCheckScreen {
  a.text("全部恢复 (0)", a.isTvDevice() ? 14f : 12, UiTokens.ACCENT_SOFT);
  restoreAll.setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8));
  restoreAll.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
- restoreAll.setFocusable(false);
+ restoreAll.setFocusable(true);
+ restoreAll.setFocusableInTouchMode(true);
+ restoreAll.setTag("source-check-restore-all");
+ TvNav.focusRing(a, restoreAll, 999);
  restoreAll.setAlpha(0.55f);
  restoreAllView = restoreAll;
  restoreAll.setOnClickListener(
@@ -225,6 +237,7 @@ final class SourceCheckScreen {
  private static void render(MainActivity a, LinearLayout list, List<Result> order) {
  list.removeAllViews();
  boolean tv = a.isTvDevice();
+ int rowIndex = 0;
  for (final Result result : order) {
  LinearLayout row = a.row();
  row.setGravity(Gravity.CENTER_VERTICAL);
@@ -265,6 +278,16 @@ final class SourceCheckScreen {
  action.setGravity(Gravity.CENTER);
  action.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
  action.setFocusable(true);
+ action.setFocusableInTouchMode(true);
+ action.setClickable(true);
+ action.setTag("source-check-row:" + rowIndex);
+ final int focusRow = rowIndex;
+ TvNav.focusRing(a, action, 999);
+ action.setOnFocusChangeListener(
+ (v, focused) -> {
+ if (focused)
+ AppLog.i("SourceCheck", "focus=row:" + focusRow + " row=" + focusRow);
+ });
  action.setOnClickListener(
  v -> {
  setDisabled(a, result.site, !disabled);
@@ -277,6 +300,60 @@ final class SourceCheckScreen {
  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
  lp.bottomMargin = a.dp(6);
  list.addView(row, lp);
+ rowIndex++;
+ }
+ if (tv) wireTvFocus(a, list);
+ }
+
+ /** 1.9.121：顶部操作 ↔ 列表行禁用按钮的显式焦点链。 */
+ private static void wireTvFocus(final MainActivity a, LinearLayout list) {
+ try {
+ java.util.List<View> rows = new java.util.ArrayList<>();
+ for (int i = 0; i < list.getChildCount(); i++) {
+ View act = list.getChildAt(i).findViewWithTag("source-check-row:" + i);
+ if (act != null) {
+ if (act.getId() == View.NO_ID) act.setId(View.generateViewId());
+ rows.add(act);
+ }
+ }
+ View start = a.body == null ? null : a.body.findViewWithTag("source-check-start");
+ View cancel = a.body == null ? null : a.body.findViewWithTag("source-check-cancel");
+ View dis = a.body == null ? null : a.body.findViewWithTag("source-check-disable-all");
+ View restore = a.body == null ? null : a.body.findViewWithTag("source-check-restore-all");
+ View[] top = {start, cancel, dis, restore};
+ for (View v : top)
+ if (v != null && v.getId() == View.NO_ID) v.setId(View.generateViewId());
+ if (start != null) {
+ start.setNextFocusRightId(cancel == null ? start.getId() : cancel.getId());
+ View first = rows.isEmpty() ? null : rows.get(0);
+ if (first != null) start.setNextFocusDownId(first.getId());
+ }
+ if (cancel != null) {
+ cancel.setNextFocusLeftId(start == null ? cancel.getId() : start.getId());
+ if (dis != null) cancel.setNextFocusRightId(dis.getId());
+ View first = rows.isEmpty() ? null : rows.get(0);
+ if (first != null) cancel.setNextFocusDownId(first.getId());
+ }
+ if (dis != null) {
+ if (cancel != null) dis.setNextFocusLeftId(cancel.getId());
+ if (restore != null) dis.setNextFocusRightId(restore.getId());
+ View first = rows.isEmpty() ? null : rows.get(0);
+ if (first != null) dis.setNextFocusDownId(first.getId());
+ }
+ if (restore != null) {
+ if (dis != null) restore.setNextFocusLeftId(dis.getId());
+ View first = rows.isEmpty() ? null : rows.get(0);
+ if (first != null) restore.setNextFocusDownId(first.getId());
+ }
+ for (int i = 0; i < rows.size(); i++) {
+ View row = rows.get(i);
+ if (start != null) row.setNextFocusUpId(start.getId());
+ if (i + 1 < rows.size()) row.setNextFocusDownId(rows.get(i + 1).getId());
+ if (i > 0) row.setNextFocusUpId(rows.get(i - 1).getId());
+ }
+ AppLog.i("SourceCheck", "focus chain rows=" + rows.size() + " top=" + top.length);
+ } catch (Throwable error) {
+ AppLog.w("SourceCheck", "wire focus failed", error);
  }
  }
 
