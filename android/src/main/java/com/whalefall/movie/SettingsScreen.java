@@ -682,10 +682,13 @@ final class SettingsScreen {
                 "扫描当前页按钮焦点/动效是否齐全，并输出报告",
                 "settings-focus-audit",
                 () -> {
+                    // 1.9.83：手动自检时才开启自动补齐
+                    TvNav.setAutoFix(true);
                     String report =
                             TvNav.audit(
                                     a,
                                     a.body == null ? "settings" : String.valueOf(a.body.getTag()));
+                    TvNav.setAutoFix(false);
                     new AppDialog.Builder(a)
                             .setTitle("焦点审计")
                             .setMessage(report)

@@ -214,7 +214,8 @@ final class LanRemoteServer implements Closeable {
                 "key=" + KeyEvent.keyCodeToString(keyCode) + " inject=true");
         activity.runOnUiThread(
                 () -> {
-                    View focus = activity.getCurrentFocus();
+                    try {
+                        View focus = activity.getCurrentFocus();
                     AppLog.i(
                             "TvKey",
                             "page="
@@ -379,6 +380,9 @@ final class LanRemoteServer implements Closeable {
                         AppLog.i("TvKey", "page=inject focus=scroll action=nav");
                     } else {
                         AppLog.i("TvKey", "page=inject focus=none action=nav");
+                    }
+                    } catch (Throwable error) {
+                        AppLog.w("Remote", "inject failed key=" + keyCode, error);
                     }
                 });
     }

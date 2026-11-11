@@ -15,7 +15,24 @@ final class TvNav {
     private TvNav() {}
 
     /** 页面渲染后确保焦点：优先 preferred tags，否则第一个可聚焦控件。 */
+    /** 1.9.83：默认关闭自动补齐（只在设置→UI 自检手动开启），减少真机崩溃面。 */
+    static volatile boolean AUTO_FIX = false;
+
+    static void setAutoFix(boolean enabled) {
+        AUTO_FIX = enabled;
+    }
+
     static View ensureFocus(MainActivity a, String page, String... preferredTags) {
+        try {
+            return ensureFocusInner(a, page, preferredTags);
+        } catch (Throwable error) {
+            AppLog.w("TvNav", "ensureFocus failed page=" + page, error);
+            return null;
+        }
+    }
+
+    private static View ensureFocusInner(
+            MainActivity a, String page, String... preferredTags) {
         if (a == null || a.root == null) return null;
         View current = a.getCurrentFocus();
         if (current != null && current.isAttachedToWindow() && current.isShown()) return current;
@@ -113,6 +130,15 @@ final class TvNav {
 
     private static void install(
             final MainActivity a, final View view, final int radiusDp, final int style) {
+        try {
+            installInner(a, view, radiusDp, style);
+        } catch (Throwable error) {
+            AppLog.w("TvNav", "focus style skipped", error);
+        }
+    }
+
+    private static void installInner(
+            final MainActivity a, final View view, final int radiusDp, final int style) {
         if (a == null || view == null) return;
         markRing(view);
         view.setFocusable(true);
@@ -130,6 +156,15 @@ final class TvNav {
 
     private static void applyFocus(
             MainActivity a, View view, boolean focused, int style, int radiusDp) {
+        try {
+            applyFocusInner(a, view, focused, style, radiusDp);
+        } catch (Throwable error) {
+            AppLog.w("FocusDraw", "draw skipped " + view.getTag(), error);
+        }
+    }
+
+    private static void applyFocusInner(
+            MainActivity a, View view, boolean focused, int style, int radiusDp) {
         // 1.9.75：只有真实 hasFocus 才绘制焦点样式；失焦必须完全透明
         if (focused && !view.hasFocus()) {
             AppLog.i(
@@ -145,7 +180,11 @@ final class TvNav {
             android.graphics.drawable.Drawable d = new FocusDrawable(a, radiusDp, style);
             if (android.os.Build.VERSION.SDK_INT >= 23) {
                 d.setAlpha(255);
-                view.setForeground(d);
+                try {
+                    view.setForeground(d);
+                } catch (Throwable error) {
+                    AppLog.w("TvNav", "setForeground failed", error);
+                }
             }
             if (view instanceof android.widget.TextView) {
                 android.widget.TextView text = (android.widget.TextView) view;
@@ -161,7 +200,11 @@ final class TvNav {
                         stored instanceof android.graphics.drawable.Drawable
                                 ? (android.graphics.drawable.Drawable) stored
                                 : null;
-                view.setForeground(original);
+                try {
+                    view.setForeground(original);
+                } catch (Throwable error) {
+                    AppLog.w("TvNav", "clearForeground failed", error);
+                }
             }
             view.setTag(FG_KEY, null);
             if (view instanceof android.widget.TextView) {
@@ -293,6 +336,15 @@ final class TvNav {
     }
 
     private static String auditInternal(MainActivity a, String page, boolean log) {
+        try {
+            return auditInner(a, page, log);
+        } catch (Throwable error) {
+            AppLog.w("TvFocusAudit", "audit skipped page=" + page, error);
+            return "";
+        }
+    }
+
+    private static String auditInner(MainActivity a, String page, boolean log) {
         if (a == null || a.root == null) return "";
         int[] stats = new int[3];
         List<String> missing = new ArrayList<>();
@@ -334,10 +386,12 @@ final class TvNav {
                                                 ? String.valueOf(
                                                         ((View) view.getParent()).getTag())
                                                 : "root"));
-                // 幂等补焦点和动效，不漏按钮
-                focusRing(a, view, 12);
-                stats[1]++;
-                stats[2]++;
+                // 1.9.83：默认只记录缺失，不自动补齐（手动 UI 自检才修）
+                if (AUTO_FIX) {
+                    focusRing(a, view, 12);
+                    stats[1]++;
+                    stats[2]++;
+                }
             }
         }
         if (view instanceof ViewGroup) {
@@ -388,10 +442,18 @@ final class TvNav {
 
     /** 1.9.66：手机被控端检测到遥控连接后，进入遥控焦点模式（手机也显示焦点）。 */
     static void enableRemoteFocus(MainActivity a, String page) {
+        try {
+            enableRemoteFocusInner(a, page);
+        } catch (Throwable error) {
+            AppLog.w("Remote", "enableRemoteFocus skipped", error);
+        }
+    }
+
+    private static void enableRemoteFocusInner(MainActivity a, String page) {
         if (a == null || a.root == null) return;
         int fixed = ensureFocusable(a, a.root, 12, 0);
         // 手机被控端：所有 clickable 控件统一粉色焦点动效（含卡片/侧栏/chip）
-        applyRings(a, a.root);
+        if (AUTO_FIX) applyRings(a, a.root);
         View first =
                 ensureFocus(
                         a,
@@ -442,6 +504,15 @@ final class TvNav {
 
     /** 1.9.67：几何方向搜索兜底：手机布局没有显式 nextFocus 时按坐标找最近目标。 */
     static View spatialMove(View root, View current, int direction) {
+        try {
+            return spatialMoveInner(root, current, direction);
+        } catch (Throwable error) {
+            AppLog.w("TvNav", "spatialMove failed", error);
+            return null;
+        }
+    }
+
+    private static View spatialMoveInner(View root, View current, int direction) {
         if (root == null || current == null) return null;
         int[] cur = new int[2];
         current.getLocationOnScreen(cur);
@@ -567,10 +638,13 @@ final class TvNav {
 
     private static void setTouchFocusWalk(MainActivity a, View view, boolean enabled, int[] count) {
         if (view == null) return;
-        if (view.isClickable() || view.isFocusable()) {
-            view.setFocusableInTouchMode(enabled);
-            if (!enabled) view.setFocusable(view.isClickable());
-            count[0]++;
+        try {
+            if (view.isClickable() || view.isFocusable()) {
+                view.setFocusableInTouchMode(enabled);
+                if (!enabled) view.setFocusable(view.isClickable());
+                count[0]++;
+            }
+        } catch (Throwable ignored) {
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
@@ -581,6 +655,15 @@ final class TvNav {
 
     /** 递归补齐可交互控件的可聚焦与焦点态。 */
     static int ensureFocusable(MainActivity a, View view, int radiusDp, int fixed) {
+        try {
+            return ensureFocusableInner(a, view, radiusDp, fixed);
+        } catch (Throwable error) {
+            AppLog.w("TvNav", "ensureFocusable skipped", error);
+            return fixed;
+        }
+    }
+
+    private static int ensureFocusableInner(MainActivity a, View view, int radiusDp, int fixed) {
         if (view == null) return fixed;
         if (view.isClickable()
                 && !view.isFocusable()

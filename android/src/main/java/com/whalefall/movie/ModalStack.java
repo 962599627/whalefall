@@ -101,6 +101,15 @@ final class ModalStack {
      * 方向键只在该模态 root 内搜索/几何移动，不落到背景页。
      */
     static boolean handleKey(MainActivity a, int keyCode) {
+        try {
+            return handleKeyInner(a, keyCode);
+        } catch (Throwable error) {
+            AppLog.w("Modal", "handleKey failed", error);
+            return false;
+        }
+    }
+
+    private static boolean handleKeyInner(MainActivity a, int keyCode) {
         Entry top;
         synchronized (ModalStack.class) {
             top = stack.peek();

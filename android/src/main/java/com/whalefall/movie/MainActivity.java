@@ -188,6 +188,8 @@ public final class MainActivity extends Activity {
 
     void scheduleFocusAudit() {
         ui.removeCallbacks(focusAuditTask);
+        // 1.9.83 热修：默认关闭周期审计，仅 debug_focus_audit=true 时开启
+        if (!prefs.getBoolean("debug_focus_audit", false)) return;
         if (isTvDevice() || remoteFocusMode) ui.postDelayed(focusAuditTask, auditIntervalMs());
     }
     boolean changingMiniEpisode;

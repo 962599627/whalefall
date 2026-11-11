@@ -16,6 +16,15 @@ final class UiAudit {
 
     /** 返回报告（同时打日志）。action=fix 表示已自动修复。 */
     static String audit(MainActivity a, String page) {
+        try {
+            return auditInner(a, page);
+        } catch (Throwable error) {
+            AppLog.w("UiAudit", "audit skipped page=" + page, error);
+            return "";
+        }
+    }
+
+    private static String auditInner(MainActivity a, String page) {
         if (a == null) return "";
         List<String> issues = new ArrayList<>();
         boolean fixed = false;
