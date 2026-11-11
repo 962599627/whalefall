@@ -1809,6 +1809,8 @@ public final class MainActivity extends Activity {
                                     "nav-home");
                     });
         }
+        if (remoteFocusMode)
+            ui.post(() -> TvNav.enableRemoteFocus(this, "remote-page"));
     }
 
     void refresh() {

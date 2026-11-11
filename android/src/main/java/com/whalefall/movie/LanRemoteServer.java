@@ -249,6 +249,12 @@ final class LanRemoteServer implements Closeable {
                                     dialogFocus == null
                                             ? dialog.getWindow().getDecorView().focusSearch(direction)
                                             : dialogFocus.focusSearch(direction);
+                            if ((next == null || next == dialogFocus) && dialogFocus != null)
+                                next =
+                                        TvNav.spatialMove(
+                                                dialog.getWindow().getDecorView(),
+                                                dialogFocus,
+                                                direction);
                             if (next != null) next.requestFocus();
                             return;
                         }
@@ -300,6 +306,8 @@ final class LanRemoteServer implements Closeable {
                     if (direction < 0) return;
                     View from = activity.getCurrentFocus();
                     View next = from == null ? null : from.focusSearch(direction);
+                    if (next == null || next == from)
+                        next = TvNav.spatialMove(activity.root, from, direction);
                     if (next == null || next == from) {
                         View root = activity.root;
                         next = root == null ? null : root.focusSearch(direction);

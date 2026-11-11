@@ -130,6 +130,88 @@ final class TvNav {
         AppLog.i("Remote", "focusMode=off page=remote");
     }
 
+    /** 1.9.67：几何方向搜索兜底：手机布局没有显式 nextFocus 时按坐标找最近目标。 */
+    static View spatialMove(View root, View current, int direction) {
+        if (root == null || current == null) return null;
+        int[] cur = new int[2];
+        current.getLocationOnScreen(cur);
+        float curX = cur[0] + current.getWidth() / 2f;
+        float curY = cur[1] + current.getHeight() / 2f;
+        ArrayList<View> all = new ArrayList<>();
+        collectMovable(root, all, current);
+        View best = null;
+        double bestScore = Double.MAX_VALUE;
+        for (View v : all) {
+            if (v == current || !v.isShown() || !v.isFocusable()) continue;
+            int[] pos = new int[2];
+            v.getLocationOnScreen(pos);
+            float x = pos[0] + v.getWidth() / 2f;
+            float y = pos[1] + v.getHeight() / 2f;
+            float dx = x - curX;
+            float dy = y - curY;
+            float primary;
+            float secondary;
+            if (direction == View.FOCUS_RIGHT) {
+                if (dx <= 1f) continue;
+                primary = dx;
+                secondary = Math.abs(dy);
+            } else if (direction == View.FOCUS_LEFT) {
+                if (dx >= -1f) continue;
+                primary = -dx;
+                secondary = Math.abs(dy);
+            } else if (direction == View.FOCUS_DOWN) {
+                if (dy <= 1f) continue;
+                primary = dy;
+                secondary = Math.abs(dx);
+            } else {
+                if (dy >= -1f) continue;
+                primary = -dy;
+                secondary = Math.abs(dx);
+            }
+            // 主轴距离优先，次轴偏移加权惩罚（避免选到斜对角很远的项）
+            double score = primary + secondary * 2.0;
+            if (score < bestScore) {
+                bestScore = score;
+                best = v;
+            }
+        }
+        if (best != null) {
+            best.requestFocus();
+            AppLog.i(
+                    "TvKey",
+                    "spatial dir="
+                            + directionName(direction)
+                            + " from="
+                            + String.valueOf(current.getTag())
+                            + " to="
+                            + String.valueOf(best.getTag())
+                            + " dist="
+                            + Math.round(bestScore));
+        }
+        return best;
+    }
+
+    private static String directionName(int direction) {
+        if (direction == View.FOCUS_LEFT) return "left";
+        if (direction == View.FOCUS_RIGHT) return "right";
+        if (direction == View.FOCUS_UP) return "up";
+        return "down";
+    }
+
+    private static void collectMovable(View view, List<View> out, View exclude) {
+        if (view == null || out.size() > 600) return;
+        if (view != exclude
+                && view.isShown()
+                && view.isFocusable()
+                && (view.isClickable() || view.isFocusable())
+                && !(view instanceof ViewGroup && !view.isClickable())) out.add(view);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++)
+                collectMovable(group.getChildAt(i), out, exclude);
+        }
+    }
+
     /** 注入方向键失败时滚动当前可滚动容器一屏。 */
     static boolean scrollPage(View root, int direction) {
         if (root == null) return false;
