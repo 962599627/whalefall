@@ -116,7 +116,8 @@ final class TvNav {
         if (a == null || view == null) return;
         markRing(view);
         view.setFocusable(true);
-        view.setFocusableInTouchMode(true);
+        // 1.9.76：触摸模式保持 false（单击即响应）；只有遥控焦点模式/TV 才 true
+        view.setFocusableInTouchMode(a.remoteFocusMode || a.isTvDevice());
         if (view.getId() == View.NO_ID) view.setId(View.generateViewId());
         if (view.getTag(BG_KEY) == null) view.setTag(BG_KEY, view.getBackground());
         if (view.getTag(TEXT_KEY) == null && view instanceof android.widget.TextView)
@@ -420,7 +421,7 @@ final class TvNav {
         if (view == null) return;
         if (view.isClickable() && view.isShown()) {
             view.setFocusable(true);
-            view.setFocusableInTouchMode(true);
+            view.setFocusableInTouchMode(a.remoteFocusMode || a.isTvDevice());
             String tag =
                     view.getTag() instanceof String ? (String) view.getTag() : "";
             if (tag.startsWith("settings-") || tag.startsWith("dialog-option")) rowFocus(a, view, 10);
@@ -548,6 +549,31 @@ final class TvNav {
             }
         }
         return null;
+    }
+
+    /** 1.9.76：批量切换 touch-mode 焦点（遥控模式=true，触摸模式=false）。 */
+    static int setTouchFocusMode(MainActivity a, boolean enabled) {
+        if (a == null || a.root == null) return 0;
+        int[] count = new int[1];
+        setTouchFocusWalk(a, a.root, enabled, count);
+        AppLog.i(
+                "TouchMode",
+                "focusableInTouchMode=" + enabled + (enabled ? " enabled=" : " restored=") + count[0]);
+        return count[0];
+    }
+
+    private static void setTouchFocusWalk(MainActivity a, View view, boolean enabled, int[] count) {
+        if (view == null) return;
+        if (view.isClickable() || view.isFocusable()) {
+            view.setFocusableInTouchMode(enabled);
+            if (!enabled) view.setFocusable(view.isClickable());
+            count[0]++;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++)
+                setTouchFocusWalk(a, group.getChildAt(i), enabled, count);
+        }
     }
 
     /** 递归补齐可交互控件的可聚焦与焦点态。 */

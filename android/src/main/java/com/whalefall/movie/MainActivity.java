@@ -150,6 +150,7 @@ public final class MainActivity extends Activity {
             return;
         }
         remoteFocusMode = true;
+        TvNav.setTouchFocusMode(this, true);
         TvNav.enableRemoteFocus(this, page);
         scheduleFocusAudit();
     }
@@ -158,6 +159,7 @@ public final class MainActivity extends Activity {
         if (!remoteFocusMode) return;
         remoteFocusMode = false;
         TvNav.disableRemoteFocus(this);
+        TvNav.setTouchFocusMode(this, false);
         ui.removeCallbacks(focusAuditTask);
     }
 
