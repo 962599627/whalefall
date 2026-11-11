@@ -13,3 +13,7 @@
 
 # 1.9.50: RecyclerView 等 androidx 组件由 media3 布局 inflate，构造器不能被裁剪
 -keep class androidx.** { *; }
+
+# 1.9.51: csp 插件用 DexClassLoader 加载，宿主 com.github.catvod 必须保留，否则 instanceof 失败
+-keep class com.github.catvod.** { *; }
+-keep class com.github.tvbox.** { *; }
