@@ -1042,6 +1042,21 @@ final class TvLive {
                         return list.size();
                     }
                 });
+        // 1.9.74：数据变化立即审计；滚动停止也审计
+        RecyclerView.Adapter<?> liveAdapter = recycler.getAdapter();
+        if (liveAdapter != null)
+            liveAdapter.registerAdapterDataObserver(
+                    new RecyclerView.AdapterDataObserver() {
+                        @Override
+                        public void onChanged() {
+                            a.ui.postDelayed(() -> TvNav.audit(a, "live-data"), 80);
+                        }
+
+                        @Override
+                        public void onItemRangeInserted(int start, int count) {
+                            a.ui.postDelayed(() -> TvNav.audit(a, "live-data"), 80);
+                        }
+                    });
         recycler.addOnScrollListener(
                 new RecyclerView.OnScrollListener() {
                     @Override
@@ -1089,10 +1104,12 @@ final class TvLive {
             row.setBackground(MobileDetailScreen.glassBg(a, 0x2bff8fb1, 0x66ffb3c8, 14));
         }
         MobileDetailScreen.bindTouchFeedback(row);
-        // TV：频道行可遥控聚焦并有焦点态；手机 no-op
-        ExtraPages.tvFocus(a, row, 14);
-        if (a.isTvDevice()) row.setTag("tv-focus-channel:" + ch.name);
+        // TV/被控端：频道行可遥控聚焦并有焦点态
+        row.setFocusable(true);
+        row.setFocusableInTouchMode(true);
         row.setClickable(true);
+        row.setTag("tv-focus-channel:" + ch.name);
+        TvNav.focusRing(a, row, 14);
         row.setOnClickListener(v -> onOpen.run());
         row.setOnLongClickListener(
                 v -> {

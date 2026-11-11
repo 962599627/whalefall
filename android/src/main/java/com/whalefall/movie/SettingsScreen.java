@@ -652,12 +652,19 @@ final class SettingsScreen {
                             UiAudit.audit(
                                     a,
                                     a.body == null ? "settings" : String.valueOf(a.body.getTag()));
+                    String focusReport =
+                            "最近一次焦点审计：\n"
+                                    + TvNav.lastReport
+                                    + "\nmissing 明细："
+                                    + TvNav.lastMissing;
                     new AppDialog.Builder(a)
                             .setTitle("UI 自检")
-                            .setMessage(report)
+                            .setMessage(report + "\n\n" + focusReport)
                             .setPositiveButton(
                                     "复制",
-                                    (d, w) -> ExtraPages.copyText(a, report, "UI 自检"))
+                                    (d, w) ->
+                                            ExtraPages.copyText(
+                                                    a, report + "\n" + focusReport, "UI 自检"))
                             .setNegativeButton("关闭", null)
                             .show();
                 });

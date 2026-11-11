@@ -197,6 +197,8 @@ final class AppDialog extends Dialog {
         super.dismiss();
         if (a.appDialog == this) a.appDialog = null;
         if (anchor != null && anchor.isAttachedToWindow()) anchor.requestFocus();
+        // 1.9.74：弹层关闭后立即审计，确保底层按钮焦点完整
+        a.ui.postDelayed(() -> TvNav.audit(a, "dialog-dismissed"), 120);
     }
 
     static final class Builder {

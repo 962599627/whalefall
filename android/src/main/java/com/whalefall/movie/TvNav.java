@@ -248,7 +248,15 @@ final class TvNav {
     }
 
     /** 1.9.71：页面焦点审计；返回报告文本，并对缺失控件幂等补焦点。 */
+    /** 1.9.74：最近一次审计报告（设置→UI 自检展示）。 */
+    static volatile String lastReport = "";
+    static volatile String lastMissing = "[]";
+
     static String audit(MainActivity a, String page) {
+        return auditInternal(a, page, true);
+    }
+
+    private static String auditInternal(MainActivity a, String page, boolean log) {
         if (a == null || a.root == null) return "";
         int[] stats = new int[3];
         List<String> missing = new ArrayList<>();
@@ -264,7 +272,9 @@ final class TvNav {
                         + stats[2]
                         + " missing="
                         + missing;
-        AppLog.i("TvFocusAudit", report);
+        if (log) AppLog.i("TvFocusAudit", report);
+        lastReport = report;
+        lastMissing = missing.toString();
         return report;
     }
 
@@ -279,9 +289,15 @@ final class TvNav {
                             || view.getOnFocusChangeListener() != null;
             if (ring) stats[2]++;
             else {
-                String tag = view.getTag() instanceof String ? (String) view.getTag() : null;
-                if (missing.size() < 24)
-                    missing.add(tag != null ? tag : view.getClass().getSimpleName());
+                    String tag = view.getTag() instanceof String ? (String) view.getTag() : null;
+                    if (missing.size() < 24)
+                        missing.add(
+                                (tag != null ? tag : view.getClass().getSimpleName())
+                                        + "@"
+                                        + (view.getParent() instanceof View
+                                                ? String.valueOf(
+                                                        ((View) view.getParent()).getTag())
+                                                : "root"));
                 // 幂等补焦点和动效，不漏按钮
                 focusRing(a, view, 12);
                 stats[1]++;
@@ -313,7 +329,25 @@ final class TvNav {
                         + " missing="
                         + missing;
         AppLog.i("TvFocusAudit", report);
+        lastReport = report;
+        lastMissing = missing.toString();
         return report;
+    }
+
+    /** 1.9.74：轻量周期审计（只扫可见树；无缺失时每 10s 打一次心跳，避免刷屏）。 */
+    private static long lastBeat;
+    static String periodicAudit(MainActivity a, String page) {
+        String report = auditInternal(a, page, false);
+        if (!missingOf(report).equals("[]") || System.currentTimeMillis() - lastBeat > 10_000) {
+            lastBeat = System.currentTimeMillis();
+            AppLog.i("TvFocusAudit", report);
+        }
+        return report;
+    }
+
+    private static String missingOf(String report) {
+        int at = report.indexOf("missing=");
+        return at < 0 ? "[]" : report.substring(at + 8);
     }
 
     /** 1.9.66：手机被控端检测到遥控连接后，进入遥控焦点模式（手机也显示焦点）。 */

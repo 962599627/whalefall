@@ -44,3 +44,11 @@
 3. 违规日志格式固定：`E/UiAudit rule=<不变量> got=N ... action=fix|log`，可自动修复的立即修正；
 4. 验收必须附 `I/UiAudit page=… navSelected=1 expected=… issues=[]`；有 issues 不得打包；
 5. 设置→诊断→「UI 自检」可现场复检并复制报告。
+
+## 持续焦点审计（1.9.74 起）
+- TV/遥控焦点模式下每 1s（低端机/Reduced 2s）扫描当前可见树；
+- 列表 Adapter 数据变化、滚动停止、Dialog show/dismiss、切 tab、弹层开关后立即扫描；
+- 扫描范围 = 所有 clickable 或带 OnClickListener 的控件（含 TextView 行、ImageView 图标、卡片子项）；
+- 缺 focusable / 缺焦点样式 → **自动补齐（幂等）**，不得遗漏；
+- 日志必须出现 `I/TvFocusAudit page=… clickable=N focusable=M rings=K missing=[]`；**missing 非空不得打包**；
+- 设置→「UI 自检」显示最近一次 missing 明细（含类名+父容器）。

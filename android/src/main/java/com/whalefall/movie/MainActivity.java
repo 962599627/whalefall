@@ -146,12 +146,36 @@ public final class MainActivity extends Activity {
     void enterRemoteFocus(String page) {
         remoteFocusMode = true;
         TvNav.enableRemoteFocus(this, page);
+        scheduleFocusAudit();
     }
 
     void exitRemoteFocus() {
         if (!remoteFocusMode) return;
         remoteFocusMode = false;
         TvNav.disableRemoteFocus(this);
+        ui.removeCallbacks(focusAuditTask);
+    }
+
+    /** 1.9.74：TV/被控端每 1s（低端/Reduced 2s）扫描可见树，补齐焦点。 */
+    final Runnable focusAuditTask =
+            new Runnable() {
+                @Override
+                public void run() {
+                    if (!(isTvDevice() || remoteFocusMode) || isFinishing()) return;
+                    TvNav.periodicAudit(
+                            MainActivity.this,
+                            body == null ? "page" : String.valueOf(body.getTag()));
+                    ui.postDelayed(this, auditIntervalMs());
+                }
+            };
+
+    int auditIntervalMs() {
+        return (reduced || android.os.Build.VERSION.SDK_INT < 26) ? 2000 : 1000;
+    }
+
+    void scheduleFocusAudit() {
+        ui.removeCallbacks(focusAuditTask);
+        if (isTvDevice() || remoteFocusMode) ui.postDelayed(focusAuditTask, auditIntervalMs());
     }
     boolean changingMiniEpisode;
     FrameLayout playerOverlay;
@@ -2771,6 +2795,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        ui.removeCallbacks(focusAuditTask);
         ui.removeCallbacks(screensaverTask);
         savePlaybackHistory(true);
         if (playerChrome != null) playerChrome.pauseLoadingAnimation();
@@ -2789,6 +2814,7 @@ public final class MainActivity extends Activity {
             AppLog.i("Player", "lifecycle resume backgroundMs=" + backgroundFor + " reconnect=true");
         // 1.9.65：切后台回来网络连接可能已被系统断开，用同一 URL 自动重连
         ui.postDelayed(() -> PlaybackController.retryAfterResume(this), 700);
+        scheduleFocusAudit();
         if (bgPlayback) {
             bgPlayback = false;
             // 1.9.53：回到前台继续播放，不释放音频焦点/不暂停，仅撤掉常驻通知

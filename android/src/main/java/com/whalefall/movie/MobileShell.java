@@ -1117,6 +1117,9 @@ final class MobileShell {
         homePosterHeightDp = Math.round(homeCardWidthDp * 1.48f);
         recycler.setLayoutManager(new LinearLayoutManager(a));
         recycler.setItemAnimator(null);
+        // 1.9.74：列表容器不吃焦点，卡片子项可聚焦；焦点变化时滚动跟随
+        recycler.setFocusable(false);
+        recycler.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
         recycler.setVerticalScrollBarEnabled(false);
         recycler.setClipToPadding(false);
         a.scroll = recycler;
@@ -1212,6 +1215,9 @@ final class MobileShell {
                 card.setBackground(thinGlass(16, true));
                 MobileDetailScreen.bindTouchFeedback(card);
                 card.setOnClickListener(v -> a.resumeHistory(e));
+                card.setFocusable(true);
+                card.setFocusableInTouchMode(true);
+                TvNav.cardFocus(a, card, card.hasFocus(), 16);
 
                 ImageView thumb = new ImageView(a);
                 thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -1290,6 +1296,10 @@ final class MobileShell {
         tonightShuffle.setPadding(a.dp(16), a.dp(8), a.dp(16), a.dp(8));
         tonightShuffle.setBackground(glassBg(0x33ffffff, 0x2effffff, a.dp(999), a.dp(0.8f), 0x44ffffff));
         MobileDetailScreen.bindTouchFeedback(tonightShuffle);
+        tonightShuffle.setTag("home-tonight-shuffle");
+        tonightShuffle.setFocusable(true);
+        tonightShuffle.setFocusableInTouchMode(true);
+        TvNav.focusRing(a, tonightShuffle, 999);
         tonightHeader.addView(tonightShuffle);
         tonightCard.addView(tonightHeader, new LinearLayout.LayoutParams(-1, -2));
         final LinearLayout tonightGrid = a.vertical();
@@ -1356,6 +1366,10 @@ final class MobileShell {
                                             0x33ffffff));
                             MobileDetailScreen.bindTouchFeedback(pick);
                             pick.setOnClickListener(x -> a.openListing(currentSite, v));
+                            pick.setTag("home-tonight-pick:" + c);
+                            pick.setFocusable(true);
+                            pick.setFocusableInTouchMode(true);
+                            TvNav.cardFocus(a, pick, pick.hasFocus(), 12);
                             ImageView poster = new ImageView(a);
                             poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
                             pick.addView(poster, new FrameLayout.LayoutParams(-1, -1));
@@ -1525,6 +1539,32 @@ final class MobileShell {
         homeFooterWrap.addView(loadMoreBtn, moreFlp);
         homeAdapter = new HomeAdapter();
         recycler.setAdapter(homeAdapter);
+        // 1.9.74：列表数据变化后立即审计（新增按钮/卡片必须带焦点）
+        homeAdapter.registerAdapterDataObserver(
+                new RecyclerView.AdapterDataObserver() {
+                    @Override
+                    public void onChanged() {
+                        a.ui.postDelayed(() -> TvNav.audit(a, "home-data"), 80);
+                    }
+
+                    @Override
+                    public void onItemRangeInserted(int start, int count) {
+                        a.ui.postDelayed(() -> TvNav.audit(a, "home-data"), 80);
+                    }
+
+                    @Override
+                    public void onItemRangeChanged(int start, int count) {
+                        a.ui.postDelayed(() -> TvNav.audit(a, "home-data"), 80);
+                    }
+                });
+        recycler.addOnScrollListener(
+                new RecyclerView.OnScrollListener() {
+                    @Override
+                    public void onScrollStateChanged(RecyclerView rv, int newState) {
+                        if (newState == RecyclerView.SCROLL_STATE_IDLE)
+                            a.ui.postDelayed(() -> TvNav.audit(a, "home-scroll-idle"), 120);
+                    }
+                });
 
         final boolean[] loadingPage = {false};
         final boolean[] pageFailed = {false};
@@ -3051,9 +3091,24 @@ final class MobileShell {
     private LinearLayout buildVideoCard(Cms.Video v, int index) {
         final Cms.Site site = homeAdapter.site;
         LinearLayout card = a.vertical();
-        card.setTag(index == 0 ? "primary" : "video:" + v.id);
+        card.setTag("home-video:" + index);
         MobileDetailScreen.bindTouchFeedback(card);
         card.setOnClickListener(view -> a.openListing(site, v));
+        // 1.9.74：卡片必须作为可聚焦项暴露给焦点系统（RecyclerView 子项可摇到）
+        card.setFocusable(true);
+        card.setFocusableInTouchMode(true);
+        card.setClickable(true);
+        TvNav.cardFocus(a, card, card.hasFocus(), 12);
+        card.setOnFocusChangeListener(
+                (view, focused) -> {
+                    TvNav.cardFocus(a, card, focused, 12);
+                    if (focused && a.isTvDevice()) {
+                        android.graphics.Rect rect =
+                                new android.graphics.Rect(
+                                        0, -a.dp(8), card.getWidth(), card.getHeight() + a.dp(44));
+                        card.requestRectangleOnScreen(rect, true);
+                    }
+                });
 
         FrameLayout art = new FrameLayout(a);
         art.setBackground(glassBg(0xff1a2c45, 0xff13233a, a.dp(12), a.dp(0.6f), 0x33ffffff));
