@@ -4891,7 +4891,8 @@ final class MobileShell {
  });
  clearBtn.setOnClickListener(
  v -> {
- a.prefs.edit().putString(Prefs.WATCH_HISTORY, "[]").apply();
+ // 1.9.122：统一清理（播放历史 + 直播上次 + 首页历史），并重绘
+ a.clearAllHistory();
  renderSubTab.run();
  });
 
@@ -6249,8 +6250,13 @@ final class MobileShell {
  arr.put(e.json());
  } catch (Exception ignored) {
  }
+ if (index == 2) {
+ // 1.9.122：全部清除 = 播放历史 + 直播上次 + 首页历史，统一走 MainActivity
+ a.clearAllHistory();
+ } else {
  a.prefs.edit().putString(Prefs.WATCH_HISTORY, arr.toString()).apply();
  a.toast("已清理 " + (entries.size() - keep.size()) + " 条记录");
+ }
  switchTab(0);
  })
  .setNegativeButton("取消", null)

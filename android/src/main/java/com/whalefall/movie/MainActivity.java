@@ -2931,6 +2931,31 @@ public final class MainActivity extends Activity {
  PlaybackController.finishSeek(this, commit);
  }
 
+ /** 1.9.122：统一清理观看历史 + 直播上次记录 + 首页历史缓存，并立即重绘。 */
+ int clearAllHistory() {
+ int removed = 0;
+ try {
+ removed = watchHistory().size();
+ } catch (Throwable ignored) {
+ }
+ if (prefs.contains(TvLive.LAST)) removed++;
+ prefs.edit()
+ .remove(Prefs.WATCH_HISTORY)
+ .remove(TvLive.LAST)
+ .apply();
+ AppLog.i("History", "clear scope=home+live removed=" + removed);
+ toast("已清空观看历史与直播记录");
+ try {
+ if (current != null && current.home) {
+ renderReturn(current);
+ } else {
+ refresh();
+ }
+ } catch (Throwable ignored) {
+ }
+ return removed;
+ }
+
  java.util.List<WatchHistory.Entry> watchHistory() {
  return privateMode
  ? java.util.Collections.emptyList()

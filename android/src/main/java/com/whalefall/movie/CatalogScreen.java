@@ -272,11 +272,8 @@ final class CatalogScreen {
  .setPositiveButton(
  "清空",
  (d, n) -> {
- a.prefs
- .edit()
- .remove(Prefs.WATCH_HISTORY)
- .apply();
- a.refresh();
+ // 1.9.122：统一清理播放历史 + 直播上次记录
+ a.clearAllHistory();
  })
  .show()));
  for (WatchHistory.Entry e : entries) {
