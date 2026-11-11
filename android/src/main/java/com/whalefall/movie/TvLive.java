@@ -174,21 +174,21 @@ final class TvLive {
                     builtin.add(
                             new Channel(
                                     (String) row[0],
-                                    overrides.getOrDefault((String) row[0], (String) row[1]),
+                                    (overrides.containsKey((String) row[0]) ? overrides.get((String) row[0]) : (String) row[1]),
                                     GROUP_CCTV));
             for (Object[] row : SAT)
                 if (!hidden.contains((String) row[0]))
                     builtin.add(
                             new Channel(
                                     (String) row[0],
-                                    overrides.getOrDefault((String) row[0], (String) row[1]),
+                                    (overrides.containsKey((String) row[0]) ? overrides.get((String) row[0]) : (String) row[1]),
                                     GROUP_SAT));
             for (Object[] row : WEBLIVE)
                 if (!hidden.contains((String) row[0]))
                     builtin.add(
                             new Channel(
                                     (String) row[0],
-                                    overrides.getOrDefault((String) row[0], (String) row[1]),
+                                    (overrides.containsKey((String) row[0]) ? overrides.get((String) row[0]) : (String) row[1]),
                                     GROUP_WEB));
             builtin.addAll(readWebLive(a));
             custom.addAll(readCustom(a));

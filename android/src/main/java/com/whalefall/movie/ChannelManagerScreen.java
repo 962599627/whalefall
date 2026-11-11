@@ -309,7 +309,7 @@ final class ChannelManagerScreen {
         java.util.Map<String, String> overrides = TvLive.readUrlOverrides(a);
         for (Object[] row : TvLive.CCTV) {
             String name = (String) row[0];
-            String url = overrides.getOrDefault(name, (String) row[1]);
+            String url = (overrides.containsKey(name) ? overrides.get(name) : (String) row[1]);
             rows.add(
                     new Row(
                             name,
@@ -321,7 +321,7 @@ final class ChannelManagerScreen {
         }
         for (Object[] row : TvLive.SAT) {
             String name = (String) row[0];
-            String url = overrides.getOrDefault(name, (String) row[1]);
+            String url = (overrides.containsKey(name) ? overrides.get(name) : (String) row[1]);
             rows.add(
                     new Row(
                             name,

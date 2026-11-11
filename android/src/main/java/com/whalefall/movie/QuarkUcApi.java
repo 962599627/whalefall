@@ -293,7 +293,7 @@ final class QuarkUcApi {
     }
 
     static boolean noteFailure(Provider p) {
-        int count = FAIL_COUNT.merge(p.key, 1, Integer::sum);
+        Integer prevCount = FAIL_COUNT.get(p.key); int count = (prevCount == null ? 0 : prevCount) + 1; FAIL_COUNT.put(p.key, count);
         if (count >= 2) {
             COOLDOWN_UNTIL.put(p.key, System.currentTimeMillis() + COOLDOWN_MS);
             FAIL_COUNT.put(p.key, 0);
@@ -494,7 +494,7 @@ final class QuarkUcApi {
         }
         Exception last = null;
         int startIndex =
-                Math.floorMod(LAST_ENDPOINT.getOrDefault(p.key, 0), endpoints.length);
+                (((LAST_ENDPOINT.containsKey(p.key) ? LAST_ENDPOINT.get(p.key) : 0) % endpoints.length) + endpoints.length) % endpoints.length;
         for (int step = 0; step < endpoints.length; step++) {
             int endpointIndex = (startIndex + step) % endpoints.length;
             String endpoint = endpoints[endpointIndex];

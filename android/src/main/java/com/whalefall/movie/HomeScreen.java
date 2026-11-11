@@ -1938,7 +1938,7 @@ final class HomeScreen {
                                             (v.id == null || v.id.isEmpty())
                                                     ? (v.title == null ? "" : v.title)
                                                     : v.id;
-                                    merged.putIfAbsent(key, v);
+                                    if (!merged.containsKey(key)) merged.put(key, v);
                                 }
                                 pageCount = Math.max(pageCount, part.pageCount);
                             }
