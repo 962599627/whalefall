@@ -115,8 +115,9 @@ final class VideoWallpaper extends FrameLayout {
                             mediaPlayer = new MediaPlayer();
                             mediaPlayer.setSurface(holder.getSurface());
                             mediaPlayer.setLooping(true);
-                            mediaPlayer.setVolume(
-                                    host.prefs.getBoolean(Prefs.WALLPAPER_SOUND, false) ? 1f : 0f);
+                            float vol =
+                                    host.prefs.getBoolean(Prefs.WALLPAPER_SOUND, false) ? 1f : 0f;
+                            mediaPlayer.setVolume(vol, vol);
                             mediaPlayer.setVideoScalingMode(
                                     MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT);
                             mediaPlayer.setDataSource(file(host).getAbsolutePath());
