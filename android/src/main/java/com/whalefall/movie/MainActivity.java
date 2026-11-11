@@ -140,6 +140,19 @@ public final class MainActivity extends Activity {
     /** 1.9.65：回前台重连与网络变化监听。 */
     long backgroundedAt;
     android.net.ConnectivityManager.NetworkCallback networkCallback;
+    /** 1.9.66：手机作为被控端时进入遥控焦点模式。 */
+    boolean remoteFocusMode;
+
+    void enterRemoteFocus(String page) {
+        remoteFocusMode = true;
+        TvNav.enableRemoteFocus(this, page);
+    }
+
+    void exitRemoteFocus() {
+        if (!remoteFocusMode) return;
+        remoteFocusMode = false;
+        TvNav.disableRemoteFocus(this);
+    }
     boolean changingMiniEpisode;
     FrameLayout playerOverlay;
     boolean controlsVisible = true;

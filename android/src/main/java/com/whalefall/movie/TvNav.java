@@ -101,6 +101,67 @@ final class TvNav {
                 });
     }
 
+    /** 1.9.66：手机被控端检测到遥控连接后，进入遥控焦点模式（手机也显示焦点）。 */
+    static void enableRemoteFocus(MainActivity a, String page) {
+        if (a == null || a.root == null) return;
+        int fixed = ensureFocusable(a, a.root, 12, 0);
+        View first =
+                ensureFocus(
+                        a,
+                        page,
+                        "detail-play",
+                        "detail-line:0",
+                        "primary",
+                        "home-tab:0",
+                        "nav-home");
+        AppLog.i(
+                "Remote",
+                "focusMode=on page="
+                        + page
+                        + " focus="
+                        + (first == null ? "null" : String.valueOf(first.getTag()))
+                        + " fixed="
+                        + fixed);
+    }
+
+    /** 遥控断开：退出强制焦点（保留 focusable，不影响触摸）。 */
+    static void disableRemoteFocus(MainActivity a) {
+        if (a == null) return;
+        AppLog.i("Remote", "focusMode=off page=remote");
+    }
+
+    /** 注入方向键失败时滚动当前可滚动容器一屏。 */
+    static boolean scrollPage(View root, int direction) {
+        if (root == null) return false;
+        View scrollable = findScrollable(root);
+        if (!(scrollable instanceof ViewGroup)) return false;
+        ViewGroup group = (ViewGroup) scrollable;
+        int dy = group.getHeight() > 0 ? group.getHeight() * 2 / 3 : 400;
+        if (direction == View.FOCUS_UP) dy = -dy;
+        if (scrollable instanceof androidx.recyclerview.widget.RecyclerView) {
+            ((androidx.recyclerview.widget.RecyclerView) scrollable).scrollBy(0, dy);
+            return true;
+        }
+        if (scrollable instanceof android.widget.ScrollView) {
+            ((android.widget.ScrollView) scrollable).scrollBy(0, dy);
+            return true;
+        }
+        return false;
+    }
+
+    private static View findScrollable(View view) {
+        if (view instanceof androidx.recyclerview.widget.RecyclerView) return view;
+        if (view instanceof android.widget.ScrollView) return view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View found = findScrollable(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
     /** 递归补齐可交互控件的可聚焦与焦点态。 */
     static int ensureFocusable(MainActivity a, View view, int radiusDp, int fixed) {
         if (view == null) return fixed;

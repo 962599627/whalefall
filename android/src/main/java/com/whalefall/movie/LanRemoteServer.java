@@ -311,6 +311,8 @@ final class LanRemoteServer implements Closeable {
                                 "page=inject focus="
                                         + String.valueOf(next.getTag())
                                         + " action=nav");
+                    } else if (TvNav.scrollPage(activity.root, direction)) {
+                        AppLog.i("TvKey", "page=inject focus=scroll action=nav");
                     } else {
                         AppLog.i("TvKey", "page=inject focus=none action=nav");
                     }
@@ -360,8 +362,12 @@ final class LanRemoteServer implements Closeable {
                 return;
             }
             lastSeen = System.currentTimeMillis();
-            sawClient = true;
             String path = uri.getPath() == null ? "/" : uri.getPath();
+            if (!sawClient) {
+                sawClient = true;
+                // 1.9.66：手机被控端进入遥控焦点模式
+                activity.runOnUiThread(() -> activity.enterRemoteFocus("remote"));
+            }
             if (!first[0].equals("GET")) {
                 if (path.equals("/cmd") && first[0].equals("POST")) {
                     String k = param(uri.getRawQuery(), "k");
@@ -580,6 +586,7 @@ final class LanRemoteServer implements Closeable {
     @Override
     public void close() {
         closed = true;
+        if (sawClient) activity.runOnUiThread(() -> activity.exitRemoteFocus());
         try {
             socket.close();
         } catch (Throwable ignored) {
