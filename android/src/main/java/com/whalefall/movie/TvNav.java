@@ -123,18 +123,25 @@ final class TvNav {
             view.setTag(TEXT_KEY, ((android.widget.TextView) view).getCurrentTextColor());
         view.setOnFocusChangeListener(
                 (v, focused) -> applyFocus(a, v, focused, style, radiusDp));
-        applyFocus(a, view, view.hasFocus(), style, radiusDp);
+        // 1.9.75：安装监听只补能力，不在未聚焦时绘制任何可见状态
+        if (view.hasFocus()) applyFocus(a, view, true, style, radiusDp);
     }
 
     private static void applyFocus(
             MainActivity a, View view, boolean focused, int style, int radiusDp) {
-        android.graphics.drawable.Drawable original =
-                (android.graphics.drawable.Drawable) view.getTag(FG_KEY);
+        // 1.9.75：只有真实 hasFocus 才绘制焦点样式；失焦必须完全透明
+        if (focused && !view.hasFocus()) {
+            AppLog.i(
+                    "FocusDraw",
+                    "hasFocus=false view="
+                            + String.valueOf(view.getTag())
+                            + " draw=skip");
+            focused = false;
+        }
+        Object stored = view.getTag(FG_KEY);
         if (focused) {
-            if (view.getTag(FG_KEY) == null)
-                view.setTag(FG_KEY, view.getForeground());
-            android.graphics.drawable.Drawable d =
-                    new FocusDrawable(a, radiusDp, style);
+            if (stored == null) view.setTag(FG_KEY, view.getForeground());
+            android.graphics.drawable.Drawable d = new FocusDrawable(a, radiusDp, style);
             if (android.os.Build.VERSION.SDK_INT >= 23) {
                 d.setAlpha(255);
                 view.setForeground(d);
@@ -146,21 +153,46 @@ final class TvNav {
                                 ? 0xffffd0de
                                 : text.getCurrentTextColor());
             }
-        } else if (view.getTag(FG_KEY) != null) {
-            if (android.os.Build.VERSION.SDK_INT >= 23)
-                view.setForeground((android.graphics.drawable.Drawable) view.getTag(FG_KEY));
+        } else {
+            // 无论之前有没有缓存，失焦都清掉焦点 overlay，避免“款式残留全亮”
+            if (android.os.Build.VERSION.SDK_INT >= 23) {
+                android.graphics.drawable.Drawable original =
+                        stored instanceof android.graphics.drawable.Drawable
+                                ? (android.graphics.drawable.Drawable) stored
+                                : null;
+                view.setForeground(original);
+            }
             view.setTag(FG_KEY, null);
             if (view instanceof android.widget.TextView) {
                 Object originalColor = view.getTag(TEXT_KEY);
                 if (originalColor instanceof Integer)
                     ((android.widget.TextView) view).setTextColor((Integer) originalColor);
             }
+            AppLog.i(
+                    "FocusDraw",
+                    "hasFocus=false view="
+                            + String.valueOf(view.getTag())
+                            + " draw=skip");
         }
         view.setScaleX(1f);
         view.setScaleY(1f);
         AppLog.i(
                 "TvNav",
                 "focus=" + String.valueOf(view.getTag()) + " style=ring+scale on=" + focused);
+    }
+
+    /** 清理非焦点控件上的焦点 overlay（UiAudit focus-leak 修复）。 */
+    static void clearFocusOverlay(View view) {
+        if (view == null) return;
+        if (android.os.Build.VERSION.SDK_INT >= 23
+                && view.getForeground() instanceof FocusDrawable) view.setForeground(null);
+        view.setTag(FG_KEY, null);
+    }
+
+    /** 判断控件是否残留焦点 overlay。 */
+    static boolean hasFocusOverlay(View view) {
+        return android.os.Build.VERSION.SDK_INT >= 23
+                && view.getForeground() instanceof FocusDrawable;
     }
 
     /** 焦点环 overlay：内嵌式，画在内容之上；卡片额外画底部高亮条。 */

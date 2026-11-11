@@ -31,7 +31,14 @@ final class LanRemoteServer implements Closeable {
     volatile boolean sawClient;
     private final long createdAt = System.currentTimeMillis();
     private volatile long idleAnchor = createdAt;
+    /** 1.9.75：最近一次客户端请求时间（焦点模式仅在此后 10s 内生效）。 */
+    private static volatile long lastClientAt;
     private static final long TTL_MS = 30 * 60_000L;
+
+    /** 遥控是否正在被使用（10s 内有请求），避免误开手机焦点模式。 */
+    static boolean clientActiveWithin(long windowMs) {
+        return System.currentTimeMillis() - lastClientAt <= windowMs;
+    }
 
     /** 1.9.30：重新打开遥控页时重置空闲计时，避免刚打开就被判定 20 分钟超时。 */
     void resetIdle() {
@@ -373,6 +380,7 @@ final class LanRemoteServer implements Closeable {
                 return;
             }
             lastSeen = System.currentTimeMillis();
+            lastClientAt = lastSeen;
             String path = uri.getPath() == null ? "/" : uri.getPath();
             if (!sawClient) {
                 sawClient = true;

@@ -144,6 +144,11 @@ public final class MainActivity extends Activity {
     boolean remoteFocusMode;
 
     void enterRemoteFocus(String page) {
+        // 1.9.75：只有遥控服务正在工作且 10s 内有客户端请求才进入焦点模式
+        if (!LanRemoteServer.clientActiveWithin(10_000L)) {
+            AppLog.i("Remote", "focusMode=skip reason=no-recent-client page=" + page);
+            return;
+        }
         remoteFocusMode = true;
         TvNav.enableRemoteFocus(this, page);
         scheduleFocusAudit();
@@ -162,6 +167,12 @@ public final class MainActivity extends Activity {
                 @Override
                 public void run() {
                     if (!(isTvDevice() || remoteFocusMode) || isFinishing()) return;
+                    // 1.9.75：遥控 10s 无请求立即退出焦点模式，避免历史状态误开
+                    if (remoteFocusMode && !LanRemoteServer.clientActiveWithin(10_000L)) {
+                        AppLog.i("Remote", "focusMode=off reason=idle");
+                        exitRemoteFocus();
+                        return;
+                    }
                     TvNav.periodicAudit(
                             MainActivity.this,
                             body == null ? "page" : String.valueOf(body.getTag()));

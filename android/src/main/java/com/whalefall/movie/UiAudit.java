@@ -77,6 +77,9 @@ final class UiAudit {
         if (a.appDialog != null && !a.appDialog.isShowing()) issues.add("stale:appDialog");
 
         List<String> bad = new ArrayList<>();
+        // 5) 焦点样式泄漏：非焦点控件出现焦点 overlay
+        int leaks = auditFocusLeaks(a, a.root);
+        if (leaks > 0) issues.add("focus-leak count=" + leaks);
         for (String line : issues) if (!line.isEmpty()) bad.add(line);
         String report =
                 "page="
@@ -129,6 +132,26 @@ final class UiAudit {
             for (int i = 0; i < group.getChildCount(); i++)
                 collect(group.getChildAt(i), out, prefix, limit);
         }
+    }
+
+    private static int auditFocusLeaks(MainActivity a, View view) {
+        if (view == null) return 0;
+        int leaks = 0;
+        if (!view.hasFocus() && TvNav.hasFocusOverlay(view)) {
+            AppLog.e(
+                    "UiAudit",
+                    "rule=focus-leak view="
+                            + String.valueOf(view.getTag())
+                            + " action=fix");
+            TvNav.clearFocusOverlay(view);
+            leaks++;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++)
+                leaks += auditFocusLeaks(a, group.getChildAt(i));
+        }
+        return leaks;
     }
 
     private static int countTag(View view, String tag) {
