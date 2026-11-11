@@ -96,7 +96,7 @@ final class UiAudit {
             AppLog.i("UiAudit", report);
         } else {
             for (String line : bad)
-                AppLog.w("UiAudit", "rule=" + line + " page=" + page + (fixed ? " action=fix" : " action=log"));
+                AppLog.i("UiAudit", "rule=" + line + " page=" + page + (fixed ? " action=fix" : " action=log"));
         }
         return report;
     }
