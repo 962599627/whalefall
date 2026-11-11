@@ -1815,10 +1815,11 @@ public final class MainActivity extends Activity {
             ui.post(() -> TvNav.enableRemoteFocus(this, "remote-page"));
         if (isTvDevice() || remoteFocusMode)
             ui.postDelayed(
-                    () ->
-                            TvNav.audit(
-                                    this,
-                                    body == null ? "page" : String.valueOf(body.getTag())),
+                    () -> {
+                        String page = body == null ? "page" : String.valueOf(body.getTag());
+                        TvNav.audit(this, page);
+                        UiAudit.audit(this, page);
+                    },
                     300);
     }
 

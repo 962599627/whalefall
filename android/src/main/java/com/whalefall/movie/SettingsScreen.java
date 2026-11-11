@@ -644,6 +644,24 @@ final class SettingsScreen {
                 });
         link("运行日志", "查看本机最近异常与诊断记录", "settings-logs", this::diagnostics);
         link(
+                "UI 自检",
+                "检查导航选中唯一、焦点唯一、无重复/残留浮层",
+                "settings-ui-audit",
+                () -> {
+                    String report =
+                            UiAudit.audit(
+                                    a,
+                                    a.body == null ? "settings" : String.valueOf(a.body.getTag()));
+                    new AppDialog.Builder(a)
+                            .setTitle("UI 自检")
+                            .setMessage(report)
+                            .setPositiveButton(
+                                    "复制",
+                                    (d, w) -> ExtraPages.copyText(a, report, "UI 自检"))
+                            .setNegativeButton("关闭", null)
+                            .show();
+                });
+        link(
                 "焦点审计",
                 "扫描当前页按钮焦点/动效是否齐全，并输出报告",
                 "settings-focus-audit",

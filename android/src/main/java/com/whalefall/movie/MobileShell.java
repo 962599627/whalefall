@@ -1000,6 +1000,7 @@ final class MobileShell {
         ++a.generation;
         if (activeTab == 0) captureHomeAnchor();
         activeTab = Math.max(0, Math.min(6, index));
+        a.ui.postDelayed(() -> UiAudit.audit(a, "tab:" + activeTab), 250);
         a.cancelPageRequests();
         // When on Search tab (1), highlight Home (0) in the 4-tab dock
         int highlightedDockTab = activeTab == 1 ? 0 : activeTab;

@@ -1252,6 +1252,7 @@ final class PlaybackController {
         // 一次性诊断：首帧布局后记录 layer/surface/chrome 尺寸与安全区（播放页「卡片化」排查用）
         logPlaybackLayout(a, ticket, 0);
         a.ui.postDelayed(() -> TvNav.audit(a, "player"), 600);
+        a.ui.postDelayed(() -> UiAudit.audit(a, "player"), 600);
         surface.listen(
                 new VideoOutput.Listener() {
                     Surface renderSurface;
@@ -1938,6 +1939,7 @@ final class PlaybackController {
         }
         a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         AppLog.i("Detail", "resume player=cleared layers=" + layers);
+        a.ui.postDelayed(() -> UiAudit.audit(a, "player-exit"), 300);
     }
 
     /** 1.9.65：回前台/网络变化后用同一 URL 自动重连（保留进度，最多 2 次）。 */

@@ -962,6 +962,8 @@ final class HomeScreen {
     }
 
     void renderSnapshot() {
+        // 1.9.73：回到首页时导航选中态切回「主页」，不残留设置/电视
+        HomeDock.selectedKey = "nav-home";
         state.snapshot = snapshot;
         boolean first = !state.initialized;
         if (first) {

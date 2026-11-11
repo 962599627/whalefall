@@ -36,3 +36,11 @@
 - 禁止只做点击不做焦点；禁止 scale>1.02 / 外发光 / 描边出界 / 盖相邻元素；
 - 验收必须提供 `I/TvFocusAudit page=… clickable=N focusable=N rings=N missing=[]` 日志（missing 为空）；
 - 缺少焦点态的改动不得进入打包门禁。
+
+## UI 状态不变量（1.9.73 起）
+新增任何 UI 状态（导航选中、面板、浮层、小窗、loading、页面栈）必须：
+1. 定义**唯一性不变量**，例如「导航栏恰好 1 个选中且等于当前 tab」「同一时刻最多 1 个筛选面板/小窗/loading/弹层」；
+2. 接入 `UiAudit.audit(a, page)`：页面渲染 / 切 tab / 进设置子页 / 开关面板 / 进出播放器后主动执行；
+3. 违规日志格式固定：`E/UiAudit rule=<不变量> got=N ... action=fix|log`，可自动修复的立即修正；
+4. 验收必须附 `I/UiAudit page=… navSelected=1 expected=… issues=[]`；有 issues 不得打包；
+5. 设置→诊断→「UI 自检」可现场复检并复制报告。

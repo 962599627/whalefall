@@ -10,6 +10,8 @@ final class HomeDock {
     final LinearLayout rail;
     final TextView hint;
     final View[] items = new View[8];
+    /** 1.9.73：全局唯一选中 tab；设置子页时仍保持「设置」选中，不残留主页/电视。 */
+    static String selectedKey = "nav-home";
     final String[] labels = {"首页", "搜索", "直播", "电视", "收藏", "网盘", "云盘专区", "设置"};
     final String[] keys = {
         "nav-home",
@@ -104,7 +106,7 @@ final class HomeDock {
             icon.setFocusable(true);
             icon.setFocusableInTouchMode(true);
             icon.setClickable(true);
-            icon.setSelected(i == 0);
+            icon.setSelected(keys[i].equals(selectedKey));
             a.pressFeedback(icon);
             int cellGap = a.dp(Math.max(3, Math.round(4 * navScale)));
             LinearLayout.LayoutParams cell =
@@ -118,22 +120,32 @@ final class HomeDock {
             }
             rail.addView(icon, cell);
             if (i == 6 && !MainActivity.cloudEnabled(a)) icon.setVisibility(View.GONE);
-            icon.setOnClickListener(v -> actions[index].run());
+            icon.setOnClickListener(v -> {
+                selectedKey = keys[index];
+                for (int n = 0; n < items.length; n++)
+                    if (items[n] != null) items[n].setSelected(keys[n].equals(selectedKey));
+                icon.invalidate();
+                AppLog.i(
+                        "TvNav",
+                        "dock selected="
+                                + selectedKey
+                                + " focus="
+                                + String.valueOf(a.getCurrentFocus() == null ? null : a.getCurrentFocus().getTag()));
+                actions[index].run();
+            });
+            // 1.9.72：侧栏焦点=10% 粉底 + 2dp ACCENT_SOFT 内环，不缩放；选中=1AFFFFFF 底 + ACCENT_SOFT 图标
+            TvNav.focusRing(a, icon, Math.max(12, (cellDp + 2) / 2));
+            final View.OnFocusChangeListener ringListener = icon.getOnFocusChangeListener();
             icon.setOnFocusChangeListener(
                     (v, focused) -> {
+                        if (ringListener != null) ringListener.onFocusChange(v, focused);
                         icon.invalidate();
-                        FocusMotion.style(
-                                a,
-                                icon,
-                                focused,
-                                Color.TRANSPARENT,
-                                MainActivity.WHITE,
-                                // Half of the cell or more: a true circle, not a squircle.
-                                Math.max(24, (cellDp + 2) / 2),
-                                MainActivity.WHITE,
-                                MainActivity.DARK,
-                                false,
-                                1.045f);
+                        AppLog.i(
+                                "TvNav",
+                                "dock selected="
+                                        + selectedKey
+                                        + " focus="
+                                        + (focused ? keys[index] : "content"));
                         if (focused && !bottomMode) showLabel(index);
                         else {
                             hint.animate().cancel();
@@ -299,13 +311,23 @@ final class HomeDock {
         @Override
         protected void onDraw(Canvas c) {
             super.onDraw(c);
-            FocusMotion.State motion = (FocusMotion.State) getTag(R.id.focus_motion);
-            boolean light = hasFocus() && (motion == null || Color.alpha(motion.color) > 150);
-            UiIcon.tintDrawable(glyph, light ? MainActivity.DARK : UiTokens.TEXT_SECONDARY);
+            int radius = a.dp(12);
+            // 1.9.73：选中态与焦点态视觉区分
+            if (isSelected() && !hasFocus()) {
+                dotPaint.setStyle(Paint.Style.FILL);
+                dotPaint.setColor(0x1AFFFFFF);
+                c.drawRoundRect(
+                        new RectF(0, 0, getWidth(), getHeight()), radius, radius, dotPaint);
+            }
+            int glyphColor =
+                    hasFocus()
+                            ? MainActivity.WHITE
+                            : (isSelected() ? UiTokens.ACCENT_SOFT : UiTokens.TEXT_SECONDARY);
+            UiIcon.tintDrawable(glyph, glyphColor);
             UiIcon.drawCentered(c, glyph, getWidth(), getHeight(), a.dp(21f * navScale));
             if (isSelected()) {
                 dotPaint.setStyle(Paint.Style.FILL);
-                dotPaint.setColor(hasFocus() ? MainActivity.DARK : MainActivity.WHITE);
+                dotPaint.setColor(hasFocus() ? MainActivity.WHITE : UiTokens.ACCENT_SOFT);
                 c.drawCircle(a.dp(5), getHeight() / 2f, a.dp(1.5f), dotPaint);
             }
         }
