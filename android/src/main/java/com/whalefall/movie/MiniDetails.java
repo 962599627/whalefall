@@ -111,18 +111,43 @@ final class MiniDetails {
 
         int layerIdx = a.root.indexOfChild(a.playbackLayer);
         a.root.addView(page, layerIdx >= 0 ? layerIdx + 1 : 0, pageLp);
+        // 1.9.56：保证视频层在详情海报之上，再叠加控制层
+        a.playbackLayer.bringToFront();
+        page.bringToFront();
 
         a.ui.post(
                 () -> {
                     if (!a.miniMode) return;
+                    a.playbackLayer.bringToFront();
+                    page.bringToFront();
                     if (controls != null) controls.resize(controls.videoWidth, controls.videoHeight);
+                    View output = PlaybackController.findTagged(a.playbackLayer, "video-output");
+                    android.view.Surface surface =
+                            output instanceof VideoOutput
+                                    ? ((VideoOutput) output).currentSurface()
+                                    : null;
+                    if (a.player != null && surface != null) a.player.setSurface(surface);
+                    AppLog.i(
+                            "Mini",
+                            "z=video|poster surface="
+                                    + (surface != null ? "reused" : "waiting")
+                                    + " player="
+                                    + (a.player != null));
                     playPause.requestFocus();
                     View detailPlay = a.root.findViewWithTag("detail-play");
                     if (detailPlay != null) {
+                        if (detailPlay.getId() == View.NO_ID)
+                            detailPlay.setId(View.generateViewId());
                         playPause.setNextFocusDownId(detailPlay.getId());
                         hit.setNextFocusDownId(detailPlay.getId());
                     }
                 });
+        // 详情异步加载可能重新显示 hero 海报：延迟再隐藏一次，保证小窗始终是视频
+        a.ui.postDelayed(
+                () -> {
+                    if (a.miniMode) PlaybackController.hideDetailHero(a, true);
+                },
+                600);
     }
 
     private TextView miniButton(String label, String tag, Runnable action) {

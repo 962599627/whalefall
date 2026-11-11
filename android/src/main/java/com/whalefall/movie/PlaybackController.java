@@ -887,6 +887,9 @@ final class PlaybackController {
                 ((ViewGroup) layer.getParent()).removeView(layer);
             a.root.addView(layer, new FrameLayout.LayoutParams(-1, -1));
         }
+        if (layer != null) layer.bringToFront();
+        // 1.9.56：小窗时隐藏详情 hero 海报/播放按钮，避免死图盖住实时视频
+        hideDetailHero(a, true);
         a.miniDetails = new MiniDetails(a);
         if (!overDetail && a.current != null) a.restore(a.current);
     }
@@ -905,6 +908,8 @@ final class PlaybackController {
         a.playbackLayer.setOutlineProvider(null);
         a.playbackLayer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         a.playbackLayer.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        // 1.9.57：恢复详情 hero 海报/播放按钮（全屏播放时详情在背后）
+        hideDetailHero(a, false);
         // 1.9.53：只恢复布局并复用现有 Surface/player，不重新请求地址、不 seek
         View output = findTagged(a.playbackLayer, "video-output");
         android.view.Surface surface =
@@ -941,8 +946,29 @@ final class PlaybackController {
                 });
     }
 
-    private static View findTagged(View view, String tag) {
-        if (view == null) return null;
+    /** 1.9.56：小窗时隐藏详情页 hero 海报/播放按钮层，避免死图 + 播放按钮盖住视频。 */
+    static void hideDetailHero(MainActivity a, boolean hide) {
+        if (a.root == null) return;
+        String[] tags = {"detail-cover", "detail-play-big", "detail-play"};
+        int changed = 0;
+        for (String tag : tags) {
+            View view = a.root.findViewWithTag(tag);
+            if (view != null) {
+                view.setVisibility(hide ? View.GONE : View.VISIBLE);
+                changed++;
+            }
+        }
+        AppLog.i(
+                "Mini",
+                "z=video|poster hero="
+                        + (hide ? "hidden" : "restored")
+                        + " layers="
+                        + changed
+                        + " surface="
+                        + (a.player != null ? "kept" : "none"));
+    }
+
+    static View findTagged(View view, String tag) {        if (view == null) return null;
         if (tag.equals(view.getTag())) return view;
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
