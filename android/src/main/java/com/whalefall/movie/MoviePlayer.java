@@ -149,13 +149,19 @@ public class MoviePlayer {
  if (!exists) raw.add(eac3);
  }
  }
- if (decoderMode == 0 || decoderMode == 3) return raw;
+ // 1.9.121：SDK<26 旧电视默认软解，避开 Amlogic 硬解器频繁 seek 崩溃
+ int effectiveMode = decoderMode;
+ if (android.os.Build.VERSION.SDK_INT < 26 && decoderMode == 0) {
+ effectiveMode = 2;
+ AppLog.i("Player", "decoder=software reason=sdk<26 mode=auto->software");
+ }
+ if (effectiveMode == 0 || effectiveMode == 3) return raw;
  java.util.List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo>
  selected = new java.util.ArrayList<>();
  for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo codec :
  raw)
  if (!mime.startsWith("video/")
- || (decoderMode == 2
+ || (effectiveMode == 2
  ? codec.softwareOnly
  : codec.hardwareAccelerated))
  selected.add(codec);
