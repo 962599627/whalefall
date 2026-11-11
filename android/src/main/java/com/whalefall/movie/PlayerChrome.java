@@ -251,10 +251,28 @@ final class PlayerChrome {
  TvNav.focusRing(a, state, 36);
  state.setOnKeyListener(
  (v, keyCode, event) -> {
- if (event.getAction() == android.view.KeyEvent.ACTION_DOWN
- && (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
- || keyCode == android.view.KeyEvent.KEYCODE_ENTER))
+ if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+ if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+ || keyCode == android.view.KeyEvent.KEYCODE_ENTER)
  AppLog.i("PlayerFocus", "ok=play-pause action=toggle");
+ else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+ View next = v.focusSearch(View.FOCUS_DOWN);
+ AppLog.i(
+ "PlayerFocus",
+ "down from=play-pause to="
+ + (next == null
+ ? "none"
+ : String.valueOf(next.getTag())));
+ } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+ View next = v.focusSearch(View.FOCUS_RIGHT);
+ AppLog.i(
+ "PlayerFocus",
+ "right from=play-pause to="
+ + (next == null
+ ? "none"
+ : String.valueOf(next.getTag())));
+ }
+ }
  return false;
  });
  }

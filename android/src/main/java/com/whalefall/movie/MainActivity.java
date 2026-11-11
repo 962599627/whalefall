@@ -223,6 +223,8 @@ public final class MainActivity extends Activity {
  }
  /** 1.9.84：物理遥控按键即进入焦点模式（不依赖 LEANBACK 上报）。 */
  boolean keyFocusMode;
+ /** 1.9.102：播放器自动隐藏计时用的最后一次输入。 */
+ String lastPlayerKey = "none";
 
  void enterRemoteFocus(String page) {
  try {
@@ -2969,6 +2971,14 @@ public final class MainActivity extends Activity {
  public boolean dispatchKeyEvent(KeyEvent event) {
  // 1.9.84：物理遥控/键盘方向键按下即进入焦点模式（isTvDevice 可能为 false）
  int pressed = event.getKeyCode();
+ // 1.9.102：播放器控制条任何按键输入都重置自动隐藏计时
+ if (event.getAction() == KeyEvent.ACTION_DOWN
+ && current != null
+ && current.player
+ && controlsVisible) {
+ lastPlayerKey = KeyEvent.keyCodeToString(pressed);
+ PlaybackController.scheduleHide(this);
+ }
  boolean focusKey =
  pressed == KeyEvent.KEYCODE_DPAD_UP
  || pressed == KeyEvent.KEYCODE_DPAD_DOWN

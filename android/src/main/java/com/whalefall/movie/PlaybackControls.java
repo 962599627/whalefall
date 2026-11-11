@@ -405,8 +405,7 @@ final class PlaybackControls {
  a.playerChrome.backBtn.setId(UiCompat.generateViewId());
  timeline.setNextFocusUpId(a.playerChrome.backBtn.getId());
  }
- for (View cell : focusable) cell.setNextFocusUpId(timeline.getId());
- if (a.playerChrome != null) {
+ for (View cell : focusable) cell.setNextFocusUpId(timeline.getId()); if (a.playerChrome != null) {
  View back = a.playerChrome.backBtn;
  View more = a.playerChrome.moreBtn;
  if (back != null && more != null) {
@@ -427,8 +426,14 @@ final class PlaybackControls {
  View playPause = a.playerChrome.state;
  if (playPause.getId() == View.NO_ID) playPause.setId(UiCompat.generateViewId());
  playPause.setNextFocusRightId(dockFirst.getId());
+ playPause.setNextFocusDownId(dockFirst.getId());
  playPause.setNextFocusUpId(timeline.getId());
  focusable.get(0).setNextFocusLeftId(playPause.getId());
+ // 1.9.102：底部按钮 UP 回到中央暂停，DOWN 由中央进入按钮行第一项
+ for (View cell : focusable) cell.setNextFocusUpId(playPause.getId());
+ AppLog.i(
+ "PlayerFocus",
+ "down from=play-pause to=" + String.valueOf(dockFirst.getTag()));
  AppLog.i("PlayerFocus", "default=play-pause");
  }
  }

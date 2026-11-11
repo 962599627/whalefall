@@ -1735,28 +1735,16 @@ final class PlaybackController {
 
  static void scheduleHide(MainActivity a) {
  if (a.hideControls != null) a.ui.removeCallbacks(a.hideControls);
- // 1.9.99：焦点在控制条内时暂停自动隐藏；离开控制条后才重新 3s 计时
- if (a.controlsVisible && focusInControls(a)) {
- AppLog.i("PlayerChrome", "autohide paused=focus");
- return;
- }
- AppLog.i("PlayerChrome", "autohide resumed idle=3000");
+ // 1.9.102：按「最后一次输入」计时，3s 到点即隐藏（不再因焦点在控件内暂停）
  a.hideControls =
  () -> {
  if (!a.controlsVisible) return;
- if (focusInControls(a)) {
- AppLog.i("PlayerChrome", "autohide paused=focus");
- return;
- }
- if (a.prepared
- && a.playing
- && (a.playbackControls == null || !a.playbackControls.dialogOpen)) {
- // 隐藏前把焦点交回视频区，避免控件已隐藏仍持焦
  View focus = a.getCurrentFocus();
  if (focus != null && focusInControls(a)) a.root.requestFocus();
- AppLog.i("PlayerChrome", "autohide hidden=true");
+ AppLog.i(
+ "PlayerChrome",
+ "autohide idle=3000 hidden=true lastKey=" + String.valueOf(a.lastPlayerKey));
  showControls(a, false);
- }
  };
  a.ui.postDelayed(a.hideControls, 3000);
  }
@@ -2162,6 +2150,7 @@ final class PlaybackController {
  || (a.playbackControls != null && a.playbackControls.dialogOpen)) return false;
  int key = event.getKeyCode();
  boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
+ if (down) a.lastPlayerKey = KeyEvent.keyCodeToString(key);
  View focus = a.getCurrentFocus();
  boolean horizontal =
  key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT;
