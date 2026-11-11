@@ -1622,14 +1622,38 @@ public final class MainActivity extends Activity {
  private String lastWallpaperLog;
 
  /** 幂等：确保 base 渐变 + 用户壁纸层（静态图或动态视频）都存在且唯一；缺则补、多则删。 */
+ /** 1.9.112：启动/进首页时清理历史遗留的不兼容动态壁纸（4K/HEVC/高帧率）。 */
+ void purgeUnsupportedVideoWallpaper() {
+ try {
+ final File video = VideoWallpaper.file(this);
+ if (!video.isFile()) return;
+ String reason = SettingsScreen.videoWallpaperRejectReason(this, video);
+ AppLog.i(
+ "Wallpaper",
+ "video validate at=startup accepted=" + (reason == null) + " size=" + video.length());
+ if (reason == null) return;
+ video.delete();
+ prefs.edit()
+ .putBoolean(Prefs.WALLPAPER_VIDEO, false)
+ .putBoolean(Prefs.WALLPAPER_ENABLED, true)
+ .apply();
+ AppLog.i("Wallpaper", "video purge reason=unsupported detail=" + reason);
+ toast("已移除不兼容的 4K 动态壁纸");
+ ui.post(
+ () -> {
+ if (root != null) applyWallpaper(root);
+ });
+ } catch (Throwable error) {
+ AppLog.w("Wallpaper", "video purge skipped", error);
+ }
+ }
+
  /** 1.9.108：动态壁纸失败自动回退默认/静态壁纸，避免整屏黑。 */
  void videoWallpaperFailed(String reason) {
  try {
  prefs.edit()
  .putBoolean(Prefs.WALLPAPER_VIDEO, false)
- .putBoolean(
- Prefs.WALLPAPER_ENABLED,
- new File(getFilesDir(), "wallpaper.jpg").isFile())
+ .putBoolean(Prefs.WALLPAPER_ENABLED, true)
  .apply();
  toast("动态壁纸播放失败，已恢复默认壁纸");
  AppLog.i("Wallpaper", "video fallback reason=" + reason + " restored=true");
@@ -1676,6 +1700,7 @@ public final class MainActivity extends Activity {
  }
 
  // 2. 静态壁纸层：动态壁纸优先时全部移除；静态模式保留且唯一
+ // 1.9.112：ENABLED 只控制自定义；关闭/失败时仍绘制内置默认壁纸兜底
  int staticCount = 0;
  for (int i = target.getChildCount() - 1; i >= 0; i--) {
  View child = target.getChildAt(i);
@@ -1687,10 +1712,10 @@ public final class MainActivity extends Activity {
  staticCount++;
  if (staticCount > 1) target.removeViewAt(i);
  }
- if (staticEnabled && !videoEnabled && staticCount == 0) {
+ if (!videoEnabled && staticCount == 0) {
  java.io.File staticFile = new java.io.File(getFilesDir(), "wallpaper.jpg");
  if (!staticFile.isFile())
- AppLog.w("Wallpaper", "static wallpaper file missing: " + staticFile, null);
+ AppLog.w("Wallpaper", "static wallpaper missing; use default asset: " + staticFile, null);
  View atmosphere = ImageLoader.createAtmosphere(this);
  atmosphere.setTag(WALLPAPER_TAG);
  target.addView(
@@ -1738,7 +1763,13 @@ public final class MainActivity extends Activity {
  lastWallpaperLog = signature;
  AppLog.i(
  "Wallpaper",
- "apply root="
+ "apply source="
+ + (videoEnabled
+ ? "custom video"
+ : (new java.io.File(getFilesDir(), "wallpaper.jpg").isFile()
+ ? "custom static"
+ : "default"))
+ + " root="
  + System.identityHashCode(target)
  + " staticEnabled="
  + staticEnabled
@@ -3352,6 +3383,7 @@ public final class MainActivity extends Activity {
  ui.postDelayed(() -> PlaybackController.retryAfterResume(this), 700);
  scheduleFocusAudit();
  ui.postDelayed(this::cleanupOldCrashLogs, 1500);
+ ui.postDelayed(this::purgeUnsupportedVideoWallpaper, 1200);
  if (bgPlayback) {
  bgPlayback = false;
  // 1.9.53：回到前台继续播放，不释放音频焦点/不暂停，仅撤掉常驻通知

@@ -964,6 +964,8 @@ final class HomeScreen {
  void renderSnapshot() {
  // 1.9.73：回到首页时导航选中态切回「主页」，不残留设置/电视
  HomeDock.selectedKey = "nav-home";
+ // 1.9.112：进入首页做一次壁纸规格自检（4K/HEVC 历史文件自动回退，不阻塞渲染）
+ a.ui.postDelayed(a::purgeUnsupportedVideoWallpaper, 600);
  state.snapshot = snapshot;
  boolean first = !state.initialized;
  if (first) {

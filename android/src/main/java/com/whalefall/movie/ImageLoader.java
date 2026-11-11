@@ -397,12 +397,24 @@ final class ImageLoader {
  final MainActivity a;
  final Paint paint = new Paint(3);
  Bitmap wallpaper;
+ Bitmap fallbackWallpaper;
  boolean decodeLogged;
 
  Atmosphere(Context c) {
  super(c);
  a = (MainActivity) c;
  if (a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) wallpaper = loadWallpaper();
+ // 1.9.112：自定义壁纸关闭/缺失时永远用内置默认壁纸兜底
+ if (wallpaper == null) fallbackWallpaper = loadDefaultWallpaper();
+ }
+
+ private Bitmap loadDefaultWallpaper() {
+ try (java.io.InputStream in = a.getAssets().open("branding/wallpaper-default.jpg")) {
+ return BitmapFactory.decodeStream(in);
+ } catch (Throwable error) {
+ AppLog.w("Wallpaper", "default wallpaper load failed", error);
+ return null;
+ }
  }
 
  /** 读取用户静态壁纸；文件缺失/解码失败写一条日志，不静默退纯色。 */
@@ -428,6 +440,7 @@ final class ImageLoader {
  canvas.drawColor(MainActivity.DARK);
  if (wallpaper == null && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false))
  wallpaper = loadWallpaper();
+ if (wallpaper == null) wallpaper = fallbackWallpaper;
  if (wallpaper != null) {
  float scale =
  Math.max(

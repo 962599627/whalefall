@@ -344,6 +344,8 @@ final class SettingsScreen {
  }
 
  void wallpaper() {
+ // 1.9.112：进入壁纸设置先自检，残留 4K/HEVC 文件自动回退
+ a.ui.postDelayed(a::purgeUnsupportedVideoWallpaper, 300);
  page(
  "首页壁纸",
  "壁纸只影响应用背景，不会更改电视桌面。图片以居中裁切显示；视频壁纸循环静音播放，耗电更高。");
