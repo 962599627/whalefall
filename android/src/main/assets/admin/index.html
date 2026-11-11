@@ -439,8 +439,25 @@ createApp({
         else { this.wallpaperError=j.reason||'设置失败'; this.say('设置失败'); }
         ev.target.value='';
       };
-      xhr.onerror=()=>{this.uploadBusy=false; this.uploadName=''; this.say('上传失败');};
+      xhr.onerror=()=>{this.uploadBusy=false; this.uploadName=''; this.verifyWallpaper(kind);};
       xhr.send(file);
+    },
+    async verifyWallpaper(kind){
+      try{
+        const r=await fetch(apiUrl('/api/wallpaper'),{cache:'no-store'});
+        const j=await r.json();
+        const ok=(kind==='video'&&j.video)||(kind==='image'&&j.type==='image');
+        this.wallpaper=j;
+        if(ok){ this.say('壁纸已生效（连接中断，但已成功）'); this.loadWallpaper(); }
+        else { this.wallpaperError='上传未生效，请重试'; this.say('上传失败'); }
+      }catch(e){ this.wallpaperError='连接中断，请刷新确认'; this.say('上传失败'); }
+    },
+    async verifyFile(name){
+      try{
+        await this.loadFiles();
+        const ok=(this.files||[]).some(f=>f.name===name);
+        this.say(ok?'文件已上传（连接中断，但已成功）':'上传失败');
+      }catch(e){ this.say('上传失败'); }
     },
     async setWallpaperFromUpload(f){
       try{
@@ -479,10 +496,10 @@ createApp({
           let ok=false;
           try{ ok=JSON.parse(xhr.responseText).ok===true; }catch(e){}
           if(ok){this.say('已上传 '+file.name);this.loadFiles();}
-          else this.say('上传失败');
+          else this.verifyFile(file.name);
           ev.target.value='';
         };
-        xhr.onerror=()=>{this.uploadBusy=false;this.say('上传失败');};
+        xhr.onerror=()=>{this.uploadBusy=false;this.verifyFile(file.name);};
         xhr.send(file);
         return;
       }
@@ -501,10 +518,10 @@ createApp({
           let ok=false;
           try{ ok = JSON.parse(xhr.responseText).ok===true; }catch(e){}
           if(ok){this.say('已上传 '+file.name);this.loadFiles();}
-          else this.say('上传失败');
+          else this.verifyFile(file.name);
           ev.target.value='';
         };
-        xhr.onerror=()=>{this.uploadBusy=false;this.say('上传失败');};
+        xhr.onerror=()=>{this.uploadBusy=false;this.verifyFile(file.name);};
         xhr.send(JSON.stringify({name:file.name,base64:String(reader.result).split(',')[1]}));
       };
       reader.readAsDataURL(file);

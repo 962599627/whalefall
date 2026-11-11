@@ -98,7 +98,7 @@ final class AdminConsole implements Closeable {
 
  private void serve(Socket client) {
  try (Socket s = client) {
- s.setSoTimeout(12000);
+ s.setSoTimeout(120000);
  InputStream in = s.getInputStream();
  ByteArrayOutputStream head = new ByteArrayOutputStream();
  int c, state = 0;
@@ -877,8 +877,15 @@ final class AdminConsole implements Closeable {
  + body.length
  + "\r\n"
  + "Connection: close\r\n\r\n";
+ try {
  out.write(head.getBytes(StandardCharsets.UTF_8));
  out.write(body);
  out.flush();
+ } catch (java.io.IOException error) {
+ // 1.9.110：客户端提前断开（EBADF 等）时结果已处理完成，只记日志不报错
+ AppLog.i(
+ "Admin",
+ "resp clientClosed=true reason=" + error.getClass().getSimpleName());
+ }
  }
 }
