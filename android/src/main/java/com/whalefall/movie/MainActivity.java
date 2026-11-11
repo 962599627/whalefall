@@ -3143,6 +3143,21 @@ public final class MainActivity extends Activity {
  return handled;
  }
 
+ /** 1.9.127：深度优先找第一个可聚焦且可见的子控件。 */
+ private static View findFirstFocusable(View view) {
+ if (view == null) return null;
+ if (view.isShown() && view.isFocusable() && view.getVisibility() == View.VISIBLE)
+ return view;
+ if (view instanceof ViewGroup) {
+ ViewGroup group = (ViewGroup) view;
+ for (int i = 0; i < group.getChildCount(); i++) {
+ View found = findFirstFocusable(group.getChildAt(i));
+ if (found != null) return found;
+ }
+ }
+ return null;
+ }
+
  @Override
  public boolean dispatchKeyEvent(KeyEvent event) {
  // 1.9.84：物理遥控/键盘方向键按下即进入焦点模式（isTvDevice 可能为 false）
@@ -3173,8 +3188,23 @@ public final class MainActivity extends Activity {
  "show reason=key hiddenBefore=true key=" + KeyEvent.keyCodeToString(pressed));
  PlaybackController.showControls(this, true);
  }
- if (focusKey && event.getAction() == KeyEvent.ACTION_DOWN && !keyFocusMode) {
- keyFocusMode = true;
+ // 1.9.127：全局无焦点兜底，避免页面刷新后「无焦点死锁」
+ if (focusKey
+ && event.getAction() == KeyEvent.ACTION_DOWN
+ && !(current != null && current.player)) {
+ View cur = getCurrentFocus();
+ if (cur == null || !cur.isShown()) {
+ View first = findFirstFocusable(root);
+ if (first != null) {
+ first.requestFocus();
+ AppLog.i(
+ "Focus",
+ "ensure reason=null-focus key=" + KeyEvent.keyCodeToString(pressed));
+ return true;
+ }
+ }
+ }
+ if (focusKey && event.getAction() == KeyEvent.ACTION_DOWN && !keyFocusMode) { keyFocusMode = true;
  AppLog.i(
  "Remote",
  "keyFocus=on key="

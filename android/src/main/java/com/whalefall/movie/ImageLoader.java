@@ -415,8 +415,36 @@ final class ImageLoader {
  }
 
  private Bitmap loadDefaultWallpaper() {
+ try {
+ // 1.9.126：旧机 4K 默认图直接解码会原生崩溃，按屏幕降采样
+ int maxEdge = 1280;
+ android.graphics.BitmapFactory.Options bounds =
+ new android.graphics.BitmapFactory.Options();
+ bounds.inJustDecodeBounds = true;
+ try (java.io.InputStream probe = a.getAssets().open("branding/wallpaper-default.jpg")) {
+ BitmapFactory.decodeStream(probe, null, bounds);
+ }
+ int sample = 1;
+ if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+ int edge = Math.max(bounds.outWidth, bounds.outHeight);
+ while (edge / sample > maxEdge * 2) sample *= 2;
+ }
+ android.graphics.BitmapFactory.Options opts =
+ new android.graphics.BitmapFactory.Options();
+ opts.inSampleSize = sample;
+ opts.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565;
+ Bitmap bitmap;
  try (java.io.InputStream in = a.getAssets().open("branding/wallpaper-default.jpg")) {
- return BitmapFactory.decodeStream(in);
+ bitmap = BitmapFactory.decodeStream(in, null, opts);
+ }
+ AppLog.i(
+ "Wallpaper",
+ "default bitmap="
+ + (bitmap == null ? "null" : bitmap.getWidth() + "x" + bitmap.getHeight())
+ + " sample="
+ + sample
+ + " cache=true");
+ return bitmap;
  } catch (Throwable error) {
  AppLog.w("Wallpaper", "default wallpaper load failed", error);
  return null;
@@ -433,7 +461,24 @@ final class ImageLoader {
  }
  return null;
  }
- Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
+ // 1.9.126：自定义静态壁纸同样降采样到屏幕尺寸内
+ Bitmap bitmap = null;
+ try {
+ android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+ bounds.inJustDecodeBounds = true;
+ BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+ int sample = 1;
+ if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+ int edge = Math.max(bounds.outWidth, bounds.outHeight);
+ while (edge / sample > 2560) sample *= 2;
+ }
+ android.graphics.BitmapFactory.Options opts = new android.graphics.BitmapFactory.Options();
+ opts.inSampleSize = sample;
+ opts.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565;
+ bitmap = BitmapFactory.decodeFile(file.getAbsolutePath(), opts);
+ } catch (Throwable error) {
+ AppLog.w("Wallpaper", "static wallpaper decode failed", error);
+ }
  if (bitmap == null && !decodeLogged) {
  decodeLogged = true;
  AppLog.w("Wallpaper", "static wallpaper decode failed: " + file, null);
@@ -453,6 +498,7 @@ final class ImageLoader {
  usingBuiltin = wallpaper != null;
  }
  if (wallpaper != null) {
+ try {
  float scale =
  Math.max(
  (float) getWidth() / wallpaper.getWidth(),
@@ -475,6 +521,13 @@ final class ImageLoader {
  AppLog.i(
  "Wallpaper",
  "draw source=" + (usingBuiltin ? "builtin-default" : "custom") + " alpha=" + dim);
+ }
+ } catch (Throwable error) {
+ // 1.9.126：绘制异常退化为纯色底，绝不原生崩溃
+ AppLog.w("Wallpaper", "draw failed; solid fallback", error);
+ wallpaper = null;
+ fallbackWallpaper = null;
+ canvas.drawColor(MainActivity.DARK);
  }
  }
  }

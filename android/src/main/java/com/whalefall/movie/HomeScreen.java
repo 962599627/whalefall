@@ -1703,6 +1703,31 @@ final class HomeScreen {
  hideFilterOptions();
  applyFilters();
  renderFilterTags();
+ // 1.9.127：筛选后强制恢复焦点（芯片 → 卡片 → tab），两次兜底
+ final String dimKey = normalizeFilterDim(def.dimension);
+ a.ui.postDelayed(() -> restoreFilterFocus(dimKey), 200);
+ a.ui.postDelayed(() -> restoreFilterFocus(dimKey), 500);
+ a.ui.postDelayed(this::wireFilterFocus, 600);
+ }
+
+ /** 1.9.127：列表刷新后焦点恢复，避免全屏无焦点死锁。 */
+ void restoreFilterFocus(String dimKey) {
+ View target = a.root == null ? null : a.root.findViewWithTag("filter-" + dimKey);
+ if (target == null || !target.isShown())
+ target = a.root == null ? null : a.root.findViewWithTag("home-video:0");
+ if (target == null || !target.isShown()) target = selectedTab();
+ if (target == null) {
+ AppLog.i("FilterFocus", "restore focus=none grid=false");
+ return;
+ }
+ target.requestFocus();
+ View grid = a.root == null ? null : a.root.findViewWithTag("home-video:0");
+ AppLog.i(
+ "FilterFocus",
+ "restore focus="
+ + String.valueOf(target.getTag())
+ + " grid="
+ + (grid != null && grid.isShown()));
  }
 
  void collapseFilterUi() {
