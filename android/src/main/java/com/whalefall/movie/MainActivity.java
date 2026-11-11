@@ -1588,6 +1588,8 @@ public final class MainActivity extends Activity {
 
  void preparePage(boolean navigation) {
  NativeLiveScreen.close(this);
+ // 1.9.106：直播浮层是页面级 WebView，任何页面重建都必须先关掉，否则会在后台继续出声
+ releaseLiveOnPageChange("page");
  clearPlaybackLoading();
  cancelArtwork();
  cancelPageRequests();
@@ -1601,7 +1603,8 @@ public final class MainActivity extends Activity {
  // 1.9.57：小窗/全屏浮层下的详情重建不能释放或打断正在播放的 player
  boolean keepPlayback = miniMode || expandedOverDetail;
  if (!keepPlayback) {
- releasePlayer();
+ // 1.9.106：页面重建统一释放（手机与电视一致）
+ releasePlaybackOnPageChange("page", false);
  generation++;
  }
  if (!isTvDevice()) {
@@ -2014,14 +2017,8 @@ public final class MainActivity extends Activity {
  }
 
  void open(Screen s, boolean history) {
- // 1.9.59：离开详情页（小窗/浮层播放中）时释放播放器，只有详情与播放页保留
- if ((miniMode || expandedOverDetail) && current != null && !current.player) {
- AppLog.i(
- "Player",
- "release reason=leave-detail page="
- + (body == null ? "detail" : String.valueOf(body.getTag())));
- PlaybackController.releasePlayer(this);
- }
+ // 1.9.106：所有页面切换统一先释放播放/直播（目标页是播放页时由 playerPage 重建播放器）
+ releasePlaybackOnPageChange("open", s != null && s.player);
  capture();
  if (history && current != null) back.push(current);
  current = s;
@@ -2144,8 +2141,9 @@ public final class MainActivity extends Activity {
  ? (root == null ? "null" : root.getClass().getName())
  : body.getClass().getName()));
  // 1.9.87：原生直播页 BACK 释放 ExoPlayer 并回上一级
+ // 1.9.106：走统一入口（popBack 内部释放，日志 I/Player release reason=back page=…）
  if ("native-live".equals(ownerTag)) {
- NativeLiveScreen.handleBack(this);
+ popBack();
  return;
  }
  // 1.9.82：App 内置文件页在最前处理，避免与 file-manager/播放器分支互串
@@ -2167,23 +2165,25 @@ public final class MainActivity extends Activity {
  if (miniMode && miniDetails != null) {
  AppLog.i("Back", "page=detail mini=true action=pop-page");
  }
- if (tvPlayer != null && current != null && current.player && tvPlayer.back()) {
- AppLog.i("Back", "branch=tvPlayer");
- return;
+ // 1.9.106：直播浮层（手机直播页 / 电视直播页）BACK 一律先关闭并释放，不再要求 current.player；
+ // 1.9.103 之前只在播放页判断，手机直播 tab 会漏关，WebView 留在后台继续出声
+ if (tvPlayer != null) {
+ boolean shown = tvPlayer.overlay != null && tvPlayer.overlay.isAttachedToWindow();
+ AppLog.i("Player", "release reason=back page=" + ownerTag + " live=1");
+ tvPlayer.close();
+ AppLog.i("Back", "branch=tvPlayer shown=" + shown);
+ if (shown) return;
  }
- if (tvPlayer != null && (current == null || !current.player))
- AppLog.i("Back", "branch=tvPlayer-stale skipped=true");
  // 1.9.53：从小窗放大后，BACK 重新缩回左上角小窗（详情页仍在下方）
  if (expandedOverDetail) {
  AppLog.i("Back", "branch=expanded");
  PlaybackController.minimizePlayback(this);
  return;
  }
- // 1.9.59：从小窗详情页 BACK 回首页/列表时停止并释放播放
+ // 1.9.59/1.9.106：从小窗详情页 BACK 回首页/列表时停止并释放播放（手机与电视一致）
  if (miniMode && current != null && !current.player) {
  AppLog.i("Back", "branch=mini");
- AppLog.i("Player", "release reason=leave-detail page=detail back=true");
- PlaybackController.releasePlayer(this);
+ releasePlaybackOnPageChange("back", false);
  }
  // 1.9.33：只在首页筛选层展开时优先收起（L3 → L2），避免误拦播放页/二级页/其它 tab 的 BACK
  if (!isTvDevice()
@@ -2222,6 +2222,8 @@ public final class MainActivity extends Activity {
  && !current.player) {
  // 1.9.80：入栈页面统一 BACK=pop 回上一级（不再依赖 body tag 匹配）
  AppLog.i("Back", "branch=pop");
+ // 1.9.106：离开页面（可能是详情页/直播相关页）统一释放，避免残留后台播放
+ releasePlaybackOnPageChange("back", false);
  logBackAction("pop");
  capture();
  current = back.pop();
@@ -2325,14 +2327,29 @@ public final class MainActivity extends Activity {
  return;
  }
  if (current != null && current.player) {
+ if (!miniMode && playbackControls != null && controlsVisible) {
+ // 第一次 BACK 只收起播放控件，不算离开播放页
+ showControls(false);
+ return;
+ }
  if (!miniMode && playbackControls != null) {
- if (controlsVisible) showControls(false);
- else if (isLive()) leavePlayback();
- else minimizePlayback();
+ // 1.9.106：BACK 离开播放页 = 立即释放（手机/电视统一），不再缩成小窗留后台声音
+ releasePlaybackOnPageChange("back", false);
+ if (!back.isEmpty()) {
+ capture();
+ current = back.pop();
+ renderReturn(current);
+ if (current != null) current.focus = "detail-play";
+ restore(current);
+ } else {
+ current = new Screen(this::home);
+ current.home = true;
+ renderReturn(current);
+ }
  return;
  }
  if (miniMode) {
- releasePlayer();
+ releasePlaybackOnPageChange("back", false);
  // 页面切换不释放壁纸：由 applyWallpaper 在返回的页面 root 上幂等迁移/补齐
  if (!back.isEmpty()) back.pop();
  if (!back.isEmpty()) {
@@ -2345,6 +2362,8 @@ public final class MainActivity extends Activity {
  }
  return;
  }
+ // 兜底：播放页但没有播放控件（异常/半初始化状态）也先释放，再走普通返回
+ releasePlaybackOnPageChange("back", false);
  }
  if (current != null && current.home) {
  if (MobileShell.activeTab == 6) {
@@ -2370,12 +2389,14 @@ public final class MainActivity extends Activity {
  }
  // 1.9.31：根页面返回需 2 秒内再按一次才退出；首次只提示，不释放播放/壁纸
  if (!rootExitGuard()) return;
- releasePlayer();
+ releasePlaybackOnPageChange("back", false);
  releaseWallpaper();
  finish();
  return;
  }
  if (!back.isEmpty()) {
+ // 1.9.106：入栈页面 pop 前统一释放播放/直播
+ releasePlaybackOnPageChange("back", false);
  logBackAction("pop");
  capture();
  current = back.pop();
@@ -2385,7 +2406,7 @@ public final class MainActivity extends Activity {
  logBackAction("finish");
  // 1.9.31：首次返回只提示，确认退出前才释放资源
  if (!rootExitGuard()) return;
- releasePlayer();
+ releasePlaybackOnPageChange("back", false);
  releaseWallpaper();
  finish();
  }
@@ -2428,6 +2449,8 @@ public final class MainActivity extends Activity {
 
  /** 1.9.81：显式 pop 回上一级（文件管理等自定义返回按钮调用，避免 onBackPressed 被早退分支吞）。 */
  void popBack() {
+ // 1.9.106：显式返回也是页面切换入口，统一释放播放/直播
+ releasePlaybackOnPageChange("back", false);
  if (!back.isEmpty()) {
  AppLog.i(
  "Back",
@@ -2852,6 +2875,63 @@ public final class MainActivity extends Activity {
  }
 
  void releasePlayer() {
+ PlaybackController.releasePlayer(this);
+ }
+
+ // ---------------- 1.9.106：页面切换统一释放播放 ----------------
+
+ /** 当前页面 tag（日志用；页面自绘 body 时可能为空，退化为类型名）。 */
+ String pageTagForLog() {
+ if (current != null && current.player) return "player";
+ if (tvPlayer != null) return "live";
+ if (body != null && body.getTag() != null) return String.valueOf(body.getTag());
+ if (current == null) return "null";
+ return current.home ? "home" : "page";
+ }
+
+ /** 直播浮层（手机直播页 / 电视直播页）与原生 HLS 直播：离开页面必须关闭，否则 WebView 会继续出声。 */
+ void releaseLiveOnPageChange(String reason) {
+ if (tvPlayer != null) {
+ AppLog.i(
+ "Player",
+ "release reason=" + reason + " page=" + pageTagForLog() + " live=1");
+ try {
+ tvPlayer.close();
+ } catch (Throwable error) {
+ AppLog.w("Player", "live close failed", error);
+ }
+ tvPlayer = null;
+ }
+ NativeLiveScreen.close(this);
+ }
+
+ /**
+ * 1.9.106：所有页面切换（open / onBackPressed / switchTab / MobileShell 返回）统一走这里释放。
+ *
+ * @param targetIsPlayer 目标页本身是播放页时不释放视频播放器（playerPage 会自行 release 并重建），
+ * 但直播浮层仍然关闭，避免两路声音并存。
+ */
+ void releasePlaybackOnPageChange(String reason, boolean targetIsPlayer) {
+ releaseLiveOnPageChange(reason);
+ if (targetIsPlayer) return;
+ boolean active =
+ player != null
+ || playbackControls != null
+ || miniMode
+ || expandedOverDetail
+ || bgPlayback
+ || (playbackLayer != null && playbackLayer.getVisibility() == View.VISIBLE);
+ if (!active) return;
+ // 手机播放页会锁横屏并进沉浸式：离开播放页时一并恢复竖屏/系统栏，避免返回页残留全屏横屏
+ if (!isTvDevice()) {
+ applyMobileSystemBars(false);
+ try {
+ setRequestedOrientation(
+ android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
+ } catch (Throwable ignored) {
+ }
+ }
+ AppLog.i("Player", "release reason=" + reason + " page=" + pageTagForLog());
  PlaybackController.releasePlayer(this);
  }
 
@@ -3360,7 +3440,8 @@ public final class MainActivity extends Activity {
  stopWeb();
  stopMagnet();
  generation++;
- releasePlayer();
+ // 1.9.106：销毁时统一释放（含直播浮层 WebView），避免退出后仍有声音
+ releasePlaybackOnPageChange("destroy", false);
  releaseWallpaper();
  closeEngines();
  cancelArtwork();

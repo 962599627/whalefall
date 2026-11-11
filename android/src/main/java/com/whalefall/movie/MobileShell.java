@@ -297,7 +297,8 @@ final class MobileShell {
  || retainedHeight != a.windowHeight()) return false;
  a.cancelPageRequests();
  a.cancelArtwork();
- a.releasePlayer();
+ // 1.9.106：返回 shell 复用旧首页前统一释放播放/直播
+ a.releasePlaybackOnPageChange("resume", false);
  a.generation++;
  ++homeRequest;
  if (resumeHome != null) resumeHome.run();
@@ -588,7 +589,8 @@ final class MobileShell {
  }
  a.stopWeb();
  a.stopMagnet();
- a.releasePlayer();
+ // 1.9.106：重建 shell 前统一释放播放/直播（手机直播 tab 的 WebView 也必须关掉）
+ a.releasePlaybackOnPageChange("shell", false);
  a.generation++;
 
  // Edge-to-edge transparent status bar over the iPhone emerald-obsidian ambient canvas
@@ -993,6 +995,8 @@ final class MobileShell {
  }
 
  void switchTab(int index) {
+ // 1.9.106：切 tab 前统一释放播放/直播，避免 WebView/播放器留在后台继续出声
+ a.releasePlaybackOnPageChange("switchTab", false);
  // 1.9.31：切换 tab 重置「再按一次退出」窗口，避免跨页误退出
  a.lastRootBackAt = 0;
  ++homeRequest;
