@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.9.50",
-  "versionCode": 19050,
+  "versionName": "1.9.51",
+  "versionCode": 19051,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.9.50 稳定版（TV）\n\n- 筛选最终版：type3 JS 爬虫源按 spider 中文维度名显示，extend 传入并做内容指纹校验；HTTP 源按 CMS query 参数。\n- TV 首页统一鲸鱼加载动画（居中、单实例、最少 400ms、内容淡入）。\n- 更新源新增 jsDelivr / ghproxy 回退，每个源 8 秒超时；更新页支持包体选择。\n- 搜索来源筛选、返回二次确认、遥控常驻等近期修复均已包含。\n\n## 安装\n- TV/盒子：WhaleFall-1.9.50-android-tv.apk\n- 校验：同目录 .sha256",
-  "size": 0,
-  "sha256": "f8376f1a56c4e5b026e8c8e5be5b8d8f5189d578401ad2f504bad3ebd2168352",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.9.50/WhaleFall-1.9.50-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.9.50/WhaleFall-1.9.50-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/v1.9.50",
+  "notes": "# 鲸落 1.9.51\n\n- 更新检查多源回退：镜像 → GitHub → raw → jsDelivr → ghproxy，每源 8 秒超时\n- 更新页支持选择安装包（通用 / arm64 / R8 实验），未知大小兼容\n- 发布资产包含更新清单（android-mobile.json / android-tv.json），旧版本可直接检查更新\n- 含 1.9.50 全部内容：三层筛选、筛选中文标签、type3 爬虫筛选、TV 安全模式开关、统一加载动画等\n- 已知：未真机验证；R8 为实验包；部分源可能不支持某维度筛选",
+  "size": 36797851,
+  "sha256": "e509da684a6ed20965fa7d9e0936037813520cc28fe54fbead4d493972c9e09a",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.51/WhaleFall-1.9.51-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.51/WhaleFall-1.9.51-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.51",
   "variants": [
     {
       "kind": "tv",
-      "label": "TV 版",
-      "size": 0,
-      "sha256": "f8376f1a56c4e5b026e8c8e5be5b8d8f5189d578401ad2f504bad3ebd2168352",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/v1.9.50/WhaleFall-1.9.50-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/v1.9.50/WhaleFall-1.9.50-android-tv.apk"
+      "label": "TV / 盒子版",
+      "size": 36797851,
+      "sha256": "e509da684a6ed20965fa7d9e0936037813520cc28fe54fbead4d493972c9e09a",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.51/WhaleFall-1.9.51-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.51/WhaleFall-1.9.51-android-tv.apk"
     }
   ]
 }
