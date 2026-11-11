@@ -1884,6 +1884,12 @@ final class PlaybackController {
         a.clearLiveNumber();
         savePlaybackHistory(a, true);
         stopEmbySession(a);
+        // 1.9.59：释放播放器同时取消后台通知/音频焦点，避免离开详情后仍有声音
+        try {
+            a.bgPlayback = false;
+            a.stopBackgroundPlayback();
+        } catch (Throwable ignored) {
+        }
         // 1.9.52：清理 MiniDetails/播放层残留，避免返回详情后出现巨幅贴图/黑罩/「返回全屏播放」
         int layers = 0;
         if (a.miniDetails != null) {

@@ -1711,6 +1711,14 @@ public final class MainActivity extends Activity {
     }
 
     void open(Screen s, boolean history) {
+        // 1.9.59：离开详情页（小窗/浮层播放中）时释放播放器，只有详情与播放页保留
+        if ((miniMode || expandedOverDetail) && current != null && !current.player) {
+            AppLog.i(
+                    "Player",
+                    "release reason=leave-detail page="
+                            + (body == null ? "detail" : String.valueOf(body.getTag())));
+            PlaybackController.releasePlayer(this);
+        }
         capture();
         if (history && current != null) back.push(current);
         current = s;
@@ -1809,6 +1817,11 @@ public final class MainActivity extends Activity {
         if (expandedOverDetail) {
             PlaybackController.minimizePlayback(this);
             return;
+        }
+        // 1.9.59：从小窗详情页 BACK 回首页/列表时停止并释放播放
+        if (miniMode && current != null && !current.player) {
+            AppLog.i("Player", "release reason=leave-detail page=detail back=true");
+            PlaybackController.releasePlayer(this);
         }
         // 1.9.33：只在首页筛选层展开时优先收起（L3 → L2），避免误拦播放页/二级页/其它 tab 的 BACK
         if (!isTvDevice()
