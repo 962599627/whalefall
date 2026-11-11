@@ -1335,6 +1335,45 @@ final class HomeScreen {
  if (a.isTvDevice()) showFilterOptionDialog(defF);
  else showFilterOptions(defF);
  });
+ // 1.9.120：重渲染后显式绑定 OK，避免遥控在已选状态下打不开其它筛选
+ chip.setClickable(true);
+ chip.setOnKeyListener(
+ (v, keyCode, event) -> {
+ if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
+ boolean ok =
+ keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+ || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
+ if (ok) {
+ if (a.isTvDevice()) showFilterOptionDialog(defF);
+ else showFilterOptions(defF);
+ return true;
+ }
+ int dir =
+ keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+ ? View.FOCUS_LEFT
+ : keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
+ ? View.FOCUS_RIGHT
+ : keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP
+ ? View.FOCUS_UP
+ : keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
+ ? View.FOCUS_DOWN
+ : -1;
+ if (dir < 0) return false;
+ View next = v.focusSearch(dir);
+ AppLog.i(
+ "FilterFocus",
+ "chip="
+ + dimKeyF
+ + " dir="
+ + (dir == View.FOCUS_LEFT
+ ? "left"
+ : dir == View.FOCUS_RIGHT
+ ? "right"
+ : dir == View.FOCUS_UP ? "up" : "down")
+ + " to="
+ + (next == null || next == v ? "none" : String.valueOf(next.getTag())));
+ return false;
+ });
  tagWrap.addView(chip, new LinearLayout.LayoutParams(-2, -2));
  if (active || open) {
  View underline = new View(a);
@@ -1361,10 +1400,14 @@ final class HomeScreen {
  clear.setGravity(Gravity.CENTER);
  MobileDetailScreen.bindTouchFeedback(clear);
  clear.setFocusable(true);
+ clear.setFocusableInTouchMode(true);
+ clear.setClickable(true);
+ clear.setTag("filter-clear");
+ TvNav.focusRing(a, clear, 999);
  clear.setOnClickListener(
  v -> {
  state.selectedFilters.clear();
- AppLog.i("Filter", "clear-all category=" + state.category);
+ AppLog.i("FilterOption", "clear-all category=" + state.category);
  applyFilters();
  collapseFilterUi();
  if (selectedTab() != null) selectedTab().requestFocus();
@@ -1450,6 +1493,12 @@ final class HomeScreen {
  AppLog.i(
  "FilterOption",
  "dialog dim=" + dimKey + " opened=true options=" + labels.length + " title=" + VideoFilters.displayLabel(def));
+ AppLog.i(
+ "FilterOption",
+ "open dim="
+ + dimKey
+ + " selected="
+ + (current == null || current.isEmpty() ? "none" : current));
  new AppDialog.Builder(a)
  .setTitle(VideoFilters.displayLabel(def))
  .setSingleChoiceItems(
