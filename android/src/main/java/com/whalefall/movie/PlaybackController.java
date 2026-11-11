@@ -2359,41 +2359,6 @@ final class PlaybackController {
  if (a.seekGesture.active && !horizontal && down)
  finishSeek(a, key != KeyEvent.KEYCODE_BACK);
  boolean confirm = key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER;
- // 1.9.133：时间轴聚焦时 LEFT/RIGHT 直接连续拖动（UI 实时前进，seek 节流）
- boolean onTimeline =
- a.playbackControls != null && focus == a.playbackControls.timeline;
- if (down && horizontal && onTimeline && a.player != null) {
- int dir = key == KeyEvent.KEYCODE_DPAD_LEFT ? -10000 : 10000;
- int current = 0;
- try {
- current = a.player.getCurrentPosition();
- } catch (Throwable ignored) {
- }
- if (event.getRepeatCount() == 0) a.scrubTarget = Math.max(0, current + dir);
- else a.scrubTarget = Math.max(0, (a.scrubTarget < 0 ? current : a.scrubTarget) + dir);
- int target = a.scrubTarget;
- a.playbackControls.setTimelineProgress(target);
- if (a.playClock != null)
- a.playClock.setText(formatTime(target) + " / " + formatTime(a.player == null ? 0 : a.player.getDuration()));
- AppLog.i(
- "Player",
- "seek key="
- + (dir > 0 ? "right" : "left")
- + " repeat="
- + event.getRepeatCount()
- + " from="
- + current
- + " to="
- + target
- + " scrub=true");
- seekCommit(a, target, event.getRepeatCount() == 0);
- if (a.scrubCommitTask != null) a.ui.removeCallbacks(a.scrubCommitTask);
- a.scrubCommitTask = () -> seekCommit(a, a.scrubTarget, true);
- a.ui.postDelayed(a.scrubCommitTask, 300);
- return true;
- }
- // 1.9.133：时间轴 LEFT/RIGHT 的 UP 事件不再走旧手势分支
- if (!down && horizontal && onTimeline) return true;
  // 1.9.128：scrubMode（长按 OK / 触摸拖动）下左右连续拖进度，OK/BACK 退出
  if (a.scrubMode) {
  if (down && confirm && event.getRepeatCount() == 0) {
