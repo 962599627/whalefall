@@ -228,7 +228,12 @@ public final class MainActivity extends Activity {
  /** 1.9.84：物理遥控按键即进入焦点模式（不依赖 LEANBACK 上报）。 */
  boolean keyFocusMode;
  /** 1.9.128：播放器长按 OK 进入进度拖动模式。 */
+ /** 1.9.128：播放器长按 OK 进入进度拖动模式。 */
  boolean scrubMode;
+ /** 1.9.132：播放中异常退出检测只做一次。 */
+ boolean crashRecoveryDone;
+ /** 1.9.131：播放器已释放标志，忽略迟到的 surface 回调。 */
+ volatile boolean playerReleased;
  /** 1.9.102：播放器自动隐藏计时用的最后一次输入。 */
  String lastPlayerKey = "none";
 
@@ -1690,6 +1695,19 @@ public final class MainActivity extends Activity {
  });
  } catch (Throwable error) {
  AppLog.w("Wallpaper", "fallback failed", error);
+ }
+ }
+
+ void crashRecoverIfNeeded() {
+ try {
+ String url = prefs.getString("playing_url", "");
+ if (url == null || url.isEmpty()) return;
+ prefs.edit().remove("playing_url").apply();
+ PlaybackController.markSeekCrashUrl(this, url);
+ AppLog.i("Player", "crash-recovery url=" + url + " fallback=software");
+ toast("上次播放异常，已对该视频启用兼容模式");
+ } catch (Throwable error) {
+ AppLog.w("Player", "crash recovery skipped", error);
  }
  }
 
@@ -3502,6 +3520,11 @@ public final class MainActivity extends Activity {
  scheduleFocusAudit();
  ui.postDelayed(this::cleanupOldCrashLogs, 1500);
  ui.postDelayed(this::purgeUnsupportedVideoWallpaper, 1200);
+ // 1.9.132：上次播放异常退出 → 对残留 URL 启用软解兼容
+ if (!crashRecoveryDone) {
+ crashRecoveryDone = true;
+ ui.postDelayed(this::crashRecoverIfNeeded, 400);
+ }
  if (bgPlayback) {
  bgPlayback = false;
  // 1.9.53：回到前台继续播放，不释放音频焦点/不暂停，仅撤掉常驻通知

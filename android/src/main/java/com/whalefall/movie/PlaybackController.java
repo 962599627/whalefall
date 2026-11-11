@@ -903,6 +903,11 @@ final class PlaybackController {
  stopMagnet(a);
  if (a.player != null) {
  try {
+ // 1.9.131：先摘 surface 再 release
+ a.player.setSurface(null);
+ } catch (Throwable ignored) {
+ }
+ try {
  a.player.release();
  } catch (Exception error) {
  AppLog.w("PlaybackController", "player.release failed", error);
@@ -1188,9 +1193,13 @@ final class PlaybackController {
 
  static void playerPage(MainActivity a, Cms.Site s, Cms.Video v, Cms.Episode ep) {
  if (a == null || s == null || v == null || ep == null) return;
+ // 1.9.131：每次进入播放页重建实例，清掉上页 released 守卫
+ a.playerReleased = false;
  if (ep.url == null) ep.url = "";
  if (ep.media == null) ep.media = new JSONObject();
  ep.url = LocalProxy.rewrite(ep.url);
+ // 1.9.132：记录正在播放的 URL，异常退出后下次对该视频启用软解
+ a.prefs.edit().putString("playing_url", ep.url == null ? "" : ep.url).apply();
  try {
  JSONArray subtitles = ep.media.optJSONArray("subtitles");
  if (subtitles != null)
@@ -1358,6 +1367,11 @@ final class PlaybackController {
  int surfaceRevision;
 
  public void available(Surface value) {
+ // 1.9.131：已释放后迟到的 surface 回调直接忽略
+ if (a.playerReleased) {
+ AppLog.i("Player", "lifecycle skipped reason=released surface=available");
+ return;
+ }
  renderSurface = value;
  final int revision = ++surfaceRevision;
  AppLog.i(
@@ -1655,6 +1669,10 @@ final class PlaybackController {
  }
 
  public void destroyed() {
+ if (a.playerReleased) {
+ AppLog.i("Player", "lifecycle skipped reason=released surface=destroyed");
+ return;
+ }
  surfaceRevision++;
  AppLog.i(
  "Player",
@@ -1938,11 +1956,16 @@ final class PlaybackController {
 
  /** 记录 seek 崩溃指纹（以后同 URL 用软解）。 */
  static void markSeekCrash(MainActivity a) {
- try {
  String url =
  a.playbackControls == null || a.playbackControls.resolved == null
  ? ""
  : a.playbackControls.resolved.url;
+ markSeekCrashUrl(a, url);
+ }
+
+ /** 1.9.132：按 URL 记录崩溃指纹（下次该视频自动软解）。 */
+ static void markSeekCrashUrl(MainActivity a, String url) {
+ try {
  if (url == null || url.isEmpty()) return;
  org.json.JSONArray arr = new org.json.JSONArray();
  try {
@@ -2188,6 +2211,10 @@ final class PlaybackController {
  }
 
  static void releasePlayer(MainActivity a) {
+ // 1.9.131：先标记 released，再释放，之后所有 surface 回调忽略
+ a.playerReleased = true;
+ // 1.9.132：正常退出/停止 → 清除播放中标记（异常退出会保留）
+ a.prefs.edit().remove("playing_url").apply();
  finishSeek(a, false);
  a.clearLiveNumber();
  savePlaybackHistory(a, true);
@@ -2219,6 +2246,11 @@ final class PlaybackController {
  a.prepared = false;
  a.playing = false;
  if (a.player != null) {
+ try {
+ // 1.9.131：先摘 surface 再 release
+ a.player.setSurface(null);
+ } catch (Throwable ignored) {
+ }
  try {
  a.player.release();
  } catch (Exception error) {

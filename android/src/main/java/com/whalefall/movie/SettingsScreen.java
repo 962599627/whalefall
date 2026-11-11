@@ -438,12 +438,7 @@ if (a.isTvDevice()) pickWallpaperBuiltin(true);
  a.prefs.edit().putInt(Prefs.PLAYER_ENGINE, 0).apply();
  a.paragraph("当前 Android 版本低于 8.0，仅支持内置 Media3 播放器（系统播放器在旧电视上可能崩溃）。");
  }
- // 1.9.121：SDK<26 旧设备默认软件解码，避免硬解原生崩溃
- if (android.os.Build.VERSION.SDK_INT < 26
- && a.prefs.getInt(Prefs.DECODER_MODE, 0) == 0) {
- a.prefs.edit().putInt(Prefs.DECODER_MODE, 2).apply();
- a.toast("旧设备默认软件解码（更稳定）");
- }
+ // 1.9.132：恢复三档解码选项，老设备默认「自动」（硬解为主，软解 720p 卡）
  ints(
  "解码方式",
  Prefs.DECODER_MODE,
