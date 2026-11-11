@@ -99,6 +99,15 @@ footer{margin-top:26px;text-align:center;font-size:11px;color:#5f6f88;line-heigh
 @media (max-width:560px){
   .wrap{padding:18px 14px 40px}.brand h1{font-size:20px}.card{padding:16px;border-radius:18px}
   .metrics{grid-template-columns:repeat(2,1fr)}
+  /* 1.9.94：手机单列卡片化 + 触控目标 ≥44px */
+  .btn,input,textarea,select,button{min-height:44px}
+  .row{flex-wrap:wrap;gap:8px}
+  .row .grow{flex:1 1 100%}
+  .row .btn,.row button{flex:0 0 auto}
+  table{display:block;overflow-x:auto;white-space:nowrap}
+  .file-row{display:flex;flex-direction:column;align-items:flex-start}
+  .file-row .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .toast{left:16px;right:16px;transform:none;max-width:none;text-align:center}
 }
 </style>
 </head>

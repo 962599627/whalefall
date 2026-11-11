@@ -347,12 +347,22 @@ final class SettingsScreen {
  page(
  "首页壁纸",
  "壁纸只影响应用背景，不会更改电视桌面。图片以居中裁切显示；视频壁纸循环静音播放，耗电更高。");
- link("选择本地图片", "JPG、PNG、WebP", "wallpaper-file", () -> pick(44, "image/*", false));
+ link(
+ "选择本地图片",
+ "JPG、PNG、WebP",
+ "wallpaper-file",
+ () ->
+ a.isTvDevice()
+ ? pickWallpaperBuiltin(false)
+ : pick(44, "image/*", false));
  link(
  "选择视频壁纸",
  "MP4 / WebM / MKV，循环静音，仅首页背景播放",
  "wallpaper-video-file",
- () -> pick(47, "video/*", false));
+ () ->
+ a.isTvDevice()
+ ? pickWallpaperBuiltin(true)
+ : pick(47, "video/*", false));
  if (VideoWallpaper.file(a).isFile())
  link(
  "壁纸声音",
@@ -924,8 +934,39 @@ final class SettingsScreen {
  .apply();
  }
 
- static void saveWallpaper(MainActivity a, InputStream stream) throws Exception {
- ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+ /** 1.9.94：TV 无系统文件选择器时，用内置文件管理器选壁纸文件。 */
+ void pickWallpaperBuiltin(final boolean video) {
+ AppLog.i(
+ "Wallpaper",
+ "picker=builtin type=" + (video ? "video" : "image") + " path=file-manager");
+ FileManagerScreen.pick(
+ a,
+ video,
+ file ->
+ a.worker.execute(
+ () -> {
+ try (InputStream input = new java.io.FileInputStream(file)) {
+ if (video) saveVideoWallpaper(a, input);
+ else saveWallpaper(a, input);
+ AppLog.i(
+ "Wallpaper",
+ "picker=builtin type="
+ + (video ? "video" : "image")
+ + " path="
+ + file.getName());
+ a.ui.post(
+ () -> {
+ a.toast(video ? "视频壁纸已更新" : "壁纸已更新");
+ a.refresh();
+ });
+ } catch (Exception error) {
+ AppLog.w("Wallpaper", "builtin pick apply failed", error);
+ a.ui.post(() -> a.notice("壁纸设置失败：" + a.message(error)));
+ }
+ }));
+ }
+
+ static void saveWallpaper(MainActivity a, InputStream stream) throws Exception { ByteArrayOutputStream bytes = new ByteArrayOutputStream();
  byte[] chunk = new byte[8192];
  int length;
  while ((length = stream.read(chunk)) != -1) {

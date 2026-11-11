@@ -325,6 +325,28 @@ final class FileManagerScreen {
  "全部", "文件夹", "视频", "图片", "文本·文档", "其他"
  };
 
+ /** 1.9.94：内置文件选择模式（壁纸等），只允许选择图片或视频。 */
+ interface PickCallback {
+ void picked(java.io.File file);
+ }
+
+ static PickCallback pickCallback;
+ static boolean pickVideoMode;
+
+ static void pick(MainActivity a, boolean video, PickCallback callback) {
+ pickCallback = callback;
+ pickVideoMode = video;
+ showFrom(a, 0);
+ if (current != null) {
+ current.filter = video ? 2 : 3;
+ current.refresh();
+ }
+ }
+
+ static void clearPick() {
+ pickCallback = null;
+ }
+
  private void buildFilterChips() {
  android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(a);
  scroll.setHorizontalScrollBarEnabled(false);
@@ -1187,6 +1209,18 @@ final class FileManagerScreen {
  final MemoCard finalHolder = holder;
  holder.setOnClickListener(
  v -> {
+ if (pickCallback != null && !entry.folder) {
+ boolean ok = pickVideoMode ? entry.video : TextViewerScreen.isImageName(entry.name);
+ if (!ok) {
+ a.toast(pickVideoMode ? "请选择视频文件" : "请选择图片文件");
+ return;
+ }
+ PickCallback callback = pickCallback;
+ pickCallback = null;
+ callback.picked(entry.file);
+ a.popBack();
+ return;
+ }
  if (selecting) {
  toggleSelection(entry.file, null);
  applySelectionVisuals();
