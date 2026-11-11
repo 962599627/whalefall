@@ -140,11 +140,11 @@ def main():
         if not r8jar.exists():
             r8jar = SDK/'lib/d8.jar'
         run(exe(JDK/'bin','java'),'-cp',r8jar,'com.android.tools.r8.R8',
-            '--release','--min-api','23','--lib',ANDROID,
+            '--release','--min-api',os.environ.get('MARCOMOVIE_MIN_API','23'),'--lib',ANDROID,
             '--pg-conf',ROOT/'scripts/r8-rules.pro',
             '--output',BUILD/'dex',BUILD/'classes.jar',*dependencies)
     else:
-        run(exe(JDK/'bin','java'),'-cp',SDK/'lib/d8.jar','com.android.tools.r8.D8','--min-api','23','--lib',ANDROID,'--output',BUILD/'dex',BUILD/'classes.jar',*dependencies)
+        run(exe(JDK/'bin','java'),'-cp',SDK/'lib/d8.jar','com.android.tools.r8.D8','--min-api',os.environ.get('MARCOMOVIE_MIN_API','23'),'--lib',ANDROID,'--output',BUILD/'dex',BUILD/'classes.jar',*dependencies)
     with zipfile.ZipFile(BUILD/'resources.apk') as source, zipfile.ZipFile(BUILD/'unsigned.apk','w',zipfile.ZIP_DEFLATED) as dest:
         for entry in source.infolist():dest.writestr(entry,source.read(entry.filename))
         for dex in (BUILD/'dex').glob('*.dex'):dest.write(dex,dex.name)
