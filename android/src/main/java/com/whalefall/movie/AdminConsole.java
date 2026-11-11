@@ -129,7 +129,8 @@ final class AdminConsole implements Closeable {
  }
  }
  final OutputStream response = s.getOutputStream();
- // 1.9.98：壁纸直传（图片/视频），写入 files/wallpaper.*，与 App 长按设壁纸等价
+ // 1.9.98：壁纸直传（图片/视频），写入 files/wallpaper.jpg 或 VideoWallpaper.file()，
+ // 1.9.105：与 App 长按设壁纸一致（视频必须写到 VideoWallpaper.file，否则永远不生效）
  if ((path.equals("/api/wallpaper/image") || path.equals("/api/wallpaper/video"))
  && method.equals("POST")) {
  try {
@@ -143,7 +144,9 @@ final class AdminConsole implements Closeable {
  return;
  }
  final java.io.File wallpaperFile =
- new java.io.File(a.getFilesDir(), video ? "wallpaper.mp4" : "wallpaper.jpg");
+ video
+ ? VideoWallpaper.file(a)
+ : new java.io.File(a.getFilesDir(), "wallpaper.jpg");
  try (InputStream raw = in;
  OutputStream out = new java.io.FileOutputStream(wallpaperFile)) {
  byte[] chunk = new byte[64 * 1024];
@@ -157,11 +160,16 @@ final class AdminConsole implements Closeable {
  }
  boolean ok = true;
  String reason = "";
- if (video && !FileManagerScreen.videoCodecSupported(wallpaperFile)) {
+ if (video) {
+ // 1.9.105：真实编码探测（MediaExtractor + MediaCodecList），失败删除文件并回传原因
+ String problem = FileManagerScreen.videoCodecProblem(wallpaperFile);
+ if (!problem.isEmpty()) {
  ok = false;
- reason = "该视频编码不支持壁纸播放（请换 H.264/VP9）";
+ reason = problem;
  wallpaperFile.delete();
- } else if (!video) {
+ AppLog.w("Wallpaper", "upload video rejected reason=" + reason + " deleted=true", null);
+ }
+ } else {
  android.graphics.BitmapFactory.Options o =
  new android.graphics.BitmapFactory.Options();
  o.inJustDecodeBounds = true;
@@ -172,16 +180,27 @@ final class AdminConsole implements Closeable {
  wallpaperFile.delete();
  }
  }
+ JSONObject json;
  if (ok) {
  a.prefs
  .edit()
  .putBoolean(Prefs.WALLPAPER_ENABLED, true)
  .putBoolean(Prefs.WALLPAPER_VIDEO, video)
  .apply();
+ // 1.9.105：回读真实状态（reduced/落盘/编码），不再无条件返回成功
+ json = settleWallpaper(video);
+ } else {
+ json = new JSONObject();
+ json.put("ok", false);
+ json.put("reason", reason);
+ // 1.9.105：写入/编码失败时清掉对应开关，避免状态与实际壁纸不一致
+ a.prefs
+ .edit()
+ .putBoolean(video ? Prefs.WALLPAPER_VIDEO : Prefs.WALLPAPER_ENABLED, false)
+ .apply();
  a.ui.post(
  () -> {
  if (a.root != null) a.applyWallpaper(a.root);
- a.refresh();
  });
  }
  AppLog.i(
@@ -191,10 +210,9 @@ final class AdminConsole implements Closeable {
  + " file="
  + wallpaperFile.getName()
  + " ok="
- + ok);
- JSONObject json = new JSONObject();
- json.put("ok", ok);
- json.put("reason", reason);
+ + ok
+ + " reason="
+ + reason);
  send(response, 200, "application/json; charset=utf-8", json.toString());
  } catch (Throwable error) {
  AppLog.w("Admin", "wallpaper upload failed", error);
@@ -370,39 +388,64 @@ final class AdminConsole implements Closeable {
  String lower = name == null ? "" : name.toLowerCase(java.util.Locale.ROOT);
  boolean video =
  lower.matches(".*\\.(mp4|webm|mkv|mov|m4v)$");
- if (!src.isFile()) break;
+ if (!src.isFile()) {
+ // 1.9.105：源文件缺失不再返回成功
+ JSONObject missing = new JSONObject();
+ missing.put("ok", false);
+ missing.put("reason", "源文件不存在：" + name);
+ AppLog.w("Wallpaper", "select missing file=" + name, null);
+ return missing;
+ }
  java.io.File target =
- new java.io.File(a.getFilesDir(), video ? "wallpaper.mp4" : "wallpaper.jpg");
- boolean ok = true;
- String reason = "";
- if (video && !FileManagerScreen.videoCodecSupported(src)) {
- ok = false;
- reason = "该视频编码不支持壁纸播放";
- } else {
+ video
+ ? VideoWallpaper.file(a)
+ : new java.io.File(a.getFilesDir(), "wallpaper.jpg");
+ if (video) {
+ // 1.9.105：真实编码探测，不支持的视频不落盘（删掉旧目标，避免假成功）
+ String problem = FileManagerScreen.videoCodecProblem(src);
+ if (!problem.isEmpty()) {
+ target.delete();
+ a.prefs.edit().putBoolean(Prefs.WALLPAPER_VIDEO, false).apply();
+ AppLog.w("Wallpaper", "select video rejected reason=" + problem + " deleted=true", null);
+ JSONObject failed = new JSONObject();
+ failed.put("ok", false);
+ failed.put("reason", problem);
+ return failed;
+ }
+ }
  try (java.io.InputStream in = new java.io.FileInputStream(src);
  java.io.OutputStream out = new java.io.FileOutputStream(target)) {
  byte[] buf = new byte[64 * 1024];
  int n;
  while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+ } catch (Exception error) {
+ target.delete();
+ a.prefs
+ .edit()
+ .putBoolean(video ? Prefs.WALLPAPER_VIDEO : Prefs.WALLPAPER_ENABLED, false)
+ .apply();
+ JSONObject failed = new JSONObject();
+ failed.put("ok", false);
+ failed.put("reason", "壁纸文件写入失败：" + a.message(error));
+ return failed;
  }
  a.prefs
  .edit()
  .putBoolean(Prefs.WALLPAPER_ENABLED, true)
  .putBoolean(Prefs.WALLPAPER_VIDEO, video)
  .apply();
- a.ui.post(
- () -> {
- if (a.root != null) a.applyWallpaper(a.root);
- a.refresh();
- });
- }
+ // 1.9.105：回读真实状态（reduced/落盘/编码），不再无条件返回成功
+ JSONObject json = settleWallpaper(video);
  AppLog.i(
  "Admin",
- "wallpaper action=set type=" + (video ? "video" : "image") + " file=" + name + " ok=" + ok);
- JSONObject json = new JSONObject();
- json.put("ok", ok);
- json.put("reason", reason);
- if (!ok) throw new Exception(reason);
+ "wallpaper action=select type="
+ + (video ? "video" : "image")
+ + " file="
+ + name
+ + " ok="
+ + json.optBoolean("ok")
+ + " reason="
+ + json.optString("reason"));
  return json;
  }
  case "/api/wallpaper/default": {
@@ -410,6 +453,8 @@ final class AdminConsole implements Closeable {
  java.io.File video = VideoWallpaper.file(a);
  image.delete();
  video.delete();
+ // 1.9.105：清理旧版本误写到 wallpaper.mp4 的孤儿文件
+ new java.io.File(a.getFilesDir(), "wallpaper.mp4").delete();
  a.prefs
  .edit()
  .putBoolean(Prefs.WALLPAPER_ENABLED, false)
@@ -519,6 +564,57 @@ final class AdminConsole implements Closeable {
  return json;
  }
 
+ /**
+ * 1.9.105：壁纸设置后回读真实状态，避免「假成功」。
+ *
+ * <p>动态壁纸的真实条件是 {@code videoWallpaperEnabled()} 的三个条件：
+ * 未开启「减少动态效果」、{@code Prefs.WALLPAPER_VIDEO} 为 true、视频文件已落盘。
+ * 若 reduced 拦住了动态壁纸，自动关闭 reduced 并回传原因；文件没落盘/编码不可用则 ok=false。
+ */
+ private JSONObject settleWallpaper(boolean video) throws Exception {
+ final java.io.File file =
+ video ? VideoWallpaper.file(a) : new java.io.File(a.getFilesDir(), "wallpaper.jpg");
+ String reason = "";
+ // 用 Prefs 的真实值同步内存态（videoWallpaperEnabled 读的是 a.reduced 字段）
+ a.reduced = a.prefs.getBoolean(Prefs.REDUCED, false);
+ if (video && a.reduced) {
+ // 减少动态效果会静默阻止动态壁纸：自动关闭并告知原因
+ a.prefs.edit().putBoolean(Prefs.REDUCED, false).apply();
+ a.reduced = false; // 同步内存态，applyWallpaper 立刻生效
+ reason = "已关闭减少动态效果";
+ }
+ final boolean fileExists = file.isFile();
+ boolean ok;
+ if (video) {
+ ok = a.videoWallpaperEnabled();
+ if (!fileExists) reason = "视频文件未落盘：" + file.getName();
+ else if (!ok) reason = "视频壁纸未生效（编码不支持或解码失败）";
+ } else {
+ ok = fileExists && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false);
+ if (!ok) reason = fileExists ? "图片壁纸未启用" : "图片文件未落盘：" + file.getName();
+ }
+ if (!ok && video) a.prefs.edit().putBoolean(Prefs.WALLPAPER_VIDEO, false).apply();
+ AppLog.i(
+ "Wallpaper",
+ "apply videoEnabled="
+ + a.videoWallpaperEnabled()
+ + " reduced="
+ + a.prefs.getBoolean(Prefs.REDUCED, false)
+ + " fileExists="
+ + fileExists);
+ a.ui.post(
+ () -> {
+ if (a.root != null) a.applyWallpaper(a.root);
+ a.refresh();
+ });
+ JSONObject json = new JSONObject();
+ json.put("ok", ok);
+ json.put("reason", reason);
+ json.put("videoEnabled", a.videoWallpaperEnabled());
+ json.put("fileExists", fileExists);
+ return json;
+ }
+
  private JSONObject state() throws Exception { JSONObject s = new JSONObject();
  s.put("ok", true);
  s.put("version", versionName());
@@ -601,6 +697,8 @@ final class AdminConsole implements Closeable {
  break;
  case "reduced":
  a.prefs.edit().putBoolean(Prefs.REDUCED, bool(raw)).apply();
+ // 1.9.105：同步内存态，管理后台改「减少动态效果」后壁纸/动效立即生效
+ a.reduced = bool(raw);
  break;
  case "autoplay":
  a.prefs.edit().putBoolean(Prefs.AUTO_NEXT, bool(raw)).apply();

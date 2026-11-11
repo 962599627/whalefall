@@ -1678,7 +1678,11 @@ public final class MainActivity extends Activity {
  }
 
  // 3. 动态壁纸：存在但挂在旧 root 时搬过来；否则释放并新建
+ // 1.9.105：动态层必须视觉上位于静态壁纸之上（上面第 2 步在 videoEnabled 时已移除静态层，
+ // 这里再兜底清一次，避免索引错位时视频被静态图盖住）
  if (videoEnabled) {
+ for (int i = target.getChildCount() - 1; i >= 0; i--)
+ if (WALLPAPER_TAG.equals(target.getChildAt(i).getTag())) target.removeViewAt(i);
  if (videoWallpaper == null || videoWallpaper.isReleased()) {
  releaseWallpaper();
  videoWallpaper = new VideoWallpaper(this);

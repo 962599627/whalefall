@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * 内置文件管理：展示管理后台 / FTP 上传到应用内的文件，支持新建文件夹、重命名、删除。
+ * App 内置文件（APP FILES）：展示管理后台 / FTP 上传到应用内的文件，支持新建文件夹、重命名、删除。
  *
  * <p>Markdown / TXT 用内置阅读器打开；视频用内置播放器播放；其它文件可以复制路径。
  */
@@ -61,6 +61,12 @@ final class FilesScreen {
 
  final String path = PushFiles.sanitizePath(relDir);
 
+ // 1.9.105：英文小标固定为 APP FILES，和「文件管理器」(FILE MANAGER) 区分
+ TextView eyebrow = a.text("APP FILES", 12, 0xffffc2d4);
+ eyebrow.setLetterSpacing(.15f);
+ column.addView(eyebrow);
+ a.gap(column, 8);
+
  LinearLayout nav = a.row();
  nav.setGravity(Gravity.CENTER_VERTICAL);
  TextView back = a.text("‹", 24, MainActivity.WHITE);
@@ -82,7 +88,9 @@ final class FilesScreen {
  a.popBack();
  });
  nav.addView(back, new LinearLayout.LayoutParams(a.dp(42), a.dp(42)));
- TextView title = a.text(path.isEmpty() ? "文件管理" : PushFiles.baseName(path), 20, MainActivity.WHITE);
+ // 1.9.105：本页是 App 内置文件（教程/配置/后台上传），标题与「文件管理」区分
+ TextView title =
+ a.text(path.isEmpty() ? "App 内置文件" : PushFiles.baseName(path), 20, MainActivity.WHITE);
  title.setTypeface(null, Typeface.BOLD);
  title.setSingleLine(true);
  title.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
@@ -127,6 +135,12 @@ final class FilesScreen {
  mkdir.setOnClickListener(v -> createFolder(a, path));
  nav.addView(mkdir);
  column.addView(nav, new LinearLayout.LayoutParams(-1, -2));
+ a.gap(column, 6);
+ if (path.isEmpty()) {
+ // 1.9.105：页面副标题，说明这里放的是什么文件
+ TextView subtitle = a.text("教程 / 配置 / 后台上传的文件", 12, 0xff9fb0c9);
+ column.addView(subtitle);
+ }
  a.gap(column, 14);
  if (path.isEmpty()) {
  // 1.9.10：与新的「文件管理器」区分说明

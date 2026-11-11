@@ -23,6 +23,10 @@ final class FileManagerScreen {
  private final MainActivity a;
  private int tab; // 0 本地 1 网盘
  private File localDir;
+ /** 1.9.105：本地根目录（/sdcard），在该层聚合 Download/鲸落/Movies/DCIM。 */
+ private File localRootDir;
+ /** 1.9.105：本地目录前进栈：BACK/上级按栈回退，聚合根进入的目录也能回到聚合根。 */
+ private final java.util.ArrayDeque<File> dirStack = new java.util.ArrayDeque<>();
  private LinearLayout breadcrumbRow, grid, content;
  private TextView pathLabel, emptyView, selectionCount;
  private LinearLayout selectionBar, downloadStrip;
@@ -34,6 +38,7 @@ final class FileManagerScreen {
  /** 1.9.13：0全部 1文件夹 2视频 3图片 4文本·文档 5其他。 */
  private int filter;
  private LinearLayout filterChips;
+ private LinearLayout actionChips;
  private String providerKey = NetdiskQrLogin.QUARK;
  private String netdiskCookie = "", netdiskPath = "根目录", netdiskFid = "0";
  private boolean netdiskFromSource;
@@ -87,26 +92,91 @@ final class FileManagerScreen {
 
  private FileManagerScreen(MainActivity a) {
  this.a = a;
- // 1.9.104：根目录聚合 /sdcard 本地存储，不再只看 App 私有目录
+ // 1.9.104：根目录聚合本地存储，不再只看 App 私有目录
+ // 1.9.105：本地根 = /sdcard，聚合 Download / Download/DSH-Go/鲸落 / Movies / DCIM
  this.localDir = localRoot(a);
+ this.localRootDir = this.localDir;
  AppLog.i("FileManager", "scan root=" + this.localDir.getAbsolutePath());
  }
 
- /** 1.9.104：本地根目录优先 /sdcard/Download，失败回退 App 下载目录。 */
+ /** 1.9.105：本地根 = 外部存储根 /sdcard（下钻聚合四个来源目录）；不可用时回退 App 下载目录。 */
  static java.io.File localRoot(MainActivity a) {
  try {
  java.io.File external = android.os.Environment.getExternalStorageDirectory();
- if (external != null) {
- java.io.File download = new java.io.File(external, "Download");
- if (download.isDirectory()) return download;
- }
+ if (external != null && external.isDirectory()) return external;
  } catch (Throwable ignored) {
  }
  return FileManagerCore.downloadDir(a);
  }
 
+ /** 1.9.105：根目录聚合来源（/sdcard/Download、Download/DSH-Go/鲸落、Movies、DCIM）。 */
+ private static java.util.List<java.io.File> localSources(MainActivity a) {
+ java.util.List<java.io.File> out = new java.util.ArrayList<>();
+ try {
+ java.io.File external = android.os.Environment.getExternalStorageDirectory();
+ if (external != null) {
+ out.add(new java.io.File(external, "Download"));
+ out.add(new java.io.File(external, "Download/DSH-Go/鲸落"));
+ out.add(new java.io.File(external, "Movies"));
+ out.add(new java.io.File(external, "DCIM"));
+ }
+ } catch (Throwable ignored) {
+ }
+ if (out.isEmpty()) out.add(FileManagerCore.downloadDir(a));
+ return out;
+ }
+
+ /** 1.9.105：当前是否停在本地聚合根。 */
+ private boolean aggregateRoot() {
+ return localDir != null && localDir.equals(localRootDir);
+ }
+
+ /** 1.9.105：进入子目录前记录当前目录，BACK/上级按栈回退。 */
+ private void pushDir() {
+ if (localDir != null) dirStack.push(localDir);
+ }
+
+ /** 1.9.105：文件所属来源目录名（取最长匹配，鲸落优先于 Download）。 */
+ private String localSourceName(java.io.File file) {
+ if (file == null) return "";
+ String path = file.getAbsolutePath();
+ String best = "";
+ int bestLen = -1;
+ for (java.io.File dir : localSources(a)) {
+ String base = dir.getAbsolutePath();
+ if ((path.equals(base) || path.startsWith(base + java.io.File.separator))
+ && base.length() > bestLen) {
+ bestLen = base.length();
+ best = dir.getName();
+ }
+ }
+ return best;
+ }
+
+ /** 1.9.105：本地路径（聚合根 → 本地文件；子目录 → 本地文件 / 来源 / 子路径）。 */
+ private String localPathLabel() {
+ if (aggregateRoot()) return "本地文件";
+ String path = localDir.getAbsolutePath();
+ String best = "";
+ String bestName = "";
+ for (java.io.File dir : localSources(a)) {
+ String base = dir.getAbsolutePath();
+ if ((path.equals(base) || path.startsWith(base + java.io.File.separator))
+ && base.length() > best.length()) {
+ best = base;
+ bestName = dir.getName();
+ }
+ }
+ if (best.isEmpty()) return "本地文件 / " + localDir.getName();
+ String rest = path.substring(best.length());
+ if (rest.startsWith("/")) rest = rest.substring(1);
+ return "本地文件 / " + bestName + (rest.isEmpty() ? "" : " / " + rest.replace("/", " / "));
+ }
+
  private void open() {
- a.renderPage("文件管理", "FILE MANAGER");
+ // 1.9.105：标题区自绘（英文小标 FILE MANAGER + 标题 + 副标题 + 存储空间）：
+ // 顶栏两行，renderPage 只负责页面骨架，不再由它出标题
+ a.renderPage("", "");
  if (a.root != null) a.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
  if (a.scroll != null) a.scroll.setBackgroundColor(android.graphics.Color.TRANSPARENT);
  if (a.body == null) return;
@@ -122,36 +192,15 @@ final class FileManagerScreen {
  AppLog.i(
  "FileMgr",
  "page=FileManager tab=" + (tab == 0 ? "local" : "netdisk") + " items=0");
- buildStorageCard();
+ buildHeader();
  if (!MainActivity.cloudEnabled(a)) tab = 0;
+ // 1.9.105：第一行（标题+存储）紧跟第二行（chips + 排序/新建），分段放在其下
+ buildTopBar();
  buildSegment();
- buildToolbar();
- buildFilterChips();
  if (tab == 1) buildProviderChips();
+ buildToolbar();
  content = a.vertical();
  a.body.addView(content);
- // 1.9.2/1.9.11：全局下载入口 + 网盘诊断
- LinearLayout tools = a.row();
- tools.setGravity(Gravity.CENTER_VERTICAL);
- downCenterBtn = a.text("下载中心", 11.5f, UiTokens.ACCENT_SOFT);
- downCenterBtn.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
- downCenterBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
- MobileDetailScreen.bindTouchFeedback(downCenterBtn);
- downCenterBtn.setOnClickListener(v -> DownloadCenterScreen.show(a));
- tools.addView(downCenterBtn);
- TextView diagBtn = a.text("网盘诊断", 11.5f, UiTokens.TEXT_PRIMARY);
- diagBtn.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
- diagBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
- MobileDetailScreen.bindTouchFeedback(diagBtn);
- diagBtn.setOnClickListener(v -> NetdiskDiagScreen.show(a));
- LinearLayout.LayoutParams diagLp = new LinearLayout.LayoutParams(-2, -2);
- diagLp.leftMargin = a.dp(8);
- tools.addView(diagBtn, diagLp);
- LinearLayout.LayoutParams toolsLp = new LinearLayout.LayoutParams(-2, -2);
- toolsLp.leftMargin = a.dp(16);
- toolsLp.rightMargin = a.dp(16);
- toolsLp.bottomMargin = a.dp(6);
- a.body.addView(tools, toolsLp);
  globalStrip = a.row();
  globalStrip.setGravity(Gravity.CENTER_VERTICAL);
  globalStrip.setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8));
@@ -164,22 +213,20 @@ final class FileManagerScreen {
  centerGo.setOnClickListener(v -> DownloadCenterScreen.show(a));
  globalStrip.addView(centerGo);
  LinearLayout.LayoutParams gslp = new LinearLayout.LayoutParams(-1, -2);
- gslp.leftMargin = a.dp(16);
- gslp.rightMargin = a.dp(16);
+ gslp.leftMargin = a.dp(24);
+ gslp.rightMargin = a.dp(24);
  gslp.bottomMargin = a.dp(8);
  a.body.addView(globalStrip, gslp);
- // 放到内容区上方（顶部「下载中心/网盘诊断」入口）
+ // 放到内容区上方
  int contentIndex = a.body.indexOfChild(content);
- a.body.removeView(tools);
  a.body.removeView(globalStrip);
- a.body.addView(tools, Math.max(0, contentIndex));
  a.body.addView(globalStrip, Math.max(0, contentIndex));
  startDownloadPoll();
  refresh();
  tvFocusFirst();
  }
 
- // ---------------- 顶部：存储概览 ----------------
+ // ---------------- 顶部：标题 + 存储空间（第一行） ----------------
 
  /** 1.9.0：bindTouchFeedback 会关闭 focusable，必须先绑定再打开焦点。 */
  private void focusable(View view) {
@@ -201,52 +248,143 @@ final class FileManagerScreen {
  1.02f));
  }
 
- private void buildStorageCard() {
- LinearLayout card = a.vertical();
- card.setPadding(a.dp(14), a.dp(12), a.dp(14), a.dp(10));
- card.setBackground(MobileDetailScreen.glassBg(a, 0xcc16283f, 0xb3121d2e, 16));
+ /**
+ * 1.9.105：顶栏第一行 = 英文小标 APP 页眉（FILE MANAGER）+ 标题「文件管理」+ 副标题
+ * 「本地存储 / 网盘 / 下载」，右侧 = /sdcard 的 StatFs 已用/可用 + 进度条。
+ */
+ private void buildHeader() {
+ // TV overscan / 手机左右安全边：右侧 ≥24dp，避免存储数值溢出
+ int side = a.dp(24);
+ LinearLayout header = a.vertical();
+ header.setPadding(side, 0, side, a.dp(2));
  LinearLayout row = a.row();
  row.setGravity(Gravity.CENTER_VERTICAL);
- LinearLayout left = a.vertical();
- TextView label = a.text("存储空间", 12, UiTokens.TEXT_SECONDARY);
- left.addView(label);
+ LinearLayout titleCol = a.vertical();
+ TextView eye = a.text("FILE MANAGER", 11.5f, 0xffffc2d4);
+ eye.setLetterSpacing(.15f);
+ titleCol.addView(eye);
+ TextView title = a.text("文件管理", 24, MainActivity.WHITE);
+ title.setTypeface(null, android.graphics.Typeface.BOLD);
+ titleCol.addView(title);
+ TextView subtitle = a.text("本地存储 / 网盘 / 下载", 11.5f, UiTokens.TEXT_TERTIARY);
+ subtitle.setPadding(0, a.dp(3), 0, 0);
+ titleCol.addView(subtitle);
+ row.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1f));
+ // 存储空间：/sdcard 的 StatFs 已用/可用（失败再回退 App 外部目录）
  long total = 0, available = 0;
  boolean ok = false;
+ java.io.File statDir = android.os.Environment.getExternalStorageDirectory();
+ for (int attempt = 0; attempt < 2 && !ok; attempt++) {
+ if (attempt == 1) statDir = a.getExternalFilesDir(null);
+ if (statDir == null) continue;
  try {
- File statDir = a.getExternalFilesDir(null);
- if (statDir == null) statDir = android.os.Environment.getDataDirectory();
- if (statDir != null) {
  android.os.StatFs stat = new android.os.StatFs(statDir.getAbsolutePath());
  total = stat.getTotalBytes();
  available = stat.getAvailableBytes();
  ok = total > 0;
- }
  } catch (Throwable ignored) {
+ total = 0;
+ available = 0;
+ }
  }
  long used = Math.max(0, total - available);
+ LinearLayout storageCol = a.vertical();
+ TextView label = a.text("存储空间", 10.5f, UiTokens.TEXT_TERTIARY);
+ label.setGravity(Gravity.END);
+ storageCol.addView(label);
  TextView value =
  a.text(
  ok
  ? "已用 " + QuarkUcApi.formatSize(used) + " · 可用 " + QuarkUcApi.formatSize(available)
  : "存储信息不可用",
- 15,
- UiTokens.TEXT_PRIMARY);
- value.setPadding(0, a.dp(3), 0, 0);
- left.addView(value);
- row.addView(left, new LinearLayout.LayoutParams(0, -2, 1f));
- row.addView(a.text("本 App 文件", 11.5f, UiTokens.TEXT_TERTIARY));
- card.addView(row);
+ 11.5f,
+ UiTokens.TEXT_SECONDARY);
+ value.setGravity(Gravity.END);
+ value.setPadding(a.dp(10), a.dp(4), 0, 0);
+ storageCol.addView(value);
  ProgressBar bar = new ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal);
  bar.setMax(100);
  bar.setProgress(total > 0 ? (int) (used * 100 / total) : 0);
  bar.setProgressTintList(android.content.res.ColorStateList.valueOf(UiTokens.ACCENT));
- LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(-1, a.dp(4));
- barLp.topMargin = a.dp(8);
- card.addView(bar, barLp);
- LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
- lp.leftMargin = a.dp(16);
- lp.rightMargin = a.dp(16);
- a.body.addView(card, lp);
+ LinearLayout.LayoutParams barLp =
+ new LinearLayout.LayoutParams(a.isTvDevice() ? a.dp(200) : a.dp(110), a.dp(3));
+ barLp.topMargin = a.dp(6);
+ storageCol.addView(bar, barLp);
+ LinearLayout.LayoutParams storageLp = new LinearLayout.LayoutParams(-2, -2);
+ storageLp.leftMargin = a.dp(12);
+ row.addView(storageCol, storageLp);
+ header.addView(row);
+ a.body.addView(header);
+ }
+
+ /**
+ * 1.9.105：顶栏第二行——左侧 HorizontalScrollView 筛选 chips（全部/文件夹/视频/图片/文本/其他
+ * 下载中心/网盘诊断），右侧排序/新建固定不滚动；右边距 ≥24dp，TV 左右 ≥24dp。
+ */
+ private void buildTopBar() {
+ final int side = a.dp(a.isTvDevice() ? 24 : 16);
+ LinearLayout bar = a.row();
+ bar.setGravity(Gravity.CENTER_VERTICAL);
+ bar.setPadding(side, a.dp(8), a.dp(24), a.dp(6));
+ android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(a);
+ scroll.setHorizontalScrollBarEnabled(false);
+ scroll.setClipToPadding(false);
+ LinearLayout chipsRow = a.row();
+ chipsRow.setGravity(Gravity.CENTER_VERTICAL);
+ filterChips = a.row();
+ filterChips.setGravity(Gravity.CENTER_VERTICAL);
+ chipsRow.addView(filterChips);
+ actionChips = a.row();
+ actionChips.setGravity(Gravity.CENTER_VERTICAL);
+ downCenterBtn = a.text("下载中心", 11.5f, UiTokens.ACCENT_SOFT);
+ downCenterBtn.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
+ downCenterBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+ MobileDetailScreen.bindTouchFeedback(downCenterBtn);
+ downCenterBtn.setOnClickListener(v -> DownloadCenterScreen.show(a));
+ LinearLayout.LayoutParams dcLp = new LinearLayout.LayoutParams(-2, -2);
+ dcLp.leftMargin = a.dp(6);
+ actionChips.addView(downCenterBtn, dcLp);
+ TextView diagBtn = a.text("网盘诊断", 11.5f, UiTokens.TEXT_PRIMARY);
+ diagBtn.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
+ diagBtn.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+ MobileDetailScreen.bindTouchFeedback(diagBtn);
+ diagBtn.setOnClickListener(v -> NetdiskDiagScreen.show(a));
+ LinearLayout.LayoutParams diagLp = new LinearLayout.LayoutParams(-2, -2);
+ diagLp.leftMargin = a.dp(6);
+ actionChips.addView(diagBtn, diagLp);
+ chipsRow.addView(actionChips);
+ scroll.addView(chipsRow, new android.widget.HorizontalScrollView.LayoutParams(-2, -2));
+ bar.addView(scroll, new LinearLayout.LayoutParams(0, -2, 1f));
+ // 右侧固定：排序 + 新建（不随 chips 滚动）
+ TextView sortChip = a.text("", 11.5f, UiTokens.ACCENT_SOFT);
+ sortChip.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
+ sortChip.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+ sortChip.setFocusable(true);
+ focusable(sortChip);
+ final TextView sortRef = sortChip;
+ sortChip.setOnClickListener(
+ v -> {
+ sort = (sort + 1) % 3;
+ sortRef.setText("排序：" + sortLabel());
+ refresh();
+ });
+ sortRef.setText("排序：" + sortLabel());
+ LinearLayout.LayoutParams sortLp = new LinearLayout.LayoutParams(-2, -2);
+ sortLp.leftMargin = a.dp(8);
+ bar.addView(sortChip, sortLp);
+ if (tab == 0) {
+ TextView newDir = a.text("新建", 11.5f, UiTokens.ACCENT_SOFT);
+ newDir.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
+ newDir.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+ newDir.setFocusable(true);
+ focusable(newDir);
+ newDir.setOnClickListener(v -> createFolderDialog());
+ LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+ lp.leftMargin = a.dp(6);
+ bar.addView(newDir, lp);
+ }
+ a.body.addView(bar);
+ updateFilterChips();
  }
 
  // ---------------- 分段 ----------------
@@ -283,51 +421,27 @@ final class FileManagerScreen {
  row.addView(chip, lp);
  }
  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
- lp.leftMargin = a.dp(16);
- lp.rightMargin = a.dp(16);
+ int side = a.dp(a.isTvDevice() ? 24 : 16);
+ lp.leftMargin = side;
+ lp.rightMargin = side;
  a.body.addView(row, lp);
  }
 
- // ---------------- 工具栏：面包屑 + 排序 + 新建 ----------------
+ // ---------------- 工具栏：面包屑（排序/新建已移到顶栏第二行右侧） ----------------
 
  private void buildToolbar() {
  LinearLayout row = a.row();
  row.setGravity(Gravity.CENTER_VERTICAL);
- // 1.9.104：TV overscan/手机左右安全边 ≥24dp，避免排序/新建被裁切
+ // 1.9.104：TV overscan/手机左右安全边 ≥24dp
  int sidePad = a.dp(a.isTvDevice() ? 24 : 12);
- row.setPadding(sidePad, a.dp(6), sidePad, a.dp(6));
+ row.setPadding(sidePad, a.dp(4), sidePad, a.dp(4));
  pathLabel = a.text("", 11.5f, UiTokens.TEXT_TERTIARY);
  pathLabel.setSingleLine(true);
  pathLabel.setEllipsize(android.text.TextUtils.TruncateAt.START);
  row.addView(pathLabel, new LinearLayout.LayoutParams(0, -2, 1f));
- TextView sortChip = a.text("", 11.5f, UiTokens.ACCENT_SOFT);
- sortChip.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
- sortChip.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
- sortChip.setFocusable(true);
- focusable(sortChip);
- final TextView sortRef = sortChip;
- sortChip.setOnClickListener(
- v -> {
- sort = (sort + 1) % 3;
- sortRef.setText("排序：" + sortLabel());
- refresh();
- });
- sortRef.setText("排序：" + sortLabel());
- row.addView(sortChip);
- if (tab == 0) {
- TextView newDir = a.text("新建", 11.5f, UiTokens.ACCENT_SOFT);
- newDir.setPadding(a.dp(10), a.dp(7), a.dp(10), a.dp(7));
- newDir.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
- newDir.setFocusable(true);
- focusable(newDir);
- newDir.setOnClickListener(v -> createFolderDialog());
- LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
- lp.leftMargin = a.dp(6);
- row.addView(newDir, lp);
- }
  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
- lp.leftMargin = a.dp(16);
- lp.rightMargin = a.dp(16);
+ lp.leftMargin = a.dp(a.isTvDevice() ? 24 : 16);
+ lp.rightMargin = a.dp(a.isTvDevice() ? 24 : 16);
  a.body.addView(row, lp);
  breadcrumbRow = a.row();
  a.body.addView(breadcrumbRow);
@@ -345,7 +459,7 @@ final class FileManagerScreen {
  // ---------------- 刷新内容 ----------------
 
  private static final String[] FILTER_NAMES = {
- "全部", "文件夹", "视频", "图片", "文本·文档", "其他"
+ "全部", "文件夹", "视频", "图片", "文本", "其他"
  };
 
  /** 1.9.94：内置文件选择模式（壁纸等），只允许选择图片或视频。 */
@@ -368,19 +482,6 @@ final class FileManagerScreen {
 
  static void clearPick() {
  pickCallback = null;
- }
-
- private void buildFilterChips() {
- android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(a);
- scroll.setHorizontalScrollBarEnabled(false);
- scroll.setClipToPadding(false);
- filterChips = a.row();
- filterChips.setPadding(a.dp(16), 0, a.dp(16), 0);
- scroll.addView(filterChips, new android.widget.HorizontalScrollView.LayoutParams(-2, -2));
- LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
- lp.bottomMargin = a.dp(6);
- a.body.addView(scroll, lp);
- updateFilterChips();
  }
 
  private int[] filterCounts() {
@@ -535,13 +636,13 @@ final class FileManagerScreen {
  breadcrumbRow.removeAllViews();
  String path;
  if (tab == 0) {
- String root = FileManagerCore.downloadDir(a).getAbsolutePath();
- path = localDir.getAbsolutePath();
- path = path.equals(root) ? "文件管理" : "文件管理 / " + localDir.getName();
+ path = localPathLabel();
  } else path = "网盘 / " + providerName() + " / " + netdiskPath;
  pathLabel.setText(path);
- breadcrumbRow.setPadding(a.dp(16), 0, a.dp(16), a.dp(4));
- if (tab == 0 && localDir.getParentFile() != null) {
+ breadcrumbRow.setPadding(a.dp(a.isTvDevice() ? 24 : 16), 0, a.dp(24), a.dp(4));
+ // 1.9.105：聚合根下的来源目录也能回上一层（dirStack 优先，其次回聚合根）
+ boolean canUp = tab == 0 && (!dirStack.isEmpty() || !aggregateRoot());
+ if (canUp) {
  TextView up = a.text("‹ 上级", 12, UiTokens.ACCENT);
  up.setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5));
  up.setFocusable(true);
@@ -553,36 +654,51 @@ final class FileManagerScreen {
 
  private void refreshLocal() {
  items.clear();
- if (localDir.exists() && !localDir.canRead()) {
+ if (!aggregateRoot() && localDir.exists() && !localDir.canRead()) {
  showEmpty("读取目录失败", "请检查存储权限后重试", "重试", () -> refresh());
  return;
  }
- List<FileManagerCore.LocalEntry> entries = FileManagerCore.scan(localDir);
- // 1.9.104：扫描统计（本地文件能看到多少）
- int apkCount = 0, videoCount = 0;
- for (FileManagerCore.LocalEntry e : entries) {
- String ln = e.name == null ? "" : e.name.toLowerCase(java.util.Locale.ROOT);
- if (ln.endsWith(".apk")) apkCount++;
- if (e.video) videoCount++;
+ List<FileManagerCore.LocalEntry> entries = new ArrayList<>();
+ if (aggregateRoot()) {
+ // 1.9.105：根目录聚合 /sdcard 下的 Download、Download/DSH-Go/鲸落、Movies、DCIM
+ // 只列存在目录里的条目，按绝对路径去重（鲸落在 Download 内，避免重复出现）
+ java.util.Set<String> seen = new java.util.HashSet<>();
+ for (java.io.File dir : localSources(a)) {
+ if (dir == null || !dir.isDirectory()) continue;
+ List<FileManagerCore.LocalEntry> part = FileManagerCore.scan(dir);
+ for (FileManagerCore.LocalEntry entry : part) {
+ if (seen.add(entry.file.getAbsolutePath())) entries.add(entry);
  }
  AppLog.i(
  "FileManager",
+ "scan source=" + dir.getAbsolutePath() + " count=" + part.size());
+ }
+ } else {
+ entries.addAll(FileManagerCore.scan(localDir));
+ }
+ int videoCount = 0;
+ for (FileManagerCore.LocalEntry e : entries) if (e.video) videoCount++;
+ AppLog.i(
+ "FileManager",
  "scan root="
- + localDir.getAbsolutePath()
+ + (aggregateRoot() ? localRootDir.getAbsolutePath() : localDir.getAbsolutePath())
  + " count="
  + entries.size()
- + " apk="
- + apkCount
  + " video="
  + videoCount);
  items.addAll(entries);
  sortEntries(entries);
  updateFilterChips();
- AppLog.i("FileMgr", "page=FileManager tab=local items=" + entries.size() + " dir=" + localDir.getName());
+ AppLog.i(
+ "FileMgr",
+ "page=FileManager tab=local items="
+ + entries.size()
+ + " dir="
+ + (aggregateRoot() ? "local-root" : localDir.getName()));
  if (entries.isEmpty()) {
  showEmpty(
  "还没有文件",
- "通过管理后台上传，或从网盘下载到 Download/鲸落/",
+ "Download / 鲸落 / Movies / DCIM 里都没有文件，可从管理后台上传或网盘下载",
  "刷新本地",
  () -> refresh());
  return;
@@ -1245,6 +1361,11 @@ final class FileManagerScreen {
  ? (countChildren(entry.file) + " 项")
  : QuarkUcApi.formatSize(entry.size);
  meta += " · " + FileManagerCore.formatDate(entry.modified);
+ if (aggregateRoot()) {
+ // 1.9.105：聚合根下显示来源目录名（Download / 鲸落 / Movies / DCIM）
+ String source = localSourceName(entry.file);
+ if (!source.isEmpty()) meta += " · 来自 " + source;
+ }
  addTitleAndMeta(card, entry.name, meta);
  final MemoCard finalHolder = holder;
  holder.setOnClickListener(
@@ -1265,6 +1386,7 @@ final class FileManagerScreen {
  toggleSelection(entry.file, null);
  applySelectionVisuals();
  } else if (entry.folder) {
+ pushDir();
  localDir = entry.file;
  filter = 0;
  exitSelection();
@@ -1364,15 +1486,18 @@ final class FileManagerScreen {
  () -> {
  try (java.io.InputStream input = new java.io.FileInputStream(file)) {
  if (video) {
- boolean supported = videoCodecSupported(file);
+ // 1.9.105：真实编码探测（MediaExtractor 读轨道 mime + MediaCodecList 找解码器）
+ String problem = videoCodecProblem(file);
  AppLog.i(
  "Wallpaper",
  "set-from-file type=video path="
  + file.getName()
  + " supported="
- + supported);
- if (!supported) {
- a.ui.post(() -> a.notice("该视频编码不支持壁纸播放（请换 H.264/VP9 视频）"));
+ + problem.isEmpty()
+ + " reason="
+ + problem);
+ if (!problem.isEmpty()) {
+ a.ui.post(() -> a.notice("该视频不能设为动态壁纸：" + problem));
  return;
  }
  SettingsScreen.saveVideoWallpaper(a, input);
@@ -1403,24 +1528,70 @@ final class FileManagerScreen {
  });
  }
 
- /** 简单编码探测：H.265/HEVC、Dolby Vision 壁纸解码不可靠，提前提示。 */
- static boolean videoCodecSupported(java.io.File file) {
- try {
+ /**
+ * 1.9.105 真实编码探测：MediaExtractor 读出视频轨 mime，再用 MediaCodecList 确认系统里
+ * 存在该 mime 的解码器（HEVC / Dolby Vision 等无解码器则视为不可用）。
+ *
+ * @return 空串 = 可用；否则为不可用原因（给前端/弹窗显示）
+ */
+ static String videoCodecProblem(java.io.File file) {
+ if (file == null || !file.isFile() || file.length() <= 0) return "视频文件不存在或为空";
+ String mime = "";
  android.media.MediaExtractor extractor = new android.media.MediaExtractor();
+ try {
  extractor.setDataSource(file.getAbsolutePath());
  for (int i = 0; i < extractor.getTrackCount(); i++) {
  android.media.MediaFormat format = extractor.getTrackFormat(i);
- String mime = format.getString(android.media.MediaFormat.KEY_MIME);
- if (mime != null && mime.startsWith("video/")) {
- extractor.release();
- return !(mime.contains("hevc") || mime.contains("h265") || mime.contains("dolby"));
+ String track = format.getString(android.media.MediaFormat.KEY_MIME);
+ if (track != null && track.startsWith("video/")) {
+ mime = track;
+ break;
  }
  }
+ } catch (Throwable error) {
+ return "无法解析视频（" + error.getClass().getSimpleName() + "）";
+ } finally {
+ try {
  extractor.release();
- return true;
  } catch (Throwable ignored) {
- return true;
  }
+ }
+ if (mime.isEmpty()) return "未找到视频轨（格式不支持）";
+ boolean hevcOrDolby =
+ mime.contains("hevc")
+ || mime.contains("h265")
+ || mime.contains("dolby")
+ || mime.contains("dvhe")
+ || mime.contains("dvh1")
+ || mime.contains("dvav")
+ || mime.contains("dva1");
+ boolean decoder = hasVideoDecoder(mime);
+ AppLog.i(
+ "Wallpaper",
+ "codec mime=" + mime + " hevcOrDolby=" + hevcOrDolby + " decoder=" + decoder);
+ if (!decoder) return "无可用解码器：" + mime;
+ return "";
+ }
+
+ /** 1.9.105：壁纸/文件页通用的编码可用性判断。 */
+ static boolean videoCodecSupported(java.io.File file) {
+ return videoCodecProblem(file).isEmpty();
+ }
+
+ /** 用 MediaCodecList 查找 mime 对应的硬件/软件解码器。 */
+ private static boolean hasVideoDecoder(String mime) {
+ try {
+ android.media.MediaCodecList list =
+ new android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS);
+ for (android.media.MediaCodecInfo codec : list.getCodecInfos()) {
+ if (codec == null || codec.isEncoder()) continue;
+ String[] types = codec.getSupportedTypes();
+ if (types == null) continue;
+ for (String type : types) if (type != null && mime.equalsIgnoreCase(type)) return true;
+ }
+ } catch (Throwable ignored) {
+ }
+ return false;
  }
 
  private View buildNetdiskCard(final QuarkUcApi.FileItem item) {
@@ -1689,7 +1860,10 @@ final class FileManagerScreen {
  final EditText input = new EditText(a);
  input.setSingleLine(true);
  prepareInput(input);
- input.setText(localDir.getAbsolutePath());
+ input.setText(
+ aggregateRoot()
+ ? FileManagerCore.downloadDir(a).getAbsolutePath()
+ : localDir.getAbsolutePath());
  input.setTextColor(MainActivity.WHITE);
  input.setHintTextColor(a.themeColor(MainActivity.MUTED));
  new AppDialog.Builder(a)
@@ -1737,7 +1911,9 @@ final class FileManagerScreen {
  "创建",
  (d, i) -> {
  String name = FileManagerCore.safeName(input.getText().toString().trim());
- File target = new File(localDir, name);
+ // 1.9.105：聚合根（/sdcard）不可直接写，新建落到 Download/鲸落
+ File target =
+ new File(aggregateRoot() ? FileManagerCore.downloadDir(a) : localDir, name);
  a.toast(target.mkdirs() ? "已创建" : "创建失败，请检查存储空间");
  refresh();
  })
@@ -2128,10 +2304,20 @@ final class FileManagerScreen {
  exitSelection();
  return true;
  }
- if (tab == 0 && localDir.getParentFile() != null) {
- localDir = localDir.getParentFile() != null ? localDir.getParentFile() : FileManagerCore.downloadDir(a);
+ if (tab == 0) {
+ // 1.9.105：先按前进栈回退（聚合根进入的目录也能回到聚合根），再兜底回本地根
+ if (!dirStack.isEmpty()) {
+ localDir = dirStack.pop();
+ filter = 0;
  refresh();
  return true;
+ }
+ if (!aggregateRoot()) {
+ localDir = localRootDir;
+ filter = 0;
+ refresh();
+ return true;
+ }
  }
  if (tab == 1 && !"0".equals(netdiskFid)) {
  netdiskFid = "0";
@@ -2144,10 +2330,9 @@ final class FileManagerScreen {
  }
 
  private void goUp() {
- localDir =
- localDir.getParentFile() != null
- ? localDir.getParentFile()
- : FileManagerCore.downloadDir(a);
+ // 1.9.105：上级目录优先走前进栈，避免从聚合来源目录跳进无关父目录
+ if (!dirStack.isEmpty()) localDir = dirStack.pop();
+ else if (!aggregateRoot()) localDir = localRootDir;
  filter = 0;
  refresh();
  }
