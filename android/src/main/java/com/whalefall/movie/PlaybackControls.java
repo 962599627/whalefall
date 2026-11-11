@@ -1555,13 +1555,17 @@ final class PlaybackControls {
                             activeDialog = null;
                             dialogOpen = false;
                             a.scheduleHide();
-                            // 1.9.61：关闭工具面板后焦点回到播放器控制条
+                            // 1.9.63：关闭弹层后焦点回到打开它的「⋮」按钮
                             if (a.isTvDevice()) {
                                 a.showControls(true);
                                 a.ui.post(
                                         () -> {
-                                            View next = buttons.get("next-episode");
-                                            if (next != null) next.requestFocus();
+                                            View opener =
+                                                    a.playerChrome == null
+                                                            ? null
+                                                            : a.playerChrome.moreBtn;
+                                            if (opener == null) opener = buttons.get("more");
+                                            if (opener != null) opener.requestFocus();
                                             AppLog.i(
                                                     "TvKey",
                                                     "page=tools focus=closed action=nav");

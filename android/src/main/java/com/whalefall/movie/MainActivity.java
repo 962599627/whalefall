@@ -1778,6 +1778,21 @@ public final class MainActivity extends Activity {
                         autoFocus = first;
                     }
                 });
+        if (isTvDevice()) {
+            ui.post(
+                    () -> {
+                        View focus = getCurrentFocus();
+                        if (focus == null || !focus.isShown() || !focus.isAttachedToWindow())
+                            TvNav.ensureFocus(
+                                    this,
+                                    "restore",
+                                    "detail-play",
+                                    "primary",
+                                    "home-tab:0",
+                                    "source-switcher",
+                                    "nav-home");
+                    });
+        }
     }
 
     void refresh() {
@@ -2568,14 +2583,17 @@ public final class MainActivity extends Activity {
                                 || key == KeyEvent.KEYCODE_DPAD_CENTER
                                 || key == KeyEvent.KEYCODE_ENTER;
                 if (nav && (focus == null || !focus.isAttachedToWindow() || !focus.isShown())) {
-                    View first = TvDetailLayout.firstDetailFocus(this);
-                    if (first == null && root != null) {
-                        ArrayList<View> available = new ArrayList<>();
-                        root.addFocusables(available, View.FOCUS_FORWARD);
-                        if (!available.isEmpty()) first = available.get(0);
-                    }
+                    View first =
+                            TvNav.ensureFocus(
+                                    this,
+                                    body == null ? "detail" : String.valueOf(body.getTag()),
+                                    "detail-play",
+                                    "detail-line:0",
+                                    "detail-back",
+                                    "detail-favorite",
+                                    "primary",
+                                    "nav-home");
                     if (first != null) {
-                        first.requestFocus();
                         AppLog.i(
                                 "TvKey",
                                 "page=detail focus-fixed tag="

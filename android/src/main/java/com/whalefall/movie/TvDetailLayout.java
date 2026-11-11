@@ -208,6 +208,7 @@ final class TvDetailLayout {
         a.ui.postDelayed(
                 () -> {
                     int fixed = ensureFocusables(a, a.root, 0);
+                    fixed += TvNav.ensureFocusable(a, a.root, 12, 0);
                     View current = a.getCurrentFocus();
                     if (current == null || !current.isShown() || !current.isAttachedToWindow()) {
                         focusFirstDetail(a, "fixed=" + fixed);

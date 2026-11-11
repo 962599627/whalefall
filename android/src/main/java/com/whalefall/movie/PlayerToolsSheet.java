@@ -171,29 +171,8 @@ final class PlayerToolsSheet {
             }
             grid.addView(row, new LinearLayout.LayoutParams(-1, a.dp(rowHeightDp)));
         }
-        // 显式方向导航：右/左逐列，下/上逐行；行尾到下一行首、行首到上一行尾
-        if (a.isTvDevice()) {
-            if (close.getId() == View.NO_ID) close.setId(View.generateViewId());
-            for (int i = 0; i < cells.size(); i++) {
-                View cell = cells.get(i);
-                if (cell.getId() == View.NO_ID) cell.setId(View.generateViewId());
-            }
-            for (int i = 0; i < cells.size(); i++) {
-                View cell = cells.get(i);
-                int column = i % columns;
-                if (column > 0 && i - 1 >= 0) cell.setNextFocusLeftId(cells.get(i - 1).getId());
-                if (column < columns - 1 && i + 1 < cells.size())
-                    cell.setNextFocusRightId(cells.get(i + 1).getId());
-                if (i - columns >= 0) cell.setNextFocusUpId(cells.get(i - columns).getId());
-                if (i + columns < cells.size())
-                    cell.setNextFocusDownId(cells.get(i + columns).getId());
-                else if (i + columns >= cells.size())
-                    cell.setNextFocusDownId(close.getId());
-            }
-            // 关闭键：从最后一格下行可达，向上回到最后一格
-            if (!cells.isEmpty())
-                close.setNextFocusUpId(cells.get(cells.size() - 1).getId());
-        }
+        // 1.9.63：统一网格焦点链（左右逐列、上下逐行、末行到关闭键，无死区）
+        if (a.isTvDevice()) TvNav.wireGrid(cells, columns, close);
         ScrollView scroll = new ScrollView(a);
         scroll.setVerticalScrollBarEnabled(false);
         scroll.setClipChildren(false);
