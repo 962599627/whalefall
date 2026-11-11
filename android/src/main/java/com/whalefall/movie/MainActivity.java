@@ -1625,6 +1625,8 @@ public final class MainActivity extends Activity {
  /** 1.9.112：启动/进首页时清理历史遗留的不兼容动态壁纸（4K/HEVC/高帧率）。 */
  void purgeUnsupportedVideoWallpaper() {
  try {
+ // 1.9.113：仅旧系统清理 4K/HEVC；SDK>=26 保持 1.9.82 行为，不删合法 4K
+ if (android.os.Build.VERSION.SDK_INT >= 26) return;
  final File video = VideoWallpaper.file(this);
  if (!video.isFile()) return;
  String reason = SettingsScreen.videoWallpaperRejectReason(this, video);

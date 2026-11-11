@@ -946,6 +946,22 @@ final class SettingsScreen {
 
  /** 1.9.108：动态壁纸严格限制 H.264 + ≤1080p + ≤30fps，避免旧 TV 黑屏。 */
  static String videoWallpaperRejectReason(MainActivity a, File target) {
+ // 1.9.113：新系统（SDK>=26）行为回到 1.9.82：允许 ExoPlayer + 4K/HEVC，不做严格规格限制
+ if (android.os.Build.VERSION.SDK_INT >= 26) {
+ String decoderProblem = FileManagerScreen.videoCodecProblem(target);
+ AppLog.i(
+ "Compat",
+ "sdk="
+ + android.os.Build.VERSION.SDK_INT
+ + " feature=wallpaper engine=exo gating=relaxed decoder="
+ + (decoderProblem.isEmpty() ? "ok" : decoderProblem));
+ return decoderProblem.isEmpty() ? null : decoderProblem;
+ }
+ AppLog.i(
+ "Compat",
+ "sdk="
+ + android.os.Build.VERSION.SDK_INT
+ + " feature=wallpaper engine=mediaplayer gating=strict");
  String mime = "";
  int width = 0, height = 0;
  float fps = 0f;

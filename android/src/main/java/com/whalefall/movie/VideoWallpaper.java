@@ -57,6 +57,12 @@ final class VideoWallpaper extends FrameLayout {
         else startMediaPlayer();
         handler.postDelayed(firstFrameTimeout, 3000);
         AppLog.i(
+                "Compat",
+                "sdk="
+                        + Build.VERSION.SDK_INT
+                        + " feature=wallpaper engine="
+                        + (useExo ? "exo" : "mediaplayer"));
+        AppLog.i(
                 "Wallpaper",
                 "video engine="
                         + (useExo ? "exo" : "mediaplayer")
