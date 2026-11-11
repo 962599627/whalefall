@@ -372,7 +372,7 @@ final class TvNav {
  return removed[0];
  }
 
- private static void clearOthersWalk(MainActivity a, View view, View keep, int[] removed) {
+ private static void clearOthersWalk(View view, View keep, int[] removed) {
  if (view == null) return;
  if (view != keep && hasFocusOverlay(view)) {
  clearFocusOverlay(view);
@@ -381,7 +381,7 @@ final class TvNav {
  if (view instanceof ViewGroup) {
  ViewGroup group = (ViewGroup) view;
  for (int i = 0; i < group.getChildCount(); i++)
- clearOthersWalk(a, group.getChildAt(i), keep, removed);
+ clearOthersWalk(group.getChildAt(i), keep, removed);
  }
  }
 

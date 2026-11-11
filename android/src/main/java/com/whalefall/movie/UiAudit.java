@@ -93,7 +93,7 @@ final class UiAudit {
  if (leaks[1] > 1) {
  // 1.9.93：多焦点环强制清除，仅保留当前焦点
  int removed = TvNav.clearOthers(a, a.getCurrentFocus());
- AppLog.e("UiAudit", "rule=focus-ring count=" + leaks[1] + " removed=" + removed + " action=fix");
+ AppLog.i("UiAudit", "rule=focus-ring count=" + leaks[1] + " removed=" + removed + " action=fix");
  }
  for (String line : issues) if (!line.isEmpty()) bad.add(line);
  String report =
