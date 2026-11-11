@@ -869,11 +869,26 @@ final class PlaybackController {
 
     static void minimizePlayback(MainActivity a) {
         if (a.playbackControls == null || a.miniMode) return;
+        boolean overDetail = a.expandedOverDetail;
+        a.expandedOverDetail = false;
         a.miniMode = true;
         showControls(a, false);
-        a.playbackControls.subtitle.setVisibility(View.GONE);
-        a.playbackControls.danmaku.setVisibility(View.GONE);
+        if (a.playbackControls.subtitle != null)
+            a.playbackControls.subtitle.setVisibility(View.GONE);
+        if (a.playbackControls.danmaku != null) a.playbackControls.danmaku.setVisibility(View.GONE);
+        // 1.9.53：从全屏播放返回时先渲染详情页；从小窗放大后再次缩小则详情已在下方
+        if (!overDetail && !a.back.isEmpty()) {
+            a.current = a.back.pop();
+            a.renderReturn(a.current);
+        }
+        View layer = a.playbackLayer;
+        if (layer != null && a.root != null && layer.getParent() != a.root) {
+            if (layer.getParent() instanceof ViewGroup)
+                ((ViewGroup) layer.getParent()).removeView(layer);
+            a.root.addView(layer, new FrameLayout.LayoutParams(-1, -1));
+        }
         a.miniDetails = new MiniDetails(a);
+        if (!overDetail && a.current != null) a.restore(a.current);
     }
 
     static void expandPlayback(MainActivity a) {
@@ -884,7 +899,12 @@ final class PlaybackController {
             a.miniDetails = null;
         }
         UiCompat.setClipToOutline(a.playbackLayer, false);
+        a.playbackLayer.setElevation(0);
+        a.playbackLayer.setOutlineProvider(null);
+        a.playbackLayer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         a.playbackLayer.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        a.expandedOverDetail = true;
+        AppLog.i("Mini", "exit fullscreen");
         a.playbackControls.subtitle.setVisibility(View.VISIBLE);
         a.playbackControls.danmaku.setVisibility(View.VISIBLE);
         a.playbackLayer.post(
@@ -1154,6 +1174,14 @@ final class PlaybackController {
                     public void available(Surface value) {
                         renderSurface = value;
                         final int revision = ++surfaceRevision;
+                        AppLog.i(
+                                "Player",
+                                "lifecycle resume surface="
+                                        + (revision > 1 ? "recreated" : "reused")
+                                        + " revision="
+                                        + revision
+                                        + " player="
+                                        + (a.player != null));
                         if (ticket != a.generation) return;
                         if (a.player != null) {
                             a.player.setSurface(value);
@@ -1432,6 +1460,9 @@ final class PlaybackController {
 
                     public void destroyed() {
                         surfaceRevision++;
+                        AppLog.i(
+                                "Player",
+                                "lifecycle pause surface=detached revision=" + surfaceRevision);
                         if (ticket == a.generation && a.player != null) a.player.setSurface(null);
                         renderSurface = null;
                     }
@@ -1786,6 +1817,7 @@ final class PlaybackController {
             layers++;
         }
         a.miniMode = false;
+        a.expandedOverDetail = false;
         if (a.playbackLayer != null) {
             a.playbackLayer.setVisibility(View.GONE);
             layers++;

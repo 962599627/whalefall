@@ -135,6 +135,8 @@ public final class MainActivity extends Activity {
     FrameLayout playbackLayer;
     MiniDetails miniDetails;
     boolean miniMode;
+    /** 1.9.53：从小窗放大回全屏、但底下仍是详情页时使用（BACK 再缩回小窗）。 */
+    boolean expandedOverDetail;
     boolean changingMiniEpisode;
     FrameLayout playerOverlay;
     boolean controlsVisible = true;
@@ -1799,6 +1801,11 @@ public final class MainActivity extends Activity {
                         + " player="
                         + (current != null && current.player));
         if (tvPlayer != null && tvPlayer.back()) return;
+        // 1.9.53：从小窗放大后，BACK 重新缩回左上角小窗（详情页仍在下方）
+        if (expandedOverDetail) {
+            PlaybackController.minimizePlayback(this);
+            return;
+        }
         // 1.9.33：只在首页筛选层展开时优先收起（L3 → L2），避免误拦播放页/二级页/其它 tab 的 BACK
         if (!isTvDevice()
                 && current != null
@@ -2667,8 +2674,14 @@ public final class MainActivity extends Activity {
         if (playerChrome != null) playerChrome.resumeLoadingAnimation();
         if (bgPlayback) {
             bgPlayback = false;
-            releaseAudioFocus();
+            // 1.9.53：回到前台继续播放，不释放音频焦点/不暂停，仅撤掉常驻通知
             BgPlay.cancel(this);
+            AppLog.i(
+                    "Player",
+                    "lifecycle resume activity player="
+                            + (player != null)
+                            + " mini="
+                            + miniMode);
         }
     }
 
@@ -2696,9 +2709,17 @@ public final class MainActivity extends Activity {
         super.onStop();
         boolean background =
                 prefs.getBoolean("bg_play", true)
-                        && current != null
-                        && current.player
-                        && player != null;
+                        && player != null
+                        && (current != null
+                                && (current.player || miniMode || expandedOverDetail));
+        AppLog.i(
+                "Player",
+                "lifecycle pause activity player="
+                        + (player != null)
+                        + " mini="
+                        + miniMode
+                        + " background="
+                        + background);
         if (background) {
             startBackgroundPlayback();
         } else if (player != null)
