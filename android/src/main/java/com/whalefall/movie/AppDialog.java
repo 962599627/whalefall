@@ -173,6 +173,17 @@ final class AppDialog extends Dialog {
         if (first == null)
             first = content.getChildCount() > 0 ? content.getChildAt(0) : actions.get(-1);
         if (first != null) first.requestFocus();
+        if (a.appDialog == this) {
+            final AppDialog self = this;
+            a.ui.post(
+                    () ->
+                            TvNav.auditDialog(
+                                    a,
+                                    "dialog",
+                                    self.getWindow() == null
+                                            ? null
+                                            : self.getWindow().getDecorView()));
+        }
         if (!a.reduced) {
             panel.setAlpha(0);
             panel.setScaleX(.96f);

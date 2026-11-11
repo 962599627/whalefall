@@ -102,6 +102,7 @@ final class FocusMotion {
             boolean border,
             float gain) {
         unclipAncestors(view);
+        TvNav.markRing(view);
         State state = state(view);
         int strokePx = Math.round(view.getResources().getDisplayMetrics().density * 2);
         if (!state.ready) {

@@ -82,6 +82,7 @@ final class TvNav {
     /** 焦点态：玻璃底 → 粉色 18% 叠加 + 2dp ACCENT 亮边 + 1.03× 放大（140ms）；REDUCED 只变色。 */
     static void focusRing(final MainActivity a, final View view, final int radiusDp) {
         if (a == null || view == null) return;
+        markRing(view);
         view.setFocusable(true);
         view.setFocusableInTouchMode(true);
         if (view.getId() == View.NO_ID) view.setId(View.generateViewId());
@@ -138,6 +139,81 @@ final class TvNav {
 
     private static final int BG_KEY = 0x7f0f9e01;
     private static final int TEXT_KEY = 0x7f0f9e02;
+    private static final int RING_KEY = 0x7f0f9e03;
+
+    /** 标记该控件已有焦点动效（审计用）。 */
+    static void markRing(View view) {
+        if (view != null) view.setTag(RING_KEY, Boolean.TRUE);
+    }
+
+    /** 1.9.71：页面焦点审计；返回报告文本，并对缺失控件幂等补焦点。 */
+    static String audit(MainActivity a, String page) {
+        if (a == null || a.root == null) return "";
+        int[] stats = new int[3];
+        List<String> missing = new ArrayList<>();
+        auditWalk(a, a.root, stats, missing);
+        String report =
+                "page="
+                        + page
+                        + " clickable="
+                        + stats[0]
+                        + " focusable="
+                        + stats[1]
+                        + " rings="
+                        + stats[2]
+                        + " missing="
+                        + missing;
+        AppLog.i("TvFocusAudit", report);
+        return report;
+    }
+
+    private static void auditWalk(MainActivity a, View view, int[] stats, List<String> missing) {
+        if (view == null || stats[0] > 2000) return;
+        boolean clickable = view.isClickable() && view.isShown();
+        if (clickable) {
+            stats[0]++;
+            if (view.isFocusable()) stats[1]++;
+            boolean ring =
+                    Boolean.TRUE.equals(view.getTag(RING_KEY))
+                            || view.getOnFocusChangeListener() != null;
+            if (ring) stats[2]++;
+            else {
+                String tag = view.getTag() instanceof String ? (String) view.getTag() : null;
+                if (missing.size() < 24)
+                    missing.add(tag != null ? tag : view.getClass().getSimpleName());
+                // 幂等补焦点和动效，不漏按钮
+                focusRing(a, view, 12);
+                stats[1]++;
+                stats[2]++;
+            }
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++)
+                auditWalk(a, group.getChildAt(i), stats, missing);
+        }
+    }
+
+    /** 弹层窗口审计：Dialog 有独立装饰树。 */
+    static String auditDialog(MainActivity a, String page, android.view.View decor) {
+        if (decor == null) return "";
+        int[] stats = new int[3];
+        List<String> missing = new ArrayList<>();
+        auditWalk(a, decor, stats, missing);
+        String report =
+                "page="
+                        + page
+                        + " clickable="
+                        + stats[0]
+                        + " focusable="
+                        + stats[1]
+                        + " rings="
+                        + stats[2]
+                        + " missing="
+                        + missing;
+        AppLog.i("TvFocusAudit", report);
+        return report;
+    }
 
     /** 1.9.66：手机被控端检测到遥控连接后，进入遥控焦点模式（手机也显示焦点）。 */
     static void enableRemoteFocus(MainActivity a, String page) {
@@ -164,6 +240,7 @@ final class TvNav {
                         + (first == null ? "null" : String.valueOf(first.getTag()))
                         + " fixed="
                         + fixed);
+        audit(a, page);
     }
 
     /** 遥控断开：退出强制焦点（保留 focusable，不影响触摸）。 */

@@ -1251,6 +1251,7 @@ final class PlaybackController {
         if (!a.isTvDevice()) a.root.requestApplyInsets();
         // 一次性诊断：首帧布局后记录 layer/surface/chrome 尺寸与安全区（播放页「卡片化」排查用）
         logPlaybackLayout(a, ticket, 0);
+        a.ui.postDelayed(() -> TvNav.audit(a, "player"), 600);
         surface.listen(
                 new VideoOutput.Listener() {
                     Surface renderSurface;

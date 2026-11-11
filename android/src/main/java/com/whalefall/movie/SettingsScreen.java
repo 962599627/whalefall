@@ -644,6 +644,24 @@ final class SettingsScreen {
                 });
         link("运行日志", "查看本机最近异常与诊断记录", "settings-logs", this::diagnostics);
         link(
+                "焦点审计",
+                "扫描当前页按钮焦点/动效是否齐全，并输出报告",
+                "settings-focus-audit",
+                () -> {
+                    String report =
+                            TvNav.audit(
+                                    a,
+                                    a.body == null ? "settings" : String.valueOf(a.body.getTag()));
+                    new AppDialog.Builder(a)
+                            .setTitle("焦点审计")
+                            .setMessage(report)
+                            .setPositiveButton(
+                                    "复制",
+                                    (d, w) -> ExtraPages.copyText(a, report, "焦点审计"))
+                            .setNegativeButton("关闭", null)
+                            .show();
+                });
+        link(
                 "恢复播放与外观默认设置",
                 "保留来源配置和网盘登录",
                 "settings-reset",
