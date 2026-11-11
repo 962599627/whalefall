@@ -351,18 +351,18 @@ final class SettingsScreen {
  "选择本地图片",
  "JPG、PNG、WebP",
  "wallpaper-file",
- () ->
- a.isTvDevice()
- ? pickWallpaperBuiltin(false)
- : pick(44, "image/*", false));
+ () -> {
+                    if (a.isTvDevice()) pickWallpaperBuiltin(false);
+                    else pick(44, "image/*", false);
+                });
  link(
  "选择视频壁纸",
  "MP4 / WebM / MKV，循环静音，仅首页背景播放",
  "wallpaper-video-file",
- () ->
- a.isTvDevice()
- ? pickWallpaperBuiltin(true)
- : pick(47, "video/*", false));
+ () -> {
+                    if (a.isTvDevice()) pickWallpaperBuiltin(true);
+                    else pick(47, "video/*", false);
+                });
  if (VideoWallpaper.file(a).isFile())
  link(
  "壁纸声音",
