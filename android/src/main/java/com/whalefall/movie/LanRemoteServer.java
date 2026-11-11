@@ -193,8 +193,128 @@ final class LanRemoteServer implements Closeable {
             default:
                 return;
         }
-        a.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, keyCode));
-        a.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, keyCode));
+        injectKey(keyCode);
+    }
+
+    /**
+     * 1.9.64：手机遥控注入按键必须走真实遥控同路径。Activity.dispatchKeyEvent 不会触发
+     * ViewRoot 的焦点导航，所以这里手动补：弹层优先 → Activity 快捷键 → 焦点搜索/点击。
+     */
+    private void injectKey(final int keyCode) {
+        final long now = android.os.SystemClock.uptimeMillis();
+        AppLog.i(
+                "Remote",
+                "key=" + KeyEvent.keyCodeToString(keyCode) + " inject=true");
+        activity.runOnUiThread(
+                () -> {
+                    View focus = activity.getCurrentFocus();
+                    AppLog.i(
+                            "TvKey",
+                            "page="
+                                    + (activity.body == null
+                                            ? "unknown"
+                                            : String.valueOf(activity.body.getTag()))
+                                    + " injected=true focus="
+                                    + (focus == null ? "null" : String.valueOf(focus.getTag()))
+                                    + " key="
+                                    + KeyEvent.keyCodeToString(keyCode));
+                    // 1) 弹层优先：Dialog 有独立窗口，Activity 收不到注入键
+                    android.app.Dialog dialog =
+                            activity.playbackControls != null
+                                            && activity.playbackControls.activeDialog != null
+                                    ? activity.playbackControls.activeDialog
+                                    : activity.appDialog;
+                    if (dialog != null && dialog.isShowing()) {
+                        if (keyCode == KeyEvent.KEYCODE_BACK) {
+                            dialog.dismiss();
+                            return;
+                        }
+                        View dialogFocus = dialog.getWindow().getCurrentFocus();
+                        if (dialogFocus == null) {
+                            View decor = dialog.getWindow().getDecorView();
+                            View found = decor.findFocus();
+                            if (found != null) dialogFocus = found;
+                        }
+                        int direction = -1;
+                        if (keyCode == KeyEvent.KEYCODE_DPAD_UP)
+                            direction = View.FOCUS_UP;
+                        else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN)
+                            direction = View.FOCUS_DOWN;
+                        else if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT)
+                            direction = View.FOCUS_LEFT;
+                        else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT)
+                            direction = View.FOCUS_RIGHT;
+                        if (direction >= 0) {
+                            View next =
+                                    dialogFocus == null
+                                            ? dialog.getWindow().getDecorView().focusSearch(direction)
+                                            : dialogFocus.focusSearch(direction);
+                            if (next != null) next.requestFocus();
+                            return;
+                        }
+                        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                                || keyCode == KeyEvent.KEYCODE_ENTER) {
+                            if (dialogFocus != null && dialogFocus.isClickable())
+                                dialogFocus.performClick();
+                            return;
+                        }
+                        // 其它键（媒体键等）交给 Activity 快捷键
+                    }
+                    if (keyCode == KeyEvent.KEYCODE_BACK) {
+                        activity.onBackPressed();
+                        return;
+                    }
+                    boolean handled =
+                            activity.dispatchKeyEvent(
+                                    new KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode));
+                    activity.dispatchKeyEvent(
+                            new KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode));
+                    if (handled) return;
+                    // 2) 手动焦点导航（真实遥控由 ViewRoot 完成，注入键不会触发）
+                    if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                            || keyCode == KeyEvent.KEYCODE_ENTER) {
+                        View target = activity.getCurrentFocus();
+                        if (target == null)
+                            target =
+                                    TvNav.ensureFocus(
+                                            activity,
+                                            "inject",
+                                            "detail-play",
+                                            "primary",
+                                            "nav-home");
+                        if (target != null) {
+                            if (target.isClickable()) target.performClick();
+                            AppLog.i(
+                                    "TvKey",
+                                    "page=inject focus="
+                                            + String.valueOf(target.getTag())
+                                            + " action=confirm");
+                        }
+                        return;
+                    }
+                    int direction = -1;
+                    if (keyCode == KeyEvent.KEYCODE_DPAD_UP) direction = View.FOCUS_UP;
+                    else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) direction = View.FOCUS_DOWN;
+                    else if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) direction = View.FOCUS_LEFT;
+                    else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) direction = View.FOCUS_RIGHT;
+                    if (direction < 0) return;
+                    View from = activity.getCurrentFocus();
+                    View next = from == null ? null : from.focusSearch(direction);
+                    if (next == null || next == from) {
+                        View root = activity.root;
+                        next = root == null ? null : root.focusSearch(direction);
+                    }
+                    if (next != null && next != from) {
+                        next.requestFocus();
+                        AppLog.i(
+                                "TvKey",
+                                "page=inject focus="
+                                        + String.valueOf(next.getTag())
+                                        + " action=nav");
+                    } else {
+                        AppLog.i("TvKey", "page=inject focus=none action=nav");
+                    }
+                });
     }
 
     private void serve(Socket client) {
