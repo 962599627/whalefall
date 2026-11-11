@@ -359,10 +359,9 @@ final class SettingsScreen {
                 });
  link(
  "选择视频壁纸",
- "MP4 / WebM / MKV，循环静音，仅首页背景播放",
- "wallpaper-video-file",
+ "MP4 / WebM / MKV，循环静音，仅首页背景播放", "wallpaper-video-file",
  () -> {
-                    if (a.isTvDevice()) pickWallpaperBuiltin(true);
+if (a.isTvDevice()) pickWallpaperBuiltin(true);
                     else pick(47, "video/*", false);
                 });
  if (VideoWallpaper.file(a).isFile())

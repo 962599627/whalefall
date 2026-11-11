@@ -1738,11 +1738,22 @@ public final class MainActivity extends Activity {
  if (WALLPAPER_TAG.equals(target.getChildAt(i).getTag())) target.removeViewAt(i);
  if (videoWallpaper == null || videoWallpaper.isReleased()) {
  releaseWallpaper();
+ try {
  videoWallpaper = new VideoWallpaper(this);
  target.addView(
  videoWallpaper,
  Math.min(1, target.getChildCount()),
  new FrameLayout.LayoutParams(-1, -1));
+ } catch (Throwable error) {
+ AppLog.w("Wallpaper", "video create failed; fallback default", error);
+ releaseWallpaper();
+ videoWallpaper = null;
+ prefs.edit()
+ .putBoolean(Prefs.WALLPAPER_VIDEO, false)
+ .putBoolean(Prefs.WALLPAPER_ENABLED, true)
+ .putBoolean("force_builtin_wallpaper", true)
+ .apply();
+ }
  } else if (videoWallpaper.getParent() != target) {
  videoWallpaper.attachTo(target);
  }

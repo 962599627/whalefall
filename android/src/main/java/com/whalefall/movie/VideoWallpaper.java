@@ -55,6 +55,14 @@ final class VideoWallpaper extends FrameLayout {
         dim = new View(host);
         addView(dim, new LayoutParams(-1, -1));
         applyDim(host.prefs.getInt(Prefs.WALLPAPER_DIM, 35));
+        AppLog.i(
+                "Wallpaper",
+                "video start engine="
+                        + (useExo ? "exo" : "mediaplayer")
+                        + " sdk="
+                        + Build.VERSION.SDK_INT
+                        + " path="
+                        + file(host).getAbsolutePath());
         if (useExo) startExo();
         else startMediaPlayer();
         handler.postDelayed(firstFrameTimeout, 3000);
@@ -114,6 +122,9 @@ final class VideoWallpaper extends FrameLayout {
 
     private void startMediaPlayer() {
         surfaceView = new SurfaceView(host);
+        surfaceView.setZOrderMediaOverlay(false);
+        surfaceView.setBackgroundColor(Color.BLACK);
+        surfaceView.getHolder().setFormat(android.graphics.PixelFormat.RGBA_8888);
         surfaceView.getHolder().addCallback(
                 new SurfaceHolder.Callback() {
                     @Override
@@ -122,6 +133,17 @@ final class VideoWallpaper extends FrameLayout {
                         // 1.9.117：Surface 重挂后再启动首帧守候（仅日志）
                         handler.removeCallbacks(firstFrameTimeout);
                         handler.postDelayed(firstFrameTimeout, 3000);
+                        // 1.9.118：已有 MediaPlayer 时只换 Surface，绝不重建（避免多次解码器/EGL 崩溃）
+                        if (mediaPlayer != null) {
+                            try {
+                                mediaPlayer.setSurface(holder.getSurface());
+                                if (!mediaPlayer.isPlaying()) mediaPlayer.start();
+                                AppLog.i("Wallpaper", "video keep engine=mediaplayer surface=reused");
+                            } catch (Throwable error) {
+                                AppLog.w("Wallpaper", "mediaplayer surface reuse failed", error);
+                            }
+                            return;
+                        }
                         try {
                             final String path = file(host).getAbsolutePath();
                             AppLog.i("Wallpaper", "video engine=mediaplayer path=" + path);
@@ -210,6 +232,9 @@ final class VideoWallpaper extends FrameLayout {
         if (released) return;
         released = true;
         handler.removeCallbacks(firstFrameTimeout);
+        AppLog.i(
+                "Wallpaper",
+                "video stop engine=" + (useExo ? "exo" : "mediaplayer") + " reason=destroy");
         try {
             if (player != null) player.setPlayWhenReady(false);
         } catch (Throwable ignored) {
@@ -223,7 +248,17 @@ final class VideoWallpaper extends FrameLayout {
         } catch (Throwable ignored) {
         }
         try {
-            if (mediaPlayer != null) mediaPlayer.release();
+            if (mediaPlayer != null) {
+                // 1.9.118：严格顺序 setSurface(null) → stop → release，避免 EGL/Surface 原生崩溃
+                mediaPlayer.setSurface(null);
+                mediaPlayer.stop();
+                mediaPlayer.release();
+                mediaPlayer = null;
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            if (surfaceView != null) surfaceView.setVisibility(View.GONE);
         } catch (Throwable ignored) {
         }
     }
