@@ -230,6 +230,8 @@ final class MiniDetails {
                             + w
                             + " h="
                             + h
+                            + " mobile="
+                            + (!a.isTvDevice())
                             + " poster=hidden");
         } else if (attempt < 8) {
             a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 100);

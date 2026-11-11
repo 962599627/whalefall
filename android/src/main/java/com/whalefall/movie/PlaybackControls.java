@@ -4,6 +4,7 @@ import android.app.Dialog;
 import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.view.*;
 import android.widget.*;
 import java.util.*;
@@ -26,6 +27,8 @@ final class PlaybackControls {
     /** 当前是否是直播会话（决定图标行文案：下台/频道/线路）。 */
     private boolean liveSession;
     final Map<String, View> buttons = new LinkedHashMap<>();
+    /** 1.9.61：TV 控制条第一个可聚焦按钮（默认焦点）。 */
+    View dockFirst;
     Dialog activeDialog;
     View menuAnchor;
     String lastSubtitle = "";
@@ -342,6 +345,89 @@ final class PlaybackControls {
             scroller.setClipToPadding(false);
             scroller.addView(row);
             dockOverlay.addView(scroller, new LinearLayout.LayoutParams(-1, a.dp(56)));
+        }
+        wireTvDockFocus(row);
+    }
+
+    /** 1.9.61：TV 底部控制条按钮全部可聚焦 + 可见焦点描边 + 左右/上下焦点链。 */
+    private void wireTvDockFocus(LinearLayout row) {
+        if (a.isTvDevice()) {
+            List<View> focusable = new ArrayList<>();
+            for (int i = 0; i < row.getChildCount(); i++) {
+                View child = row.getChildAt(i);
+                if (!child.isClickable()) continue;
+                child.setFocusable(true);
+                child.setFocusableInTouchMode(true);
+                child.setEnabled(true);
+                if (child.getId() == View.NO_ID) child.setId(UiCompat.generateViewId());
+                child.setOnFocusChangeListener(
+                        (v, focused) -> {
+                            GradientDrawable ring = new GradientDrawable();
+                            ring.setColor(focused ? 0x33ffffff : 0x00000000);
+                            ring.setCornerRadius(a.dp(10));
+                            if (focused) ring.setStroke(a.dp(2), 0xffffffff);
+                            v.setBackground(ring);
+                            v.animate()
+                                    .scaleX(focused ? 1.03f : 1f)
+                                    .scaleY(focused ? 1.03f : 1f)
+                                    .setDuration(UiTokens.MOTION_FAST)
+                                    .start();
+                            AppLog.i(
+                                    "TvKey",
+                                    "page=player focus="
+                                            + (v.getTag() == null
+                                                    ? "dock"
+                                                    : String.valueOf(v.getTag()))
+                                            + " action=nav");
+                        });
+                child.setOnKeyListener(
+                        (v, keyCode, event) -> {
+                            if (event.getAction() == KeyEvent.ACTION_DOWN
+                                    && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                                            || keyCode == KeyEvent.KEYCODE_ENTER))
+                                AppLog.i(
+                                        "TvKey",
+                                        "page=player focus="
+                                                + String.valueOf(v.getTag())
+                                                + " action=confirm");
+                            return false;
+                        });
+                focusable.add(child);
+            }
+            for (int i = 0; i < focusable.size(); i++) {
+                View cell = focusable.get(i);
+                if (i > 0) cell.setNextFocusLeftId(focusable.get(i - 1).getId());
+                if (i + 1 < focusable.size())
+                    cell.setNextFocusRightId(focusable.get(i + 1).getId());
+            }
+            timeline.setId(UiCompat.generateViewId());
+            if (!focusable.isEmpty()) {
+                timeline.setNextFocusDownId(focusable.get(0).getId());
+                if (a.playerChrome != null && a.playerChrome.backBtn != null) {
+                    if (a.playerChrome.backBtn.getId() == View.NO_ID)
+                        a.playerChrome.backBtn.setId(UiCompat.generateViewId());
+                    timeline.setNextFocusUpId(a.playerChrome.backBtn.getId());
+                }
+                for (View cell : focusable) cell.setNextFocusUpId(timeline.getId());
+                if (a.playerChrome != null) {
+                    View back = a.playerChrome.backBtn;
+                    View more = a.playerChrome.moreBtn;
+                    if (back != null && more != null) {
+                        if (back.getId() == View.NO_ID) back.setId(UiCompat.generateViewId());
+                        if (more.getId() == View.NO_ID) more.setId(UiCompat.generateViewId());
+                        back.setNextFocusRightId(more.getId());
+                        more.setNextFocusLeftId(back.getId());
+                        View first = focusable.get(0);
+                        if (first.getTag() != null)
+                            back.setTag("top-back");
+                        more.setTag("top-more");
+                        back.setNextFocusDownId(first.getId());
+                        more.setNextFocusDownId(first.getId());
+                        first.setNextFocusUpId(back.getId());
+                    }
+                }
+                dockFirst = focusable.get(0);
+            }
         }
     }
 

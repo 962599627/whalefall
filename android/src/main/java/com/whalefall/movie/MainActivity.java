@@ -1953,7 +1953,7 @@ public final class MainActivity extends Activity {
         if (current != null && current.player) {
             if (!miniMode && playbackControls != null) {
                 if (controlsVisible) showControls(false);
-                else if (isLive() || !isTvDevice()) leavePlayback();
+                else if (isLive()) leavePlayback();
                 else minimizePlayback();
                 return;
             }

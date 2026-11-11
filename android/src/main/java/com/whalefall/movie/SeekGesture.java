@@ -5,13 +5,15 @@ package com.whalefall.movie;
  * controls.
  */
 final class SeekGesture {
-    static final int TAP_MS = 15000, HOLD_DELAY_MS = 500;
-    static final int BASE_SPEED = 30, ACCELERATION = 30, MAX_SPEED = 240;
-    static final int RAMP_MS = (MAX_SPEED - BASE_SPEED) * 1000 / ACCELERATION;
+    static final int TAP_MS = 10000, HOLD_DELAY_MS = 500;
+    static final int STEP_START_MS = 1000, STEP_MAX_MS = 30000, STEP_INTERVAL_MS = 500;
     static final int MODE_NONE = 0, MODE_SEEK = 1, MODE_BRIGHTNESS = 2, MODE_VOLUME = 3;
     boolean active;
     int direction, target, duration, initialTarget;
     long started, updated;
+    /** 1.9.61：长按加速步长（1s→2s→4s→8s…上限 30s）。 */
+    int stepMs = STEP_START_MS;
+    long nextStepAt;
 
     static int classifyDrag(float dx, float dy, float startX, float width, float touchSlop) {
         if (Math.abs(dx) < touchSlop && Math.abs(dy) < touchSlop) return MODE_NONE;
@@ -40,22 +42,20 @@ final class SeekGesture {
         this.duration = Math.max(0, duration);
         initialTarget = target = bound((long) position + this.direction * TAP_MS);
         started = updated = now;
+        stepMs = STEP_START_MS;
+        nextStepAt = now + HOLD_DELAY_MS;
         active = duration > 0;
     }
 
     void advance(long now) {
-        if (!active || now <= updated) return;
-        long elapsed = Math.max(0, now - started - HOLD_DELAY_MS);
-        double ramp = Math.min(elapsed, RAMP_MS);
-        // Integrate a linear speed ramp from the initial preview position. Absolute
-        // elapsed time avoids dependence on remote repeat rate or callback jitter.
-        double distance =
-                BASE_SPEED * ramp
-                        + ACCELERATION * ramp * ramp / 2000.0
-                        + MAX_SPEED * (double) Math.max(0, elapsed - RAMP_MS);
-        long delta = Math.min(duration, Math.round(distance));
-        target = bound((long) initialTarget + direction * delta);
-        updated = now;
+        if (!active || now < nextStepAt) return;
+        // 长按连续加速：每 STEP_INTERVAL 累加当前步长，步长翻倍到 30s 上限。
+        while (active && now >= nextStepAt) {
+            target = bound((long) target + direction * stepMs);
+            stepMs = Math.min(STEP_MAX_MS, stepMs * 2);
+            nextStepAt += STEP_INTERVAL_MS;
+            updated = now;
+        }
     }
 
     boolean accelerated(long now) {
@@ -64,8 +64,7 @@ final class SeekGesture {
 
     int speed(long now) {
         if (!active || now - started <= HOLD_DELAY_MS) return 0;
-        long ramp = Math.min(RAMP_MS, Math.max(0, now - started - HOLD_DELAY_MS));
-        return BASE_SPEED + (int) (ACCELERATION * ramp / 1000);
+        return stepMs;
     }
 
     int bound(long value) {

@@ -111,6 +111,7 @@ final class PlayerChrome {
                         UiTokens.PLAYER_BTN_STROKE,
                         a::leavePlayback);
         backBtn.setTag("player-back");
+        styleTopFocus(backBtn, "top-back");
         titleRow.addView(backBtn, new LinearLayout.LayoutParams(a.dp(44), a.dp(44)));
 
         LinearLayout titleCol = a.vertical();
@@ -198,6 +199,7 @@ final class PlayerChrome {
                             }
                         });
         topRight.addView(moreBtn, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
+        styleTopFocus(moreBtn, "top-more");
         overlay.addView(
                 topRight, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT));
         topActions = topRight;
@@ -457,6 +459,40 @@ final class PlayerChrome {
                 () -> {
                     layoutPending = false;
                     if (a.playerChrome == this) relayout();
+                });
+    }
+
+    /** 1.9.61：TV 顶部返回/更多可聚焦 + 可见焦点描边 + 按键日志。 */
+    private void styleTopFocus(final ImageButton button, final String tag) {
+        button.setTag(tag);
+        if (!a.isTvDevice()) return;
+        button.setFocusable(true);
+        button.setFocusableInTouchMode(true);
+        button.setOnFocusChangeListener(
+                (v, focused) -> {
+                    GradientDrawable ring = new GradientDrawable();
+                    ring.setColor(focused ? 0x33ffffff : 0x00000000);
+                    ring.setCornerRadius(a.dp(24));
+                    if (focused) ring.setStroke(a.dp(2), 0xffffffff);
+                    v.setBackground(ring);
+                    v.animate()
+                            .scaleX(focused ? 1.08f : 1f)
+                            .scaleY(focused ? 1.08f : 1f)
+                            .setDuration(UiTokens.MOTION_FAST)
+                            .start();
+                    AppLog.i(
+                            "TvKey",
+                            "page=player focus=" + tag + " action=nav");
+                });
+        button.setOnKeyListener(
+                (v, keyCode, event) -> {
+                    if (event.getAction() == android.view.KeyEvent.ACTION_DOWN
+                            && (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+                                    || keyCode == android.view.KeyEvent.KEYCODE_ENTER))
+                        AppLog.i(
+                                "TvKey",
+                                "page=player focus=" + tag + " action=confirm");
+                    return false;
                 });
     }
 

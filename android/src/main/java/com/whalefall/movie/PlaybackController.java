@@ -854,6 +854,11 @@ final class PlaybackController {
         if (!a.isTvDevice()) {
             a.applyMobileSystemBars(false);
             a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
+            // 1.9.62：手机返回详情与 TV 一致：进入左上角小窗，而不是释放播放器回海报
+            if (!a.isLive() && !a.miniMode && a.playbackControls != null && a.player != null) {
+                minimizePlayback(a);
+                return;
+            }
         }
         if (!a.back.isEmpty()) {
             releasePlayer(a);
@@ -888,6 +893,16 @@ final class PlaybackController {
             a.root.addView(layer, new FrameLayout.LayoutParams(-1, -1));
         }
         if (layer != null) layer.bringToFront();
+        // 1.9.62：手机小窗确保详情回到顶部，hero 区域可见用于视频覆盖
+        if (a.scroll != null) a.scroll.scrollTo(0, 0);
+        AppLog.i(
+                "Mini",
+                "enter mobile="
+                        + (!a.isTvDevice())
+                        + " mini="
+                        + a.miniMode
+                        + " player="
+                        + (a.player != null));
         // 1.9.58：由 MiniDetails 先测 hero 矩形再隐藏，保证小窗与海报区域一致
         a.miniDetails = new MiniDetails(a);
         if (!overDetail && a.current != null) a.restore(a.current);
@@ -1586,7 +1601,8 @@ final class PlaybackController {
         if (visible) {
             if (changed && a.playbackControls != null && a.isTvDevice()) {
                 // 1.9.54：控制条默认焦点放「下一集」而不是进度条，方向键才能在按钮间移动
-                View first = a.playbackControls.buttons.get("next-episode");
+                View first = a.playbackControls.dockFirst;
+                if (first == null) first = a.playbackControls.buttons.get("next-episode");
                 if (first == null) first = a.playbackControls.timeline;
                 if (first != null) first.requestFocus();
                 AppLog.i(
@@ -2010,6 +2026,18 @@ final class PlaybackController {
                         || a.playbackControls != null && focus == a.playbackControls.timeline)) {
             int direction = key == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1;
             if (down) {
+                if (event.getRepeatCount() > 0 && a.seekGesture.active) {
+                    // 1.9.61：按住方向键连续拖动，系统重复键只加速不抖动
+                    a.seekGesture.advance(android.os.SystemClock.uptimeMillis());
+                    previewSeek(a);
+                    AppLog.i(
+                            "TvKey",
+                            "page=player focus="
+                                    + (focus == null ? "null" : String.valueOf(focus.getTag()))
+                                    + " action=longseek step="
+                                    + a.seekGesture.stepMs);
+                    return true;
+                }
                 if (!a.seekGesture.active && event.getRepeatCount() == 0
                         || a.seekGesture.active
                                 && a.seekGesture.direction != direction
