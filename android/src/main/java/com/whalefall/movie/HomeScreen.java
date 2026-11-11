@@ -2258,17 +2258,8 @@ final class HomeScreen {
     }
 
     void outline(View view, boolean focused, int radius, int color) {
-        FocusMotion.style(
-                a,
-                view,
-                focused,
-                color,
-                color,
-                radius,
-                MainActivity.WHITE,
-                MainActivity.WHITE,
-                true,
-                view instanceof TextView ? 1.02f : 1.035f);
+        // 1.9.72 设计规范：卡片=内环+底条，chip/按钮=10% 粉底+内环；不缩放/不 unclip/不 elevation
+        TvNav.tagFocus(a, view, focused, radius);
     }
 
     void single(TextView text) {

@@ -79,67 +79,168 @@ final class TvNav {
             closeView.setNextFocusUpId(cells.get(cells.size() - 1).getId());
     }
 
-    /** 焦点态：玻璃底 → 粉色 18% 叠加 + 2dp ACCENT 亮边 + 1.03× 放大（140ms）；REDUCED 只变色。 */
+    /** 1.9.72 设计规范：按钮焦点=10% 粉底 + 2dp ACCENT_SOFT 内环；不缩放、不溢出。 */
     static void focusRing(final MainActivity a, final View view, final int radiusDp) {
+        install(a, view, radiusDp, STYLE_BUTTON);
+    }
+
+    /** 设置条目/弹层行：10% 粉底 + 左侧 3dp ACCENT 竖条，不用整圈描边。 */
+    static void rowFocus(final MainActivity a, final View view, final int radiusDp) {
+        install(a, view, radiusDp, STYLE_ROW);
+    }
+
+    /** 按 tag 自动选择卡片/按钮/行样式（首页 outline 兼容入口）。 */
+    static void tagFocus(MainActivity a, View view, boolean focused, int radiusDp) {
+        String tag = view == null || !(view.getTag() instanceof String) ? "" : (String) view.getTag();
+        int style =
+                tag.startsWith("home-video:")
+                                || tag.startsWith("home-history:")
+                                || tag.startsWith("home-tonight")
+                                || tag.startsWith("card:")
+                        ? STYLE_CARD
+                        : STYLE_BUTTON;
+        install(a, view, radiusDp, style);
+        applyFocus(a, view, focused, style, radiusDp);
+    }
+
+    /** 卡片：2dp ACCENT_SOFT 内环 + 3dp ACCENT 底部高亮条，不缩放。 */
+    static void cardFocus(final MainActivity a, final View view, boolean focused, int radiusDp) {
+        install(a, view, radiusDp, STYLE_CARD);
+        applyFocus(a, view, focused, STYLE_CARD, radiusDp);
+    }
+
+    static final int STYLE_BUTTON = 0, STYLE_ROW = 1, STYLE_CARD = 2;
+
+    private static void install(
+            final MainActivity a, final View view, final int radiusDp, final int style) {
         if (a == null || view == null) return;
         markRing(view);
         view.setFocusable(true);
         view.setFocusableInTouchMode(true);
         if (view.getId() == View.NO_ID) view.setId(View.generateViewId());
-        final int bgKey = BG_KEY;
-        if (view.getTag(bgKey) == null)
-            view.setTag(bgKey, view.getBackground());
-        final int textKey = TEXT_KEY;
-        if (view.getTag(textKey) == null && view instanceof android.widget.TextView)
-            view.setTag(textKey, ((android.widget.TextView) view).getCurrentTextColor());
+        if (view.getTag(BG_KEY) == null) view.setTag(BG_KEY, view.getBackground());
+        if (view.getTag(TEXT_KEY) == null && view instanceof android.widget.TextView)
+            view.setTag(TEXT_KEY, ((android.widget.TextView) view).getCurrentTextColor());
         view.setOnFocusChangeListener(
-                (v, focused) -> {
-                    long duration = a.reduced ? 0 : 140;
-                    if (!focused) {
-                        Object originalBg = v.getTag(BG_KEY);
-                        v.setBackground(
-                                originalBg instanceof android.graphics.drawable.Drawable
-                                        ? (android.graphics.drawable.Drawable) originalBg
-                                        : null);
-                        if (v instanceof android.widget.TextView) {
-                            Object original = v.getTag(TEXT_KEY);
-                            if (original instanceof Integer)
-                                ((android.widget.TextView) v)
-                                        .setTextColor((Integer) original);
-                        }
-                    } else {
-                        android.graphics.drawable.GradientDrawable ring =
-                                new android.graphics.drawable.GradientDrawable();
-                        ring.setColor(0x33ff6f9c);
-                        ring.setCornerRadius(a.dp(radiusDp));
-                        ring.setStroke(a.dp(2), 0xff8fb1ff);
-                        v.setBackground(ring);
-                        if (v instanceof android.widget.TextView)
-                            ((android.widget.TextView) v).setTextColor(0xffffd0de);
-                    }
-                    if (a.reduced) {
-                        v.setScaleX(1f);
-                        v.setScaleY(1f);
-                    } else {
-                        v.animate()
-                                .scaleX(focused ? 1.03f : 1f)
-                                .scaleY(focused ? 1.03f : 1f)
-                                .setDuration(duration)
-                                .start();
-                    }
-                    AppLog.i(
-                            "TvNav",
-                            "focus="
-                                    + String.valueOf(v.getTag())
-                                    + " style=ring+scale"
-                                    + " on="
-                                    + focused);
-                });
+                (v, focused) -> applyFocus(a, v, focused, style, radiusDp));
+        applyFocus(a, view, view.hasFocus(), style, radiusDp);
+    }
+
+    private static void applyFocus(
+            MainActivity a, View view, boolean focused, int style, int radiusDp) {
+        android.graphics.drawable.Drawable original =
+                (android.graphics.drawable.Drawable) view.getTag(FG_KEY);
+        if (focused) {
+            if (view.getTag(FG_KEY) == null)
+                view.setTag(FG_KEY, view.getForeground());
+            android.graphics.drawable.Drawable d =
+                    new FocusDrawable(a, radiusDp, style);
+            if (android.os.Build.VERSION.SDK_INT >= 23) {
+                d.setAlpha(255);
+                view.setForeground(d);
+            }
+            if (view instanceof android.widget.TextView) {
+                android.widget.TextView text = (android.widget.TextView) view;
+                text.setTextColor(
+                        style == STYLE_ROW || style == STYLE_BUTTON
+                                ? 0xffffd0de
+                                : text.getCurrentTextColor());
+            }
+        } else if (view.getTag(FG_KEY) != null) {
+            if (android.os.Build.VERSION.SDK_INT >= 23)
+                view.setForeground((android.graphics.drawable.Drawable) view.getTag(FG_KEY));
+            view.setTag(FG_KEY, null);
+            if (view instanceof android.widget.TextView) {
+                Object originalColor = view.getTag(TEXT_KEY);
+                if (originalColor instanceof Integer)
+                    ((android.widget.TextView) view).setTextColor((Integer) originalColor);
+            }
+        }
+        view.setScaleX(1f);
+        view.setScaleY(1f);
+        AppLog.i(
+                "TvNav",
+                "focus=" + String.valueOf(view.getTag()) + " style=ring+scale on=" + focused);
+    }
+
+    /** 焦点环 overlay：内嵌式，画在内容之上；卡片额外画底部高亮条。 */
+    private static final class FocusDrawable extends android.graphics.drawable.Drawable {
+        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final int radiusPx, style;
+        private final float inset, barInsetLR, barBottom;
+
+        FocusDrawable(MainActivity a, int radiusDp, int style) {
+            this.radiusPx = a.dp(Math.max(0, radiusDp));
+            this.style = style;
+            this.inset = a.dp(1);
+            this.barInsetLR = a.dp(8);
+            this.barBottom = a.dp(6);
+        }
+
+        @Override
+        public void draw(android.graphics.Canvas canvas) {
+            android.graphics.Rect b = getBounds();
+            float r = Math.max(0, radiusPx);
+            paint.setStyle(android.graphics.Paint.Style.FILL);
+            if (style != STYLE_CARD) {
+                paint.setColor(0x1AFF8FB1);
+                canvas.drawRoundRect(b.left, b.top, b.right, b.bottom, r, r, paint);
+            }
+            android.graphics.RectF ring =
+                    new android.graphics.RectF(
+                            b.left + inset, b.top + inset, b.right - inset, b.bottom - inset);
+            if (style != STYLE_ROW) {
+                paint.setStyle(android.graphics.Paint.Style.STROKE);
+                paint.setStrokeWidth(inset * 2);
+                paint.setColor(0xFFFFB3C8);
+                canvas.drawRoundRect(ring, Math.max(0, r - inset), Math.max(0, r - inset), paint);
+            }
+            if (style == STYLE_ROW) {
+                paint.setStyle(android.graphics.Paint.Style.FILL);
+                paint.setColor(0xFFFF8FB1);
+                canvas.drawRoundRect(
+                        b.left,
+                        b.top + inset * 6,
+                        b.left + inset * 3,
+                        b.bottom - inset * 6,
+                        inset * 1.5f,
+                        inset * 1.5f,
+                        paint);
+            } else if (style == STYLE_CARD) {
+                paint.setStyle(android.graphics.Paint.Style.FILL);
+                paint.setColor(0xFFFF8FB1);
+                canvas.drawRoundRect(
+                        b.left + barInsetLR,
+                        b.bottom - barBottom - inset * 3,
+                        b.right - barInsetLR,
+                        b.bottom - barBottom,
+                        inset * 1.5f,
+                        inset * 1.5f,
+                        paint);
+            }
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            paint.setAlpha(alpha);
+            invalidateSelf();
+        }
+
+        @Override
+        public void setColorFilter(android.graphics.ColorFilter filter) {
+            paint.setColorFilter(filter);
+        }
+
+        @Override
+        public int getOpacity() {
+            return android.graphics.PixelFormat.TRANSLUCENT;
+        }
     }
 
     private static final int BG_KEY = 0x7f0f9e01;
     private static final int TEXT_KEY = 0x7f0f9e02;
     private static final int RING_KEY = 0x7f0f9e03;
+    private static final int FG_KEY = 0x7f0f9e04;
 
     /** 标记该控件已有焦点动效（审计用）。 */
     static void markRing(View view) {
@@ -254,7 +355,13 @@ final class TvNav {
         if (view.isClickable() && view.isShown()) {
             view.setFocusable(true);
             view.setFocusableInTouchMode(true);
-            focusRing(a, view, 12);
+            String tag =
+                    view.getTag() instanceof String ? (String) view.getTag() : "";
+            if (tag.startsWith("settings-") || tag.startsWith("dialog-option")) rowFocus(a, view, 10);
+            else if (tag.startsWith("home-video:")
+                    || tag.startsWith("home-history:")
+                    || tag.startsWith("home-tonight")) cardFocus(a, view, view.hasFocus(), 12);
+            else focusRing(a, view, 12);
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
@@ -384,7 +491,11 @@ final class TvNav {
                 && !view.isFocusable()
                 && !(view instanceof android.widget.ScrollView)
                 && !(view instanceof android.widget.HorizontalScrollView)) {
-            focusRing(a, view, radiusDp);
+            String tag =
+                    view.getTag() instanceof String ? (String) view.getTag() : "";
+            if (tag.startsWith("settings-") || tag.startsWith("dialog-option"))
+                rowFocus(a, view, 10);
+            else focusRing(a, view, radiusDp);
             fixed++;
         } else if (view.isFocusable() && !view.isClickable() && view instanceof ViewGroup) {
             view.setFocusable(false);

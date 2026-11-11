@@ -32,32 +32,9 @@ final class FocusMotion {
         return false;
     }
 
+    /** 1.9.72 设计规范：禁止 unclipAncestors 造成焦点溢出/盖邻居；保留空实现兼容旧调用。 */
     static void unclipAncestors(View view) {
-        if (view == null) return;
-        if (view.getContext() instanceof MainActivity
-                && !((MainActivity) view.getContext()).isTvDevice()) {
-            return;
-        }
-        ViewParent p = view.getParent();
-        while (p instanceof ViewGroup) {
-            ViewGroup g = (ViewGroup) p;
-            Object tag = g.getTag();
-            if (g instanceof android.widget.ScrollView
-                    || g instanceof android.widget.HorizontalScrollView
-                    || g.getClipToOutline()
-                    || "scroll-viewport-clip".equals(tag)
-                    || "player-dock".equals(tag)
-                    || "app-dialog".equals(tag)
-                    || "source-picker".equals(tag)
-                    || "account-panel".equals(tag)) {
-                break;
-            }
-            if (!hasDirectScrollChild(g)) {
-                if (g.getClipChildren()) g.setClipChildren(false);
-                if (g.getClipToPadding()) g.setClipToPadding(false);
-            }
-            p = g.getParent();
-        }
+        // no-op：焦点环改为内嵌 overlay，父容器保持 clipChildren=true
     }
 
     static State state(View view) {
@@ -120,7 +97,7 @@ final class FocusMotion {
         state.idleText = idleText;
         state.activeText = activeText;
         state.border = border;
-        state.gain = gain;
+        state.gain = 1f; // 1.9.72：焦点不缩放（设计规范禁止 scale/溢出）
         state.radiusPx = a.dp(radius);
         state.background.setCornerRadius(state.radiusPx);
         if (view.getBackground() != state.background) view.setBackground(state.background);
