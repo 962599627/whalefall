@@ -27,3 +27,12 @@
 - [ ] architect 复审
 - [ ] qa 验收
 - [ ] 询问用户打包
+
+## 遥控焦点硬规则（1.9.72 起）
+- 任何新增可点击控件（按钮/卡片/条目/弹层格子/图标）必须同时具备：
+  1. `focusable/focusableInTouchMode`；
+  2. 统一焦点样式 `TvNav.focusRing`（或 `FocusMotion.style` 且 markRing）；
+  3. 明确的方向可达性（显式 nextFocus 或几何搜索可命中）；
+- 禁止只做点击不做焦点；禁止 scale>1.02 / 外发光 / 描边出界 / 盖相邻元素；
+- 验收必须提供 `I/TvFocusAudit page=… clickable=N focusable=N rings=N missing=[]` 日志（missing 为空）；
+- 缺少焦点态的改动不得进入打包门禁。
