@@ -755,12 +755,25 @@ public final class MainActivity extends Activity {
  java.io.StringWriter writer = new java.io.StringWriter();
  error.printStackTrace(new java.io.PrintWriter(writer));
  sb.append(writer).append("\n--- recent app log ---\n").append(AppLog.dump());
+ // 1.9.100：内部崩溃日志轮转，最多保留 crash-1..3 + crash-last
+ int crashedRemoved = rotateCrashLogs(dir);
+ AppLog.i("CrashLog", "rotate keep=3 removed=" + crashedRemoved);
  java.io.FileOutputStream out =
  new java.io.FileOutputStream(new java.io.File(dir, "crash-last.txt"));
  try {
  out.write(sb.toString().getBytes("UTF-8"));
  } finally {
  out.close();
+ }
+ try {
+ java.io.FileOutputStream copy =
+ new java.io.FileOutputStream(new java.io.File(dir, "crash-1.txt"));
+ try {
+ copy.write(sb.toString().getBytes("UTF-8"));
+ } finally {
+ copy.close();
+ }
+ } catch (Throwable ignored) {
  }
  // 1.9.84：同时写外部存储，用户可直接拷出 /sdcard/Download/DSH-Go/鲸落/crash-last.txt
  writeExternalCrashLog(sb.toString());
@@ -793,6 +806,51 @@ public final class MainActivity extends Activity {
  }
  } catch (Throwable ignored) {
  }
+ }
+
+ /** 1.9.100：crash-last → crash-1 → crash-2 → crash-3，删除最旧。 */
+ private static int rotateCrashLogs(java.io.File dir) {
+ int removed = 0;
+ try {
+ java.io.File c1 = new java.io.File(dir, "crash-1.txt");
+ java.io.File c2 = new java.io.File(dir, "crash-2.txt");
+ java.io.File c3 = new java.io.File(dir, "crash-3.txt");
+ java.io.File last = new java.io.File(dir, "crash-last.txt");
+ if (c3.exists() && !c3.delete()) removed++;
+ if (c2.exists()) c2.renameTo(c3);
+ if (c1.exists()) c1.renameTo(c2);
+ if (last.exists()) last.renameTo(c1);
+ } catch (Throwable ignored) {
+ }
+ return removed;
+ }
+
+ /** 1.9.100：启动时清理 7 天前的崩溃日志（内部 + 外部）。 */
+ void cleanupOldCrashLogs() {
+ long cutoff = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000;
+ int removed = cleanCrashDir(getFilesDir(), cutoff);
+ try {
+ java.io.File external = android.os.Environment.getExternalStorageDirectory();
+ if (external != null)
+ removed += cleanCrashDir(new java.io.File(external, "Download/DSH-Go/鲸落"), cutoff);
+ } catch (Throwable ignored) {
+ }
+ if (removed > 0) AppLog.i("CrashLog", "cleanup old=7d removed=" + removed);
+ }
+
+ private static int cleanCrashDir(java.io.File dir, long cutoff) {
+ int removed = 0;
+ try {
+ java.io.File[] files = dir == null ? null : dir.listFiles();
+ if (files == null) return 0;
+ for (java.io.File f : files) {
+ String name = f.getName();
+ if (!name.startsWith("crash-") || !name.endsWith(".txt")) continue;
+ if (f.lastModified() < cutoff && f.delete()) removed++;
+ }
+ } catch (Throwable ignored) {
+ }
+ return removed;
  }
 
  /** Opens a list card without leaving an invisible redirect page in the back stack. */

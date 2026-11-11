@@ -1316,7 +1316,7 @@ final class HomeScreen {
  AppLog.i(
  "FilterFocus",
  "chip="
- + dimKey
+ + dimKeyF
  + " dir="
  + (dir == View.FOCUS_LEFT
  ? "left"
