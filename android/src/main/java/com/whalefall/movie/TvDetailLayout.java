@@ -95,6 +95,17 @@ final class TvDetailLayout {
         row.addView(rightScroll, new LinearLayout.LayoutParams(rightW, -1));
         a.scroll = rightScroll;
         a.body = rightCol;
+        // 1.9.62：容器不抢焦点，只让子项可聚焦
+        for (View container :
+                new View[] {
+                    topRow, content, row, leftCol, rightCol, lineScroll, lineList, rightScroll
+                }) {
+            if (container == null) continue;
+            container.setFocusable(false);
+            if (container instanceof ViewGroup)
+                ((ViewGroup) container)
+                        .setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        }
 
         // ---------------- 左栏：16:9 预览卡 + 片源·线路 ----------------
         int previewH = Math.round(leftW * 9f / 16f);
@@ -358,6 +369,8 @@ final class TvDetailLayout {
                     buildActions(
                             a, actionsWrap, s, v, remembered, play, rebuildEpisodes[0], page);
                     DetailScreen.populateTvRelatedSeasons(a, s, v, seasonsWrap);
+                    // 1.9.62：内容就绪后建立完整显式 nextFocus 链（不依赖几何默认）
+                    wireDetailFocusChain(a);
 
                     // 焦点恢复：优先离开前 tag（线路/选集/操作/播放），否则主播放
                     View saved = null;
@@ -898,17 +911,147 @@ final class TvDetailLayout {
         return director == null || director.trim().isEmpty() ? "" : "导演：" + director.trim();
     }
 
-    /** 1.9.60：首焦点顺序：播放 → 线路第一项 → 收藏 → 返回；禁止返回优先。 */
+    /** 1.9.62：详情页完整显式 nextFocus 链（播放/收藏/返回/线路/选集/简介/复制/全部剧集）。 */
+    static void wireDetailFocusChain(MainActivity a) {
+        if (a == null || a.root == null) return;
+        View back = a.root.findViewWithTag("detail-back");
+        View fav = a.root.findViewWithTag("detail-favorite");
+        View play = a.root.findViewWithTag("detail-play");
+        if (play == null) play = a.root.findViewWithTag("detail-play-big");
+        java.util.List<View> lines = collectByPrefix(a.root, "detail-line:", 64);
+        java.util.List<View> episodes = collectByPrefix(a.root, "episode:", 512);
+        View synopsis = a.root.findViewWithTag("synopsis-toggle");
+        View copy = a.root.findViewWithTag("detail-act-copy");
+        View allEpisodes = a.root.findViewWithTag("episodes-all");
+        java.util.List<View> chain = new java.util.ArrayList<>();
+        for (View v : new View[] {back, fav, play, synopsis, copy, allEpisodes}) if (v != null) chain.add(v);
+        chain.addAll(lines);
+        chain.addAll(episodes);
+        for (View v : chain) if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
+
+        if (play != null) {
+            if (fav != null) play.setNextFocusUpId(fav.getId());
+            if (!lines.isEmpty()) {
+                play.setNextFocusDownId(lines.get(0).getId());
+                play.setNextFocusLeftId(lines.get(0).getId());
+            }
+            if (fav != null) play.setNextFocusRightId(fav.getId());
+        }
+        if (fav != null) {
+            if (back != null) fav.setNextFocusLeftId(back.getId());
+            if (play != null) fav.setNextFocusDownId(play.getId());
+            View right = synopsis != null ? synopsis : copy;
+            if (right != null) fav.setNextFocusRightId(right.getId());
+        }
+        if (back != null) {
+            if (fav != null) back.setNextFocusRightId(fav.getId());
+            if (play != null) back.setNextFocusDownId(play.getId());
+        }
+        for (int i = 0; i < lines.size(); i++) {
+            View line = lines.get(i);
+            if (play != null) line.setNextFocusUpId(play.getId());
+            if (i + 1 < lines.size()) line.setNextFocusDownId(lines.get(i + 1).getId());
+            else if (!episodes.isEmpty()) line.setNextFocusDownId(episodes.get(0).getId());
+            if (!episodes.isEmpty()) line.setNextFocusRightId(episodes.get(0).getId());
+            if (i == 0 && back != null) line.setNextFocusUpId(play == null ? back.getId() : play.getId());
+        }
+        if (!lines.isEmpty() && !episodes.isEmpty()) {
+            episodes.get(0).setNextFocusUpId(lines.get(lines.size() - 1).getId());
+        }
+        for (int i = 0; i < episodes.size(); i++) {
+            View ep = episodes.get(i);
+            if (i - 1 >= 0) ep.setNextFocusLeftId(episodes.get(i - 1).getId());
+            if (i + 1 < episodes.size()) ep.setNextFocusRightId(episodes.get(i + 1).getId());
+            // 2 列选集：上下按行移动
+            if (i - 2 >= 0) ep.setNextFocusUpId(episodes.get(i - 2).getId());
+            if (i + 2 < episodes.size()) ep.setNextFocusDownId(episodes.get(i + 2).getId());
+            else if (allEpisodes != null) ep.setNextFocusDownId(allEpisodes.getId());
+        }
+        if (synopsis != null) {
+            if (copy != null) synopsis.setNextFocusDownId(copy.getId());
+            else if (play != null) synopsis.setNextFocusDownId(play.getId());
+            if (fav != null) synopsis.setNextFocusLeftId(fav.getId());
+        }
+        if (copy != null) {
+            if (allEpisodes != null) copy.setNextFocusDownId(allEpisodes.getId());
+            if (synopsis != null) copy.setNextFocusUpId(synopsis.getId());
+        }
+        if (allEpisodes != null) {
+            if (copy != null) allEpisodes.setNextFocusUpId(copy.getId());
+            else if (synopsis != null) allEpisodes.setNextFocusUpId(synopsis.getId());
+        }
+        AppLog.i(
+                "TvFocus",
+                "chain play="
+                        + (play != null)
+                        + " lines="
+                        + lines.size()
+                        + " episodes="
+                        + episodes.size()
+                        + " fav="
+                        + (fav != null)
+                        + " back="
+                        + (back != null));
+        // 按键时打印链路方向，便于线上核对
+        for (final View v : chain) {
+            v.setOnKeyListener(
+                    (view, keyCode, event) -> {
+                        if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
+                        int direction = View.FOCUS_DOWN;
+                        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP)
+                            direction = View.FOCUS_UP;
+                        else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT)
+                            direction = View.FOCUS_LEFT;
+                        else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT)
+                            direction = View.FOCUS_RIGHT;
+                        else if (keyCode != android.view.KeyEvent.KEYCODE_DPAD_DOWN) return false;
+                        View next = view.focusSearch(direction);
+                        AppLog.i(
+                                "TvFocus",
+                                "chain from="
+                                        + String.valueOf(view.getTag())
+                                        + " key="
+                                        + android.view.KeyEvent.keyCodeToString(keyCode)
+                                        + " to="
+                                        + (next == null
+                                                ? "null"
+                                                : String.valueOf(next.getTag())));
+                        return false;
+                    });
+        }
+    }
+
+    private static java.util.List<View> collectByPrefix(View view, String prefix, int limit) {
+        java.util.List<View> out = new java.util.ArrayList<>();
+        collectByPrefix(view, prefix, limit, out);
+        return out;
+    }
+
+    private static void collectByPrefix(
+            View view, String prefix, int limit, java.util.List<View> out) {
+        if (view == null || out.size() >= limit) return;
+        if (view.getTag() instanceof String
+                && ((String) view.getTag()).startsWith(prefix)
+                && view.isFocusable()) out.add(view);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount() && out.size() < limit; i++)
+                collectByPrefix(group.getChildAt(i), prefix, limit, out);
+        }
+    }
+
+    /** 1.9.60/1.9.62：首焦点顺序：播放 → 线路第一项 → 返回 → 收藏（收藏绝不优先）。 */
     static View firstDetailFocus(MainActivity a) {
         if (a == null || a.root == null) return null;
         View play = a.root.findViewWithTag("detail-play");
         if (play != null && play.isShown()) return play;
         View line = findByTagPrefix(a.root, "detail-line:");
         if (line != null) return line;
+        View back = a.root.findViewWithTag("detail-back");
+        if (back != null && back.isShown()) return back;
         View fav = a.root.findViewWithTag("detail-favorite");
         if (fav != null && fav.isShown()) return fav;
-        View back = a.root.findViewWithTag("detail-back");
-        return back;
+        return null;
     }
 
     private static View findByTagPrefix(View view, String prefix) {
