@@ -1703,7 +1703,7 @@ public final class MainActivity extends Activity {
  String url = prefs.getString("playing_url", "");
  if (url == null || url.isEmpty()) return;
  prefs.edit().remove("playing_url").apply();
- PlaybackController.markSeekCrashUrl(this, url);
+            AppLog.i("Player", "crash-recovery record skipped revert=true");
  AppLog.i("Player", "crash-recovery url=" + url + " fallback=software");
  toast("上次播放异常，已对该视频启用兼容模式");
  } catch (Throwable error) {
