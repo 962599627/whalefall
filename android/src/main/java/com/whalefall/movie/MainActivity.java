@@ -58,6 +58,10 @@ public final class MainActivity extends Activity {
  PlaybackLoading playbackLoading;
  /** 1.9.89：解析超时/失败后的重试动作。 */
  Runnable playbackRetry;
+ /** 1.9.120：seek 节流（最多 400ms 一次）。 */
+ long lastSeekAt;
+ int pendingSeek = -1;
+ Runnable seekTask;
  View playbackLoadingFocus;
  int playbackResolveSerial;
  GlobalSearchScreen searchScreen;

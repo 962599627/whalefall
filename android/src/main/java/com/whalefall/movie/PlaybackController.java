@@ -1380,6 +1380,15 @@ final class PlaybackController {
  Map<String, String> mediaHeaders =
  Cms.inheritedHeaders(s.api, ep.url, s.headers);
  Cms.mergeHeaders(mediaHeaders, ep.headers);
+ // 1.9.120：该视频曾经 seek 崩过 → 用软件解码打开
+ if (isSeekCrash(a, ep.url)) {
+ try {
+ ep.media.put("_softwareFallback", true);
+ ep.media.put("_fallbackMode", 2);
+ } catch (Exception ignored) {
+ }
+ AppLog.i("Player", "seek-crash fallback=software url=" + ep.url);
+ }
  candidate =
  a.prefs.getInt(Prefs.PLAYER_ENGINE, 0) == 1
  ? new SystemPlayer(a)
@@ -1861,6 +1870,93 @@ final class PlaybackController {
  }
  }
 
+ /** 1.9.120：seek 节流 + 软件解码降级（防止硬件解码器被频繁 seek 搞崩）。 */
+ static void seekCommit(final MainActivity a, final int target, final boolean force) {
+ if (a == null || a.player == null || !a.prepared) return;
+ long now = SystemClock.uptimeMillis();
+ long wait = 400 - (now - a.lastSeekAt);
+ if (!force && wait > 0) {
+ a.pendingSeek = target;
+ if (a.seekTask != null) a.ui.removeCallbacks(a.seekTask);
+ a.seekTask =
+ () -> {
+ int pending = a.pendingSeek;
+ a.pendingSeek = -1;
+ if (pending >= 0) seekCommit(a, pending, true);
+ };
+ a.ui.postDelayed(a.seekTask, wait);
+ return;
+ }
+ a.pendingSeek = -1;
+ if (a.seekTask != null) a.ui.removeCallbacks(a.seekTask);
+ try {
+ if (!a.player.isCommandAvailable(
+ androidx.media3.common.Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) {
+ AppLog.i("Player", "seek skip reason=command-unavailable at=" + target);
+ return;
+ }
+ a.lastSeekAt = now;
+ a.player.seekTo(target);
+ } catch (Throwable error) {
+ AppLog.i(
+ "Player",
+ "seek fail at=" + target + " reason=" + error.getClass().getSimpleName());
+ markSeekCrash(a);
+ }
+ }
+
+ private static java.io.File seekCrashFile(MainActivity a) {
+ return new java.io.File(a.getFilesDir(), "seek-crash.json");
+ }
+
+ static boolean isSeekCrash(MainActivity a, String url) {
+ try {
+ org.json.JSONArray arr =
+ new org.json.JSONArray(readText(seekCrashFile(a)));
+ for (int i = 0; i < arr.length(); i++)
+ if (url != null && url.equals(arr.optString(i))) return true;
+ } catch (Throwable ignored) {
+ }
+ return false;
+ }
+
+ private static String readText(java.io.File file) throws java.io.IOException {
+ java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+ try (java.io.InputStream in = new java.io.FileInputStream(file)) {
+ byte[] buf = new byte[4096];
+ int n;
+ while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+ }
+ return out.toString("UTF-8");
+ }
+
+ /** 记录 seek 崩溃指纹（以后同 URL 用软解）。 */
+ static void markSeekCrash(MainActivity a) {
+ try {
+ String url =
+ a.playbackControls == null || a.playbackControls.resolved == null
+ ? ""
+ : a.playbackControls.resolved.url;
+ if (url == null || url.isEmpty()) return;
+ org.json.JSONArray arr = new org.json.JSONArray();
+ try {
+ arr = new org.json.JSONArray(readText(seekCrashFile(a)));
+ } catch (Throwable ignored) {
+ }
+ for (int i = 0; i < arr.length(); i++)
+ if (url.equals(arr.optString(i))) return;
+ arr.put(url);
+ java.io.FileOutputStream out = new java.io.FileOutputStream(seekCrashFile(a));
+ try {
+ out.write(arr.toString().getBytes("UTF-8"));
+ } finally {
+ out.close();
+ }
+ AppLog.i("Player", "seek-crash record url=" + url);
+ } catch (Throwable ignored) {
+ }
+ }
+
  static void finishSeek(MainActivity a, boolean commit) {
  if (!a.seekGesture.active) return;
  a.seekGesture.advance(SystemClock.uptimeMillis());
@@ -1868,7 +1964,7 @@ final class PlaybackController {
  a.seekGesture.cancel();
  a.ui.removeCallbacks(a.seekPulse);
  if (commit && a.player != null && a.prepared) {
- a.player.seekTo(target);
+ seekCommit(a, target, true);
  if (a.playingBookmark != null) {
  a.playingBookmark.position = Math.max(0, target);
  }
@@ -2251,6 +2347,8 @@ final class PlaybackController {
  int direction = key == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1;
  if (down) {
  if (event.getRepeatCount() > 0 && a.seekGesture.active) {
+ // 1.9.120：SDK<26 长按不做连续 seek 风暴，只单次 ±10s（由短按逻辑处理）
+ if (android.os.Build.VERSION.SDK_INT < 26) return true;
  // 1.9.61：按住方向键连续拖动，系统重复键只加速不抖动
  a.seekGesture.advance(android.os.SystemClock.uptimeMillis());
  previewSeek(a);
