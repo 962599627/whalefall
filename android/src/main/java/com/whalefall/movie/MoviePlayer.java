@@ -153,8 +153,7 @@ public class MoviePlayer {
  int effectiveMode = decoderMode;
  if (android.os.Build.VERSION.SDK_INT < 26 && decoderMode == 0) {
  effectiveMode = 2;
- AppLog.i("Player", "decoder=software reason=sdk<26 mode=auto->software");
- }
+ AppLog.i("Player", "decoder=software reason=sdk<26 mode=auto->software"); }
  if (effectiveMode == 0 || effectiveMode == 3) return raw;
  java.util.List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo>
  selected = new java.util.ArrayList<>();

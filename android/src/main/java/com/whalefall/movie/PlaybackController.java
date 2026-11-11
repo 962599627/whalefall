@@ -1891,6 +1891,17 @@ final class PlaybackController {
  if (a.seekTask != null) a.ui.removeCallbacks(a.seekTask);
  try {
  a.lastSeekAt = now;
+ try {
+ AppLog.i(
+ "Player",
+ "seek commit at="
+ + target
+ + " delta="
+ + (target - a.player.getCurrentPosition())
+ + " throttled="
+ + (wait > 0));
+ } catch (Throwable ignored) {
+ }
  a.player.seekTo(target);
  } catch (Throwable error) {
  AppLog.i(
@@ -1959,7 +1970,14 @@ final class PlaybackController {
  a.seekGesture.cancel();
  a.ui.removeCallbacks(a.seekPulse);
  if (commit && a.player != null && a.prepared) {
- seekCommit(a, target, true);
+ // 1.9.124：先节流提交（≤1次/400ms），300ms 后强制跳到最终位置
+ seekCommit(a, target, false);
+ final int finalTarget = target;
+ a.ui.postDelayed(
+ () -> {
+ if (a.player != null && a.prepared) seekCommit(a, finalTarget, true);
+ },
+ 300);
  if (a.playingBookmark != null) {
  a.playingBookmark.position = Math.max(0, target);
  }
@@ -2340,29 +2358,13 @@ final class PlaybackController {
  || focus == a.root
  || a.playbackControls != null && focus == a.playbackControls.timeline)) {
  int direction = key == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1;
- // 1.9.123：SDK<26 彻底禁用长按连续快进：repeat 一律消费，单击 ±10s 单次 seek
- if (down && android.os.Build.VERSION.SDK_INT < 26) {
- if (event.getRepeatCount() > 0) {
- AppLog.i("Player", "seek skip reason=repeat key=" + (direction > 0 ? "right" : "left"));
- return true;
- }
- int target = 0;
- try {
- target = Math.max(0, a.player.getCurrentPosition() + direction * 10000);
- } catch (Throwable ignored) {
- }
- AppLog.i("Player", "lastAction=seek repeat=0");
+ // 1.9.124：长按保留连续推进，但实际 seek 统一由 finishSeek/seekCommit 节流
  AppLog.i(
  "Player",
- "seek key=" + (direction > 0 ? "right" : "left") + " repeat=0 delta=10s");
- seekCommit(a, target, true);
- return true;
- }
+ "lastAction=seek repeat=" + event.getRepeatCount() + " key=" + (direction > 0 ? "right" : "left"));
  if (down) {
  if (event.getRepeatCount() > 0 && a.seekGesture.active) {
- // 1.9.120：SDK<26 长按不做连续 seek 风暴，只单次 ±10s（由短按逻辑处理）
- if (android.os.Build.VERSION.SDK_INT < 26) return true;
- // 1.9.61：按住方向键连续拖动，系统重复键只加速不抖动
+ // 1.9.61：按住方向键连续拖动，系统重复键只加速不抖动（seek 由松手后节流提交）
  a.seekGesture.advance(android.os.SystemClock.uptimeMillis());
  previewSeek(a);
  AppLog.i(
