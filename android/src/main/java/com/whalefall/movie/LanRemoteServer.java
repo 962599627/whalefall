@@ -266,9 +266,9 @@ final class LanRemoteServer implements Closeable {
                     }
                     boolean handled =
                             activity.dispatchKeyEvent(
-                                    new KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode));
+                                    new android.view.KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0));
                     activity.dispatchKeyEvent(
-                            new KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode));
+                            new android.view.KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0));
                     if (handled) return;
                     // 2) 手动焦点导航（真实遥控由 ViewRoot 完成，注入键不会触发）
                     if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
