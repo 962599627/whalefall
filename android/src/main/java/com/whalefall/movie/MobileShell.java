@@ -335,6 +335,9 @@ final class MobileShell {
         pendingRestoreKeyword = "";
         MobileShell shell = new MobileShell(a);
         shell.render();
+        // 1.9.70：被控端在主页时默认焦点落在内容卡片，而不是侧栏
+        if (a.remoteFocusMode)
+            a.ui.postDelayed(() -> TvNav.enableRemoteFocus(a, "home"), 200);
         if (restoreTab > 0 && restoreTab < 6) {
             if (!restoreKeyword.isEmpty()) shell.pendingSearchKeyword = restoreKeyword;
             shell.switchTab(restoreTab);

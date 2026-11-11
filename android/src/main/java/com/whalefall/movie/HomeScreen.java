@@ -510,6 +510,151 @@ final class HomeScreen {
         }
     }
 
+    /** 1.9.70：TV 主页显式焦点链，默认焦点=第一张卡片（无卡片=分类第一个）。 */
+    void wireHomeFocus() {
+        final MainActivity a = this.a;
+        if (!a.isTvDevice() || a.root == null) return;
+        java.util.List<View> tabs = collectPrefix(a.root, "home-tab:", 32);
+        java.util.List<View> videos = collectPrefix(a.root, "home-video:", 300);
+        for (View v : tabs)
+            if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
+        for (View v : videos)
+            if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
+        for (int i = 0; i < tabs.size(); i++) {
+            View tab = tabs.get(i);
+            if (i > 0) tab.setNextFocusLeftId(tabs.get(i - 1).getId());
+            if (i + 1 < tabs.size()) tab.setNextFocusRightId(tabs.get(i + 1).getId());
+            if (!videos.isEmpty()) tab.setNextFocusDownId(videos.get(0).getId());
+        }
+        if (!videos.isEmpty()) {
+            // 按屏幕坐标分行：行内左右、行间上下，顶行 UP→分类行
+            java.util.List<View> sorted = new java.util.ArrayList<>(videos);
+            final int[] pos = new int[2];
+            java.util.Collections.sort(
+                    sorted,
+                    (x, y) -> {
+                        int[] xp = new int[2];
+                        int[] yp = new int[2];
+                        x.getLocationOnScreen(xp);
+                        y.getLocationOnScreen(yp);
+                        if (Math.abs(xp[1] - yp[1]) > a.dp(8)) return xp[1] - yp[1];
+                        return xp[0] - yp[0];
+                    });
+            int rowTop = Integer.MIN_VALUE;
+            View rowFirst = null;
+            View prev = null;
+            java.util.List<View> rowList = new java.util.ArrayList<>();
+            final View nav = a.root.findViewWithTag("nav-home");
+            for (View card : sorted) {
+                int[] p = new int[2];
+                card.getLocationOnScreen(p);
+                if (Math.abs(p[1] - rowTop) > a.dp(8)) {
+                    if (prev != null && nav != null && !tabs.isEmpty())
+                        prev.setNextFocusRightId(nav.getId());
+                    rowTop = p[1];
+                    rowFirst = card;
+                    rowList.clear();
+                    rowList.add(card);
+                    if (!tabs.isEmpty())
+                        card.setNextFocusUpId(tabs.get(0).getId());
+                    else card.setNextFocusUpId(card.getId());
+                } else {
+                    rowList.add(card);
+                }
+                prev = card;
+            }
+            for (int i = 0; i < sorted.size(); i++) {
+                View card = sorted.get(i);
+                int[] p = new int[2];
+                card.getLocationOnScreen(p);
+                View left = null, right = null, up = null, down = null;
+                for (View other : sorted) {
+                    if (other == card) continue;
+                    int[] q = new int[2];
+                    other.getLocationOnScreen(q);
+                    boolean sameRow = Math.abs(q[1] - p[1]) <= a.dp(8);
+                    if (sameRow && q[0] < p[0] && (left == null || q[0] > leftPos(left)))
+                        left = other;
+                    if (sameRow && q[0] > p[0] && (right == null || q[0] < rightPos(right)))
+                        right = other;
+                    if (Math.abs(q[0] - p[0]) <= a.dp(24) && q[1] < p[1]
+                            && (up == null || q[1] > upPos(up))) up = other;
+                    if (Math.abs(q[0] - p[0]) <= a.dp(24) && q[1] > p[1]
+                            && (down == null || q[1] < downPos(down))) down = other;
+                }
+                if (left != null) card.setNextFocusLeftId(left.getId());
+                if (right != null) card.setNextFocusRightId(right.getId());
+                else if (nav != null) card.setNextFocusRightId(nav.getId());
+                if (up != null) card.setNextFocusUpId(up.getId());
+                if (down != null) card.setNextFocusDownId(down.getId());
+            }
+            if (nav != null) {
+                if (nav.getId() == View.NO_ID) nav.setId(View.generateViewId());
+                nav.setNextFocusLeftId(sorted.get(sorted.size() - 1).getId());
+            }
+            if (videos.isEmpty() || a.getCurrentFocus() == null) focusFirstHomeCard(videos, tabs);
+        } else if (!tabs.isEmpty()) {
+            tabs.get(0).requestFocus();
+        }
+        View focus = a.getCurrentFocus();
+        AppLog.i(
+                "TvNav",
+                "page=home focus="
+                        + (focus == null ? "null" : String.valueOf(focus.getTag()))
+                        + " cards="
+                        + videos.size());
+    }
+
+    private int leftPos(View v) {
+        int[] p = new int[2];
+        v.getLocationOnScreen(p);
+        return p[0];
+    }
+
+    private int rightPos(View v) {
+        int[] p = new int[2];
+        v.getLocationOnScreen(p);
+        return p[0];
+    }
+
+    private int upPos(View v) {
+        int[] p = new int[2];
+        v.getLocationOnScreen(p);
+        return p[1];
+    }
+
+    private int downPos(View v) {
+        int[] p = new int[2];
+        v.getLocationOnScreen(p);
+        return p[1];
+    }
+
+    private void focusFirstHomeCard(java.util.List<View> videos, java.util.List<View> tabs) {
+        View nav = a.root == null ? null : a.root.findViewWithTag("nav-home");
+        View focus = a.getCurrentFocus();
+        if (focus != null && focus != nav && focus.isShown()) return;
+        if (!videos.isEmpty()) videos.get(0).requestFocus();
+        else if (!tabs.isEmpty()) tabs.get(0).requestFocus();
+    }
+
+    private java.util.List<View> collectPrefix(View view, String prefix, int limit) {
+        java.util.List<View> out = new java.util.ArrayList<>();
+        collectPrefix(view, prefix, limit, out);
+        return out;
+    }
+
+    private void collectPrefix(View view, String prefix, int limit, java.util.List<View> out) {
+        if (view == null || out.size() >= limit) return;
+        if (view.getTag() instanceof String
+                && ((String) view.getTag()).startsWith(prefix)
+                && view.isShown()) out.add(view);
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount() && out.size() < limit; i++)
+                collectPrefix(group.getChildAt(i), prefix, limit, out);
+        }
+    }
+
     void loadHome() {
         if (busy) return;
         busy = true;
@@ -554,6 +699,8 @@ final class HomeScreen {
                                     hideHomeLoading("category");
                                     status.setVisibility(View.GONE);
                                     renderSnapshot();
+                                    // 1.9.70：主页显式焦点链 + 默认焦点=第一张卡片
+                                    a.ui.post(this::wireHomeFocus);
                                 });
                     } catch (Throwable e) {
                         AppLog.w("HomeScreen", "loadHome failed for " + site.key, e);

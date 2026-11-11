@@ -1803,6 +1803,8 @@ public final class MainActivity extends Activity {
                                     this,
                                     "restore",
                                     "detail-play",
+                                    "home-video:0",
+                                    "home-tonight",
                                     "primary",
                                     "home-tab:0",
                                     "source-switcher",

@@ -143,12 +143,16 @@ final class TvNav {
     static void enableRemoteFocus(MainActivity a, String page) {
         if (a == null || a.root == null) return;
         int fixed = ensureFocusable(a, a.root, 12, 0);
+        // 手机被控端：所有 clickable 控件统一粉色焦点动效（含卡片/侧栏/chip）
+        applyRings(a, a.root);
         View first =
                 ensureFocus(
                         a,
                         page,
                         "detail-play",
                         "detail-line:0",
+                        "home-video:0",
+                        "home-tonight",
                         "primary",
                         "home-tab:0",
                         "nav-home");
@@ -166,6 +170,20 @@ final class TvNav {
     static void disableRemoteFocus(MainActivity a) {
         if (a == null) return;
         AppLog.i("Remote", "focusMode=off page=remote");
+    }
+
+    private static void applyRings(MainActivity a, View view) {
+        if (view == null) return;
+        if (view.isClickable() && view.isShown()) {
+            view.setFocusable(true);
+            view.setFocusableInTouchMode(true);
+            focusRing(a, view, 12);
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++)
+                applyRings(a, group.getChildAt(i));
+        }
     }
 
     /** 1.9.67：几何方向搜索兜底：手机布局没有显式 nextFocus 时按坐标找最近目标。 */

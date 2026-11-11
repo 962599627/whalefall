@@ -286,6 +286,9 @@ final class LanRemoteServer implements Closeable {
                                             activity,
                                             "inject",
                                             "detail-play",
+                                            "detail-line:0",
+                                            "home-video:0",
+                                            "home-tonight",
                                             "primary",
                                             "nav-home");
                         if (target != null) {
