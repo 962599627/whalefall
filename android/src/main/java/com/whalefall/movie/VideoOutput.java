@@ -82,6 +82,11 @@ final class VideoOutput extends FrameLayout
         if (current != null && current.isValid()) listener.available(current);
     }
 
+    /** 1.9.53：小窗→全屏时复用当前 Surface，避免重新起播/断流。 */
+    Surface currentSurface() {
+        return current != null && current.isValid() ? current : null;
+    }
+
     private void ready(Surface value) {
         current = value;
         if (listener != null) listener.available(value);

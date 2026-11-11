@@ -894,28 +894,64 @@ final class PlaybackController {
     static void expandPlayback(MainActivity a) {
         if (!a.miniMode) return;
         a.miniMode = false;
+        a.expandedOverDetail = true;
         if (a.miniDetails != null) {
             a.miniDetails.remove();
             a.miniDetails = null;
         }
+        int position = a.player == null ? 0 : a.player.getCurrentPosition();
         UiCompat.setClipToOutline(a.playbackLayer, false);
         a.playbackLayer.setElevation(0);
         a.playbackLayer.setOutlineProvider(null);
         a.playbackLayer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         a.playbackLayer.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-        a.expandedOverDetail = true;
-        AppLog.i("Mini", "exit fullscreen");
-        a.playbackControls.subtitle.setVisibility(View.VISIBLE);
-        a.playbackControls.danmaku.setVisibility(View.VISIBLE);
+        // 1.9.53：只恢复布局并复用现有 Surface/player，不重新请求地址、不 seek
+        View output = findTagged(a.playbackLayer, "video-output");
+        android.view.Surface surface =
+                output instanceof VideoOutput ? ((VideoOutput) output).currentSurface() : null;
+        if (a.player != null && surface != null) {
+            a.player.setSurface(surface);
+            try {
+                a.player.seekTo(position);
+            } catch (Throwable ignored) {
+            }
+        }
+        if (a.playerChrome != null) a.playerChrome.setLoading(false);
+        AppLog.i(
+                "Player",
+                "expand fullscreen player="
+                        + (a.player != null ? "kept" : "missing")
+                        + " surface="
+                        + (surface != null ? "reused" : "none")
+                        + " position="
+                        + position);
+        if (a.playbackControls != null) {
+            a.playbackControls.subtitle.setVisibility(View.VISIBLE);
+            a.playbackControls.danmaku.setVisibility(View.VISIBLE);
+        }
         a.playbackLayer.post(
                 () -> {
                     if (a.playbackControls != null) {
                         a.playbackControls.resize(
                                 a.playbackControls.videoWidth, a.playbackControls.videoHeight);
                         showControls(a, true);
-                        a.playbackControls.timeline.requestFocus();
+                        if (a.playbackControls.timeline != null)
+                            a.playbackControls.timeline.requestFocus();
                     }
                 });
+    }
+
+    private static View findTagged(View view, String tag) {
+        if (view == null) return null;
+        if (tag.equals(view.getTag())) return view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View found = findTagged(group.getChildAt(i), tag);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     /** 1.9.22：播放失败/卡顿时自动换线路（最多 2 次，记住用户偏好）。 */
