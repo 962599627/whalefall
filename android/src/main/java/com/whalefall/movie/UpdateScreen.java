@@ -27,6 +27,7 @@ final class UpdateScreen {
     void show() {
         SettingsScreen settings = new SettingsScreen(a);
         settings.page("软件更新", "镜像优先，连接失败时尝试 GitHub。安装前会核对版本、文件完整性与签名。");
+        if (a.body != null) a.body.setTag("update");
         a.updateScreen = this;
         status = a.text("", 16, MainActivity.MUTED);
         status.setTag("update-status");

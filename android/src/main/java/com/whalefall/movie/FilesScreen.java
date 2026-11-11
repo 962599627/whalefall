@@ -57,6 +57,7 @@ final class FilesScreen {
         a.root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         a.scroll = scroll;
         a.body = column;
+        a.body.setTag("files");
 
         final String path = PushFiles.sanitizePath(relDir);
 

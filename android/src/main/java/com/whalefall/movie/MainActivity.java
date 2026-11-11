@@ -1925,9 +1925,8 @@ public final class MainActivity extends Activity {
         if (!back.isEmpty()
                 && current != null
                 && !current.home
-                && !current.player
-                && current.pushedTag != null
-                && current.pushedTag.equals(tag)) {
+                && !current.player) {
+            // 1.9.80：入栈页面统一 BACK=pop 回上一级（不再依赖 body tag 匹配）
             logBackAction("pop");
             capture();
             current = back.pop();
@@ -2133,14 +2132,18 @@ public final class MainActivity extends Activity {
     }
 
     void logBackAction(String action) {
+        String from = body == null ? "null" : String.valueOf(body.getTag());
+        String target = back.isEmpty() ? (current != null && current.home ? "home" : "none") : back.peek().pushedTag;
         AppLog.i(
                 "Back",
-                "page="
-                        + (body == null ? "null" : String.valueOf(body.getTag()))
-                        + " stack="
-                        + back.size()
+                "from="
+                        + from
                         + " action="
-                        + action);
+                        + action
+                        + " target="
+                        + target
+                        + " stack="
+                        + back.size());
     }
 
     void minimizePlayback() {

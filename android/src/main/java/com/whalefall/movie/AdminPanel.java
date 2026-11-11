@@ -40,6 +40,7 @@ final class AdminPanel {
                                 + MiniFtpServer.password() + "）";
 
         LinearLayout panel = a.vertical();
+        if (a.body != null) a.body.setTag("admin-panel");
         panel.setGravity(Gravity.CENTER_HORIZONTAL);
         final boolean tv = a.isTvDevice();
 

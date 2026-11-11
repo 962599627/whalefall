@@ -174,22 +174,27 @@ final class SettingsScreen {
         switch (which) {
             case EXTRA_ABOUT:
                 page("关于鲸落", "");
+                if (a.body != null) a.body.setTag("settings-extra");
                 ExtraPages.about(a, a.body);
                 break;
             case EXTRA_STATS:
                 page("观影统计", "");
+                if (a.body != null) a.body.setTag("settings-extra");
                 ExtraPages.stats(a, a.body);
                 break;
             case EXTRA_KEYMAP:
                 page("遥控器按键说明", "");
+                if (a.body != null) a.body.setTag("settings-extra");
                 ExtraPages.keymap(a, a.body);
                 break;
             case EXTRA_STORAGE:
                 page("存储空间与缓存清理", "");
+                if (a.body != null) a.body.setTag("settings-extra");
                 ExtraPages.storage(a, a.body);
                 break;
             case EXTRA_CRASH:
                 page("崩溃日志", "");
+                if (a.body != null) a.body.setTag("settings-extra");
                 ExtraPages.crashLog(a, a.body);
                 break;
             default:
