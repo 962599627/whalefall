@@ -2340,6 +2340,24 @@ final class PlaybackController {
  || focus == a.root
  || a.playbackControls != null && focus == a.playbackControls.timeline)) {
  int direction = key == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1;
+ // 1.9.123：SDK<26 彻底禁用长按连续快进：repeat 一律消费，单击 ±10s 单次 seek
+ if (down && android.os.Build.VERSION.SDK_INT < 26) {
+ if (event.getRepeatCount() > 0) {
+ AppLog.i("Player", "seek skip reason=repeat key=" + (direction > 0 ? "right" : "left"));
+ return true;
+ }
+ int target = 0;
+ try {
+ target = Math.max(0, a.player.getCurrentPosition() + direction * 10000);
+ } catch (Throwable ignored) {
+ }
+ AppLog.i("Player", "lastAction=seek repeat=0");
+ AppLog.i(
+ "Player",
+ "seek key=" + (direction > 0 ? "right" : "left") + " repeat=0 delta=10s");
+ seekCommit(a, target, true);
+ return true;
+ }
  if (down) {
  if (event.getRepeatCount() > 0 && a.seekGesture.active) {
  // 1.9.120：SDK<26 长按不做连续 seek 风暴，只单次 ±10s（由短按逻辑处理）
