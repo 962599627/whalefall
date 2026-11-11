@@ -312,8 +312,8 @@ final class TvDetailLayout {
  // 主播放按钮（首焦点）。续播语义（R3）：有书签优先续播（书签自带线路）；
  // 无书签才使用当前左栏选中线路。
  String playLabel;
- if (remembered == null) playLabel = "▶ 播放 · 首集";
- else playLabel = "▶ 播放 · " + remembered.episode + " · 续播";
+ if (remembered == null) playLabel = "播放 · 首集";
+ else playLabel = "播放 · " + remembered.episode + " · 续播";
  final Button play =
  DetailScreen.heroPlayButton(
  a,
@@ -444,14 +444,14 @@ final class TvDetailLayout {
  new int[] {0x00000000, 0x44000000, 0xcc050b14}));
  card.addView(scrim, new FrameLayout.LayoutParams(-1, a.dp(150), Gravity.BOTTOM));
 
- TextView hint = a.text("▶ 按 OK 播放", 13, 0xd9ffffff);
+ TextView hint = a.text("按 OK 播放", 13, 0xd9ffffff);
  hint.setShadowLayer(a.dp(6), 0, a.dp(2), 0xcc000000);
  FrameLayout.LayoutParams hintLp =
  new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.LEFT);
  hintLp.setMargins(a.dp(16), 0, 0, a.dp(12));
  card.addView(hint, hintLp);
 
- TextView bigPlay = a.text("▶", 26, 0xff31141f);
+ TextView bigPlay = a.text("播放", 16, 0xff31141f);
  bigPlay.setTag("detail-play-big");
  bigPlay.setTypeface(null, android.graphics.Typeface.BOLD);
  bigPlay.setGravity(Gravity.CENTER);

@@ -2056,7 +2056,7 @@ final class MobileShell {
  new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.START);
  titleLp2.setMargins(a.dp(10), 0, a.dp(10), a.dp(10));
  card.addView(miniTitle, titleLp2);
- TextView miniPlay = a.text("▶", 10, 0xff31141f);
+ TextView miniPlay = a.text("播放", 10, 0xff31141f);
  miniPlay.setTypeface(null, Typeface.BOLD);
  miniPlay.setGravity(Gravity.CENTER);
  miniPlay.setBackground(glassBg(0xffffc7d6, 0xfff59ab5, a.dp(999), 0, 0));
@@ -2137,7 +2137,7 @@ final class MobileShell {
  // Bottom-right Watch Now white capsule button
  LinearLayout bottomRow = a.row();
  bottomRow.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
- TextView watchBtn = a.text("▶ 立即观看", 10.5f, 0xff0b0f0d);
+ TextView watchBtn = a.text("立即观看", 10.5f, 0xff0b0f0d);
  watchBtn.setTypeface(null, Typeface.BOLD);
  watchBtn.setGravity(Gravity.CENTER);
  watchBtn.setPadding(a.dp(10), a.dp(4), a.dp(10), a.dp(4));

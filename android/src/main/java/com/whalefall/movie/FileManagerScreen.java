@@ -1123,7 +1123,7 @@ final class FileManagerScreen {
  FrameLayout thumb = new FrameLayout(a);
  thumb.setBackground(
  MobileDetailScreen.glassBg(a, 0xdd0d1a2b, 0x33000000, 16));
- final TextView glyph = a.text(entry == null ? fileSymbol(name) : entry.folder ? "" : entry.video ? "▶" : fileSymbol(entry.name), 34, UiTokens.ACCENT_SOFT);
+ final TextView glyph = a.text(entry == null ? fileSymbol(name) : entry.folder ? "" : entry.video ? "视频" : fileSymbol(entry.name), 34, UiTokens.ACCENT_SOFT);
  glyph.setGravity(Gravity.CENTER);
  thumb.addView(glyph, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
  if (entry != null && !entry.folder && (entry.video || TextViewerScreen.isImageName(entry.name))) {

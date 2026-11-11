@@ -419,7 +419,14 @@ final class SettingsScreen {
  new String[] {"保真输出 · HDR 与流畅度优先", "兼容输出 · 支持应用内调色"},
  new int[] {0, 1},
  0);
+ // 1.9.89：Android<8 隐藏「系统播放器」选项，强制 Media3
+ if (android.os.Build.VERSION.SDK_INT >= 26)
  ints("播放器", Prefs.PLAYER_ENGINE, new String[] {"Media3", "系统播放器"}, new int[] {0, 1}, 0);
+ else {
+ if (a.prefs.getInt(Prefs.PLAYER_ENGINE, 0) != 0)
+ a.prefs.edit().putInt(Prefs.PLAYER_ENGINE, 0).apply();
+ a.paragraph("当前 Android 版本低于 8.0，仅支持内置 Media3 播放器（系统播放器在旧电视上可能崩溃）。");
+ }
  ints(
  "解码方式",
  Prefs.DECODER_MODE,

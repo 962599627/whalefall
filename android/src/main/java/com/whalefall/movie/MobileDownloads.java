@@ -216,7 +216,7 @@ final class MobileDownloads {
  }
 
  private static String actionLabel(int state) {
- if (state == DownloadManager.DONE) return "▶ 播放";
+ if (state == DownloadManager.DONE) return "播放";
  if (state == DownloadManager.FAILED) return "重试";
  if (state == DownloadManager.PAUSED) return "继续";
  return "暂停";

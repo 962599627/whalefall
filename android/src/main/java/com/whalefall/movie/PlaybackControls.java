@@ -1012,7 +1012,7 @@ final class PlaybackControls {
  TextView guide =
  a.text(
  a.isTvDevice()
- ? "▲ ▼ 调整高度位置 · ◀ ▶ 调整字体大小 · 确认键 切换字体颜色"
+ ? "上/下 调整高度位置 · 左/右 调整字体大小 · 确认键 切换字体颜色"
  : "可使用方向键或下方按钮实时调节高度位置、字体大小与字体颜色",
  12,
  MainActivity.MUTED);
@@ -1089,7 +1089,7 @@ final class PlaybackControls {
  } else {
  LinearLayout controlsRow = a.row();
  controlsRow.setGravity(Gravity.CENTER);
- String[] btnLabels = {"字号 -", "字号 +", "▼ 下移", "▲ 上移", "切换颜色", "完成"};
+ String[] btnLabels = {"字号 -", "字号 +", "下移", "上移", "切换颜色", "完成"};
  Runnable[] btnActions = {
  () -> stepSize.accept(-2),
  () -> stepSize.accept(2),

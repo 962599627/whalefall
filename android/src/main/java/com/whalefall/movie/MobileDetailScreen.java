@@ -737,13 +737,13 @@ final class MobileDetailScreen {
  FrameLayout.LayoutParams previewScrimLp = new FrameLayout.LayoutParams(-1, a.dp(150), Gravity.BOTTOM);
  previewCard.addView(previewScrim, previewScrimLp);
 
- TextView bigPlayHint = a.text("▶ 点击播放", 12, 0xd9ffffff);
+ TextView bigPlayHint = a.text("点击播放", 12, 0xd9ffffff);
  bigPlayHint.setShadowLayer(a.dp(6), 0, a.dp(2), 0xcc000000);
  FrameLayout.LayoutParams bigHintLp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.LEFT);
  bigHintLp.setMargins(a.dp(16), 0, 0, a.dp(14));
  previewCard.addView(bigPlayHint, bigHintLp);
 
- TextView bigPlay = a.text("▶", 26, 0xff31141f);
+ TextView bigPlay = a.text("播放", 16, 0xff31141f);
  bigPlay.setTag("detail-play-big");
  bigPlay.setTypeface(null, Typeface.BOLD);
  bigPlay.setGravity(Gravity.CENTER);
@@ -956,7 +956,7 @@ final class MobileDetailScreen {
  }
  final WatchHistory.Entry remembered = bookmark;
 
- // Full-Width White Capsule Play Button (matches iPhone `▶ 播放 · 第 1 季 · E01`)
+ // Full-Width White Capsule Play Button (matches iPhone `播放 · 第 1 季 · E01`)
  SeasonMeta curSeason = parseSeasonMeta(v.title);
  EpisodeDisplay firstDisp =
  parseEpisodeDisplay(
@@ -972,16 +972,16 @@ final class MobileDetailScreen {
  int resumePos = remembered.resume();
  playLabel =
  resumePos > 0
- ? "▶ 播放 · "
+ ? "播放 · "
  + remDisp.cleanTitle
  + " · 继续上次位置 · "
  + PlaybackController.formatTime(resumePos)
- : "▶ 播放 · " + remDisp.cleanTitle;
+ : "播放 · " + remDisp.cleanTitle;
  } else if (v.lines.get(SourcePreferences.lineIndex(a, v)).episodes.size() > 1) {
  playLabel =
- "▶ 播放 · " + curSeason.seasonLabel + " · " + firstDisp.cleanTitle;
+ "播放 · " + curSeason.seasonLabel + " · " + firstDisp.cleanTitle;
  } else {
- playLabel = "▶ 播放 · " + firstDisp.cleanTitle;
+ playLabel = "播放 · " + firstDisp.cleanTitle;
  }
 
  Button playBtn = new Button(a);

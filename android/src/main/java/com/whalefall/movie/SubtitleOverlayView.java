@@ -23,7 +23,7 @@ final class SubtitleOverlayView extends FrameLayout {
  return styleName(preset);
  }
 
- private static final String PREVIEW_LINE = "字幕实时预览 · ▲▼ 调高低位置 · ◀▶ 调字体大小 · 确认键 切换字体颜色";
+ private static final String PREVIEW_LINE = "字幕实时预览 · 上/下 调高低位置 · 左/右 调字体大小 · 确认键 切换字体颜色";
 
  final androidx.media3.ui.SubtitleView delegate;
  private List<Cue> currentCues = Collections.emptyList();

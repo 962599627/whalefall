@@ -241,7 +241,7 @@ final class QuarkUcFiles {
  if (file.video) {
  Button play =
  a.button(
- "▶ 播放",
+ "播放",
  "quarkuc-play:" + file.fid,
  () -> play(a, p, file, cookie, fromSource));
  play.setTextSize(12);

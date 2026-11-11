@@ -81,12 +81,12 @@ final class MiniDetails {
  final TextView[] playHolder = new TextView[1];
  playHolder[0] =
  miniButton(
- a.player != null && a.playing ? "暂停" : "▶",
+ a.player != null && a.playing ? "暂停" : "播放",
  "mini-play",
  () -> {
  a.togglePlayback();
  if (playHolder[0] != null)
- playHolder[0].setText(a.playing ? "暂停" : "▶");
+ playHolder[0].setText(a.playing ? "暂停" : "播放");
  AppLog.i(
  "Mini",
  "playstate="
@@ -181,7 +181,7 @@ final class MiniDetails {
  @Override
  public void run() {
  if (!a.miniMode) return;
- playPause.setText(a.playing ? "暂停" : "▶");
+ playPause.setText(a.playing ? "暂停" : "播放");
  a.ui.postDelayed(this, 500);
  }
  };

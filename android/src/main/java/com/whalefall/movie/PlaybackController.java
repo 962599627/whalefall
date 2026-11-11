@@ -270,6 +270,7 @@ final class PlaybackController {
  }
  }
  if (s.supported()) {
+ a.playbackRetry = () -> resolvePlayer(a, s, v, line, ep);
  if (!s.requiresParser || Cms.isDirectStreamUrl(ep.url)) {
  openPlayer(a, s, v, ep);
  return;
@@ -525,6 +526,11 @@ final class PlaybackController {
  }
  openPlayer(a, s, v, resolved);
  } catch (Exception error) {
+ AppLog.i(
+ "Playback",
+ "resolve fail reason="
+ + error.getClass().getSimpleName()
+ + " elapsed=inline");
  AppLog.w(
  "PlaybackController",
  "parse player response failed",
@@ -536,6 +542,9 @@ final class PlaybackController {
  });
  } catch (Exception error) {
  AppLog.w("PlaybackController", "engine.player failed", error);
+ AppLog.i(
+ "Playback",
+ "resolve fail reason=" + error.getClass().getSimpleName() + " elapsed=engine");
  a.ui.post(
  () -> {
  if (serial != a.playbackResolveSerial
@@ -552,13 +561,13 @@ final class PlaybackController {
  static void resolveCmsWithParser(
  MainActivity a, Cms.Site s, Cms.Video v, Cms.Episode ep, String preferredPrefix) {
  if (a.playbackLoading != null) return;
+ a.playbackRetry = () -> resolveCmsWithParser(a, s, v, ep, preferredPrefix);
  showPlaybackLoading(a);
  final int serial = a.playbackResolveSerial, ticket = a.generation;
  Future<?> request =
  RequestScope.submit(
  a.details,
  () -> {
- // 1. Try preferredPrefix or JSON parsers in config.parses
  List<Cms.Parse> candidates = new java.util.ArrayList<>();
  if (preferredPrefix != null && Cms.isHttp(preferredPrefix)) {
  Cms.Parse direct = new Cms.Parse();
@@ -634,10 +643,43 @@ final class PlaybackController {
  a.root.addView(a.playbackLoading, new FrameLayout.LayoutParams(-1, -1));
  if (a.playerChrome != null) a.playerChrome.update();
  a.playbackLoading.requestFocus();
+ // 1.9.89：15s 内未完成解析则隐藏 loading 并提示，绝不永久卡加载
+ final long started = android.os.SystemClock.uptimeMillis();
+ a.ui.postDelayed(
+ () -> {
+ if (a.playbackLoading == null) return;
+ long elapsed = android.os.SystemClock.uptimeMillis() - started;
+ AppLog.i("Playback", "resolve fail reason=timeout elapsed=" + elapsed);
+ Runnable retry = a.playbackRetry;
+ clearPlaybackLoading(a);
+ showResolveFail(a, "解析超时（15 秒），可能是网络或来源不可达。", retry);
+ },
+ 15000);
+ }
+
+ /** 1.9.89：解析失败统一提示（隐藏 loading + 重试按钮，可换线路）。 */
+ static void showResolveFail(MainActivity a, String reason, Runnable retry) {
+ if (a == null || a.isFinishing()) return;
+ AppDialog.Builder builder =
+ new AppDialog.Builder(a)
+ .setTitle("解析失败")
+ .setMessage(reason + "\n\n可点「重试」，或返回后用右上角「切换」换线路。")
+ .setNegativeButton("取消", null);
+ if (retry != null) builder.setPositiveButton("重试", (d, w) -> retry.run());
+ builder.show();
+ }
+
+ static void showResolveFail(
+ MainActivity a, Cms.Site s, Cms.Video v, Cms.Line line, Cms.Episode ep, String reason) {
+ showResolveFail(
+ a,
+ reason,
+ () -> resolvePlayer(a, s, v, line, ep));
  }
 
  static void clearPlaybackLoading(MainActivity a) {
  a.playbackResolveSerial++;
+ a.playbackRetry = null;
  if (a.playbackLoading != null) {
  if (a.playbackLoading.getParent() instanceof ViewGroup)
  ((ViewGroup) a.playbackLoading.getParent()).removeView(a.playbackLoading);
@@ -1463,16 +1505,17 @@ final class PlaybackController {
  what)
  && a.prefs.getInt(
  Prefs
- .DECODER_MODE,
- 0)
- == 0
- && a.prefs.getInt(
- Prefs
  .PLAYER_ENGINE,
  0)
  == 0
  && !ep.media.optBoolean(
  "_softwareFallback")) {
+ AppLog.i(
+ "Player",
+ "decode fallback software code="
+ + what
+ + " detail="
+ + mp.getLastError());
  try {
  ep.media.put(
  "_softwareFallback",

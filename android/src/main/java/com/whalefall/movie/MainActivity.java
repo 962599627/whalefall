@@ -56,6 +56,8 @@ public final class MainActivity extends Activity {
  }
  };
  PlaybackLoading playbackLoading;
+ /** 1.9.89：解析超时/失败后的重试动作。 */
+ Runnable playbackRetry;
  View playbackLoadingFocus;
  int playbackResolveSerial;
  GlobalSearchScreen searchScreen;
@@ -885,6 +887,12 @@ public final class MainActivity extends Activity {
  }
  prefs = getSharedPreferences(privateMode ? "movie-private" : Prefs.FILE, MODE_PRIVATE);
  reduced = prefs.getBoolean(Prefs.REDUCED, false);
+ // 1.9.89：Android<8 强制 ExoPlayer，修正旧设备保存的系统播放器设置
+ if (android.os.Build.VERSION.SDK_INT < 26
+ && prefs.getInt(Prefs.PLAYER_ENGINE, 0) == 1) {
+ prefs.edit().putInt(Prefs.PLAYER_ENGINE, 0).apply();
+ ui.post(() -> toast("当前系统版本较低，已自动切换为内置播放器"));
+ }
  configOrigin = prefs.getString("origin", "");
  ConfigHistory.backfill(this);
  try {

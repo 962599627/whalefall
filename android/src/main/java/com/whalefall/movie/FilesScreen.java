@@ -504,7 +504,7 @@ final class FilesScreen {
 
  private static String fileBadge(String name) {
  if (PushFiles.isMarkdown(name)) return "MD";
- if (PushFiles.isVideo(name)) return "▶";
+ if (PushFiles.isVideo(name)) return "视频";
  int dot = name.lastIndexOf('.');
  String ext = dot >= 0 ? name.substring(dot + 1).toUpperCase(Locale.ROOT) : "?";
  return ext.length() > 2 ? ext.substring(0, 2) : ext;

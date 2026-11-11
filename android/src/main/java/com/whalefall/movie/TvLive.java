@@ -1349,7 +1349,7 @@ final class TvLive {
  favLp.bottomMargin = a.dp(6);
  panel.addView(favBtn, favLp);
 
- TextView watch = TvUiKit.pill(a, "▶ 观看直播", 14, true);
+ TextView watch = TvUiKit.pill(a, "观看直播", 14, true);
  ExtraPages.tvFocus(a, watch, 999);
  watch.setTag("tv-focus-live-watch");
  final String openGroup = page.query.isEmpty() ? page.group : sel.group;
