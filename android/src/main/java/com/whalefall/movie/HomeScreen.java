@@ -1329,12 +1329,7 @@ final class HomeScreen {
  + (next == null || next == v ? "none" : String.valueOf(next.getTag())));
  return false;
  });
- chip.setOnClickListener(
- v -> {
- // 1.9.117：TV 用 AppDialog 弹窗选择器（ModalStack 焦点已验证）；手机保留内嵌触摸展开
- if (a.isTvDevice()) showFilterOptionDialog(defF);
- else showFilterOptions(defF);
- });
+ chip.setOnClickListener(v -> openFilterFor(defF));
  // 1.9.120：重渲染后显式绑定 OK，避免遥控在已选状态下打不开其它筛选
  chip.setClickable(true);
  chip.setOnKeyListener(
@@ -1344,8 +1339,7 @@ final class HomeScreen {
  keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
  || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
  if (ok) {
- if (a.isTvDevice()) showFilterOptionDialog(defF);
- else showFilterOptions(defF);
+ openFilterFor(defF);
  return true;
  }
  int dir =
@@ -1478,6 +1472,21 @@ final class HomeScreen {
 
  /** L3：单行横滚紧凑 chip（TV 34dp/10 间距）。 */
  /** 1.9.117：TV 筛选选项弹窗（每行一个选项，当前选中高亮；BACK=关闭）。 */
+ /** 1.9.125：触摸模式才内嵌展开；遥控/按键模式一律弹窗（不依赖 isTvDevice）。 */
+ void openFilterFor(final VideoFilters.Definition def) {
+ boolean touchMode = !a.keyFocusMode && !a.remoteFocusMode;
+ String dim = normalizeFilterDim(def.dimension);
+ if (touchMode) {
+ AppLog.i("FilterOption", "path=inline touch=true keyMode=" + a.keyFocusMode + " dim=" + dim);
+ showFilterOptions(def);
+ } else {
+ AppLog.i(
+ "FilterOption",
+ "path=dialog tv=" + a.isTvDevice() + " keyMode=" + a.keyFocusMode + " dim=" + dim);
+ showFilterOptionDialog(def);
+ }
+ }
+
  void showFilterOptionDialog(final VideoFilters.Definition def) {
  final String dimKey = normalizeFilterDim(def.dimension);
  String[] labels = new String[def.choices.size()];
