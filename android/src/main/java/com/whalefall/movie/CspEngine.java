@@ -84,28 +84,15 @@ public final class CspEngine implements SourceEngine {
  Object candidate = loader.loadClass(className).getDeclaredConstructor().newInstance();
  if (!(candidate instanceof Spider)) throw new IOException("插件父接口与当前宿主不兼容");
  spider = (Spider) candidate;
- Context pluginContext = themedContext(app);
  synchronized (pluginLock) {
  try {
  spider.initApi(new com.github.catvod.crawler.SpiderApi());
  } catch (Throwable ignored) {
  }
- try {
- spider.init(pluginContext, site.ext == null ? "" : site.ext.toString());
- } catch (Throwable themedError) {
- AppLog.w(
- "CspEngine",
- "plugin.init with themed context failed; retry plain Application",
- themedError);
+ // 1.9.91：catvod Init.init 只接受 Application，禁止传 ContextThemeWrapper（否则 ClassCastException）
  spider.init(app, site.ext == null ? "" : site.ext.toString());
  }
- }
- AppLog.i(
- "CspEngine",
- "plugin context themed="
- + (pluginContext != app)
- + " style=PluginDialogTheme"
- + " (frame/text/buttons themed; plugin self-drawn colors cannot be patched)");
+ AppLog.i("CspEngine", "init context=application ok plugin=" + className);
  diagnostic("loaded", className, null);
  } catch (Throwable error) {
  Throwable cause = unwrap(error);
@@ -133,19 +120,16 @@ public final class CspEngine implements SourceEngine {
  app.getClassLoader());
  prepareHostStorage(app);
  List<Object> before = lifecycleCallbacks(app);
- Context themed = themedContext(app);
  try {
- loader.loadClass("com.github.catvod.spider.Init")
- .getMethod("init", Context.class)
- .invoke(null, themed);
- } catch (Throwable themedError) {
- AppLog.w(
- "CspEngine",
- "Init.init themed context failed; retry plain Application",
- themedError);
+ // 1.9.91：Init.init 必须传 Application（catvod 内部强转 Application）
  loader.loadClass("com.github.catvod.spider.Init")
  .getMethod("init", Context.class)
  .invoke(null, app);
+ AppLog.i("CspEngine", "Init.init context=application ok sha=" + sha);
+ } catch (Throwable initError) {
+ AppLog.w("CspEngine", "Init.init failed reason=init CCE", initError);
+ if (initError instanceof Exception) throw (Exception) initError;
+ throw new IOException("Init.init failed", initError);
  }
  syncPluginProxyPort(loader, ProxyAddress.port);
  replayForegroundActivity(app, before);

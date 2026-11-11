@@ -545,10 +545,11 @@ final class PlaybackController {
  }
  openPlayer(a, s, v, resolved);
  } catch (Exception error) {
+ boolean initFailure = isPluginInitFailure(error);
  AppLog.i(
  "Playback",
  "resolve fail reason="
- + error.getClass().getSimpleName()
+ + (initFailure ? "init CCE" : error.getClass().getSimpleName())
  + " elapsed=inline");
  AppLog.w(
  "PlaybackController",
@@ -556,21 +557,28 @@ final class PlaybackController {
  error);
  a.changingMiniEpisode = false;
  clearPlaybackLoading(a);
- failInPlaceSwitch(a, "播放信息无法读取，请重试");
+ if (initFailure)
+ showResolveFail(a, "片源插件初始化失败：" + a.message(error), null);
+ else failInPlaceSwitch(a, "播放信息无法读取，请重试");
  }
  });
  } catch (Exception error) {
  AppLog.w("PlaybackController", "engine.player failed", error);
+ boolean initFailure = isPluginInitFailure(error);
  AppLog.i(
  "Playback",
- "resolve fail reason=" + error.getClass().getSimpleName() + " elapsed=engine");
+ "resolve fail reason="
+ + (initFailure ? "init CCE" : error.getClass().getSimpleName())
+ + " elapsed=engine");
  a.ui.post(
  () -> {
  if (serial != a.playbackResolveSerial
  || ticket != a.generation) return;
  a.changingMiniEpisode = false;
  clearPlaybackLoading(a);
- failInPlaceSwitch(a, a.message(error));
+ if (initFailure)
+ showResolveFail(a, "片源插件初始化失败：" + a.message(error), null);
+ else failInPlaceSwitch(a, a.message(error));
  });
  }
  });
@@ -677,6 +685,20 @@ final class PlaybackController {
  }
 
  /** 1.9.89：解析失败统一提示（隐藏 loading + 重试按钮，可换线路）。 */
+ /** 1.9.91：识别插件/CSP 初始化失败（ClassCastException / 主题 Context 等），立即提示不等超时。 */
+ static boolean isPluginInitFailure(Throwable error) {
+ for (Throwable t = error; t != null; t = t.getCause()) {
+ if (t instanceof ClassCastException) return true;
+ String m = t.getMessage();
+ if (m != null
+ && (m.contains("初始化")
+ || m.contains("Init.init")
+ || m.contains("ContextThemeWrapper")
+ || m.contains("Application"))) return true;
+ }
+ return false;
+ }
+
  static void showResolveFail(MainActivity a, String reason, Runnable retry) {
  if (a == null || a.isFinishing()) return;
  AppDialog.Builder builder =
