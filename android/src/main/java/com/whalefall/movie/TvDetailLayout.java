@@ -970,6 +970,44 @@ final class TvDetailLayout {
  if (copy != null) allEpisodes.setNextFocusUpId(copy.getId());
  else if (synopsis != null) allEpisodes.setNextFocusUpId(synopsis.getId());
  }
+ // 1.9.96：小窗显示时把 mini 控制区纳入详情焦点链，保证上下左右都不卡死
+ View miniPlay = a.root.findViewWithTag("mini-play");
+ View miniExpand = a.root.findViewWithTag("mini-expand");
+ View miniStop = a.root.findViewWithTag("mini-stop");
+ View miniVideo = a.root.findViewWithTag("mini-video");
+ if (miniVideo != null) {
+ if (miniVideo.getId() == View.NO_ID) miniVideo.setId(View.generateViewId());
+ if (fav != null) miniVideo.setNextFocusRightId(fav.getId());
+ if (play != null) miniVideo.setNextFocusDownId(play.getId());
+ if (back != null) miniVideo.setNextFocusUpId(back.getId());
+ if (back != null) back.setNextFocusDownId(miniVideo.getId());
+ if (fav != null) fav.setNextFocusLeftId(miniVideo.getId());
+ AppLog.i("MiniFocus", "root focus=mini-video");
+ }
+ if (miniPlay != null) {
+ if (miniPlay.getId() == View.NO_ID) miniPlay.setId(View.generateViewId());
+ if (miniExpand != null && miniExpand.getId() == View.NO_ID)
+ miniExpand.setId(View.generateViewId());
+ if (miniStop != null && miniStop.getId() == View.NO_ID)
+ miniStop.setId(View.generateViewId());
+ if (back != null) miniPlay.setNextFocusUpId(back.getId());
+ if (play != null) miniPlay.setNextFocusDownId(play.getId());
+ if (miniExpand != null) miniPlay.setNextFocusRightId(miniExpand.getId());
+ if (miniExpand != null) {
+ miniExpand.setNextFocusLeftId(miniPlay.getId());
+ if (miniStop != null) miniExpand.setNextFocusRightId(miniStop.getId());
+ if (back != null) miniExpand.setNextFocusUpId(back.getId());
+ if (play != null) miniExpand.setNextFocusDownId(play.getId());
+ }
+ if (miniStop != null) {
+ miniStop.setNextFocusLeftId(
+ miniExpand != null ? miniExpand.getId() : miniPlay.getId());
+ if (back != null) miniStop.setNextFocusUpId(back.getId());
+ if (play != null) miniStop.setNextFocusDownId(play.getId());
+ }
+ if (play != null) play.setNextFocusUpId(miniPlay.getId());
+ }
+ AppLog.i("DetailFocus", "chain mini=" + (miniPlay != null) + " episodes=" + episodes.size());
  AppLog.i(
  "TvFocus",
  "chain play="
@@ -997,14 +1035,18 @@ final class TvDetailLayout {
  else if (keyCode != android.view.KeyEvent.KEYCODE_DPAD_DOWN) return false;
  View next = view.focusSearch(direction);
  AppLog.i(
- "TvFocus",
- "chain from="
+ "DetailFocus",
+ "from="
  + String.valueOf(view.getTag())
- + " key="
- + android.view.KeyEvent.keyCodeToString(keyCode)
+ + " dir="
+ + (direction == View.FOCUS_UP
+ ? "up"
+ : direction == View.FOCUS_DOWN
+ ? "down"
+ : direction == View.FOCUS_LEFT ? "left" : "right")
  + " to="
- + (next == null
- ? "null"
+ + (next == null || next == view
+ ? "none"
  : String.valueOf(next.getTag())));
  return false;
  });
@@ -1022,7 +1064,8 @@ final class TvDetailLayout {
  if (view == null || out.size() >= limit) return;
  if (view.getTag() instanceof String
  && ((String) view.getTag()).startsWith(prefix)
- && view.isFocusable()) out.add(view);
+ && view.isFocusable()
+ && view.isShown()) out.add(view);
  if (view instanceof ViewGroup) {
  ViewGroup group = (ViewGroup) view;
  for (int i = 0; i < group.getChildCount() && out.size() < limit; i++)

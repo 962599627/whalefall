@@ -114,9 +114,18 @@ final class MiniDetails {
  hit = new View(a);
  hit.setFocusable(true);
  hit.setFocusableInTouchMode(true);
- hit.setOnClickListener(v -> a.expandPlayback());
+ hit.setTag("mini-video");
+ TvNav.focusRing(a, hit, 12);
+ hit.setOnClickListener(
+ v -> {
+ // 1.9.96：小窗视频区 OK/点击 = 直接放大全屏
+ AppLog.i("MiniFocus", "ok=expand");
+ a.expandPlayback();
+ });
  FrameLayout.LayoutParams hitLp = new FrameLayout.LayoutParams(-1, -1);
  page.addView(hit, hitLp);
+ // 1.9.96：控制条必须叠在 mini-video 之上，否则按钮被整块 hit 盖住点不到
+ bar.bringToFront();
  hit.setOnFocusChangeListener(
  (v, focused) ->
  FocusMotion.style(
@@ -247,6 +256,7 @@ final class MiniDetails {
  b.setIncludeFontPadding(false);
  b.setFocusable(true);
  b.setFocusableInTouchMode(true);
+ TvNav.markRing(b);
  if (b.getId() == View.NO_ID) b.setId(View.generateViewId());
  b.setOnFocusChangeListener(
  (v, focused) -> {
