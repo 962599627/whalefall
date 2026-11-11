@@ -78,7 +78,8 @@ final class UpdateScreen {
  } catch (Throwable error) {
  AppLog.w(
  "Update",
- "fail reason=" + error.getClass().getSimpleName() + ": " + error.getMessage());
+ "fail reason=" + error.getClass().getSimpleName() + ": " + error.getMessage(),
+ error);
  showFallback(error);
  }
  }
