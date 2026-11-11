@@ -2352,8 +2352,15 @@ public final class MainActivity extends Activity {
  showControls(false);
  return;
  }
+ if (!miniMode && playbackControls != null && isTvDevice() && !isLive()) {
+ // 1.9.109：TV 第二次 BACK → 缩回详情页左侧小窗，保持播放
+ AppLog.i("Back", "page=player tv=true action=minimize");
+ minimizePlayback();
+ return;
+ }
  if (!miniMode && playbackControls != null) {
- // 1.9.106：BACK 离开播放页 = 立即释放（手机/电视统一），不再缩成小窗留后台声音
+ // 1.9.106/1.9.109：手机 BACK 直接停止播放并回上一级
+ AppLog.i("Back", "page=player tv=false action=release");
  releasePlaybackOnPageChange("back", false);
  if (!back.isEmpty()) {
  capture();
