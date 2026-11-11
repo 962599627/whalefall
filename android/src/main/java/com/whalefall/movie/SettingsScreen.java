@@ -119,7 +119,11 @@ final class SettingsScreen {
                     "App 内置文件（教程 / 配置 / 上传）",
                     "仅 App 内置配置/教程与管理员后台上传文件",
                     "settings-files",
-                    () -> open(() -> FilesScreen.show(a)));
+                    // 1.9.82：FilesScreen.show 内部已 a.open；这里不能再包一层 open，否则双入栈导致 BACK 循环
+                    () -> {
+                        AppLog.i("Back", "open owner=FilesScreen target=app-files");
+                        FilesScreen.show(a);
+                    });
             link(
                     "片源体检 / 失效源清理",
                     "逐个检测片源可用性与耗时，可禁用/恢复失效源",

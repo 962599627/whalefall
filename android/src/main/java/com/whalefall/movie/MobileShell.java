@@ -5752,10 +5752,8 @@ final class MobileShell {
                         1,
                         "App 内置文件（教程 / 配置 / 上传）",
                         "App 内置配置/教程文件与管理员后台上传；本地与网盘文件请用「文件管理器」",
-                        () ->
-                                a.open(
-                                        new MainActivity.Screen(() -> FilesScreen.show(a)),
-                                        true));
+                        // 1.9.82：FilesScreen.show 内部已 a.open，禁止再包一层 Screen（双入栈 BACK 循环）
+                        () -> FilesScreen.show(a));
                 addSettingCard(
                         body,
                         1,

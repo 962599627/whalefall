@@ -57,7 +57,7 @@ final class FilesScreen {
         a.root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         a.scroll = scroll;
         a.body = column;
-        a.body.setTag("files");
+        a.body.setTag("app-files");
 
         final String path = PushFiles.sanitizePath(relDir);
 
@@ -70,24 +70,16 @@ final class FilesScreen {
         ExtraPages.tvFocus(a, back, 999);
         back.setOnClickListener(
                 v -> {
-                    AppLog.i("Back", "files path=" + path);
-                    // 1.9.81：TV 返回按钮显式 popBack，避免被 onBackPressed 早退分支吞掉
-                    if (a.isTvDevice()) {
-                        a.onBackPressed();
-                        a.ui.postDelayed(
-                                () -> {
-                                    if (a.body != null
-                                            && "files".equals(String.valueOf(a.body.getTag())))
-                                        a.popBack();
-                                },
-                                120);
-                        return;
-                    }
-                    if (path.isEmpty()) {
-                        a.onBackPressed();
-                        return;
-                    }
-                    show(a, PushFiles.parentOf(path));
+                    AppLog.i(
+                            "Back",
+                            "app-files path="
+                                    + path
+                                    + " target="
+                                    + (a.back.isEmpty()
+                                            ? "home"
+                                            : String.valueOf(a.back.peek().pushedTag)));
+                    // 1.9.82：直接显式 popBack，不再经过 onBackPressed（避免与 FileManager 分支互串）
+                    a.popBack();
                 });
         nav.addView(back, new LinearLayout.LayoutParams(a.dp(42), a.dp(42)));
         TextView title = a.text(path.isEmpty() ? "文件管理" : PushFiles.baseName(path), 20, MainActivity.WHITE);

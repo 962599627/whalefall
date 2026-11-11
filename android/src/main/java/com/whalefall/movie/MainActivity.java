@@ -1882,6 +1882,22 @@ public final class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        String ownerTag = body == null ? "null" : String.valueOf(body.getTag());
+        AppLog.i(
+                "Back",
+                "page="
+                        + ownerTag
+                        + " stack="
+                        + back.size()
+                        + " owner="
+                        + (body == null
+                                ? (root == null ? "null" : root.getClass().getName())
+                                : body.getClass().getName()));
+        // 1.9.82：App 内置文件页在最前处理，避免与 file-manager/播放器分支互串
+        if ("app-files".equals(ownerTag)) {
+            popBack();
+            return;
+        }
         AppLog.i(
                 "Back",
                 "page="
