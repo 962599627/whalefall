@@ -2568,7 +2568,7 @@ public final class MainActivity extends Activity {
                                 || key == KeyEvent.KEYCODE_DPAD_CENTER
                                 || key == KeyEvent.KEYCODE_ENTER;
                 if (nav && (focus == null || !focus.isAttachedToWindow() || !focus.isShown())) {
-                    View first = root == null ? null : root.findViewWithTag("detail-play");
+                    View first = TvDetailLayout.firstDetailFocus(this);
                     if (first == null && root != null) {
                         ArrayList<View> available = new ArrayList<>();
                         root.addFocusables(available, View.FOCUS_FORWARD);

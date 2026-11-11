@@ -197,47 +197,25 @@ final class TvDetailLayout {
                 new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         stateWrap.addView(state, tvStateLp);
         rightCol.addView(stateWrap, new LinearLayout.LayoutParams(-1, a.dp(150)));
-        backBtn.requestFocus();
-        AppLog.i("TvFocus", "page=detail first=detail-back");
-        // 1.9.52：兜底确保 TV 详情页始终有焦点（DPAD 无焦点时整个页面按不动）
+        // 1.9.60：首焦点必须是「播放·首集」，禁止先落「返回」
         a.ui.post(
                 () -> {
                     View current = a.getCurrentFocus();
                     if (current != null && current.isAttachedToWindow() && current.isShown())
                         return;
-                    View first = a.root == null ? null : a.root.findViewWithTag("detail-play");
-                    if (first == null) first = backBtn;
-                    if (first != null) {
-                        first.requestFocus();
-                        a.autoFocus = first;
-                        AppLog.i(
-                                "TvFocus",
-                                "page=detail first="
-                                        + (first.getTag() == null ? "fallback" : first.getTag()));
-                    }
+                    focusFirstDetail(a, "post");
                 });
         a.ui.postDelayed(
                 () -> {
-                    int fixed = ensureFocusables(a.root, 0);
+                    int fixed = ensureFocusables(a, a.root, 0);
                     View current = a.getCurrentFocus();
-                    if ((current == null || !current.isShown() || !current.isAttachedToWindow())
-                            && a.root != null) {
-                        View play = a.root.findViewWithTag("detail-play");
-                        if (play == null) play = backBtn;
-                        if (play != null) {
-                            play.requestFocus();
-                            AppLog.i(
-                                    "TvFocus",
-                                    "page=detail first="
-                                            + (play.getTag() == null ? "fallback" : play.getTag())
-                                            + " fixed="
-                                            + fixed);
-                        }
+                    if (current == null || !current.isShown() || !current.isAttachedToWindow()) {
+                        focusFirstDetail(a, "fixed=" + fixed);
                     } else {
                         AppLog.i(
                                 "TvFocus",
                                 "page=detail focus="
-                                        + (current == null
+                                        + (current.getTag() == null
                                                 ? "null"
                                                 : String.valueOf(current.getTag()))
                                         + " fixed="
@@ -248,18 +226,8 @@ final class TvDetailLayout {
         a.ui.postDelayed(
                 () -> {
                     View current = a.getCurrentFocus();
-                    if (current == null || !current.isShown() || !current.isAttachedToWindow()) {
-                        View play = a.root == null ? null : a.root.findViewWithTag("detail-play");
-                        if (play == null) play = backBtn;
-                        if (play != null) {
-                            play.requestFocus();
-                            AppLog.i(
-                                    "TvFocus",
-                                    "page=detail first="
-                                            + String.valueOf(play.getTag())
-                                            + " delayed=true");
-                        }
-                    }
+                    if (current == null || !current.isShown() || !current.isAttachedToWindow())
+                        focusFirstDetail(a, "delayed");
                 },
                 1400);
 
@@ -370,6 +338,22 @@ final class TvDetailLayout {
                     play.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
                     playWrap.removeAllViews();
                     playWrap.addView(play, new LinearLayout.LayoutParams(-1, a.dp(52)));
+                    // 1.9.60：播放 → 下到线路第一项、右到收藏，保证方向键可达
+                    if (play.getId() == View.NO_ID) play.setId(View.generateViewId());
+                    View lineFirst = findByTagPrefix(a.root, "detail-line:");
+                    if (lineFirst != null) {
+                        if (lineFirst.getId() == View.NO_ID)
+                            lineFirst.setId(View.generateViewId());
+                        play.setNextFocusDownId(lineFirst.getId());
+                        lineFirst.setNextFocusUpId(play.getId());
+                    }
+                    View favoriteTop = a.root.findViewWithTag("detail-favorite");
+                    if (favoriteTop != null) {
+                        if (favoriteTop.getId() == View.NO_ID)
+                            favoriteTop.setId(View.generateViewId());
+                        play.setNextFocusRightId(favoriteTop.getId());
+                        favoriteTop.setNextFocusLeftId(play.getId());
+                    }
 
                     buildActions(
                             a, actionsWrap, s, v, remembered, play, rebuildEpisodes[0], page);
@@ -914,8 +898,53 @@ final class TvDetailLayout {
         return director == null || director.trim().isEmpty() ? "" : "导演：" + director.trim();
     }
 
-    /** 1.9.52：兜底把详情页所有可交互控件补成可聚焦（避免某控件吃掉 DPAD 后整页无焦点）。 */
-    static int ensureFocusables(View view, int fixed) {
+    /** 1.9.60：首焦点顺序：播放 → 线路第一项 → 收藏 → 返回；禁止返回优先。 */
+    static View firstDetailFocus(MainActivity a) {
+        if (a == null || a.root == null) return null;
+        View play = a.root.findViewWithTag("detail-play");
+        if (play != null && play.isShown()) return play;
+        View line = findByTagPrefix(a.root, "detail-line:");
+        if (line != null) return line;
+        View fav = a.root.findViewWithTag("detail-favorite");
+        if (fav != null && fav.isShown()) return fav;
+        View back = a.root.findViewWithTag("detail-back");
+        return back;
+    }
+
+    private static View findByTagPrefix(View view, String prefix) {
+        if (view == null) return null;
+        if (view.getTag() instanceof String
+                && ((String) view.getTag()).startsWith(prefix)
+                && view.isShown()
+                && view.isFocusable()) return view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View found = findByTagPrefix(group.getChildAt(i), prefix);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private static void focusFirstDetail(MainActivity a, String reason) {
+        View first = firstDetailFocus(a);
+        if (first == null) {
+            AppLog.i("TvFocus", "page=detail first=none reason=" + reason);
+            return;
+        }
+        first.requestFocus();
+        a.autoFocus = first;
+        AppLog.i(
+                "TvFocus",
+                "page=detail first="
+                        + String.valueOf(first.getTag())
+                        + " reason="
+                        + reason);
+    }
+
+    /** 1.9.52/1.9.60：兜底把详情页可交互控件补成可聚焦，并加可见焦点描边。 */
+    static int ensureFocusables(MainActivity a, View view, int fixed) {
         if (view == null) return fixed;
         if (view.isClickable()
                 && !view.isFocusable()
@@ -923,12 +952,25 @@ final class TvDetailLayout {
                 && !(view instanceof android.widget.HorizontalScrollView)) {
             view.setFocusable(true);
             view.setFocusableInTouchMode(true);
+            view.setOnFocusChangeListener(
+                    (v, focused) ->
+                            FocusMotion.style(
+                                    a,
+                                    v,
+                                    focused,
+                                    0x0016283f,
+                                    0x66ffffff,
+                                    12,
+                                    0xffffffff,
+                                    0xff070d18,
+                                    true,
+                                    1.03f));
             fixed++;
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++)
-                fixed = ensureFocusables(group.getChildAt(i), fixed);
+                fixed = ensureFocusables(a, group.getChildAt(i), fixed);
         }
         return fixed;
     }
