@@ -53,6 +53,12 @@ final class FileManagerScreen {
  }
 
  static void showFrom(MainActivity a, int source) {
+ // 1.9.97：无存储权限时不显示空列表，先申请/引导
+ if (!a.hasStoragePermission()) {
+ AppLog.i("Perm", "storage granted=false target=file-manager");
+ a.requestStoragePermission(() -> showFrom(a, source));
+ return;
+ }
  lastSource = source;
  FileManagerScreen screen = new FileManagerScreen(a);
  screen.open();

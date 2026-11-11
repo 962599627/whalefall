@@ -23,6 +23,12 @@ final class AdminPanel {
  private AdminPanel() {}
 
  static void show(MainActivity a) {
+ // 1.9.97：管理员后台需要存储权限才能列文件/接收上传
+ if (!a.hasStoragePermission()) {
+ AppLog.i("Perm", "storage granted=false target=admin-panel");
+ a.requestStoragePermission(() -> show(a));
+ return;
+ }
  final AdminConsole[] holder = new AdminConsole[1];
  try {
  holder[0] = new AdminConsole(a);

@@ -144,6 +144,83 @@ public final class MainActivity extends Activity {
  android.net.ConnectivityManager.NetworkCallback networkCallback;
  /** 1.9.66：手机作为被控端时进入遥控焦点模式。 */
  boolean remoteFocusMode;
+ /** 1.9.97：Android 6 运行时存储权限。 */
+ static final int REQ_STORAGE = 1001;
+ Runnable storagePending;
+
+ boolean hasStoragePermission() {
+ if (android.os.Build.VERSION.SDK_INT < 23) return true;
+ try {
+ return checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+ == android.content.pm.PackageManager.PERMISSION_GRANTED
+ && checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+ == android.content.pm.PackageManager.PERMISSION_GRANTED;
+ } catch (Throwable ignored) {
+ return false;
+ }
+ }
+
+ void requestStoragePermission(Runnable after) {
+ if (hasStoragePermission()) {
+ AppLog.i("Perm", "storage granted=true cached");
+ if (after != null) after.run();
+ return;
+ }
+ storagePending = after;
+ try {
+ requestPermissions(
+ new String[] {
+ android.Manifest.permission.READ_EXTERNAL_STORAGE,
+ android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+ },
+ REQ_STORAGE);
+ } catch (Throwable error) {
+ AppLog.w("Perm", "request storage failed", error);
+ showStoragePermissionDialog(after);
+ }
+ }
+
+ void showStoragePermissionDialog(final Runnable retry) {
+ new AppDialog.Builder(this)
+ .setTitle("未授予存储权限")
+ .setMessage(
+ "需要「存储」权限才能读取本地视频/图片、选择壁纸和保存崩溃日志。请在系统弹窗选择允许，或到系统设置手动授权。")
+ .setNegativeButton(
+ "去设置",
+ (d, w) -> {
+ try {
+ startActivity(
+ new android.content.Intent(
+ android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+ android.net.Uri.parse("package:" + getPackageName())));
+ } catch (Throwable ignored) {
+ }
+ })
+ .setPositiveButton("重新授权", (d, w) -> requestStoragePermission(retry))
+ .setPositiveDefaultFocus()
+ .show();
+ }
+
+ @Override
+ public void onRequestPermissionsResult(
+ int requestCode, String[] permissions, int[] grantResults) {
+ super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+ if (requestCode != REQ_STORAGE) return;
+ boolean granted = grantResults.length > 0;
+ for (int result : grantResults)
+ if (result != android.content.pm.PackageManager.PERMISSION_GRANTED) granted = false;
+ AppLog.i("Perm", "storage granted=" + granted);
+ if (granted) {
+ toast("已授予存储权限");
+ if (storagePending != null) {
+ Runnable next = storagePending;
+ storagePending = null;
+ next.run();
+ }
+ } else {
+ showStoragePermissionDialog(storagePending);
+ }
+ }
  /** 1.9.84：物理遥控按键即进入焦点模式（不依赖 LEANBACK 上报）。 */
  boolean keyFocusMode;
 
