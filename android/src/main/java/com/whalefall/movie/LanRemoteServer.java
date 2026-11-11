@@ -238,6 +238,34 @@ final class LanRemoteServer implements Closeable {
                                         + " injected=true");
                         return;
                     }
+                    // 1.9.79：注入前焦点兜底（触摸后 focusableInTouchMode/焦点可能丢失）
+                    View preFocus = activity.getCurrentFocus();
+                    if (preFocus == null
+                            || !preFocus.isAttachedToWindow()
+                            || !preFocus.isShown()) {
+                        TvNav.setTouchFocusMode(activity, true);
+                        View modal = ModalStack.topRoot();
+                        View restored;
+                        if (modal != null) {
+                            ModalStack.focusFirst(activity, modal);
+                            restored = modal.findFocus();
+                        } else {
+                            restored =
+                                    TvNav.ensureFocus(
+                                            activity,
+                                            "inject-pre",
+                                            "detail-play",
+                                            "home-video:0",
+                                            "primary",
+                                            "nav-home");
+                        }
+                        AppLog.i(
+                                "Remote",
+                                "inject focus-restore="
+                                        + (restored == null
+                                                ? "null"
+                                                : String.valueOf(restored.getTag())));
+                    }
                     // 1) 弹层优先：Dialog 有独立窗口，Activity 收不到注入键
                     android.app.Dialog dialog =
                             activity.playbackControls != null

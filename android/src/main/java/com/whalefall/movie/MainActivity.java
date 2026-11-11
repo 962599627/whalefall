@@ -2581,6 +2581,46 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        boolean handled = super.dispatchTouchEvent(event);
+        // 1.9.79：遥控焦点模式下触摸不退出遥控；手指抬起后恢复焦点与 touch-mode
+        if (remoteFocusMode
+                && (event.getActionMasked() == android.view.MotionEvent.ACTION_UP
+                        || event.getActionMasked()
+                                == android.view.MotionEvent.ACTION_CANCEL)) {
+            ui.postDelayed(
+                    () -> {
+                        if (!remoteFocusMode) return;
+                        TvNav.setTouchFocusMode(this, true);
+                        View modal = ModalStack.topRoot();
+                        View focus;
+                        if (modal != null) {
+                            ModalStack.focusFirst(this, modal);
+                            focus = modal.findFocus();
+                        } else {
+                            focus =
+                                    TvNav.ensureFocus(
+                                            this,
+                                            "touch",
+                                            "detail-play",
+                                            "home-video:0",
+                                            "home-tonight",
+                                            "primary",
+                                            "nav-home");
+                        }
+                        AppLog.i(
+                                "Remote",
+                                "touch=restore-focus focus="
+                                        + (focus == null
+                                                ? "null"
+                                                : String.valueOf(focus.getTag())));
+                    },
+                    50);
+        }
+        return handled;
+    }
+
+    @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (introSkipKey && event.getAction() == KeyEvent.ACTION_UP) {
             introSkipKey = false;
