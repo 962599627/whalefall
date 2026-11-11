@@ -719,6 +719,7 @@ final class MobileDetailScreen {
         previewBg.setStroke(Math.max(1, a.dp(0.8f)), 0x22ffffff);
         previewCard.setBackground(previewBg);
         previewCard.setClipToOutline(true);
+        previewCard.setTag("detail-hero");
 
         final ImageView posterHook = new ImageView(a);
         posterHook.setTag("detail-cover");

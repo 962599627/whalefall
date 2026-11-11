@@ -436,6 +436,7 @@ final class TvDetailLayout {
     /** 16:9 预览卡：封面 + 底部渐变 + 中央 72dp 粉圆「按 OK 播放」浮层（独立可聚焦）。 */
     private static View buildPreview(MainActivity a, Cms.Video listing, int height) {
         FrameLayout card = new FrameLayout(a);
+        card.setTag("detail-hero");
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(0xff0d1a2b);
         bg.setCornerRadius(a.dp(20));

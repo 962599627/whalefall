@@ -888,8 +888,7 @@ final class PlaybackController {
             a.root.addView(layer, new FrameLayout.LayoutParams(-1, -1));
         }
         if (layer != null) layer.bringToFront();
-        // 1.9.56：小窗时隐藏详情 hero 海报/播放按钮，避免死图盖住实时视频
-        hideDetailHero(a, true);
+        // 1.9.58：由 MiniDetails 先测 hero 矩形再隐藏，保证小窗与海报区域一致
         a.miniDetails = new MiniDetails(a);
         if (!overDetail && a.current != null) a.restore(a.current);
     }
@@ -949,8 +948,15 @@ final class PlaybackController {
     /** 1.9.56：小窗时隐藏详情页 hero 海报/播放按钮层，避免死图 + 播放按钮盖住视频。 */
     static void hideDetailHero(MainActivity a, boolean hide) {
         if (a.root == null) return;
-        String[] tags = {"detail-cover", "detail-play-big", "detail-play"};
         int changed = 0;
+        // 1.9.58：整个 hero 容器（海报 + 渐变 + 播放按钮/提示）一起隐藏/恢复
+        View hero = a.root.findViewWithTag("detail-hero");
+        if (hero != null) {
+            // INVISIBLE 保留 hero 占位，避免详情排版上移被小窗盖住
+            hero.setVisibility(hide ? View.INVISIBLE : View.VISIBLE);
+            changed++;
+        }
+        String[] tags = {"detail-cover", "detail-play-big", "detail-play"};
         for (String tag : tags) {
             View view = a.root.findViewWithTag(tag);
             if (view != null) {
@@ -964,6 +970,8 @@ final class PlaybackController {
                         + (hide ? "hidden" : "restored")
                         + " layers="
                         + changed
+                        + " poster="
+                        + (hide ? "hidden" : "shown")
                         + " surface="
                         + (a.player != null ? "kept" : "none"));
     }

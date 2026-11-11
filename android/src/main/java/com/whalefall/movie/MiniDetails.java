@@ -127,6 +127,8 @@ final class MiniDetails {
         // 1.9.56：保证视频层在详情海报之上，再叠加控制层
         a.playbackLayer.bringToFront();
         page.bringToFront();
+        // 1.9.58：小窗精确覆盖 hero 海报矩形
+        a.ui.post(() -> applyHeroRect(0));
 
         a.ui.post(
                 () -> {
@@ -190,6 +192,48 @@ final class MiniDetails {
                     if (a.miniMode) PlaybackController.hideDetailHero(a, true);
                 },
                 600);
+    }
+
+    /** 1.9.58：把视频/控制层对齐到详情 hero 海报矩形，并隐藏 hero 整层。 */
+    private void applyHeroRect(int attempt) {
+        if (!a.miniMode || a.root == null) return;
+        View hero = a.root.findViewWithTag("detail-hero");
+        if (hero != null && hero.getWidth() > 0 && hero.getHeight() > 0) {
+            int[] hv = new int[2];
+            hero.getLocationOnScreen(hv);
+            int[] rv = new int[2];
+            a.root.getLocationOnScreen(rv);
+            int x = Math.max(0, hv[0] - rv[0]);
+            int y = Math.max(0, hv[1] - rv[1]);
+            int w = hero.getWidth();
+            int h = hero.getHeight();
+            FrameLayout.LayoutParams vlp =
+                    new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
+            vlp.leftMargin = x;
+            vlp.topMargin = y;
+            a.playbackLayer.setLayoutParams(vlp);
+            FrameLayout.LayoutParams plp =
+                    new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
+            plp.leftMargin = x;
+            plp.topMargin = y;
+            page.setLayoutParams(plp);
+            PlaybackController.hideDetailHero(a, true);
+            a.playbackLayer.bringToFront();
+            page.bringToFront();
+            AppLog.i(
+                    "Mini",
+                    "rect=hero x="
+                            + x
+                            + " y="
+                            + y
+                            + " w="
+                            + w
+                            + " h="
+                            + h
+                            + " poster=hidden");
+        } else if (attempt < 8) {
+            a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 100);
+        }
     }
 
     private TextView miniButton(String label, String tag, Runnable action) {
