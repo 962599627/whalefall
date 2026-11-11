@@ -1656,9 +1656,12 @@ public final class MainActivity extends Activity {
  prefs.edit()
  .putBoolean(Prefs.WALLPAPER_VIDEO, false)
  .putBoolean(Prefs.WALLPAPER_ENABLED, true)
+ .putBoolean("force_builtin_wallpaper", true)
  .apply();
  toast("动态壁纸播放失败，已恢复默认壁纸");
- AppLog.i("Wallpaper", "video fallback reason=" + reason + " restored=true");
+ AppLog.i(
+ "Wallpaper",
+ "video fallback reason=" + reason + " restored=true source=builtin-default");
  ui.post(
  () -> {
  if (root != null) applyWallpaper(root);

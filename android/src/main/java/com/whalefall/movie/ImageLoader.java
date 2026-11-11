@@ -399,13 +399,19 @@ final class ImageLoader {
  Bitmap wallpaper;
  Bitmap fallbackWallpaper;
  boolean decodeLogged;
+ boolean usingBuiltin;
+ boolean drawLogged;
 
  Atmosphere(Context c) {
  super(c);
  a = (MainActivity) c;
- if (a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) wallpaper = loadWallpaper();
+ if (!a.prefs.getBoolean("force_builtin_wallpaper", false)
+ && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) wallpaper = loadWallpaper();
  // 1.9.112：自定义壁纸关闭/缺失时永远用内置默认壁纸兜底
- if (wallpaper == null) fallbackWallpaper = loadDefaultWallpaper();
+ if (wallpaper == null) {
+ fallbackWallpaper = loadDefaultWallpaper();
+ usingBuiltin = fallbackWallpaper != null;
+ }
  }
 
  private Bitmap loadDefaultWallpaper() {
@@ -438,9 +444,14 @@ final class ImageLoader {
  @Override
  protected void onDraw(Canvas canvas) {
  canvas.drawColor(MainActivity.DARK);
- if (wallpaper == null && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false))
+ if (wallpaper == null
+ && !a.prefs.getBoolean("force_builtin_wallpaper", false)
+ && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false))
  wallpaper = loadWallpaper();
- if (wallpaper == null) wallpaper = fallbackWallpaper;
+ if (wallpaper == null) {
+ wallpaper = fallbackWallpaper;
+ usingBuiltin = wallpaper != null;
+ }
  if (wallpaper != null) {
  float scale =
  Math.max(
@@ -456,8 +467,15 @@ final class ImageLoader {
  (getWidth() + w) / 2,
  (getHeight() + h) / 2),
  paint);
- int dim = Prefs.clampWallpaperDim(a.prefs.getInt(Prefs.WALLPAPER_DIM, 60));
+ int dim = Prefs.clampWallpaperDim(a.prefs.getInt(Prefs.WALLPAPER_DIM, 40));
+ if (usingBuiltin) dim = Math.min(dim, 30);
  canvas.drawColor(Color.argb(Math.round(255 * dim / 100f), 0, 0, 0));
+ if (!drawLogged) {
+ drawLogged = true;
+ AppLog.i(
+ "Wallpaper",
+ "draw source=" + (usingBuiltin ? "builtin-default" : "custom") + " alpha=" + dim);
+ }
  }
  }
 

@@ -406,7 +406,7 @@ final class SettingsScreen {
  "使用上次导入的图片",
  "wallpaper-enable",
  () -> {
- a.prefs.edit().putBoolean(Prefs.WALLPAPER_ENABLED, true).apply();
+ a.prefs.edit().putBoolean(Prefs.WALLPAPER_ENABLED, true).remove("force_builtin_wallpaper").apply();
  a.refresh();
  });
  }
@@ -933,6 +933,7 @@ final class SettingsScreen {
  a.prefs.edit()
  .putBoolean(Prefs.WALLPAPER_VIDEO, true)
  .putBoolean(Prefs.WALLPAPER_ENABLED, false)
+ .remove("force_builtin_wallpaper")
  .apply();
  String reason = videoWallpaperRejectReason(a, target);
  if (reason != null) {
@@ -1123,7 +1124,7 @@ final class SettingsScreen {
  image.recycle();
  temporary.delete();
  }
- a.prefs.edit().putBoolean(Prefs.WALLPAPER_ENABLED, true).apply();
+ a.prefs.edit().putBoolean(Prefs.WALLPAPER_ENABLED, true).remove("force_builtin_wallpaper").apply();
  }
 
  static final String[] KEYS = Prefs.KEYS;

@@ -1329,7 +1329,12 @@ final class HomeScreen {
  + (next == null || next == v ? "none" : String.valueOf(next.getTag())));
  return false;
  });
- chip.setOnClickListener(v -> showFilterOptions(defF));
+ chip.setOnClickListener(
+ v -> {
+ // 1.9.117：TV 用 AppDialog 弹窗选择器（ModalStack 焦点已验证）；手机保留内嵌触摸展开
+ if (a.isTvDevice()) showFilterOptionDialog(defF);
+ else showFilterOptions(defF);
+ });
  tagWrap.addView(chip, new LinearLayout.LayoutParams(-2, -2));
  if (active || open) {
  View underline = new View(a);
@@ -1429,6 +1434,44 @@ final class HomeScreen {
  }
 
  /** L3：单行横滚紧凑 chip（TV 34dp/10 间距）。 */
+ /** 1.9.117：TV 筛选选项弹窗（每行一个选项，当前选中高亮；BACK=关闭）。 */
+ void showFilterOptionDialog(final VideoFilters.Definition def) {
+ final String dimKey = normalizeFilterDim(def.dimension);
+ String[] labels = new String[def.choices.size()];
+ int checked = 0;
+ String current = state.selectedFilters.get(def.dimension);
+ for (int i = 0; i < def.choices.size(); i++) {
+ VideoFilters.Choice choice = def.choices.get(i);
+ labels[i] = choice.label;
+ if (current != null
+ && !current.isEmpty()
+ && current.equals(choice.value)) checked = i;
+ }
+ AppLog.i(
+ "FilterOption",
+ "dialog dim=" + dimKey + " opened=true options=" + labels.length + " title=" + VideoFilters.displayLabel(def));
+ new AppDialog.Builder(a)
+ .setTitle(VideoFilters.displayLabel(def))
+ .setSingleChoiceItems(
+ labels,
+ checked,
+ (dialog, which) -> {
+ VideoFilters.Choice picked = def.choices.get(which);
+ AppLog.i(
+ "FilterOption",
+ "pick dim=" + dimKey + " value=" + picked.value + " label=" + picked.label);
+ applyFilterChoice(def, picked);
+ a.ui.postDelayed(
+ () -> {
+ View chip = a.root == null ? null : a.root.findViewWithTag("filter-" + dimKey);
+ if (chip != null) chip.requestFocus();
+ },
+ 250);
+ })
+ .setNegativeButton("取消", null)
+ .show();
+ }
+
  void showFilterOptions(final VideoFilters.Definition def) {
  if (filterOptionScroll == null) return;
  int panelBefore =

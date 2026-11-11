@@ -38,7 +38,9 @@ final class VideoWallpaper extends FrameLayout {
     private boolean released, moving, firstFrame;
     private final Runnable firstFrameTimeout =
             () -> {
-                if (!released && !firstFrame) fail("first-frame-timeout");
+                // 1.9.117：页面切换/重建导致首帧计时误判，仅记录不 fallback
+                if (!released && !firstFrame)
+                    AppLog.i("Wallpaper", "video firstFrame msec=3000 action=log-only keep=true");
             };
 
     static File file(Context c) {
@@ -117,6 +119,9 @@ final class VideoWallpaper extends FrameLayout {
                     @Override
                     public void surfaceCreated(SurfaceHolder holder) {
                         if (released) return;
+                        // 1.9.117：Surface 重挂后再启动首帧守候（仅日志）
+                        handler.removeCallbacks(firstFrameTimeout);
+                        handler.postDelayed(firstFrameTimeout, 3000);
                         try {
                             final String path = file(host).getAbsolutePath();
                             AppLog.i("Wallpaper", "video engine=mediaplayer path=" + path);
@@ -250,6 +255,12 @@ final class VideoWallpaper extends FrameLayout {
                 Math.min(1, root.getChildCount()),
                 new android.widget.FrameLayout.LayoutParams(-1, -1));
         moving = false;
+        // 1.9.117：页面切换不重建播放器；未出首帧时重置守候（仅日志，不 fallback）
+        if (!firstFrame) {
+            handler.removeCallbacks(firstFrameTimeout);
+            handler.postDelayed(firstFrameTimeout, 3000);
+        }
+        AppLog.i("Wallpaper", "video page-change keep=true firstFrame=" + firstFrame);
         if (player != null) player.setPlayWhenReady(true);
         if (mediaPlayer != null) {
             try {
