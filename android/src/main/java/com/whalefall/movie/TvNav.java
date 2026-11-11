@@ -175,8 +175,37 @@ final class TvNav {
             focused = false;
         }
         Object stored = view.getTag(FG_KEY);
-        if (focused) {
-            if (stored == null) view.setTag(FG_KEY, view.getForeground());
+        final boolean canOverlay = android.os.Build.VERSION.SDK_INT >= 23;
+        if (focused && !canOverlay) {
+            // 1.9.84：API<23 无 foreground，用 background 内描边替代焦点环
+            try {
+                if (view.getTag(BG_KEY) == null) view.setTag(BG_KEY, view.getBackground());
+                android.graphics.drawable.GradientDrawable ring =
+                        new android.graphics.drawable.GradientDrawable();
+                ring.setColor(0x1AFF8FB1);
+                ring.setCornerRadius(a.dp(Math.max(0, radiusDp)));
+                ring.setStroke(a.dp(2), 0xFFFFB3C8);
+                view.setBackground(ring);
+            } catch (Throwable error) {
+                AppLog.w("TvNav", "legacy focus ring skipped", error);
+            }
+        } else if (!focused && !canOverlay) {
+            try {
+                Object bg = view.getTag(BG_KEY);
+                view.setBackground(
+                        bg instanceof android.graphics.drawable.Drawable
+                                ? (android.graphics.drawable.Drawable) bg
+                                : null);
+            } catch (Throwable ignored) {
+            }
+        }
+        if (focused && canOverlay) {
+            if (stored == null) {
+                try {
+                    view.setTag(FG_KEY, view.getForeground());
+                } catch (Throwable ignored) {
+                }
+            }
             android.graphics.drawable.Drawable d = new FocusDrawable(a, radiusDp, style);
             if (android.os.Build.VERSION.SDK_INT >= 23) {
                 d.setAlpha(255);
@@ -193,7 +222,7 @@ final class TvNav {
                                 ? 0xffffd0de
                                 : text.getCurrentTextColor());
             }
-        } else {
+        } else if (!focused) {
             // 无论之前有没有缓存，失焦都清掉焦点 overlay，避免“款式残留全亮”
             if (android.os.Build.VERSION.SDK_INT >= 23) {
                 android.graphics.drawable.Drawable original =

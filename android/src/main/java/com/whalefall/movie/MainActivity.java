@@ -142,6 +142,8 @@ public final class MainActivity extends Activity {
     android.net.ConnectivityManager.NetworkCallback networkCallback;
     /** 1.9.66：手机作为被控端时进入遥控焦点模式。 */
     boolean remoteFocusMode;
+    /** 1.9.84：物理遥控按键即进入焦点模式（不依赖 LEANBACK 上报）。 */
+    boolean keyFocusMode;
 
     void enterRemoteFocus(String page) {
         // 1.9.75：只有遥控服务正在工作且 10s 内有客户端请求才进入焦点模式
@@ -620,6 +622,35 @@ public final class MainActivity extends Activity {
                 out.write(sb.toString().getBytes("UTF-8"));
             } finally {
                 out.close();
+            }
+            // 1.9.84：同时写外部存储，用户可直接拷出 /sdcard/Download/DSH-Go/鲸落/crash-last.txt
+            writeExternalCrashLog(sb.toString());
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void writeExternalCrashLog(String text) {
+        try {
+            java.io.File external = android.os.Environment.getExternalStorageDirectory();
+            if (external == null) return;
+            java.io.File[] dirs = {
+                new java.io.File(external, "Download/DSH-Go/鲸落"),
+                new java.io.File(external, "Download/WhaleFall"),
+                new java.io.File(external, "Download")
+            };
+            for (java.io.File dir : dirs) {
+                try {
+                    if (!dir.isDirectory() && !dir.mkdirs()) continue;
+                    java.io.FileOutputStream out =
+                            new java.io.FileOutputStream(new java.io.File(dir, "crash-last.txt"));
+                    try {
+                        out.write(text.getBytes("UTF-8"));
+                    } finally {
+                        out.close();
+                    }
+                    return;
+                } catch (Throwable ignored) {
+                }
             }
         } catch (Throwable ignored) {
         }
@@ -2644,6 +2675,16 @@ public final class MainActivity extends Activity {
 
     @Override
     public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        if (keyFocusMode
+                && !remoteFocusMode
+                && event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+            keyFocusMode = false;
+            try {
+                TvNav.setTouchFocusMode(this, false);
+            } catch (Throwable ignored) {
+            }
+            AppLog.i("Remote", "keyFocus=off reason=touch");
+        }
         boolean handled = super.dispatchTouchEvent(event);
         // 1.9.79：遥控焦点模式下触摸不退出遥控；手指抬起后恢复焦点与 touch-mode
         if (remoteFocusMode
@@ -2684,6 +2725,36 @@ public final class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        // 1.9.84：物理遥控/键盘方向键按下即进入焦点模式（isTvDevice 可能为 false）
+        int pressed = event.getKeyCode();
+        boolean focusKey =
+                pressed == KeyEvent.KEYCODE_DPAD_UP
+                        || pressed == KeyEvent.KEYCODE_DPAD_DOWN
+                        || pressed == KeyEvent.KEYCODE_DPAD_LEFT
+                        || pressed == KeyEvent.KEYCODE_DPAD_RIGHT
+                        || pressed == KeyEvent.KEYCODE_DPAD_CENTER
+                        || pressed == KeyEvent.KEYCODE_ENTER;
+        if (focusKey && event.getAction() == KeyEvent.ACTION_DOWN && !keyFocusMode) {
+            keyFocusMode = true;
+            AppLog.i(
+                    "Remote",
+                    "keyFocus=on key="
+                            + KeyEvent.keyCodeToString(pressed)
+                            + " tv="
+                            + isTvDevice());
+            try {
+                TvNav.setTouchFocusMode(this, true);
+                TvNav.ensureFocus(
+                        this,
+                        "key",
+                        "home-video:0",
+                        "detail-play",
+                        "primary",
+                        "nav-home");
+            } catch (Throwable error) {
+                AppLog.w("Remote", "keyFocus enter failed", error);
+            }
+        }
         if (introSkipKey && event.getAction() == KeyEvent.ACTION_UP) {
             introSkipKey = false;
             return true;
@@ -2722,7 +2793,10 @@ public final class MainActivity extends Activity {
         }
         if (liveKey(event)) return true;
         // 1.9.54：TV 二级页（详情/播放除外）按键诊断 + 无焦点时强制落焦点，避免 DPAD/OK 无效
-        if (isTvDevice() && current != null && !current.home && !current.player) {
+        if ((isTvDevice() || keyFocusMode || remoteFocusMode)
+                && current != null
+                && !current.home
+                && !current.player) {
             int key = event.getKeyCode();
             View focus = getCurrentFocus();
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
