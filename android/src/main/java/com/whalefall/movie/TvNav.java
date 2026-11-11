@@ -79,27 +79,65 @@ final class TvNav {
             closeView.setNextFocusUpId(cells.get(cells.size() - 1).getId());
     }
 
-    /** 统一焦点描边：2dp 白描边 + 1.03× 放大；失焦恢复透明。 */
+    /** 焦点态：玻璃底 → 粉色 18% 叠加 + 2dp ACCENT 亮边 + 1.03× 放大（140ms）；REDUCED 只变色。 */
     static void focusRing(final MainActivity a, final View view, final int radiusDp) {
         if (a == null || view == null) return;
         view.setFocusable(true);
         view.setFocusableInTouchMode(true);
         if (view.getId() == View.NO_ID) view.setId(View.generateViewId());
+        final int bgKey = BG_KEY;
+        if (view.getTag(bgKey) == null)
+            view.setTag(bgKey, view.getBackground());
+        final int textKey = TEXT_KEY;
+        if (view.getTag(textKey) == null && view instanceof android.widget.TextView)
+            view.setTag(textKey, ((android.widget.TextView) view).getCurrentTextColor());
         view.setOnFocusChangeListener(
                 (v, focused) -> {
-                    android.graphics.drawable.GradientDrawable ring =
-                            new android.graphics.drawable.GradientDrawable();
-                    ring.setColor(focused ? 0x33ffffff : 0x00000000);
-                    ring.setCornerRadius(a.dp(radiusDp));
-                    if (focused) ring.setStroke(a.dp(2), 0xffffffff);
-                    v.setBackground(ring);
-                    v.animate()
-                            .scaleX(focused ? 1.03f : 1f)
-                            .scaleY(focused ? 1.03f : 1f)
-                            .setDuration(UiTokens.MOTION_FAST)
-                            .start();
+                    long duration = a.reduced ? 0 : 140;
+                    if (!focused) {
+                        Object originalBg = v.getTag(BG_KEY);
+                        v.setBackground(
+                                originalBg instanceof android.graphics.drawable.Drawable
+                                        ? (android.graphics.drawable.Drawable) originalBg
+                                        : null);
+                        if (v instanceof android.widget.TextView) {
+                            Object original = v.getTag(TEXT_KEY);
+                            if (original instanceof Integer)
+                                ((android.widget.TextView) v)
+                                        .setTextColor((Integer) original);
+                        }
+                    } else {
+                        android.graphics.drawable.GradientDrawable ring =
+                                new android.graphics.drawable.GradientDrawable();
+                        ring.setColor(0x33ff6f9c);
+                        ring.setCornerRadius(a.dp(radiusDp));
+                        ring.setStroke(a.dp(2), 0xff8fb1ff);
+                        v.setBackground(ring);
+                        if (v instanceof android.widget.TextView)
+                            ((android.widget.TextView) v).setTextColor(0xffffd0de);
+                    }
+                    if (a.reduced) {
+                        v.setScaleX(1f);
+                        v.setScaleY(1f);
+                    } else {
+                        v.animate()
+                                .scaleX(focused ? 1.03f : 1f)
+                                .scaleY(focused ? 1.03f : 1f)
+                                .setDuration(duration)
+                                .start();
+                    }
+                    AppLog.i(
+                            "TvNav",
+                            "focus="
+                                    + String.valueOf(v.getTag())
+                                    + " style=ring+scale"
+                                    + " on="
+                                    + focused);
                 });
     }
+
+    private static final int BG_KEY = 0x7f0f9e01;
+    private static final int TEXT_KEY = 0x7f0f9e02;
 
     /** 1.9.66：手机被控端检测到遥控连接后，进入遥控焦点模式（手机也显示焦点）。 */
     static void enableRemoteFocus(MainActivity a, String page) {

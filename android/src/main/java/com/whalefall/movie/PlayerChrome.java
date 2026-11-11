@@ -468,22 +468,8 @@ final class PlayerChrome {
         if (!a.isTvDevice()) return;
         button.setFocusable(true);
         button.setFocusableInTouchMode(true);
-        button.setOnFocusChangeListener(
-                (v, focused) -> {
-                    GradientDrawable ring = new GradientDrawable();
-                    ring.setColor(focused ? 0x33ffffff : 0x00000000);
-                    ring.setCornerRadius(a.dp(24));
-                    if (focused) ring.setStroke(a.dp(2), 0xffffffff);
-                    v.setBackground(ring);
-                    v.animate()
-                            .scaleX(focused ? 1.08f : 1f)
-                            .scaleY(focused ? 1.08f : 1f)
-                            .setDuration(UiTokens.MOTION_FAST)
-                            .start();
-                    AppLog.i(
-                            "TvKey",
-                            "page=player focus=" + tag + " action=nav");
-                });
+        // 1.9.68：顶部栏也走统一焦点动效
+        TvNav.focusRing(a, button, 24);
         button.setOnKeyListener(
                 (v, keyCode, event) -> {
                     if (event.getAction() == android.view.KeyEvent.ACTION_DOWN

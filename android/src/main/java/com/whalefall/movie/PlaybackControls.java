@@ -360,26 +360,8 @@ final class PlaybackControls {
                 child.setFocusableInTouchMode(true);
                 child.setEnabled(true);
                 if (child.getId() == View.NO_ID) child.setId(UiCompat.generateViewId());
-                child.setOnFocusChangeListener(
-                        (v, focused) -> {
-                            GradientDrawable ring = new GradientDrawable();
-                            ring.setColor(focused ? 0x33ffffff : 0x00000000);
-                            ring.setCornerRadius(a.dp(10));
-                            if (focused) ring.setStroke(a.dp(2), 0xffffffff);
-                            v.setBackground(ring);
-                            v.animate()
-                                    .scaleX(focused ? 1.03f : 1f)
-                                    .scaleY(focused ? 1.03f : 1f)
-                                    .setDuration(UiTokens.MOTION_FAST)
-                                    .start();
-                            AppLog.i(
-                                    "TvKey",
-                                    "page=player focus="
-                                            + (v.getTag() == null
-                                                    ? "dock"
-                                                    : String.valueOf(v.getTag()))
-                                            + " action=nav");
-                        });
+                // 1.9.68：统一焦点动效（粉色叠加 + ACCENT 亮边 + 1.03× 放大）
+                TvNav.focusRing(a, child, 10);
                 child.setOnKeyListener(
                         (v, keyCode, event) -> {
                             if (event.getAction() == KeyEvent.ACTION_DOWN

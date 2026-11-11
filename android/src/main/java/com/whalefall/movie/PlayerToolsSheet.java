@@ -91,14 +91,7 @@ final class PlayerToolsSheet {
         if (a.isTvDevice()) {
             close.setFocusable(true);
             close.setFocusableInTouchMode(true);
-            close.setOnFocusChangeListener(
-                    (v, focused) -> {
-                        GradientDrawable ring = new GradientDrawable();
-                        ring.setColor(focused ? 0x33ffffff : 0x00000000);
-                        ring.setCornerRadius(a.dp(24));
-                        if (focused) ring.setStroke(a.dp(2), 0xffffffff);
-                        v.setBackground(ring);
-                    });
+            TvNav.focusRing(a, close, 24);
         }
         titleRow.addView(close, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
         card.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));

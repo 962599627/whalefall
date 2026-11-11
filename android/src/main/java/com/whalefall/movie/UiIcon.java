@@ -360,20 +360,8 @@ final class UiIcon {
         if (a.isTvDevice()) {
             cell.setFocusable(true);
             cell.setFocusableInTouchMode(true);
-            cell.setOnFocusChangeListener(
-                    (v, focused) -> {
-                        // 1.9.61：网格可聚焦 + 可见 2dp 白描边 + 轻微放大
-                        GradientDrawable bg = new GradientDrawable();
-                        bg.setColor(focused ? 0x33ffffff : 0x26ffffff);
-                        bg.setCornerRadius(a.dp(UiTokens.RADIUS_14));
-                        if (focused) bg.setStroke(a.dp(2), 0xffffffff);
-                        v.setBackground(bg);
-                        v.animate()
-                                .scaleX(focused ? 1.03f : 1f)
-                                .scaleY(focused ? 1.03f : 1f)
-                                .setDuration(UiTokens.MOTION_FAST)
-                                .start();
-                    });
+            // 1.9.68：工具面板格子统一焦点动效
+            TvNav.focusRing(a, cell, UiTokens.RADIUS_14);
         }
         LinearLayout inner = new LinearLayout(a);
         inner.setOrientation(LinearLayout.VERTICAL);
