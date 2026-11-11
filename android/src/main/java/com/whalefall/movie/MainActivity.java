@@ -3155,6 +3155,13 @@ public final class MainActivity extends Activity {
  lastPlayerKey = KeyEvent.keyCodeToString(pressed);
  PlaybackController.scheduleHide(this);
  }
+ boolean focusKey =
+ pressed == KeyEvent.KEYCODE_DPAD_UP
+ || pressed == KeyEvent.KEYCODE_DPAD_DOWN
+ || pressed == KeyEvent.KEYCODE_DPAD_LEFT
+ || pressed == KeyEvent.KEYCODE_DPAD_RIGHT
+ || pressed == KeyEvent.KEYCODE_DPAD_CENTER
+ || pressed == KeyEvent.KEYCODE_ENTER;
  // 1.9.126：任意方向/OK 按键先把隐藏的控制条唤出，避免被 seek/长按分支吞掉
  if (event.getAction() == KeyEvent.ACTION_DOWN
  && focusKey
@@ -3166,13 +3173,6 @@ public final class MainActivity extends Activity {
  "show reason=key hiddenBefore=true key=" + KeyEvent.keyCodeToString(pressed));
  PlaybackController.showControls(this, true);
  }
- boolean focusKey =
- pressed == KeyEvent.KEYCODE_DPAD_UP
- || pressed == KeyEvent.KEYCODE_DPAD_DOWN
- || pressed == KeyEvent.KEYCODE_DPAD_LEFT
- || pressed == KeyEvent.KEYCODE_DPAD_RIGHT
- || pressed == KeyEvent.KEYCODE_DPAD_CENTER
- || pressed == KeyEvent.KEYCODE_ENTER;
  if (focusKey && event.getAction() == KeyEvent.ACTION_DOWN && !keyFocusMode) {
  keyFocusMode = true;
  AppLog.i(
