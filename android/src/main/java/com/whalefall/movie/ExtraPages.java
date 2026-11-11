@@ -565,7 +565,7 @@ final class ExtraPages {
  }
  cm.setPrimaryClip(
  android.content.ClipData.newPlainText(label, text));
- a.toast("日志已复制");
+ a.toast("已复制，可在设置里清空");
  } catch (Throwable e) {
  AppLog.w("Clipboard", "copy failed", e);
  a.toast("复制失败：" + a.message(e));
@@ -623,10 +623,26 @@ final class ExtraPages {
 
  private static void clearCrashFiles(MainActivity a) {
  try {
- java.io.File src = new java.io.File(a.getFilesDir(), "crash-last.txt");
- if (src.exists()) src.delete();
+ java.io.File dir = a.getFilesDir();
+ java.io.File[] files = dir == null ? null : dir.listFiles();
+ if (files != null)
+ for (java.io.File f : files) {
+ String n = f.getName();
+ if (n.startsWith("crash-") && n.endsWith(".txt")) f.delete();
+ }
  java.io.File pushed = new java.io.File(a.getFilesDir(), "pushed/崩溃日志/上次崩溃.txt");
  if (pushed.exists()) pushed.delete();
+ try {
+ java.io.File external = android.os.Environment.getExternalStorageDirectory();
+ if (external != null) {
+ java.io.File[] outFiles =
+ new java.io.File(external, "Download/DSH-Go/鲸落").listFiles();
+ if (outFiles != null)
+ for (java.io.File f : outFiles)
+ if (f.getName().startsWith("crash-")) f.delete();
+ }
+ } catch (Throwable ignored) {
+ }
  } catch (Throwable ignored) {
  }
  }

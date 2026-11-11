@@ -793,6 +793,13 @@ public final class MainActivity extends Activity {
  for (java.io.File dir : dirs) {
  try {
  if (!dir.isDirectory() && !dir.mkdirs()) continue;
+ // 1.9.100：外部只保留最新 1 份，先删除旧 crash 文件
+ java.io.File[] old = dir.listFiles();
+ if (old != null)
+ for (java.io.File f : old) {
+ String n = f.getName();
+ if (n.startsWith("crash-") || n.equals("crash-last.txt")) f.delete();
+ }
  java.io.FileOutputStream out =
  new java.io.FileOutputStream(new java.io.File(dir, "crash-last.txt"));
  try {
@@ -3239,6 +3246,7 @@ public final class MainActivity extends Activity {
  // 1.9.65：切后台回来网络连接可能已被系统断开，用同一 URL 自动重连
  ui.postDelayed(() -> PlaybackController.retryAfterResume(this), 700);
  scheduleFocusAudit();
+ ui.postDelayed(this::cleanupOldCrashLogs, 1500);
  if (bgPlayback) {
  bgPlayback = false;
  // 1.9.53：回到前台继续播放，不释放音频焦点/不暂停，仅撤掉常驻通知
