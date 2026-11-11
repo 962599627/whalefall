@@ -187,14 +187,20 @@ final class PlayerToolsSheet {
         root.addView(card, cardFrameLp);
 
         dialog.setContentView(root);
-        dialog.setOnDismissListener(
-                d -> {
-                    if (dismissed != null) dismissed.run();
-                });
         // 点遮罩空白处关闭（窗口铺满全屏，卡片贴底）
         root.setOnClickListener(v -> dialog.dismiss());
         dialog.show();
         a.ui.post(() -> TvNav.auditDialog(a, "tools", dialog.getWindow() == null ? null : dialog.getWindow().getDecorView()));
+        if (dialog.getWindow() != null) {
+            View decor = dialog.getWindow().getDecorView();
+            ModalStack.push("player-tools-sheet", decor, dialog::dismiss);
+            a.ui.post(() -> ModalStack.focusFirst(a, decor));
+            dialog.setOnDismissListener(
+                    d -> {
+                        ModalStack.pop(decor);
+                        if (dismissed != null) dismissed.run();
+                    });
+        }
         // 1.9.61：默认焦点=第一格（上一集）
         if (!cells.isEmpty()) {
             final View firstCell = cells.get(0);

@@ -169,8 +169,10 @@ final class SourcePicker {
         a.sourceDialog = dialog;
         dialog.setOnDismissListener(
                 d -> {
+                    ModalStack.pop(dialog.getWindow() == null ? null : dialog.getWindow().getDecorView());
                     if (a.sourceDialog == dialog) a.sourceDialog = null;
                     if (anchor != null && anchor.isAttachedToWindow()) anchor.requestFocus();
+                    a.ui.postDelayed(() -> TvNav.audit(a, "source-dismissed"), 120);
                 });
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout panel = a.vertical();
@@ -469,6 +471,10 @@ final class SourcePicker {
                 });
         dialog.show();
         if (window != null) window.setLayout(Math.min(a.dp(720), a.root.getWidth() - marginH), -2);
+        // 1.9.77：选择片源弹窗注册模态栈，遥控键只作用于弹窗内部
+        View pickerDecor = window == null ? null : window.getDecorView();
+        ModalStack.push("source-picker", pickerDecor, dialog::dismiss);
+        a.ui.post(() -> ModalStack.focusFirst(a, pickerDecor));
     }
 
     static void showWarehouses(MainActivity a) {

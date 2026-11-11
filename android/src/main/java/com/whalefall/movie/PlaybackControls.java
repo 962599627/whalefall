@@ -1169,6 +1169,17 @@ final class PlaybackControls {
         dlg.setContentView(wrapper);
         dlg.show();
         card.requestFocus();
+        View subtitleDecor = dlg.getWindow() == null ? null : dlg.getWindow().getDecorView();
+        ModalStack.push("subtitle-adjuster", subtitleDecor, dlg::dismiss);
+        dlg.setOnDismissListener(
+                d -> {
+                    ModalStack.pop(
+                            dlg.getWindow() == null ? null : dlg.getWindow().getDecorView());
+                    if (liveSub != null) {
+                        liveSub.setPreviewActive(false);
+                        if (onChanged != null) onChanged.run();
+                    }
+                });
     }
 
     void tracks(int type) {
@@ -1414,6 +1425,10 @@ final class PlaybackControls {
         dlg.setContentView(wrapper);
         dlg.show();
         bar.requestFocus();
+        View speedDecor = dlg.getWindow() == null ? null : dlg.getWindow().getDecorView();
+        ModalStack.push("speed-picker", speedDecor, dlg::dismiss);
+        dlg.setOnDismissListener(
+                d -> ModalStack.pop(dlg.getWindow() == null ? null : dlg.getWindow().getDecorView()));
     }
 
     void repeat() {

@@ -134,9 +134,9 @@ final class TvNav {
         if (focused && !view.hasFocus()) {
             AppLog.i(
                     "FocusDraw",
-                    "hasFocus=false view="
+                    "view="
                             + String.valueOf(view.getTag())
-                            + " draw=skip");
+                            + " hasFocus=false draw=skip");
             focused = false;
         }
         Object stored = view.getTag(FG_KEY);
@@ -171,9 +171,9 @@ final class TvNav {
             }
             AppLog.i(
                     "FocusDraw",
-                    "hasFocus=false view="
+                    "view="
                             + String.valueOf(view.getTag())
-                            + " draw=skip");
+                            + " hasFocus=false clear=true");
         }
         view.setScaleX(1f);
         view.setScaleY(1f);
@@ -188,6 +188,9 @@ final class TvNav {
         if (android.os.Build.VERSION.SDK_INT >= 23
                 && view.getForeground() instanceof FocusDrawable) view.setForeground(null);
         view.setTag(FG_KEY, null);
+        AppLog.i(
+                "FocusDraw",
+                "view=" + String.valueOf(view.getTag()) + " hasFocus=" + view.hasFocus() + " clear=true");
     }
 
     /** 判断控件是否残留焦点 overlay。 */

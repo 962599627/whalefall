@@ -184,6 +184,10 @@ final class AppDialog extends Dialog {
                                             ? null
                                             : self.getWindow().getDecorView()));
         }
+        // 1.9.77：注册模态栈，遥控注入键优先弹窗内部
+        View decor = w.getDecorView();
+        ModalStack.push("app-dialog", decor, this::dismiss);
+        a.ui.post(() -> ModalStack.focusFirst(a, decor));
         if (!a.reduced) {
             panel.setAlpha(0);
             panel.setScaleX(.96f);
@@ -194,6 +198,7 @@ final class AppDialog extends Dialog {
 
     @Override
     public void dismiss() {
+        ModalStack.pop(getWindow() == null ? null : getWindow().getDecorView());
         super.dismiss();
         if (a.appDialog == this) a.appDialog = null;
         if (anchor != null && anchor.isAttachedToWindow()) anchor.requestFocus();

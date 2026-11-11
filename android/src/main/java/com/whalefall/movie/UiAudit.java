@@ -77,9 +77,11 @@ final class UiAudit {
         if (a.appDialog != null && !a.appDialog.isShowing()) issues.add("stale:appDialog");
 
         List<String> bad = new ArrayList<>();
-        // 5) 焦点样式泄漏：非焦点控件出现焦点 overlay
-        int leaks = auditFocusLeaks(a, a.root);
-        if (leaks > 0) issues.add("focus-leak count=" + leaks);
+        // 5) 焦点样式泄漏：非焦点控件出现焦点 overlay / 同时多个焦点环
+        int[] leaks = new int[2];
+        auditFocusLeaks(a, a.root, leaks);
+        if (leaks[0] > 0) issues.add("focus-leak count=" + leaks[0]);
+        if (leaks[1] > 1) issues.add("focus-ring count=" + leaks[1]);
         for (String line : issues) if (!line.isEmpty()) bad.add(line);
         String report =
                 "page="
@@ -134,24 +136,24 @@ final class UiAudit {
         }
     }
 
-    private static int auditFocusLeaks(MainActivity a, View view) {
-        if (view == null) return 0;
-        int leaks = 0;
-        if (!view.hasFocus() && TvNav.hasFocusOverlay(view)) {
-            AppLog.i(
+    private static void auditFocusLeaks(MainActivity a, View view, int[] stats) {
+        if (view == null) return;
+        boolean overlay = TvNav.hasFocusOverlay(view);
+        if (overlay && view.hasFocus()) stats[1]++;
+        if (!view.hasFocus() && overlay) {
+            AppLog.e(
                     "UiAudit",
                     "rule=focus-leak view="
                             + String.valueOf(view.getTag())
                             + " action=fix");
             TvNav.clearFocusOverlay(view);
-            leaks++;
+            stats[0]++;
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++)
-                leaks += auditFocusLeaks(a, group.getChildAt(i));
+                auditFocusLeaks(a, group.getChildAt(i), stats);
         }
-        return leaks;
     }
 
     private static int countTag(View view, String tag) {

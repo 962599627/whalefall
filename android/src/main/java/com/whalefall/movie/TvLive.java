@@ -825,17 +825,31 @@ final class TvLive {
             LinearLayout item = a.row();
             item.setGravity(Gravity.CENTER_VERTICAL);
             item.setPadding(a.dp(10), 0, a.dp(10), 0);
-            if (on) item.setBackground(TvUiKit.accentFill(a, 14));
+            // 1.9.78：选中态轻量化：浅底 + 左侧 3dp ACCENT 竖条，不再整块亮粉
+            if (on) {
+                GradientDrawable selectedBg = new GradientDrawable();
+                selectedBg.setColor(0x1AFF8FB1);
+                selectedBg.setCornerRadius(a.dp(10));
+                item.setBackground(selectedBg);
+            }
             MobileDetailScreen.bindTouchFeedback(item);
             item.setClickable(true);
-            if (a.isTvDevice()) item.setTag("tv-focus-cat:" + g);
+            item.setTag("tv-focus-cat:" + g);
             ExtraPages.tvFocus(a, item, 14);
+            if (on) {
+                View bar = new View(a);
+                bar.setBackgroundColor(0xFFFF8FB1);
+                LinearLayout.LayoutParams barLp =
+                        new LinearLayout.LayoutParams(a.dp(3), a.dp(28));
+                barLp.rightMargin = a.dp(8);
+                item.addView(bar, barLp);
+            }
 
-            TextView name = a.text(gs[i], 14, on ? 0xff31141f : 0xffd6e1f0);
+            TextView name = a.text(gs[i], 14, on ? 0xFFFFB3C8 : 0xffd6e1f0);
             name.setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
             item.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
 
-            TextView count = a.text(String.valueOf(counts[i]), 12, on ? 0xa631141f : 0xff8d9cb6);
+            TextView count = a.text(String.valueOf(counts[i]), 12, on ? 0xFFFFB3C8 : 0xff8d9cb6);
             count.setTypeface(null, Typeface.BOLD);
             item.addView(count);
 
@@ -1100,9 +1114,7 @@ final class TvLive {
         LinearLayout row = a.row();
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(a.dp(6), 0, a.dp(8), 0);
-        if (active) {
-            row.setBackground(MobileDetailScreen.glassBg(a, 0x2bff8fb1, 0x66ffb3c8, 14));
-        }
+        // 1.9.78：正在播放不再整行粉底，只用小红点标记
         MobileDetailScreen.bindTouchFeedback(row);
         // TV/被控端：频道行可遥控聚焦并有焦点态
         row.setFocusable(true);

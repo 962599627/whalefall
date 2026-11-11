@@ -225,6 +225,19 @@ final class LanRemoteServer implements Closeable {
                                     + (focus == null ? "null" : String.valueOf(focus.getTag()))
                                     + " key="
                                     + KeyEvent.keyCodeToString(keyCode));
+                    // 1.9.77：优先最上层模态（所有弹窗统一注册），方向键绝不落到背景页
+                    if (ModalStack.handleKey(activity, keyCode)) {
+                        AppLog.i(
+                                "Modal",
+                                "stack="
+                                        + ModalStack.size()
+                                        + " top="
+                                        + (ModalStack.top() == null
+                                                ? "none"
+                                                : ModalStack.top().tag)
+                                        + " injected=true");
+                        return;
+                    }
                     // 1) 弹层优先：Dialog 有独立窗口，Activity 收不到注入键
                     android.app.Dialog dialog =
                             activity.playbackControls != null
