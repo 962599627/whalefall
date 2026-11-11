@@ -339,6 +339,7 @@ final class UpdateScreen {
  if (launchInstall(a, view, "view")) return true;
  String[] components = {
  "com.miui.packageinstaller/.PackageInstallerActivity",
+ "com.android.packageinstaller/.ui.PackageInstallerActivity",
  "com.android.packageinstaller/.PackageInstallerActivity",
  "com.google.android.packageinstaller/.PackageInstallerActivity"
  };
