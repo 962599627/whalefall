@@ -3,6 +3,7 @@ package com.whalefall.movie;
 import android.graphics.Canvas;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.content.Context;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -357,11 +358,19 @@ final class UiIcon {
         cell.setContentDescription(label);
         cell.setBackground(UiTokens.roundedRipple(a, UiTokens.RADIUS_14, 0x26ffffff));
         if (a.isTvDevice()) {
+            cell.setFocusable(true);
+            cell.setFocusableInTouchMode(true);
             cell.setOnFocusChangeListener(
                     (v, focused) -> {
+                        // 1.9.61：网格可聚焦 + 可见 2dp 白描边 + 轻微放大
+                        GradientDrawable bg = new GradientDrawable();
+                        bg.setColor(focused ? 0x33ffffff : 0x26ffffff);
+                        bg.setCornerRadius(a.dp(UiTokens.RADIUS_14));
+                        if (focused) bg.setStroke(a.dp(2), 0xffffffff);
+                        v.setBackground(bg);
                         v.animate()
-                                .scaleX(focused ? 1.06f : 1f)
-                                .scaleY(focused ? 1.06f : 1f)
+                                .scaleX(focused ? 1.03f : 1f)
+                                .scaleY(focused ? 1.03f : 1f)
                                 .setDuration(UiTokens.MOTION_FAST)
                                 .start();
                     });

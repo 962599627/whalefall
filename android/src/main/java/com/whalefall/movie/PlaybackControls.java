@@ -1469,6 +1469,18 @@ final class PlaybackControls {
                             activeDialog = null;
                             dialogOpen = false;
                             a.scheduleHide();
+                            // 1.9.61：关闭工具面板后焦点回到播放器控制条
+                            if (a.isTvDevice()) {
+                                showControls(a, true);
+                                a.ui.post(
+                                        () -> {
+                                            View next = buttons.get("next-episode");
+                                            if (next != null) next.requestFocus();
+                                            AppLog.i(
+                                                    "TvKey",
+                                                    "page=tools focus=closed action=nav");
+                                        });
+                            }
                         });
     }
 

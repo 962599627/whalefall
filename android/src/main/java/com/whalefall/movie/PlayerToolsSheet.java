@@ -87,8 +87,24 @@ final class PlayerToolsSheet {
         titleRow.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1f));
         android.widget.ImageButton close =
                 UiIcon.button(a, UiIcon.CLOSE, "关闭工具面板", 48, 22, dialog::dismiss);
+        close.setTag("tools-close");
+        if (a.isTvDevice()) {
+            close.setFocusable(true);
+            close.setFocusableInTouchMode(true);
+            close.setOnFocusChangeListener(
+                    (v, focused) -> {
+                        GradientDrawable ring = new GradientDrawable();
+                        ring.setColor(focused ? 0x33ffffff : 0x00000000);
+                        ring.setCornerRadius(a.dp(24));
+                        if (focused) ring.setStroke(a.dp(2), 0xffffffff);
+                        v.setBackground(ring);
+                    });
+        }
         titleRow.addView(close, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
         card.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
+
+        // 1.9.61：TV 四列网格显式方向导航，默认焦点=第一格
+        final java.util.List<View> cells = new java.util.ArrayList<>();
 
         // 自适应列数：宽面板 4 列（20 项正好 5 行全展示），窄屏 3 列（内部滚动）
         int width =
@@ -129,6 +145,23 @@ final class PlayerToolsSheet {
                             new LinearLayout.LayoutParams(0, a.dp(cellHeightDp), 1f);
                     cellLp.setMargins(a.dp(3), a.dp(2), a.dp(3), a.dp(2));
                     row.addView(cell, cellLp);
+                    cell.setTag("tool:" + label);
+                    cell.setOnKeyListener(
+                            (v, keyCode, event) -> {
+                                if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                                    boolean confirm =
+                                            keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+                                                    || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
+                                    AppLog.i(
+                                            "TvKey",
+                                            "page=tools focus="
+                                                    + v.getTag()
+                                                    + " action="
+                                                    + (confirm ? "confirm" : "nav"));
+                                }
+                                return false;
+                            });
+                    cells.add(cell);
                 } else {
                     LinearLayout.LayoutParams emptyLp =
                             new LinearLayout.LayoutParams(0, a.dp(cellHeightDp), 1f);
@@ -137,6 +170,29 @@ final class PlayerToolsSheet {
                 }
             }
             grid.addView(row, new LinearLayout.LayoutParams(-1, a.dp(rowHeightDp)));
+        }
+        // 显式方向导航：右/左逐列，下/上逐行；行尾到下一行首、行首到上一行尾
+        if (a.isTvDevice()) {
+            if (close.getId() == View.NO_ID) close.setId(View.generateViewId());
+            for (int i = 0; i < cells.size(); i++) {
+                View cell = cells.get(i);
+                if (cell.getId() == View.NO_ID) cell.setId(View.generateViewId());
+            }
+            for (int i = 0; i < cells.size(); i++) {
+                View cell = cells.get(i);
+                int column = i % columns;
+                if (column > 0 && i - 1 >= 0) cell.setNextFocusLeftId(cells.get(i - 1).getId());
+                if (column < columns - 1 && i + 1 < cells.size())
+                    cell.setNextFocusRightId(cells.get(i + 1).getId());
+                if (i - columns >= 0) cell.setNextFocusUpId(cells.get(i - columns).getId());
+                if (i + columns < cells.size())
+                    cell.setNextFocusDownId(cells.get(i + columns).getId());
+                else if (i + columns >= cells.size())
+                    cell.setNextFocusDownId(close.getId());
+            }
+            // 关闭键：从最后一格下行可达，向上回到最后一格
+            if (!cells.isEmpty())
+                close.setNextFocusUpId(cells.get(cells.size() - 1).getId());
         }
         ScrollView scroll = new ScrollView(a);
         scroll.setVerticalScrollBarEnabled(false);
@@ -166,6 +222,20 @@ final class PlayerToolsSheet {
         // 点遮罩空白处关闭（窗口铺满全屏，卡片贴底）
         root.setOnClickListener(v -> dialog.dismiss());
         dialog.show();
+        // 1.9.61：默认焦点=第一格（上一集）
+        if (!cells.isEmpty()) {
+            final View firstCell = cells.get(0);
+            a.ui.post(
+                    () -> {
+                        if (!firstCell.isAttachedToWindow()) return;
+                        firstCell.requestFocus();
+                        AppLog.i(
+                                "TvKey",
+                                "page=tools focus="
+                                        + firstCell.getTag()
+                                        + " action=nav first=true");
+                    });
+        }
         Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawableResource(android.R.color.transparent);
