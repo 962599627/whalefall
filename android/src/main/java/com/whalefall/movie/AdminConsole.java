@@ -157,19 +157,19 @@ final class AdminConsole implements Closeable {
  }
  boolean ok = true;
  String reason = "";
- if (video && !FileManagerScreen.videoCodecSupported(target)) {
+ if (video && !FileManagerScreen.videoCodecSupported(wallpaperFile)) {
  ok = false;
  reason = "该视频编码不支持壁纸播放（请换 H.264/VP9）";
- target.delete();
+ wallpaperFile.delete();
  } else if (!video) {
  android.graphics.BitmapFactory.Options o =
  new android.graphics.BitmapFactory.Options();
  o.inJustDecodeBounds = true;
- android.graphics.BitmapFactory.decodeFile(target.getAbsolutePath(), o);
+ android.graphics.BitmapFactory.decodeFile(wallpaperFile.getAbsolutePath(), o);
  if (o.outWidth <= 0 || o.outHeight <= 0) {
  ok = false;
  reason = "图片格式不支持";
- target.delete();
+ wallpaperFile.delete();
  }
  }
  if (ok) {
@@ -189,7 +189,7 @@ final class AdminConsole implements Closeable {
  "wallpaper action=set type="
  + (video ? "video" : "image")
  + " file="
- + target.getName()
+ + wallpaperFile.getName()
  + " ok="
  + ok);
  JSONObject json = new JSONObject();

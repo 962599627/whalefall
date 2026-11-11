@@ -1309,6 +1309,12 @@ final class PlaybackController {
  a, a.playerChrome.dock, a.playerChrome.progress, surface, s, v, ep);
  TouchPlayerGesture.attach(a, surface);
  final PlaybackControls controls = a.playbackControls;
+ // 1.9.99：控制条内焦点变化时重新计时（离开控制条 3s 后才隐藏）
+ a.root.getViewTreeObserver()
+ .addOnGlobalFocusChangeListener(
+ (oldFocus, newFocus) -> {
+ if (a.controlsVisible) scheduleHide(a);
+ });
  a.root.addOnLayoutChangeListener(
  (view, l, t, r, b, ol, ot, or, ob) -> {
  int w = r - l, h = b - t;
@@ -1713,14 +1719,44 @@ final class PlaybackController {
  } else if (a.hideControls != null) a.ui.removeCallbacks(a.hideControls);
  }
 
+ static boolean focusInControls(MainActivity a) {
+ View focus = a.getCurrentFocus();
+ for (View v = focus; v != null; ) {
+ if (a.playerChrome != null
+ && (v == a.playerChrome.overlay || v == a.playerChrome.state)) return true;
+ if (a.playbackControls != null
+ && (v == a.playbackControls.dockOverlay || v == a.playbackControls.timeline))
+ return true;
+ if (!(v.getParent() instanceof View)) break;
+ v = (View) v.getParent();
+ }
+ return false;
+ }
+
  static void scheduleHide(MainActivity a) {
  if (a.hideControls != null) a.ui.removeCallbacks(a.hideControls);
+ // 1.9.99：焦点在控制条内时暂停自动隐藏；离开控制条后才重新 3s 计时
+ if (a.controlsVisible && focusInControls(a)) {
+ AppLog.i("PlayerChrome", "autohide paused=focus");
+ return;
+ }
+ AppLog.i("PlayerChrome", "autohide resumed idle=3000");
  a.hideControls =
  () -> {
+ if (!a.controlsVisible) return;
+ if (focusInControls(a)) {
+ AppLog.i("PlayerChrome", "autohide paused=focus");
+ return;
+ }
  if (a.prepared
  && a.playing
- && (a.playbackControls == null || !a.playbackControls.dialogOpen))
+ && (a.playbackControls == null || !a.playbackControls.dialogOpen)) {
+ // 隐藏前把焦点交回视频区，避免控件已隐藏仍持焦
+ View focus = a.getCurrentFocus();
+ if (focus != null && focusInControls(a)) a.root.requestFocus();
+ AppLog.i("PlayerChrome", "autohide hidden=true");
  showControls(a, false);
+ }
  };
  a.ui.postDelayed(a.hideControls, 3000);
  }
