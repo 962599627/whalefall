@@ -2945,14 +2945,23 @@ public final class MainActivity extends Activity {
  .remove(Prefs.WATCH_HISTORY)
  .remove(TvLive.LAST)
  .apply();
- AppLog.i("History", "clear scope=home+live removed=" + removed);
+ AppLog.i("History", "clear source=watch_history removed=" + removed);
+ AppLog.i("History", "clear source=tv_last removed=" + (prefs.contains(TvLive.LAST) ? 0 : 1));
+ AppLog.i("History", "clear source=home retained=true scope=home+live removed=" + removed);
  toast("已清空观看历史与直播记录");
+ // 1.9.129：作废首页/历史页缓存实例，返回时强制重建（不能只清 prefs）
  try {
- if (current != null && current.home) {
- renderReturn(current);
- } else {
- refresh();
+ if (current != null) {
+ current.retainedHome = null;
+ current.mobileHome = null;
  }
+ if (back != null)
+ for (Screen s : back) {
+ s.retainedHome = null;
+ s.mobileHome = null;
+ }
+ if (current != null && current.home) renderReturn(current);
+ else refresh();
  } catch (Throwable ignored) {
  }
  return removed;
