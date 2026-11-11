@@ -227,6 +227,8 @@ public final class MainActivity extends Activity {
  }
  /** 1.9.84：物理遥控按键即进入焦点模式（不依赖 LEANBACK 上报）。 */
  boolean keyFocusMode;
+ /** 1.9.128：播放器长按 OK 进入进度拖动模式。 */
+ boolean scrubMode;
  /** 1.9.102：播放器自动隐藏计时用的最后一次输入。 */
  String lastPlayerKey = "none";
 

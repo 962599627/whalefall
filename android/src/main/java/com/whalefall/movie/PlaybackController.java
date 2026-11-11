@@ -1963,6 +1963,47 @@ final class PlaybackController {
  }
  }
 
+ /** 1.9.128：进入/退出进度拖动模式。 */
+ static void enterScrub(MainActivity a) {
+ if (a.playbackControls == null) return;
+ a.scrubMode = true;
+ showControls(a, true);
+ a.playbackControls.timeline.requestFocus();
+ if (a.playStatus != null) a.playStatus.setText("左右拖动进度，OK/BACK 确认");
+ AppLog.i("Player", "scrub enter source=long-ok");
+ }
+
+ static void exitScrub(MainActivity a, boolean commit) {
+ a.scrubMode = false;
+ int target = a.seekGesture.active ? a.seekGesture.target : -1;
+ if (a.seekGesture.active) {
+ if (commit) seekCommit(a, target, true);
+ a.seekGesture.cancel();
+ }
+ AppLog.i("Player", "scrub exit commit=" + commit + " target=" + target);
+ }
+
+ static void scrubSeek(final MainActivity a, int direction) {
+ if (a.player == null || !a.prepared) return;
+ if (!a.seekGesture.active) beginSeek(a, direction);
+ else if (a.seekGesture.direction != direction) beginSeek(a, direction);
+ else {
+ a.seekGesture.advance(android.os.SystemClock.uptimeMillis());
+ }
+ previewSeek(a);
+ int target = a.seekGesture.target;
+ seekCommit(a, target, false);
+ AppLog.i(
+ "Player",
+ "scrub seek target=" + target + " throttled=true");
+ a.ui.postDelayed(
+ () -> {
+ if (a.scrubMode && a.seekGesture.active)
+ seekCommit(a, a.seekGesture.target, true);
+ },
+ 300);
+ }
+
  static void finishSeek(MainActivity a, boolean commit) {
  if (!a.seekGesture.active) return;
  a.seekGesture.advance(SystemClock.uptimeMillis());
@@ -2282,6 +2323,29 @@ final class PlaybackController {
  if (a.seekGesture.active && !horizontal && down)
  finishSeek(a, key != KeyEvent.KEYCODE_BACK);
  boolean confirm = key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER;
+ // 1.9.128：scrubMode（长按 OK / 触摸拖动）下左右连续拖进度，OK/BACK 退出
+ if (a.scrubMode) {
+ if (down && confirm && event.getRepeatCount() == 0) {
+ exitScrub(a, true);
+ return true;
+ }
+ if (down && key == KeyEvent.KEYCODE_BACK) {
+ exitScrub(a, true);
+ return true;
+ }
+ if (down && horizontal) {
+ scrubSeek(a, key == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1);
+ return true;
+ }
+ }
+ // 1.9.128：控制条隐藏时长按 OK（repeat>0）→ 唤出控制条并聚焦进度条进入拖动
+ if (down
+ && confirm
+ && event.getRepeatCount() > 0
+ && a.playbackControls != null) {
+ enterScrub(a);
+ return true;
+ }
  // 1.9.92：进度条 OK = 切换「可拖动/可跳转」提示，左右为快退/快进
  if (confirm
  && a.playbackControls != null
