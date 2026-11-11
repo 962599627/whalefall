@@ -38,6 +38,8 @@ final class VideoWallpaper extends FrameLayout {
  view = new PlayerView(host);
  view.setUseController(false);
  view.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
+ // 1.9.107：不随播放重置重建画面，减少旧盒子每帧重建/闪烁
+ view.setKeepContentOnPlayerReset(true);
  view.setShutterBackgroundColor(Color.BLACK);
  addView(view, new LayoutParams(-1, -1));
  dim = new View(host);
@@ -45,6 +47,12 @@ final class VideoWallpaper extends FrameLayout {
  applyDim(host.prefs.getInt(Prefs.WALLPAPER_DIM, 35));
  player = new ExoPlayer.Builder(host).build();
  player.setRepeatMode(Player.REPEAT_MODE_ONE);
+ // 1.9.107：缩放模式固定为裁剪铺满，避免每帧重新计算缩放
+ try {
+ player.setVideoScalingMode(
+ androidx.media3.common.C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING);
+ } catch (Throwable ignored) {
+ }
  player.setVolume(host.prefs.getBoolean(Prefs.WALLPAPER_SOUND, false) ? 1f : 0f);
  view.setPlayer(player);
  player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file(host))));

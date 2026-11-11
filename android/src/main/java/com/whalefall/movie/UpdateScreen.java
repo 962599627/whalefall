@@ -25,11 +25,16 @@ final class UpdateScreen {
  }
 
  void show() {
+ AppLog.i("Update", "page=enter");
+ try {
  SettingsScreen settings = new SettingsScreen(a);
  settings.page("软件更新", "镜像优先，连接失败时尝试 GitHub。安装前会核对版本、文件完整性与签名。");
+ // 1.9.107：黑屏兜底：页面必须有深色底，不能依赖透明 root
+ if (a.root != null) a.root.setBackgroundColor(0xff070b14);
+ if (a.scroll != null) a.scroll.setBackgroundColor(0xff070b14);
  if (a.body != null) a.body.setTag("update");
  a.updateScreen = this;
- status = a.text("", 16, MainActivity.MUTED);
+ status = a.text("正在加载更新信息…", 16, MainActivity.MUTED);
  status.setTag("update-status");
  status.setLineSpacing(a.dp(4), 1);
  a.body.addView(status);
@@ -70,6 +75,35 @@ final class UpdateScreen {
  else a.toast("当前没有进行中的任务");
  });
  refresh();
+ } catch (Throwable error) {
+ AppLog.w(
+ "Update",
+ "fail reason=" + error.getClass().getSimpleName() + ": " + error.getMessage());
+ showFallback(error);
+ }
+ }
+
+ /** 1.9.107：更新页异常时显示深色底 + 原因，避免纯黑。 */
+ private void showFallback(Throwable error) {
+ try {
+ a.renderPage("软件更新", "");
+ if (a.root != null) a.root.setBackgroundColor(0xff070b14);
+ if (a.body != null) {
+ a.body.setTag("update");
+ a.body.addView(a.text("软件更新", 26, MainActivity.WHITE));
+ a.gap(a.body, 10);
+ a.body.addView(
+ a.text(
+ "更新页加载失败："
+ + error.getClass().getSimpleName()
+ + (error.getMessage() == null ? "" : " - " + error.getMessage())
+ + "\n请检查网络后重试。",
+ 14,
+ MainActivity.MUTED));
+ }
+ AppLog.i("Update", "page=fallback shown=true");
+ } catch (Throwable ignored) {
+ }
  }
 
  void refresh() {

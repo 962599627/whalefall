@@ -932,6 +932,55 @@ final class SettingsScreen {
  .putBoolean(Prefs.WALLPAPER_VIDEO, true)
  .putBoolean(Prefs.WALLPAPER_ENABLED, false)
  .apply();
+ warnVideoWallpaperSpec(a, target);
+ }
+
+ /** 1.9.107：动态壁纸分辨率/帧率提示（旧 TV 4K 解码易卡顿）。 */
+ static void warnVideoWallpaperSpec(MainActivity a, File target) {
+ try {
+ android.media.MediaMetadataRetriever retriever =
+ new android.media.MediaMetadataRetriever();
+ retriever.setDataSource(target.getAbsolutePath());
+ int width =
+ Integer.parseInt(
+ retriever.extractMetadata(
+ android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
+ int height =
+ Integer.parseInt(
+ retriever.extractMetadata(
+ android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
+ String fpsText =
+ retriever.extractMetadata(
+ android.media.MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE);
+ float fps = 0f;
+ try {
+ fps = fpsText == null ? 0f : Float.parseFloat(fpsText);
+ } catch (Throwable ignored) {
+ }
+ retriever.release();
+ boolean tooLarge = width > 1920 || height > 1080;
+ boolean tooFast = fps > 30f;
+ AppLog.i(
+ "Wallpaper",
+ "video width="
+ + width
+ + " height="
+ + height
+ + " fps="
+ + fps
+ + " warn="
+ + (tooLarge ? "4k" : (tooFast ? "fps" : "none")));
+ if (tooLarge || tooFast) {
+ a.ui.post(
+ () ->
+ a.toast(
+ "该视频为 "
+ + (tooLarge ? "4K" : "高帧率")
+ + "，旧设备可能卡顿，建议使用 1080p/30fps 视频"));
+ }
+ } catch (Throwable error) {
+ AppLog.w("Wallpaper", "video spec probe failed", error);
+ }
  }
 
  /** 1.9.94：TV 无系统文件选择器时，用内置文件管理器选壁纸文件。 */
