@@ -230,6 +230,9 @@ public final class MainActivity extends Activity {
  /** 1.9.128：播放器长按 OK 进入进度拖动模式。 */
  /** 1.9.128：播放器长按 OK 进入进度拖动模式。 */
  boolean scrubMode;
+ /** 1.9.133：时间轴聚焦时连续 seek 的目标位置与停键提交任务。 */
+ int scrubTarget = -1;
+ Runnable scrubCommitTask;
  /** 1.9.132：播放中异常退出检测只做一次。 */
  boolean crashRecoveryDone;
  /** 1.9.131：播放器已释放标志，忽略迟到的 surface 回调。 */
