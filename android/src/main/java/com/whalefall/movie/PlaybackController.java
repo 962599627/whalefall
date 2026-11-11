@@ -964,6 +964,15 @@ final class PlaybackController {
  if (a.playbackControls.subtitle != null)
  a.playbackControls.subtitle.setVisibility(View.GONE);
  if (a.playbackControls.danmaku != null) a.playbackControls.danmaku.setVisibility(View.GONE);
+ // 1.9.114：入栈缺失时兜底生成详情页，避免 BACK 落到首页
+ if (!overDetail && a.back.isEmpty() && a.playbackControls != null) {
+ Cms.Site miniSite = a.playbackControls.site;
+ Cms.Video miniVideo = a.playbackControls.video;
+ if (miniSite != null && miniVideo != null) {
+ AppLog.i("Back", "page=player target=home stack=0 fallback=detail");
+ a.open(new MainActivity.Screen(() -> a.detail(miniSite, miniVideo)), false);
+ }
+ }
  // 1.9.53：从全屏播放返回时先渲染详情页；从小窗放大后再次缩小则详情已在下方
  if (!overDetail && !a.back.isEmpty()) {
  a.current = a.back.pop();

@@ -2386,12 +2386,17 @@ public final class MainActivity extends Activity {
  return;
  }
  if (!miniMode && playbackControls != null && isTvDevice() && !isLive()) {
- // 1.9.109：TV 第二次 BACK → 缩回详情页左侧小窗，保持播放
- AppLog.i("Back", "page=player tv=true action=minimize");
+ // 1.9.109/1.9.114：TV 第二次 BACK → 回详情并缩左侧小窗（不得落首页）
+ AppLog.i(
+ "Back",
+ "page=player target=" + (back.isEmpty() ? "home" : "detail") + " stack=" + back.size());
  minimizePlayback();
  return;
  }
  if (!miniMode && playbackControls != null) {
+ AppLog.i(
+ "Back",
+ "page=player target=" + (back.isEmpty() ? "home" : "detail") + " stack=" + back.size());
  // 1.9.106/1.9.109：手机 BACK 直接停止播放并回上一级
  AppLog.i("Back", "page=player tv=false action=release");
  releasePlaybackOnPageChange("back", false);
