@@ -484,6 +484,8 @@ public final class MainActivity extends Activity {
  String episodeFocusLine = "";
  final EpisodeSelection selection = new EpisodeSelection();
  boolean player, home;
+ /** 1.9.130：详情页是唯一允许小窗保留播放的页面。 */
+ boolean detail;
  HomeScreen.State homeState;
  HomeScreen retainedHome;
 
@@ -883,7 +885,9 @@ public final class MainActivity extends Activity {
  crossSearch(Cms.searchTitle(v));
  return;
  }
- open(new Screen(() -> detail(s, v)), true);
+ Screen detailScreen = new Screen(() -> detail(s, v));
+ detailScreen.detail = true;
+ open(detailScreen, true);
  }
 
  /**
@@ -1606,8 +1610,20 @@ public final class MainActivity extends Activity {
  }
  stopWeb();
  stopMagnet();
- // 1.9.57：小窗/全屏浮层下的详情重建不能释放或打断正在播放的 player
- boolean keepPlayback = miniMode || expandedOverDetail;
+ // 1.9.130：只有详情页允许小窗/全屏保留播放；其它页面一律释放
+ boolean keepPlayback =
+ (miniMode || expandedOverDetail) && current != null && current.detail;
+ AppLog.i(
+ "Player",
+ "policy target="
+ + (current == null
+ ? "null"
+ : (current.detail
+ ? "detail"
+ : current.player ? "player" : current.home ? "home" : "other"))
+ + " keep="
+ + keepPlayback
+ + " reason=page-change");
  if (!keepPlayback) {
  // 1.9.106：页面重建统一释放（手机与电视一致）
  releasePlaybackOnPageChange("page", false);
