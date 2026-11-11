@@ -986,9 +986,10 @@ final class PlaybackController {
  + a.miniMode
  + " player="
  + (a.player != null));
+ // 1.9.95：先恢复详情页，再建小窗，避免详情页 restore 抢走小窗焦点
+ if (!overDetail && a.current != null) a.restore(a.current);
  // 1.9.58：由 MiniDetails 先测 hero 矩形再隐藏，保证小窗与海报区域一致
  a.miniDetails = new MiniDetails(a);
- if (!overDetail && a.current != null) a.restore(a.current);
  }
 
  static void expandPlayback(MainActivity a) {

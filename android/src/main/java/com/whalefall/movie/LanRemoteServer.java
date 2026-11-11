@@ -168,6 +168,17 @@ final class LanRemoteServer implements Closeable {
  return;
  }
  hint = "已发送：" + key;
+ // 1.9.95：音量/静音直接走系统 AudioService（注入按键不会调音量）
+ if ("vol+".equals(key) || "vol-".equals(key) || "mute".equals(key)) {
+ int pct = activity.adjustRemoteVolume(key);
+ hint = pct >= 0 ? "音量 " + pct + "%" : "音量调节失败";
+ return;
+ }
+ if ("br+".equals(key) || "br-".equals(key)) {
+ int pct = activity.adjustRemoteBrightness("br+".equals(key) ? 1 : -1);
+ hint = pct >= 0 ? "亮度 " + pct + "%" : "亮度调节失败";
+ return;
+ }
  int keyCode;
  switch (key) {
  case "up":
@@ -190,12 +201,6 @@ final class LanRemoteServer implements Closeable {
  break;
  case "play":
  keyCode = KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE;
- break;
- case "vol+":
- keyCode = KeyEvent.KEYCODE_VOLUME_UP;
- break;
- case "vol-":
- keyCode = KeyEvent.KEYCODE_VOLUME_DOWN;
  break;
  default:
  return;
@@ -435,7 +440,14 @@ final class LanRemoteServer implements Closeable {
  if (!sawClient) {
  sawClient = true;
  // 1.9.66：手机被控端进入遥控焦点模式
- activity.runOnUiThread(() -> activity.enterRemoteFocus("remote"));
+ activity.runOnUiThread(
+ () -> {
+ try {
+ activity.enterRemoteFocus("remote");
+ } catch (Throwable error) {
+ AppLog.w("Remote", "enter focus on connect failed", error);
+ }
+ });
  }
  if (!first[0].equals("GET")) {
  if (path.equals("/cmd") && first[0].equals("POST")) {
@@ -468,7 +480,11 @@ final class LanRemoteServer implements Closeable {
  out,
  200,
  "application/json; charset=utf-8",
- "{\"ok\":true,\"hint\":\"" + jsonEscape(hint) + "\"}");
+ "{\"ok\":true,\"hint\":\""
+ + jsonEscape(hint)
+ + "\",\"volume\":"
+ + activity.remoteVolumePercent()
+ + "}");
  } catch (Throwable ignored) {
  }
  }
@@ -612,6 +628,10 @@ final class LanRemoteServer implements Closeable {
  + "<button onclick=\"cmd('play')\">播放/暂停</button>"
  + "<button onclick=\"cmd('vol+')\">音量+</button>"
  + "<button onclick=\"cmd('vol-')\">音量-</button>"
+ + "<button onclick=\"cmd('mute')\">静音</button>"
+ + "<button onclick=\"cmd('br+')\">亮度+</button>"
+ + "<button onclick=\"cmd('br-')\">亮度-</button>"
+ + "<span id='vol' style='font-size:12px;color:#8d9cb6;margin-left:6px'>音量 --</span>"
  + "<button onclick=\"cmd('back')\">返回</button></div></div>"
  + "<script>var t='"
  + t
@@ -620,7 +640,7 @@ final class LanRemoteServer implements Closeable {
  + "fetch(u,{method:'POST'}).then(function(r){return r.text()}).then(function(x){document.getElementById('hint').textContent='已发送';}).catch(function(){document.getElementById('hint').textContent='发送失败，请检查 WiFi';});}"
  + "function sendText(){var v=document.getElementById('text').value;if(!v)return;cmd('text',v);document.getElementById('text').value='';}"
  + "function setConn(ok){var c=document.getElementById('conn');if(!c)return;c.textContent=ok?' 已连接':' 已断开，请确认手机与电视同一 WiFi';c.style.color=ok?'#2ad47a':'#ffb454';}"
- + "function poll(){fetch('/poll?t='+encodeURIComponent(t)).then(function(r){return r.json()}).then(function(j){setConn(true);document.getElementById('hint').textContent=j.hint||'已连接';}).catch(function(){setConn(false);document.getElementById('hint').textContent='连接中断，点击重试';});}"
+ + "function poll(){fetch('/poll?t='+encodeURIComponent(t)).then(function(r){return r.json()}).then(function(j){setConn(true);document.getElementById('hint').textContent=j.hint||'已连接';var v=document.getElementById('vol');if(v&&typeof j.volume==='number'&&j.volume>=0)v.textContent='音量 '+j.volume+'%';}).catch(function(){setConn(false);document.getElementById('hint').textContent='连接中断，点击重试';});}"
  + "document.getElementById('hint').onclick=poll;poll();"
  + "setInterval(function(){if(!document.hidden)poll();},3000);"
  + "</script></body></html>";

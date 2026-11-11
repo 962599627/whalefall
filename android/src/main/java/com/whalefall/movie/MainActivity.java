@@ -148,6 +148,7 @@ public final class MainActivity extends Activity {
  boolean keyFocusMode;
 
  void enterRemoteFocus(String page) {
+ try {
  // 1.9.75：只有遥控服务正在工作且 10s 内有客户端请求才进入焦点模式
  if (!LanRemoteServer.clientActiveWithin(10_000L)) {
  AppLog.i("Remote", "focusMode=skip reason=no-recent-client page=" + page);
@@ -157,14 +158,73 @@ public final class MainActivity extends Activity {
  TvNav.setTouchFocusMode(this, true);
  TvNav.enableRemoteFocus(this, page);
  scheduleFocusAudit();
+ } catch (Throwable error) {
+ AppLog.w("Remote", "enterRemoteFocus failed", error);
+ }
  }
 
- void exitRemoteFocus() {
+ /** 1.9.95：手机遥控音量直接走系统 AudioManager（注入 KEYCODE 不会改音量）。 */
+ int adjustRemoteVolume(String action) {
+ try {
+ android.media.AudioManager am =
+ (android.media.AudioManager) getSystemService(android.content.Context.AUDIO_SERVICE);
+ if (am == null) return -1;
+ int dir;
+ if ("vol+".equals(action)) dir = android.media.AudioManager.ADJUST_RAISE;
+ else if ("mute".equals(action)) dir = android.media.AudioManager.ADJUST_TOGGLE_MUTE;
+ else dir = android.media.AudioManager.ADJUST_LOWER;
+ am.adjustStreamVolume(
+ android.media.AudioManager.STREAM_MUSIC,
+ dir,
+ android.media.AudioManager.FLAG_SHOW_UI);
+ int cur = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
+ int max = Math.max(1, am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC));
+ AppLog.i("LanRemote", "volume=" + action + " level=" + cur + "/" + max);
+ return Math.round(cur * 100f / max);
+ } catch (Throwable error) {
+ AppLog.w("LanRemote", "volume adjust failed", error);
+ return -1;
+ }
+ }
+
+ /** 1.9.95：遥控亮度用窗口 screenBrightness（电视上等价系统亮度，无需写 Settings 权限）。 */
+ int adjustRemoteBrightness(int delta) {
+ try {
+ android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+ float current = lp.screenBrightness;
+ if (current < 0f) current = 0.6f;
+ current = Math.max(0.05f, Math.min(1f, current + delta * 0.1f));
+ lp.screenBrightness = current;
+ getWindow().setAttributes(lp);
+ AppLog.i("LanRemote", "brightness=" + Math.round(current * 100) + "%");
+ return Math.round(current * 100);
+ } catch (Throwable error) {
+ AppLog.w("LanRemote", "brightness adjust failed", error);
+ return -1;
+ }
+ }
+
+ int remoteVolumePercent() { try {
+ android.media.AudioManager am =
+ (android.media.AudioManager) getSystemService(android.content.Context.AUDIO_SERVICE);
+ if (am == null) return -1;
+ int cur = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
+ int max = Math.max(1, am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC));
+ return Math.round(cur * 100f / max);
+ } catch (Throwable ignored) {
+ return -1;
+ }
+ }
+
+ void exitRemoteFocus() { try {
  if (!remoteFocusMode) return;
  remoteFocusMode = false;
  TvNav.disableRemoteFocus(this);
  TvNav.setTouchFocusMode(this, false);
  ui.removeCallbacks(focusAuditTask);
+ } catch (Throwable error) {
+ AppLog.w("Remote", "exitRemoteFocus failed", error);
+ }
  }
 
  /** 1.9.74：TV/被控端每 1s（低端/Reduced 2s）扫描可见树，补齐焦点。 */
@@ -1955,6 +2015,26 @@ public final class MainActivity extends Activity {
  + (current != null && current.home)
  + " player="
  + (current != null && current.player));
+ // 1.9.95：小窗焦点区内按 BACK 先回详情页焦点，再走返回
+ if (miniMode && miniDetails != null) {
+ View f = getCurrentFocus();
+ View page = miniDetails.page;
+ boolean inside = false;
+ for (View v = f; v != null; ) {
+ if (v == page) {
+ inside = true;
+ break;
+ }
+ if (!(v.getParent() instanceof View)) break;
+ v = (View) v.getParent();
+ }
+ if (inside) {
+ View detailPlay = root == null ? null : root.findViewWithTag("detail-play");
+ if (detailPlay != null) detailPlay.requestFocus();
+ AppLog.i("MiniFocus", "zone=mini action=back-to-detail");
+ return;
+ }
+ }
  if (tvPlayer != null && current != null && current.player && tvPlayer.back()) {
  AppLog.i("Back", "branch=tvPlayer");
  return;
@@ -2709,6 +2789,7 @@ public final class MainActivity extends Activity {
  == android.view.MotionEvent.ACTION_CANCEL)) {
  ui.postDelayed(
  () -> {
+ try {
  if (!remoteFocusMode) return;
  TvNav.setTouchFocusMode(this, true);
  View modal = ModalStack.topRoot();
@@ -2733,6 +2814,9 @@ public final class MainActivity extends Activity {
  + (focus == null
  ? "null"
  : String.valueOf(focus.getTag())));
+ } catch (Throwable error) {
+ AppLog.w("Remote", "touch restore failed", error);
+ }
  },
  50);
  }

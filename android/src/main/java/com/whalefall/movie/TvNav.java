@@ -691,6 +691,7 @@ final class TvNav {
 
  /** 1.9.76：批量切换 touch-mode 焦点（遥控模式=true，触摸模式=false）。 */
  static int setTouchFocusMode(MainActivity a, boolean enabled) {
+ try {
  if (a == null || a.root == null) return 0;
  int[] count = new int[1];
  setTouchFocusWalk(a, a.root, enabled, count);
@@ -698,6 +699,10 @@ final class TvNav {
  "TouchMode",
  "focusableInTouchMode=" + enabled + (enabled ? " enabled=" : " restored=") + count[0]);
  return count[0];
+ } catch (Throwable error) {
+ AppLog.w("TouchMode", "setTouchFocusMode skipped", error);
+ return 0;
+ }
  }
 
  private static void setTouchFocusWalk(MainActivity a, View view, boolean enabled, int[] count) {

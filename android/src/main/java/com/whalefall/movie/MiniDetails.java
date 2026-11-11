@@ -95,7 +95,7 @@ final class MiniDetails {
  });
  TextView playPause = playHolder[0];
  TextView expand = miniButton("全屏", "mini-expand", () -> a.expandPlayback());
- TextView stop = miniButton("", "mini-stop", () -> {
+ TextView stop = miniButton("关闭", "mini-stop", () -> {
  AppLog.i("Mini", "exit stop");
  PlaybackController.releasePlayer(a);
  a.ui.post(() -> {
@@ -157,6 +157,8 @@ final class MiniDetails {
  playPause.setNextFocusUpId(detailPlay.getId());
  hit.setNextFocusDownId(detailPlay.getId());
  hit.setNextFocusUpId(detailPlay.getId());
+ // 1.9.95：详情按钮区 UP 回到小窗暂停键，形成 mini 焦点区闭环
+ detailPlay.setNextFocusUpId(playPause.getId());
  }
  // 三个小窗按钮显式左右/上下导航
  playPause.setNextFocusRightId(expand.getId());
@@ -254,6 +256,12 @@ final class MiniDetails {
  ring.setCornerRadius(a.dp(8));
  ring.setStroke(a.dp(2), 0xffffffff);
  v.setBackground(ring);
+ AppLog.i(
+ "MiniFocus",
+ "zone=mini focus="
+ + ("mini-play".equals(tag)
+ ? "pause"
+ : ("mini-expand".equals(tag) ? "full" : "close")));
  } else {
  v.setBackground(null);
  }
