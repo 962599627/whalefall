@@ -859,7 +859,11 @@ final class PlaybackController {
             releasePlayer(a);
             a.current = a.back.pop();
             a.renderReturn(a.current);
-            a.restore(a.current);
+            // 1.9.52：返回详情后焦点回到「播放·首集」（或原线路）
+            if (a.current != null) {
+                a.current.focus = "detail-play";
+                a.restore(a.current);
+            } else a.restore(a.current);
         } else a.onBackPressed();
     }
 
@@ -1771,8 +1775,25 @@ final class PlaybackController {
         a.clearLiveNumber();
         savePlaybackHistory(a, true);
         stopEmbySession(a);
+        // 1.9.52：清理 MiniDetails/播放层残留，避免返回详情后出现巨幅贴图/黑罩/「返回全屏播放」
+        int layers = 0;
+        if (a.miniDetails != null) {
+            try {
+                a.miniDetails.remove();
+            } catch (Throwable ignored) {
+            }
+            a.miniDetails = null;
+            layers++;
+        }
         a.miniMode = false;
-        a.miniDetails = null;
+        if (a.playbackLayer != null) {
+            a.playbackLayer.setVisibility(View.GONE);
+            layers++;
+        }
+        if (a.playerChrome != null) {
+            a.playerChrome.setVisibility(View.GONE);
+            layers++;
+        }
         if (a.playbackControls != null) a.playbackControls.close();
         a.playbackControls = null;
         a.prepared = false;
@@ -1784,8 +1805,10 @@ final class PlaybackController {
                 AppLog.w("PlaybackController", "player.release failed", error);
             }
             a.player = null;
+            layers++;
         }
         a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        AppLog.i("Detail", "resume player=cleared layers=" + layers);
     }
 
     static boolean dispatchPlaybackKey(MainActivity a, KeyEvent event) {

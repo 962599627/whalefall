@@ -90,6 +90,8 @@ final class TvDetailLayout {
         rightScroll.setVerticalScrollBarEnabled(false);
         rightCol.setPadding(0, 0, 0, a.dp(16));
         rightScroll.addView(rightCol, new ScrollView.LayoutParams(-1, -2));
+        rightScroll.setFocusable(false);
+        rightScroll.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
         row.addView(rightScroll, new LinearLayout.LayoutParams(rightW, -1));
         a.scroll = rightScroll;
         a.body = rightCol;
@@ -105,6 +107,10 @@ final class TvDetailLayout {
         ScrollView lineScroll = new ScrollView(a);
         lineScroll.setVerticalScrollBarEnabled(false);
         lineScroll.setClipToPadding(false);
+        // 1.9.52：滚动容器不吃焦点，交给子项
+        lineScroll.setFocusable(false);
+        lineScroll.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        lineList.setFocusable(false);
         lineScroll.addView(lineList, new ScrollView.LayoutParams(-1, -2));
         leftCol.addView(lineScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -192,6 +198,53 @@ final class TvDetailLayout {
         stateWrap.addView(state, tvStateLp);
         rightCol.addView(stateWrap, new LinearLayout.LayoutParams(-1, a.dp(150)));
         backBtn.requestFocus();
+        AppLog.i("TvFocus", "page=detail first=detail-back");
+        // 1.9.52：兜底确保 TV 详情页始终有焦点（DPAD 无焦点时整个页面按不动）
+        a.ui.post(
+                () -> {
+                    View current = a.getCurrentFocus();
+                    if (current != null && current.isAttachedToWindow() && current.isShown())
+                        return;
+                    View first = a.root == null ? null : a.root.findViewWithTag("detail-play");
+                    if (first == null) first = backBtn;
+                    if (first != null) {
+                        first.requestFocus();
+                        a.autoFocus = first;
+                        AppLog.i(
+                                "TvFocus",
+                                "page=detail first="
+                                        + (first.getTag() == null ? "fallback" : first.getTag()));
+                    }
+                });
+        a.ui.postDelayed(
+                () -> {
+                    int fixed = ensureFocusables(a.root, 0);
+                    View current = a.getCurrentFocus();
+                    if ((current == null || !current.isShown() || !current.isAttachedToWindow())
+                            && a.root != null) {
+                        View play = a.root.findViewWithTag("detail-play");
+                        if (play == null) play = backBtn;
+                        if (play != null) {
+                            play.requestFocus();
+                            AppLog.i(
+                                    "TvFocus",
+                                    "page=detail first="
+                                            + (play.getTag() == null ? "fallback" : play.getTag())
+                                            + " fixed="
+                                            + fixed);
+                        }
+                    } else {
+                        AppLog.i(
+                                "TvFocus",
+                                "page=detail focus="
+                                        + (current == null
+                                                ? "null"
+                                                : String.valueOf(current.getTag()))
+                                        + " fixed="
+                                        + fixed);
+                    }
+                },
+                450);
 
         // ---------------- 数据填充 ----------------
         final int[] lineIndex = {Math.max(0, SourcePreferences.lineIndex(a, listing))};
@@ -841,5 +894,24 @@ final class TvDetailLayout {
 
     static String directorLine(String director) {
         return director == null || director.trim().isEmpty() ? "" : "导演：" + director.trim();
+    }
+
+    /** 1.9.52：兜底把详情页所有可交互控件补成可聚焦（避免某控件吃掉 DPAD 后整页无焦点）。 */
+    static int ensureFocusables(View view, int fixed) {
+        if (view == null) return fixed;
+        if (view.isClickable()
+                && !view.isFocusable()
+                && !(view instanceof ScrollView)
+                && !(view instanceof android.widget.HorizontalScrollView)) {
+            view.setFocusable(true);
+            view.setFocusableInTouchMode(true);
+            fixed++;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++)
+                fixed = ensureFocusables(group.getChildAt(i), fixed);
+        }
+        return fixed;
     }
 }
