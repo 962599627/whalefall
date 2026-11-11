@@ -1978,6 +1978,13 @@ final class PlaybackController {
  if (a.player != null && a.prepared) seekCommit(a, finalTarget, true);
  },
  300);
+ // 1.9.126：长按 seek 结束后控制条必须仍在/恢复，并重置自动隐藏计时
+ if (!a.controlsVisible) {
+ AppLog.i("PlayerChrome", "show reason=seek-end hiddenBefore=true");
+ showControls(a, true);
+ } else {
+ scheduleHide(a);
+ }
  if (a.playingBookmark != null) {
  a.playingBookmark.position = Math.max(0, target);
  }

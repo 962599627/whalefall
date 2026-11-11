@@ -3155,6 +3155,17 @@ public final class MainActivity extends Activity {
  lastPlayerKey = KeyEvent.keyCodeToString(pressed);
  PlaybackController.scheduleHide(this);
  }
+ // 1.9.126：任意方向/OK 按键先把隐藏的控制条唤出，避免被 seek/长按分支吞掉
+ if (event.getAction() == KeyEvent.ACTION_DOWN
+ && focusKey
+ && current != null
+ && current.player
+ && !controlsVisible) {
+ AppLog.i(
+ "PlayerChrome",
+ "show reason=key hiddenBefore=true key=" + KeyEvent.keyCodeToString(pressed));
+ PlaybackController.showControls(this, true);
+ }
  boolean focusKey =
  pressed == KeyEvent.KEYCODE_DPAD_UP
  || pressed == KeyEvent.KEYCODE_DPAD_DOWN
