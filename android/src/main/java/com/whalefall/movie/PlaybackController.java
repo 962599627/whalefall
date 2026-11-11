@@ -263,6 +263,11 @@ final class PlaybackController {
  }
  a.activeLine = line;
  a.activeEpisode = ep;
+ AppLog.i(
+ "Playback",
+ "resolve start source=" + s.name + " engine=" + (s.api == null ? "unknown" : s.api));
+ // 1.9.90：所有解析入口都注册重试动作
+ a.playbackRetry = () -> resolvePlayer(a, s, v, line, ep);
  if (a.resumeAt == 0) {
  WatchHistory.Entry saved = lookupSavedBookmark(a, s, v, line, ep);
  if (saved != null) {
@@ -271,6 +276,20 @@ final class PlaybackController {
  }
  if (s.supported()) {
  a.playbackRetry = () -> resolvePlayer(a, s, v, line, ep);
+ AppLog.i(
+ "Playback",
+ "resolve start source="
+ + s.name
+ + " engine="
+ + (s.api == null
+ ? "unknown"
+ : (s.api.startsWith("csp_")
+ ? "csp"
+ : (s.api.contains("type3")
+ ? "type3"
+ : (s.api.contains("json")
+ ? "json"
+ : s.api)))));
  if (!s.requiresParser || Cms.isDirectStreamUrl(ep.url)) {
  openPlayer(a, s, v, ep);
  return;
@@ -652,9 +671,9 @@ final class PlaybackController {
  AppLog.i("Playback", "resolve fail reason=timeout elapsed=" + elapsed);
  Runnable retry = a.playbackRetry;
  clearPlaybackLoading(a);
- showResolveFail(a, "解析超时（15 秒），可能是网络或来源不可达。", retry);
+ showResolveFail(a, "解析超时（30 秒），旧设备首次解析可能较慢。", retry);
  },
- 15000);
+ 30000);
  }
 
  /** 1.9.89：解析失败统一提示（隐藏 loading + 重试按钮，可换线路）。 */
@@ -666,7 +685,7 @@ final class PlaybackController {
  .setMessage(reason + "\n\n可点「重试」，或返回后用右上角「切换」换线路。")
  .setNegativeButton("取消", null);
  if (retry != null) builder.setPositiveButton("重试", (d, w) -> retry.run());
- builder.show();
+ builder.setPositiveDefaultFocus().show();
  }
 
  static void showResolveFail(

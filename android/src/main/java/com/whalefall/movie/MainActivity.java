@@ -2469,6 +2469,8 @@ public final class MainActivity extends Activity {
  }
 
  void detail(Cms.Site s, Cms.Video listing, Cms.Video ready) {
+ // 1.9.90：进入详情即预热 CSP WebView，减少旧设备首次解析等待
+ CspEngine.prewarm(this);
  if (!isTvDevice()) {
  MobileDetailScreen.show(this, s, listing, ready);
  return;

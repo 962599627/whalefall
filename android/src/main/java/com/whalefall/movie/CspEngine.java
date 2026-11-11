@@ -15,6 +15,31 @@ import org.json.*;
 
 /** Experimental ordinary CSP host. Never unwraps, patches, or bypasses plugin protection. */
 public final class CspEngine implements SourceEngine {
+ /** 1.9.90：预热 Chromium（后台创建 WebView + about:blank），让旧盒子首次 CSP 解析更快。 */
+ static void prewarm(final MainActivity a) {
+ if (a == null) return;
+ a.ui.postDelayed(
+ () -> {
+ try {
+ final android.webkit.WebView warm = new android.webkit.WebView(a);
+ warm.getSettings().setJavaScriptEnabled(true);
+ warm.loadUrl("about:blank");
+ AppLog.i("CspEngine", "prewarm webview=started");
+ a.ui.postDelayed(
+ () -> {
+ try {
+ warm.destroy();
+ } catch (Throwable ignored) {
+ }
+ },
+ 4000);
+ } catch (Throwable error) {
+ AppLog.w("CspEngine", "prewarm failed", error);
+ }
+ },
+ 800);
+ }
+
  static final Map<String, DexClassLoader> LOADERS = new HashMap<>();
  static volatile String activeJarDeclaration = "";
  final Application app;
@@ -96,8 +121,7 @@ public final class CspEngine implements SourceEngine {
  }
 
  static synchronized DexClassLoader loader(Application app, File artifact, String sha)
- throws Exception {
- DexClassLoader existing = LOADERS.get(sha);
+ throws Exception { DexClassLoader existing = LOADERS.get(sha);
  if (existing != null) return existing;
  File optimized = new File(app.getCodeCacheDir(), "csp-opt");
  if (!optimized.exists() && !optimized.mkdirs()) throw new IOException("无法创建插件私有目录");

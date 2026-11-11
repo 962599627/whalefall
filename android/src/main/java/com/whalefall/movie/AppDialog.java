@@ -170,6 +170,7 @@ final class AppDialog extends Dialog {
  w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
  View first = selected;
  if (first == null && spec.focusNegative) first = actions.get(-2);
+ if (first == null && spec.focusPositive) first = actions.get(-1);
  if (first == null)
  first = content.getChildCount() > 0 ? content.getChildAt(0) : actions.get(-1);
  if (first != null) first.requestFocus();
@@ -218,9 +219,16 @@ final class AppDialog extends Dialog {
  final Map<Integer, String> buttons = new HashMap<>();
  final Map<Integer, DialogInterface.OnClickListener> callbacks = new HashMap<>();
  boolean focusNegative;
+ boolean focusPositive;
 
  Builder setNegativeDefaultFocus() {
  focusNegative = true;
+ return this;
+ }
+
+ /** 1.9.90：默认焦点放到「确定/重试」等正向按钮。 */
+ Builder setPositiveDefaultFocus() {
+ focusPositive = true;
  return this;
  }
 
