@@ -2159,25 +2159,9 @@ public final class MainActivity extends Activity {
  + (current != null && current.home)
  + " player="
  + (current != null && current.player));
- // 1.9.95：小窗焦点区内按 BACK 先回详情页焦点，再走返回
+ // 1.9.103：页面级 BACK 不被小窗焦点吞掉，直接回上一级（全屏 expanded 另处理）
  if (miniMode && miniDetails != null) {
- View f = getCurrentFocus();
- View page = miniDetails.page;
- boolean inside = false;
- for (View v = f; v != null; ) {
- if (v == page) {
- inside = true;
- break;
- }
- if (!(v.getParent() instanceof View)) break;
- v = (View) v.getParent();
- }
- if (inside) {
- View detailPlay = root == null ? null : root.findViewWithTag("detail-play");
- if (detailPlay != null) detailPlay.requestFocus();
- AppLog.i("MiniFocus", "zone=mini action=back-to-detail");
- return;
- }
+ AppLog.i("Back", "page=detail mini=true action=pop-page");
  }
  if (tvPlayer != null && current != null && current.player && tvPlayer.back()) {
  AppLog.i("Back", "branch=tvPlayer");
