@@ -1,40 +1,40 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.9.51",
-  "versionCode": 19051,
+  "versionName": "1.9.82",
+  "versionCode": 19082,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.9.51\n\n- 更新检查多源回退：镜像 → GitHub → raw → jsDelivr → ghproxy，每源 8 秒超时\n- 更新页支持选择安装包（通用 / arm64 / R8 实验），未知大小兼容\n- 发布资产包含更新清单（android-mobile.json / android-tv.json），旧版本可直接检查更新\n- 含 1.9.50 全部内容：三层筛选、筛选中文标签、type3 爬虫筛选、TV 安全模式开关、统一加载动画等\n- 已知：未真机验证；R8 为实验包；部分源可能不支持某维度筛选",
-  "size": 62570368,
-  "sha256": "2a48db93319249dfe32c225e3dc90101d51401bb5beed978e0f662bab8acf9cd",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.51/WhaleFall-1.9.51-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.51/WhaleFall-1.9.51-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.51",
+  "notes": "# 鲸落 1.9.82\n\n- 遥控焦点体系：统一 TvNav（可聚焦/焦点动效/几何方向搜索/模态栈），手机遥控可控制手机与 TV\n- 修复弹窗打开时遥控穿透到背景页；BACK 只关最上层弹窗\n- 修复焦点泄漏（未聚焦控件不绘制焦点环）、触摸单击即响应（不再点两下）\n- TV App 内置文件双入栈导致无法返回的问题\n- 片库三层筛选、type3 爬虫源筛选（中文维度、extend 传参）\n- 详情页小窗持续播放（手机+TV）、离开详情停止播放、切后台自动重连\n- 统一加载动画、薄玻璃卡片、默认字体色 #4CFF80、TV 安全模式开关\n- 更新检查多源回退（jsDelivr/ghproxy）+ 包体选择\n- 已知：未真机全量验证；R8 为实验包",
+  "size": 62599040,
+  "sha256": "a5d2a73dcb0806e21a3fc9517a364c7289d0e4b707e6f8f64f3ef4e2d21d227e",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.82",
   "variants": [
     {
       "kind": "mobile",
       "label": "通用版（双 ABI，推荐）",
-      "size": 62570368,
-      "sha256": "2a48db93319249dfe32c225e3dc90101d51401bb5beed978e0f662bab8acf9cd",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.51/WhaleFall-1.9.51-android-mobile.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.51/WhaleFall-1.9.51-android-mobile.apk"
+      "size": 62599040,
+      "sha256": "a5d2a73dcb0806e21a3fc9517a364c7289d0e4b707e6f8f64f3ef4e2d21d227e",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile.apk"
     },
     {
       "kind": "arm64",
       "label": "arm64 精简版（约 36MB）",
-      "size": 36134059,
-      "sha256": "2ba7334b2fcfe0b7f80a3fb49b3c6de69d5679d8e4e7d3b65b94e25aef9e1890",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.51/WhaleFall-1.9.51-android-mobile-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.51/WhaleFall-1.9.51-android-mobile-arm64.apk"
+      "size": 36162731,
+      "sha256": "40f83aea6ea0bffc9ec05168224c5f96030ab7e4946d561ddee1588cbae8ae54",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile-arm64.apk"
     },
     {
       "kind": "r8",
       "label": "R8 精简版（实验，未真机验证）",
-      "size": 33778801,
-      "sha256": "2024a1024b42afb858b33ced30fe0ded13a92452aa3f8c74297857fd2d4f7290",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.51/WhaleFall-1.9.51-android-mobile-r8-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.51/WhaleFall-1.9.51-android-mobile-r8-arm64.apk"
+      "size": 33803377,
+      "sha256": "4ee091f98f680bed407b0b66d3a1f20dff9102d961f4fe30a8b108155547e13d",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile-r8-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile-r8-arm64.apk"
     }
   ]
 }
