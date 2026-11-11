@@ -1822,8 +1822,26 @@ final class TvLive {
     static void open(
             MainActivity a, Store store, String group, Channel channel, Runnable onClosed) {
         a.prefs.edit().putString(LAST, channel.name + "\n" + channel.url).apply();
-        // 1.9.19：网页直播分组统一用全屏 WebLiveScreen（通用网页直播入口）
+        // 1.9.87：网页直播分组在旧 TV 上优先原生 HLS；无原生流则明确提示，不打开假页面
         if (GROUP_WEB.equals(group)) {
+            if (webLiveRestricted(a)) {
+                String nativeUrl = nativeWebLiveUrl(channel);
+                if (nativeUrl != null) {
+                    AppLog.i(
+                            "TvLive",
+                            "weblive native=yes channel=" + channel.name + " url=" + nativeUrl);
+                    a.open(
+                            new MainActivity.Screen(
+                                    () -> NativeLiveScreen.show(a, channel.name, nativeUrl)),
+                            true);
+                    if (onClosed != null) onClosed.run();
+                    return;
+                }
+                AppLog.i("TvLive", "weblive native=no channel=" + channel.name);
+                showWebLiveUnsupported(a, channel.name);
+                if (onClosed != null) onClosed.run();
+                return;
+            }
             WebLiveScreen.show(a, channel.name, channel.url);
             if (onClosed != null) onClosed.run();
             return;
@@ -1831,6 +1849,39 @@ final class TvLive {
         Player player = new Player(a, store, group, channel);
         player.onClosed = onClosed;
         player.show();
+    }
+
+    /** 旧 TV / 老 WebView 才限制网页 HLS；新系统继续网页播放。 */
+    static boolean webLiveRestricted(MainActivity a) {
+        if (a == null || !a.isTvDevice()) return false;
+        if (Build.VERSION.SDK_INT < 26) return true;
+        try {
+            String ua = android.webkit.WebSettings.getDefaultUserAgent(a);
+            java.util.regex.Matcher m =
+                    java.util.regex.Pattern.compile("Chrome/(\\d+)").matcher(ua == null ? "" : ua);
+            if (m.find()) return Integer.parseInt(m.group(1)) < 70;
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    /** 已知可原生播放的深圳频道 m3u8；其它深圳频道返回 null。 */
+    static String nativeWebLiveUrl(Channel channel) {
+        if (channel == null || channel.name == null) return null;
+        String name = channel.name.replace(" ", "");
+        if (name.contains("深圳卫视") || name.contains("深视4K") || name.contains("深视 4K"))
+            return "https://livepull-tcms.sztv.com.cn/live/sz4Kpgm.m3u8";
+        return null;
+    }
+
+    private static void showWebLiveUnsupported(MainActivity a, String name) {
+        new AppDialog.Builder(a)
+                .setTitle("网页直播暂不支持")
+                .setMessage(
+                        "该频道为官方网页直播，当前电视系统 WebView 不支持 HLS 播放。"
+                                + "\n\n请使用上方央视 / 卫视直播源，或换用其它频道。")
+                .setPositiveButton("知道了", null)
+                .show();
     }
 
     static final class Player {

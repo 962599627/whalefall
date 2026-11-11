@@ -1375,6 +1375,7 @@ public final class MainActivity extends Activity {
     }
 
     void preparePage(boolean navigation) {
+        NativeLiveScreen.close(this);
         clearPlaybackLoading();
         cancelArtwork();
         cancelPageRequests();
@@ -1926,6 +1927,11 @@ public final class MainActivity extends Activity {
                         + (body == null
                                 ? (root == null ? "null" : root.getClass().getName())
                                 : body.getClass().getName()));
+        // 1.9.87：原生直播页 BACK 释放 ExoPlayer 并回上一级
+        if ("native-live".equals(ownerTag)) {
+            NativeLiveScreen.handleBack(this);
+            return;
+        }
         // 1.9.82：App 内置文件页在最前处理，避免与 file-manager/播放器分支互串
         if ("app-files".equals(ownerTag)) {
             popBack();
