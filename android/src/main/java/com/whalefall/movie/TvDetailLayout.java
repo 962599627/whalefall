@@ -1020,7 +1020,24 @@ final class TvDetailLayout {
  + (fav != null)
  + " back="
  + (back != null));
- // 按键时打印链路方向，便于线上核对
+ // 1.9.99：线路/选集/全部剧集统一补焦点环，并在获得焦点时滚动到可见
+ java.util.List<View> rowItems = new java.util.ArrayList<>();
+ rowItems.addAll(lines);
+ rowItems.addAll(episodes);
+ if (allEpisodes != null) rowItems.add(allEpisodes);
+ for (final View item : rowItems) {
+ TvNav.focusRing(a, item, 12);
+ final View.OnFocusChangeListener base = item.getOnFocusChangeListener();
+ item.setOnFocusChangeListener(
+ (vv, focused) -> {
+ if (base != null) base.onFocusChange(vv, focused);
+ if (focused && a.root != null)
+ vv.requestRectangleOnScreen(
+ new android.graphics.Rect(
+ 0, -a.dp(24), vv.getWidth(), vv.getHeight() + a.dp(48)),
+ true);
+ });
+ }
  for (final View v : chain) {
  v.setOnKeyListener(
  (view, keyCode, event) -> {

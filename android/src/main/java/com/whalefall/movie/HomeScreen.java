@@ -1280,6 +1280,51 @@ final class HomeScreen {
  MobileDetailScreen.bindTouchFeedback(chip);
  chip.setFocusable(true);
  chip.setFocusableInTouchMode(true);
+ // 1.9.99：筛选 chip 标签/焦点环 + 按键日志，纳入焦点链
+ String dimKey = def.dimension == null ? "other" : def.dimension.toLowerCase(java.util.Locale.ROOT);
+ if (dimKey.contains("year")) dimKey = "year";
+ else if (dimKey.contains("area") || dimKey.contains("region") || dimKey.contains("country"))
+ dimKey = "area";
+ else if (dimKey.contains("sort") || dimKey.contains("order")) dimKey = "sort";
+ else if (dimKey.contains("type") || dimKey.contains("class")) dimKey = "type";
+ chip.setTag("filter-" + dimKey);
+ TvNav.focusRing(a, chip, 12);
+ chip.setOnKeyListener(
+ (v, keyCode, event) -> {
+ if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
+ boolean confirm =
+ keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+ || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
+ if (confirm) {
+ AppLog.i("FilterOk", "chip=" + dimKey + " options=" + def.choices.size());
+ return false;
+ }
+ int dir =
+ keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+ ? View.FOCUS_LEFT
+ : keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
+ ? View.FOCUS_RIGHT
+ : keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP
+ ? View.FOCUS_UP
+ : keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
+ ? View.FOCUS_DOWN
+ : -1;
+ if (dir < 0) return false;
+ View next = v.focusSearch(dir);
+ AppLog.i(
+ "FilterFocus",
+ "chip="
+ + dimKey
+ + " dir="
+ + (dir == View.FOCUS_LEFT
+ ? "left"
+ : dir == View.FOCUS_RIGHT
+ ? "right"
+ : dir == View.FOCUS_UP ? "up" : "down")
+ + " to="
+ + (next == null || next == v ? "none" : String.valueOf(next.getTag())));
+ return false;
+ });
  chip.setOnClickListener(v -> showFilterOptions(def));
  tagWrap.addView(chip, new LinearLayout.LayoutParams(-2, -2));
  if (active || open) {
@@ -1330,7 +1375,32 @@ final class HomeScreen {
  if (filterTagRow.getChildCount() > 0 && a.isTvDevice()) {
  View first = filterTagRow.getChildAt(0);
  if (!first.hasFocus() && filterPendingTag.isEmpty()) first.requestFocus();
+ if (a.isTvDevice()) a.ui.post(this::wireFilterFocus);
  }
+ }
+
+ /** 1.9.99：分类 tab ↔ 筛选条 ↔ 卡片网格的显式焦点链。 */
+ void wireFilterFocus() {
+ if (!a.isTvDevice() || a.root == null) return;
+ java.util.List<View> chips = collectPrefix(a.root, "filter-", 32);
+ if (chips.isEmpty()) return;
+ for (View chip : chips) if (chip.getId() == View.NO_ID) chip.setId(View.generateViewId());
+ for (int i = 0; i < chips.size(); i++) {
+ View chip = chips.get(i);
+ if (i > 0) chip.setNextFocusLeftId(chips.get(i - 1).getId());
+ if (i + 1 < chips.size()) chip.setNextFocusRightId(chips.get(i + 1).getId());
+ }
+ View tab = a.root.findViewWithTag("home-tab:0");
+ View card = a.root.findViewWithTag("home-video:0");
+ if (tab != null && tab.getId() != View.NO_ID) {
+ for (View chip : chips) chip.setNextFocusUpId(tab.getId());
+ tab.setNextFocusDownId(chips.get(0).getId());
+ }
+ if (card != null && card.getId() != View.NO_ID) {
+ for (View chip : chips) chip.setNextFocusDownId(card.getId());
+ card.setNextFocusUpId(chips.get(0).getId());
+ }
+ AppLog.i("FilterFocus", "row chips=" + chips.size() + " tab=" + (tab != null) + " grid=" + (card != null));
  }
 
  private boolean filterOptionsVisible() {
