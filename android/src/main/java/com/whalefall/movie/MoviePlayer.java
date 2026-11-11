@@ -836,6 +836,20 @@ public class MoviePlayer {
         return onMain(() -> lastError);
     }
 
+    /** 1.9.65：回前台重连前判断是否处于错误态。 */
+    public boolean hasPlaybackError() {
+        return onMain(() -> !lastError.isEmpty());
+    }
+
+    /** 1.9.65：同 URL 重连成功后清除错误标记。 */
+    public void clearPlaybackError() {
+        onMain(
+                () -> {
+                    lastError = "";
+                    return null;
+                });
+    }
+
     public int softFallbackMode() {
         return onMain(() -> lastErrorTrack == C.TRACK_TYPE_AUDIO ? 3 : 2);
     }

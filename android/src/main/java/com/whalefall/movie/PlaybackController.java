@@ -1939,6 +1939,87 @@ final class PlaybackController {
         AppLog.i("Detail", "resume player=cleared layers=" + layers);
     }
 
+    /** 1.9.65：回前台/网络变化后用同一 URL 自动重连（保留进度，最多 2 次）。 */
+    static void retryAfterResume(MainActivity a) {
+        retryPlayer(a, "resume", 0);
+    }
+
+    private static void retryPlayer(final MainActivity a, final String reason, final int attempt) {
+        if (a == null
+                || a.player == null
+                || a.playbackControls == null
+                || a.miniDetails == null && a.current == null) return;
+        if (!a.player.hasPlaybackError()) {
+            if (attempt == 0)
+                AppLog.i("Player", "retry skip reason=" + reason + " result=no-error");
+            return;
+        }
+        if (attempt >= 2) {
+            AppLog.i(
+                    "Player",
+                    "retry attempt=" + (attempt + 1) + " url=same result=fail reason=" + reason);
+            if (a.playerChrome != null)
+                a.playerChrome.showLoadingError(
+                        "媒体连接失败，请检查网络后重试",
+                        () -> {
+                            if (a.playbackControls != null) a.playbackControls.reload(true);
+                        });
+            return;
+        }
+        final int position = a.player.getCurrentPosition();
+        AppLog.i(
+                "Player",
+                "retry attempt="
+                        + (attempt + 1)
+                        + " url=same pos="
+                        + position
+                        + " reason="
+                        + reason);
+        try {
+            a.player.prepareAsync();
+        } catch (Throwable error) {
+            AppLog.w("Player", "retry prepare failed", error);
+            if (a.playerChrome != null) a.playerChrome.setLoading(true);
+            a.ui.postDelayed(() -> retryPlayer(a, reason, attempt + 1), 3000);
+            return;
+        }
+        a.ui.postDelayed(
+                () -> {
+                    if (a.player == null) return;
+                    if (a.player.hasPlaybackError()) {
+                        AppLog.i(
+                                "Player",
+                                "retry attempt="
+                                        + (attempt + 1)
+                                        + " url=same pos="
+                                        + position
+                                        + " result=fail");
+                        long delay = attempt == 0 ? 1000 : 3000;
+                        a.ui.postDelayed(() -> retryPlayer(a, reason, attempt + 1), delay);
+                        return;
+                    }
+                    a.player.clearPlaybackError();
+                    try {
+                        if (position > 0) a.player.seekTo(position);
+                    } catch (Throwable ignored) {
+                    }
+                    if (a.playerChrome != null) {
+                        a.playerChrome.setLoading(false);
+                        a.playerChrome.hideLoadingError();
+                    }
+                    if (a.playbackControls != null && a.playbackControls.timeline != null)
+                        a.playbackControls.timeline.requestFocus();
+                    AppLog.i(
+                            "Player",
+                            "retry attempt="
+                                    + (attempt + 1)
+                                    + " url=same pos="
+                                    + position
+                                    + " result=ok");
+                },
+                1500);
+    }
+
     static boolean dispatchPlaybackKey(MainActivity a, KeyEvent event) {
         if (a.current == null
                 || !a.current.player

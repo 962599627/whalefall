@@ -699,6 +699,12 @@ final class PlayerChrome {
         loadingLayer.showError(message, retry);
     }
 
+    /** 1.9.65：自动重连成功后收起错误层。 */
+    void hideLoadingError() {
+        loadingLayer.hideNow("retry ok");
+        loadingLayer.setVisibility(View.GONE);
+    }
+
     void switchEpisode(Cms.Episode episode, Cms.Line line) {
         String lineName = line == null || line.name == null ? "" : line.name;
         String epName = episode == null || episode.name == null ? "" : episode.name;

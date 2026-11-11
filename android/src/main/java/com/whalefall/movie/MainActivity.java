@@ -137,6 +137,9 @@ public final class MainActivity extends Activity {
     boolean miniMode;
     /** 1.9.53：从小窗放大回全屏、但底下仍是详情页时使用（BACK 再缩回小窗）。 */
     boolean expandedOverDetail;
+    /** 1.9.65：回前台重连与网络变化监听。 */
+    long backgroundedAt;
+    android.net.ConnectivityManager.NetworkCallback networkCallback;
     boolean changingMiniEpisode;
     FrameLayout playerOverlay;
     boolean controlsVisible = true;
@@ -2753,6 +2756,14 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (playerChrome != null) playerChrome.resumeLoadingAnimation();
+        watchNetwork();
+        long backgroundFor =
+                backgroundedAt <= 0 ? 0 : android.os.SystemClock.elapsedRealtime() - backgroundedAt;
+        backgroundedAt = 0;
+        if (backgroundFor > 5 * 60_000L)
+            AppLog.i("Player", "lifecycle resume backgroundMs=" + backgroundFor + " reconnect=true");
+        // 1.9.65：切后台回来网络连接可能已被系统断开，用同一 URL 自动重连
+        ui.postDelayed(() -> PlaybackController.retryAfterResume(this), 700);
         if (bgPlayback) {
             bgPlayback = false;
             // 1.9.53：回到前台继续播放，不释放音频焦点/不暂停，仅撤掉常驻通知
@@ -2766,8 +2777,38 @@ public final class MainActivity extends Activity {
         }
     }
 
+    /** 1.9.65：WiFi/流量切换时，若播放器有错误立即同 URL 重试。 */
+    void watchNetwork() {
+        if (android.os.Build.VERSION.SDK_INT < 24 || networkCallback != null) return;
+        try {
+            final android.net.ConnectivityManager cm =
+                    (android.net.ConnectivityManager)
+                            getSystemService(android.content.Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return;
+            networkCallback =
+                    new android.net.ConnectivityManager.NetworkCallback() {
+                        @Override
+                        public void onAvailable(android.net.Network network) {
+                            AppLog.i("Player", "network change state=available reconnect=try");
+                            ui.postDelayed(
+                                    () -> PlaybackController.retryAfterResume(MainActivity.this),
+                                    600);
+                        }
+
+                        @Override
+                        public void onLost(android.net.Network network) {
+                            AppLog.i("Player", "network change state=lost");
+                        }
+                    };
+            cm.registerDefaultNetworkCallback(networkCallback);
+        } catch (Throwable error) {
+            AppLog.w("Player", "network callback unavailable", error);
+        }
+    }
+
     @Override
     protected void onStop() {
+        backgroundedAt = android.os.SystemClock.elapsedRealtime();
         PrivacySpace.cancelPrompt(this);
         finishSeek(false);
         if (playbackLoading != null) {
@@ -2815,6 +2856,16 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (networkCallback != null) {
+            try {
+                android.net.ConnectivityManager cm =
+                        (android.net.ConnectivityManager)
+                                getSystemService(android.content.Context.CONNECTIVITY_SERVICE);
+                if (cm != null) cm.unregisterNetworkCallback(networkCallback);
+            } catch (Throwable ignored) {
+            }
+            networkCallback = null;
+        }
         RemoteInputScreen.stop("destroy");
         BgPlay.cancel(this);
         releaseAudioFocus();
