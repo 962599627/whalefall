@@ -1383,6 +1383,16 @@ final class HomeScreen {
  }
  }
 
+ /** 1.9.116：维度归一化，用于 filter-type/year/area/sort 等 tag。 */
+ static String normalizeFilterDim(String dimension) {
+ String d = dimension == null ? "other" : dimension.toLowerCase(java.util.Locale.ROOT);
+ if (d.contains("year")) return "year";
+ if (d.contains("area") || d.contains("region") || d.contains("country")) return "area";
+ if (d.contains("sort") || d.contains("order")) return "sort";
+ if (d.contains("type") || d.contains("class")) return "type";
+ return d;
+ }
+
  /** 1.9.99：分类 tab ↔ 筛选条 ↔ 卡片网格的显式焦点链。 */
  void wireFilterFocus() {
  if (!a.isTvDevice() || a.root == null) return;
@@ -1500,9 +1510,59 @@ final class HomeScreen {
  new LinearLayout.LayoutParams(-2, chipHeight);
  lp.rightMargin = a.dp(10);
  filterOptionRow.addView(chip, lp);
- if (count == 0) chip.requestFocus();
+ // 1.9.116：选项 chip 可聚焦、可遥控、有焦点环与 tag
+ String dimKey = normalizeFilterDim(def.dimension);
+ if (chip.getId() == View.NO_ID) chip.setId(View.generateViewId());
+ chip.setTag("filter-option:" + dimKey + ":" + choice.value);
+ TvNav.focusRing(a, chip, 999);
+ final View.OnFocusChangeListener optionRing = chip.getOnFocusChangeListener();
+ final String optionDim = dimKey;
+ final String optionValue = choice.value;
+ chip.setOnFocusChangeListener(
+ (v, focused) -> {
+ if (optionRing != null) optionRing.onFocusChange(v, focused);
+ if (focused) {
+ AppLog.i(
+ "FilterOption",
+ "dim=" + optionDim + " value=" + optionValue + " focus=true");
+ v.requestRectangleOnScreen(
+ new android.graphics.Rect(0, 0, v.getWidth() + a.dp(48), v.getHeight()),
+ true);
+ }
+ });
+ if (count == 0) {
+ chip.requestFocus();
+ View parentChip =
+ a.root == null ? null : a.root.findViewWithTag("filter-" + dimKey);
+ if (parentChip != null && parentChip.getId() != View.NO_ID)
+ parentChip.setNextFocusDownId(chip.getId());
+ }
+ if (count > 0) {
+ TextView prev =
+ (TextView) filterOptionRow.getChildAt(filterOptionRow.getChildCount() - 2);
+ if (prev != null && prev.getId() != View.NO_ID) {
+ prev.setNextFocusRightId(chip.getId());
+ chip.setNextFocusLeftId(prev.getId());
+ }
+ }
  count++;
  }
+ // 1.9.116：建立「筛选芯片 ↔ 选项行 ↔ 卡片」焦点链
+ String openedDim = normalizeFilterDim(def.dimension);
+ View parentChip = a.root == null ? null : a.root.findViewWithTag("filter-" + openedDim);
+ View firstOption = filterOptionRow.getChildCount() > 0 ? filterOptionRow.getChildAt(0) : null;
+ if (firstOption != null && firstOption.getId() != View.NO_ID) {
+ if (parentChip != null && parentChip.getId() != View.NO_ID) {
+ parentChip.setNextFocusDownId(firstOption.getId());
+ firstOption.setNextFocusUpId(parentChip.getId());
+ }
+ View gridCard = a.root == null ? null : a.root.findViewWithTag("home-video:0");
+ if (gridCard != null && gridCard.getId() != View.NO_ID)
+ firstOption.setNextFocusDownId(gridCard.getId());
+ }
+ AppLog.i(
+ "FilterFocus",
+ "open dim=" + openedDim + " options=" + count + " firstFocused=" + (firstOption != null));
  AppLog.i(
  "Filter",
  "expand tab="
