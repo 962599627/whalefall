@@ -161,14 +161,28 @@ final class HomeDock {
                         }
                     });
         }
-        int last = items.length - 1;
+        // 1.9.86：焦点链跳过 GONE 的云盘项，保证「网盘」下方能到「设置」
+        int[] prevVisible = new int[items.length];
+        int[] nextVisible = new int[items.length];
+        int lastSeen = -1;
         for (int i = 0; i < items.length; i++) {
+            prevVisible[i] = lastSeen;
+            if (items[i].getVisibility() == View.VISIBLE) lastSeen = i;
+        }
+        int nextSeen = -1;
+        for (int i = items.length - 1; i >= 0; i--) {
+            nextVisible[i] = nextSeen;
+            if (items[i].getVisibility() == View.VISIBLE) nextSeen = i;
+        }
+        for (int i = 0; i < items.length; i++) {
+            int pv = prevVisible[i] < 0 ? i : prevVisible[i];
+            int nv = nextVisible[i] < 0 ? i : nextVisible[i];
             if (bottomMode) {
-                items[i].setNextFocusLeftId(items[Math.max(0, i - 1)].getId());
-                items[i].setNextFocusRightId(items[Math.min(last, i + 1)].getId());
+                items[i].setNextFocusLeftId(items[pv].getId());
+                items[i].setNextFocusRightId(items[nv].getId());
             } else {
-                items[i].setNextFocusUpId(items[Math.max(0, i - 1)].getId());
-                items[i].setNextFocusDownId(items[Math.min(last, i + 1)].getId());
+                items[i].setNextFocusUpId(items[pv].getId());
+                items[i].setNextFocusDownId(items[nv].getId());
                 items[i].setNextFocusRightId(items[i].getId());
             }
         }
