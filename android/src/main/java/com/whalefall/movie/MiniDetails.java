@@ -127,9 +127,11 @@ final class MiniDetails {
  // 1.9.96：控制条必须叠在 mini-video 之上，否则按钮被整块 hit 盖住点不到
  bar.bringToFront();
  hit.setOnFocusChangeListener(
- (v, focused) ->
+ (v, focused) -> {
  FocusMotion.style(
- a, page, focused, 0x00000000, 0x66ffffff, 12, 0, 0, false, 1f));
+ a, page, focused, 0x00000000, 0x66ffffff, 12, 0, 0, false, 1f);
+ if (focused) AppLog.i("MiniFocus", "enter from=detail dir=focus");
+ });
 
  int layerIdx = a.root.indexOfChild(a.playbackLayer);
  a.root.addView(page, layerIdx >= 0 ? layerIdx + 1 : 0, pageLp);
@@ -185,6 +187,13 @@ final class MiniDetails {
  "playstate="
  + (a.playing ? "playing" : "paused")
  + " focus=mini-play");
+ // 1.9.115：重建后确保 mini-video 仍可聚焦，并重挂详情焦点链
+ if (!hit.isFocusable()) {
+ hit.setFocusable(true);
+ hit.setFocusableInTouchMode(true);
+ AppLog.i("MiniFocus", "lost focusable=false restored=true");
+ }
+ a.ui.postDelayed(() -> TvDetailLayout.wireDetailFocusChain(a), 300);
  });
  // 图标跟随真实播放状态（暂停/播放切换后同步）
  final Runnable tick =

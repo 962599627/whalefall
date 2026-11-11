@@ -982,7 +982,17 @@ final class TvDetailLayout {
  if (back != null) miniVideo.setNextFocusUpId(back.getId());
  if (back != null) back.setNextFocusDownId(miniVideo.getId());
  if (fav != null) fav.setNextFocusLeftId(miniVideo.getId());
- AppLog.i("MiniFocus", "root focus=mini-video");
+ // 1.9.115：详情各分区都能重新进入小窗
+ if (play != null) {
+ play.setNextFocusLeftId(miniVideo.getId());
+ play.setNextFocusUpId(miniVideo.getId());
+ }
+ if (synopsis != null) synopsis.setNextFocusLeftId(miniVideo.getId());
+ if (copy != null) copy.setNextFocusLeftId(miniVideo.getId());
+ if (!lines.isEmpty()) lines.get(0).setNextFocusUpId(miniVideo.getId());
+ if (!episodes.isEmpty()) episodes.get(0).setNextFocusUpId(miniVideo.getId());
+ if (allEpisodes != null) allEpisodes.setNextFocusUpId(miniVideo.getId());
+ AppLog.i("MiniFocus", "root focus=mini-video chain=true");
  }
  if (miniPlay != null) {
  if (miniPlay.getId() == View.NO_ID) miniPlay.setId(View.generateViewId());
