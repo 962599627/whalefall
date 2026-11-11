@@ -1965,12 +1965,16 @@ final class PlaybackController {
 
  /** 1.9.128：进入/退出进度拖动模式。 */
  static void enterScrub(MainActivity a) {
+ enterScrub(a, "long-ok");
+ }
+
+ static void enterScrub(MainActivity a, String source) {
  if (a.playbackControls == null) return;
  a.scrubMode = true;
  showControls(a, true);
  a.playbackControls.timeline.requestFocus();
  if (a.playStatus != null) a.playStatus.setText("左右拖动进度，OK/BACK 确认");
- AppLog.i("Player", "scrub enter source=long-ok");
+ AppLog.i("Player", "scrub enter source=" + source);
  }
 
  static void exitScrub(MainActivity a, boolean commit) {
@@ -2433,6 +2437,12 @@ final class PlaybackController {
  AppLog.i(
  "Player",
  "lastAction=seek repeat=" + event.getRepeatCount() + " key=" + (direction > 0 ? "right" : "left"));
+ if (down && event.getRepeatCount() > 0 && !a.scrubMode && a.playbackControls != null) {
+ // 1.9.128：长按 LEFT/RIGHT → 唤出控制条 + 聚焦进度条 + 进入拖动
+ enterScrub(a, direction > 0 ? "long-right" : "long-left");
+ scrubSeek(a, direction);
+ return true;
+ }
  if (down) {
  if (event.getRepeatCount() > 0 && a.seekGesture.active) {
  // 1.9.61：按住方向键连续拖动，系统重复键只加速不抖动（seek 由松手后节流提交）
