@@ -19,88 +19,88 @@ import java.io.File;
  * 作为首页背景动态播放，不影响播放器本身的进度与音量。
  */
 final class VideoWallpaper extends FrameLayout {
-    static final String FILE = "wallpaper-video.mp4";
+ static final String FILE = "wallpaper-video.mp4";
 
-    private final ExoPlayer player;
-    private final PlayerView view;
-    private final View dim;
-    private boolean released;
-    private boolean moving;
+ private final ExoPlayer player;
+ private final PlayerView view;
+ private final View dim;
+ private boolean released;
+ private boolean moving;
 
-    static File file(Context c) {
-        return new File(c.getFilesDir(), FILE);
-    }
+ static File file(Context c) {
+ return new File(c.getFilesDir(), FILE);
+ }
 
-    VideoWallpaper(MainActivity host) {
-        super(host);
-        setTag("wallpaper-video");
-        setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        view = new PlayerView(host);
-        view.setUseController(false);
-        view.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
-        view.setShutterBackgroundColor(Color.BLACK);
-        addView(view, new LayoutParams(-1, -1));
-        dim = new View(host);
-        addView(dim, new LayoutParams(-1, -1));
-        applyDim(host.prefs.getInt(Prefs.WALLPAPER_DIM, 35));
-        player = new ExoPlayer.Builder(host).build();
-        player.setRepeatMode(Player.REPEAT_MODE_ONE);
-        player.setVolume(host.prefs.getBoolean(Prefs.WALLPAPER_SOUND, false) ? 1f : 0f);
-        view.setPlayer(player);
-        player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file(host))));
-        player.prepare();
-        player.setPlayWhenReady(true);
-    }
+ VideoWallpaper(MainActivity host) {
+ super(host);
+ setTag("wallpaper-video");
+ setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+ view = new PlayerView(host);
+ view.setUseController(false);
+ view.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
+ view.setShutterBackgroundColor(Color.BLACK);
+ addView(view, new LayoutParams(-1, -1));
+ dim = new View(host);
+ addView(dim, new LayoutParams(-1, -1));
+ applyDim(host.prefs.getInt(Prefs.WALLPAPER_DIM, 35));
+ player = new ExoPlayer.Builder(host).build();
+ player.setRepeatMode(Player.REPEAT_MODE_ONE);
+ player.setVolume(host.prefs.getBoolean(Prefs.WALLPAPER_SOUND, false) ? 1f : 0f);
+ view.setPlayer(player);
+ player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file(host))));
+ player.prepare();
+ player.setPlayWhenReady(true);
+ }
 
-    void applyDim(int percent) {
-        int level = Math.max(20, Math.min(100, percent));
-        dim.setBackgroundColor(Color.argb(Math.round(level * 2.55f), 4, 8, 18));
-    }
+ void applyDim(int percent) {
+ int level = Math.max(20, Math.min(100, percent));
+ dim.setBackgroundColor(Color.argb(Math.round(level * 2.55f), 4, 8, 18));
+ }
 
-    void release() {
-        if (released) return;
-        released = true;
-        try {
-            player.setPlayWhenReady(false);
-        } catch (Throwable ignored) {
-        }
-        try {
-            view.setPlayer(null);
-        } catch (Throwable ignored) {
-        }
-        try {
-            player.release();
-        } catch (Throwable ignored) {
-        }
-    }
+ void release() {
+ if (released) return;
+ released = true;
+ try {
+ player.setPlayWhenReady(false);
+ } catch (Throwable ignored) {
+ }
+ try {
+ view.setPlayer(null);
+ } catch (Throwable ignored) {
+ }
+ try {
+ player.release();
+ } catch (Throwable ignored) {
+ }
+ }
 
-    @Override
-    protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        if (!released) player.setPlayWhenReady(true);
-    }
+ @Override
+ protected void onAttachedToWindow() {
+ super.onAttachedToWindow();
+ if (!released) player.setPlayWhenReady(true);
+ }
 
-    boolean isReleased() {
-        return released;
-    }
+ boolean isReleased() {
+ return released;
+ }
 
-    /** 换页面时把同一个播放器视图搬过去，避免重建导致的黑屏/首帧闪烁。 */
-    void attachTo(android.widget.FrameLayout root) {
-        moving = true;
-        if (getParent() instanceof android.view.ViewGroup)
-            ((android.view.ViewGroup) getParent()).removeView(this);
-        // 始终垫在 base 渐变之上、页面内容之下（index 0 = base）
-        root.addView(
-                this,
-                Math.min(1, root.getChildCount()),
-                new android.widget.FrameLayout.LayoutParams(-1, -1));
-        moving = false;
-        player.setPlayWhenReady(true);
-    }
+ /** 换页面时把同一个播放器视图搬过去，避免重建导致的黑屏/首帧闪烁。 */
+ void attachTo(android.widget.FrameLayout root) {
+ moving = true;
+ if (getParent() instanceof android.view.ViewGroup)
+ ((android.view.ViewGroup) getParent()).removeView(this);
+ // 始终垫在 base 渐变之上、页面内容之下（index 0 = base）
+ root.addView(
+ this,
+ Math.min(1, root.getChildCount()),
+ new android.widget.FrameLayout.LayoutParams(-1, -1));
+ moving = false;
+ player.setPlayWhenReady(true);
+ }
 
-    @Override
-    protected void onDetachedFromWindow() {
-        if (!released && !moving) player.setPlayWhenReady(false);
-        super.onDetachedFromWindow();
-    }
+ @Override
+ protected void onDetachedFromWindow() {
+ if (!released && !moving) player.setPlayWhenReady(false);
+ super.onDetachedFromWindow();
+ }
 }

@@ -11,1862 +11,1862 @@ import java.util.*;
 
 /** Independent TV playback controls. Every visible action is wired to playback state. */
 final class PlaybackControls {
-    final MainActivity a;
-    final Cms.Site site;
-    final Cms.Video video;
-    final Cms.Episode resolved;
-    final LinearLayout dockOverlay;
-    final androidx.media3.ui.DefaultTimeBar timeline;
-    long timelinePosMs, timelineDurMs;
-    final SubtitleOverlayView subtitle;
-    final VideoOutput surface;
-    final PlaybackEffects effects = new PlaybackEffects();
-    final DanmakuView danmaku;
-    boolean danmakuLoaded;
-    boolean currentMobileLandscape;
-    /** 当前是否是直播会话（决定图标行文案：下台/频道/线路）。 */
-    private boolean liveSession;
-    final Map<String, View> buttons = new LinkedHashMap<>();
-    /** 1.9.61：TV 控制条第一个可聚焦按钮（默认焦点）。 */
-    View dockFirst;
-    Dialog activeDialog;
-    View menuAnchor;
-    String lastSubtitle = "";
-    boolean dialogOpen, transitioning;
-    boolean touchSeeking, sliderSeeking;
-    long lastSeekTimeMs;
-    int lastSeekTargetMs = -1;
-    int pendingResumeMs;
-    int videoWidth, videoHeight;
-    /** resize 时若 playbackLayer 还没测量完成，下一帧补一次（避免用旧尺寸固定 surface）。 */
-    boolean resizeRetryPending;
-    int resizeRetry;
-
-    boolean isUserSeeking() {
-        return touchSeeking || sliderSeeking;
-    }
-
-    void recordUserSeek(int targetMs) {
-        lastSeekTimeMs = android.os.SystemClock.uptimeMillis();
-        lastSeekTargetMs = Math.max(0, targetMs);
-        setTimelineProgress(lastSeekTargetMs);
-    }
-
-    int displayPosition(int actualPositionMs) {
-        if (lastSeekTargetMs >= 0
-                && android.os.SystemClock.uptimeMillis() - lastSeekTimeMs < 3500
-                && Math.abs(actualPositionMs - lastSeekTargetMs) > 2500) {
-            return lastSeekTargetMs;
-        }
-        return actualPositionMs;
-    }
-
-    PlaybackControls(
-            MainActivity host,
-            LinearLayout overlay,
-            android.view.ViewGroup progress,
-            VideoOutput texture,
-            Cms.Site s,
-            Cms.Video v,
-            Cms.Episode ep) {
-        a = host;
-        site = s;
-        video = v;
-        resolved = ep;
-        dockOverlay = overlay;
-        surface = texture;
-        liveSession = "live".equals(s.key);
-        menuAnchor = a.playerChrome == null ? null : a.playerChrome.menuAnchor;
-        danmaku =
-                new DanmakuView(
-                        a,
-                        new DanmakuView.Clock() {
-                            public int position() {
-                                return a.player == null ? 0 : a.player.getCurrentPosition();
-                            }
-
-                            public boolean playing() {
-                                return a.player != null && a.player.isPlaying();
-                            }
-                        });
-        a.playbackLayer.addView(danmaku, 1, new FrameLayout.LayoutParams(-1, -1));
-        danmaku.enabled(false);
-        subtitle = new SubtitleOverlayView(a);
-        subtitle.setUserDefaultStyle();
-        subtitle.setPadding(a.dp(40), 0, a.dp(40), a.dp(12));
-        FrameLayout.LayoutParams caption = new FrameLayout.LayoutParams(-1, -1, Gravity.BOTTOM);
-        caption.bottomMargin = a.dp(168);
-        a.playbackLayer.addView(subtitle, 1, caption);
-        applySubtitleStyle();
-        timeline =
-                (androidx.media3.ui.DefaultTimeBar)
-                        android.view.LayoutInflater.from(a)
-                                .inflate(R.layout.whale_time_bar, null);
-        timeline.setTag("timeline");
-        timeline.setFocusable(true);
-        timeline.setOnFocusChangeListener(
-                (focusedView, f) ->
-                        FocusMotion.style(
-                                a,
-                                timeline,
-                                f,
-                                0,
-                                0x16ffffff,
-                                16,
-                                MainActivity.WHITE,
-                                MainActivity.WHITE,
-                                false,
-                                1));
-        // 三段式进度：时间在轨道左右，轨道不再用 68dp 内边距避让文本
-        timeline.setPadding(0, 0, 0, 0);
-        timeline.setKeyTimeIncrement(15000);
-        // 进度条放进 PlayerChrome 的中段时间槽
-        progress.addView(
-                timeline,
-                0,
-                new FrameLayout.LayoutParams(-1, a.dp(48), Gravity.CENTER_VERTICAL));
-        timeline.addListener(
-                new androidx.media3.ui.TimeBar.OnScrubListener() {
-                    public void onScrubStart(androidx.media3.ui.TimeBar bar, long position) {
-                        sliderSeeking = true;
-                        a.finishSeek(false);
-                        a.scheduleHide();
-                        if (a.playerChrome != null)
-                            a.playerChrome.showSeekBubble((int) position, (int) Math.max(1, timelineDurMs));
-                    }
-
-                    public void onScrubMove(androidx.media3.ui.TimeBar bar, long position) {
-                        if (a.playerChrome != null)
-                            a.playerChrome.showSeekBubble((int) position, (int) Math.max(1, timelineDurMs));
-                    }
-
-                    public void onScrubStop(
-                            androidx.media3.ui.TimeBar bar, long position, boolean canceled) {
-                        sliderSeeking = false;
-                        if (!canceled && a.prepared && a.player != null) {
-                            int target = (int) position;
-                            recordUserSeek(target);
-                            a.player.seekTo(target);
-                            if (a.playClock != null && a.player.getDuration() > 0) {
-                                a.playClock.setText(
-                                        PlaybackController.formatTime(target)
-                                                + " / "
-                                                + PlaybackController.formatTime(
-                                                        a.player.getDuration()));
-                            }
-                        }
-                        if (a.playerChrome != null) a.playerChrome.hideSeekBubble();
-                        a.scheduleHide();
-                    }
-                });
-        boolean wideLayout =
-                a.isTvDevice()
-                        || a.windowWidth() / a.getResources().getDisplayMetrics().density
-                                >= 600f;
-        boolean mobileLandscape = wideLayout;
-        currentMobileLandscape = mobileLandscape;
-        LinearLayout row = a.row();
-        boolean live = "live".equals(site.key);
-        if (a.isTvDevice()) {
-            add(
-                    row,
-                    live ? "下台" : "下一集",
-                    "next-episode",
-                    () -> {
-                        if (live) a.liveStep(1);
-                        else if (!step(1)) showBubble("无下集", new String[] {"知道了"}, -1, i -> {}, "");
-                    });
-            add(
-                    row,
-                    live ? "频道" : "选集",
-                    "episodes",
-                    () -> {
-                        if (live) a.chooseLiveChannel();
-                        else chooseEpisodes();
-                    });
-            add(
-                    row,
-                    live ? "线路" : "换源",
-                    "lines",
-                    () -> {
-                        if (live) a.chooseLiveStream();
-                        else chooseLine();
-                    });
-            add(row, "倍速", "speed", this::speed);
-            add(row, "音轨", "audio-tracks", () -> tracks(1));
-            add(row, "解码", "decoder", this::decoderMenu);
-            add(row, "片头", "skip-intro-tool", () -> skip(true));
-            add(row, "片尾", "skip-outro-tool", () -> skip(false));
-            add(row, "更多", "more", this::more);
-            // Keep aspect/subtitles action references in map for programmatic callers
-            registerHiddenAction("aspect", this::aspect);
-            registerHiddenAction("subtitles", () -> tracks(3));
-        } else {
-            if (!live) {
-                add(
-                        row,
-                        "上集",
-                        "prev-episode",
-                        () -> {
-                            if (!step(-1))
-                                showBubble("已是第一集", new String[] {"知道了"}, -1, i -> {}, "");
-                        });
-            }
-            add(
-                    row,
-                    live ? "下台" : "下集",
-                    "next-episode",
-                    () -> {
-                        if (live) a.liveStep(1);
-                        else if (!step(1)) showBubble("无下集", new String[] {"知道了"}, -1, i -> {}, "");
-                    });
-            add(
-                    row,
-                    live ? "频道" : "选集",
-                    "episodes",
-                    () -> {
-                        if (live) a.chooseLiveChannel();
-                        else chooseEpisodes();
-                    });
-            add(
-                    row,
-                    "换源",
-                    "lines",
-                    () -> {
-                        if (live) a.chooseLiveStream();
-                        else chooseLine();
-                    });
-            add(row, "1.0×", "speed", this::speed);
-            add(row, "画面", "aspect", this::aspect);
-            add(row, "字幕", "subtitles", () -> tracks(3));
-            add(row, "全屏", "fullscreen-tool", a::togglePlayerOrientation);
-            add(row, "音轨", "audio-tracks", () -> tracks(1));
-            add(row, "解码", "decoder", this::decoderMenu);
-            add(row, "弹幕", "danmaku-tool", this::danmaku);
-            add(row, "跳片头", "skip-intro-tool", () -> skip(true));
-            add(row, "跳片尾", "skip-outro-tool", () -> skip(false));
-            add(row, "循环", "repeat-tool", this::repeat);
-            add(
-                    row,
-                    "重播",
-                    "restart-tool",
-                    () -> {
-                        if (a.player != null && a.prepared) {
-                            a.player.seekTo(0);
-                            a.player.start();
-                            a.playing = true;
-                        } else reload(false);
-                    });
-            add(row, "更多", "more", this::more);
-        }
-        timeline.setId(UiCompat.generateViewId());
-        List<View> all = new ArrayList<>();
-        for (int i = 0; i < row.getChildCount(); i++) {
-            View child = row.getChildAt(i);
-            if (child instanceof Button) all.add(child);
-        }
-        for (View b : all) b.setId(UiCompat.generateViewId());
-        if (!all.isEmpty()) {
-            for (View b : all) b.setNextFocusUpId(timeline.getId());
-            timeline.setNextFocusDownId(all.get(0).getId());
-            all.get(0).setNextFocusLeftId(all.get(all.size() - 1).getId());
-            all.get(all.size() - 1).setNextFocusRightId(all.get(0).getId());
-            all.get(0)
-                    .setOnKeyListener(
-                            (view, key, event) -> {
-                                if (key != KeyEvent.KEYCODE_DPAD_LEFT) return false;
-                                if (event.getAction() == KeyEvent.ACTION_DOWN)
-                                    all.get(all.size() - 1).requestFocus();
-                                return true;
-                            });
-            all.get(all.size() - 1)
-                    .setOnKeyListener(
-                            (view, key, event) -> {
-                                if (key != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
-                                if (event.getAction() == KeyEvent.ACTION_DOWN)
-                                    all.get(0).requestFocus();
-                                return true;
-                            });
-        }
-        rebuildToolDock(mobileLandscape);
-        updateLabels();
-    }
-
-    void relayout(boolean wide) {
-        if (wide != currentMobileLandscape || dockOverlay.getChildCount() == 0) {
-            currentMobileLandscape = wide;
-            rebuildToolDock(wide);
-        }
-        updateLabels();
-    }
-
-    /** 底部图标行：宽屏均分铺满（8 格），窄屏横向滚动；中央播放簇由 PlayerChrome 负责。 */
-    private static final String[] BAR_KEYS = {
-        "prev-episode",
-        "next-episode",
-        "episodes",
-        "speed",
-        "lines",
-        "subtitles",
-        "aspect",
-        "more"
-    };
-
-    /** 直播会话：下台 / 频道 / 线路 / 倍速 / 更多。 */
-    private static final String[] LIVE_KEYS = {
-        "next-episode", "episodes", "lines", "speed", "more"
-    };
-
-    /** 底部图标行：宽屏均分铺满，窄屏横向滚动；控件是 vector 图标的 48dp ImageButton。 */
-    private void rebuildToolDock(boolean wide) {
-        dockOverlay.removeAllViews();
-        dockOverlay.setPadding(0, 0, 0, 0);
-        LinearLayout row = a.row();
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setClipChildren(false);
-        row.setClipToPadding(false);
-        String[] keys = liveSession ? LIVE_KEYS : BAR_KEYS;
-        for (String key : keys) {
-            View b = buttons.get(key);
-            if (b == null) continue;
-            if (b.getParent() instanceof ViewGroup) {
-                ((ViewGroup) b.getParent()).removeView(b);
-            }
-            if (a.isTvDevice()) styleTextButton(b, key);
-            b.setVisibility(View.VISIBLE);
-            row.addView(b, cellLp(wide));
-        }
-        if (wide) {
-            dockOverlay.addView(row, new LinearLayout.LayoutParams(-1, a.dp(56)));
-        } else {
-            HorizontalScrollView scroller = new HorizontalScrollView(a);
-            scroller.setHorizontalScrollBarEnabled(false);
-            scroller.setClipChildren(false);
-            scroller.setClipToPadding(false);
-            scroller.addView(row);
-            dockOverlay.addView(scroller, new LinearLayout.LayoutParams(-1, a.dp(56)));
-        }
-        wireTvDockFocus(row);
-    }
-
-    /** 1.9.61：TV 底部控制条按钮全部可聚焦 + 可见焦点描边 + 左右/上下焦点链。 */
-    private void wireTvDockFocus(LinearLayout row) {
-        if (a.isTvDevice()) {
-            List<View> focusable = new ArrayList<>();
-            for (int i = 0; i < row.getChildCount(); i++) {
-                View child = row.getChildAt(i);
-                if (!child.isClickable()) continue;
-                child.setFocusable(true);
-                child.setFocusableInTouchMode(true);
-                child.setEnabled(true);
-                if (child.getId() == View.NO_ID) child.setId(UiCompat.generateViewId());
-                // 1.9.68：统一焦点动效（粉色叠加 + ACCENT 亮边 + 1.03× 放大）
-                TvNav.focusRing(a, child, 10);
-                child.setOnKeyListener(
-                        (v, keyCode, event) -> {
-                            if (event.getAction() == KeyEvent.ACTION_DOWN
-                                    && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
-                                            || keyCode == KeyEvent.KEYCODE_ENTER))
-                                AppLog.i(
-                                        "TvKey",
-                                        "page=player focus="
-                                                + String.valueOf(v.getTag())
-                                                + " action=confirm");
-                            return false;
-                        });
-                focusable.add(child);
-            }
-            for (int i = 0; i < focusable.size(); i++) {
-                View cell = focusable.get(i);
-                if (i > 0) cell.setNextFocusLeftId(focusable.get(i - 1).getId());
-                if (i + 1 < focusable.size())
-                    cell.setNextFocusRightId(focusable.get(i + 1).getId());
-            }
-            timeline.setId(UiCompat.generateViewId());
-            if (!focusable.isEmpty()) {
-                timeline.setNextFocusDownId(focusable.get(0).getId());
-                if (a.playerChrome != null && a.playerChrome.backBtn != null) {
-                    if (a.playerChrome.backBtn.getId() == View.NO_ID)
-                        a.playerChrome.backBtn.setId(UiCompat.generateViewId());
-                    timeline.setNextFocusUpId(a.playerChrome.backBtn.getId());
-                }
-                for (View cell : focusable) cell.setNextFocusUpId(timeline.getId());
-                if (a.playerChrome != null) {
-                    View back = a.playerChrome.backBtn;
-                    View more = a.playerChrome.moreBtn;
-                    if (back != null && more != null) {
-                        if (back.getId() == View.NO_ID) back.setId(UiCompat.generateViewId());
-                        if (more.getId() == View.NO_ID) more.setId(UiCompat.generateViewId());
-                        back.setNextFocusRightId(more.getId());
-                        more.setNextFocusLeftId(back.getId());
-                        View first = focusable.get(0);
-                        if (first.getTag() != null)
-                            back.setTag("top-back");
-                        more.setTag("top-more");
-                        back.setNextFocusDownId(first.getId());
-                        more.setNextFocusDownId(first.getId());
-                        first.setNextFocusUpId(back.getId());
-                    }
-                }
-                dockFirst = focusable.get(0);
-            }
-        }
-    }
-
-    private LinearLayout.LayoutParams cellLp(boolean wide) {
-        if (wide) return new LinearLayout.LayoutParams(0, a.dp(56), 1f);
-        return new LinearLayout.LayoutParams(a.dp(48), a.dp(56));
-    }
-
-    /** TV 遥控器场景保留「图标 + 文字」，比纯图标更容易辨认。 */
-    private void styleTextButton(View raw, String key) {
-        if (!(raw instanceof Button)) return;
-        Button b = (Button) raw;
-        b.setAllCaps(false);
-        b.setText(toolLabel(key));
-        b.setTextSize(11);
-        b.setTextColor(UiTokens.PLAYER_ICON);
-        b.setMinWidth(0);
-        b.setMinimumWidth(0);
-        b.setMinHeight(0);
-        b.setMinimumHeight(0);
-        b.setPadding(0, 0, 0, 0);
-        b.setBackground(null);
-        b.setContentDescription(toolLabel(key));
-        b.setCompoundDrawables(null, null, null, null);
-    }
-
-    /** 快退 / 快进 10 秒（中央播放簇左右按钮的回调）。 */
-    void nudge(int deltaMs) {
-        if (a.player == null || !a.prepared) return;
-        int duration = Math.max(1, a.player.getDuration());
-        int current = a.player.getCurrentPosition();
-        int next = Math.max(0, Math.min(duration, current + deltaMs));
-        recordUserSeek(next);
-        a.player.seekTo(next);
-        if (a.playerChrome != null) {
-            a.playerChrome.showSeekBubble(next, duration);
-            a.ui.postDelayed(
-                    () -> {
-                        if (a.playerChrome != null) a.playerChrome.hideSeekBubble();
-                    },
-                    900);
-        }
-        a.showControls(true);
-    }
-
-    private String toolLabel(String key) {
-        if ("speed".equals(key)) return "倍速";
-        if ("fullscreen-tool".equals(key)) return "竖屏 / 全屏";
-        if ("prev-episode".equals(key)) return "上一集";
-        if ("next-episode".equals(key)) return liveSession ? "下台" : "下一集";
-        if ("episodes".equals(key)) return liveSession ? "频道" : "选集";
-        if ("lines".equals(key)) return liveSession ? "线路" : "换源";
-        if ("aspect".equals(key)) return "画面比例";
-        if ("subtitles".equals(key)) return "字幕";
-        if ("danmaku-tool".equals(key)) return "弹幕";
-        if ("audio-tracks".equals(key)) return "音轨";
-        if ("restart-tool".equals(key)) return "重播";
-        if ("repeat-tool".equals(key)) return "循环";
-        if ("decoder".equals(key)) return "解码与播放器";
-        if ("skip-intro-tool".equals(key)) return "跳片头";
-        if ("skip-outro-tool".equals(key)) return "跳片尾";
-        if ("more".equals(key)) return "更多";
-        return key;
-    }
-
-    /** 创建动作控件：手机是 48dp vector 图标按钮，TV 是带文字标签的 Button。 */
-    private View createAction(String title, String key, Runnable action) {
-        final Runnable click =
-                () -> {
-                    menuAnchor =
-                            a.playerChrome == null ? buttons.get(key) : a.playerChrome.menuAnchor;
-                    action.run();
-                };
-        if (a.isTvDevice()) {
-            Button b = a.button("", key, click);
-            b.setContentDescription(title);
-            b.setText(title);
-            b.setSingleLine(true);
-            b.setMinWidth(0);
-            b.setMinimumWidth(0);
-            b.setMinHeight(0);
-            b.setMinimumHeight(0);
-            b.setPadding(0, 0, 0, 0);
-            b.setBackground(null);
-            b.setTextColor(UiTokens.PLAYER_ICON);
-            b.setTextSize(11);
-            return b;
-        }
-        return UiIcon.iconCell(a, UiIcon.kindForKey(key), title, 22, click);
-    }
-
-    void registerHiddenAction(String key, Runnable action) {
-        if (buttons.containsKey(key)) return;
-        View b = createAction(toolLabel(key), key, action);
-        b.setVisibility(View.GONE);
-        buttons.put(key, b);
-    }
-
-    View add(LinearLayout row, String title, String key, Runnable action) {
-        View b = createAction(title, key, action);
-        if (b instanceof Button) {
-            row.addView(b, new LinearLayout.LayoutParams(a.dp(44), a.dp(56)));
-        }
-        buttons.put(key, b);
-        return b;
-    }
-
-    int lineIndex() {
-        return a.activeLine == null ? -1 : video.lines.indexOf(a.activeLine);
-    }
-
-    int episodeIndex() {
-        return a.activeLine == null ? -1 : a.activeLine.episodes.indexOf(a.activeEpisode);
-    }
-
-    void choose(String title, String[] labels, int selected, PlayerBubble.IntAction action) {
-        showBubble(title, labels, selected, action, "");
-    }
-
-    void message(String text) {
-        showBubble("播放提示", new String[] {"完成"}, -1, i -> {}, text);
-    }
-
-    void showBubble(
-            String title,
-            String[] labels,
-            int selected,
-            PlayerBubble.IntAction action,
-            String message) {
-        if (activeDialog != null) {
-            activeDialog.dismiss();
-            activeDialog = null;
-        }
-        if (menuAnchor == null || !UiCompat.isAttached(menuAnchor))
-            menuAnchor = buttons.get("more");
-        dialogOpen = true;
-        if (a.hideControls != null) a.ui.removeCallbacks(a.hideControls);
-        final Dialog[] holder = new Dialog[1];
-        holder[0] =
-                PlayerBubble.show(
-                        a,
-                        menuAnchor,
-                        title,
-                        labels,
-                        selected,
-                        action,
-                        () -> {
-                            if (activeDialog == holder[0]) {
-                                activeDialog = null;
-                                dialogOpen = false;
-                                a.scheduleHide();
-                            }
-                        },
-                        message);
-        activeDialog = holder[0];
-    }
-
-    static final int EPISODE_GROUP_SIZE = 50;
-
-    void chooseEpisodes() {
-        int l = lineIndex();
-        if (l < 0) {
-            message("此内容没有可切换的剧集。");
-            return;
-        }
-        Cms.Line line = video.lines.get(l);
-        int total = line.episodes.size();
-        int current = episodeIndex();
-        if (total <= EPISODE_GROUP_SIZE) {
-            String[] labels = new String[total];
-            for (int i = 0; i < total; i++) labels[i] = line.episodes.get(i).name;
-            choose(
-                    line.name + " · 选集",
-                    labels,
-                    current,
-                    i -> a.changeEpisode(site, video, line, line.episodes.get(i), 0));
-            return;
-        }
-        int page = EpisodeSelection.pageFor(Math.max(0, current), total, false);
-        chooseEpisodePage(line, page);
-    }
-
-    void chooseEpisodePage(Cms.Line line, int page) {
-        int total = line.episodes.size();
-        int groups = Math.max(1, (total + EPISODE_GROUP_SIZE - 1) / EPISODE_GROUP_SIZE);
-        int safePage = Math.max(0, Math.min(page, groups - 1));
-        int start = safePage * EPISODE_GROUP_SIZE;
-        int end = Math.min(total, start + EPISODE_GROUP_SIZE);
-        int count = end - start;
-        String[] labels = new String[count + 1];
-        labels[0] = "切换选集分组（当前 " + (start + 1) + "-" + end + " / 共 " + total + " 集）";
-        int current = episodeIndex();
-        int selected = 0;
-        for (int i = 0; i < count; i++) {
-            int epIndex = start + i;
-            labels[i + 1] = line.episodes.get(epIndex).name;
-            if (epIndex == current) selected = i + 1;
-        }
-        choose(
-                line.name + " · 选集 (" + (start + 1) + "-" + end + ")",
-                labels,
-                selected,
-                i -> {
-                    if (i == 0) {
-                        chooseEpisodeGroupList(line, safePage);
-                    } else {
-                        int target = start + (i - 1);
-                        if (target >= 0 && target < total) {
-                            a.changeEpisode(site, video, line, line.episodes.get(target), 0);
-                        }
-                    }
-                });
-    }
-
-    void chooseEpisodeGroupList(Cms.Line line, int currentGroup) {
-        int total = line.episodes.size();
-        int groups = Math.max(1, (total + EPISODE_GROUP_SIZE - 1) / EPISODE_GROUP_SIZE);
-        String[] groupLabels = new String[groups];
-        for (int g = 0; g < groups; g++) {
-            int gStart = g * EPISODE_GROUP_SIZE + 1;
-            int gEnd = Math.min(total, (g + 1) * EPISODE_GROUP_SIZE);
-            groupLabels[g] = "第 " + gStart + " - " + gEnd + " 集";
-        }
-        choose(line.name + " · 选择分组", groupLabels, currentGroup, g -> chooseEpisodePage(line, g));
-    }
-
-    void chooseLine() {
-        org.json.JSONArray qualities =
-                resolved != null && resolved.media != null
-                        ? resolved.media.optJSONArray("qualities")
-                        : null;
-        int qCount = qualities != null && qualities.length() > 1 ? qualities.length() : 0;
-        boolean canCrossSearch =
-                video != null
-                        && video.title != null
-                        && !video.title.trim().isEmpty()
-                        && !"live".equals(site.key);
-        if (video.lines.isEmpty() && qCount == 0 && !canCrossSearch) {
-            message("此内容只有当前地址。");
-            return;
-        }
-        List<String> items = new ArrayList<>();
-        int currentQualityIdx =
-                resolved != null && resolved.media != null
-                        ? resolved.media.optInt("_qualityIdx", 0)
-                        : 0;
-        for (int q = 0; q < qCount; q++) {
-            org.json.JSONObject qObj = qualities.optJSONObject(q);
-            String qName = qObj != null ? qObj.optString("name", "画质 " + (q + 1)) : "画质 " + (q + 1);
-            items.add("画质 · " + qName + (q == currentQualityIdx ? "（当前）" : ""));
-        }
-        for (int i = 0; i < video.lines.size(); i++) {
-            items.add((qCount > 0 ? "线路 · " : "") + video.lines.get(i).name);
-        }
-        final int crossSearchIndex = canCrossSearch ? items.size() : -1;
-        if (canCrossSearch) {
-            items.add("搜索同名其他片源 · " + video.title);
-        }
-        int selected = qCount > 0 ? currentQualityIdx : lineIndex();
-        final int finalQCount = qCount;
-        final org.json.JSONArray finalQualities = qualities;
-        choose(
-                qCount > 0 ? "选择画质或播放线路" : "换源 · 选择线路或片源",
-                items.toArray(new String[0]),
-                selected,
-                i -> {
-                    if (crossSearchIndex >= 0 && i == crossSearchIndex) {
-                        a.leavePlayback();
-                        a.crossSearch(Cms.searchTitle(video));
-                        return;
-                    }
-                    if (i < finalQCount && finalQualities != null) {
-                        org.json.JSONObject qObj = finalQualities.optJSONObject(i);
-                        if (qObj != null) {
-                            String nextUrl = qObj.optString("url", "");
-                            if (!nextUrl.isEmpty()) {
-                                try {
-                                    resolved.media.put("_qualityIdx", i);
-                                } catch (Exception ignored) {
-                                }
-                                resolved.url = LocalProxy.rewrite(nextUrl);
-                                a.resumeAt =
-                                        a.prepared && a.player != null
-                                                ? a.player.getCurrentPosition()
-                                                : 0;
-                                a.playerPage(site, video, resolved);
-                            }
-                        }
-                        return;
-                    }
-                    int lineIdx = i - finalQCount;
-                    if (lineIdx >= 0 && lineIdx < video.lines.size()) {
-                        Cms.Line line = video.lines.get(lineIdx);
-                        if (!line.episodes.isEmpty()) {
-                            int n = Math.min(Math.max(0, episodeIndex()), line.episodes.size() - 1);
-                            a.changeEpisode(site, video, line, line.episodes.get(n), 0);
-                        }
-                    }
-                });
-    }
-
-    boolean step(int direction) {
-        int i = episodeIndex(), l = lineIndex();
-        if (l < 0 || i < 0) return false;
-        Cms.Line line = video.lines.get(l);
-        int next = i + direction;
-        if (a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 2)
-            next = (next + line.episodes.size()) % line.episodes.size();
-        if (next < 0 || next >= line.episodes.size()) return false;
-        transitioning = true;
-        a.changeEpisode(site, video, line, line.episodes.get(next), 0);
-        return true;
-    }
-
-    void reload(boolean preserve) {
-        int position =
-                preserve && a.prepared && a.player != null ? a.player.getCurrentPosition() : 0;
-        if (a.activeLine != null && a.activeEpisode != null)
-            a.changeEpisode(site, video, a.activeLine, a.activeEpisode, position);
-        else {
-            a.resumeAt = position;
-            a.playerPage(site, video, resolved);
-        }
-    }
-
-    void speed() {
-        if (a.player == null) return;
-        float[] speeds = {.5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f};
-        String[] labels = {"0.5×", "0.75×", "1.0×", "1.25×", "1.5×", "1.75×", "2.0×"};
-        int current = 2;
-        for (int i = 0; i < speeds.length; i++) if (speeds[i] == a.player.getSpeed()) current = i;
-        choose(
-                "播放速度",
-                labels,
-                current,
-                i -> {
-                    if (a.player != null) a.player.setSpeed(speeds[i]);
-                    a.prefs.edit().putFloat(Prefs.PLAY_SPEED, speeds[i]).apply();
-                    updateLabels();
-                });
-    }
-
-    void aspect() {
-        String[] labels = {"适应画面", "铺满屏幕", "16:9", "4:3", "裁切填充", "恢复默认比例（跟随设置）"};
-        int current = AspectMemory.read(a, video == null ? "" : video.title, a.prefs.getInt(Prefs.ASPECT, 4));
-        choose(
-                "画面比例 · 当前 " + AspectMemory.label(current),
-                labels,
-                current,
-                i -> {
-                    if (i >= labels.length - 1) {
-                        AspectMemory.clear(a, video == null ? "" : video.title);
-                        int fallback = a.prefs.getInt(Prefs.ASPECT, 4);
-                        a.prefs.edit().putInt(Prefs.ASPECT, fallback).apply();
-                        resize(videoWidth, videoHeight);
-                        updateLabels();
-                        a.toast("已恢复默认比例 · " + AspectMemory.label(fallback));
-                        if (a.playStatus != null)
-                            a.playStatus.setText("画面比例：" + AspectMemory.label(fallback));
-                        return;
-                    }
-                    AspectMemory.save(a, video == null ? "" : video.title, i);
-                    a.prefs.edit().putInt(Prefs.ASPECT, i).apply();
-                    resize(videoWidth, videoHeight);
-                    updateLabels();
-                    String label = AspectMemory.label(i);
-                    a.toast("画面比例：" + label + "（本片已记忆）");
-                    if (a.playStatus != null) a.playStatus.setText("画面比例：" + label);
-                });
-    }
-
-    void engine() {
-        choose(
-                "选择播放器",
-                new String[] {"Media3 · 网络与字幕优先", "系统播放器"},
-                a.prefs.getInt(Prefs.PLAYER_ENGINE, 0),
-                i -> {
-                    a.prefs.edit().putInt(Prefs.PLAYER_ENGINE, i).apply();
-                    reload(true);
-                });
-    }
-
-    void output() {
-        choose(
-                "画面输出",
-                new String[] {"保真输出 · HDR 与流畅度优先", "兼容输出 · 支持应用内调色"},
-                a.prefs.getInt(Prefs.VIDEO_OUTPUT, 0),
-                i -> {
-                    a.prefs.edit().putInt(Prefs.VIDEO_OUTPUT, i).apply();
-                    reload(true);
-                });
-    }
-
-    void decoder() {
-        choose(
-                "选择解码方式",
-                new String[] {"自动选择（默认）", "设备硬件解码", "软件解码优先（高分辨率可能较慢）"},
-                a.prefs.getInt(Prefs.DECODER_MODE, 0),
-                i -> {
-                    a.prefs.edit().putInt(Prefs.DECODER_MODE, i).apply();
-                    updateLabels();
-                    reload(true);
-                });
-    }
-
-    void decoderMenu() {
-        int decMode = a.prefs.getInt(Prefs.DECODER_MODE, 0);
-        int engMode = a.prefs.getInt(Prefs.PLAYER_ENGINE, 0);
-        int outMode = a.prefs.getInt(Prefs.VIDEO_OUTPUT, 0);
-        String[] items = {
-            (decMode == 0 ? "✓ " : "") + "自动解码（默认）",
-            (decMode == 1 ? "✓ " : "") + "设备硬件解码 (HW)",
-            (decMode == 2 ? "✓ " : "") + "软件解码优先 (SW)",
-            "播放器内核 · " + (engMode == 0 ? "Media3" : "系统播放器"),
-            "画面输出 · " + (outMode == 0 ? "保真输出 (HDR)" : "兼容输出 (调色)")
-        };
-        choose(
-                "解码与播放器",
-                items,
-                decMode >= 0 && decMode <= 2 ? decMode : 0,
-                i -> {
-                    if (i >= 0 && i <= 2) {
-                        a.prefs.edit().putInt(Prefs.DECODER_MODE, i).apply();
-                        updateLabels();
-                        reload(true);
-                    } else if (i == 3) {
-                        engine();
-                    } else if (i == 4) {
-                        output();
-                    }
-                });
-    }
-
-    void danmaku() {
-        choose(
-                "弹幕",
-                new String[] {"开启 / 重新加载来源弹幕", "关闭弹幕", "导入本地弹幕 XML / JSON"},
-                -1,
-                i -> {
-                    if (i == 1) {
-                        danmaku.enabled(false);
-                        return;
-                    }
-                    if (i == 2) {
-                        a.pickDanmaku();
-                        return;
-                    }
-                    String address = resolved.media.optString("danmaku");
-                    if (address.isEmpty()) {
-                        message("当前来源没有提供弹幕，可导入本地 XML / JSON。");
-                        return;
-                    }
-                    danmaku.enabled(true);
-                    danmaku.load(
-                            address,
-                            resolved.headers,
-                            new DanmakuView.Listener() {
-                                public void loaded(int count) {
-                                    a.toast("已加载 " + count + " 条弹幕");
-                                }
-
-                                public void error(String message) {
-                                    message(message);
-                                }
-                            });
-                });
-    }
-
-    void soundEffect() {
-        choose(
-                "音效",
-                new String[] {"原声", "影院", "人声清晰", "柔和低音"},
-                a.prefs.getInt(Prefs.AUDIO_EFFECT, 0),
-                i -> {
-                    try {
-                        if (a.player == null) throw new IllegalStateException();
-                        effects.audio(a.player.getAudioSessionId(), i);
-                        a.prefs.edit().putInt(Prefs.AUDIO_EFFECT, i).apply();
-                    } catch (Exception error) {
-                        message("这台设备当前音轨未提供可用音效接口。");
-                    }
-                });
-    }
-
-    void pictureEffect() {
-        choose(
-                "画面色彩",
-                new String[] {"原始画面", "明亮", "影院", "柔和"},
-                a.prefs.getInt(Prefs.PICTURE_EFFECT, 0),
-                i -> {
-                    if (i > 0 && !surface.supportsPicture()) {
-                        message("当前使用保真输出，保留原始色彩。需要应用内调色时，可在“播放器与解码”选择兼容输出；HDR 内容建议保持保真输出。");
-                        return;
-                    }
-                    PlaybackEffects.picture(surface, i);
-                    a.prefs.edit().putInt(Prefs.PICTURE_EFFECT, i).apply();
-                });
-    }
-
-    void close() {
-        surface.setFrameAdvancing(false);
-        if (activeDialog != null) {
-            activeDialog.dismiss();
-            activeDialog = null;
-        }
-        effects.close();
-        danmaku.close();
-    }
-
-    static final int[] SUBTITLE_SIZES = {28, 35, 45, 55, 65};
-    static final String[] SUBTITLE_SIZE_LABELS = {"极小", "小", "标准", "大", "超大"};
-    static final int[] SUBTITLE_BOTTOMS = {8, 24, 48, 76, 110, 148};
-    static final String[] SUBTITLE_BOTTOM_LABELS = {"贴底", "标准", "略高", "中下", "偏高", "较高"};
-
-    int timelineProgress() {
-        return (int) timelinePosMs;
-    }
-
-    int timelineMax() {
-        return (int) Math.max(1, timelineDurMs);
-    }
-
-    void setTimelineProgress(int ms) {
-        timelinePosMs = Math.max(0, ms);
-        timeline.setPosition(timelinePosMs);
-    }
-
-    void setTimelineMax(int ms) {
-        timelineDurMs = Math.max(1, ms);
-        timeline.setDuration(timelineDurMs);
-    }
-
-    void applySubtitleStyle() {
-        int size = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
-        int bottomDp = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
-        int stylePreset = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
-        subtitle.applyStylePreset(stylePreset);
-        subtitle.setFractionalTextSize(size / 1000f);
-        subtitle.setBottomPaddingFraction(0.02f + (bottomDp / 650f));
-        visible(a.controlsVisible);
-    }
-
-    String subtitleSizeLabel() {
-        int size = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
-        for (int i = 0; i < SUBTITLE_SIZES.length; i++) {
-            if (SUBTITLE_SIZES[i] == size) return SUBTITLE_SIZE_LABELS[i];
-        }
-        return size + "";
-    }
-
-    String subtitleBottomLabel() {
-        int bottomDp = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
-        for (int i = 0; i < SUBTITLE_BOTTOMS.length; i++) {
-            if (SUBTITLE_BOTTOMS[i] == bottomDp) return SUBTITLE_BOTTOM_LABELS[i];
-        }
-        return bottomDp + "dp";
-    }
-
-    String subtitleStyleLabel() {
-        int style = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
-        return SubtitleOverlayView.STYLE_LABELS[style];
-    }
-
-    void subtitleSizeDialog() {
-        showSubtitleAdjuster(a, subtitle, this::applySubtitleStyle);
-    }
-
-    void subtitleBottomDialog() {
-        showSubtitleAdjuster(a, subtitle, this::applySubtitleStyle);
-    }
-
-    static void showSubtitleAdjuster(
-            MainActivity a, SubtitleOverlayView liveSub, Runnable onChanged) {
-        final Dialog dlg = new Dialog(a);
-        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        if (dlg.getWindow() != null) {
-            dlg.getWindow()
-                    .setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            dlg.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-        }
-        if (liveSub != null) {
-            liveSub.setPreviewActive(true);
-            if (a.controlsVisible) a.showControls(false);
-        }
-
-        LinearLayout card = a.vertical();
-        card.setPadding(a.dp(22), a.dp(18), a.dp(22), a.dp(18));
-        android.graphics.drawable.GradientDrawable bg = a.bg(0xe8141c19, 22);
-        bg.setStroke(a.dp(1), 0x40ffffff);
-        card.setBackground(bg);
-        card.setFocusable(true);
-        card.setFocusableInTouchMode(true);
-
-        TextView title = a.text("字幕方向键直调（实时生效）", 17, MainActivity.WHITE);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        card.addView(title);
-        a.gap(card, 6);
-
-        TextView guide =
-                a.text(
-                        a.isTvDevice()
-                                ? "▲ ▼ 调整高度位置  ·  ◀ ▶ 调整字体大小  ·  确认键 切换字体颜色"
-                                : "可使用方向键或下方按钮实时调节高度位置、字体大小与字体颜色",
-                        12,
-                        MainActivity.MUTED);
-        card.addView(guide);
-        a.gap(card, 10);
-
-        final TextView statusView = a.text("", 14, 0xff2ad47a);
-        statusView.setTypeface(null, android.graphics.Typeface.BOLD);
-        card.addView(statusView);
-        a.gap(card, 12);
-
-        final SubtitleOverlayView previewBox;
-        if (liveSub == null) {
-            previewBox = new SubtitleOverlayView(a);
-            previewBox.setBackground(a.bg(0xff0b110f, 14));
-            previewBox.setPreviewActive(true);
-            card.addView(previewBox, new LinearLayout.LayoutParams(-1, a.dp(92)));
-            a.gap(card, 12);
-        } else {
-            previewBox = null;
-        }
-
-        final Runnable syncState =
-                () -> {
-                    int sz = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
-                    int bt = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
-                    int st = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
-                    statusView.setText(
-                            "底部高度："
-                                    + bt
-                                    + "dp   ·   字体大小："
-                                    + sz
-                                    + "   ·   颜色样式："
-                                    + SubtitleOverlayView.STYLE_LABELS[st]);
-                    statusView.setTextColor(SubtitleOverlayView.STYLE_COLORS[st]);
-                    if (previewBox != null) {
-                        previewBox.applyStylePreset(st);
-                        previewBox.setFractionalTextSize(sz / 1000f);
-                        previewBox.setBottomPaddingFraction(0.02f + (bt / 650f));
-                    }
-                    if (onChanged != null) onChanged.run();
-                };
-        syncState.run();
-
-        // java.util.function.IntConsumer is unavailable on Android 6 (API 23).
-        final PlayerBubble.IntAction stepSize =
-                delta -> {
-                    int cur = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
-                    int next = Prefs.clampSubtitleSize(cur + delta);
-                    a.prefs.edit().putInt(Prefs.SUBTITLE_SIZE, next).apply();
-                    syncState.run();
-                };
-        final PlayerBubble.IntAction stepBottom =
-                delta -> {
-                    int cur = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
-                    int next = Prefs.clampSubtitleBottom(cur + delta);
-                    a.prefs.edit().putInt(Prefs.SUBTITLE_BOTTOM, next).apply();
-                    syncState.run();
-                };
-        final Runnable cycleStyle =
-                () -> {
-                    int cur = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
-                    int next = (cur + 1) % SubtitleOverlayView.STYLE_LABELS.length;
-                    a.prefs.edit().putInt(Prefs.SUBTITLE_STYLE, next).apply();
-                    syncState.run();
-                };
-
-        if (a.isTvDevice()) {
-            TextView tvExitHint = a.text("✓ 每次调节均已实时保存  ·  按【返回键】或长按【确认键】完成退出", 12.5f, 0xffe6edf9);
-            tvExitHint.setGravity(Gravity.CENTER);
-            tvExitHint.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
-            tvExitHint.setBackground(a.bg(0x33ffffff, 12));
-            card.addView(tvExitHint, new LinearLayout.LayoutParams(-1, -2));
-        } else {
-            LinearLayout controlsRow = a.row();
-            controlsRow.setGravity(Gravity.CENTER);
-            String[] btnLabels = {"字号 -", "字号 +", "▼ 下移", "▲ 上移", "切换颜色", "完成"};
-            Runnable[] btnActions = {
-                () -> stepSize.accept(-2),
-                () -> stepSize.accept(2),
-                () -> stepBottom.accept(-6),
-                () -> stepBottom.accept(6),
-                cycleStyle,
-                dlg::dismiss
-            };
-            for (int i = 0; i < btnLabels.length; i++) {
-                final Runnable act = btnActions[i];
-                TextView b = a.text(btnLabels[i], 12, MainActivity.WHITE);
-                b.setGravity(Gravity.CENTER);
-                b.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
-                b.setBackground(a.bg(i == btnLabels.length - 1 ? 0xff1f6f4a : 0x33ffffff, 12));
-                b.setOnClickListener(v -> act.run());
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-                lp.rightMargin = a.dp(6);
-                controlsRow.addView(b, lp);
-            }
-            HorizontalScrollView hScroll = new HorizontalScrollView(a);
-            hScroll.setHorizontalScrollBarEnabled(false);
-            hScroll.addView(controlsRow);
-            card.addView(hScroll, new LinearLayout.LayoutParams(-1, -2));
-        }
-
-        dlg.setOnKeyListener(
-                (dialog, keyCode, event) -> {
-                    if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
-                    if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                        stepSize.accept(-2);
-                        return true;
-                    }
-                    if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                        stepSize.accept(2);
-                        return true;
-                    }
-                    if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-                        stepBottom.accept(6);
-                        return true;
-                    }
-                    if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                        stepBottom.accept(-6);
-                        return true;
-                    }
-                    if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
-                            || keyCode == KeyEvent.KEYCODE_ENTER) {
-                        if (event.getRepeatCount() > 0) {
-                            dlg.dismiss();
-                            return true;
-                        }
-                        cycleStyle.run();
-                        return true;
-                    }
-                    if (keyCode == KeyEvent.KEYCODE_BACK
-                            || keyCode == KeyEvent.KEYCODE_ESCAPE
-                            || keyCode == KeyEvent.KEYCODE_MENU) {
-                        dlg.dismiss();
-                        return true;
-                    }
-                    return false;
-                });
-        dlg.setOnDismissListener(
-                d -> {
-                    if (liveSub != null) {
-                        liveSub.setPreviewActive(false);
-                        if (onChanged != null) onChanged.run();
-                    }
-                });
-        FrameLayout wrapper = new FrameLayout(a);
-        FrameLayout.LayoutParams wlp =
-                new FrameLayout.LayoutParams(
-                        Math.min(a.windowWidth() - a.dp(32), a.dp(560)),
-                        -2,
-                        Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        wlp.topMargin = a.dp(32);
-        wrapper.addView(card, wlp);
-        dlg.setContentView(wrapper);
-        dlg.show();
-        card.requestFocus();
-        View subtitleDecor = dlg.getWindow() == null ? null : dlg.getWindow().getDecorView();
-        ModalStack.push("subtitle-adjuster", subtitleDecor, dlg::dismiss);
-        dlg.setOnDismissListener(
-                d -> {
-                    ModalStack.pop(
-                            dlg.getWindow() == null ? null : dlg.getWindow().getDecorView());
-                    if (liveSub != null) {
-                        liveSub.setPreviewActive(false);
-                        if (onChanged != null) onChanged.run();
-                    }
-                });
-    }
-
-    void tracks(int type) {
-        if (type == 3) {
-            List<String> tracks =
-                    (a.player != null && a.prepared)
-                            ? a.player.trackLabels(3)
-                            : Collections.emptyList();
-            List<String> labels = new ArrayList<>();
-            labels.add(
-                    "方向键直调字幕（大小 "
-                            + subtitleSizeLabel()
-                            + " · 位置 "
-                            + subtitleBottomLabel()
-                            + " · "
-                            + subtitleStyleLabel()
-                            + "）");
-            labels.add("字幕样式 · " + subtitleStyleLabel());
-            labels.add("关闭字幕");
-            labels.addAll(tracks);
-            labels.add("导入字幕文件…");
-            choose(
-                    "字幕与显示设置",
-                    labels.toArray(new String[0]),
-                    -1,
-                    i -> {
-                        if (i == 0) {
-                            showSubtitleAdjuster(a, subtitle, this::applySubtitleStyle);
-                        } else if (i == 1) {
-                            int cur =
-                                    Prefs.clampSubtitleStyle(
-                                            a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
-                            choose(
-                                    "字幕样式（默认透明底描边）",
-                                    SubtitleOverlayView.STYLE_LABELS,
-                                    cur,
-                                    sIdx -> {
-                                        a.prefs.edit().putInt(Prefs.SUBTITLE_STYLE, sIdx).apply();
-                                        applySubtitleStyle();
-                                    });
-                        } else if (i == labels.size() - 1) {
-                            a.pickSubtitle();
-                        } else if (a.player != null && a.prepared) {
-                            a.player.selectTrack(3, i == 2 ? -2 : i - 3);
-                        }
-                    });
-            return;
-        }
-        if (a.player == null || !a.prepared) {
-            message("请等待视频开始播放。");
-            return;
-        }
-        List<String> tracks = a.player.trackLabels(type);
-        List<String> labels = new ArrayList<>();
-        labels.add("自动选择默认音轨");
-        labels.addAll(tracks);
-        final int trackOptionCount = labels.size();
-        boolean swAudio = a.prefs.getBoolean(Prefs.SOFTWARE_AUDIO, false);
-        labels.add("兼容音频解码：" + (swAudio ? "已开启" : "关闭"));
-        labels.add("音效模式 · 设置");
-        choose(
-                "音轨与音频",
-                labels.toArray(new String[0]),
-                0,
-                i -> {
-                    if (i < trackOptionCount) {
-                        if (a.player != null) a.player.selectTrack(type, i == 0 ? -1 : i - 1);
-                    } else if (i == trackOptionCount) {
-                        a.prefs.edit().putBoolean(Prefs.SOFTWARE_AUDIO, !swAudio).apply();
-                        reload(true);
-                    } else {
-                        soundEffect();
-                    }
-                });
-    }
-
-    void skip(boolean intro) {
-        int curPos = a.player != null && a.prepared ? a.player.getCurrentPosition() : 0;
-        int curDur = a.player != null && a.prepared ? a.player.getDuration() : 0;
-        showSkipAdjuster(a, intro, curPos, curDur, this::updateLabels);
-    }
-
-    /** 1.8.1 标记本剧片头/片尾（当前进度/剩余时长）。 */
-    void markSkip(boolean intro) {
-        if (a.player == null || !a.prepared) {
-            a.toast("加载完成后可标记");
-            return;
-        }
-        int posSec = Math.max(0, a.player.getCurrentPosition() / 1000);
-        int durSec = Math.max(0, a.player.getDuration() / 1000);
-        SkipMemory.Mem mem = SkipMemory.read(a, video.title);
-        if (intro) mem.intro = Math.min(SkipMemory.MAX_SECONDS, posSec);
-        else mem.outro = Math.min(SkipMemory.MAX_SECONDS, Math.max(1, durSec - posSec));
-        if (mem.intro + mem.outro > 0 && durSec > 0 && mem.intro + mem.outro >= durSec) {
-            a.toast("片头+片尾超过时长，未保存");
-            return;
-        }
-        SkipMemory.save(a, video.title, mem.intro, mem.outro);
-        a.toast(
-                intro
-                        ? "已标记本剧片头 " + PlaybackController.formatTime(mem.intro * 1000)
-                        : "已标记本剧片尾 " + PlaybackController.formatTime(mem.outro * 1000));
-        updateLabels();
-    }
-
-    void clearSkipMemory() {
-        SkipMemory.clear(a, video.title);
-        a.toast("已清除本剧片头片尾记忆");
-        updateLabels();
-    }
-
-    static void showSkipAdjuster(
-            MainActivity a,
-            boolean intro,
-            int currentPlayerPosMs,
-            int currentPlayerDurMs,
-            Runnable onChanged) {
-        final String key = intro ? Prefs.SKIP_INTRO : Prefs.SKIP_OUTRO;
-        final Dialog dlg = new Dialog(a);
-        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        if (dlg.getWindow() != null) {
-            dlg.getWindow()
-                    .setBackgroundDrawable(
-                            new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-        }
-        LinearLayout card = a.vertical();
-        card.setPadding(a.dp(22), a.dp(18), a.dp(22), a.dp(18));
-        android.graphics.drawable.GradientDrawable bg = a.bg(0xf2161e1b, 22);
-        bg.setStroke(a.dp(1), 0x38ffffff);
-        card.setBackground(bg);
-
-        TextView title = a.text(intro ? "手动精准设置跳过片头" : "手动精准设置跳过片尾", 17, MainActivity.WHITE);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        card.addView(title);
-        a.gap(card, 6);
-
-        TextView sub =
-                a.text("拖动滑块或使用左右方向键精准定位到秒（00:00 - 03:00），也可一键抓取当前播放进度", 12, MainActivity.MUTED);
-        card.addView(sub);
-        a.gap(card, 14);
-
-        final TextView valueLabel = a.text("", 18, 0xff2ad47a);
-        valueLabel.setTypeface(null, android.graphics.Typeface.BOLD);
-        card.addView(valueLabel);
-        a.gap(card, 10);
-
-        final SeekBar bar = new SeekBar(a);
-        bar.setMax(180);
-        bar.setKeyProgressIncrement(1);
-        UiCompat.tintSeekBar(bar, 0xff2ad47a, Color.WHITE);
-        int initialSec = Prefs.clampSkipSeconds(a.prefs.getInt(key, 0));
-        bar.setProgress(initialSec);
-        card.addView(bar, new LinearLayout.LayoutParams(-1, a.dp(36)));
-        a.gap(card, 12);
-
-        final PlayerBubble.IntAction applySec =
-                sec -> {
-                    int clamped = Prefs.clampSkipSeconds(sec);
-                    a.prefs.edit().putInt(key, clamped).apply();
-                    if (bar.getProgress() != clamped) bar.setProgress(clamped);
-                    valueLabel.setText(
-                            clamped <= 0
-                                    ? "当前：已关闭（00:00）"
-                                    : "当前："
-                                            + PlaybackController.formatTime(clamped * 1000)
-                                            + "（"
-                                            + clamped
-                                            + " 秒）");
-                    if (onChanged != null) onChanged.run();
-                };
-        applySec.accept(initialSec);
-
-        bar.setOnSeekBarChangeListener(
-                new SeekBar.OnSeekBarChangeListener() {
-                    public void onStartTrackingTouch(SeekBar s) {}
-
-                    public void onStopTrackingTouch(SeekBar s) {}
-
-                    public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
-                        if (fromUser) applySec.accept(progress);
-                    }
-                });
-
-        if (currentPlayerPosMs > 0) {
-            int candidateSec =
-                    intro
-                            ? (currentPlayerPosMs / 1000)
-                            : (currentPlayerDurMs > currentPlayerPosMs
-                                    ? (currentPlayerDurMs - currentPlayerPosMs) / 1000
-                                    : (currentPlayerPosMs / 1000));
-            final int captureSec = Prefs.clampSkipSeconds(Math.max(1, candidateSec));
-            String captureText =
-                    (intro ? "设为当前播放进度 · " : "设为当前剩余时长 · ")
-                            + PlaybackController.formatTime(captureSec * 1000)
-                            + " ("
-                            + captureSec
-                            + "秒)";
-            TextView captureBtn = a.text(captureText, 13, MainActivity.WHITE);
-            captureBtn.setGravity(Gravity.CENTER);
-            captureBtn.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
-            captureBtn.setBackground(a.bg(0xff1e5d41, 14));
-            captureBtn.setFocusable(true);
-            captureBtn.setOnClickListener(v -> applySec.accept(captureSec));
-            card.addView(captureBtn, new LinearLayout.LayoutParams(-1, -2));
-            a.gap(card, 10);
-        }
-
-        LinearLayout stepRow = a.row();
-        stepRow.setGravity(Gravity.CENTER);
-        String[] stepTitles = {"关闭", "-10秒", "-5秒", "-1秒", "+1秒", "+5秒", "+10秒", "完成"};
-        int[] deltas = {0, -10, -5, -1, 1, 5, 10, 999};
-        for (int i = 0; i < stepTitles.length; i++) {
-            final int d = deltas[i];
-            TextView b = a.text(stepTitles[i], 12, MainActivity.WHITE);
-            b.setGravity(Gravity.CENTER);
-            b.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
-            b.setFocusable(true);
-            b.setBackground(a.bg(d == 999 ? 0xff1f6f4a : 0x30ffffff, 12));
-            b.setOnClickListener(
-                    v -> {
-                        if (d == 999) {
-                            dlg.dismiss();
-                        } else if (d == 0) {
-                            applySec.accept(0);
-                        } else {
-                            applySec.accept(a.prefs.getInt(key, 0) + d);
-                        }
-                    });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-            lp.rightMargin = a.dp(6);
-            stepRow.addView(b, lp);
-        }
-        HorizontalScrollView scroll = new HorizontalScrollView(a);
-        scroll.setHorizontalScrollBarEnabled(false);
-        scroll.addView(stepRow);
-        card.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
-
-        FrameLayout wrapper = new FrameLayout(a);
-        FrameLayout.LayoutParams wlp =
-                new FrameLayout.LayoutParams(
-                        Math.min(a.windowWidth() - a.dp(32), a.dp(540)), -2, Gravity.CENTER);
-        wrapper.addView(card, wlp);
-        dlg.setContentView(wrapper);
-        dlg.show();
-        bar.requestFocus();
-        View speedDecor = dlg.getWindow() == null ? null : dlg.getWindow().getDecorView();
-        ModalStack.push("speed-picker", speedDecor, dlg::dismiss);
-        dlg.setOnDismissListener(
-                d -> ModalStack.pop(dlg.getWindow() == null ? null : dlg.getWindow().getDecorView()));
-    }
-
-    void repeat() {
-        choose(
-                "循环播放",
-                new String[] {"关闭", "单集循环", "列表循环"},
-                a.prefs.getInt(Prefs.REPEAT_MODE, 0),
-                i -> {
-                    a.prefs.edit().putInt(Prefs.REPEAT_MODE, i).apply();
-                    if (a.player != null)
-                        a.player.setRepeatOne(i == 1 && a.prefs.getInt(Prefs.SKIP_OUTRO, 0) == 0);
-                    updateLabels();
-                });
-    }
-
-    /** 「更多」：底部 3 列工具面板，低频功能全部收纳，回调与原列表逐项对应。 */
-    void more() {
-        if (dialogOpen) return;
-        final List<PlayerToolsSheet.Tool> items = new ArrayList<>();
-        if (liveSession) {
-            items.add(new PlayerToolsSheet.Tool(UiIcon.PREV, "上一频道", () -> a.liveStep(-1)));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.NEXT, "下一频道", () -> a.liveStep(1)));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.EPISODES, "选择频道", a::chooseLiveChannel));
-            items.add(
-                    new PlayerToolsSheet.Tool(UiIcon.SWAP, "播放线路", a::chooseLiveStream));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.TUNE, "播放器与解码", this::decoderMenu));
-            items.add(
-                    new PlayerToolsSheet.Tool(UiIcon.ASPECT, "画面色彩", this::pictureEffect));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.INFO, "播放信息", this::playbackInfo));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.BACK, "返回频道列表", a::leavePlayback));
-        } else {
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.PREV,
-                            "上一集",
-                            () -> {
-                                if (!step(-1)) message("已经是第一集。");
-                            }));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.NEXT,
-                            "下一集",
-                            () -> {
-                                if (!step(1)) message("无下集。");
-                            }));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.EPISODES, "选集", this::chooseEpisodes));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.SWAP, "换源", this::chooseLine));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.SPEED, "倍速", this::speed));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.ASPECT, "画面比例", this::aspect));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.SUBTITLE, "字幕", () -> tracks(3)));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.DANMAKU, "弹幕", this::danmaku));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.AUDIO, "音轨", () -> tracks(1)));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.AUDIO, "音效", this::soundEffect));
-            items.add(
-                    new PlayerToolsSheet.Tool(UiIcon.TUNE, "解码与播放器", this::decoderMenu));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.REPEAT,
-                            "循环",
-                            a.prefs.getInt(Prefs.REPEAT_MODE, 0) != 0,
-                            this::repeat));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.SKIP_INTRO, "跳片头", () -> skip(true)));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.SKIP_OUTRO, "跳片尾", () -> skip(false)));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.SKIP_INTRO, "标记片头", () -> markSkip(true)));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.SKIP_OUTRO, "标记片尾", () -> markSkip(false)));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.REFRESH, "清除片头片尾", this::clearSkipMemory));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.REPLAY, "重播", this::restartPlayback));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.REFRESH, "刷新播放", () -> reload(true)));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.FULLSCREEN, "竖屏 / 全屏", a::togglePlayerOrientation));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.NEXT,
-                            "自动下集",
-                            a.prefs.getBoolean(Prefs.AUTO_NEXT, true),
-                            () ->
-                                    a.prefs
-                                            .edit()
-                                            .putBoolean(
-                                                    Prefs.AUTO_NEXT,
-                                                    !a.prefs.getBoolean(Prefs.AUTO_NEXT, true))
-                                            .apply()));
-            items.add(new PlayerToolsSheet.Tool(UiIcon.INFO, "播放信息", this::playbackInfo));
-            if (!QueueStore.list(a).isEmpty())
-                items.add(
-                        new PlayerToolsSheet.Tool(
-                                UiIcon.REPLAY,
-                                "播放队列（" + QueueStore.list(a).size() + "）",
-                                this::showQueue));
-            items.add(
-                    new PlayerToolsSheet.Tool(
-                            UiIcon.BACK, "返回详情", a::leavePlayback));
-        }
-        dialogOpen = true;
-        if (a.hideControls != null) a.ui.removeCallbacks(a.hideControls);
-        activeDialog =
-                PlayerToolsSheet.show(
-                        a,
-                        liveSession ? "直播设置" : "更多工具",
-                        items,
-                        () -> {
-                            activeDialog = null;
-                            dialogOpen = false;
-                            a.scheduleHide();
-                            // 1.9.63：关闭弹层后焦点回到打开它的「⋮」按钮
-                            if (a.isTvDevice()) {
-                                a.showControls(true);
-                                a.ui.post(
-                                        () -> {
-                                            View opener =
-                                                    a.playerChrome == null
-                                                            ? null
-                                                            : a.playerChrome.moreBtn;
-                                            if (opener == null) opener = buttons.get("more");
-                                            if (opener != null) opener.requestFocus();
-                                            AppLog.i(
-                                                    "TvKey",
-                                                    "page=tools focus=closed action=nav");
-                                        });
-                            }
-                        });
-    }
-
-    /** 推送队列：播放下一个 / 移除 / 清空。 */
-    private void showQueue() {
-        java.util.List<QueueStore.Item> queue = QueueStore.list(a);
-        if (queue.isEmpty()) {
-            a.toast("推送队列为空");
-            return;
-        }
-        String[] labels = new String[queue.size() + 1];
-        for (int i = 0; i < queue.size(); i++) labels[i] = (i + 1) + ". " + queue.get(i).title;
-        labels[queue.size()] = "清空队列";
-        new AppDialog.Builder(a)
-                .setTitle("播放队列")
-                .setItems(
-                        labels,
-                        (d, index) -> {
-                            if (index == queue.size()) {
-                                QueueStore.clear(a);
-                                a.toast("队列已清空");
-                                return;
-                            }
-                            QueueStore.Item item = queue.get(index);
-                            QueueStore.remove(a, item.url);
-                            PushFiles.playUrl(a, item.url, item.title);
-                        })
-                .setNegativeButton("关闭", null)
-                .show();
-    }
-
-    void playbackInfo() {
-        message(
-                a.player == null
-                        ? "播放器尚未准备好。"
-                        : a.player.playbackInfo() + "\n" + surface.outputName());
-    }
-
-    /** 从头重播（沿用原「更多」里的逻辑）。 */
-    private void restartPlayback() {
-        pendingResumeMs = 0;
-        if (a.playingBookmark != null) a.playingBookmark.position = 0;
-        if (a.player != null && a.prepared) {
-            recordUserSeek(0);
-            a.player.seekTo(0);
-            a.player.start();
-            a.playing = true;
-        } else {
-            a.resumeAt = -1;
-            reload(false);
-        }
-    }
-
-    /** 纯图标行没有文字；只给「激活态」图标上樱花粉（倍速 ≠ 1、画面 ≠ 默认、循环开启）。 */
-    void updateLabels() {
-        float rate = a.prefs.getFloat(Prefs.PLAY_SPEED, 1f);
-        tintIcon("speed", Math.abs(rate - 1f) >= 0.01f);
-        tintIcon("aspect", a.prefs.getInt(Prefs.ASPECT, 4) != 0);
-        tintIcon("repeat-tool", a.prefs.getInt(Prefs.REPEAT_MODE, 0) != 0);
-    }
-
-    private void tintIcon(String key, boolean active) {
-        View b = buttons.get(key);
-        int color = active ? UiTokens.PLAYER_ACTIVE : UiTokens.PLAYER_ICON;
-        if (b instanceof TextView) {
-            ((TextView) b).setTextColor(color);
-        } else if (b != null) {
-            UiIcon.tintIconCell(b, color);
-        }
-    }
-
-    String skipLabel(int seconds) {
-        return seconds == 0 ? "关闭" : a.time(seconds * 1000);
-    }
-
-    void prepared() {
-        if (a.player == null) return;
-        if (a.prefs.getBoolean(Prefs.DANMAKU_DEFAULT, true)
-                && !danmakuLoaded
-                && !resolved.media.optString("danmaku").isEmpty()) {
-            danmakuLoaded = true;
-            danmaku.enabled(true);
-            danmaku.load(
-                    resolved.media.optString("danmaku"),
-                    resolved.headers,
-                    new DanmakuView.Listener() {
-                        public void loaded(int count) {}
-
-                        public void error(String message) {}
-                    });
-        }
-        PlaybackEffects.picture(surface, a.prefs.getInt(Prefs.PICTURE_EFFECT, 0));
-        try {
-            effects.audio(a.player.getAudioSessionId(), a.prefs.getInt(Prefs.AUDIO_EFFECT, 0));
-        } catch (Exception ignored) {
-        }
-        int duration = a.player.getDuration();
-        if (duration <= 0 && a.playingBookmark != null && a.playingBookmark.duration > 0) {
-            duration = a.playingBookmark.duration;
-        }
-        timeline.setEnabled(duration > 0);
-        setTimelineMax(duration > 0 ? duration : 100);
-        if (duration <= 0) setTimelineProgress(0);
-        timeline.setBufferedPosition(0);
-        timeline.setKeyTimeIncrement(15000);
-        boolean explicitRestart = a.resumeAt < 0;
-        boolean historyResume = a.resumeAt > 0;
-        SkipMemory.Mem memo = SkipMemory.read(a, video.title);
-        int configuredIntro = a.prefs.getInt(Prefs.SKIP_INTRO, 0) * 1000;
-        if (configuredIntro <= 0 && memo.intro > 0) configuredIntro = memo.intro * 1000;
-        int seek =
-                ("live".equals(site.key) || explicitRestart)
-                        ? 0
-                        : historyResume ? a.resumeAt : configuredIntro;
-        // 1.8.1 智能片头：首次进入按本剧记忆跳过（误差 ≤2s）
-        if (!historyResume && !explicitRestart && memo.intro > 0 && seek > 0) {
-            a.toast("已自动跳过片头 · " + PlaybackController.formatTime(memo.intro * 1000));
-        }
-        // 1.8.0 跨源续播：源间时长差异 >10% 时按百分比兜底
-        if (historyResume
-                && duration > 0
-                && a.playingBookmark != null
-                && a.playingBookmark.duration > 0) {
-            int savedDuration = a.playingBookmark.duration;
-            if (Math.abs(duration - savedDuration) > Math.max(15000, savedDuration / 10)) {
-                float fraction = a.resumeAt / (float) savedDuration;
-                seek = Math.round(duration * Math.max(0f, Math.min(1f, fraction)));
-                AppLog.i(
-                        "PlaybackController",
-                        "cross-source percent resume " + Math.round(fraction * 100) + "%");
-            }
-        }
-        a.resumeAt = 0;
-        if (seek > 0) {
-            if (duration > 0) {
-                if (seek < duration - 1000) {
-                    pendingResumeMs = 0;
-                    recordUserSeek(seek);
-                    a.player.seekTo(seek);
-                    if (historyResume) {
-                        a.toast("已为您续播至 " + PlaybackController.formatTime(seek));
-                    }
-                }
-            } else {
-                pendingResumeMs = seek;
-                if (historyResume) {
-                    a.toast("已为您续播至 " + PlaybackController.formatTime(seek));
-                }
-            }
-        }
-        a.player.setSpeed(a.prefs.getFloat(Prefs.PLAY_SPEED, 1));
-        a.player.setRepeatOne(
-                a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 1
-                        && a.prefs.getInt(Prefs.SKIP_OUTRO, 0) == 0);
-    }
-
-    void tick() {
-        if ("live".equals(site.key)) return;
-        if (a.player == null || !a.prepared || isUserSeeking()) return;
-        int duration = a.player.getDuration();
-        if (duration <= 0 && a.playingBookmark != null && a.playingBookmark.duration > 0) {
-            duration = a.playingBookmark.duration;
-        }
-        if (pendingResumeMs > 0 && duration > 0) {
-            int target = pendingResumeMs;
-            pendingResumeMs = 0;
-            if (target < duration - 1000
-                    && a.player.getCurrentPosition() < Math.min(target - 2000, 5000)) {
-                recordUserSeek(target);
-                a.player.seekTo(target);
-            }
-        }
-        int position = displayPosition(a.player.getCurrentPosition());
-        if (duration > 0) {
-            timeline.setEnabled(true);
-            setTimelineMax(Math.max(duration, position));
-            setTimelineProgress(Math.max(0, Math.min(position, timelineMax())));
-            // 缓冲段：DefaultTimeBar 自带的 secondary 轨道，播放器补 getBufferedPosition() 后点亮
-            timeline.setBufferedPosition(
-                    Math.max(0, Math.min(duration, a.player.getBufferedPosition())));
-        } else {
-            timeline.setEnabled(false);
-            setTimelineMax(100);
-            setTimelineProgress(0);
-            timeline.setBufferedPosition(0);
-        }
-        int tail = a.prefs.getInt(Prefs.SKIP_OUTRO, 0) * 1000;
-        SkipMemory.Mem memoOutro = SkipMemory.read(a, video.title);
-        if (memoOutro.outro > 0) tail = memoOutro.outro * 1000;
-        if (!transitioning
-                && a.playing
-                && duration > 0
-                && tail > 0
-                && tail < duration
-                && position >= duration - tail) {
-            if (a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 1)
-                a.player.seekTo(a.prefs.getInt(Prefs.SKIP_INTRO, 0) * 1000);
-            else if (!step(1)) {
-                transitioning = true;
-                a.player.pause();
-                a.playing = false;
-                a.playStatus.setText("已跳过片尾");
-                a.showControls(true);
-            }
-        }
-    }
-
-    void completed() {
-        if (!transitioning
-                && (a.prefs.getBoolean(Prefs.AUTO_NEXT, true)
-                        || a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 2)
-                && step(1)) return;
-        a.showControls(true);
-        a.playStatus.setText("播放结束 · 按确认重播");
-    }
-
-    void resize(int width, int height) {
-        videoWidth = width;
-        videoHeight = height;
-        if (a.playerChrome != null) a.playerChrome.resolution(width, height);
-        if (width <= 0 || height <= 0) return;
-        final FrameLayout layer = a.playbackLayer;
-        if (layer == null) return;
-        if (layer.getWidth() <= 0 || layer.getHeight() <= 0) {
-            // 首帧尚未测量：下一帧再算，避免把 surface 固定成 0/旧尺寸（最多重试 3 次防死循环）
-            if (!resizeRetryPending && resizeRetry < 3) {
-                resizeRetryPending = true;
-                resizeRetry++;
-                layer.post(
-                        () -> {
-                            resizeRetryPending = false;
-                            resize(videoWidth, videoHeight);
-                        });
-            }
-            return;
-        }
-        resizeRetry = 0;
-        int w = layer.getWidth(),
-                h = layer.getHeight(),
-                mode =
-                        AspectMemory.read(
-                                a,
-                                video == null ? "" : video.title,
-                                a.prefs.getInt(Prefs.ASPECT, 4));
-        float ratio = mode == 2 ? 16f / 9 : mode == 3 ? 4f / 3 : (float) width / height;
-        if (mode != 1) {
-            if (mode == 4) {
-                if ((float) w / h > ratio) h = Math.round(w / ratio);
-                else w = Math.round(h * ratio);
-            } else if ((float) w / h > ratio) w = Math.round(h * ratio);
-            else h = Math.round(w / ratio);
-        }
-        FrameLayout.LayoutParams current =
-                surface.getLayoutParams() instanceof FrameLayout.LayoutParams
-                        ? (FrameLayout.LayoutParams) surface.getLayoutParams()
-                        : null;
-        if (current != null
-                && current.width == w
-                && current.height == h
-                && current.gravity == Gravity.CENTER) return;
-        surface.setLayoutParams(new FrameLayout.LayoutParams(w, h, Gravity.CENTER));
-        AppLog.i(
-                "Player",
-                "resize layer="
-                        + layer.getWidth()
-                        + "x"
-                        + layer.getHeight()
-                        + " video="
-                        + width
-                        + "x"
-                        + height
-                        + " surface="
-                        + w
-                        + "x"
-                        + h
-                        + " mode="
-                        + mode);
-    }
-
-    void visible(boolean visible) {
-        int bottomDp = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
-        int basePx = a.dp(bottomDp);
-        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) subtitle.getLayoutParams();
-        if (lp.bottomMargin != basePx) {
-            lp.bottomMargin = basePx;
-            subtitle.setLayoutParams(lp);
-        }
-        if (subtitle.isPreviewActive()) {
-            subtitle.setTranslationY(0f);
-            return;
-        }
-        boolean progressOnly = a.playerChrome != null && a.playerChrome.progressOnlyMode;
-        int targetPx =
-                visible
-                        ? a.dp(
-                                progressOnly
-                                        ? Math.max(82, bottomDp + 16)
-                                        : Math.max(168, bottomDp + 24))
-                        : basePx;
-        subtitle.setTranslationY(-(targetPx - basePx));
-    }
+ final MainActivity a;
+ final Cms.Site site;
+ final Cms.Video video;
+ final Cms.Episode resolved;
+ final LinearLayout dockOverlay;
+ final androidx.media3.ui.DefaultTimeBar timeline;
+ long timelinePosMs, timelineDurMs;
+ final SubtitleOverlayView subtitle;
+ final VideoOutput surface;
+ final PlaybackEffects effects = new PlaybackEffects();
+ final DanmakuView danmaku;
+ boolean danmakuLoaded;
+ boolean currentMobileLandscape;
+ /** 当前是否是直播会话（决定图标行文案：下台/频道/线路）。 */
+ private boolean liveSession;
+ final Map<String, View> buttons = new LinkedHashMap<>();
+ /** 1.9.61：TV 控制条第一个可聚焦按钮（默认焦点）。 */
+ View dockFirst;
+ Dialog activeDialog;
+ View menuAnchor;
+ String lastSubtitle = "";
+ boolean dialogOpen, transitioning;
+ boolean touchSeeking, sliderSeeking;
+ long lastSeekTimeMs;
+ int lastSeekTargetMs = -1;
+ int pendingResumeMs;
+ int videoWidth, videoHeight;
+ /** resize 时若 playbackLayer 还没测量完成，下一帧补一次（避免用旧尺寸固定 surface）。 */
+ boolean resizeRetryPending;
+ int resizeRetry;
+
+ boolean isUserSeeking() {
+ return touchSeeking || sliderSeeking;
+ }
+
+ void recordUserSeek(int targetMs) {
+ lastSeekTimeMs = android.os.SystemClock.uptimeMillis();
+ lastSeekTargetMs = Math.max(0, targetMs);
+ setTimelineProgress(lastSeekTargetMs);
+ }
+
+ int displayPosition(int actualPositionMs) {
+ if (lastSeekTargetMs >= 0
+ && android.os.SystemClock.uptimeMillis() - lastSeekTimeMs < 3500
+ && Math.abs(actualPositionMs - lastSeekTargetMs) > 2500) {
+ return lastSeekTargetMs;
+ }
+ return actualPositionMs;
+ }
+
+ PlaybackControls(
+ MainActivity host,
+ LinearLayout overlay,
+ android.view.ViewGroup progress,
+ VideoOutput texture,
+ Cms.Site s,
+ Cms.Video v,
+ Cms.Episode ep) {
+ a = host;
+ site = s;
+ video = v;
+ resolved = ep;
+ dockOverlay = overlay;
+ surface = texture;
+ liveSession = "live".equals(s.key);
+ menuAnchor = a.playerChrome == null ? null : a.playerChrome.menuAnchor;
+ danmaku =
+ new DanmakuView(
+ a,
+ new DanmakuView.Clock() {
+ public int position() {
+ return a.player == null ? 0 : a.player.getCurrentPosition();
+ }
+
+ public boolean playing() {
+ return a.player != null && a.player.isPlaying();
+ }
+ });
+ a.playbackLayer.addView(danmaku, 1, new FrameLayout.LayoutParams(-1, -1));
+ danmaku.enabled(false);
+ subtitle = new SubtitleOverlayView(a);
+ subtitle.setUserDefaultStyle();
+ subtitle.setPadding(a.dp(40), 0, a.dp(40), a.dp(12));
+ FrameLayout.LayoutParams caption = new FrameLayout.LayoutParams(-1, -1, Gravity.BOTTOM);
+ caption.bottomMargin = a.dp(168);
+ a.playbackLayer.addView(subtitle, 1, caption);
+ applySubtitleStyle();
+ timeline =
+ (androidx.media3.ui.DefaultTimeBar)
+ android.view.LayoutInflater.from(a)
+ .inflate(R.layout.whale_time_bar, null);
+ timeline.setTag("timeline");
+ timeline.setFocusable(true);
+ timeline.setOnFocusChangeListener(
+ (focusedView, f) ->
+ FocusMotion.style(
+ a,
+ timeline,
+ f,
+ 0,
+ 0x16ffffff,
+ 16,
+ MainActivity.WHITE,
+ MainActivity.WHITE,
+ false,
+ 1));
+ // 三段式进度：时间在轨道左右，轨道不再用 68dp 内边距避让文本
+ timeline.setPadding(0, 0, 0, 0);
+ timeline.setKeyTimeIncrement(15000);
+ // 进度条放进 PlayerChrome 的中段时间槽
+ progress.addView(
+ timeline,
+ 0,
+ new FrameLayout.LayoutParams(-1, a.dp(48), Gravity.CENTER_VERTICAL));
+ timeline.addListener(
+ new androidx.media3.ui.TimeBar.OnScrubListener() {
+ public void onScrubStart(androidx.media3.ui.TimeBar bar, long position) {
+ sliderSeeking = true;
+ a.finishSeek(false);
+ a.scheduleHide();
+ if (a.playerChrome != null)
+ a.playerChrome.showSeekBubble((int) position, (int) Math.max(1, timelineDurMs));
+ }
+
+ public void onScrubMove(androidx.media3.ui.TimeBar bar, long position) {
+ if (a.playerChrome != null)
+ a.playerChrome.showSeekBubble((int) position, (int) Math.max(1, timelineDurMs));
+ }
+
+ public void onScrubStop(
+ androidx.media3.ui.TimeBar bar, long position, boolean canceled) {
+ sliderSeeking = false;
+ if (!canceled && a.prepared && a.player != null) {
+ int target = (int) position;
+ recordUserSeek(target);
+ a.player.seekTo(target);
+ if (a.playClock != null && a.player.getDuration() > 0) {
+ a.playClock.setText(
+ PlaybackController.formatTime(target)
+ + " / "
+ + PlaybackController.formatTime(
+ a.player.getDuration()));
+ }
+ }
+ if (a.playerChrome != null) a.playerChrome.hideSeekBubble();
+ a.scheduleHide();
+ }
+ });
+ boolean wideLayout =
+ a.isTvDevice()
+ || a.windowWidth() / a.getResources().getDisplayMetrics().density
+ >= 600f;
+ boolean mobileLandscape = wideLayout;
+ currentMobileLandscape = mobileLandscape;
+ LinearLayout row = a.row();
+ boolean live = "live".equals(site.key);
+ if (a.isTvDevice()) {
+ add(
+ row,
+ live ? "下台" : "下一集",
+ "next-episode",
+ () -> {
+ if (live) a.liveStep(1);
+ else if (!step(1)) showBubble("无下集", new String[] {"知道了"}, -1, i -> {}, "");
+ });
+ add(
+ row,
+ live ? "频道" : "选集",
+ "episodes",
+ () -> {
+ if (live) a.chooseLiveChannel();
+ else chooseEpisodes();
+ });
+ add(
+ row,
+ live ? "线路" : "换源",
+ "lines",
+ () -> {
+ if (live) a.chooseLiveStream();
+ else chooseLine();
+ });
+ add(row, "倍速", "speed", this::speed);
+ add(row, "音轨", "audio-tracks", () -> tracks(1));
+ add(row, "解码", "decoder", this::decoderMenu);
+ add(row, "片头", "skip-intro-tool", () -> skip(true));
+ add(row, "片尾", "skip-outro-tool", () -> skip(false));
+ add(row, "更多", "more", this::more);
+ // Keep aspect/subtitles action references in map for programmatic callers
+ registerHiddenAction("aspect", this::aspect);
+ registerHiddenAction("subtitles", () -> tracks(3));
+ } else {
+ if (!live) {
+ add(
+ row,
+ "上集",
+ "prev-episode",
+ () -> {
+ if (!step(-1))
+ showBubble("已是第一集", new String[] {"知道了"}, -1, i -> {}, "");
+ });
+ }
+ add(
+ row,
+ live ? "下台" : "下集",
+ "next-episode",
+ () -> {
+ if (live) a.liveStep(1);
+ else if (!step(1)) showBubble("无下集", new String[] {"知道了"}, -1, i -> {}, "");
+ });
+ add(
+ row,
+ live ? "频道" : "选集",
+ "episodes",
+ () -> {
+ if (live) a.chooseLiveChannel();
+ else chooseEpisodes();
+ });
+ add(
+ row,
+ "换源",
+ "lines",
+ () -> {
+ if (live) a.chooseLiveStream();
+ else chooseLine();
+ });
+ add(row, "1.0×", "speed", this::speed);
+ add(row, "画面", "aspect", this::aspect);
+ add(row, "字幕", "subtitles", () -> tracks(3));
+ add(row, "全屏", "fullscreen-tool", a::togglePlayerOrientation);
+ add(row, "音轨", "audio-tracks", () -> tracks(1));
+ add(row, "解码", "decoder", this::decoderMenu);
+ add(row, "弹幕", "danmaku-tool", this::danmaku);
+ add(row, "跳片头", "skip-intro-tool", () -> skip(true));
+ add(row, "跳片尾", "skip-outro-tool", () -> skip(false));
+ add(row, "循环", "repeat-tool", this::repeat);
+ add(
+ row,
+ "重播",
+ "restart-tool",
+ () -> {
+ if (a.player != null && a.prepared) {
+ a.player.seekTo(0);
+ a.player.start();
+ a.playing = true;
+ } else reload(false);
+ });
+ add(row, "更多", "more", this::more);
+ }
+ timeline.setId(UiCompat.generateViewId());
+ List<View> all = new ArrayList<>();
+ for (int i = 0; i < row.getChildCount(); i++) {
+ View child = row.getChildAt(i);
+ if (child instanceof Button) all.add(child);
+ }
+ for (View b : all) b.setId(UiCompat.generateViewId());
+ if (!all.isEmpty()) {
+ for (View b : all) b.setNextFocusUpId(timeline.getId());
+ timeline.setNextFocusDownId(all.get(0).getId());
+ all.get(0).setNextFocusLeftId(all.get(all.size() - 1).getId());
+ all.get(all.size() - 1).setNextFocusRightId(all.get(0).getId());
+ all.get(0)
+ .setOnKeyListener(
+ (view, key, event) -> {
+ if (key != KeyEvent.KEYCODE_DPAD_LEFT) return false;
+ if (event.getAction() == KeyEvent.ACTION_DOWN)
+ all.get(all.size() - 1).requestFocus();
+ return true;
+ });
+ all.get(all.size() - 1)
+ .setOnKeyListener(
+ (view, key, event) -> {
+ if (key != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+ if (event.getAction() == KeyEvent.ACTION_DOWN)
+ all.get(0).requestFocus();
+ return true;
+ });
+ }
+ rebuildToolDock(mobileLandscape);
+ updateLabels();
+ }
+
+ void relayout(boolean wide) {
+ if (wide != currentMobileLandscape || dockOverlay.getChildCount() == 0) {
+ currentMobileLandscape = wide;
+ rebuildToolDock(wide);
+ }
+ updateLabels();
+ }
+
+ /** 底部图标行：宽屏均分铺满（8 格），窄屏横向滚动；中央播放簇由 PlayerChrome 负责。 */
+ private static final String[] BAR_KEYS = {
+ "prev-episode",
+ "next-episode",
+ "episodes",
+ "speed",
+ "lines",
+ "subtitles",
+ "aspect",
+ "more"
+ };
+
+ /** 直播会话：下台 / 频道 / 线路 / 倍速 / 更多。 */
+ private static final String[] LIVE_KEYS = {
+ "next-episode", "episodes", "lines", "speed", "more"
+ };
+
+ /** 底部图标行：宽屏均分铺满，窄屏横向滚动；控件是 vector 图标的 48dp ImageButton。 */
+ private void rebuildToolDock(boolean wide) {
+ dockOverlay.removeAllViews();
+ dockOverlay.setPadding(0, 0, 0, 0);
+ LinearLayout row = a.row();
+ row.setGravity(Gravity.CENTER_VERTICAL);
+ row.setClipChildren(false);
+ row.setClipToPadding(false);
+ String[] keys = liveSession ? LIVE_KEYS : BAR_KEYS;
+ for (String key : keys) {
+ View b = buttons.get(key);
+ if (b == null) continue;
+ if (b.getParent() instanceof ViewGroup) {
+ ((ViewGroup) b.getParent()).removeView(b);
+ }
+ if (a.isTvDevice()) styleTextButton(b, key);
+ b.setVisibility(View.VISIBLE);
+ row.addView(b, cellLp(wide));
+ }
+ if (wide) {
+ dockOverlay.addView(row, new LinearLayout.LayoutParams(-1, a.dp(56)));
+ } else {
+ HorizontalScrollView scroller = new HorizontalScrollView(a);
+ scroller.setHorizontalScrollBarEnabled(false);
+ scroller.setClipChildren(false);
+ scroller.setClipToPadding(false);
+ scroller.addView(row);
+ dockOverlay.addView(scroller, new LinearLayout.LayoutParams(-1, a.dp(56)));
+ }
+ wireTvDockFocus(row);
+ }
+
+ /** 1.9.61：TV 底部控制条按钮全部可聚焦 + 可见焦点描边 + 左右/上下焦点链。 */
+ private void wireTvDockFocus(LinearLayout row) {
+ if (a.isTvDevice()) {
+ List<View> focusable = new ArrayList<>();
+ for (int i = 0; i < row.getChildCount(); i++) {
+ View child = row.getChildAt(i);
+ if (!child.isClickable()) continue;
+ child.setFocusable(true);
+ child.setFocusableInTouchMode(true);
+ child.setEnabled(true);
+ if (child.getId() == View.NO_ID) child.setId(UiCompat.generateViewId());
+ // 1.9.68：统一焦点动效（粉色叠加 + ACCENT 亮边 + 1.03× 放大）
+ TvNav.focusRing(a, child, 10);
+ child.setOnKeyListener(
+ (v, keyCode, event) -> {
+ if (event.getAction() == KeyEvent.ACTION_DOWN
+ && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+ || keyCode == KeyEvent.KEYCODE_ENTER))
+ AppLog.i(
+ "TvKey",
+ "page=player focus="
+ + String.valueOf(v.getTag())
+ + " action=confirm");
+ return false;
+ });
+ focusable.add(child);
+ }
+ for (int i = 0; i < focusable.size(); i++) {
+ View cell = focusable.get(i);
+ if (i > 0) cell.setNextFocusLeftId(focusable.get(i - 1).getId());
+ if (i + 1 < focusable.size())
+ cell.setNextFocusRightId(focusable.get(i + 1).getId());
+ }
+ timeline.setId(UiCompat.generateViewId());
+ if (!focusable.isEmpty()) {
+ timeline.setNextFocusDownId(focusable.get(0).getId());
+ if (a.playerChrome != null && a.playerChrome.backBtn != null) {
+ if (a.playerChrome.backBtn.getId() == View.NO_ID)
+ a.playerChrome.backBtn.setId(UiCompat.generateViewId());
+ timeline.setNextFocusUpId(a.playerChrome.backBtn.getId());
+ }
+ for (View cell : focusable) cell.setNextFocusUpId(timeline.getId());
+ if (a.playerChrome != null) {
+ View back = a.playerChrome.backBtn;
+ View more = a.playerChrome.moreBtn;
+ if (back != null && more != null) {
+ if (back.getId() == View.NO_ID) back.setId(UiCompat.generateViewId());
+ if (more.getId() == View.NO_ID) more.setId(UiCompat.generateViewId());
+ back.setNextFocusRightId(more.getId());
+ more.setNextFocusLeftId(back.getId());
+ View first = focusable.get(0);
+ if (first.getTag() != null)
+ back.setTag("top-back");
+ more.setTag("top-more");
+ back.setNextFocusDownId(first.getId());
+ more.setNextFocusDownId(first.getId());
+ first.setNextFocusUpId(back.getId());
+ }
+ }
+ dockFirst = focusable.get(0);
+ }
+ }
+ }
+
+ private LinearLayout.LayoutParams cellLp(boolean wide) {
+ if (wide) return new LinearLayout.LayoutParams(0, a.dp(56), 1f);
+ return new LinearLayout.LayoutParams(a.dp(48), a.dp(56));
+ }
+
+ /** TV 遥控器场景保留「图标 + 文字」，比纯图标更容易辨认。 */
+ private void styleTextButton(View raw, String key) {
+ if (!(raw instanceof Button)) return;
+ Button b = (Button) raw;
+ b.setAllCaps(false);
+ b.setText(toolLabel(key));
+ b.setTextSize(11);
+ b.setTextColor(UiTokens.PLAYER_ICON);
+ b.setMinWidth(0);
+ b.setMinimumWidth(0);
+ b.setMinHeight(0);
+ b.setMinimumHeight(0);
+ b.setPadding(0, 0, 0, 0);
+ b.setBackground(null);
+ b.setContentDescription(toolLabel(key));
+ b.setCompoundDrawables(null, null, null, null);
+ }
+
+ /** 快退 / 快进 10 秒（中央播放簇左右按钮的回调）。 */
+ void nudge(int deltaMs) {
+ if (a.player == null || !a.prepared) return;
+ int duration = Math.max(1, a.player.getDuration());
+ int current = a.player.getCurrentPosition();
+ int next = Math.max(0, Math.min(duration, current + deltaMs));
+ recordUserSeek(next);
+ a.player.seekTo(next);
+ if (a.playerChrome != null) {
+ a.playerChrome.showSeekBubble(next, duration);
+ a.ui.postDelayed(
+ () -> {
+ if (a.playerChrome != null) a.playerChrome.hideSeekBubble();
+ },
+ 900);
+ }
+ a.showControls(true);
+ }
+
+ private String toolLabel(String key) {
+ if ("speed".equals(key)) return "倍速";
+ if ("fullscreen-tool".equals(key)) return "竖屏 / 全屏";
+ if ("prev-episode".equals(key)) return "上一集";
+ if ("next-episode".equals(key)) return liveSession ? "下台" : "下一集";
+ if ("episodes".equals(key)) return liveSession ? "频道" : "选集";
+ if ("lines".equals(key)) return liveSession ? "线路" : "换源";
+ if ("aspect".equals(key)) return "画面比例";
+ if ("subtitles".equals(key)) return "字幕";
+ if ("danmaku-tool".equals(key)) return "弹幕";
+ if ("audio-tracks".equals(key)) return "音轨";
+ if ("restart-tool".equals(key)) return "重播";
+ if ("repeat-tool".equals(key)) return "循环";
+ if ("decoder".equals(key)) return "解码与播放器";
+ if ("skip-intro-tool".equals(key)) return "跳片头";
+ if ("skip-outro-tool".equals(key)) return "跳片尾";
+ if ("more".equals(key)) return "更多";
+ return key;
+ }
+
+ /** 创建动作控件：手机是 48dp vector 图标按钮，TV 是带文字标签的 Button。 */
+ private View createAction(String title, String key, Runnable action) {
+ final Runnable click =
+ () -> {
+ menuAnchor =
+ a.playerChrome == null ? buttons.get(key) : a.playerChrome.menuAnchor;
+ action.run();
+ };
+ if (a.isTvDevice()) {
+ Button b = a.button("", key, click);
+ b.setContentDescription(title);
+ b.setText(title);
+ b.setSingleLine(true);
+ b.setMinWidth(0);
+ b.setMinimumWidth(0);
+ b.setMinHeight(0);
+ b.setMinimumHeight(0);
+ b.setPadding(0, 0, 0, 0);
+ b.setBackground(null);
+ b.setTextColor(UiTokens.PLAYER_ICON);
+ b.setTextSize(11);
+ return b;
+ }
+ return UiIcon.iconCell(a, UiIcon.kindForKey(key), title, 22, click);
+ }
+
+ void registerHiddenAction(String key, Runnable action) {
+ if (buttons.containsKey(key)) return;
+ View b = createAction(toolLabel(key), key, action);
+ b.setVisibility(View.GONE);
+ buttons.put(key, b);
+ }
+
+ View add(LinearLayout row, String title, String key, Runnable action) {
+ View b = createAction(title, key, action);
+ if (b instanceof Button) {
+ row.addView(b, new LinearLayout.LayoutParams(a.dp(44), a.dp(56)));
+ }
+ buttons.put(key, b);
+ return b;
+ }
+
+ int lineIndex() {
+ return a.activeLine == null ? -1 : video.lines.indexOf(a.activeLine);
+ }
+
+ int episodeIndex() {
+ return a.activeLine == null ? -1 : a.activeLine.episodes.indexOf(a.activeEpisode);
+ }
+
+ void choose(String title, String[] labels, int selected, PlayerBubble.IntAction action) {
+ showBubble(title, labels, selected, action, "");
+ }
+
+ void message(String text) {
+ showBubble("播放提示", new String[] {"完成"}, -1, i -> {}, text);
+ }
+
+ void showBubble(
+ String title,
+ String[] labels,
+ int selected,
+ PlayerBubble.IntAction action,
+ String message) {
+ if (activeDialog != null) {
+ activeDialog.dismiss();
+ activeDialog = null;
+ }
+ if (menuAnchor == null || !UiCompat.isAttached(menuAnchor))
+ menuAnchor = buttons.get("more");
+ dialogOpen = true;
+ if (a.hideControls != null) a.ui.removeCallbacks(a.hideControls);
+ final Dialog[] holder = new Dialog[1];
+ holder[0] =
+ PlayerBubble.show(
+ a,
+ menuAnchor,
+ title,
+ labels,
+ selected,
+ action,
+ () -> {
+ if (activeDialog == holder[0]) {
+ activeDialog = null;
+ dialogOpen = false;
+ a.scheduleHide();
+ }
+ },
+ message);
+ activeDialog = holder[0];
+ }
+
+ static final int EPISODE_GROUP_SIZE = 50;
+
+ void chooseEpisodes() {
+ int l = lineIndex();
+ if (l < 0) {
+ message("此内容没有可切换的剧集。");
+ return;
+ }
+ Cms.Line line = video.lines.get(l);
+ int total = line.episodes.size();
+ int current = episodeIndex();
+ if (total <= EPISODE_GROUP_SIZE) {
+ String[] labels = new String[total];
+ for (int i = 0; i < total; i++) labels[i] = line.episodes.get(i).name;
+ choose(
+ line.name + " · 选集",
+ labels,
+ current,
+ i -> a.changeEpisode(site, video, line, line.episodes.get(i), 0));
+ return;
+ }
+ int page = EpisodeSelection.pageFor(Math.max(0, current), total, false);
+ chooseEpisodePage(line, page);
+ }
+
+ void chooseEpisodePage(Cms.Line line, int page) {
+ int total = line.episodes.size();
+ int groups = Math.max(1, (total + EPISODE_GROUP_SIZE - 1) / EPISODE_GROUP_SIZE);
+ int safePage = Math.max(0, Math.min(page, groups - 1));
+ int start = safePage * EPISODE_GROUP_SIZE;
+ int end = Math.min(total, start + EPISODE_GROUP_SIZE);
+ int count = end - start;
+ String[] labels = new String[count + 1];
+ labels[0] = "切换选集分组（当前 " + (start + 1) + "-" + end + " / 共 " + total + " 集）";
+ int current = episodeIndex();
+ int selected = 0;
+ for (int i = 0; i < count; i++) {
+ int epIndex = start + i;
+ labels[i + 1] = line.episodes.get(epIndex).name;
+ if (epIndex == current) selected = i + 1;
+ }
+ choose(
+ line.name + " · 选集 (" + (start + 1) + "-" + end + ")",
+ labels,
+ selected,
+ i -> {
+ if (i == 0) {
+ chooseEpisodeGroupList(line, safePage);
+ } else {
+ int target = start + (i - 1);
+ if (target >= 0 && target < total) {
+ a.changeEpisode(site, video, line, line.episodes.get(target), 0);
+ }
+ }
+ });
+ }
+
+ void chooseEpisodeGroupList(Cms.Line line, int currentGroup) {
+ int total = line.episodes.size();
+ int groups = Math.max(1, (total + EPISODE_GROUP_SIZE - 1) / EPISODE_GROUP_SIZE);
+ String[] groupLabels = new String[groups];
+ for (int g = 0; g < groups; g++) {
+ int gStart = g * EPISODE_GROUP_SIZE + 1;
+ int gEnd = Math.min(total, (g + 1) * EPISODE_GROUP_SIZE);
+ groupLabels[g] = "第 " + gStart + " - " + gEnd + " 集";
+ }
+ choose(line.name + " · 选择分组", groupLabels, currentGroup, g -> chooseEpisodePage(line, g));
+ }
+
+ void chooseLine() {
+ org.json.JSONArray qualities =
+ resolved != null && resolved.media != null
+ ? resolved.media.optJSONArray("qualities")
+ : null;
+ int qCount = qualities != null && qualities.length() > 1 ? qualities.length() : 0;
+ boolean canCrossSearch =
+ video != null
+ && video.title != null
+ && !video.title.trim().isEmpty()
+ && !"live".equals(site.key);
+ if (video.lines.isEmpty() && qCount == 0 && !canCrossSearch) {
+ message("此内容只有当前地址。");
+ return;
+ }
+ List<String> items = new ArrayList<>();
+ int currentQualityIdx =
+ resolved != null && resolved.media != null
+ ? resolved.media.optInt("_qualityIdx", 0)
+ : 0;
+ for (int q = 0; q < qCount; q++) {
+ org.json.JSONObject qObj = qualities.optJSONObject(q);
+ String qName = qObj != null ? qObj.optString("name", "画质 " + (q + 1)) : "画质 " + (q + 1);
+ items.add("画质 · " + qName + (q == currentQualityIdx ? "（当前）" : ""));
+ }
+ for (int i = 0; i < video.lines.size(); i++) {
+ items.add((qCount > 0 ? "线路 · " : "") + video.lines.get(i).name);
+ }
+ final int crossSearchIndex = canCrossSearch ? items.size() : -1;
+ if (canCrossSearch) {
+ items.add("搜索同名其他片源 · " + video.title);
+ }
+ int selected = qCount > 0 ? currentQualityIdx : lineIndex();
+ final int finalQCount = qCount;
+ final org.json.JSONArray finalQualities = qualities;
+ choose(
+ qCount > 0 ? "选择画质或播放线路" : "换源 · 选择线路或片源",
+ items.toArray(new String[0]),
+ selected,
+ i -> {
+ if (crossSearchIndex >= 0 && i == crossSearchIndex) {
+ a.leavePlayback();
+ a.crossSearch(Cms.searchTitle(video));
+ return;
+ }
+ if (i < finalQCount && finalQualities != null) {
+ org.json.JSONObject qObj = finalQualities.optJSONObject(i);
+ if (qObj != null) {
+ String nextUrl = qObj.optString("url", "");
+ if (!nextUrl.isEmpty()) {
+ try {
+ resolved.media.put("_qualityIdx", i);
+ } catch (Exception ignored) {
+ }
+ resolved.url = LocalProxy.rewrite(nextUrl);
+ a.resumeAt =
+ a.prepared && a.player != null
+ ? a.player.getCurrentPosition()
+ : 0;
+ a.playerPage(site, video, resolved);
+ }
+ }
+ return;
+ }
+ int lineIdx = i - finalQCount;
+ if (lineIdx >= 0 && lineIdx < video.lines.size()) {
+ Cms.Line line = video.lines.get(lineIdx);
+ if (!line.episodes.isEmpty()) {
+ int n = Math.min(Math.max(0, episodeIndex()), line.episodes.size() - 1);
+ a.changeEpisode(site, video, line, line.episodes.get(n), 0);
+ }
+ }
+ });
+ }
+
+ boolean step(int direction) {
+ int i = episodeIndex(), l = lineIndex();
+ if (l < 0 || i < 0) return false;
+ Cms.Line line = video.lines.get(l);
+ int next = i + direction;
+ if (a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 2)
+ next = (next + line.episodes.size()) % line.episodes.size();
+ if (next < 0 || next >= line.episodes.size()) return false;
+ transitioning = true;
+ a.changeEpisode(site, video, line, line.episodes.get(next), 0);
+ return true;
+ }
+
+ void reload(boolean preserve) {
+ int position =
+ preserve && a.prepared && a.player != null ? a.player.getCurrentPosition() : 0;
+ if (a.activeLine != null && a.activeEpisode != null)
+ a.changeEpisode(site, video, a.activeLine, a.activeEpisode, position);
+ else {
+ a.resumeAt = position;
+ a.playerPage(site, video, resolved);
+ }
+ }
+
+ void speed() {
+ if (a.player == null) return;
+ float[] speeds = {.5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f};
+ String[] labels = {"0.5×", "0.75×", "1.0×", "1.25×", "1.5×", "1.75×", "2.0×"};
+ int current = 2;
+ for (int i = 0; i < speeds.length; i++) if (speeds[i] == a.player.getSpeed()) current = i;
+ choose(
+ "播放速度",
+ labels,
+ current,
+ i -> {
+ if (a.player != null) a.player.setSpeed(speeds[i]);
+ a.prefs.edit().putFloat(Prefs.PLAY_SPEED, speeds[i]).apply();
+ updateLabels();
+ });
+ }
+
+ void aspect() {
+ String[] labels = {"适应画面", "铺满屏幕", "16:9", "4:3", "裁切填充", "恢复默认比例（跟随设置）"};
+ int current = AspectMemory.read(a, video == null ? "" : video.title, a.prefs.getInt(Prefs.ASPECT, 4));
+ choose(
+ "画面比例 · 当前 " + AspectMemory.label(current),
+ labels,
+ current,
+ i -> {
+ if (i >= labels.length - 1) {
+ AspectMemory.clear(a, video == null ? "" : video.title);
+ int fallback = a.prefs.getInt(Prefs.ASPECT, 4);
+ a.prefs.edit().putInt(Prefs.ASPECT, fallback).apply();
+ resize(videoWidth, videoHeight);
+ updateLabels();
+ a.toast("已恢复默认比例 · " + AspectMemory.label(fallback));
+ if (a.playStatus != null)
+ a.playStatus.setText("画面比例：" + AspectMemory.label(fallback));
+ return;
+ }
+ AspectMemory.save(a, video == null ? "" : video.title, i);
+ a.prefs.edit().putInt(Prefs.ASPECT, i).apply();
+ resize(videoWidth, videoHeight);
+ updateLabels();
+ String label = AspectMemory.label(i);
+ a.toast("画面比例：" + label + "（本片已记忆）");
+ if (a.playStatus != null) a.playStatus.setText("画面比例：" + label);
+ });
+ }
+
+ void engine() {
+ choose(
+ "选择播放器",
+ new String[] {"Media3 · 网络与字幕优先", "系统播放器"},
+ a.prefs.getInt(Prefs.PLAYER_ENGINE, 0),
+ i -> {
+ a.prefs.edit().putInt(Prefs.PLAYER_ENGINE, i).apply();
+ reload(true);
+ });
+ }
+
+ void output() {
+ choose(
+ "画面输出",
+ new String[] {"保真输出 · HDR 与流畅度优先", "兼容输出 · 支持应用内调色"},
+ a.prefs.getInt(Prefs.VIDEO_OUTPUT, 0),
+ i -> {
+ a.prefs.edit().putInt(Prefs.VIDEO_OUTPUT, i).apply();
+ reload(true);
+ });
+ }
+
+ void decoder() {
+ choose(
+ "选择解码方式",
+ new String[] {"自动选择（默认）", "设备硬件解码", "软件解码优先（高分辨率可能较慢）"},
+ a.prefs.getInt(Prefs.DECODER_MODE, 0),
+ i -> {
+ a.prefs.edit().putInt(Prefs.DECODER_MODE, i).apply();
+ updateLabels();
+ reload(true);
+ });
+ }
+
+ void decoderMenu() {
+ int decMode = a.prefs.getInt(Prefs.DECODER_MODE, 0);
+ int engMode = a.prefs.getInt(Prefs.PLAYER_ENGINE, 0);
+ int outMode = a.prefs.getInt(Prefs.VIDEO_OUTPUT, 0);
+ String[] items = {
+ (decMode == 0 ? "✓ " : "") + "自动解码（默认）",
+ (decMode == 1 ? "✓ " : "") + "设备硬件解码 (HW)",
+ (decMode == 2 ? "✓ " : "") + "软件解码优先 (SW)",
+ "播放器内核 · " + (engMode == 0 ? "Media3" : "系统播放器"),
+ "画面输出 · " + (outMode == 0 ? "保真输出 (HDR)" : "兼容输出 (调色)")
+ };
+ choose(
+ "解码与播放器",
+ items,
+ decMode >= 0 && decMode <= 2 ? decMode : 0,
+ i -> {
+ if (i >= 0 && i <= 2) {
+ a.prefs.edit().putInt(Prefs.DECODER_MODE, i).apply();
+ updateLabels();
+ reload(true);
+ } else if (i == 3) {
+ engine();
+ } else if (i == 4) {
+ output();
+ }
+ });
+ }
+
+ void danmaku() {
+ choose(
+ "弹幕",
+ new String[] {"开启 / 重新加载来源弹幕", "关闭弹幕", "导入本地弹幕 XML / JSON"},
+ -1,
+ i -> {
+ if (i == 1) {
+ danmaku.enabled(false);
+ return;
+ }
+ if (i == 2) {
+ a.pickDanmaku();
+ return;
+ }
+ String address = resolved.media.optString("danmaku");
+ if (address.isEmpty()) {
+ message("当前来源没有提供弹幕，可导入本地 XML / JSON。");
+ return;
+ }
+ danmaku.enabled(true);
+ danmaku.load(
+ address,
+ resolved.headers,
+ new DanmakuView.Listener() {
+ public void loaded(int count) {
+ a.toast("已加载 " + count + " 条弹幕");
+ }
+
+ public void error(String message) {
+ message(message);
+ }
+ });
+ });
+ }
+
+ void soundEffect() {
+ choose(
+ "音效",
+ new String[] {"原声", "影院", "人声清晰", "柔和低音"},
+ a.prefs.getInt(Prefs.AUDIO_EFFECT, 0),
+ i -> {
+ try {
+ if (a.player == null) throw new IllegalStateException();
+ effects.audio(a.player.getAudioSessionId(), i);
+ a.prefs.edit().putInt(Prefs.AUDIO_EFFECT, i).apply();
+ } catch (Exception error) {
+ message("这台设备当前音轨未提供可用音效接口。");
+ }
+ });
+ }
+
+ void pictureEffect() {
+ choose(
+ "画面色彩",
+ new String[] {"原始画面", "明亮", "影院", "柔和"},
+ a.prefs.getInt(Prefs.PICTURE_EFFECT, 0),
+ i -> {
+ if (i > 0 && !surface.supportsPicture()) {
+ message("当前使用保真输出，保留原始色彩。需要应用内调色时，可在“播放器与解码”选择兼容输出；HDR 内容建议保持保真输出。");
+ return;
+ }
+ PlaybackEffects.picture(surface, i);
+ a.prefs.edit().putInt(Prefs.PICTURE_EFFECT, i).apply();
+ });
+ }
+
+ void close() {
+ surface.setFrameAdvancing(false);
+ if (activeDialog != null) {
+ activeDialog.dismiss();
+ activeDialog = null;
+ }
+ effects.close();
+ danmaku.close();
+ }
+
+ static final int[] SUBTITLE_SIZES = {28, 35, 45, 55, 65};
+ static final String[] SUBTITLE_SIZE_LABELS = {"极小", "小", "标准", "大", "超大"};
+ static final int[] SUBTITLE_BOTTOMS = {8, 24, 48, 76, 110, 148};
+ static final String[] SUBTITLE_BOTTOM_LABELS = {"贴底", "标准", "略高", "中下", "偏高", "较高"};
+
+ int timelineProgress() {
+ return (int) timelinePosMs;
+ }
+
+ int timelineMax() {
+ return (int) Math.max(1, timelineDurMs);
+ }
+
+ void setTimelineProgress(int ms) {
+ timelinePosMs = Math.max(0, ms);
+ timeline.setPosition(timelinePosMs);
+ }
+
+ void setTimelineMax(int ms) {
+ timelineDurMs = Math.max(1, ms);
+ timeline.setDuration(timelineDurMs);
+ }
+
+ void applySubtitleStyle() {
+ int size = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
+ int bottomDp = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+ int stylePreset = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
+ subtitle.applyStylePreset(stylePreset);
+ subtitle.setFractionalTextSize(size / 1000f);
+ subtitle.setBottomPaddingFraction(0.02f + (bottomDp / 650f));
+ visible(a.controlsVisible);
+ }
+
+ String subtitleSizeLabel() {
+ int size = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
+ for (int i = 0; i < SUBTITLE_SIZES.length; i++) {
+ if (SUBTITLE_SIZES[i] == size) return SUBTITLE_SIZE_LABELS[i];
+ }
+ return size + "";
+ }
+
+ String subtitleBottomLabel() {
+ int bottomDp = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+ for (int i = 0; i < SUBTITLE_BOTTOMS.length; i++) {
+ if (SUBTITLE_BOTTOMS[i] == bottomDp) return SUBTITLE_BOTTOM_LABELS[i];
+ }
+ return bottomDp + "dp";
+ }
+
+ String subtitleStyleLabel() {
+ int style = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
+ return SubtitleOverlayView.STYLE_LABELS[style];
+ }
+
+ void subtitleSizeDialog() {
+ showSubtitleAdjuster(a, subtitle, this::applySubtitleStyle);
+ }
+
+ void subtitleBottomDialog() {
+ showSubtitleAdjuster(a, subtitle, this::applySubtitleStyle);
+ }
+
+ static void showSubtitleAdjuster(
+ MainActivity a, SubtitleOverlayView liveSub, Runnable onChanged) {
+ final Dialog dlg = new Dialog(a);
+ dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
+ if (dlg.getWindow() != null) {
+ dlg.getWindow()
+ .setBackgroundDrawable(
+ new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+ dlg.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+ }
+ if (liveSub != null) {
+ liveSub.setPreviewActive(true);
+ if (a.controlsVisible) a.showControls(false);
+ }
+
+ LinearLayout card = a.vertical();
+ card.setPadding(a.dp(22), a.dp(18), a.dp(22), a.dp(18));
+ android.graphics.drawable.GradientDrawable bg = a.bg(0xe8141c19, 22);
+ bg.setStroke(a.dp(1), 0x40ffffff);
+ card.setBackground(bg);
+ card.setFocusable(true);
+ card.setFocusableInTouchMode(true);
+
+ TextView title = a.text("字幕方向键直调（实时生效）", 17, MainActivity.WHITE);
+ title.setTypeface(null, android.graphics.Typeface.BOLD);
+ card.addView(title);
+ a.gap(card, 6);
+
+ TextView guide =
+ a.text(
+ a.isTvDevice()
+ ? "▲ ▼ 调整高度位置 · ◀ ▶ 调整字体大小 · 确认键 切换字体颜色"
+ : "可使用方向键或下方按钮实时调节高度位置、字体大小与字体颜色",
+ 12,
+ MainActivity.MUTED);
+ card.addView(guide);
+ a.gap(card, 10);
+
+ final TextView statusView = a.text("", 14, 0xff2ad47a);
+ statusView.setTypeface(null, android.graphics.Typeface.BOLD);
+ card.addView(statusView);
+ a.gap(card, 12);
+
+ final SubtitleOverlayView previewBox;
+ if (liveSub == null) {
+ previewBox = new SubtitleOverlayView(a);
+ previewBox.setBackground(a.bg(0xff0b110f, 14));
+ previewBox.setPreviewActive(true);
+ card.addView(previewBox, new LinearLayout.LayoutParams(-1, a.dp(92)));
+ a.gap(card, 12);
+ } else {
+ previewBox = null;
+ }
+
+ final Runnable syncState =
+ () -> {
+ int sz = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
+ int bt = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+ int st = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
+ statusView.setText(
+ "底部高度："
+ + bt
+ + "dp · 字体大小："
+ + sz
+ + " · 颜色样式："
+ + SubtitleOverlayView.STYLE_LABELS[st]);
+ statusView.setTextColor(SubtitleOverlayView.STYLE_COLORS[st]);
+ if (previewBox != null) {
+ previewBox.applyStylePreset(st);
+ previewBox.setFractionalTextSize(sz / 1000f);
+ previewBox.setBottomPaddingFraction(0.02f + (bt / 650f));
+ }
+ if (onChanged != null) onChanged.run();
+ };
+ syncState.run();
+
+ // java.util.function.IntConsumer is unavailable on Android 6 (API 23).
+ final PlayerBubble.IntAction stepSize =
+ delta -> {
+ int cur = Prefs.clampSubtitleSize(a.prefs.getInt(Prefs.SUBTITLE_SIZE, 45));
+ int next = Prefs.clampSubtitleSize(cur + delta);
+ a.prefs.edit().putInt(Prefs.SUBTITLE_SIZE, next).apply();
+ syncState.run();
+ };
+ final PlayerBubble.IntAction stepBottom =
+ delta -> {
+ int cur = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+ int next = Prefs.clampSubtitleBottom(cur + delta);
+ a.prefs.edit().putInt(Prefs.SUBTITLE_BOTTOM, next).apply();
+ syncState.run();
+ };
+ final Runnable cycleStyle =
+ () -> {
+ int cur = Prefs.clampSubtitleStyle(a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
+ int next = (cur + 1) % SubtitleOverlayView.STYLE_LABELS.length;
+ a.prefs.edit().putInt(Prefs.SUBTITLE_STYLE, next).apply();
+ syncState.run();
+ };
+
+ if (a.isTvDevice()) {
+ TextView tvExitHint = a.text("✓ 每次调节均已实时保存 · 按【返回键】或长按【确认键】完成退出", 12.5f, 0xffe6edf9);
+ tvExitHint.setGravity(Gravity.CENTER);
+ tvExitHint.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
+ tvExitHint.setBackground(a.bg(0x33ffffff, 12));
+ card.addView(tvExitHint, new LinearLayout.LayoutParams(-1, -2));
+ } else {
+ LinearLayout controlsRow = a.row();
+ controlsRow.setGravity(Gravity.CENTER);
+ String[] btnLabels = {"字号 -", "字号 +", "▼ 下移", "▲ 上移", "切换颜色", "完成"};
+ Runnable[] btnActions = {
+ () -> stepSize.accept(-2),
+ () -> stepSize.accept(2),
+ () -> stepBottom.accept(-6),
+ () -> stepBottom.accept(6),
+ cycleStyle,
+ dlg::dismiss
+ };
+ for (int i = 0; i < btnLabels.length; i++) {
+ final Runnable act = btnActions[i];
+ TextView b = a.text(btnLabels[i], 12, MainActivity.WHITE);
+ b.setGravity(Gravity.CENTER);
+ b.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
+ b.setBackground(a.bg(i == btnLabels.length - 1 ? 0xff1f6f4a : 0x33ffffff, 12));
+ b.setOnClickListener(v -> act.run());
+ LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+ lp.rightMargin = a.dp(6);
+ controlsRow.addView(b, lp);
+ }
+ HorizontalScrollView hScroll = new HorizontalScrollView(a);
+ hScroll.setHorizontalScrollBarEnabled(false);
+ hScroll.addView(controlsRow);
+ card.addView(hScroll, new LinearLayout.LayoutParams(-1, -2));
+ }
+
+ dlg.setOnKeyListener(
+ (dialog, keyCode, event) -> {
+ if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+ if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+ stepSize.accept(-2);
+ return true;
+ }
+ if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+ stepSize.accept(2);
+ return true;
+ }
+ if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+ stepBottom.accept(6);
+ return true;
+ }
+ if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+ stepBottom.accept(-6);
+ return true;
+ }
+ if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+ || keyCode == KeyEvent.KEYCODE_ENTER) {
+ if (event.getRepeatCount() > 0) {
+ dlg.dismiss();
+ return true;
+ }
+ cycleStyle.run();
+ return true;
+ }
+ if (keyCode == KeyEvent.KEYCODE_BACK
+ || keyCode == KeyEvent.KEYCODE_ESCAPE
+ || keyCode == KeyEvent.KEYCODE_MENU) {
+ dlg.dismiss();
+ return true;
+ }
+ return false;
+ });
+ dlg.setOnDismissListener(
+ d -> {
+ if (liveSub != null) {
+ liveSub.setPreviewActive(false);
+ if (onChanged != null) onChanged.run();
+ }
+ });
+ FrameLayout wrapper = new FrameLayout(a);
+ FrameLayout.LayoutParams wlp =
+ new FrameLayout.LayoutParams(
+ Math.min(a.windowWidth() - a.dp(32), a.dp(560)),
+ -2,
+ Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+ wlp.topMargin = a.dp(32);
+ wrapper.addView(card, wlp);
+ dlg.setContentView(wrapper);
+ dlg.show();
+ card.requestFocus();
+ View subtitleDecor = dlg.getWindow() == null ? null : dlg.getWindow().getDecorView();
+ ModalStack.push("subtitle-adjuster", subtitleDecor, dlg::dismiss);
+ dlg.setOnDismissListener(
+ d -> {
+ ModalStack.pop(
+ dlg.getWindow() == null ? null : dlg.getWindow().getDecorView());
+ if (liveSub != null) {
+ liveSub.setPreviewActive(false);
+ if (onChanged != null) onChanged.run();
+ }
+ });
+ }
+
+ void tracks(int type) {
+ if (type == 3) {
+ List<String> tracks =
+ (a.player != null && a.prepared)
+ ? a.player.trackLabels(3)
+ : Collections.emptyList();
+ List<String> labels = new ArrayList<>();
+ labels.add(
+ "方向键直调字幕（大小 "
+ + subtitleSizeLabel()
+ + " · 位置 "
+ + subtitleBottomLabel()
+ + " · "
+ + subtitleStyleLabel()
+ + "）");
+ labels.add("字幕样式 · " + subtitleStyleLabel());
+ labels.add("关闭字幕");
+ labels.addAll(tracks);
+ labels.add("导入字幕文件…");
+ choose(
+ "字幕与显示设置",
+ labels.toArray(new String[0]),
+ -1,
+ i -> {
+ if (i == 0) {
+ showSubtitleAdjuster(a, subtitle, this::applySubtitleStyle);
+ } else if (i == 1) {
+ int cur =
+ Prefs.clampSubtitleStyle(
+ a.prefs.getInt(Prefs.SUBTITLE_STYLE, 0));
+ choose(
+ "字幕样式（默认透明底描边）",
+ SubtitleOverlayView.STYLE_LABELS,
+ cur,
+ sIdx -> {
+ a.prefs.edit().putInt(Prefs.SUBTITLE_STYLE, sIdx).apply();
+ applySubtitleStyle();
+ });
+ } else if (i == labels.size() - 1) {
+ a.pickSubtitle();
+ } else if (a.player != null && a.prepared) {
+ a.player.selectTrack(3, i == 2 ? -2 : i - 3);
+ }
+ });
+ return;
+ }
+ if (a.player == null || !a.prepared) {
+ message("请等待视频开始播放。");
+ return;
+ }
+ List<String> tracks = a.player.trackLabels(type);
+ List<String> labels = new ArrayList<>();
+ labels.add("自动选择默认音轨");
+ labels.addAll(tracks);
+ final int trackOptionCount = labels.size();
+ boolean swAudio = a.prefs.getBoolean(Prefs.SOFTWARE_AUDIO, false);
+ labels.add("兼容音频解码：" + (swAudio ? "已开启" : "关闭"));
+ labels.add("音效模式 · 设置");
+ choose(
+ "音轨与音频",
+ labels.toArray(new String[0]),
+ 0,
+ i -> {
+ if (i < trackOptionCount) {
+ if (a.player != null) a.player.selectTrack(type, i == 0 ? -1 : i - 1);
+ } else if (i == trackOptionCount) {
+ a.prefs.edit().putBoolean(Prefs.SOFTWARE_AUDIO, !swAudio).apply();
+ reload(true);
+ } else {
+ soundEffect();
+ }
+ });
+ }
+
+ void skip(boolean intro) {
+ int curPos = a.player != null && a.prepared ? a.player.getCurrentPosition() : 0;
+ int curDur = a.player != null && a.prepared ? a.player.getDuration() : 0;
+ showSkipAdjuster(a, intro, curPos, curDur, this::updateLabels);
+ }
+
+ /** 1.8.1 标记本剧片头/片尾（当前进度/剩余时长）。 */
+ void markSkip(boolean intro) {
+ if (a.player == null || !a.prepared) {
+ a.toast("加载完成后可标记");
+ return;
+ }
+ int posSec = Math.max(0, a.player.getCurrentPosition() / 1000);
+ int durSec = Math.max(0, a.player.getDuration() / 1000);
+ SkipMemory.Mem mem = SkipMemory.read(a, video.title);
+ if (intro) mem.intro = Math.min(SkipMemory.MAX_SECONDS, posSec);
+ else mem.outro = Math.min(SkipMemory.MAX_SECONDS, Math.max(1, durSec - posSec));
+ if (mem.intro + mem.outro > 0 && durSec > 0 && mem.intro + mem.outro >= durSec) {
+ a.toast("片头+片尾超过时长，未保存");
+ return;
+ }
+ SkipMemory.save(a, video.title, mem.intro, mem.outro);
+ a.toast(
+ intro
+ ? "已标记本剧片头 " + PlaybackController.formatTime(mem.intro * 1000)
+ : "已标记本剧片尾 " + PlaybackController.formatTime(mem.outro * 1000));
+ updateLabels();
+ }
+
+ void clearSkipMemory() {
+ SkipMemory.clear(a, video.title);
+ a.toast("已清除本剧片头片尾记忆");
+ updateLabels();
+ }
+
+ static void showSkipAdjuster(
+ MainActivity a,
+ boolean intro,
+ int currentPlayerPosMs,
+ int currentPlayerDurMs,
+ Runnable onChanged) {
+ final String key = intro ? Prefs.SKIP_INTRO : Prefs.SKIP_OUTRO;
+ final Dialog dlg = new Dialog(a);
+ dlg.requestWindowFeature(Window.FEATURE_NO_TITLE);
+ if (dlg.getWindow() != null) {
+ dlg.getWindow()
+ .setBackgroundDrawable(
+ new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+ }
+ LinearLayout card = a.vertical();
+ card.setPadding(a.dp(22), a.dp(18), a.dp(22), a.dp(18));
+ android.graphics.drawable.GradientDrawable bg = a.bg(0xf2161e1b, 22);
+ bg.setStroke(a.dp(1), 0x38ffffff);
+ card.setBackground(bg);
+
+ TextView title = a.text(intro ? "手动精准设置跳过片头" : "手动精准设置跳过片尾", 17, MainActivity.WHITE);
+ title.setTypeface(null, android.graphics.Typeface.BOLD);
+ card.addView(title);
+ a.gap(card, 6);
+
+ TextView sub =
+ a.text("拖动滑块或使用左右方向键精准定位到秒（00:00 - 03:00），也可一键抓取当前播放进度", 12, MainActivity.MUTED);
+ card.addView(sub);
+ a.gap(card, 14);
+
+ final TextView valueLabel = a.text("", 18, 0xff2ad47a);
+ valueLabel.setTypeface(null, android.graphics.Typeface.BOLD);
+ card.addView(valueLabel);
+ a.gap(card, 10);
+
+ final SeekBar bar = new SeekBar(a);
+ bar.setMax(180);
+ bar.setKeyProgressIncrement(1);
+ UiCompat.tintSeekBar(bar, 0xff2ad47a, Color.WHITE);
+ int initialSec = Prefs.clampSkipSeconds(a.prefs.getInt(key, 0));
+ bar.setProgress(initialSec);
+ card.addView(bar, new LinearLayout.LayoutParams(-1, a.dp(36)));
+ a.gap(card, 12);
+
+ final PlayerBubble.IntAction applySec =
+ sec -> {
+ int clamped = Prefs.clampSkipSeconds(sec);
+ a.prefs.edit().putInt(key, clamped).apply();
+ if (bar.getProgress() != clamped) bar.setProgress(clamped);
+ valueLabel.setText(
+ clamped <= 0
+ ? "当前：已关闭（00:00）"
+ : "当前："
+ + PlaybackController.formatTime(clamped * 1000)
+ + "（"
+ + clamped
+ + " 秒）");
+ if (onChanged != null) onChanged.run();
+ };
+ applySec.accept(initialSec);
+
+ bar.setOnSeekBarChangeListener(
+ new SeekBar.OnSeekBarChangeListener() {
+ public void onStartTrackingTouch(SeekBar s) {}
+
+ public void onStopTrackingTouch(SeekBar s) {}
+
+ public void onProgressChanged(SeekBar s, int progress, boolean fromUser) {
+ if (fromUser) applySec.accept(progress);
+ }
+ });
+
+ if (currentPlayerPosMs > 0) {
+ int candidateSec =
+ intro
+ ? (currentPlayerPosMs / 1000)
+ : (currentPlayerDurMs > currentPlayerPosMs
+ ? (currentPlayerDurMs - currentPlayerPosMs) / 1000
+ : (currentPlayerPosMs / 1000));
+ final int captureSec = Prefs.clampSkipSeconds(Math.max(1, candidateSec));
+ String captureText =
+ (intro ? "设为当前播放进度 · " : "设为当前剩余时长 · ")
+ + PlaybackController.formatTime(captureSec * 1000)
+ + " ("
+ + captureSec
+ + "秒)";
+ TextView captureBtn = a.text(captureText, 13, MainActivity.WHITE);
+ captureBtn.setGravity(Gravity.CENTER);
+ captureBtn.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
+ captureBtn.setBackground(a.bg(0xff1e5d41, 14));
+ captureBtn.setFocusable(true);
+ captureBtn.setOnClickListener(v -> applySec.accept(captureSec));
+ card.addView(captureBtn, new LinearLayout.LayoutParams(-1, -2));
+ a.gap(card, 10);
+ }
+
+ LinearLayout stepRow = a.row();
+ stepRow.setGravity(Gravity.CENTER);
+ String[] stepTitles = {"关闭", "-10秒", "-5秒", "-1秒", "+1秒", "+5秒", "+10秒", "完成"};
+ int[] deltas = {0, -10, -5, -1, 1, 5, 10, 999};
+ for (int i = 0; i < stepTitles.length; i++) {
+ final int d = deltas[i];
+ TextView b = a.text(stepTitles[i], 12, MainActivity.WHITE);
+ b.setGravity(Gravity.CENTER);
+ b.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
+ b.setFocusable(true);
+ b.setBackground(a.bg(d == 999 ? 0xff1f6f4a : 0x30ffffff, 12));
+ b.setOnClickListener(
+ v -> {
+ if (d == 999) {
+ dlg.dismiss();
+ } else if (d == 0) {
+ applySec.accept(0);
+ } else {
+ applySec.accept(a.prefs.getInt(key, 0) + d);
+ }
+ });
+ LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+ lp.rightMargin = a.dp(6);
+ stepRow.addView(b, lp);
+ }
+ HorizontalScrollView scroll = new HorizontalScrollView(a);
+ scroll.setHorizontalScrollBarEnabled(false);
+ scroll.addView(stepRow);
+ card.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+
+ FrameLayout wrapper = new FrameLayout(a);
+ FrameLayout.LayoutParams wlp =
+ new FrameLayout.LayoutParams(
+ Math.min(a.windowWidth() - a.dp(32), a.dp(540)), -2, Gravity.CENTER);
+ wrapper.addView(card, wlp);
+ dlg.setContentView(wrapper);
+ dlg.show();
+ bar.requestFocus();
+ View speedDecor = dlg.getWindow() == null ? null : dlg.getWindow().getDecorView();
+ ModalStack.push("speed-picker", speedDecor, dlg::dismiss);
+ dlg.setOnDismissListener(
+ d -> ModalStack.pop(dlg.getWindow() == null ? null : dlg.getWindow().getDecorView()));
+ }
+
+ void repeat() {
+ choose(
+ "循环播放",
+ new String[] {"关闭", "单集循环", "列表循环"},
+ a.prefs.getInt(Prefs.REPEAT_MODE, 0),
+ i -> {
+ a.prefs.edit().putInt(Prefs.REPEAT_MODE, i).apply();
+ if (a.player != null)
+ a.player.setRepeatOne(i == 1 && a.prefs.getInt(Prefs.SKIP_OUTRO, 0) == 0);
+ updateLabels();
+ });
+ }
+
+ /** 「更多」：底部 3 列工具面板，低频功能全部收纳，回调与原列表逐项对应。 */
+ void more() {
+ if (dialogOpen) return;
+ final List<PlayerToolsSheet.Tool> items = new ArrayList<>();
+ if (liveSession) {
+ items.add(new PlayerToolsSheet.Tool(UiIcon.PREV, "上一频道", () -> a.liveStep(-1)));
+ items.add(new PlayerToolsSheet.Tool(UiIcon.NEXT, "下一频道", () -> a.liveStep(1)));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.EPISODES, "选择频道", a::chooseLiveChannel));
+ items.add(
+ new PlayerToolsSheet.Tool(UiIcon.SWAP, "播放线路", a::chooseLiveStream));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.TUNE, "播放器与解码", this::decoderMenu));
+ items.add(
+ new PlayerToolsSheet.Tool(UiIcon.ASPECT, "画面色彩", this::pictureEffect));
+ items.add(new PlayerToolsSheet.Tool(UiIcon.INFO, "播放信息", this::playbackInfo));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.BACK, "返回频道列表", a::leavePlayback));
+ } else {
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.PREV,
+ "上一集",
+ () -> {
+ if (!step(-1)) message("已经是第一集。");
+ }));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.NEXT,
+ "下一集",
+ () -> {
+ if (!step(1)) message("无下集。");
+ }));
+ items.add(new PlayerToolsSheet.Tool(UiIcon.EPISODES, "选集", this::chooseEpisodes));
+ items.add(new PlayerToolsSheet.Tool(UiIcon.SWAP, "换源", this::chooseLine));
+ items.add(new PlayerToolsSheet.Tool(UiIcon.SPEED, "倍速", this::speed));
+ items.add(new PlayerToolsSheet.Tool(UiIcon.ASPECT, "画面比例", this::aspect));
+ items.add(new PlayerToolsSheet.Tool(UiIcon.SUBTITLE, "字幕", () -> tracks(3)));
+ items.add(new PlayerToolsSheet.Tool(UiIcon.DANMAKU, "弹幕", this::danmaku));
+ items.add(new PlayerToolsSheet.Tool(UiIcon.AUDIO, "音轨", () -> tracks(1)));
+ items.add(new PlayerToolsSheet.Tool(UiIcon.AUDIO, "音效", this::soundEffect));
+ items.add(
+ new PlayerToolsSheet.Tool(UiIcon.TUNE, "解码与播放器", this::decoderMenu));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.REPEAT,
+ "循环",
+ a.prefs.getInt(Prefs.REPEAT_MODE, 0) != 0,
+ this::repeat));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.SKIP_INTRO, "跳片头", () -> skip(true)));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.SKIP_OUTRO, "跳片尾", () -> skip(false)));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.SKIP_INTRO, "标记片头", () -> markSkip(true)));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.SKIP_OUTRO, "标记片尾", () -> markSkip(false)));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.REFRESH, "清除片头片尾", this::clearSkipMemory));
+ items.add(new PlayerToolsSheet.Tool(UiIcon.REPLAY, "重播", this::restartPlayback));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.REFRESH, "刷新播放", () -> reload(true)));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.FULLSCREEN, "竖屏 / 全屏", a::togglePlayerOrientation));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.NEXT,
+ "自动下集",
+ a.prefs.getBoolean(Prefs.AUTO_NEXT, true),
+ () ->
+ a.prefs
+ .edit()
+ .putBoolean(
+ Prefs.AUTO_NEXT,
+ !a.prefs.getBoolean(Prefs.AUTO_NEXT, true))
+ .apply()));
+ items.add(new PlayerToolsSheet.Tool(UiIcon.INFO, "播放信息", this::playbackInfo));
+ if (!QueueStore.list(a).isEmpty())
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.REPLAY,
+ "播放队列（" + QueueStore.list(a).size() + "）",
+ this::showQueue));
+ items.add(
+ new PlayerToolsSheet.Tool(
+ UiIcon.BACK, "返回详情", a::leavePlayback));
+ }
+ dialogOpen = true;
+ if (a.hideControls != null) a.ui.removeCallbacks(a.hideControls);
+ activeDialog =
+ PlayerToolsSheet.show(
+ a,
+ liveSession ? "直播设置" : "更多工具",
+ items,
+ () -> {
+ activeDialog = null;
+ dialogOpen = false;
+ a.scheduleHide();
+ // 1.9.63：关闭弹层后焦点回到打开它的「⋮」按钮
+ if (a.isTvDevice()) {
+ a.showControls(true);
+ a.ui.post(
+ () -> {
+ View opener =
+ a.playerChrome == null
+ ? null
+ : a.playerChrome.moreBtn;
+ if (opener == null) opener = buttons.get("more");
+ if (opener != null) opener.requestFocus();
+ AppLog.i(
+ "TvKey",
+ "page=tools focus=closed action=nav");
+ });
+ }
+ });
+ }
+
+ /** 推送队列：播放下一个 / 移除 / 清空。 */
+ private void showQueue() {
+ java.util.List<QueueStore.Item> queue = QueueStore.list(a);
+ if (queue.isEmpty()) {
+ a.toast("推送队列为空");
+ return;
+ }
+ String[] labels = new String[queue.size() + 1];
+ for (int i = 0; i < queue.size(); i++) labels[i] = (i + 1) + ". " + queue.get(i).title;
+ labels[queue.size()] = "清空队列";
+ new AppDialog.Builder(a)
+ .setTitle("播放队列")
+ .setItems(
+ labels,
+ (d, index) -> {
+ if (index == queue.size()) {
+ QueueStore.clear(a);
+ a.toast("队列已清空");
+ return;
+ }
+ QueueStore.Item item = queue.get(index);
+ QueueStore.remove(a, item.url);
+ PushFiles.playUrl(a, item.url, item.title);
+ })
+ .setNegativeButton("关闭", null)
+ .show();
+ }
+
+ void playbackInfo() {
+ message(
+ a.player == null
+ ? "播放器尚未准备好。"
+ : a.player.playbackInfo() + "\n" + surface.outputName());
+ }
+
+ /** 从头重播（沿用原「更多」里的逻辑）。 */
+ private void restartPlayback() {
+ pendingResumeMs = 0;
+ if (a.playingBookmark != null) a.playingBookmark.position = 0;
+ if (a.player != null && a.prepared) {
+ recordUserSeek(0);
+ a.player.seekTo(0);
+ a.player.start();
+ a.playing = true;
+ } else {
+ a.resumeAt = -1;
+ reload(false);
+ }
+ }
+
+ /** 纯图标行没有文字；只给「激活态」图标上樱花粉（倍速 ≠ 1、画面 ≠ 默认、循环开启）。 */
+ void updateLabels() {
+ float rate = a.prefs.getFloat(Prefs.PLAY_SPEED, 1f);
+ tintIcon("speed", Math.abs(rate - 1f) >= 0.01f);
+ tintIcon("aspect", a.prefs.getInt(Prefs.ASPECT, 4) != 0);
+ tintIcon("repeat-tool", a.prefs.getInt(Prefs.REPEAT_MODE, 0) != 0);
+ }
+
+ private void tintIcon(String key, boolean active) {
+ View b = buttons.get(key);
+ int color = active ? UiTokens.PLAYER_ACTIVE : UiTokens.PLAYER_ICON;
+ if (b instanceof TextView) {
+ ((TextView) b).setTextColor(color);
+ } else if (b != null) {
+ UiIcon.tintIconCell(b, color);
+ }
+ }
+
+ String skipLabel(int seconds) {
+ return seconds == 0 ? "关闭" : a.time(seconds * 1000);
+ }
+
+ void prepared() {
+ if (a.player == null) return;
+ if (a.prefs.getBoolean(Prefs.DANMAKU_DEFAULT, true)
+ && !danmakuLoaded
+ && !resolved.media.optString("danmaku").isEmpty()) {
+ danmakuLoaded = true;
+ danmaku.enabled(true);
+ danmaku.load(
+ resolved.media.optString("danmaku"),
+ resolved.headers,
+ new DanmakuView.Listener() {
+ public void loaded(int count) {}
+
+ public void error(String message) {}
+ });
+ }
+ PlaybackEffects.picture(surface, a.prefs.getInt(Prefs.PICTURE_EFFECT, 0));
+ try {
+ effects.audio(a.player.getAudioSessionId(), a.prefs.getInt(Prefs.AUDIO_EFFECT, 0));
+ } catch (Exception ignored) {
+ }
+ int duration = a.player.getDuration();
+ if (duration <= 0 && a.playingBookmark != null && a.playingBookmark.duration > 0) {
+ duration = a.playingBookmark.duration;
+ }
+ timeline.setEnabled(duration > 0);
+ setTimelineMax(duration > 0 ? duration : 100);
+ if (duration <= 0) setTimelineProgress(0);
+ timeline.setBufferedPosition(0);
+ timeline.setKeyTimeIncrement(15000);
+ boolean explicitRestart = a.resumeAt < 0;
+ boolean historyResume = a.resumeAt > 0;
+ SkipMemory.Mem memo = SkipMemory.read(a, video.title);
+ int configuredIntro = a.prefs.getInt(Prefs.SKIP_INTRO, 0) * 1000;
+ if (configuredIntro <= 0 && memo.intro > 0) configuredIntro = memo.intro * 1000;
+ int seek =
+ ("live".equals(site.key) || explicitRestart)
+ ? 0
+ : historyResume ? a.resumeAt : configuredIntro;
+ // 1.8.1 智能片头：首次进入按本剧记忆跳过（误差 ≤2s）
+ if (!historyResume && !explicitRestart && memo.intro > 0 && seek > 0) {
+ a.toast("已自动跳过片头 · " + PlaybackController.formatTime(memo.intro * 1000));
+ }
+ // 1.8.0 跨源续播：源间时长差异 >10% 时按百分比兜底
+ if (historyResume
+ && duration > 0
+ && a.playingBookmark != null
+ && a.playingBookmark.duration > 0) {
+ int savedDuration = a.playingBookmark.duration;
+ if (Math.abs(duration - savedDuration) > Math.max(15000, savedDuration / 10)) {
+ float fraction = a.resumeAt / (float) savedDuration;
+ seek = Math.round(duration * Math.max(0f, Math.min(1f, fraction)));
+ AppLog.i(
+ "PlaybackController",
+ "cross-source percent resume " + Math.round(fraction * 100) + "%");
+ }
+ }
+ a.resumeAt = 0;
+ if (seek > 0) {
+ if (duration > 0) {
+ if (seek < duration - 1000) {
+ pendingResumeMs = 0;
+ recordUserSeek(seek);
+ a.player.seekTo(seek);
+ if (historyResume) {
+ a.toast("已为您续播至 " + PlaybackController.formatTime(seek));
+ }
+ }
+ } else {
+ pendingResumeMs = seek;
+ if (historyResume) {
+ a.toast("已为您续播至 " + PlaybackController.formatTime(seek));
+ }
+ }
+ }
+ a.player.setSpeed(a.prefs.getFloat(Prefs.PLAY_SPEED, 1));
+ a.player.setRepeatOne(
+ a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 1
+ && a.prefs.getInt(Prefs.SKIP_OUTRO, 0) == 0);
+ }
+
+ void tick() {
+ if ("live".equals(site.key)) return;
+ if (a.player == null || !a.prepared || isUserSeeking()) return;
+ int duration = a.player.getDuration();
+ if (duration <= 0 && a.playingBookmark != null && a.playingBookmark.duration > 0) {
+ duration = a.playingBookmark.duration;
+ }
+ if (pendingResumeMs > 0 && duration > 0) {
+ int target = pendingResumeMs;
+ pendingResumeMs = 0;
+ if (target < duration - 1000
+ && a.player.getCurrentPosition() < Math.min(target - 2000, 5000)) {
+ recordUserSeek(target);
+ a.player.seekTo(target);
+ }
+ }
+ int position = displayPosition(a.player.getCurrentPosition());
+ if (duration > 0) {
+ timeline.setEnabled(true);
+ setTimelineMax(Math.max(duration, position));
+ setTimelineProgress(Math.max(0, Math.min(position, timelineMax())));
+ // 缓冲段：DefaultTimeBar 自带的 secondary 轨道，播放器补 getBufferedPosition() 后点亮
+ timeline.setBufferedPosition(
+ Math.max(0, Math.min(duration, a.player.getBufferedPosition())));
+ } else {
+ timeline.setEnabled(false);
+ setTimelineMax(100);
+ setTimelineProgress(0);
+ timeline.setBufferedPosition(0);
+ }
+ int tail = a.prefs.getInt(Prefs.SKIP_OUTRO, 0) * 1000;
+ SkipMemory.Mem memoOutro = SkipMemory.read(a, video.title);
+ if (memoOutro.outro > 0) tail = memoOutro.outro * 1000;
+ if (!transitioning
+ && a.playing
+ && duration > 0
+ && tail > 0
+ && tail < duration
+ && position >= duration - tail) {
+ if (a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 1)
+ a.player.seekTo(a.prefs.getInt(Prefs.SKIP_INTRO, 0) * 1000);
+ else if (!step(1)) {
+ transitioning = true;
+ a.player.pause();
+ a.playing = false;
+ a.playStatus.setText("已跳过片尾");
+ a.showControls(true);
+ }
+ }
+ }
+
+ void completed() {
+ if (!transitioning
+ && (a.prefs.getBoolean(Prefs.AUTO_NEXT, true)
+ || a.prefs.getInt(Prefs.REPEAT_MODE, 0) == 2)
+ && step(1)) return;
+ a.showControls(true);
+ a.playStatus.setText("播放结束 · 按确认重播");
+ }
+
+ void resize(int width, int height) {
+ videoWidth = width;
+ videoHeight = height;
+ if (a.playerChrome != null) a.playerChrome.resolution(width, height);
+ if (width <= 0 || height <= 0) return;
+ final FrameLayout layer = a.playbackLayer;
+ if (layer == null) return;
+ if (layer.getWidth() <= 0 || layer.getHeight() <= 0) {
+ // 首帧尚未测量：下一帧再算，避免把 surface 固定成 0/旧尺寸（最多重试 3 次防死循环）
+ if (!resizeRetryPending && resizeRetry < 3) {
+ resizeRetryPending = true;
+ resizeRetry++;
+ layer.post(
+ () -> {
+ resizeRetryPending = false;
+ resize(videoWidth, videoHeight);
+ });
+ }
+ return;
+ }
+ resizeRetry = 0;
+ int w = layer.getWidth(),
+ h = layer.getHeight(),
+ mode =
+ AspectMemory.read(
+ a,
+ video == null ? "" : video.title,
+ a.prefs.getInt(Prefs.ASPECT, 4));
+ float ratio = mode == 2 ? 16f / 9 : mode == 3 ? 4f / 3 : (float) width / height;
+ if (mode != 1) {
+ if (mode == 4) {
+ if ((float) w / h > ratio) h = Math.round(w / ratio);
+ else w = Math.round(h * ratio);
+ } else if ((float) w / h > ratio) w = Math.round(h * ratio);
+ else h = Math.round(w / ratio);
+ }
+ FrameLayout.LayoutParams current =
+ surface.getLayoutParams() instanceof FrameLayout.LayoutParams
+ ? (FrameLayout.LayoutParams) surface.getLayoutParams()
+ : null;
+ if (current != null
+ && current.width == w
+ && current.height == h
+ && current.gravity == Gravity.CENTER) return;
+ surface.setLayoutParams(new FrameLayout.LayoutParams(w, h, Gravity.CENTER));
+ AppLog.i(
+ "Player",
+ "resize layer="
+ + layer.getWidth()
+ + "x"
+ + layer.getHeight()
+ + " video="
+ + width
+ + "x"
+ + height
+ + " surface="
+ + w
+ + "x"
+ + h
+ + " mode="
+ + mode);
+ }
+
+ void visible(boolean visible) {
+ int bottomDp = Prefs.clampSubtitleBottom(a.prefs.getInt(Prefs.SUBTITLE_BOTTOM, 24));
+ int basePx = a.dp(bottomDp);
+ FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) subtitle.getLayoutParams();
+ if (lp.bottomMargin != basePx) {
+ lp.bottomMargin = basePx;
+ subtitle.setLayoutParams(lp);
+ }
+ if (subtitle.isPreviewActive()) {
+ subtitle.setTranslationY(0f);
+ return;
+ }
+ boolean progressOnly = a.playerChrome != null && a.playerChrome.progressOnlyMode;
+ int targetPx =
+ visible
+ ? a.dp(
+ progressOnly
+ ? Math.max(82, bottomDp + 16)
+ : Math.max(168, bottomDp + 24))
+ : basePx;
+ subtitle.setTranslationY(-(targetPx - basePx));
+ }
 }

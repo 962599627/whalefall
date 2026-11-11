@@ -18,2496 +18,2496 @@ import org.json.JSONObject;
 
 /** Recent history above one category-based, vertically browsed library. */
 final class HomeScreen {
-    static final int MAX_RETAINED_CARDS = 120;
-    final MainActivity a;
-    final Cms.Site site;
-    final int COLUMNS;
-    final float navScale;
-    final Map<View, String> tabIds = new HashMap<>();
-    final List<View> historyCards = new ArrayList<>(), tabs = new ArrayList<>();
-    final List<List<View>> rows = new ArrayList<>();
-    LinearLayout content;
-    /** 1.9.33：L2 筛选标签行 / L3 选项行（分类 chip 之下）。 */
-    LinearLayout filterTagRow, filterOptionRow, filterOptionGrid;
-    /** 1.9.37：薄玻璃（筛选面板同款），壁纸透出；TV 历史卡使用。 */
-    android.graphics.drawable.GradientDrawable thinGlass(int radiusDp, boolean strongerStroke) {
-        android.graphics.drawable.GradientDrawable d =
-                new android.graphics.drawable.GradientDrawable();
-        d.setColor(0x1affffff);
-        d.setCornerRadius(a.dp(radiusDp));
-        d.setStroke(a.dp(1), strongerStroke ? 0x26ffffff : 0x1affffff);
-        return d;
-    }
-    LinearLayout filterPanel;
-    android.widget.HorizontalScrollView filterTagScroll, filterOptionScroll;
-    String filterOpenDim = "";
-    String filterPendingTag = "";
-    boolean filterSkipAnim;
-    int filterAnimSeq;
-    /** 1.9.43：远程单选提示只弹一次。 */
-    boolean remoteSingleToastShown;
-    /** 1.9.45：组合筛选不支持提示只弹一次。 */
-    boolean filterUnsupportedToastShown;
-    /** 1.9.49：TV 统一 loading overlay。 */
-    FrameLayout loadingOverlay;
-    WhaleLoadingView loadingWhale;
-    boolean loadingVisible;
-    long loadingShownAt;
-
-    void attachLoadingOverlay() {
-        if (loadingOverlay != null && loadingOverlay.getParent() != null) return;
-        if (loadingOverlay != null && loadingOverlay.getParent() == null) {
-            // 页面根被重建，允许重新挂载
-            loadingOverlay = null;
-            loadingWhale = null;
-        }
-        if (!(a.root instanceof android.view.ViewGroup)) return;
-        android.view.ViewGroup root = (android.view.ViewGroup) a.root;
-        loadingOverlay = new FrameLayout(a);
-        loadingOverlay.setTag("tv-loading-overlay");
-        loadingOverlay.setClickable(false);
-        loadingOverlay.setFocusable(false);
-        loadingOverlay.setVisibility(View.GONE);
-        FrameLayout.LayoutParams lp =
-                new FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.WRAP_CONTENT,
-                        FrameLayout.LayoutParams.WRAP_CONTENT,
-                        Gravity.CENTER);
-        loadingWhale = new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
-        loadingWhale.setText("加载中…");
-        loadingOverlay.addView(
-                loadingWhale,
-                new FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.WRAP_CONTENT,
-                        FrameLayout.LayoutParams.WRAP_CONTENT,
-                        Gravity.CENTER));
-        root.addView(loadingOverlay, lp);
-    }
-
-    void showHomeLoading(String reason) {
-        if (loadingVisible) return;
-        if (loadingOverlay == null || loadingOverlay.getParent() == null) attachLoadingOverlay();
-        loadingVisible = true;
-        loadingShownAt = android.os.SystemClock.uptimeMillis();
-        AppLog.i("Loading", "show reason=" + reason + " tv=true");
-        if (loadingOverlay != null) {
-            loadingOverlay.setVisibility(View.VISIBLE);
-            loadingOverlay.bringToFront();
-            if (loadingWhale != null) loadingWhale.post(loadingWhale::start);
-        }
-        if (a.body != null && !a.reduced)
-            a.body.animate().alpha(0.35f).setDuration(120).start();
-    }
-
-    void hideHomeLoading(String reason) {
-        if (!loadingVisible) return;
-        long elapsed = android.os.SystemClock.uptimeMillis() - loadingShownAt;
-        long minShow = 400;
-        if (elapsed < minShow) {
-            final String why = reason;
-            a.body.postDelayed(() -> doHideHomeLoading(why), minShow - elapsed);
-            return;
-        }
-        doHideHomeLoading(reason);
-    }
-
-    private void doHideHomeLoading(String reason) {
-        if (!loadingVisible) return;
-        loadingVisible = false;
-        AppLog.i("Loading", "hide reason=" + reason + " tv=true");
-        if (loadingWhale != null) loadingWhale.stop();
-        if (loadingOverlay != null) loadingOverlay.setVisibility(View.GONE);
-        if (a.body != null) {
-            if (a.reduced) a.body.setAlpha(1f);
-            else a.body.animate().alpha(1f).setDuration(170).start();
-        }
-    }
-    android.animation.ValueAnimator filterHeightAnim;
-    /** 1.8.12 云盘配置原地容器（首页分类栏下方，默认隐藏）。 */
-    LinearLayout cloudInline;
-    View cloudContent;
-    TextView cloudStatus;
-    View cloudFooter;
-    CategoryFlow filters;
-    HomeAmbient ambient;
-    TextView status, source, more, earlier, allHistory;
-    int ticket, request, posterWidth, gridEpoch;
-    long lastCategoryDpadTime;
-    Runnable pendingGrid;
-
-    /** Tag of the card that should take focus once drawn after "加载更多". */
-    String pendingFocus;
-
-    boolean busy;
-    Snapshot snapshot;
-    State state;
-    FrameLayout retainedRoot;
-    LinearLayout retainedBody;
-    android.view.View retainedScroll;
-    HomeDock retainedDock;
-    int retainedWidth, retainedHeight, retainedEngineEpoch;
-    boolean retainedSafeMode;
-    float retainedFontScale;
-    Map<String, Object> retainedAppearance;
-
-    static final class Snapshot {
-        final long time = System.currentTimeMillis();
-        final List<Cms.Video> videos;
-        final List<Cms.Category> categories;
-        final String skip;
-        final int pages;
-        String filterSchema = "{}";
-
-        Snapshot(List<Cms.Video> videos, List<Cms.Category> categories, String skip, int pages) {
-            this.videos = videos;
-            this.categories = categories;
-            this.skip = skip;
-            this.pages = pages;
-        }
-    }
-
-    /** Navigation-entry state survives detail/back without changing the active category. */
-    static final class State {
-        String site, category = "";
-        int engineEpoch;
-        List<Cms.Video> videos = new ArrayList<>();
-        int page = 1, pages = 1, windowStart = 0;
-        boolean ready, initialized;
-        Snapshot snapshot;
-        final Map<String, String> selectedFilters = new LinkedHashMap<>();
-        final Map<String, Cms.Listing> categoryCache = new HashMap<>();
-
-        State(String key) {
-            site = key;
-        }
-    }
-
-    HomeScreen(MainActivity activity, Cms.Site selected) {
-        a = activity;
-        site = selected;
-        navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
-        COLUMNS =
-                TvLayoutPolicy.responsiveHomeColumns(
-                        a.windowWidth() / a.getResources().getDisplayMetrics().density,
-                        a.prefs.getInt(Prefs.HOME_COLUMNS, 5),
-                        a.formFactor,
-                        a.windowWidth() < a.dp(600));
-    }
-
-    boolean active() {
-        return ticket == a.generation && !a.isFinishing();
-    }
-
-    void show() {
-        a.renderPage("", "", true);
-        ambient = a.homeAmbient;
-        ticket = a.generation;
-        if (a.current != null) a.current.home = true;
-        state = a.current == null ? null : a.current.homeState;
-        if (state == null || !site.key.equals(state.site) || state.engineEpoch != a.engineEpoch) {
-            state = new State(site.key);
-            state.engineEpoch = a.engineEpoch;
-            if (a.current != null) a.current.homeState = state;
-        }
-        boolean bottomDock = a.useBottomDock();
-        int rightPadDp = Math.max(100, Math.round(50 * navScale) + 50);
-        int bottomPadDp = Math.max(86, Math.round(50 * navScale) + 36);
-        if (bottomDock) {
-            a.body.setPadding(a.dp(18), a.dp(16), a.dp(18), a.dp(bottomPadDp));
-        } else {
-            a.body.setPadding(a.dp(34), a.dp(18), a.dp(rightPadDp), a.dp(36));
-        }
-        a.body.setClipChildren(false);
-        a.body.setClipToPadding(false);
-        if (a.scroll instanceof android.view.ViewGroup)
-            ((android.view.ViewGroup) a.scroll).setClipChildren(false);
-        float width = a.windowWidth() / a.getResources().getDisplayMetrics().density;
-        int marginDp = bottomDock ? 36 : (34 + rightPadDp);
-        posterWidth = Math.max(48, (int) ((width - marginDp - (COLUMNS - 1) * 14) / COLUMNS) - 8);
-        historySection();
-        LinearLayout heading = a.row();
-        heading.setClipChildren(false);
-        heading.setClipToPadding(false);
-        heading.setPadding(0, a.dp(6), 0, a.dp(6));
-        TextView title = a.text("发现", 22, MainActivity.WHITE);
-        title.setTypeface(null, Typeface.BOLD);
-        heading.addView(title, new LinearLayout.LayoutParams(-2, -2));
-        source = pill(site.name, "source-switcher", a::chooseSources);
-        source.setPadding(a.dp(Math.round(14 * navScale)), 0, a.dp(Math.round(14 * navScale)), 0);
-        source.setCompoundDrawablePadding(a.dp(9));
-        source.setCompoundDrawables(null, null, new SourceChevron(a), null);
-        source.setOnFocusChangeListener((v, f) -> styleSource(f));
-        styleSource(false);
-        source.setMaxWidth(a.dp(Math.round(220 * Math.max(1f, navScale))));
-        source.setContentDescription("当前片源：" + site.name + "，按确认键切换");
-        LinearLayout.LayoutParams sourceSize =
-                new LinearLayout.LayoutParams(-2, a.dp(Math.round(34 * navScale)));
-        sourceSize.leftMargin = a.dp(14);
-        heading.addView(source, sourceSize);
-        a.body.addView(heading);
-        filters = new CategoryFlow(a, this::wireNavigation);
-        filters.setPadding(0, a.dp(2), 0, a.dp(8));
-        a.body.addView(filters);
-        // 1.9.35 紧凑版：薄玻璃面板（圆角16 / 无 header / padding 14·10 / 外边距 24·8·24·12）
-        filterPanel = a.vertical();
-        filterPanel.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
-        android.graphics.drawable.GradientDrawable filterPanelBg =
-                new android.graphics.drawable.GradientDrawable();
-        filterPanelBg.setColor(0x1affffff);
-        filterPanelBg.setCornerRadius(a.dp(16));
-        filterPanelBg.setStroke(a.dp(1), 0x26ffffff);
-        filterPanel.setBackground(filterPanelBg);
-        filterPanel.setClipChildren(false);
-        filterPanel.setVisibility(View.GONE);
-        LinearLayout.LayoutParams filterPanelLp = new LinearLayout.LayoutParams(-1, -2);
-        filterPanelLp.setMargins(a.dp(24), a.dp(8), a.dp(24), a.dp(12));
-        a.body.addView(filterPanel, filterPanelLp);
-        filterTagScroll = new android.widget.HorizontalScrollView(a);
-        filterTagScroll.setHorizontalScrollBarEnabled(false);
-        filterTagScroll.setClipChildren(false);
-        filterTagScroll.setClipToPadding(false);
-        filterTagRow = a.row();
-        filterTagRow.setGravity(Gravity.CENTER_VERTICAL);
-        filterTagScroll.addView(filterTagRow);
-        filterPanel.addView(filterTagScroll, new LinearLayout.LayoutParams(-1, -2));
-        filterOptionScroll = new android.widget.HorizontalScrollView(a);
-        filterOptionScroll.setHorizontalScrollBarEnabled(false);
-        filterOptionScroll.setClipChildren(false);
-        filterOptionScroll.setPadding(0, a.dp(6), 0, 0);
-        filterOptionScroll.setVisibility(View.GONE);
-        filterOptionRow = a.row();
-        filterOptionRow.setGravity(Gravity.CENTER_VERTICAL);
-        filterOptionScroll.addView(filterOptionRow);
-        filterPanel.addView(filterOptionScroll, new LinearLayout.LayoutParams(-1, -2));
-        filterOptionGrid = a.vertical();
-        filterOptionGrid.setVisibility(View.GONE);
-        status = a.text("", 13, MainActivity.MUTED);
-        status.setPadding(a.dp(4), a.dp(12), 0, a.dp(12));
-        status.setVisibility(View.GONE);
-        a.body.addView(status);
-        attachLoadingOverlay();
-        earlier =
-                pill(
-                        "查看前面的影片",
-                        "home-earlier",
-                        () -> showWindow(Math.max(0, state.windowStart - windowSize())));
-        earlier.setVisibility(View.GONE);
-        a.body.addView(earlier, new LinearLayout.LayoutParams(a.dp(180), a.dp(40)));
-        content = a.vertical();
-        content.setClipChildren(false);
-        content.setClipToPadding(false);
-        a.body.addView(content);
-        more =
-                pill(
-                        "加载更多",
-                        "home-load-more",
-                        () -> {
-                            if (snapshot == null) {
-                                loadHome();
-                                return;
-                            }
-                            if (windowEnd() < state.videos.size()) {
-                                showWindow(state.windowStart + windowSize());
-                                return;
-                            }
-                            loadCategory(!state.ready);
-                        });
-        LinearLayout footer = a.row();
-        footer.setClipChildren(false);
-        footer.setClipToPadding(false);
-        footer.setGravity(Gravity.CENTER);
-        footer.setPadding(0, a.dp(14), 0, a.dp(8));
-        footer.addView(more, new LinearLayout.LayoutParams(a.dp(180), a.dp(40)));
-        a.body.addView(footer);
-        // 1.8.12：云盘配置原地容器（与 content/footer 同级，默认 GONE）
-        cloudContent = content;
-        cloudStatus = status;
-        cloudFooter = footer;
-        cloudInline = a.vertical();
-        cloudInline.setTag("home-cloud-inline");
-        cloudInline.setVisibility(View.GONE);
-        a.body.addView(cloudInline, new LinearLayout.LayoutParams(-1, -2));
-        more.setVisibility(View.GONE);
-        wireNavigation();
-        retainedRoot = a.root;
-        retainedBody = a.body;
-        retainedScroll = a.scroll;
-        retainedDock = a.homeDock;
-        retainedWidth = a.windowWidth();
-        retainedHeight = a.windowHeight();
-        retainedFontScale = a.getResources().getConfiguration().fontScale;
-        retainedEngineEpoch = a.engineEpoch;
-        retainedSafeMode = SafeMode.enabled(a);
-        retainedAppearance = appearance();
-        if (a.current != null) a.current.retainedHome = this;
-        Snapshot saved = state.snapshot != null ? state.snapshot : a.homeData.get(site.key);
-        if (saved != null
-                && (state.snapshot != null || System.currentTimeMillis() - saved.time < 300000)) {
-            snapshot = saved;
-            renderSnapshot();
-            return;
-        }
-        if (!a.reduced && (site.api == null || !site.api.contains("fixture.test"))) {
-            Snapshot disk = readDiskSnapshot(a, site.key);
-            if (disk != null && !disk.videos.isEmpty()) {
-                snapshot = disk;
-                a.homeData.put(site.key, disk);
-                renderSnapshot();
-                if (System.currentTimeMillis() - disk.time >= 300000) {
-                    refreshHomeSilently();
-                }
-                return;
-            }
-        }
-        loadHome();
-    }
-
-    static Cms.Listing parseHomeListing(String raw) {
-        if (raw == null || raw.trim().isEmpty()) return new Cms.Listing();
-        try {
-            String trimmed = raw.trim();
-            if (trimmed.startsWith("<")) {
-                return Cms.listing(raw);
-            }
-            if (new JSONObject(raw).has("list")) {
-                return Cms.listing(raw);
-            }
-        } catch (Throwable ignored) {
-        }
-        return new Cms.Listing();
-    }
-
-    void refreshHomeSilently() {
-        final int token = request;
-        a.worker.execute(
-                () -> {
-                    try {
-                        SourceEngine engine = a.engine(site);
-                        String raw = engine.home();
-                        List<Cms.Category> categories = Cms.categories(raw);
-                        Cms.Listing list = parseHomeListing(raw);
-                        clean(list.videos);
-                        if (list.videos.isEmpty())
-                            try {
-                                list = Cms.listing(engine.homeVideos());
-                                clean(list.videos);
-                            } catch (Throwable ignored) {
-                            }
-                        String skip = "";
-                        if (list.videos.isEmpty() && !categories.isEmpty()) {
-                            skip = categories.get(0).id;
-                            list = Cms.listing(engine.category(skip, 1));
-                            clean(list.videos);
-                        }
-                        if (list.videos.isEmpty() && categories.isEmpty()) return;
-                        final Snapshot fresh =
-                                new Snapshot(list.videos, categories, skip, list.pageCount);
-                        writeDiskSnapshot(a, site.key, fresh);
-                        a.ui.post(
-                                () -> {
-                                    a.homeData.put(site.key, fresh);
-                                    if (!active() || busy || token != request) return;
-                                    boolean onDefaultTab =
-                                            state != null
-                                                    && (state.category == null
-                                                            || state.category.isEmpty())
-                                                    && state.page == 1;
-                                    if (onDefaultTab && snapshot != null) {
-                                        String oldFirst =
-                                                snapshot.videos.isEmpty()
-                                                        ? ""
-                                                        : snapshot.videos.get(0).id;
-                                        String newFirst =
-                                                fresh.videos.isEmpty()
-                                                        ? ""
-                                                        : fresh.videos.get(0).id;
-                                        snapshot = fresh;
-                                        if (!Objects.equals(oldFirst, newFirst)
-                                                || state.videos.size() != fresh.videos.size()) {
-                                            state.ready = false;
-                                            renderSnapshot();
-                                        }
-                                    }
-                                });
-                    } catch (Throwable ignored) {
-                    }
-                });
-    }
-
-    Map<String, Object> appearance() {
-        Map<String, Object> values = new LinkedHashMap<>();
-        Map<String, ?> prefs = a.prefs.getAll();
-        for (String key :
-                new String[] {
-                    Prefs.HOME_COLUMNS,
-                    Prefs.HOME_ROWS,
-                    Prefs.HOME_SECTIONS,
-                    Prefs.HOME_AMBIENT,
-                    Prefs.WALLPAPER_ENABLED,
-                    Prefs.WALLPAPER_DIM,
-                    Prefs.REDUCED,
-                    Prefs.REDUCED_TRANSPARENCY,
-                    Prefs.UI_SCALE_PERCENT,
-                    Prefs.NAV_SCALE_PERCENT
-                }) values.put(key, prefs.get(key));
-        return values;
-    }
-
-    /** Reattach the exact home tree after detail/playback, without a catalogue request. */
-    boolean resume() {
-        if (retainedRoot == null
-                || state == null
-                || !state.ready
-                || busy
-                || retainedWidth != a.windowWidth()
-                || retainedHeight != a.windowHeight()
-                || retainedFontScale != a.getResources().getConfiguration().fontScale
-                || retainedEngineEpoch != a.engineEpoch
-                || !appearance().equals(retainedAppearance)
-                || !site.key.equals(a.prefs.getString(Prefs.SELECTED_SITE, ""))) return false;
-        a.preparePage(true);
-        ticket = a.generation;
-        request++;
-        cancelGrid();
-        a.root = retainedRoot;
-        a.body = retainedBody;
-        a.scroll = retainedScroll;
-        a.homeDock = retainedDock;
-        a.homeAmbient = ambient;
-        a.setContentView(retainedRoot);
-        // 1.8.25：安全模式状态未变时只补壁纸，不 clear/release（避免返回首页重建视频壁纸黑闪）
-        boolean safeNow = SafeMode.enabled(a);
-        if (retainedRoot != null) {
-            if (safeNow != retainedSafeMode) {
-                a.applySafeModeVisual(); // 状态切换才 clear/重建
-            } else if (!safeNow) {
-                a.applyWallpaper(retainedRoot); // 仅幂等补层，不 release 已有视频壁纸
-            }
-            retainedSafeMode = safeNow;
-            AppLog.i(
-                    "Wallpaper",
-                    "page=HomeScreen resume safe=" + safeNow + " changed=false bg=transparent");
-        }
-        int drawn = state.windowStart;
-        for (List<View> row : rows) drawn += row.size();
-        if (drawn < windowEnd()) appendCards(drawn, gridEpoch, true);
-        resumeMissingPosters(retainedRoot);
-        updateMore();
-        wireNavigation();
-        return true;
-    }
-
-    void resumeMissingPosters(View view) {
-        if (view instanceof ImageView
-                && ((ImageView) view).getDrawable() == null
-                && view.getTag() instanceof String) {
-            a.poster((String) view.getTag(), (ImageView) view);
-        }
-        if (view instanceof android.view.ViewGroup) {
-            android.view.ViewGroup group = (android.view.ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++)
-                resumeMissingPosters(group.getChildAt(i));
-        }
-    }
-
-    /** 1.9.70：TV 主页显式焦点链，默认焦点=第一张卡片（无卡片=分类第一个）。 */
-    void wireHomeFocus() {
-        final MainActivity a = this.a;
-        if (!a.isTvDevice() || a.root == null) return;
-        java.util.List<View> tabs = collectPrefix(a.root, "home-tab:", 32);
-        java.util.List<View> videos = collectPrefix(a.root, "home-video:", 300);
-        for (View v : tabs)
-            if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
-        for (View v : videos)
-            if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
-        for (int i = 0; i < tabs.size(); i++) {
-            View tab = tabs.get(i);
-            if (i > 0) tab.setNextFocusLeftId(tabs.get(i - 1).getId());
-            if (i + 1 < tabs.size()) tab.setNextFocusRightId(tabs.get(i + 1).getId());
-            if (!videos.isEmpty()) tab.setNextFocusDownId(videos.get(0).getId());
-        }
-        if (!videos.isEmpty()) {
-            // 按屏幕坐标分行：行内左右、行间上下，顶行 UP→分类行
-            java.util.List<View> sorted = new java.util.ArrayList<>(videos);
-            final int[] pos = new int[2];
-            java.util.Collections.sort(
-                    sorted,
-                    (x, y) -> {
-                        int[] xp = new int[2];
-                        int[] yp = new int[2];
-                        x.getLocationOnScreen(xp);
-                        y.getLocationOnScreen(yp);
-                        if (Math.abs(xp[1] - yp[1]) > a.dp(8)) return xp[1] - yp[1];
-                        return xp[0] - yp[0];
-                    });
-            int rowTop = Integer.MIN_VALUE;
-            View rowFirst = null;
-            View prev = null;
-            java.util.List<View> rowList = new java.util.ArrayList<>();
-            final View nav = a.root.findViewWithTag("nav-home");
-            for (View card : sorted) {
-                int[] p = new int[2];
-                card.getLocationOnScreen(p);
-                if (Math.abs(p[1] - rowTop) > a.dp(8)) {
-                    if (prev != null && nav != null && !tabs.isEmpty())
-                        prev.setNextFocusRightId(nav.getId());
-                    rowTop = p[1];
-                    rowFirst = card;
-                    rowList.clear();
-                    rowList.add(card);
-                    if (!tabs.isEmpty())
-                        card.setNextFocusUpId(tabs.get(0).getId());
-                    else card.setNextFocusUpId(card.getId());
-                } else {
-                    rowList.add(card);
-                }
-                prev = card;
-            }
-            for (int i = 0; i < sorted.size(); i++) {
-                View card = sorted.get(i);
-                int[] p = new int[2];
-                card.getLocationOnScreen(p);
-                View left = null, right = null, up = null, down = null;
-                for (View other : sorted) {
-                    if (other == card) continue;
-                    int[] q = new int[2];
-                    other.getLocationOnScreen(q);
-                    boolean sameRow = Math.abs(q[1] - p[1]) <= a.dp(8);
-                    if (sameRow && q[0] < p[0] && (left == null || q[0] > leftPos(left)))
-                        left = other;
-                    if (sameRow && q[0] > p[0] && (right == null || q[0] < rightPos(right)))
-                        right = other;
-                    if (Math.abs(q[0] - p[0]) <= a.dp(24) && q[1] < p[1]
-                            && (up == null || q[1] > upPos(up))) up = other;
-                    if (Math.abs(q[0] - p[0]) <= a.dp(24) && q[1] > p[1]
-                            && (down == null || q[1] < downPos(down))) down = other;
-                }
-                if (left != null) card.setNextFocusLeftId(left.getId());
-                if (right != null) card.setNextFocusRightId(right.getId());
-                else if (nav != null) card.setNextFocusRightId(nav.getId());
-                if (up != null) card.setNextFocusUpId(up.getId());
-                if (down != null) card.setNextFocusDownId(down.getId());
-            }
-            if (nav != null) {
-                if (nav.getId() == View.NO_ID) nav.setId(View.generateViewId());
-                nav.setNextFocusLeftId(sorted.get(sorted.size() - 1).getId());
-            }
-            if (videos.isEmpty() || a.getCurrentFocus() == null) focusFirstHomeCard(videos, tabs);
-        } else if (!tabs.isEmpty()) {
-            tabs.get(0).requestFocus();
-        }
-        View focus = a.getCurrentFocus();
-        AppLog.i(
-                "TvNav",
-                "page=home focus="
-                        + (focus == null ? "null" : String.valueOf(focus.getTag()))
-                        + " cards="
-                        + videos.size());
-    }
-
-    private int leftPos(View v) {
-        int[] p = new int[2];
-        v.getLocationOnScreen(p);
-        return p[0];
-    }
-
-    private int rightPos(View v) {
-        int[] p = new int[2];
-        v.getLocationOnScreen(p);
-        return p[0];
-    }
-
-    private int upPos(View v) {
-        int[] p = new int[2];
-        v.getLocationOnScreen(p);
-        return p[1];
-    }
-
-    private int downPos(View v) {
-        int[] p = new int[2];
-        v.getLocationOnScreen(p);
-        return p[1];
-    }
-
-    private void focusFirstHomeCard(java.util.List<View> videos, java.util.List<View> tabs) {
-        View nav = a.root == null ? null : a.root.findViewWithTag("nav-home");
-        View focus = a.getCurrentFocus();
-        if (focus != null && focus != nav && focus.isShown()) return;
-        if (!videos.isEmpty()) videos.get(0).requestFocus();
-        else if (!tabs.isEmpty()) tabs.get(0).requestFocus();
-    }
-
-    private java.util.List<View> collectPrefix(View view, String prefix, int limit) {
-        java.util.List<View> out = new java.util.ArrayList<>();
-        collectPrefix(view, prefix, limit, out);
-        return out;
-    }
-
-    private void collectPrefix(View view, String prefix, int limit, java.util.List<View> out) {
-        if (view == null || out.size() >= limit) return;
-        if (view.getTag() instanceof String
-                && ((String) view.getTag()).startsWith(prefix)
-                && view.isShown()) out.add(view);
-        if (view instanceof android.view.ViewGroup) {
-            android.view.ViewGroup group = (android.view.ViewGroup) view;
-            for (int i = 0; i < group.getChildCount() && out.size() < limit; i++)
-                collectPrefix(group.getChildAt(i), prefix, limit, out);
-        }
-    }
-
-    void loadHome() {
-        if (busy) return;
-        busy = true;
-        showHomeLoading("category");
-        more.setVisibility(View.GONE);
-        int token = ++request;
-        a.prefs.edit().putString(Prefs.LOADING_SITE, site.key).commit();
-        a.submitPage(
-                () -> {
-                    try {
-                        SourceEngine engine = a.engine(site);
-                        String raw = engine.home();
-                        List<Cms.Category> categories = Cms.categories(raw);
-                        Cms.Listing list = parseHomeListing(raw);
-                        clean(list.videos);
-                        if (list.videos.isEmpty())
-                            try {
-                                list = Cms.listing(engine.homeVideos());
-                                clean(list.videos);
-                            } catch (Throwable ignored) {
-                            }
-                        String skip = "";
-                        if (list.videos.isEmpty() && !categories.isEmpty()) {
-                            skip = categories.get(0).id;
-                            list = Cms.listing(engine.category(skip, 1));
-                            clean(list.videos);
-                        }
-                        Snapshot result =
-                                new Snapshot(list.videos, categories, skip, list.pageCount);
-                        result.filterSchema = raw;
-                        if (!a.reduced
-                                && (site.api == null || !site.api.contains("fixture.test"))) {
-                            a.worker.execute(() -> writeDiskSnapshot(a, site.key, result));
-                        }
-                        a.ui.post(
-                                () -> {
-                                    a.prefs.edit().putString(Prefs.LOADING_SITE, "").apply();
-                                    if (!active() || token != request) return;
-                                    busy = false;
-                                    snapshot = result;
-                                    a.homeData.put(site.key, result);
-                                    hideHomeLoading("category");
-                                    status.setVisibility(View.GONE);
-                                    renderSnapshot();
-                                    // 1.9.70：主页显式焦点链 + 默认焦点=第一张卡片
-                                    a.ui.post(this::wireHomeFocus);
-                                });
-                    } catch (Throwable e) {
-                        AppLog.w("HomeScreen", "loadHome failed for " + site.key, e);
-                        a.ui.post(
-                                () -> {
-                                    a.prefs.edit().putString(Prefs.LOADING_SITE, "").apply();
-                                    if (!active() || token != request) return;
-                                    busy = false;
-                                    hideHomeLoading("category");
-                                    status.setVisibility(View.VISIBLE);
-                                    status.setText("加载失败：" + a.message(e));
-                                    more.setText("重新加载");
-                                    more.setVisibility(View.VISIBLE);
-                                    wireNavigation();
-                                    if (source != null) source.requestFocus();
-                                });
-                    }
-                });
-    }
-
-    private static java.io.File snapshotCacheFile(MainActivity a, String siteKey) {
-        try {
-            java.io.File dir = new java.io.File(a.getCacheDir(), "home_snap_v1");
-            if (!dir.exists()) dir.mkdirs();
-            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
-            byte[] digest =
-                    md.digest(
-                            (siteKey == null ? "" : siteKey)
-                                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(32);
-            for (int i = 0; i < 16 && i < digest.length; i++) {
-                hex.append(String.format(java.util.Locale.US, "%02x", digest[i] & 0xff));
-            }
-            return new java.io.File(dir, hex + ".json");
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private static void writeDiskSnapshot(MainActivity a, String siteKey, Snapshot snap) {
-        if (a == null || snap == null || (snap.videos.isEmpty() && snap.categories.isEmpty()))
-            return;
-        java.io.File file = snapshotCacheFile(a, siteKey);
-        if (file == null) return;
-        try {
-            JSONObject root = new JSONObject();
-            root.put("skip", snap.skip == null ? "" : snap.skip);
-            root.put("pages", snap.pages);
-            root.put("filterSchema", snap.filterSchema == null ? "{}" : snap.filterSchema);
-            org.json.JSONArray cats = new org.json.JSONArray();
-            for (Cms.Category c : snap.categories) {
-                JSONObject cj = new JSONObject();
-                cj.put("id", c.id);
-                cj.put("name", c.name);
-                cats.put(cj);
-            }
-            root.put("categories", cats);
-            org.json.JSONArray vids = new org.json.JSONArray();
-            int limit = Math.min(40, snap.videos.size());
-            for (int i = 0; i < limit; i++) {
-                Cms.Video v = snap.videos.get(i);
-                JSONObject vj = new JSONObject();
-                vj.put("id", v.id == null ? "" : v.id);
-                vj.put("title", v.title == null ? "" : v.title);
-                vj.put("poster", v.poster == null ? "" : v.poster);
-                vj.put("remarks", v.remarks == null ? "" : v.remarks);
-                vj.put("year", v.year == null ? "" : v.year);
-                vj.put("area", v.area == null ? "" : v.area);
-                vj.put("actor", v.actor == null ? "" : v.actor);
-                vj.put("director", v.director == null ? "" : v.director);
-                vj.put("description", v.description == null ? "" : v.description);
-                vj.put("tag", v.tag == null ? "" : v.tag);
-                vj.put("action", v.action == null ? "" : v.action);
-                vids.put(vj);
-            }
-            root.put("videos", vids);
-            byte[] bytes = root.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            try (java.io.FileOutputStream out = new java.io.FileOutputStream(file)) {
-                out.write(bytes);
-            }
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private static Snapshot readDiskSnapshot(MainActivity a, String siteKey) {
-        java.io.File file = snapshotCacheFile(a, siteKey);
-        if (file == null || !file.exists() || file.length() <= 0 || file.length() > 512 * 1024)
-            return null;
-        // Expire disk snapshot after 3 days
-        if (System.currentTimeMillis() - file.lastModified() > 3L * 24 * 3600 * 1000) return null;
-        try (java.io.InputStream in = new java.io.FileInputStream(file)) {
-            JSONObject root = new JSONObject(Cms.read(in, 512 * 1024));
-            String skip = root.optString("skip", "");
-            int pages = Math.max(1, root.optInt("pages", 1));
-            List<Cms.Category> categories = new ArrayList<>();
-            org.json.JSONArray cats = root.optJSONArray("categories");
-            if (cats != null) {
-                for (int i = 0; i < cats.length(); i++) {
-                    JSONObject cj = cats.optJSONObject(i);
-                    if (cj != null) {
-                        String id = cj.optString("id", "");
-                        String name = cj.optString("name", "");
-                        if (!id.isEmpty() && !name.isEmpty()) {
-                            categories.add(new Cms.Category(id, name));
-                        }
-                    }
-                }
-            }
-            List<Cms.Video> videos = new ArrayList<>();
-            org.json.JSONArray vids = root.optJSONArray("videos");
-            if (vids != null) {
-                for (int i = 0; i < vids.length(); i++) {
-                    JSONObject vj = vids.optJSONObject(i);
-                    if (vj != null) {
-                        Cms.Video v = new Cms.Video();
-                        v.id = vj.optString("id", "");
-                        v.title = vj.optString("title", "");
-                        v.poster = vj.optString("poster", "");
-                        v.remarks = vj.optString("remarks", "");
-                        v.year = vj.optString("year", "");
-                        v.area = vj.optString("area", "");
-                        v.actor = vj.optString("actor", "");
-                        v.director = vj.optString("director", "");
-                        v.description = vj.optString("description", "");
-                        v.tag = vj.optString("tag", "");
-                        v.action = vj.optString("action", "");
-                        if (!v.id.isEmpty() && !v.title.isEmpty()) {
-                            videos.add(v);
-                        }
-                    }
-                }
-            }
-            if (videos.isEmpty()) return null;
-            Snapshot snap = new Snapshot(videos, categories, skip, pages);
-            snap.filterSchema = root.optString("filterSchema", "{}");
-            return snap;
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    void historySection() {
-        List<WatchHistory.Entry> entries = WatchHistory.collapsed(a.watchHistory());
-        if (entries.isEmpty()) return;
-        boolean compactStack = a.useBottomDock();
-        LinearLayout section = a.vertical();
-        section.setTag("home-history-section");
-        section.setGravity(Gravity.TOP);
-        section.setClipChildren(false);
-        section.setClipToPadding(false);
-        a.body.addView(section);
-        LinearLayout heading = a.row();
-        heading.setClipChildren(false);
-        heading.setClipToPadding(false);
-        TextView historyTitle = a.text("历史记录", 17, MainActivity.WHITE);
-        historyTitle.setTag("home-history-title");
-        historyTitle.setTypeface(null, Typeface.BOLD);
-        heading.addView(historyTitle, new LinearLayout.LayoutParams(0, -2, 1));
-        allHistory =
-                pill(
-                        "全部历史  ›",
-                        "home-history-all",
-                        () -> a.open(new MainActivity.Screen(a::historyPage), true));
-        heading.addView(
-                allHistory, new LinearLayout.LayoutParams(-2, a.dp(Math.round(30 * navScale))));
-        section.addView(heading, new LinearLayout.LayoutParams(-1, -2));
-        a.gap(section, 6);
-        LinearLayout recent = compactStack ? a.vertical() : a.row();
-        if (!compactStack) recent.setWeightSum(4);
-        recent.setTag("home-history-list");
-        recent.setClipChildren(false);
-        recent.setClipToPadding(false);
-        section.addView(recent, new LinearLayout.LayoutParams(-1, -2));
-        int count = Math.min(4, entries.size());
-        for (int i = 0; i < count; i++) {
-            LinearLayout.LayoutParams cell =
-                    compactStack
-                            ? new LinearLayout.LayoutParams(-1, a.dp(72))
-                            : new LinearLayout.LayoutParams(0, a.dp(72), 1);
-            boolean last = i == count - 1;
-            cell.rightMargin = a.dp(compactStack ? 0 : (last ? (4 - count) * 12 : 12));
-            cell.bottomMargin = a.dp(compactStack && !last ? 10 : 0);
-            final WatchHistory.Entry e = entries.get(i);
-            LinearLayout card = a.row();
-            card.setPadding(a.dp(9), a.dp(6), a.dp(12), a.dp(6));
-            card.setBackground(thinGlass(16, true));
-            ImageView image = new AmbientPoster();
-            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            image.setBackground(a.bg(0xff303038, 7));
-            image.setClipToOutline(true);
-            LinearLayout.LayoutParams art = new LinearLayout.LayoutParams(a.dp(40), a.dp(60));
-            art.rightMargin = a.dp(12);
-            card.addView(image, art);
-            a.poster(e.poster, image);
-            LinearLayout info = a.vertical();
-            info.setGravity(Gravity.CENTER_VERTICAL);
-            card.addView(info, new LinearLayout.LayoutParams(0, -1, 1));
-            TextView name = a.text(e.title, 14, MainActivity.WHITE);
-            single(name);
-            info.addView(name);
-            a.gap(info, 6);
-            TextView detail = a.text(a.historyLabel(e), 11, MainActivity.MUTED);
-            single(detail);
-            info.addView(detail);
-            a.gap(info, 9);
-            FrameLayout track = new FrameLayout(a);
-            track.setBackground(a.bg(0xff4a5f85, 2));
-            track.setClipToOutline(true);
-            info.addView(track, new LinearLayout.LayoutParams(-1, a.dp(3)));
-            View progress = new View(a);
-            progress.setBackgroundColor(0xffeef2fb);
-            float fraction =
-                    e.duration > 0 ? Math.max(0, Math.min(1, e.position / (float) e.duration)) : 0;
-            track.addView(progress, new FrameLayout.LayoutParams(0, -1));
-            track.addOnLayoutChangeListener(
-                    (v, l, t, r, b, ol, ot, or, ob) -> {
-                        android.view.ViewGroup.LayoutParams p = progress.getLayoutParams();
-                        int w = Math.round((r - l) * fraction);
-                        if (p.width != w) {
-                            p.width = w;
-                            progress.setLayoutParams(p);
-                        }
-                    });
-            focusable(card, "home-history:" + i);
-            outline(card, false, 14, 0xff16243c);
-            card.setContentDescription(e.title + "，" + a.historyLabel(e));
-            card.setOnClickListener(v -> a.resumeHistory(e));
-            card.setOnFocusChangeListener(
-                    (v, f) -> {
-                        outline(card, f, 14, 0xff16243c);
-                        if (f && ambient != null) ambient.follow(image);
-                        if (f && !a.reduced && a.config != null) {
-                            v.postDelayed(
-                                    () -> {
-                                        if (v.hasFocus() && active() && a.config != null) {
-                                            for (Cms.Site s : a.config.sites) {
-                                                if (s.key.equals(e.site)) {
-                                                    Cms.Video listing = new Cms.Video();
-                                                    listing.id = e.id;
-                                                    listing.title = e.title;
-                                                    listing.poster = e.poster;
-                                                    SourceController.prefetchDetail(a, s, listing);
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    },
-                                    150);
-                        }
-                    });
-            if (i == 0
-                    && ambient != null
-                    && (ambient.wanted == null || !ambient.wanted.isAttachedToWindow()))
-                ambient.follow(image);
-            recent.addView(card, cell);
-            historyCards.add(card);
-        }
-        a.gap(a.body, 4);
-    }
-
-    void renderSnapshot() {
-        // 1.9.73：回到首页时导航选中态切回「主页」，不残留设置/电视
-        HomeDock.selectedKey = "nav-home";
-        state.snapshot = snapshot;
-        boolean first = !state.initialized;
-        if (first) {
-            state.initialized = true;
-            state.category = "";
-        }
-        buildTabs();
-        if (first && a.current != null && a.current.focus == null) {
-            a.current.focus = String.valueOf(selectedTab().getTag());
-            restoreFocus();
-        }
-        if (state.ready) {
-            drawGrid(false);
-            restoreFocus();
-        } else choose(state.category, false);
-    }
-
-    void buildTabs() {
-        filters.removeAllViews();
-        filters.lines.clear();
-        tabs.clear();
-        tabIds.clear();
-        addTab("推荐", "", 0);
-        int visible = Math.min(4, snapshot.categories.size());
-        for (int i = 0; i < visible; i++) {
-            Cms.Category c = snapshot.categories.get(i);
-            addTab(c.name, c.id, i + 1);
-        }
-        if (snapshot.categories.size() > visible) {
-            TextView extra =
-                    pill(
-                            "更多分类  ⌄",
-                            "home-category-more",
-                            () -> {
-                                String[] names = new String[snapshot.categories.size()];
-                                int selected = -1;
-                                for (int i = 0; i < names.length; i++) {
-                                    Cms.Category c = snapshot.categories.get(i);
-                                    names[i] = c.name;
-                                    if (c.id.equals(state.category)) selected = i;
-                                }
-                                new AppDialog.Builder(a)
-                                        .setTitle("选择分类")
-                                        .wrapChoices()
-                                        .setSingleChoiceItems(
-                                                names,
-                                                selected,
-                                                (d, n) ->
-                                                        choose(snapshot.categories.get(n).id, true))
-                                        .setNegativeButton("关闭", null)
-                                        .show();
-                            });
-            extra.setOnFocusChangeListener(
-                    (v, f) -> outline(extra, f, 17, extra.isSelected() ? 0xffeef2fb : 0xff172742));
-            addTabView(extra);
-        }
-        // 1.9.33：移除旧的「筛选」按钮，筛选入口改到带 ≡ 的分类 chip
-        updateTabs();        wireNavigation();
-    }
-
-    List<VideoFilters.Definition> filterDefinitions() {
-        String category = state.category;
-        if (category.isEmpty() && !snapshot.categories.isEmpty())
-            category = snapshot.categories.get(0).id;
-        // 1.9.46：type3 JS 源只用 spider 返回的 key
-        List<VideoFilters.Definition> definitions =
-                VideoFilters.definitionsFor(site, snapshot.filterSchema, category, snapshot.videos);
-        if (site.supported() && site.type != 3)
-            for (VideoFilters.Definition def : definitions) {
-                if (!VideoFilters.allowedKey(def.key)) def.remote = false;
-            }
-        return definitions;
-    }
-
-    /** 1.9.38：能力 = schema 有该分类 且 至少一个远程筛选维度可解析（图标与点击同一判定）。 */
-    boolean categoryHasFilters(String catId) {
-        if (snapshot == null) return false;
-        String category =
-                catId == null || catId.isEmpty()
-                        ? (state.category.isEmpty() && !snapshot.categories.isEmpty()
-                                ? snapshot.categories.get(0).id
-                                : state.category)
-                        : catId;
-        boolean schema =
-                VideoFilters.hasSchemaFiltersFor(
-                        site, snapshot.filterSchema, category, snapshot.videos);
-        int remoteDefs = 0;
-        if (schema) {
-            List<VideoFilters.Definition> defs =
-                    VideoFilters.definitionsFor(
-                            site, snapshot.filterSchema, category, snapshot.videos);
-            boolean restrict = site != null && site.supported() && site.type != 3;
-            for (VideoFilters.Definition def : defs) {
-                if (restrict && !VideoFilters.allowedKey(def.key)) continue;
-                if (def.remote && def.choices.size() > 1) remoteDefs++;
-            }
-        }
-        boolean icons = schema && remoteDefs > 0;
-        AppLog.i(
-                "Filter",
-                "capability category="
-                        + category
-                        + " key="
-                        + category
-                        + " schema="
-                        + schema
-                        + " defs="
-                        + remoteDefs
-                        + " icons="
-                        + icons
-                        + " site="
-                        + (site == null ? "null" : site.key)
-                        + " types="
-                        + VideoFilters.schemaKinds(snapshot.filterSchema));
-        return icons;
-    }
-
-    private android.graphics.drawable.Drawable funnelDrawable(int color, int sizeDp) {
-        android.graphics.drawable.Drawable glyph = UiIcon.drawable(a, UiIcon.FILTER);
-        if (glyph == null) return null;
-        UiIcon.tintDrawable(glyph, color);
-        int size = a.dp(sizeDp);
-        glyph.setBounds(0, 0, size, size);
-        return glyph;
-    }
-
-    /** 1.9.34：已选中分类点击循环：L2 → 类型 L3 → 收起。 */
-    void handleCategoryFilterTap() {
-        if (filterPanel == null) return;
-        if (filterPanel.getVisibility() != View.VISIBLE) {
-            List<VideoFilters.Definition> defs = filterDefinitions();
-            final int scrollY = a.scroll == null ? 0 : a.scroll.getScrollY();
-            AppLog.i(
-                    "Filter",
-                    "tap state=expand category="
-                            + state.category
-                            + " mode=both options="
-                            + (defs.isEmpty() ? 0 : defs.get(0).choices.size())
-                            + " zeroLoad=true");
-            renderFilterTags();
-            if (!defs.isEmpty()) {
-                VideoFilters.Definition target = defs.get(0);
-                for (VideoFilters.Definition def : defs)
-                    if ("class".equals(def.dimension)) {
-                        target = def;
-                        break;
-                    }
-                showFilterOptions(target);
-            }
-            a.ui.post(() -> {
-                if (a.scroll != null) a.scroll.scrollTo(0, scrollY);
-            });
-            return;
-        }
-        AppLog.i("Filter", "tap state=collapse category=" + state.category);
-        collapseFilterUi();
-    }
-
-    void toggleFilterTags() {
-        if (filterPanel == null) return;
-        if (filterPanel.getVisibility() == View.VISIBLE) {
-            collapseFilterUi();
-            return;
-        }
-        renderFilterTags();
-    }
-
-    /** L2：文字标签 + 2dp 粉色下划线（紧凑稿，无胶囊底）。 */
-    /** 1.9.36：同维度多选（逗号分隔，兼容原 Map 结构）。 */
-    static java.util.LinkedHashSet<String> filterValueSet(String raw) {
-        java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<>();
-        if (raw != null)
-            for (String part : raw.split(","))
-                if (!part.trim().isEmpty()) set.add(part.trim());
-        return set;
-    }
-
-    static String joinFilterValues(java.util.Set<String> values) {
-        return TextUtils.join(",", values);
-    }
-
-    static String firstFilterValue(String raw) {
-        java.util.Set<String> set = filterValueSet(raw);
-        if (set.isEmpty()) return "";
-        return set.iterator().next();
-    }
-
-    static String filterLabel(VideoFilters.Definition def, String raw) {
-        java.util.Set<String> values = filterValueSet(raw);
-        if (values.isEmpty()) return "全部";
-        StringBuilder out = new StringBuilder();
-        for (String value : values) {
-            if (out.length() > 0) out.append("+");
-            out.append(def.labelFor(value));
-        }
-        return out.toString();
-    }
-
-    /** 1.9.43：远程维度默认单选；本地维度多选。 */
-    boolean remoteMultiAllowed(VideoFilters.Definition def) {
-        return a.prefs.getBoolean("filter_remote_multi_enabled", false);
-    }
-
-    void toggleHomeFilterValue(VideoFilters.Definition def, VideoFilters.Choice choice) {
-        java.util.LinkedHashSet<String> values =
-                filterValueSet(state.selectedFilters.get(def.dimension));
-        boolean remoteSingle = MobileShell.siteHasRemoteApi(site) && !remoteMultiAllowed(def);
-        if (remoteSingle) {
-            if (choice.value.isEmpty()) {
-                values.clear();
-            } else if (values.size() == 1 && values.contains(choice.value)) {
-                values.clear();
-            } else {
-                values.clear();
-                values.add(choice.value);
-                if (!remoteSingleToastShown) {
-                    remoteSingleToastShown = true;
-                    a.toast(
-                            "该源仅支持单条件筛选，已切换为「"
-                                    + def.labelFor(choice.value)
-                                    + "」");
-                }
-                AppLog.i(
-                        "Filter",
-                        "remote single dim="
-                                + def.dimension
-                                + " value="
-                                + choice.value);
-            }
-        } else {
-            if (choice.value.isEmpty()) values.clear();
-            else if (!values.remove(choice.value)) values.add(choice.value);
-        }
-        if (values.isEmpty()) state.selectedFilters.remove(def.dimension);
-        else state.selectedFilters.put(def.dimension, joinFilterValues(values));
-        String joined =
-                state.selectedFilters.containsKey(def.dimension)
-                        ? state.selectedFilters.get(def.dimension)
-                        : "";
-        StringBuilder labels = new StringBuilder("[");
-        for (String value : filterValueSet(joined)) {
-            if (labels.length() > 1) labels.append(",");
-            labels.append(def.labelFor(value));
-        }
-        labels.append("]");
-        AppLog.i(
-                "Filter",
-                "apply dim="
-                        + def.dimension
-                        + " values="
-                        + labels
-                        + " joined="
-                        + joined);
-        if (filterValueSet(joined).size() > 1 && def.remote && remoteMultiAllowed(def)) {
-            AppLog.i("Filter", "multi enabled dim=" + def.dimension);
-        }
-        filterPendingTag = def.dimension;
-        final int scroll = a.scroll == null ? 0 : a.scroll.getScrollY();
-        applyFilters();
-        renderFilterTags();
-        if (filterOptionScroll != null && filterOptionScroll.getVisibility() == View.VISIBLE) {
-            hideFilterOptions();
-            showFilterOptions(def);
-        }
-        a.ui.postDelayed(
-                () -> {
-                    if (a.scroll != null) a.scroll.scrollTo(0, scroll);
-                },
-                450);
-    }
-
-    void renderFilterTags() {
-        if (filterTagScroll == null) return;
-        filterTagRow.removeAllViews();
-        List<VideoFilters.Definition> defs = filterDefinitions();
-        if (defs.isEmpty()) {
-            // 1.9.39：标签渲染绝不收起面板
-            AppLog.i("Filter", "tags empty panelKeep=true");
-            return;
-        }
-        filterTagScroll.setVisibility(View.VISIBLE);
-        boolean panelHidden = filterPanel.getVisibility() != View.VISIBLE;
-        if (panelHidden) {
-            android.view.ViewGroup.LayoutParams lp = filterPanel.getLayoutParams();
-            lp.height = 0;
-            filterPanel.setLayoutParams(lp);
-            filterPanel.setVisibility(View.VISIBLE);
-        }
-        for (final VideoFilters.Definition def : defs) {
-            String value = state.selectedFilters.get(def.dimension);
-            // 1.9.44：有远程接口的站点所有维度按单选展示
-            if (MobileShell.siteHasRemoteApi(site) && !remoteMultiAllowed(def))
-                value = firstFilterValue(value);
-            boolean active = value != null && !value.isEmpty();
-            boolean open = def.dimension.equals(filterOpenDim);
-            LinearLayout tagWrap = a.vertical();
-            tagWrap.setGravity(Gravity.CENTER_HORIZONTAL);
-            TextView chip =
-                    a.text(
-                            active
-                                    ? VideoFilters.displayLabel(def)
-                                            + " · "
-                                            + filterLabel(def, value)
-                                    : VideoFilters.displayLabel(def),
-                            14,
-                            active || open ? UiTokens.ACCENT_SOFT : 0xffa9b7d0);
-            chip.setTypeface(null, (active || open) ? Typeface.BOLD : Typeface.NORMAL);
-            chip.setSingleLine(true);
-            chip.setEllipsize(TextUtils.TruncateAt.END);
-            chip.setMaxWidth(a.dp(260));
-            chip.setGravity(Gravity.CENTER);
-            chip.setSingleLine(true);
-            chip.setPadding(a.dp(2), 0, a.dp(2), 0);
-            MobileDetailScreen.bindTouchFeedback(chip);
-            chip.setFocusable(true);
-            chip.setFocusableInTouchMode(true);
-            chip.setOnClickListener(v -> showFilterOptions(def));
-            tagWrap.addView(chip, new LinearLayout.LayoutParams(-2, -2));
-            if (active || open) {
-                View underline = new View(a);
-                underline.setBackgroundColor(0xffff8fb1);
-                LinearLayout.LayoutParams underlineLp =
-                        new LinearLayout.LayoutParams(a.dp(20), a.dp(2));
-                underlineLp.topMargin = a.dp(4);
-                underlineLp.gravity = Gravity.CENTER_HORIZONTAL;
-                tagWrap.addView(underline, underlineLp);
-            }
-            LinearLayout.LayoutParams lp =
-                    new LinearLayout.LayoutParams(-2, a.dp(40));
-            lp.rightMargin = a.dp(16);
-            filterTagRow.addView(tagWrap, lp);
-            if (def.dimension.equals(filterPendingTag)) {
-                chip.requestFocus();
-                filterPendingTag = "";
-            }
-        }
-        if (!state.selectedFilters.isEmpty()) {
-            TextView clear = a.text("清除", 13, 0xff8d9cb6);
-            clear.setPadding(a.dp(4), 0, a.dp(4), 0);
-            clear.setMinHeight(a.dp(40));
-            clear.setGravity(Gravity.CENTER);
-            MobileDetailScreen.bindTouchFeedback(clear);
-            clear.setFocusable(true);
-            clear.setOnClickListener(
-                    v -> {
-                        state.selectedFilters.clear();
-                        AppLog.i("Filter", "clear-all category=" + state.category);
-                        applyFilters();
-                        collapseFilterUi();
-                        if (selectedTab() != null) selectedTab().requestFocus();
-                    });
-            LinearLayout.LayoutParams clearLp =
-                    new LinearLayout.LayoutParams(-2, a.dp(40));
-            clearLp.leftMargin = a.dp(10);
-            filterTagRow.addView(clear, clearLp);
-        }
-        int duration;
-        if (filterSkipAnim) duration = 0;
-        else if (panelHidden) duration = 140;
-        else duration = filterOptionsVisible() ? 120 : 140;
-        animateFilterPanelHeight(
-                filterPanel, measureFilterPanelHeight(filterPanel), duration);
-        filterSkipAnim = false;
-        if (filterTagRow.getChildCount() > 0 && a.isTvDevice()) {
-            View first = filterTagRow.getChildAt(0);
-            if (!first.hasFocus() && filterPendingTag.isEmpty()) first.requestFocus();
-        }
-    }
-
-    private boolean filterOptionsVisible() {
-        return filterOptionScroll != null
-                && filterOptionScroll.getVisibility() == View.VISIBLE;
-    }
-
-    void hideFilterOptions() {
-        filterOpenDim = "";
-        if (filterOptionScroll != null) filterOptionScroll.setVisibility(View.GONE);
-        if (filterOptionGrid != null) filterOptionGrid.setVisibility(View.GONE);
-    }
-
-    /** L3：单行横滚紧凑 chip（TV 34dp/10 间距）。 */
-    void showFilterOptions(final VideoFilters.Definition def) {
-        if (filterOptionScroll == null) return;
-        int panelBefore =
-                filterPanel != null && filterPanel.getVisibility() == View.VISIBLE ? 1 : 0;
-        boolean l3Before = filterOptionsVisible();
-        if (def.dimension.equals(filterOpenDim)) {
-            // 1.9.39：只收起 L3，L2 面板必须保持可见
-            hideFilterOptions();
-            renderFilterTags();
-            if (filterPanel != null) filterPanel.setVisibility(View.VISIBLE);
-            AppLog.i(
-                    "Filter",
-                    "tag click dim="
-                            + def.dimension
-                            + " panelBefore="
-                            + panelBefore
-                            + " panelAfter="
-                            + (filterPanel.getVisibility() == View.VISIBLE ? 1 : 0)
-                            + " l3=closed before="
-                            + l3Before);
-            return;
-        }
-        hideFilterOptions();
-        filterOpenDim = def.dimension;
-        filterPanel.setVisibility(View.VISIBLE);
-        filterTagScroll.setVisibility(View.VISIBLE);
-        filterOptionRow.removeAllViews();
-        filterOptionScroll.setVisibility(View.VISIBLE);
-        int chipHeight = a.dp(34);
-        int padH = a.dp(12);
-        int count = 0;
-        for (final VideoFilters.Choice choice : def.choices) {
-            java.util.Set<String> currentValues =
-                    filterValueSet(state.selectedFilters.get(def.dimension));
-            boolean active =
-                    choice.value.isEmpty()
-                            ? currentValues.isEmpty()
-                            : currentValues.contains(choice.value);
-            TextView chip =
-                    a.text(
-                            choice.label,
-                            14,
-                            active ? 0xff070d18 : 0xfff5f7fc);
-            chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
-            chip.setGravity(Gravity.CENTER);
-            chip.setSingleLine(true);
-            chip.setPadding(padH, 0, padH, 0);
-            android.graphics.drawable.GradientDrawable optBg =
-                    new android.graphics.drawable.GradientDrawable();
-            optBg.setCornerRadius(a.dp(999));
-            optBg.setColor(active ? UiTokens.ACCENT : 0x14ffffff);
-            optBg.setStroke(a.dp(1), active ? 0x66ffb3c8 : 0x1affffff);
-            chip.setBackground(optBg);
-            MobileDetailScreen.bindTouchFeedback(chip);
-            chip.setFocusable(true);
-            chip.setFocusableInTouchMode(true);
-            chip.setMinHeight(chipHeight);
-            chip.setOnClickListener(
-                    v -> {
-                        if (!a.reduced) {
-                            chip.animate()
-                                    .scaleX(0.96f)
-                                    .scaleY(0.96f)
-                                    .setDuration(60)
-                                    .withEndAction(
-                                            () ->
-                                                    chip.animate()
-                                                            .scaleX(1f)
-                                                            .scaleY(1f)
-                                                            .setDuration(60)
-                                                            .start())
-                                    .start();
-                            a.ui.postDelayed(() -> toggleHomeFilterValue(def, choice), 70);
-                        } else {
-                            toggleHomeFilterValue(def, choice);
-                        }
-                    });
-            LinearLayout.LayoutParams lp =
-                    new LinearLayout.LayoutParams(-2, chipHeight);
-            lp.rightMargin = a.dp(10);
-            filterOptionRow.addView(chip, lp);
-            if (count == 0) chip.requestFocus();
-            count++;
-        }
-        AppLog.i(
-                "Filter",
-                "expand tab="
-                        + def.label
-                        + " options="
-                        + def.choices.size()
-                        + " layout=scroll");
-        AppLog.i(
-                "Filter",
-                "tag click dim="
-                        + def.dimension
-                        + " panelBefore="
-                        + panelBefore
-                        + " panelAfter="
-                        + (filterPanel.getVisibility() == View.VISIBLE ? 1 : 0)
-                        + " l3=open before="
-                        + l3Before);
-        animateFilterPanelHeight(filterPanel, measureFilterPanelHeight(filterPanel), 120);
-    }
-
-    void applyFilterChoice(VideoFilters.Definition def, VideoFilters.Choice choice) {
-        filterSkipAnim = true;
-        String current = state.selectedFilters.get(def.dimension);
-        if (choice.value.isEmpty()) state.selectedFilters.remove(def.dimension);
-        else if (choice.value.equals(current == null ? "" : current))
-            state.selectedFilters.remove(def.dimension);
-        else state.selectedFilters.put(def.dimension, choice.value);
-        AppLog.i(
-                "Filter",
-                "category="
-                        + state.category
-                        + " tab="
-                        + def.label
-                        + " value="
-                        + choice.value);
-        filterPendingTag = def.dimension;
-        hideFilterOptions();
-        applyFilters();
-        renderFilterTags();
-    }
-
-    void collapseFilterUi() {
-        hideFilterOptions();
-        if (filterPanel == null || filterPanel.getVisibility() != View.VISIBLE) return;
-        animateFilterPanelHeight(filterPanel, 0, 120);
-    }
-
-    /** 1.9.36：面板过渡改为 translationY+alpha（去掉逐帧 LayoutParams.height）。 */
-    void animateFilterPanelHeight(View panel, int targetHeight, int durationMs) {
-        if (panel == null) return;
-        final int seq = ++filterAnimSeq;
-        boolean collapse = targetHeight == 0;
-        if (filterHeightAnim != null) {
-            filterHeightAnim.cancel();
-            filterHeightAnim = null;
-        }
-        ViewGroup.LayoutParams lp = panel.getLayoutParams();
-        lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-        panel.setLayoutParams(lp);
-        if (a.reduced || durationMs <= 0) {
-            panel.setAlpha(1f);
-            panel.setTranslationY(0);
-            panel.setVisibility(collapse ? View.GONE : View.VISIBLE);
-            return;
-        }
-        panel.animate().cancel();
-        if (collapse) {
-            panel.animate()
-                    .alpha(0f)
-                    .translationY(a.dp(6))
-                    .setDuration(durationMs)
-                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
-                    .withEndAction(
-                            () -> {
-                                if (seq != filterAnimSeq) return;
-                                panel.setVisibility(View.GONE);
-                                panel.setAlpha(1f);
-                                panel.setTranslationY(0);
-                            })
-                    .start();
-        } else {
-            panel.setVisibility(View.VISIBLE);
-            panel.setAlpha(0f);
-            panel.setTranslationY(-a.dp(6));
-            panel.animate()
-                    .alpha(1f)
-                    .translationY(0)
-                    .setDuration(durationMs)
-                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
-                    .start();
-        }
-    }
-
-    int measureFilterPanelHeight(View panel) {
-        if (panel == null) return 0;
-        int width = panel.getWidth() > 0 ? panel.getWidth() : a.windowWidth() - a.dp(64);
-        panel.measure(
-                View.MeasureSpec.makeMeasureSpec(Math.max(1, width), View.MeasureSpec.AT_MOST),
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-        return panel.getMeasuredHeight();
-    }
-
-    private void animateFilterRow(View view, int durationMs, float offsetDp) {
-        if (view == null) return;
-        if (a.reduced || durationMs <= 0) {
-            view.setAlpha(1f);
-            view.setTranslationY(0);
-            return;
-        }
-        view.setAlpha(0f);
-        view.setTranslationY(-a.dp((int) offsetDp));
-        view.animate().alpha(1f).translationY(0).setDuration(durationMs).start();
-    }
-
-    /** BACK 逐层收起 L3 → L2。 */
-    boolean backFilterUi() {
-        if (filterOptionGrid != null && filterOptionGrid.getVisibility() == View.VISIBLE) {
-            String dim = filterOpenDim;
-            hideFilterOptions();
-            renderFilterTags();
-            focusFilterTag(dim);
-            return true;
-        }
-        if (filterPanel != null && filterPanel.getVisibility() == View.VISIBLE) {
-            collapseFilterUi();
-            if (selectedTab() != null) selectedTab().requestFocus();
-            return true;
-        }
-        return false;
-    }
-
-    /** BACK 从 L3 回到 L2 时焦点回到对应维度标签。 */
-    private void focusFilterTag(String dimension) {
-        if (filterTagRow == null) return;
-        for (int i = 0; i < filterTagRow.getChildCount(); i++) {
-            View child = filterTagRow.getChildAt(i);
-            if (child instanceof TextView
-                    && ("home-filter-tag:" + dimension).equals(String.valueOf(child.getTag()))) {
-                child.requestFocus();
-                return;
-            }
-        }
-    }
-
-    void showFilters() {
-        if (snapshot == null) return;        List<VideoFilters.Definition> definitions = filterDefinitions();
-        String[] labels = new String[definitions.size() + 1];
-        for (int i = 0; i < definitions.size(); i++) {
-            VideoFilters.Definition def = definitions.get(i);
-            labels[i] = def.label + "：" + def.labelFor(state.selectedFilters.get(def.dimension));
-        }
-        labels[definitions.size()] = "清除全部筛选";
-        new AppDialog.Builder(a)
-                .setTitle("影视筛选")
-                .wrapChoices()
-                .setItems(
-                        labels,
-                        (dialog, index) -> {
-                            if (index == definitions.size()) {
-                                if (!state.selectedFilters.isEmpty()) {
-                                    state.selectedFilters.clear();
-                                    applyFilters();
-                                }
-                                return;
-                            }
-                            VideoFilters.Definition def = definitions.get(index);
-                            String[] options = new String[def.choices.size()];
-                            int checked = 0;
-                            for (int n = 0; n < options.length; n++) {
-                                options[n] = def.choices.get(n).label;
-                                if (def.choices
-                                        .get(n)
-                                        .value
-                                        .equals(state.selectedFilters.get(def.dimension)))
-                                    checked = n;
-                            }
-                            new AppDialog.Builder(a)
-                                    .setTitle(def.label + (def.remote ? "" : " · 按影片资料筛选"))
-                                    .wrapChoices()
-                                    .setSingleChoiceItems(
-                                            options,
-                                            checked,
-                                            (choiceDialog, n) -> {
-                                                String value = def.choices.get(n).value;
-                                                if (value.isEmpty())
-                                                    state.selectedFilters.remove(def.dimension);
-                                                else
-                                                    state.selectedFilters.put(def.dimension, value);
-                                                applyFilters();
-                                            })
-                                    .setNegativeButton("取消", null)
-                                    .show();
-                        })
-                .setNegativeButton("关闭", null)
-                .show();
-    }
-
-    void applyFilters() {
-        String category = state.category;
-        if (category.isEmpty()
-                && !state.selectedFilters.isEmpty()
-                && !snapshot.categories.isEmpty()) {
-            category = snapshot.categories.get(0).id;
-        }
-        // A new filter starts at page one; detail/back keeps this exact state.
-        state.category = category;
-        state.ready = false;
-        choose(category, true);
-        View filter = filters.findViewWithTag("home-filters");
-        if (filter != null) {
-            if (a.current != null) a.current.focus = "home-filters";
-            filter.requestFocus();
-        }
-    }
-
-    /** 1.8.12：首页云盘 tab → 原地四盘卡片（异常有兜底，不白屏）。 */
-    void showCloudHomeInline() {
-        if (cloudInline == null) {
-            AppLog.i("CloudConfig", "home inline holder=null");
-            return;
-        }
-        try {
-            cloudInline.setVisibility(View.VISIBLE);
-            cloudInline.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
-            if (cloudContent != null) cloudContent.setVisibility(View.GONE);
-            if (cloudStatus != null) cloudStatus.setVisibility(View.GONE);
-            if (cloudFooter != null) cloudFooter.setVisibility(View.GONE);
-            CloudInlineView.build(a, cloudInline, this::showCloudHomeInline);
-            AppLog.i(
-                    "CloudConfig",
-                    "home inline show holder="
-                            + System.identityHashCode(cloudInline)
-                            + " rows="
-                            + cloudInline.getChildCount()
-                            + " error=");
-        } catch (Throwable error) {
-            AppLog.w("CloudConfig", "home inline show failed", error);
-            CloudInlineView.showError(a, cloudInline, error, this::showCloudHomeInline);
-            cloudInline.setVisibility(View.VISIBLE);
-        }
-    }
-
-    void hideCloudHomeInline() {
-        if (cloudInline == null || cloudInline.getVisibility() != View.VISIBLE) return;
-        cloudInline.setVisibility(View.GONE);
-        if (cloudContent != null) cloudContent.setVisibility(View.VISIBLE);
-        if (cloudStatus != null) cloudStatus.setVisibility(View.VISIBLE);
-        if (cloudFooter != null) cloudFooter.setVisibility(View.VISIBLE);
-        AppLog.i("CloudConfig", "home inline hidden");
-    }
-
-    void addTab(String label, String id, int index) {
-        TextView button =
-                pill(
-                        label,
-                        "home-tab:" + index,
-                        () -> {
-                            // 1.8.28：云盘 tab → 我们的玻璃 UI 管理源插件登录
-                            boolean cloud = MobileShell.isCloudConfigCategory(label, id);
-                            AppLog.i(
-                                    "CloudConfig",
-                                    "homeTab -> SourceCloudConfigScreen label="
-                                            + label
-                                            + " id="
-                                            + id
-                                            + " cloud="
-                                            + cloud);
-                            if (cloud) {
-                                hideCloudHomeInline();
-                                SourceCloudConfigScreen.show(a);
-                                return;
-                            }
-                            hideCloudHomeInline();
-                            if (id.equals(state.category)) {
-                                if (categoryHasFilters(id)) handleCategoryFilterTap();
-                                return;
-                            }
-                            AppLog.i("Filter", "tap state=select category=" + id);
-                            collapseFilterUi();
-                            choose(id, true);
-                        });
-        tabIds.put(button, id);
-        if (categoryHasFilters(id)) {
-            boolean selected = id.equals(state.category);
-            boolean filtered = selected && !state.selectedFilters.isEmpty();
-            // 1.9.33：选中分类漏斗用 BG_DEEP，未选中：有筛选 ACCENT / 无筛选 TEXT_TERTIARY
-            int funnelColor =
-                    selected ? 0xff070d18 : filtered ? UiTokens.ACCENT : 0xff8d9cb6;
-            button.setCompoundDrawables(
-                    null, null, funnelDrawable(funnelColor, 16), null);
-            button.setCompoundDrawablePadding(a.dp(8));
-        }
-        button.setOnKeyListener(
-                (v, keyCode, event) -> {
-                    FocusMotion.key(a, v, keyCode, event);
-                    if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
-                        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
-                                || keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
-                                || ((keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP
-                                                || keyCode
-                                                        == android.view.KeyEvent.KEYCODE_DPAD_DOWN)
-                                        && v.isSelected())) {
-                            lastCategoryDpadTime = android.os.SystemClock.uptimeMillis();
-                        }
-                    }
-                    return false;
-                });
-        button.setOnFocusChangeListener(
-                (v, f) -> {
-                    styleTab(button);
-                    if (f
-                            && a.isTvDevice()
-                            && android.os.SystemClock.uptimeMillis() - lastCategoryDpadTime < 450
-                            && !id.equals(state.category)) {
-                        button.postDelayed(
-                                () -> {
-                                    if (button.hasFocus()
-                                            && active()
-                                            && !id.equals(state.category)) {
-                                        choose(id, true);
-                                    }
-                                },
-                                130);
-                    }
-                });
-        addTabView(button);
-    }
-
-    void addTabView(TextView button) {        button.setSingleLine(false);
-        button.setMaxLines(Integer.MAX_VALUE);
-        button.setEllipsize(null);
-        button.setMinHeight(a.dp(Math.round(34 * navScale)));
-        int padH = a.dp(Math.round(15 * navScale));
-        int padV = a.dp(Math.round(8 * navScale));
-        button.setPadding(padH, padV, padH, padV);
-        filters.addView(button, new android.view.ViewGroup.LayoutParams(-2, -2));
-        tabs.add(button);
-    }
-
-    void styleTab(TextView b) {
-        boolean selected = state.category.equals(tabIds.get(b));
-        b.setSelected(selected);
-        FocusMotion.style(
-                a,
-                b,
-                b.hasFocus(),
-                selected ? 0xffeef2fb : 0xff16243c,
-                selected ? 0xffeef2fb : 0xff22375a,
-                Math.round(17 * navScale),
-                selected ? 0xff101a2e : a.userTextColor(MainActivity.WHITE),
-                selected ? 0xff101a2e : a.userTextColor(MainActivity.WHITE),
-                true,
-                1.02f);
-        if (selected && !b.hasFocus()) {
-            // 1.9.33：TV 分类选中态同步手机（ACCENT→ACCENT_SOFT 渐变 + 深色字）
-            android.graphics.drawable.GradientDrawable grad =
-                    new android.graphics.drawable.GradientDrawable(
-                            android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
-                            new int[] {UiTokens.ACCENT, 0xffffb3c8});
-            grad.setCornerRadius(a.dp(Math.round(17 * navScale)));
-            b.setBackground(grad);
-            b.setTextColor(0xff0b1220);
-        }
-    }
-
-    void updateTabs() {
-        for (View v : tabs) {
-            TextView b = (TextView) v;
-            if (tabIds.get(b) != null) styleTab(b);
-            else if ("home-filters".equals(b.getTag())) {
-                b.setText(
-                        state.selectedFilters.isEmpty()
-                                ? "筛选"
-                                : "筛选 · " + state.selectedFilters.size());
-                b.setContentDescription("类型、国家地区、年份筛选");
-            } else {
-                boolean hidden = false;
-                String name = "更多分类";
-                for (int i = 4; i < snapshot.categories.size(); i++)
-                    if (snapshot.categories.get(i).id.equals(state.category)) {
-                        hidden = true;
-                        name = snapshot.categories.get(i).name;
-                        break;
-                    }
-                b.setText(name + "  ⌄");
-                b.setSelected(hidden);
-                FocusMotion.style(
-                        a,
-                        b,
-                        b.hasFocus(),
-                        hidden ? 0xffeef2fb : 0xff172742,
-                        hidden ? 0xffeef2fb : 0xff22375a,
-                        Math.round(17 * navScale),
-                        hidden ? 0xff101a2e : MainActivity.WHITE,
-                        hidden ? 0xff101a2e : MainActivity.WHITE,
-                        true,
-                        1.02f);
-            }
-        }
-    }
-
-    View selectedTab() {
-        for (View v : tabs) if (tabIds.containsKey(v) && v.isSelected()) return v;
-        return tabs.isEmpty() ? source : tabs.get(0);
-    }
-
-    void choose(String category, boolean user) {
-        hideCloudHomeInline();
-        if (category.equals(state.category) && (state.ready || busy)) return;
-        a.cancelPageRequests();
-        request++;
-        busy = false;
-        if (!state.category.equals(category)) {
-            state.selectedFilters.clear();
-            collapseFilterUi();
-        }
-        state.category = category;
-        state.ready = false;
-        state.videos.clear();
-        state.windowStart = 0;
-        state.page = 1;
-        state.pages = 1;
-        pendingFocus = null;
-        cancelGrid();
-        clearGrid();
-        more.setVisibility(View.GONE);
-        updateTabs();
-        wireNavigation();
-        if (user) {
-            if (a.current != null) {
-                a.current.focus = String.valueOf(selectedTab().getTag());
-                a.current.scroll = 0;
-            }
-            selectedTab().requestFocus();
-            filters.requestRectangleOnScreen(
-                    new Rect(0, -a.dp(8), filters.getWidth(), filters.getHeight()), false);
-        }
-        if (category.isEmpty()) {
-            state.videos.addAll(
-                    VideoFilters.apply(
-                            snapshot.videos, filterDefinitions(), state.selectedFilters));
-            state.pages = snapshot.skip.isEmpty() ? 1 : snapshot.pages;
-            state.ready = true;
-            drawGrid(false);
-            if (!user) restoreFocus();
-        } else if (state.selectedFilters.isEmpty() && state.categoryCache.containsKey(category)) {
-            Cms.Listing cached = state.categoryCache.get(category);
-            state.videos.addAll(cached.videos);
-            state.pages = Math.max(1, cached.pageCount);
-            state.ready = true;
-            drawGrid(false);
-            if (!user) restoreFocus();
-        } else loadCategory(true);
-    }
-
-    void loadCategory(boolean first) {
-        if (busy || snapshot == null) return;
-        String category = state.category.isEmpty() ? snapshot.skip : state.category;
-        if (category.isEmpty()) return;
-        busy = true;
-        int token = ++request;
-        int page = first ? 1 : state.page + 1;
-        List<VideoFilters.Definition> definitions = filterDefinitions();
-        Map<String, String> selections = new LinkedHashMap<>(state.selectedFilters);
-        // 1.9.44：有远程接口时所有选中维度都作为请求参数
-        boolean remoteSite = MobileShell.siteHasRemoteApi(site);
-        boolean allowMulti = a.prefs.getBoolean("filter_remote_multi_enabled", false);
-        List<Map<String, String>> variants =
-                MobileShell.filterVariants(definitions, selections, remoteSite, allowMulti);
-        boolean remoteRequest =
-                remoteSite && !variants.isEmpty() && !variants.get(0).isEmpty();
-        boolean multiRemote = variants.size() > 1;
-        Map<String, String> remoteFilters = variants.isEmpty()
-                ? new LinkedHashMap<String, String>()
-                : new LinkedHashMap<>(variants.get(0));
-        if (remoteRequest) {
-            AppLog.i(
-                    "Filter",
-                    "request site="
-                            + (site == null ? "null" : site.key)
-                            + " filters="
-                            + remoteFilters
-                            + " multi="
-                            + multiRemote
-                            + " variants="
-                            + variants.size());
-        }
-        status.setVisibility(View.GONE);
-        status.setText("");
-        more.setText("正在加载…");
-        more.setVisibility(first ? View.GONE : View.VISIBLE);
-        final String loadReason = selections.isEmpty() ? "category" : "filter";
-        if (first) showHomeLoading(loadReason);
-        a.submitPage(
-                () -> {
-                    try {
-                        Cms.Listing list;
-                        if (multiRemote) {
-                            LinkedHashMap<String, Cms.Video> merged = new LinkedHashMap<>();
-                            int pageCount = 1;
-                            for (Map<String, String> variant : variants) {
-                                Cms.Listing part =
-                                        Cms.listing(
-                                                a.engine(site).category(category, page, variant));
-                                for (Cms.Video v : part.videos) {
-                                    String key =
-                                            (v.id == null || v.id.isEmpty())
-                                                    ? (v.title == null ? "" : v.title)
-                                                    : v.id;
-                                    if (!merged.containsKey(key)) merged.put(key, v);
-                                }
-                                pageCount = Math.max(pageCount, part.pageCount);
-                            }
-                            list = new Cms.Listing();
-                            list.videos.addAll(merged.values());
-                            list.pageCount = pageCount;
-                        } else {
-                            list =
-                                    Cms.listing(
-                                            a.engine(site)
-                                                    .category(category, page, remoteFilters));
-                        }
-                        clean(list.videos);
-                        int received = list.videos.size();
-                        AppLog.i(
-                                "Filter",
-                                "raw="
-                                        + received
-                                        + " remoteRequest="
-                                        + remoteRequest
-                                        + " filters="
-                                        + remoteFilters);
-                        if (remoteRequest && received == 0 && !filterUnsupportedToastShown) {
-                            filterUnsupportedToastShown = true;
-                            a.ui.post(() -> a.toast("该源不支持该组合筛选，已显示未筛选内容"));
-                            AppLog.i(
-                                    "Filter",
-                                    "unsupported combo site="
-                                            + (site == null ? "null" : site.key)
-                                            + " filters="
-                                            + remoteFilters);
-                        }
-                        List<Cms.Video> matching =
-                                remoteRequest
-                                        ? new java.util.ArrayList<>(list.videos)
-                                        : VideoFilters.apply(list.videos, definitions, selections);
-                        a.ui.post(
-                                () -> {
-                                    if (!active() || token != request) return;
-                                    busy = false;
-                                    int previous = state.videos.size();
-                                    boolean focusMore = more.hasFocus();
-                                    Set<String> ids = new HashSet<>();
-                                    for (Cms.Video v : state.videos) ids.add(v.id);
-                                    int added = 0;
-                                    for (Cms.Video v : matching)
-                                        if (ids.add(v.id)) {
-                                            state.videos.add(v);
-                                            added++;
-                                        }
-                                    int oldWindow = state.windowStart;
-                                    int focusIndex = previous;
-                                    if (added > 0 && previous >= windowEnd()) {
-                                        state.windowStart =
-                                                (previous / windowSize()) * windowSize();
-                                    }
-                                    boolean changedWindow = oldWindow != state.windowStart;
-                                    state.page = page;
-                                    state.pages =
-                                            received == 0 ? page : Math.max(page, list.pageCount);
-                                    state.ready = true;
-                                    if (first && selections.isEmpty() && !state.videos.isEmpty()) {
-                                        Cms.Listing cached = new Cms.Listing();
-                                        cached.videos.addAll(state.videos);
-                                        cached.pageCount = state.pages;
-                                        state.categoryCache.put(category, cached);
-                                    }
-                                    // Keep focus on the button until the first new card exists,
-                                    // so focus never falls back to the category tabs at the top.
-                                    pendingFocus =
-                                            !first && focusMore ? "home-video:" + focusIndex : null;
-                                    hideHomeLoading(loadReason);
-                                    drawGrid(!first && !changedWindow);
-                                    if (first
-                                            && a.current != null
-                                            && a.current.focus != null
-                                            && a.current.focus.startsWith("home-video:"))
-                                        restoreFocus();
-                                });
-                    } catch (Throwable e) {
-                        AppLog.w("HomeScreen", "loadCategory failed for " + site.key, e);
-                        a.ui.post(
-                                () -> {
-                                    if (!active() || token != request) return;
-                                    busy = false;
-                                    hideHomeLoading(loadReason);
-                                    status.setVisibility(View.VISIBLE);
-                                    status.setText("加载失败：" + a.message(e));
-                                    more.setText("重新加载");
-                                    more.setVisibility(View.VISIBLE);
-                                    wireNavigation();
-                                });
-                    }
-                });
-    }
-
-    static void clean(List<Cms.Video> videos) {
-        Set<String> ids = new HashSet<>();
-        Iterator<Cms.Video> it = videos.iterator();
-        while (it.hasNext()) {
-            Cms.Video v = it.next();
-            if (v == null || v.id == null || v.id.trim().isEmpty() || !ids.add(v.id)) {
-                it.remove();
-            }
-        }
-    }
-
-    void cancelGrid() {
-        gridEpoch++;
-        if (pendingGrid != null) {
-            a.ui.removeCallbacks(pendingGrid);
-            content.removeCallbacks(pendingGrid);
-        }
-        pendingGrid = null;
-    }
-
-    void clearGrid() {
-        for (int i = 0; i < content.getChildCount(); i++) {
-            android.view.ViewGroup row = (android.view.ViewGroup) content.getChildAt(i);
-            for (int j = 0; j < row.getChildCount(); j++)
-                if (row.getChildAt(j) instanceof android.view.ViewGroup) {
-                    android.view.ViewGroup card = (android.view.ViewGroup) row.getChildAt(j);
-                    if (card.getChildCount() > 0) card.getChildAt(0).setTag(null);
-                }
-        }
-        content.removeAllViews();
-        rows.clear();
-    }
-
-    int windowSize() {
-        return Math.max(COLUMNS, (MAX_RETAINED_CARDS / COLUMNS) * COLUMNS);
-    }
-
-    int windowEnd() {
-        return Math.min(state.videos.size(), state.windowStart + windowSize());
-    }
-
-    void showWindow(int start) {
-        if (busy || start < 0 || start >= state.videos.size()) return;
-        state.windowStart = start;
-        pendingFocus = "home-video:" + start;
-        if (a.current != null) a.current.focus = pendingFocus;
-        drawGrid(false);
-        a.smoothHomeScroll(0);
-    }
-
-    void drawGrid(boolean append) {
-        cancelGrid();
-        int existing = state.windowStart;
-        for (List<View> row : rows) existing += row.size();
-        if (!append) {
-            clearGrid();
-            existing = state.windowStart;
-        }
-        earlier.setVisibility(state.windowStart > 0 ? View.VISIBLE : View.GONE);
-        if (existing < windowEnd()) a.learnTitles(state.videos.subList(existing, windowEnd()));
-        status.setText(
-                state.selectedFilters.isEmpty()
-                        ? "这个分类暂无内容，可切换其他分类或使用全局搜索。"
-                        : "当前已读取的影片没有匹配结果，可继续加载或调整筛选。");
-        boolean localFiltering = VideoFilters.hasLocal(filterDefinitions(), state.selectedFilters);
-        if (localFiltering && !state.videos.isEmpty()) status.setText("按片源已提供的影片资料筛选，可继续加载更多结果。");
-        status.setVisibility(state.videos.isEmpty() || localFiltering ? View.VISIBLE : View.GONE);
-        // Hiding the focused button would hand focus to the first tab and jump to the top.
-        if (pendingFocus == null || !more.hasFocus()) more.setVisibility(View.GONE);
-        appendCards(existing, gridEpoch, !append);
-    }
-
-    /** Moves focus to the card awaited after "加载更多", once it is laid out. */
-    void resolvePendingFocus(boolean finished) {
-        if (pendingFocus == null) return;
-        View target = a.root.findViewWithTag(pendingFocus);
-        if (target == null && finished && !rows.isEmpty()) {
-            List<View> last = rows.get(rows.size() - 1);
-            target = last.isEmpty() ? null : last.get(0);
-        }
-        if (target == null) return;
-        pendingFocus = null;
-        final View card = target;
-        if (card.isLaidOut()) card.requestFocus();
-        else
-            card.addOnLayoutChangeListener(
-                    new View.OnLayoutChangeListener() {
-                        public void onLayoutChange(
-                                View v,
-                                int l,
-                                int t,
-                                int r,
-                                int b,
-                                int ol,
-                                int ot,
-                                int or,
-                                int ob) {
-                            v.removeOnLayoutChangeListener(this);
-                            if (active() && v.isAttachedToWindow()) v.requestFocus();
-                            if (pendingGrid == null) updateMore();
-                        }
-                    });
-    }
-
-    /** Shows or hides "加载更多" without ever hiding it while it still holds focus. */
-    void updateMore() {
-        more.setText(windowEnd() < state.videos.size() ? "查看后面的影片" : "加载更多");
-        boolean hasMore = windowEnd() < state.videos.size() || state.page < state.pages;
-        if (hasMore || !more.hasFocus()) more.setVisibility(hasMore ? View.VISIBLE : View.GONE);
-    }
-
-    void appendCards(int start, int epoch, boolean restore) {
-        pendingGrid = null;
-        if (!active() || epoch != gridEpoch) return;
-        int end = start;
-        int batchCount = start == 0 ? Math.max(COLUMNS * 2, 10) : Math.max(COLUMNS, 5);
-        long budgetNs = start == 0 ? 12000000L : 5000000L;
-        long batchStarted = System.nanoTime();
-        for (int index = start; index < windowEnd() && index < start + batchCount; index++) {
-            int column = index % COLUMNS;
-            LinearLayout row;
-            List<View> focusRow;
-            if (column == 0) {
-                row = a.row();
-                row.setGravity(Gravity.TOP);
-                row.setClipChildren(false);
-                row.setClipToPadding(false);
-                row.setPadding(0, a.dp(5), 0, a.dp(18));
-                content.addView(row);
-                focusRow = new ArrayList<>();
-                rows.add(focusRow);
-                for (int c = 0; c < COLUMNS; c++) {
-                    LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, -2, 1);
-                    cell.rightMargin = a.dp(c == COLUMNS - 1 ? 0 : 14);
-                    row.addView(new View(a), cell);
-                }
-            } else {
-                row = (LinearLayout) content.getChildAt(content.getChildCount() - 1);
-                focusRow = rows.get(rows.size() - 1);
-            }
-            android.view.ViewGroup.LayoutParams size = row.getChildAt(column).getLayoutParams();
-            row.removeViewAt(column);
-            View card = card(state.videos.get(index), index);
-            row.addView(card, column, size);
-            focusRow.add(card);
-            end = index + 1;
-            if (System.nanoTime() - batchStarted >= budgetNs) break;
-        }
-        wireNavigation(Math.max(0, (start - state.windowStart) / COLUMNS - 1));
-        resolvePendingFocus(false);
-        if (end < windowEnd()) {
-            final int next = end;
-            pendingGrid = () -> appendCards(next, epoch, restore);
-            Runnable nextBatch = pendingGrid;
-            content.postOnAnimation(
-                    () -> {
-                        if (active() && epoch == gridEpoch) a.ui.post(nextBatch);
-                    });
-        } else {
-            resolvePendingFocus(true);
-            updateMore();
-            wireNavigation(Math.max(0, rows.size() - 1));
-            if (restore
-                    && a.current != null
-                    && a.current.focus != null
-                    && a.current.focus.startsWith("home-video:")) restoreFocus();
-            if (!a.reduced && !state.videos.isEmpty()) {
-                final Cms.Video firstVid = state.videos.get(0);
-                content.postDelayed(
-                        () -> {
-                            if (active()) SourceController.prefetchDetail(a, site, firstVid);
-                        },
-                        350);
-            }
-        }
-    }
-
-    View card(Cms.Video video, int index) {
-        LinearLayout card = a.vertical();
-        card.setPadding(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
-        card.setGravity(Gravity.CENTER_HORIZONTAL);
-        card.setClipChildren(false);
-        ImageView art = new AmbientPoster();
-        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        art.setBackground(a.bg(0xff182a45, 10));
-        art.setClipToOutline(true);
-        card.addView(
-                art, new LinearLayout.LayoutParams(a.dp(posterWidth), a.dp(posterWidth * 1.5f)));
-        a.poster(video.poster, art);
-        TextView title = a.text(video.title, 13, 0xffc8d5ea);
-        single(title);
-        title.setPadding(a.dp(2), a.dp(7), a.dp(2), 0);
-        card.addView(title, new LinearLayout.LayoutParams(-1, a.dp(27)));
-        focusable(card, "home-video:" + index);
-        outline(card, false, 13, Color.TRANSPARENT);
-        card.setContentDescription(video.title);
-        card.setOnClickListener(v -> a.openListing(site, video));
-        card.setOnFocusChangeListener(
-                (v, f) -> {
-                    outline(card, f, 13, Color.TRANSPARENT);
-                    title.setTextColor(a.userTextColor(f ? Color.WHITE : 0xffc8d5ea));
-                    if (f && ambient != null) ambient.follow(art);
-                    if (f) {
-                        v.requestRectangleOnScreen(
-                                new Rect(0, -a.dp(8), v.getWidth(), v.getHeight() + a.dp(10)),
-                                false);
-                        if (!a.reduced) {
-                            v.postDelayed(
-                                    () -> {
-                                        if (v.hasFocus() && active()) {
-                                            SourceController.prefetchDetail(a, site, video);
-                                        }
-                                    },
-                                    200);
-                        }
-                    }
-                });
-        if (index == 0
-                && ambient != null
-                && (ambient.wanted == null || !ambient.wanted.isAttachedToWindow()))
-            ambient.follow(art);
-        return card;
-    }
-
-    void outline(View view, boolean focused, int radius, int color) {
-        // 1.9.72 设计规范：卡片=内环+底条，chip/按钮=10% 粉底+内环；不缩放/不 unclip/不 elevation
-        TvNav.tagFocus(a, view, focused, radius);
-    }
-
-    void single(TextView text) {
-        text.setSingleLine(true);
-        text.setEllipsize(TextUtils.TruncateAt.END);
-    }
-
-    void focusable(View view, String tag) {
-        view.setTag(tag);
-        view.setId(View.generateViewId());
-        view.setFocusable(true);
-        view.setFocusableInTouchMode(true);
-        view.setClickable(true);
-        a.pressFeedback(view);
-    }
-
-    TextView pill(String label, String tag, Runnable action) {
-        TextView b = a.text(label, 12f * navScale, MainActivity.WHITE);
-        single(b);
-        b.setGravity(Gravity.CENTER);
-        b.setIncludeFontPadding(false);
-        int padH = a.dp(Math.round(15 * navScale));
-        int radius = Math.round(18 * navScale);
-        b.setPadding(padH, 0, padH, 0);
-        focusable(b, tag);
-        b.setBackground(a.bg(0xff172742, radius));
-        b.setOnClickListener(v -> action.run());
-        b.setOnFocusChangeListener((v, f) -> outline(b, f, radius, 0xff172742));
-        return b;
-    }
-
-    void horizontal(List<View> line) {
-        for (int i = 0; i < line.size(); i++) {
-            line.get(i).setNextFocusLeftId(line.get(Math.max(0, i - 1)).getId());
-            line.get(i).setNextFocusRightId(line.get(Math.min(line.size() - 1, i + 1)).getId());
-        }
-    }
-
-    void wireNavigation() {
-        wireNavigation(0);
-    }
-
-    void wireNavigation(int firstRow) {
-        View nav = a.root.findViewWithTag("nav-home");
-        if (nav != null && nav.getId() == View.NO_ID) nav.setId(View.generateViewId());
-        boolean stackedHistory = a.useBottomDock();
-        horizontal(historyCards);
-        for (int i = 0; i < historyCards.size(); i++) {
-            View card = historyCards.get(i);
-            card.setNextFocusUpId(
-                    stackedHistory
-                            ? (i == 0 ? allHistory : historyCards.get(i - 1)).getId()
-                            : card.getId());
-            card.setNextFocusDownId(
-                    stackedHistory && i + 1 < historyCards.size()
-                            ? historyCards.get(i + 1).getId()
-                            : source.getId());
-            if (stackedHistory) {
-                card.setNextFocusLeftId(card.getId());
-                card.setNextFocusRightId(card.getId());
-            }
-        }
-        if (!historyCards.isEmpty()) {
-            View lastHistory = historyCards.get(historyCards.size() - 1);
-            if (!stackedHistory) lastHistory.setNextFocusRightId(allHistory.getId());
-            allHistory.setNextFocusLeftId(
-                    stackedHistory ? allHistory.getId() : lastHistory.getId());
-            allHistory.setNextFocusDownId(
-                    stackedHistory ? historyCards.get(0).getId() : source.getId());
-        }
-        source.setNextFocusUpId(
-                historyCards.isEmpty()
-                        ? source.getId()
-                        : historyCards.get(stackedHistory ? historyCards.size() - 1 : 0).getId());
-        source.setNextFocusDownId(selectedTab().getId());
-        for (int r = 0; r < filters.lines.size(); r++) {
-            List<View> line = filters.lines.get(r);
-            horizontal(line);
-            for (View tab : line) {
-                tab.setNextFocusUpId(
-                        r == 0
-                                ? source.getId()
-                                : filters.nearest(filters.lines.get(r - 1), tab).getId());
-                tab.setNextFocusDownId(
-                        r + 1 < filters.lines.size()
-                                ? filters.nearest(filters.lines.get(r + 1), tab).getId()
-                                : earlier.isShown()
-                                        ? earlier.getId()
-                                        : rows.isEmpty()
-                                                ? (more.isShown() ? more.getId() : tab.getId())
-                                                : rows.get(0).get(0).getId());
-            }
-            if (a.homeDock != null && !line.isEmpty())
-                a.homeDock.rightEdge(line.get(line.size() - 1));
-        }
-        for (int r = Math.max(0, firstRow); r < rows.size(); r++) {
-            List<View> row = rows.get(r);
-            horizontal(row);
-            for (int c = 0; c < row.size(); c++) {
-                View card = row.get(c);
-                card.setNextFocusUpId(
-                        r == 0
-                                ? (earlier.isShown() ? earlier.getId() : selectedTab().getId())
-                                : rows.get(r - 1)
-                                        .get(Math.min(c, rows.get(r - 1).size() - 1))
-                                        .getId());
-                card.setNextFocusDownId(
-                        r + 1 < rows.size()
-                                ? rows.get(r + 1)
-                                        .get(Math.min(c, rows.get(r + 1).size() - 1))
-                                        .getId()
-                                : more.isShown() ? more.getId() : card.getId());
-            }
-        }
-        earlier.setNextFocusUpId(selectedTab().getId());
-        earlier.setNextFocusDownId(rows.isEmpty() ? more.getId() : rows.get(0).get(0).getId());
-        more.setNextFocusUpId(
-                rows.isEmpty() ? selectedTab().getId() : rows.get(rows.size() - 1).get(0).getId());
-        if (a.homeDock != null) {
-            a.homeDock.rightEdge(source);
-            a.homeDock.rightEdge(allHistory);
-            a.homeDock.rightEdge(more);
-            a.homeDock.rightEdge(earlier);
-            if (!tabs.isEmpty()) a.homeDock.rightEdge(tabs.get(tabs.size() - 1));
-            for (int r = Math.max(0, firstRow); r < rows.size(); r++) {
-                List<View> row = rows.get(r);
-                if (!row.isEmpty()) a.homeDock.rightEdge(row.get(row.size() - 1));
-            }
-        }
-    }
-
-    static boolean navigationKey(MainActivity a, android.view.KeyEvent event) {
-        int key = event.getKeyCode();
-        if (key != android.view.KeyEvent.KEYCODE_DPAD_UP
-                && key != android.view.KeyEvent.KEYCODE_DPAD_DOWN
-                && key != android.view.KeyEvent.KEYCODE_DPAD_LEFT
-                && key != android.view.KeyEvent.KEYCODE_DPAD_RIGHT) return false;
-        View focus = a.getCurrentFocus();
-        if (focus == null || a.scroll == null) return false;
-        android.view.ViewParent parent = focus.getParent();
-        while (parent != null && parent != a.scroll) parent = parent.getParent();
-        if (parent != a.scroll) return false;
-        int id =
-                key == android.view.KeyEvent.KEYCODE_DPAD_UP
-                        ? focus.getNextFocusUpId()
-                        : key == android.view.KeyEvent.KEYCODE_DPAD_DOWN
-                                ? focus.getNextFocusDownId()
-                                : key == android.view.KeyEvent.KEYCODE_DPAD_LEFT
-                                        ? focus.getNextFocusLeftId()
-                                        : focus.getNextFocusRightId();
-        View target = id == View.NO_ID ? null : a.root.findViewById(id);
-        if (target == null || !target.isShown() || !target.isFocusable()) return false;
-        if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
-            target.requestFocus();
-            String tag = String.valueOf(target.getTag());
-            if (key == android.view.KeyEvent.KEYCODE_DPAD_UP
-                    && (tag.startsWith("home-history:")
-                            || tag.equals("home-history-all")
-                            || target == focus)) {
-                a.smoothHomeScroll(0);
-            } else if (!(a.scroll instanceof TvScrollView))
-                target.requestRectangleOnScreen(
-                        new Rect(0, -a.dp(12), target.getWidth(), target.getHeight() + a.dp(12)),
-                        false);
-        }
-        return true;
-    }
-
-    void styleSource(boolean focused) {
-        FocusMotion.style(
-                a,
-                source,
-                focused,
-                0x66344352,
-                0xff344452,
-                // Fully rounded capsule matching the 34dp pill height.
-                17,
-                0xffd8e6fb,
-                Color.WHITE,
-                true,
-                1.02f);
-    }
-
-    final class AmbientPoster extends ImageView {
-        AmbientPoster() {
-            super(a);
-        }
-
-        @Override
-        public void setImageBitmap(android.graphics.Bitmap bitmap) {
-            super.setImageBitmap(bitmap);
-            if (ambient != null) ambient.posterReady(this);
-        }
-    }
-
-    static final class SourceChevron extends android.graphics.drawable.Drawable {
-        final android.graphics.Paint paint = new android.graphics.Paint(3);
-        final MainActivity a;
-
-        SourceChevron(MainActivity a) {
-            this.a = a;
-            setBounds(0, 0, a.dp(10), a.dp(10));
-        }
-
-        public void draw(android.graphics.Canvas canvas) {
-            android.graphics.Rect b = getBounds();
-            paint.setColor(0xffd8e6fb);
-            paint.setStyle(android.graphics.Paint.Style.STROKE);
-            paint.setStrokeWidth(a.dp(1.4f));
-            paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
-            paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
-            android.graphics.Path path = new android.graphics.Path();
-            path.moveTo(b.left + b.width() * .15f, b.top + b.height() * .35f);
-            path.lineTo(b.exactCenterX(), b.top + b.height() * .65f);
-            path.lineTo(b.left + b.width() * .85f, b.top + b.height() * .35f);
-            canvas.drawPath(path, paint);
-        }
-
-        public void setAlpha(int value) {
-            paint.setAlpha(value);
-        }
-
-        public void setColorFilter(android.graphics.ColorFilter value) {
-            paint.setColorFilter(value);
-        }
-
-        public int getOpacity() {
-            return android.graphics.PixelFormat.TRANSLUCENT;
-        }
-    }
-
-    /** Late home data must not pull focus back once the user has moved it (dock, account panel). */
-    void restoreFocus() {
-        a.ui.post(
-                () -> {
-                    if (!active() || a.current == null) return;
-                    View saved =
-                            a.current.focus == null
-                                    ? null
-                                    : a.root.findViewWithTag(a.current.focus);
-                    View now = a.getCurrentFocus();
-                    if (saved != null && (now == null || now == a.autoFocus || now == saved)) {
-                        saved.requestFocus();
-                        a.autoFocus = saved;
-                        a.scroll.scrollTo(0, a.current.scroll);
-                    }
-                });
-    }
+ static final int MAX_RETAINED_CARDS = 120;
+ final MainActivity a;
+ final Cms.Site site;
+ final int COLUMNS;
+ final float navScale;
+ final Map<View, String> tabIds = new HashMap<>();
+ final List<View> historyCards = new ArrayList<>(), tabs = new ArrayList<>();
+ final List<List<View>> rows = new ArrayList<>();
+ LinearLayout content;
+ /** 1.9.33：L2 筛选标签行 / L3 选项行（分类 chip 之下）。 */
+ LinearLayout filterTagRow, filterOptionRow, filterOptionGrid;
+ /** 1.9.37：薄玻璃（筛选面板同款），壁纸透出；TV 历史卡使用。 */
+ android.graphics.drawable.GradientDrawable thinGlass(int radiusDp, boolean strongerStroke) {
+ android.graphics.drawable.GradientDrawable d =
+ new android.graphics.drawable.GradientDrawable();
+ d.setColor(0x1affffff);
+ d.setCornerRadius(a.dp(radiusDp));
+ d.setStroke(a.dp(1), strongerStroke ? 0x26ffffff : 0x1affffff);
+ return d;
+ }
+ LinearLayout filterPanel;
+ android.widget.HorizontalScrollView filterTagScroll, filterOptionScroll;
+ String filterOpenDim = "";
+ String filterPendingTag = "";
+ boolean filterSkipAnim;
+ int filterAnimSeq;
+ /** 1.9.43：远程单选提示只弹一次。 */
+ boolean remoteSingleToastShown;
+ /** 1.9.45：组合筛选不支持提示只弹一次。 */
+ boolean filterUnsupportedToastShown;
+ /** 1.9.49：TV 统一 loading overlay。 */
+ FrameLayout loadingOverlay;
+ WhaleLoadingView loadingWhale;
+ boolean loadingVisible;
+ long loadingShownAt;
+
+ void attachLoadingOverlay() {
+ if (loadingOverlay != null && loadingOverlay.getParent() != null) return;
+ if (loadingOverlay != null && loadingOverlay.getParent() == null) {
+ // 页面根被重建，允许重新挂载
+ loadingOverlay = null;
+ loadingWhale = null;
+ }
+ if (!(a.root instanceof android.view.ViewGroup)) return;
+ android.view.ViewGroup root = (android.view.ViewGroup) a.root;
+ loadingOverlay = new FrameLayout(a);
+ loadingOverlay.setTag("tv-loading-overlay");
+ loadingOverlay.setClickable(false);
+ loadingOverlay.setFocusable(false);
+ loadingOverlay.setVisibility(View.GONE);
+ FrameLayout.LayoutParams lp =
+ new FrameLayout.LayoutParams(
+ FrameLayout.LayoutParams.WRAP_CONTENT,
+ FrameLayout.LayoutParams.WRAP_CONTENT,
+ Gravity.CENTER);
+ loadingWhale = new WhaleLoadingView(a, WhaleLoadingView.SMALL, true);
+ loadingWhale.setText("加载中…");
+ loadingOverlay.addView(
+ loadingWhale,
+ new FrameLayout.LayoutParams(
+ FrameLayout.LayoutParams.WRAP_CONTENT,
+ FrameLayout.LayoutParams.WRAP_CONTENT,
+ Gravity.CENTER));
+ root.addView(loadingOverlay, lp);
+ }
+
+ void showHomeLoading(String reason) {
+ if (loadingVisible) return;
+ if (loadingOverlay == null || loadingOverlay.getParent() == null) attachLoadingOverlay();
+ loadingVisible = true;
+ loadingShownAt = android.os.SystemClock.uptimeMillis();
+ AppLog.i("Loading", "show reason=" + reason + " tv=true");
+ if (loadingOverlay != null) {
+ loadingOverlay.setVisibility(View.VISIBLE);
+ loadingOverlay.bringToFront();
+ if (loadingWhale != null) loadingWhale.post(loadingWhale::start);
+ }
+ if (a.body != null && !a.reduced)
+ a.body.animate().alpha(0.35f).setDuration(120).start();
+ }
+
+ void hideHomeLoading(String reason) {
+ if (!loadingVisible) return;
+ long elapsed = android.os.SystemClock.uptimeMillis() - loadingShownAt;
+ long minShow = 400;
+ if (elapsed < minShow) {
+ final String why = reason;
+ a.body.postDelayed(() -> doHideHomeLoading(why), minShow - elapsed);
+ return;
+ }
+ doHideHomeLoading(reason);
+ }
+
+ private void doHideHomeLoading(String reason) {
+ if (!loadingVisible) return;
+ loadingVisible = false;
+ AppLog.i("Loading", "hide reason=" + reason + " tv=true");
+ if (loadingWhale != null) loadingWhale.stop();
+ if (loadingOverlay != null) loadingOverlay.setVisibility(View.GONE);
+ if (a.body != null) {
+ if (a.reduced) a.body.setAlpha(1f);
+ else a.body.animate().alpha(1f).setDuration(170).start();
+ }
+ }
+ android.animation.ValueAnimator filterHeightAnim;
+ /** 1.8.12 云盘配置原地容器（首页分类栏下方，默认隐藏）。 */
+ LinearLayout cloudInline;
+ View cloudContent;
+ TextView cloudStatus;
+ View cloudFooter;
+ CategoryFlow filters;
+ HomeAmbient ambient;
+ TextView status, source, more, earlier, allHistory;
+ int ticket, request, posterWidth, gridEpoch;
+ long lastCategoryDpadTime;
+ Runnable pendingGrid;
+
+ /** Tag of the card that should take focus once drawn after "加载更多". */
+ String pendingFocus;
+
+ boolean busy;
+ Snapshot snapshot;
+ State state;
+ FrameLayout retainedRoot;
+ LinearLayout retainedBody;
+ android.view.View retainedScroll;
+ HomeDock retainedDock;
+ int retainedWidth, retainedHeight, retainedEngineEpoch;
+ boolean retainedSafeMode;
+ float retainedFontScale;
+ Map<String, Object> retainedAppearance;
+
+ static final class Snapshot {
+ final long time = System.currentTimeMillis();
+ final List<Cms.Video> videos;
+ final List<Cms.Category> categories;
+ final String skip;
+ final int pages;
+ String filterSchema = "{}";
+
+ Snapshot(List<Cms.Video> videos, List<Cms.Category> categories, String skip, int pages) {
+ this.videos = videos;
+ this.categories = categories;
+ this.skip = skip;
+ this.pages = pages;
+ }
+ }
+
+ /** Navigation-entry state survives detail/back without changing the active category. */
+ static final class State {
+ String site, category = "";
+ int engineEpoch;
+ List<Cms.Video> videos = new ArrayList<>();
+ int page = 1, pages = 1, windowStart = 0;
+ boolean ready, initialized;
+ Snapshot snapshot;
+ final Map<String, String> selectedFilters = new LinkedHashMap<>();
+ final Map<String, Cms.Listing> categoryCache = new HashMap<>();
+
+ State(String key) {
+ site = key;
+ }
+ }
+
+ HomeScreen(MainActivity activity, Cms.Site selected) {
+ a = activity;
+ site = selected;
+ navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
+ COLUMNS =
+ TvLayoutPolicy.responsiveHomeColumns(
+ a.windowWidth() / a.getResources().getDisplayMetrics().density,
+ a.prefs.getInt(Prefs.HOME_COLUMNS, 5),
+ a.formFactor,
+ a.windowWidth() < a.dp(600));
+ }
+
+ boolean active() {
+ return ticket == a.generation && !a.isFinishing();
+ }
+
+ void show() {
+ a.renderPage("", "", true);
+ ambient = a.homeAmbient;
+ ticket = a.generation;
+ if (a.current != null) a.current.home = true;
+ state = a.current == null ? null : a.current.homeState;
+ if (state == null || !site.key.equals(state.site) || state.engineEpoch != a.engineEpoch) {
+ state = new State(site.key);
+ state.engineEpoch = a.engineEpoch;
+ if (a.current != null) a.current.homeState = state;
+ }
+ boolean bottomDock = a.useBottomDock();
+ int rightPadDp = Math.max(100, Math.round(50 * navScale) + 50);
+ int bottomPadDp = Math.max(86, Math.round(50 * navScale) + 36);
+ if (bottomDock) {
+ a.body.setPadding(a.dp(18), a.dp(16), a.dp(18), a.dp(bottomPadDp));
+ } else {
+ a.body.setPadding(a.dp(34), a.dp(18), a.dp(rightPadDp), a.dp(36));
+ }
+ a.body.setClipChildren(false);
+ a.body.setClipToPadding(false);
+ if (a.scroll instanceof android.view.ViewGroup)
+ ((android.view.ViewGroup) a.scroll).setClipChildren(false);
+ float width = a.windowWidth() / a.getResources().getDisplayMetrics().density;
+ int marginDp = bottomDock ? 36 : (34 + rightPadDp);
+ posterWidth = Math.max(48, (int) ((width - marginDp - (COLUMNS - 1) * 14) / COLUMNS) - 8);
+ historySection();
+ LinearLayout heading = a.row();
+ heading.setClipChildren(false);
+ heading.setClipToPadding(false);
+ heading.setPadding(0, a.dp(6), 0, a.dp(6));
+ TextView title = a.text("发现", 22, MainActivity.WHITE);
+ title.setTypeface(null, Typeface.BOLD);
+ heading.addView(title, new LinearLayout.LayoutParams(-2, -2));
+ source = pill(site.name, "source-switcher", a::chooseSources);
+ source.setPadding(a.dp(Math.round(14 * navScale)), 0, a.dp(Math.round(14 * navScale)), 0);
+ source.setCompoundDrawablePadding(a.dp(9));
+ source.setCompoundDrawables(null, null, new SourceChevron(a), null);
+ source.setOnFocusChangeListener((v, f) -> styleSource(f));
+ styleSource(false);
+ source.setMaxWidth(a.dp(Math.round(220 * Math.max(1f, navScale))));
+ source.setContentDescription("当前片源：" + site.name + "，按确认键切换");
+ LinearLayout.LayoutParams sourceSize =
+ new LinearLayout.LayoutParams(-2, a.dp(Math.round(34 * navScale)));
+ sourceSize.leftMargin = a.dp(14);
+ heading.addView(source, sourceSize);
+ a.body.addView(heading);
+ filters = new CategoryFlow(a, this::wireNavigation);
+ filters.setPadding(0, a.dp(2), 0, a.dp(8));
+ a.body.addView(filters);
+ // 1.9.35 紧凑版：薄玻璃面板（圆角16 / 无 header / padding 14·10 / 外边距 24·8·24·12）
+ filterPanel = a.vertical();
+ filterPanel.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
+ android.graphics.drawable.GradientDrawable filterPanelBg =
+ new android.graphics.drawable.GradientDrawable();
+ filterPanelBg.setColor(0x1affffff);
+ filterPanelBg.setCornerRadius(a.dp(16));
+ filterPanelBg.setStroke(a.dp(1), 0x26ffffff);
+ filterPanel.setBackground(filterPanelBg);
+ filterPanel.setClipChildren(false);
+ filterPanel.setVisibility(View.GONE);
+ LinearLayout.LayoutParams filterPanelLp = new LinearLayout.LayoutParams(-1, -2);
+ filterPanelLp.setMargins(a.dp(24), a.dp(8), a.dp(24), a.dp(12));
+ a.body.addView(filterPanel, filterPanelLp);
+ filterTagScroll = new android.widget.HorizontalScrollView(a);
+ filterTagScroll.setHorizontalScrollBarEnabled(false);
+ filterTagScroll.setClipChildren(false);
+ filterTagScroll.setClipToPadding(false);
+ filterTagRow = a.row();
+ filterTagRow.setGravity(Gravity.CENTER_VERTICAL);
+ filterTagScroll.addView(filterTagRow);
+ filterPanel.addView(filterTagScroll, new LinearLayout.LayoutParams(-1, -2));
+ filterOptionScroll = new android.widget.HorizontalScrollView(a);
+ filterOptionScroll.setHorizontalScrollBarEnabled(false);
+ filterOptionScroll.setClipChildren(false);
+ filterOptionScroll.setPadding(0, a.dp(6), 0, 0);
+ filterOptionScroll.setVisibility(View.GONE);
+ filterOptionRow = a.row();
+ filterOptionRow.setGravity(Gravity.CENTER_VERTICAL);
+ filterOptionScroll.addView(filterOptionRow);
+ filterPanel.addView(filterOptionScroll, new LinearLayout.LayoutParams(-1, -2));
+ filterOptionGrid = a.vertical();
+ filterOptionGrid.setVisibility(View.GONE);
+ status = a.text("", 13, MainActivity.MUTED);
+ status.setPadding(a.dp(4), a.dp(12), 0, a.dp(12));
+ status.setVisibility(View.GONE);
+ a.body.addView(status);
+ attachLoadingOverlay();
+ earlier =
+ pill(
+ "查看前面的影片",
+ "home-earlier",
+ () -> showWindow(Math.max(0, state.windowStart - windowSize())));
+ earlier.setVisibility(View.GONE);
+ a.body.addView(earlier, new LinearLayout.LayoutParams(a.dp(180), a.dp(40)));
+ content = a.vertical();
+ content.setClipChildren(false);
+ content.setClipToPadding(false);
+ a.body.addView(content);
+ more =
+ pill(
+ "加载更多",
+ "home-load-more",
+ () -> {
+ if (snapshot == null) {
+ loadHome();
+ return;
+ }
+ if (windowEnd() < state.videos.size()) {
+ showWindow(state.windowStart + windowSize());
+ return;
+ }
+ loadCategory(!state.ready);
+ });
+ LinearLayout footer = a.row();
+ footer.setClipChildren(false);
+ footer.setClipToPadding(false);
+ footer.setGravity(Gravity.CENTER);
+ footer.setPadding(0, a.dp(14), 0, a.dp(8));
+ footer.addView(more, new LinearLayout.LayoutParams(a.dp(180), a.dp(40)));
+ a.body.addView(footer);
+ // 1.8.12：云盘配置原地容器（与 content/footer 同级，默认 GONE）
+ cloudContent = content;
+ cloudStatus = status;
+ cloudFooter = footer;
+ cloudInline = a.vertical();
+ cloudInline.setTag("home-cloud-inline");
+ cloudInline.setVisibility(View.GONE);
+ a.body.addView(cloudInline, new LinearLayout.LayoutParams(-1, -2));
+ more.setVisibility(View.GONE);
+ wireNavigation();
+ retainedRoot = a.root;
+ retainedBody = a.body;
+ retainedScroll = a.scroll;
+ retainedDock = a.homeDock;
+ retainedWidth = a.windowWidth();
+ retainedHeight = a.windowHeight();
+ retainedFontScale = a.getResources().getConfiguration().fontScale;
+ retainedEngineEpoch = a.engineEpoch;
+ retainedSafeMode = SafeMode.enabled(a);
+ retainedAppearance = appearance();
+ if (a.current != null) a.current.retainedHome = this;
+ Snapshot saved = state.snapshot != null ? state.snapshot : a.homeData.get(site.key);
+ if (saved != null
+ && (state.snapshot != null || System.currentTimeMillis() - saved.time < 300000)) {
+ snapshot = saved;
+ renderSnapshot();
+ return;
+ }
+ if (!a.reduced && (site.api == null || !site.api.contains("fixture.test"))) {
+ Snapshot disk = readDiskSnapshot(a, site.key);
+ if (disk != null && !disk.videos.isEmpty()) {
+ snapshot = disk;
+ a.homeData.put(site.key, disk);
+ renderSnapshot();
+ if (System.currentTimeMillis() - disk.time >= 300000) {
+ refreshHomeSilently();
+ }
+ return;
+ }
+ }
+ loadHome();
+ }
+
+ static Cms.Listing parseHomeListing(String raw) {
+ if (raw == null || raw.trim().isEmpty()) return new Cms.Listing();
+ try {
+ String trimmed = raw.trim();
+ if (trimmed.startsWith("<")) {
+ return Cms.listing(raw);
+ }
+ if (new JSONObject(raw).has("list")) {
+ return Cms.listing(raw);
+ }
+ } catch (Throwable ignored) {
+ }
+ return new Cms.Listing();
+ }
+
+ void refreshHomeSilently() {
+ final int token = request;
+ a.worker.execute(
+ () -> {
+ try {
+ SourceEngine engine = a.engine(site);
+ String raw = engine.home();
+ List<Cms.Category> categories = Cms.categories(raw);
+ Cms.Listing list = parseHomeListing(raw);
+ clean(list.videos);
+ if (list.videos.isEmpty())
+ try {
+ list = Cms.listing(engine.homeVideos());
+ clean(list.videos);
+ } catch (Throwable ignored) {
+ }
+ String skip = "";
+ if (list.videos.isEmpty() && !categories.isEmpty()) {
+ skip = categories.get(0).id;
+ list = Cms.listing(engine.category(skip, 1));
+ clean(list.videos);
+ }
+ if (list.videos.isEmpty() && categories.isEmpty()) return;
+ final Snapshot fresh =
+ new Snapshot(list.videos, categories, skip, list.pageCount);
+ writeDiskSnapshot(a, site.key, fresh);
+ a.ui.post(
+ () -> {
+ a.homeData.put(site.key, fresh);
+ if (!active() || busy || token != request) return;
+ boolean onDefaultTab =
+ state != null
+ && (state.category == null
+ || state.category.isEmpty())
+ && state.page == 1;
+ if (onDefaultTab && snapshot != null) {
+ String oldFirst =
+ snapshot.videos.isEmpty()
+ ? ""
+ : snapshot.videos.get(0).id;
+ String newFirst =
+ fresh.videos.isEmpty()
+ ? ""
+ : fresh.videos.get(0).id;
+ snapshot = fresh;
+ if (!Objects.equals(oldFirst, newFirst)
+ || state.videos.size() != fresh.videos.size()) {
+ state.ready = false;
+ renderSnapshot();
+ }
+ }
+ });
+ } catch (Throwable ignored) {
+ }
+ });
+ }
+
+ Map<String, Object> appearance() {
+ Map<String, Object> values = new LinkedHashMap<>();
+ Map<String, ?> prefs = a.prefs.getAll();
+ for (String key :
+ new String[] {
+ Prefs.HOME_COLUMNS,
+ Prefs.HOME_ROWS,
+ Prefs.HOME_SECTIONS,
+ Prefs.HOME_AMBIENT,
+ Prefs.WALLPAPER_ENABLED,
+ Prefs.WALLPAPER_DIM,
+ Prefs.REDUCED,
+ Prefs.REDUCED_TRANSPARENCY,
+ Prefs.UI_SCALE_PERCENT,
+ Prefs.NAV_SCALE_PERCENT
+ }) values.put(key, prefs.get(key));
+ return values;
+ }
+
+ /** Reattach the exact home tree after detail/playback, without a catalogue request. */
+ boolean resume() {
+ if (retainedRoot == null
+ || state == null
+ || !state.ready
+ || busy
+ || retainedWidth != a.windowWidth()
+ || retainedHeight != a.windowHeight()
+ || retainedFontScale != a.getResources().getConfiguration().fontScale
+ || retainedEngineEpoch != a.engineEpoch
+ || !appearance().equals(retainedAppearance)
+ || !site.key.equals(a.prefs.getString(Prefs.SELECTED_SITE, ""))) return false;
+ a.preparePage(true);
+ ticket = a.generation;
+ request++;
+ cancelGrid();
+ a.root = retainedRoot;
+ a.body = retainedBody;
+ a.scroll = retainedScroll;
+ a.homeDock = retainedDock;
+ a.homeAmbient = ambient;
+ a.setContentView(retainedRoot);
+ // 1.8.25：安全模式状态未变时只补壁纸，不 clear/release（避免返回首页重建视频壁纸黑闪）
+ boolean safeNow = SafeMode.enabled(a);
+ if (retainedRoot != null) {
+ if (safeNow != retainedSafeMode) {
+ a.applySafeModeVisual(); // 状态切换才 clear/重建
+ } else if (!safeNow) {
+ a.applyWallpaper(retainedRoot); // 仅幂等补层，不 release 已有视频壁纸
+ }
+ retainedSafeMode = safeNow;
+ AppLog.i(
+ "Wallpaper",
+ "page=HomeScreen resume safe=" + safeNow + " changed=false bg=transparent");
+ }
+ int drawn = state.windowStart;
+ for (List<View> row : rows) drawn += row.size();
+ if (drawn < windowEnd()) appendCards(drawn, gridEpoch, true);
+ resumeMissingPosters(retainedRoot);
+ updateMore();
+ wireNavigation();
+ return true;
+ }
+
+ void resumeMissingPosters(View view) {
+ if (view instanceof ImageView
+ && ((ImageView) view).getDrawable() == null
+ && view.getTag() instanceof String) {
+ a.poster((String) view.getTag(), (ImageView) view);
+ }
+ if (view instanceof android.view.ViewGroup) {
+ android.view.ViewGroup group = (android.view.ViewGroup) view;
+ for (int i = 0; i < group.getChildCount(); i++)
+ resumeMissingPosters(group.getChildAt(i));
+ }
+ }
+
+ /** 1.9.70：TV 主页显式焦点链，默认焦点=第一张卡片（无卡片=分类第一个）。 */
+ void wireHomeFocus() {
+ final MainActivity a = this.a;
+ if (!a.isTvDevice() || a.root == null) return;
+ java.util.List<View> tabs = collectPrefix(a.root, "home-tab:", 32);
+ java.util.List<View> videos = collectPrefix(a.root, "home-video:", 300);
+ for (View v : tabs)
+ if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
+ for (View v : videos)
+ if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
+ for (int i = 0; i < tabs.size(); i++) {
+ View tab = tabs.get(i);
+ if (i > 0) tab.setNextFocusLeftId(tabs.get(i - 1).getId());
+ if (i + 1 < tabs.size()) tab.setNextFocusRightId(tabs.get(i + 1).getId());
+ if (!videos.isEmpty()) tab.setNextFocusDownId(videos.get(0).getId());
+ }
+ if (!videos.isEmpty()) {
+ // 按屏幕坐标分行：行内左右、行间上下，顶行 UP→分类行
+ java.util.List<View> sorted = new java.util.ArrayList<>(videos);
+ final int[] pos = new int[2];
+ java.util.Collections.sort(
+ sorted,
+ (x, y) -> {
+ int[] xp = new int[2];
+ int[] yp = new int[2];
+ x.getLocationOnScreen(xp);
+ y.getLocationOnScreen(yp);
+ if (Math.abs(xp[1] - yp[1]) > a.dp(8)) return xp[1] - yp[1];
+ return xp[0] - yp[0];
+ });
+ int rowTop = Integer.MIN_VALUE;
+ View rowFirst = null;
+ View prev = null;
+ java.util.List<View> rowList = new java.util.ArrayList<>();
+ final View nav = a.root.findViewWithTag("nav-home");
+ for (View card : sorted) {
+ int[] p = new int[2];
+ card.getLocationOnScreen(p);
+ if (Math.abs(p[1] - rowTop) > a.dp(8)) {
+ if (prev != null && nav != null && !tabs.isEmpty())
+ prev.setNextFocusRightId(nav.getId());
+ rowTop = p[1];
+ rowFirst = card;
+ rowList.clear();
+ rowList.add(card);
+ if (!tabs.isEmpty())
+ card.setNextFocusUpId(tabs.get(0).getId());
+ else card.setNextFocusUpId(card.getId());
+ } else {
+ rowList.add(card);
+ }
+ prev = card;
+ }
+ for (int i = 0; i < sorted.size(); i++) {
+ View card = sorted.get(i);
+ int[] p = new int[2];
+ card.getLocationOnScreen(p);
+ View left = null, right = null, up = null, down = null;
+ for (View other : sorted) {
+ if (other == card) continue;
+ int[] q = new int[2];
+ other.getLocationOnScreen(q);
+ boolean sameRow = Math.abs(q[1] - p[1]) <= a.dp(8);
+ if (sameRow && q[0] < p[0] && (left == null || q[0] > leftPos(left)))
+ left = other;
+ if (sameRow && q[0] > p[0] && (right == null || q[0] < rightPos(right)))
+ right = other;
+ if (Math.abs(q[0] - p[0]) <= a.dp(24) && q[1] < p[1]
+ && (up == null || q[1] > upPos(up))) up = other;
+ if (Math.abs(q[0] - p[0]) <= a.dp(24) && q[1] > p[1]
+ && (down == null || q[1] < downPos(down))) down = other;
+ }
+ if (left != null) card.setNextFocusLeftId(left.getId());
+ if (right != null) card.setNextFocusRightId(right.getId());
+ else if (nav != null) card.setNextFocusRightId(nav.getId());
+ if (up != null) card.setNextFocusUpId(up.getId());
+ if (down != null) card.setNextFocusDownId(down.getId());
+ }
+ if (nav != null) {
+ if (nav.getId() == View.NO_ID) nav.setId(View.generateViewId());
+ nav.setNextFocusLeftId(sorted.get(sorted.size() - 1).getId());
+ }
+ if (videos.isEmpty() || a.getCurrentFocus() == null) focusFirstHomeCard(videos, tabs);
+ } else if (!tabs.isEmpty()) {
+ tabs.get(0).requestFocus();
+ }
+ View focus = a.getCurrentFocus();
+ AppLog.i(
+ "TvNav",
+ "page=home focus="
+ + (focus == null ? "null" : String.valueOf(focus.getTag()))
+ + " cards="
+ + videos.size());
+ }
+
+ private int leftPos(View v) {
+ int[] p = new int[2];
+ v.getLocationOnScreen(p);
+ return p[0];
+ }
+
+ private int rightPos(View v) {
+ int[] p = new int[2];
+ v.getLocationOnScreen(p);
+ return p[0];
+ }
+
+ private int upPos(View v) {
+ int[] p = new int[2];
+ v.getLocationOnScreen(p);
+ return p[1];
+ }
+
+ private int downPos(View v) {
+ int[] p = new int[2];
+ v.getLocationOnScreen(p);
+ return p[1];
+ }
+
+ private void focusFirstHomeCard(java.util.List<View> videos, java.util.List<View> tabs) {
+ View nav = a.root == null ? null : a.root.findViewWithTag("nav-home");
+ View focus = a.getCurrentFocus();
+ if (focus != null && focus != nav && focus.isShown()) return;
+ if (!videos.isEmpty()) videos.get(0).requestFocus();
+ else if (!tabs.isEmpty()) tabs.get(0).requestFocus();
+ }
+
+ private java.util.List<View> collectPrefix(View view, String prefix, int limit) {
+ java.util.List<View> out = new java.util.ArrayList<>();
+ collectPrefix(view, prefix, limit, out);
+ return out;
+ }
+
+ private void collectPrefix(View view, String prefix, int limit, java.util.List<View> out) {
+ if (view == null || out.size() >= limit) return;
+ if (view.getTag() instanceof String
+ && ((String) view.getTag()).startsWith(prefix)
+ && view.isShown()) out.add(view);
+ if (view instanceof android.view.ViewGroup) {
+ android.view.ViewGroup group = (android.view.ViewGroup) view;
+ for (int i = 0; i < group.getChildCount() && out.size() < limit; i++)
+ collectPrefix(group.getChildAt(i), prefix, limit, out);
+ }
+ }
+
+ void loadHome() {
+ if (busy) return;
+ busy = true;
+ showHomeLoading("category");
+ more.setVisibility(View.GONE);
+ int token = ++request;
+ a.prefs.edit().putString(Prefs.LOADING_SITE, site.key).commit();
+ a.submitPage(
+ () -> {
+ try {
+ SourceEngine engine = a.engine(site);
+ String raw = engine.home();
+ List<Cms.Category> categories = Cms.categories(raw);
+ Cms.Listing list = parseHomeListing(raw);
+ clean(list.videos);
+ if (list.videos.isEmpty())
+ try {
+ list = Cms.listing(engine.homeVideos());
+ clean(list.videos);
+ } catch (Throwable ignored) {
+ }
+ String skip = "";
+ if (list.videos.isEmpty() && !categories.isEmpty()) {
+ skip = categories.get(0).id;
+ list = Cms.listing(engine.category(skip, 1));
+ clean(list.videos);
+ }
+ Snapshot result =
+ new Snapshot(list.videos, categories, skip, list.pageCount);
+ result.filterSchema = raw;
+ if (!a.reduced
+ && (site.api == null || !site.api.contains("fixture.test"))) {
+ a.worker.execute(() -> writeDiskSnapshot(a, site.key, result));
+ }
+ a.ui.post(
+ () -> {
+ a.prefs.edit().putString(Prefs.LOADING_SITE, "").apply();
+ if (!active() || token != request) return;
+ busy = false;
+ snapshot = result;
+ a.homeData.put(site.key, result);
+ hideHomeLoading("category");
+ status.setVisibility(View.GONE);
+ renderSnapshot();
+ // 1.9.70：主页显式焦点链 + 默认焦点=第一张卡片
+ a.ui.post(this::wireHomeFocus);
+ });
+ } catch (Throwable e) {
+ AppLog.w("HomeScreen", "loadHome failed for " + site.key, e);
+ a.ui.post(
+ () -> {
+ a.prefs.edit().putString(Prefs.LOADING_SITE, "").apply();
+ if (!active() || token != request) return;
+ busy = false;
+ hideHomeLoading("category");
+ status.setVisibility(View.VISIBLE);
+ status.setText("加载失败：" + a.message(e));
+ more.setText("重新加载");
+ more.setVisibility(View.VISIBLE);
+ wireNavigation();
+ if (source != null) source.requestFocus();
+ });
+ }
+ });
+ }
+
+ private static java.io.File snapshotCacheFile(MainActivity a, String siteKey) {
+ try {
+ java.io.File dir = new java.io.File(a.getCacheDir(), "home_snap_v1");
+ if (!dir.exists()) dir.mkdirs();
+ java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+ byte[] digest =
+ md.digest(
+ (siteKey == null ? "" : siteKey)
+ .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+ StringBuilder hex = new StringBuilder(32);
+ for (int i = 0; i < 16 && i < digest.length; i++) {
+ hex.append(String.format(java.util.Locale.US, "%02x", digest[i] & 0xff));
+ }
+ return new java.io.File(dir, hex + ".json");
+ } catch (Throwable ignored) {
+ return null;
+ }
+ }
+
+ private static void writeDiskSnapshot(MainActivity a, String siteKey, Snapshot snap) {
+ if (a == null || snap == null || (snap.videos.isEmpty() && snap.categories.isEmpty()))
+ return;
+ java.io.File file = snapshotCacheFile(a, siteKey);
+ if (file == null) return;
+ try {
+ JSONObject root = new JSONObject();
+ root.put("skip", snap.skip == null ? "" : snap.skip);
+ root.put("pages", snap.pages);
+ root.put("filterSchema", snap.filterSchema == null ? "{}" : snap.filterSchema);
+ org.json.JSONArray cats = new org.json.JSONArray();
+ for (Cms.Category c : snap.categories) {
+ JSONObject cj = new JSONObject();
+ cj.put("id", c.id);
+ cj.put("name", c.name);
+ cats.put(cj);
+ }
+ root.put("categories", cats);
+ org.json.JSONArray vids = new org.json.JSONArray();
+ int limit = Math.min(40, snap.videos.size());
+ for (int i = 0; i < limit; i++) {
+ Cms.Video v = snap.videos.get(i);
+ JSONObject vj = new JSONObject();
+ vj.put("id", v.id == null ? "" : v.id);
+ vj.put("title", v.title == null ? "" : v.title);
+ vj.put("poster", v.poster == null ? "" : v.poster);
+ vj.put("remarks", v.remarks == null ? "" : v.remarks);
+ vj.put("year", v.year == null ? "" : v.year);
+ vj.put("area", v.area == null ? "" : v.area);
+ vj.put("actor", v.actor == null ? "" : v.actor);
+ vj.put("director", v.director == null ? "" : v.director);
+ vj.put("description", v.description == null ? "" : v.description);
+ vj.put("tag", v.tag == null ? "" : v.tag);
+ vj.put("action", v.action == null ? "" : v.action);
+ vids.put(vj);
+ }
+ root.put("videos", vids);
+ byte[] bytes = root.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+ try (java.io.FileOutputStream out = new java.io.FileOutputStream(file)) {
+ out.write(bytes);
+ }
+ } catch (Throwable ignored) {
+ }
+ }
+
+ private static Snapshot readDiskSnapshot(MainActivity a, String siteKey) {
+ java.io.File file = snapshotCacheFile(a, siteKey);
+ if (file == null || !file.exists() || file.length() <= 0 || file.length() > 512 * 1024)
+ return null;
+ // Expire disk snapshot after 3 days
+ if (System.currentTimeMillis() - file.lastModified() > 3L * 24 * 3600 * 1000) return null;
+ try (java.io.InputStream in = new java.io.FileInputStream(file)) {
+ JSONObject root = new JSONObject(Cms.read(in, 512 * 1024));
+ String skip = root.optString("skip", "");
+ int pages = Math.max(1, root.optInt("pages", 1));
+ List<Cms.Category> categories = new ArrayList<>();
+ org.json.JSONArray cats = root.optJSONArray("categories");
+ if (cats != null) {
+ for (int i = 0; i < cats.length(); i++) {
+ JSONObject cj = cats.optJSONObject(i);
+ if (cj != null) {
+ String id = cj.optString("id", "");
+ String name = cj.optString("name", "");
+ if (!id.isEmpty() && !name.isEmpty()) {
+ categories.add(new Cms.Category(id, name));
+ }
+ }
+ }
+ }
+ List<Cms.Video> videos = new ArrayList<>();
+ org.json.JSONArray vids = root.optJSONArray("videos");
+ if (vids != null) {
+ for (int i = 0; i < vids.length(); i++) {
+ JSONObject vj = vids.optJSONObject(i);
+ if (vj != null) {
+ Cms.Video v = new Cms.Video();
+ v.id = vj.optString("id", "");
+ v.title = vj.optString("title", "");
+ v.poster = vj.optString("poster", "");
+ v.remarks = vj.optString("remarks", "");
+ v.year = vj.optString("year", "");
+ v.area = vj.optString("area", "");
+ v.actor = vj.optString("actor", "");
+ v.director = vj.optString("director", "");
+ v.description = vj.optString("description", "");
+ v.tag = vj.optString("tag", "");
+ v.action = vj.optString("action", "");
+ if (!v.id.isEmpty() && !v.title.isEmpty()) {
+ videos.add(v);
+ }
+ }
+ }
+ }
+ if (videos.isEmpty()) return null;
+ Snapshot snap = new Snapshot(videos, categories, skip, pages);
+ snap.filterSchema = root.optString("filterSchema", "{}");
+ return snap;
+ } catch (Throwable ignored) {
+ return null;
+ }
+ }
+
+ void historySection() {
+ List<WatchHistory.Entry> entries = WatchHistory.collapsed(a.watchHistory());
+ if (entries.isEmpty()) return;
+ boolean compactStack = a.useBottomDock();
+ LinearLayout section = a.vertical();
+ section.setTag("home-history-section");
+ section.setGravity(Gravity.TOP);
+ section.setClipChildren(false);
+ section.setClipToPadding(false);
+ a.body.addView(section);
+ LinearLayout heading = a.row();
+ heading.setClipChildren(false);
+ heading.setClipToPadding(false);
+ TextView historyTitle = a.text("历史记录", 17, MainActivity.WHITE);
+ historyTitle.setTag("home-history-title");
+ historyTitle.setTypeface(null, Typeface.BOLD);
+ heading.addView(historyTitle, new LinearLayout.LayoutParams(0, -2, 1));
+ allHistory =
+ pill(
+ "全部历史 ›",
+ "home-history-all",
+ () -> a.open(new MainActivity.Screen(a::historyPage), true));
+ heading.addView(
+ allHistory, new LinearLayout.LayoutParams(-2, a.dp(Math.round(30 * navScale))));
+ section.addView(heading, new LinearLayout.LayoutParams(-1, -2));
+ a.gap(section, 6);
+ LinearLayout recent = compactStack ? a.vertical() : a.row();
+ if (!compactStack) recent.setWeightSum(4);
+ recent.setTag("home-history-list");
+ recent.setClipChildren(false);
+ recent.setClipToPadding(false);
+ section.addView(recent, new LinearLayout.LayoutParams(-1, -2));
+ int count = Math.min(4, entries.size());
+ for (int i = 0; i < count; i++) {
+ LinearLayout.LayoutParams cell =
+ compactStack
+ ? new LinearLayout.LayoutParams(-1, a.dp(72))
+ : new LinearLayout.LayoutParams(0, a.dp(72), 1);
+ boolean last = i == count - 1;
+ cell.rightMargin = a.dp(compactStack ? 0 : (last ? (4 - count) * 12 : 12));
+ cell.bottomMargin = a.dp(compactStack && !last ? 10 : 0);
+ final WatchHistory.Entry e = entries.get(i);
+ LinearLayout card = a.row();
+ card.setPadding(a.dp(9), a.dp(6), a.dp(12), a.dp(6));
+ card.setBackground(thinGlass(16, true));
+ ImageView image = new AmbientPoster();
+ image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+ image.setBackground(a.bg(0xff303038, 7));
+ image.setClipToOutline(true);
+ LinearLayout.LayoutParams art = new LinearLayout.LayoutParams(a.dp(40), a.dp(60));
+ art.rightMargin = a.dp(12);
+ card.addView(image, art);
+ a.poster(e.poster, image);
+ LinearLayout info = a.vertical();
+ info.setGravity(Gravity.CENTER_VERTICAL);
+ card.addView(info, new LinearLayout.LayoutParams(0, -1, 1));
+ TextView name = a.text(e.title, 14, MainActivity.WHITE);
+ single(name);
+ info.addView(name);
+ a.gap(info, 6);
+ TextView detail = a.text(a.historyLabel(e), 11, MainActivity.MUTED);
+ single(detail);
+ info.addView(detail);
+ a.gap(info, 9);
+ FrameLayout track = new FrameLayout(a);
+ track.setBackground(a.bg(0xff4a5f85, 2));
+ track.setClipToOutline(true);
+ info.addView(track, new LinearLayout.LayoutParams(-1, a.dp(3)));
+ View progress = new View(a);
+ progress.setBackgroundColor(0xffeef2fb);
+ float fraction =
+ e.duration > 0 ? Math.max(0, Math.min(1, e.position / (float) e.duration)) : 0;
+ track.addView(progress, new FrameLayout.LayoutParams(0, -1));
+ track.addOnLayoutChangeListener(
+ (v, l, t, r, b, ol, ot, or, ob) -> {
+ android.view.ViewGroup.LayoutParams p = progress.getLayoutParams();
+ int w = Math.round((r - l) * fraction);
+ if (p.width != w) {
+ p.width = w;
+ progress.setLayoutParams(p);
+ }
+ });
+ focusable(card, "home-history:" + i);
+ outline(card, false, 14, 0xff16243c);
+ card.setContentDescription(e.title + "，" + a.historyLabel(e));
+ card.setOnClickListener(v -> a.resumeHistory(e));
+ card.setOnFocusChangeListener(
+ (v, f) -> {
+ outline(card, f, 14, 0xff16243c);
+ if (f && ambient != null) ambient.follow(image);
+ if (f && !a.reduced && a.config != null) {
+ v.postDelayed(
+ () -> {
+ if (v.hasFocus() && active() && a.config != null) {
+ for (Cms.Site s : a.config.sites) {
+ if (s.key.equals(e.site)) {
+ Cms.Video listing = new Cms.Video();
+ listing.id = e.id;
+ listing.title = e.title;
+ listing.poster = e.poster;
+ SourceController.prefetchDetail(a, s, listing);
+ break;
+ }
+ }
+ }
+ },
+ 150);
+ }
+ });
+ if (i == 0
+ && ambient != null
+ && (ambient.wanted == null || !ambient.wanted.isAttachedToWindow()))
+ ambient.follow(image);
+ recent.addView(card, cell);
+ historyCards.add(card);
+ }
+ a.gap(a.body, 4);
+ }
+
+ void renderSnapshot() {
+ // 1.9.73：回到首页时导航选中态切回「主页」，不残留设置/电视
+ HomeDock.selectedKey = "nav-home";
+ state.snapshot = snapshot;
+ boolean first = !state.initialized;
+ if (first) {
+ state.initialized = true;
+ state.category = "";
+ }
+ buildTabs();
+ if (first && a.current != null && a.current.focus == null) {
+ a.current.focus = String.valueOf(selectedTab().getTag());
+ restoreFocus();
+ }
+ if (state.ready) {
+ drawGrid(false);
+ restoreFocus();
+ } else choose(state.category, false);
+ }
+
+ void buildTabs() {
+ filters.removeAllViews();
+ filters.lines.clear();
+ tabs.clear();
+ tabIds.clear();
+ addTab("推荐", "", 0);
+ int visible = Math.min(4, snapshot.categories.size());
+ for (int i = 0; i < visible; i++) {
+ Cms.Category c = snapshot.categories.get(i);
+ addTab(c.name, c.id, i + 1);
+ }
+ if (snapshot.categories.size() > visible) {
+ TextView extra =
+ pill(
+ "更多分类 ",
+ "home-category-more",
+ () -> {
+ String[] names = new String[snapshot.categories.size()];
+ int selected = -1;
+ for (int i = 0; i < names.length; i++) {
+ Cms.Category c = snapshot.categories.get(i);
+ names[i] = c.name;
+ if (c.id.equals(state.category)) selected = i;
+ }
+ new AppDialog.Builder(a)
+ .setTitle("选择分类")
+ .wrapChoices()
+ .setSingleChoiceItems(
+ names,
+ selected,
+ (d, n) ->
+ choose(snapshot.categories.get(n).id, true))
+ .setNegativeButton("关闭", null)
+ .show();
+ });
+ extra.setOnFocusChangeListener(
+ (v, f) -> outline(extra, f, 17, extra.isSelected() ? 0xffeef2fb : 0xff172742));
+ addTabView(extra);
+ }
+ // 1.9.33：移除旧的「筛选」按钮，筛选入口改到带 ≡ 的分类 chip
+ updateTabs(); wireNavigation();
+ }
+
+ List<VideoFilters.Definition> filterDefinitions() {
+ String category = state.category;
+ if (category.isEmpty() && !snapshot.categories.isEmpty())
+ category = snapshot.categories.get(0).id;
+ // 1.9.46：type3 JS 源只用 spider 返回的 key
+ List<VideoFilters.Definition> definitions =
+ VideoFilters.definitionsFor(site, snapshot.filterSchema, category, snapshot.videos);
+ if (site.supported() && site.type != 3)
+ for (VideoFilters.Definition def : definitions) {
+ if (!VideoFilters.allowedKey(def.key)) def.remote = false;
+ }
+ return definitions;
+ }
+
+ /** 1.9.38：能力 = schema 有该分类 且 至少一个远程筛选维度可解析（图标与点击同一判定）。 */
+ boolean categoryHasFilters(String catId) {
+ if (snapshot == null) return false;
+ String category =
+ catId == null || catId.isEmpty()
+ ? (state.category.isEmpty() && !snapshot.categories.isEmpty()
+ ? snapshot.categories.get(0).id
+ : state.category)
+ : catId;
+ boolean schema =
+ VideoFilters.hasSchemaFiltersFor(
+ site, snapshot.filterSchema, category, snapshot.videos);
+ int remoteDefs = 0;
+ if (schema) {
+ List<VideoFilters.Definition> defs =
+ VideoFilters.definitionsFor(
+ site, snapshot.filterSchema, category, snapshot.videos);
+ boolean restrict = site != null && site.supported() && site.type != 3;
+ for (VideoFilters.Definition def : defs) {
+ if (restrict && !VideoFilters.allowedKey(def.key)) continue;
+ if (def.remote && def.choices.size() > 1) remoteDefs++;
+ }
+ }
+ boolean icons = schema && remoteDefs > 0;
+ AppLog.i(
+ "Filter",
+ "capability category="
+ + category
+ + " key="
+ + category
+ + " schema="
+ + schema
+ + " defs="
+ + remoteDefs
+ + " icons="
+ + icons
+ + " site="
+ + (site == null ? "null" : site.key)
+ + " types="
+ + VideoFilters.schemaKinds(snapshot.filterSchema));
+ return icons;
+ }
+
+ private android.graphics.drawable.Drawable funnelDrawable(int color, int sizeDp) {
+ android.graphics.drawable.Drawable glyph = UiIcon.drawable(a, UiIcon.FILTER);
+ if (glyph == null) return null;
+ UiIcon.tintDrawable(glyph, color);
+ int size = a.dp(sizeDp);
+ glyph.setBounds(0, 0, size, size);
+ return glyph;
+ }
+
+ /** 1.9.34：已选中分类点击循环：L2 → 类型 L3 → 收起。 */
+ void handleCategoryFilterTap() {
+ if (filterPanel == null) return;
+ if (filterPanel.getVisibility() != View.VISIBLE) {
+ List<VideoFilters.Definition> defs = filterDefinitions();
+ final int scrollY = a.scroll == null ? 0 : a.scroll.getScrollY();
+ AppLog.i(
+ "Filter",
+ "tap state=expand category="
+ + state.category
+ + " mode=both options="
+ + (defs.isEmpty() ? 0 : defs.get(0).choices.size())
+ + " zeroLoad=true");
+ renderFilterTags();
+ if (!defs.isEmpty()) {
+ VideoFilters.Definition target = defs.get(0);
+ for (VideoFilters.Definition def : defs)
+ if ("class".equals(def.dimension)) {
+ target = def;
+ break;
+ }
+ showFilterOptions(target);
+ }
+ a.ui.post(() -> {
+ if (a.scroll != null) a.scroll.scrollTo(0, scrollY);
+ });
+ return;
+ }
+ AppLog.i("Filter", "tap state=collapse category=" + state.category);
+ collapseFilterUi();
+ }
+
+ void toggleFilterTags() {
+ if (filterPanel == null) return;
+ if (filterPanel.getVisibility() == View.VISIBLE) {
+ collapseFilterUi();
+ return;
+ }
+ renderFilterTags();
+ }
+
+ /** L2：文字标签 + 2dp 粉色下划线（紧凑稿，无胶囊底）。 */
+ /** 1.9.36：同维度多选（逗号分隔，兼容原 Map 结构）。 */
+ static java.util.LinkedHashSet<String> filterValueSet(String raw) {
+ java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<>();
+ if (raw != null)
+ for (String part : raw.split(","))
+ if (!part.trim().isEmpty()) set.add(part.trim());
+ return set;
+ }
+
+ static String joinFilterValues(java.util.Set<String> values) {
+ return TextUtils.join(",", values);
+ }
+
+ static String firstFilterValue(String raw) {
+ java.util.Set<String> set = filterValueSet(raw);
+ if (set.isEmpty()) return "";
+ return set.iterator().next();
+ }
+
+ static String filterLabel(VideoFilters.Definition def, String raw) {
+ java.util.Set<String> values = filterValueSet(raw);
+ if (values.isEmpty()) return "全部";
+ StringBuilder out = new StringBuilder();
+ for (String value : values) {
+ if (out.length() > 0) out.append("+");
+ out.append(def.labelFor(value));
+ }
+ return out.toString();
+ }
+
+ /** 1.9.43：远程维度默认单选；本地维度多选。 */
+ boolean remoteMultiAllowed(VideoFilters.Definition def) {
+ return a.prefs.getBoolean("filter_remote_multi_enabled", false);
+ }
+
+ void toggleHomeFilterValue(VideoFilters.Definition def, VideoFilters.Choice choice) {
+ java.util.LinkedHashSet<String> values =
+ filterValueSet(state.selectedFilters.get(def.dimension));
+ boolean remoteSingle = MobileShell.siteHasRemoteApi(site) && !remoteMultiAllowed(def);
+ if (remoteSingle) {
+ if (choice.value.isEmpty()) {
+ values.clear();
+ } else if (values.size() == 1 && values.contains(choice.value)) {
+ values.clear();
+ } else {
+ values.clear();
+ values.add(choice.value);
+ if (!remoteSingleToastShown) {
+ remoteSingleToastShown = true;
+ a.toast(
+ "该源仅支持单条件筛选，已切换为「"
+ + def.labelFor(choice.value)
+ + "」");
+ }
+ AppLog.i(
+ "Filter",
+ "remote single dim="
+ + def.dimension
+ + " value="
+ + choice.value);
+ }
+ } else {
+ if (choice.value.isEmpty()) values.clear();
+ else if (!values.remove(choice.value)) values.add(choice.value);
+ }
+ if (values.isEmpty()) state.selectedFilters.remove(def.dimension);
+ else state.selectedFilters.put(def.dimension, joinFilterValues(values));
+ String joined =
+ state.selectedFilters.containsKey(def.dimension)
+ ? state.selectedFilters.get(def.dimension)
+ : "";
+ StringBuilder labels = new StringBuilder("[");
+ for (String value : filterValueSet(joined)) {
+ if (labels.length() > 1) labels.append(",");
+ labels.append(def.labelFor(value));
+ }
+ labels.append("]");
+ AppLog.i(
+ "Filter",
+ "apply dim="
+ + def.dimension
+ + " values="
+ + labels
+ + " joined="
+ + joined);
+ if (filterValueSet(joined).size() > 1 && def.remote && remoteMultiAllowed(def)) {
+ AppLog.i("Filter", "multi enabled dim=" + def.dimension);
+ }
+ filterPendingTag = def.dimension;
+ final int scroll = a.scroll == null ? 0 : a.scroll.getScrollY();
+ applyFilters();
+ renderFilterTags();
+ if (filterOptionScroll != null && filterOptionScroll.getVisibility() == View.VISIBLE) {
+ hideFilterOptions();
+ showFilterOptions(def);
+ }
+ a.ui.postDelayed(
+ () -> {
+ if (a.scroll != null) a.scroll.scrollTo(0, scroll);
+ },
+ 450);
+ }
+
+ void renderFilterTags() {
+ if (filterTagScroll == null) return;
+ filterTagRow.removeAllViews();
+ List<VideoFilters.Definition> defs = filterDefinitions();
+ if (defs.isEmpty()) {
+ // 1.9.39：标签渲染绝不收起面板
+ AppLog.i("Filter", "tags empty panelKeep=true");
+ return;
+ }
+ filterTagScroll.setVisibility(View.VISIBLE);
+ boolean panelHidden = filterPanel.getVisibility() != View.VISIBLE;
+ if (panelHidden) {
+ android.view.ViewGroup.LayoutParams lp = filterPanel.getLayoutParams();
+ lp.height = 0;
+ filterPanel.setLayoutParams(lp);
+ filterPanel.setVisibility(View.VISIBLE);
+ }
+ for (final VideoFilters.Definition def : defs) {
+ String value = state.selectedFilters.get(def.dimension);
+ // 1.9.44：有远程接口的站点所有维度按单选展示
+ if (MobileShell.siteHasRemoteApi(site) && !remoteMultiAllowed(def))
+ value = firstFilterValue(value);
+ boolean active = value != null && !value.isEmpty();
+ boolean open = def.dimension.equals(filterOpenDim);
+ LinearLayout tagWrap = a.vertical();
+ tagWrap.setGravity(Gravity.CENTER_HORIZONTAL);
+ TextView chip =
+ a.text(
+ active
+ ? VideoFilters.displayLabel(def)
+ + " · "
+ + filterLabel(def, value)
+ : VideoFilters.displayLabel(def),
+ 14,
+ active || open ? UiTokens.ACCENT_SOFT : 0xffa9b7d0);
+ chip.setTypeface(null, (active || open) ? Typeface.BOLD : Typeface.NORMAL);
+ chip.setSingleLine(true);
+ chip.setEllipsize(TextUtils.TruncateAt.END);
+ chip.setMaxWidth(a.dp(260));
+ chip.setGravity(Gravity.CENTER);
+ chip.setSingleLine(true);
+ chip.setPadding(a.dp(2), 0, a.dp(2), 0);
+ MobileDetailScreen.bindTouchFeedback(chip);
+ chip.setFocusable(true);
+ chip.setFocusableInTouchMode(true);
+ chip.setOnClickListener(v -> showFilterOptions(def));
+ tagWrap.addView(chip, new LinearLayout.LayoutParams(-2, -2));
+ if (active || open) {
+ View underline = new View(a);
+ underline.setBackgroundColor(0xffff8fb1);
+ LinearLayout.LayoutParams underlineLp =
+ new LinearLayout.LayoutParams(a.dp(20), a.dp(2));
+ underlineLp.topMargin = a.dp(4);
+ underlineLp.gravity = Gravity.CENTER_HORIZONTAL;
+ tagWrap.addView(underline, underlineLp);
+ }
+ LinearLayout.LayoutParams lp =
+ new LinearLayout.LayoutParams(-2, a.dp(40));
+ lp.rightMargin = a.dp(16);
+ filterTagRow.addView(tagWrap, lp);
+ if (def.dimension.equals(filterPendingTag)) {
+ chip.requestFocus();
+ filterPendingTag = "";
+ }
+ }
+ if (!state.selectedFilters.isEmpty()) {
+ TextView clear = a.text("清除", 13, 0xff8d9cb6);
+ clear.setPadding(a.dp(4), 0, a.dp(4), 0);
+ clear.setMinHeight(a.dp(40));
+ clear.setGravity(Gravity.CENTER);
+ MobileDetailScreen.bindTouchFeedback(clear);
+ clear.setFocusable(true);
+ clear.setOnClickListener(
+ v -> {
+ state.selectedFilters.clear();
+ AppLog.i("Filter", "clear-all category=" + state.category);
+ applyFilters();
+ collapseFilterUi();
+ if (selectedTab() != null) selectedTab().requestFocus();
+ });
+ LinearLayout.LayoutParams clearLp =
+ new LinearLayout.LayoutParams(-2, a.dp(40));
+ clearLp.leftMargin = a.dp(10);
+ filterTagRow.addView(clear, clearLp);
+ }
+ int duration;
+ if (filterSkipAnim) duration = 0;
+ else if (panelHidden) duration = 140;
+ else duration = filterOptionsVisible() ? 120 : 140;
+ animateFilterPanelHeight(
+ filterPanel, measureFilterPanelHeight(filterPanel), duration);
+ filterSkipAnim = false;
+ if (filterTagRow.getChildCount() > 0 && a.isTvDevice()) {
+ View first = filterTagRow.getChildAt(0);
+ if (!first.hasFocus() && filterPendingTag.isEmpty()) first.requestFocus();
+ }
+ }
+
+ private boolean filterOptionsVisible() {
+ return filterOptionScroll != null
+ && filterOptionScroll.getVisibility() == View.VISIBLE;
+ }
+
+ void hideFilterOptions() {
+ filterOpenDim = "";
+ if (filterOptionScroll != null) filterOptionScroll.setVisibility(View.GONE);
+ if (filterOptionGrid != null) filterOptionGrid.setVisibility(View.GONE);
+ }
+
+ /** L3：单行横滚紧凑 chip（TV 34dp/10 间距）。 */
+ void showFilterOptions(final VideoFilters.Definition def) {
+ if (filterOptionScroll == null) return;
+ int panelBefore =
+ filterPanel != null && filterPanel.getVisibility() == View.VISIBLE ? 1 : 0;
+ boolean l3Before = filterOptionsVisible();
+ if (def.dimension.equals(filterOpenDim)) {
+ // 1.9.39：只收起 L3，L2 面板必须保持可见
+ hideFilterOptions();
+ renderFilterTags();
+ if (filterPanel != null) filterPanel.setVisibility(View.VISIBLE);
+ AppLog.i(
+ "Filter",
+ "tag click dim="
+ + def.dimension
+ + " panelBefore="
+ + panelBefore
+ + " panelAfter="
+ + (filterPanel.getVisibility() == View.VISIBLE ? 1 : 0)
+ + " l3=closed before="
+ + l3Before);
+ return;
+ }
+ hideFilterOptions();
+ filterOpenDim = def.dimension;
+ filterPanel.setVisibility(View.VISIBLE);
+ filterTagScroll.setVisibility(View.VISIBLE);
+ filterOptionRow.removeAllViews();
+ filterOptionScroll.setVisibility(View.VISIBLE);
+ int chipHeight = a.dp(34);
+ int padH = a.dp(12);
+ int count = 0;
+ for (final VideoFilters.Choice choice : def.choices) {
+ java.util.Set<String> currentValues =
+ filterValueSet(state.selectedFilters.get(def.dimension));
+ boolean active =
+ choice.value.isEmpty()
+ ? currentValues.isEmpty()
+ : currentValues.contains(choice.value);
+ TextView chip =
+ a.text(
+ choice.label,
+ 14,
+ active ? 0xff070d18 : 0xfff5f7fc);
+ chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
+ chip.setGravity(Gravity.CENTER);
+ chip.setSingleLine(true);
+ chip.setPadding(padH, 0, padH, 0);
+ android.graphics.drawable.GradientDrawable optBg =
+ new android.graphics.drawable.GradientDrawable();
+ optBg.setCornerRadius(a.dp(999));
+ optBg.setColor(active ? UiTokens.ACCENT : 0x14ffffff);
+ optBg.setStroke(a.dp(1), active ? 0x66ffb3c8 : 0x1affffff);
+ chip.setBackground(optBg);
+ MobileDetailScreen.bindTouchFeedback(chip);
+ chip.setFocusable(true);
+ chip.setFocusableInTouchMode(true);
+ chip.setMinHeight(chipHeight);
+ chip.setOnClickListener(
+ v -> {
+ if (!a.reduced) {
+ chip.animate()
+ .scaleX(0.96f)
+ .scaleY(0.96f)
+ .setDuration(60)
+ .withEndAction(
+ () ->
+ chip.animate()
+ .scaleX(1f)
+ .scaleY(1f)
+ .setDuration(60)
+ .start())
+ .start();
+ a.ui.postDelayed(() -> toggleHomeFilterValue(def, choice), 70);
+ } else {
+ toggleHomeFilterValue(def, choice);
+ }
+ });
+ LinearLayout.LayoutParams lp =
+ new LinearLayout.LayoutParams(-2, chipHeight);
+ lp.rightMargin = a.dp(10);
+ filterOptionRow.addView(chip, lp);
+ if (count == 0) chip.requestFocus();
+ count++;
+ }
+ AppLog.i(
+ "Filter",
+ "expand tab="
+ + def.label
+ + " options="
+ + def.choices.size()
+ + " layout=scroll");
+ AppLog.i(
+ "Filter",
+ "tag click dim="
+ + def.dimension
+ + " panelBefore="
+ + panelBefore
+ + " panelAfter="
+ + (filterPanel.getVisibility() == View.VISIBLE ? 1 : 0)
+ + " l3=open before="
+ + l3Before);
+ animateFilterPanelHeight(filterPanel, measureFilterPanelHeight(filterPanel), 120);
+ }
+
+ void applyFilterChoice(VideoFilters.Definition def, VideoFilters.Choice choice) {
+ filterSkipAnim = true;
+ String current = state.selectedFilters.get(def.dimension);
+ if (choice.value.isEmpty()) state.selectedFilters.remove(def.dimension);
+ else if (choice.value.equals(current == null ? "" : current))
+ state.selectedFilters.remove(def.dimension);
+ else state.selectedFilters.put(def.dimension, choice.value);
+ AppLog.i(
+ "Filter",
+ "category="
+ + state.category
+ + " tab="
+ + def.label
+ + " value="
+ + choice.value);
+ filterPendingTag = def.dimension;
+ hideFilterOptions();
+ applyFilters();
+ renderFilterTags();
+ }
+
+ void collapseFilterUi() {
+ hideFilterOptions();
+ if (filterPanel == null || filterPanel.getVisibility() != View.VISIBLE) return;
+ animateFilterPanelHeight(filterPanel, 0, 120);
+ }
+
+ /** 1.9.36：面板过渡改为 translationY+alpha（去掉逐帧 LayoutParams.height）。 */
+ void animateFilterPanelHeight(View panel, int targetHeight, int durationMs) {
+ if (panel == null) return;
+ final int seq = ++filterAnimSeq;
+ boolean collapse = targetHeight == 0;
+ if (filterHeightAnim != null) {
+ filterHeightAnim.cancel();
+ filterHeightAnim = null;
+ }
+ ViewGroup.LayoutParams lp = panel.getLayoutParams();
+ lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+ panel.setLayoutParams(lp);
+ if (a.reduced || durationMs <= 0) {
+ panel.setAlpha(1f);
+ panel.setTranslationY(0);
+ panel.setVisibility(collapse ? View.GONE : View.VISIBLE);
+ return;
+ }
+ panel.animate().cancel();
+ if (collapse) {
+ panel.animate()
+ .alpha(0f)
+ .translationY(a.dp(6))
+ .setDuration(durationMs)
+ .setInterpolator(new android.view.animation.DecelerateInterpolator())
+ .withEndAction(
+ () -> {
+ if (seq != filterAnimSeq) return;
+ panel.setVisibility(View.GONE);
+ panel.setAlpha(1f);
+ panel.setTranslationY(0);
+ })
+ .start();
+ } else {
+ panel.setVisibility(View.VISIBLE);
+ panel.setAlpha(0f);
+ panel.setTranslationY(-a.dp(6));
+ panel.animate()
+ .alpha(1f)
+ .translationY(0)
+ .setDuration(durationMs)
+ .setInterpolator(new android.view.animation.DecelerateInterpolator())
+ .start();
+ }
+ }
+
+ int measureFilterPanelHeight(View panel) {
+ if (panel == null) return 0;
+ int width = panel.getWidth() > 0 ? panel.getWidth() : a.windowWidth() - a.dp(64);
+ panel.measure(
+ View.MeasureSpec.makeMeasureSpec(Math.max(1, width), View.MeasureSpec.AT_MOST),
+ View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+ return panel.getMeasuredHeight();
+ }
+
+ private void animateFilterRow(View view, int durationMs, float offsetDp) {
+ if (view == null) return;
+ if (a.reduced || durationMs <= 0) {
+ view.setAlpha(1f);
+ view.setTranslationY(0);
+ return;
+ }
+ view.setAlpha(0f);
+ view.setTranslationY(-a.dp((int) offsetDp));
+ view.animate().alpha(1f).translationY(0).setDuration(durationMs).start();
+ }
+
+ /** BACK 逐层收起 L3 → L2。 */
+ boolean backFilterUi() {
+ if (filterOptionGrid != null && filterOptionGrid.getVisibility() == View.VISIBLE) {
+ String dim = filterOpenDim;
+ hideFilterOptions();
+ renderFilterTags();
+ focusFilterTag(dim);
+ return true;
+ }
+ if (filterPanel != null && filterPanel.getVisibility() == View.VISIBLE) {
+ collapseFilterUi();
+ if (selectedTab() != null) selectedTab().requestFocus();
+ return true;
+ }
+ return false;
+ }
+
+ /** BACK 从 L3 回到 L2 时焦点回到对应维度标签。 */
+ private void focusFilterTag(String dimension) {
+ if (filterTagRow == null) return;
+ for (int i = 0; i < filterTagRow.getChildCount(); i++) {
+ View child = filterTagRow.getChildAt(i);
+ if (child instanceof TextView
+ && ("home-filter-tag:" + dimension).equals(String.valueOf(child.getTag()))) {
+ child.requestFocus();
+ return;
+ }
+ }
+ }
+
+ void showFilters() {
+ if (snapshot == null) return; List<VideoFilters.Definition> definitions = filterDefinitions();
+ String[] labels = new String[definitions.size() + 1];
+ for (int i = 0; i < definitions.size(); i++) {
+ VideoFilters.Definition def = definitions.get(i);
+ labels[i] = def.label + "：" + def.labelFor(state.selectedFilters.get(def.dimension));
+ }
+ labels[definitions.size()] = "清除全部筛选";
+ new AppDialog.Builder(a)
+ .setTitle("影视筛选")
+ .wrapChoices()
+ .setItems(
+ labels,
+ (dialog, index) -> {
+ if (index == definitions.size()) {
+ if (!state.selectedFilters.isEmpty()) {
+ state.selectedFilters.clear();
+ applyFilters();
+ }
+ return;
+ }
+ VideoFilters.Definition def = definitions.get(index);
+ String[] options = new String[def.choices.size()];
+ int checked = 0;
+ for (int n = 0; n < options.length; n++) {
+ options[n] = def.choices.get(n).label;
+ if (def.choices
+ .get(n)
+ .value
+ .equals(state.selectedFilters.get(def.dimension)))
+ checked = n;
+ }
+ new AppDialog.Builder(a)
+ .setTitle(def.label + (def.remote ? "" : " · 按影片资料筛选"))
+ .wrapChoices()
+ .setSingleChoiceItems(
+ options,
+ checked,
+ (choiceDialog, n) -> {
+ String value = def.choices.get(n).value;
+ if (value.isEmpty())
+ state.selectedFilters.remove(def.dimension);
+ else
+ state.selectedFilters.put(def.dimension, value);
+ applyFilters();
+ })
+ .setNegativeButton("取消", null)
+ .show();
+ })
+ .setNegativeButton("关闭", null)
+ .show();
+ }
+
+ void applyFilters() {
+ String category = state.category;
+ if (category.isEmpty()
+ && !state.selectedFilters.isEmpty()
+ && !snapshot.categories.isEmpty()) {
+ category = snapshot.categories.get(0).id;
+ }
+ // A new filter starts at page one; detail/back keeps this exact state.
+ state.category = category;
+ state.ready = false;
+ choose(category, true);
+ View filter = filters.findViewWithTag("home-filters");
+ if (filter != null) {
+ if (a.current != null) a.current.focus = "home-filters";
+ filter.requestFocus();
+ }
+ }
+
+ /** 1.8.12：首页云盘 tab → 原地四盘卡片（异常有兜底，不白屏）。 */
+ void showCloudHomeInline() {
+ if (cloudInline == null) {
+ AppLog.i("CloudConfig", "home inline holder=null");
+ return;
+ }
+ try {
+ cloudInline.setVisibility(View.VISIBLE);
+ cloudInline.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+ if (cloudContent != null) cloudContent.setVisibility(View.GONE);
+ if (cloudStatus != null) cloudStatus.setVisibility(View.GONE);
+ if (cloudFooter != null) cloudFooter.setVisibility(View.GONE);
+ CloudInlineView.build(a, cloudInline, this::showCloudHomeInline);
+ AppLog.i(
+ "CloudConfig",
+ "home inline show holder="
+ + System.identityHashCode(cloudInline)
+ + " rows="
+ + cloudInline.getChildCount()
+ + " error=");
+ } catch (Throwable error) {
+ AppLog.w("CloudConfig", "home inline show failed", error);
+ CloudInlineView.showError(a, cloudInline, error, this::showCloudHomeInline);
+ cloudInline.setVisibility(View.VISIBLE);
+ }
+ }
+
+ void hideCloudHomeInline() {
+ if (cloudInline == null || cloudInline.getVisibility() != View.VISIBLE) return;
+ cloudInline.setVisibility(View.GONE);
+ if (cloudContent != null) cloudContent.setVisibility(View.VISIBLE);
+ if (cloudStatus != null) cloudStatus.setVisibility(View.VISIBLE);
+ if (cloudFooter != null) cloudFooter.setVisibility(View.VISIBLE);
+ AppLog.i("CloudConfig", "home inline hidden");
+ }
+
+ void addTab(String label, String id, int index) {
+ TextView button =
+ pill(
+ label,
+ "home-tab:" + index,
+ () -> {
+ // 1.8.28：云盘 tab → 我们的玻璃 UI 管理源插件登录
+ boolean cloud = MobileShell.isCloudConfigCategory(label, id);
+ AppLog.i(
+ "CloudConfig",
+ "homeTab -> SourceCloudConfigScreen label="
+ + label
+ + " id="
+ + id
+ + " cloud="
+ + cloud);
+ if (cloud) {
+ hideCloudHomeInline();
+ SourceCloudConfigScreen.show(a);
+ return;
+ }
+ hideCloudHomeInline();
+ if (id.equals(state.category)) {
+ if (categoryHasFilters(id)) handleCategoryFilterTap();
+ return;
+ }
+ AppLog.i("Filter", "tap state=select category=" + id);
+ collapseFilterUi();
+ choose(id, true);
+ });
+ tabIds.put(button, id);
+ if (categoryHasFilters(id)) {
+ boolean selected = id.equals(state.category);
+ boolean filtered = selected && !state.selectedFilters.isEmpty();
+ // 1.9.33：选中分类漏斗用 BG_DEEP，未选中：有筛选 ACCENT / 无筛选 TEXT_TERTIARY
+ int funnelColor =
+ selected ? 0xff070d18 : filtered ? UiTokens.ACCENT : 0xff8d9cb6;
+ button.setCompoundDrawables(
+ null, null, funnelDrawable(funnelColor, 16), null);
+ button.setCompoundDrawablePadding(a.dp(8));
+ }
+ button.setOnKeyListener(
+ (v, keyCode, event) -> {
+ FocusMotion.key(a, v, keyCode, event);
+ if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+ if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+ || keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
+ || ((keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP
+ || keyCode
+ == android.view.KeyEvent.KEYCODE_DPAD_DOWN)
+ && v.isSelected())) {
+ lastCategoryDpadTime = android.os.SystemClock.uptimeMillis();
+ }
+ }
+ return false;
+ });
+ button.setOnFocusChangeListener(
+ (v, f) -> {
+ styleTab(button);
+ if (f
+ && a.isTvDevice()
+ && android.os.SystemClock.uptimeMillis() - lastCategoryDpadTime < 450
+ && !id.equals(state.category)) {
+ button.postDelayed(
+ () -> {
+ if (button.hasFocus()
+ && active()
+ && !id.equals(state.category)) {
+ choose(id, true);
+ }
+ },
+ 130);
+ }
+ });
+ addTabView(button);
+ }
+
+ void addTabView(TextView button) { button.setSingleLine(false);
+ button.setMaxLines(Integer.MAX_VALUE);
+ button.setEllipsize(null);
+ button.setMinHeight(a.dp(Math.round(34 * navScale)));
+ int padH = a.dp(Math.round(15 * navScale));
+ int padV = a.dp(Math.round(8 * navScale));
+ button.setPadding(padH, padV, padH, padV);
+ filters.addView(button, new android.view.ViewGroup.LayoutParams(-2, -2));
+ tabs.add(button);
+ }
+
+ void styleTab(TextView b) {
+ boolean selected = state.category.equals(tabIds.get(b));
+ b.setSelected(selected);
+ FocusMotion.style(
+ a,
+ b,
+ b.hasFocus(),
+ selected ? 0xffeef2fb : 0xff16243c,
+ selected ? 0xffeef2fb : 0xff22375a,
+ Math.round(17 * navScale),
+ selected ? 0xff101a2e : a.userTextColor(MainActivity.WHITE),
+ selected ? 0xff101a2e : a.userTextColor(MainActivity.WHITE),
+ true,
+ 1.02f);
+ if (selected && !b.hasFocus()) {
+ // 1.9.33：TV 分类选中态同步手机（ACCENT→ACCENT_SOFT 渐变 + 深色字）
+ android.graphics.drawable.GradientDrawable grad =
+ new android.graphics.drawable.GradientDrawable(
+ android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+ new int[] {UiTokens.ACCENT, 0xffffb3c8});
+ grad.setCornerRadius(a.dp(Math.round(17 * navScale)));
+ b.setBackground(grad);
+ b.setTextColor(0xff0b1220);
+ }
+ }
+
+ void updateTabs() {
+ for (View v : tabs) {
+ TextView b = (TextView) v;
+ if (tabIds.get(b) != null) styleTab(b);
+ else if ("home-filters".equals(b.getTag())) {
+ b.setText(
+ state.selectedFilters.isEmpty()
+ ? "筛选"
+ : "筛选 · " + state.selectedFilters.size());
+ b.setContentDescription("类型、国家地区、年份筛选");
+ } else {
+ boolean hidden = false;
+ String name = "更多分类";
+ for (int i = 4; i < snapshot.categories.size(); i++)
+ if (snapshot.categories.get(i).id.equals(state.category)) {
+ hidden = true;
+ name = snapshot.categories.get(i).name;
+ break;
+ }
+ b.setText(name + " ");
+ b.setSelected(hidden);
+ FocusMotion.style(
+ a,
+ b,
+ b.hasFocus(),
+ hidden ? 0xffeef2fb : 0xff172742,
+ hidden ? 0xffeef2fb : 0xff22375a,
+ Math.round(17 * navScale),
+ hidden ? 0xff101a2e : MainActivity.WHITE,
+ hidden ? 0xff101a2e : MainActivity.WHITE,
+ true,
+ 1.02f);
+ }
+ }
+ }
+
+ View selectedTab() {
+ for (View v : tabs) if (tabIds.containsKey(v) && v.isSelected()) return v;
+ return tabs.isEmpty() ? source : tabs.get(0);
+ }
+
+ void choose(String category, boolean user) {
+ hideCloudHomeInline();
+ if (category.equals(state.category) && (state.ready || busy)) return;
+ a.cancelPageRequests();
+ request++;
+ busy = false;
+ if (!state.category.equals(category)) {
+ state.selectedFilters.clear();
+ collapseFilterUi();
+ }
+ state.category = category;
+ state.ready = false;
+ state.videos.clear();
+ state.windowStart = 0;
+ state.page = 1;
+ state.pages = 1;
+ pendingFocus = null;
+ cancelGrid();
+ clearGrid();
+ more.setVisibility(View.GONE);
+ updateTabs();
+ wireNavigation();
+ if (user) {
+ if (a.current != null) {
+ a.current.focus = String.valueOf(selectedTab().getTag());
+ a.current.scroll = 0;
+ }
+ selectedTab().requestFocus();
+ filters.requestRectangleOnScreen(
+ new Rect(0, -a.dp(8), filters.getWidth(), filters.getHeight()), false);
+ }
+ if (category.isEmpty()) {
+ state.videos.addAll(
+ VideoFilters.apply(
+ snapshot.videos, filterDefinitions(), state.selectedFilters));
+ state.pages = snapshot.skip.isEmpty() ? 1 : snapshot.pages;
+ state.ready = true;
+ drawGrid(false);
+ if (!user) restoreFocus();
+ } else if (state.selectedFilters.isEmpty() && state.categoryCache.containsKey(category)) {
+ Cms.Listing cached = state.categoryCache.get(category);
+ state.videos.addAll(cached.videos);
+ state.pages = Math.max(1, cached.pageCount);
+ state.ready = true;
+ drawGrid(false);
+ if (!user) restoreFocus();
+ } else loadCategory(true);
+ }
+
+ void loadCategory(boolean first) {
+ if (busy || snapshot == null) return;
+ String category = state.category.isEmpty() ? snapshot.skip : state.category;
+ if (category.isEmpty()) return;
+ busy = true;
+ int token = ++request;
+ int page = first ? 1 : state.page + 1;
+ List<VideoFilters.Definition> definitions = filterDefinitions();
+ Map<String, String> selections = new LinkedHashMap<>(state.selectedFilters);
+ // 1.9.44：有远程接口时所有选中维度都作为请求参数
+ boolean remoteSite = MobileShell.siteHasRemoteApi(site);
+ boolean allowMulti = a.prefs.getBoolean("filter_remote_multi_enabled", false);
+ List<Map<String, String>> variants =
+ MobileShell.filterVariants(definitions, selections, remoteSite, allowMulti);
+ boolean remoteRequest =
+ remoteSite && !variants.isEmpty() && !variants.get(0).isEmpty();
+ boolean multiRemote = variants.size() > 1;
+ Map<String, String> remoteFilters = variants.isEmpty()
+ ? new LinkedHashMap<String, String>()
+ : new LinkedHashMap<>(variants.get(0));
+ if (remoteRequest) {
+ AppLog.i(
+ "Filter",
+ "request site="
+ + (site == null ? "null" : site.key)
+ + " filters="
+ + remoteFilters
+ + " multi="
+ + multiRemote
+ + " variants="
+ + variants.size());
+ }
+ status.setVisibility(View.GONE);
+ status.setText("");
+ more.setText("正在加载…");
+ more.setVisibility(first ? View.GONE : View.VISIBLE);
+ final String loadReason = selections.isEmpty() ? "category" : "filter";
+ if (first) showHomeLoading(loadReason);
+ a.submitPage(
+ () -> {
+ try {
+ Cms.Listing list;
+ if (multiRemote) {
+ LinkedHashMap<String, Cms.Video> merged = new LinkedHashMap<>();
+ int pageCount = 1;
+ for (Map<String, String> variant : variants) {
+ Cms.Listing part =
+ Cms.listing(
+ a.engine(site).category(category, page, variant));
+ for (Cms.Video v : part.videos) {
+ String key =
+ (v.id == null || v.id.isEmpty())
+ ? (v.title == null ? "" : v.title)
+ : v.id;
+ if (!merged.containsKey(key)) merged.put(key, v);
+ }
+ pageCount = Math.max(pageCount, part.pageCount);
+ }
+ list = new Cms.Listing();
+ list.videos.addAll(merged.values());
+ list.pageCount = pageCount;
+ } else {
+ list =
+ Cms.listing(
+ a.engine(site)
+ .category(category, page, remoteFilters));
+ }
+ clean(list.videos);
+ int received = list.videos.size();
+ AppLog.i(
+ "Filter",
+ "raw="
+ + received
+ + " remoteRequest="
+ + remoteRequest
+ + " filters="
+ + remoteFilters);
+ if (remoteRequest && received == 0 && !filterUnsupportedToastShown) {
+ filterUnsupportedToastShown = true;
+ a.ui.post(() -> a.toast("该源不支持该组合筛选，已显示未筛选内容"));
+ AppLog.i(
+ "Filter",
+ "unsupported combo site="
+ + (site == null ? "null" : site.key)
+ + " filters="
+ + remoteFilters);
+ }
+ List<Cms.Video> matching =
+ remoteRequest
+ ? new java.util.ArrayList<>(list.videos)
+ : VideoFilters.apply(list.videos, definitions, selections);
+ a.ui.post(
+ () -> {
+ if (!active() || token != request) return;
+ busy = false;
+ int previous = state.videos.size();
+ boolean focusMore = more.hasFocus();
+ Set<String> ids = new HashSet<>();
+ for (Cms.Video v : state.videos) ids.add(v.id);
+ int added = 0;
+ for (Cms.Video v : matching)
+ if (ids.add(v.id)) {
+ state.videos.add(v);
+ added++;
+ }
+ int oldWindow = state.windowStart;
+ int focusIndex = previous;
+ if (added > 0 && previous >= windowEnd()) {
+ state.windowStart =
+ (previous / windowSize()) * windowSize();
+ }
+ boolean changedWindow = oldWindow != state.windowStart;
+ state.page = page;
+ state.pages =
+ received == 0 ? page : Math.max(page, list.pageCount);
+ state.ready = true;
+ if (first && selections.isEmpty() && !state.videos.isEmpty()) {
+ Cms.Listing cached = new Cms.Listing();
+ cached.videos.addAll(state.videos);
+ cached.pageCount = state.pages;
+ state.categoryCache.put(category, cached);
+ }
+ // Keep focus on the button until the first new card exists,
+ // so focus never falls back to the category tabs at the top.
+ pendingFocus =
+ !first && focusMore ? "home-video:" + focusIndex : null;
+ hideHomeLoading(loadReason);
+ drawGrid(!first && !changedWindow);
+ if (first
+ && a.current != null
+ && a.current.focus != null
+ && a.current.focus.startsWith("home-video:"))
+ restoreFocus();
+ });
+ } catch (Throwable e) {
+ AppLog.w("HomeScreen", "loadCategory failed for " + site.key, e);
+ a.ui.post(
+ () -> {
+ if (!active() || token != request) return;
+ busy = false;
+ hideHomeLoading(loadReason);
+ status.setVisibility(View.VISIBLE);
+ status.setText("加载失败：" + a.message(e));
+ more.setText("重新加载");
+ more.setVisibility(View.VISIBLE);
+ wireNavigation();
+ });
+ }
+ });
+ }
+
+ static void clean(List<Cms.Video> videos) {
+ Set<String> ids = new HashSet<>();
+ Iterator<Cms.Video> it = videos.iterator();
+ while (it.hasNext()) {
+ Cms.Video v = it.next();
+ if (v == null || v.id == null || v.id.trim().isEmpty() || !ids.add(v.id)) {
+ it.remove();
+ }
+ }
+ }
+
+ void cancelGrid() {
+ gridEpoch++;
+ if (pendingGrid != null) {
+ a.ui.removeCallbacks(pendingGrid);
+ content.removeCallbacks(pendingGrid);
+ }
+ pendingGrid = null;
+ }
+
+ void clearGrid() {
+ for (int i = 0; i < content.getChildCount(); i++) {
+ android.view.ViewGroup row = (android.view.ViewGroup) content.getChildAt(i);
+ for (int j = 0; j < row.getChildCount(); j++)
+ if (row.getChildAt(j) instanceof android.view.ViewGroup) {
+ android.view.ViewGroup card = (android.view.ViewGroup) row.getChildAt(j);
+ if (card.getChildCount() > 0) card.getChildAt(0).setTag(null);
+ }
+ }
+ content.removeAllViews();
+ rows.clear();
+ }
+
+ int windowSize() {
+ return Math.max(COLUMNS, (MAX_RETAINED_CARDS / COLUMNS) * COLUMNS);
+ }
+
+ int windowEnd() {
+ return Math.min(state.videos.size(), state.windowStart + windowSize());
+ }
+
+ void showWindow(int start) {
+ if (busy || start < 0 || start >= state.videos.size()) return;
+ state.windowStart = start;
+ pendingFocus = "home-video:" + start;
+ if (a.current != null) a.current.focus = pendingFocus;
+ drawGrid(false);
+ a.smoothHomeScroll(0);
+ }
+
+ void drawGrid(boolean append) {
+ cancelGrid();
+ int existing = state.windowStart;
+ for (List<View> row : rows) existing += row.size();
+ if (!append) {
+ clearGrid();
+ existing = state.windowStart;
+ }
+ earlier.setVisibility(state.windowStart > 0 ? View.VISIBLE : View.GONE);
+ if (existing < windowEnd()) a.learnTitles(state.videos.subList(existing, windowEnd()));
+ status.setText(
+ state.selectedFilters.isEmpty()
+ ? "这个分类暂无内容，可切换其他分类或使用全局搜索。"
+ : "当前已读取的影片没有匹配结果，可继续加载或调整筛选。");
+ boolean localFiltering = VideoFilters.hasLocal(filterDefinitions(), state.selectedFilters);
+ if (localFiltering && !state.videos.isEmpty()) status.setText("按片源已提供的影片资料筛选，可继续加载更多结果。");
+ status.setVisibility(state.videos.isEmpty() || localFiltering ? View.VISIBLE : View.GONE);
+ // Hiding the focused button would hand focus to the first tab and jump to the top.
+ if (pendingFocus == null || !more.hasFocus()) more.setVisibility(View.GONE);
+ appendCards(existing, gridEpoch, !append);
+ }
+
+ /** Moves focus to the card awaited after "加载更多", once it is laid out. */
+ void resolvePendingFocus(boolean finished) {
+ if (pendingFocus == null) return;
+ View target = a.root.findViewWithTag(pendingFocus);
+ if (target == null && finished && !rows.isEmpty()) {
+ List<View> last = rows.get(rows.size() - 1);
+ target = last.isEmpty() ? null : last.get(0);
+ }
+ if (target == null) return;
+ pendingFocus = null;
+ final View card = target;
+ if (card.isLaidOut()) card.requestFocus();
+ else
+ card.addOnLayoutChangeListener(
+ new View.OnLayoutChangeListener() {
+ public void onLayoutChange(
+ View v,
+ int l,
+ int t,
+ int r,
+ int b,
+ int ol,
+ int ot,
+ int or,
+ int ob) {
+ v.removeOnLayoutChangeListener(this);
+ if (active() && v.isAttachedToWindow()) v.requestFocus();
+ if (pendingGrid == null) updateMore();
+ }
+ });
+ }
+
+ /** Shows or hides "加载更多" without ever hiding it while it still holds focus. */
+ void updateMore() {
+ more.setText(windowEnd() < state.videos.size() ? "查看后面的影片" : "加载更多");
+ boolean hasMore = windowEnd() < state.videos.size() || state.page < state.pages;
+ if (hasMore || !more.hasFocus()) more.setVisibility(hasMore ? View.VISIBLE : View.GONE);
+ }
+
+ void appendCards(int start, int epoch, boolean restore) {
+ pendingGrid = null;
+ if (!active() || epoch != gridEpoch) return;
+ int end = start;
+ int batchCount = start == 0 ? Math.max(COLUMNS * 2, 10) : Math.max(COLUMNS, 5);
+ long budgetNs = start == 0 ? 12000000L : 5000000L;
+ long batchStarted = System.nanoTime();
+ for (int index = start; index < windowEnd() && index < start + batchCount; index++) {
+ int column = index % COLUMNS;
+ LinearLayout row;
+ List<View> focusRow;
+ if (column == 0) {
+ row = a.row();
+ row.setGravity(Gravity.TOP);
+ row.setClipChildren(false);
+ row.setClipToPadding(false);
+ row.setPadding(0, a.dp(5), 0, a.dp(18));
+ content.addView(row);
+ focusRow = new ArrayList<>();
+ rows.add(focusRow);
+ for (int c = 0; c < COLUMNS; c++) {
+ LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, -2, 1);
+ cell.rightMargin = a.dp(c == COLUMNS - 1 ? 0 : 14);
+ row.addView(new View(a), cell);
+ }
+ } else {
+ row = (LinearLayout) content.getChildAt(content.getChildCount() - 1);
+ focusRow = rows.get(rows.size() - 1);
+ }
+ android.view.ViewGroup.LayoutParams size = row.getChildAt(column).getLayoutParams();
+ row.removeViewAt(column);
+ View card = card(state.videos.get(index), index);
+ row.addView(card, column, size);
+ focusRow.add(card);
+ end = index + 1;
+ if (System.nanoTime() - batchStarted >= budgetNs) break;
+ }
+ wireNavigation(Math.max(0, (start - state.windowStart) / COLUMNS - 1));
+ resolvePendingFocus(false);
+ if (end < windowEnd()) {
+ final int next = end;
+ pendingGrid = () -> appendCards(next, epoch, restore);
+ Runnable nextBatch = pendingGrid;
+ content.postOnAnimation(
+ () -> {
+ if (active() && epoch == gridEpoch) a.ui.post(nextBatch);
+ });
+ } else {
+ resolvePendingFocus(true);
+ updateMore();
+ wireNavigation(Math.max(0, rows.size() - 1));
+ if (restore
+ && a.current != null
+ && a.current.focus != null
+ && a.current.focus.startsWith("home-video:")) restoreFocus();
+ if (!a.reduced && !state.videos.isEmpty()) {
+ final Cms.Video firstVid = state.videos.get(0);
+ content.postDelayed(
+ () -> {
+ if (active()) SourceController.prefetchDetail(a, site, firstVid);
+ },
+ 350);
+ }
+ }
+ }
+
+ View card(Cms.Video video, int index) {
+ LinearLayout card = a.vertical();
+ card.setPadding(a.dp(4), a.dp(4), a.dp(4), a.dp(4));
+ card.setGravity(Gravity.CENTER_HORIZONTAL);
+ card.setClipChildren(false);
+ ImageView art = new AmbientPoster();
+ art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+ art.setBackground(a.bg(0xff182a45, 10));
+ art.setClipToOutline(true);
+ card.addView(
+ art, new LinearLayout.LayoutParams(a.dp(posterWidth), a.dp(posterWidth * 1.5f)));
+ a.poster(video.poster, art);
+ TextView title = a.text(video.title, 13, 0xffc8d5ea);
+ single(title);
+ title.setPadding(a.dp(2), a.dp(7), a.dp(2), 0);
+ card.addView(title, new LinearLayout.LayoutParams(-1, a.dp(27)));
+ focusable(card, "home-video:" + index);
+ outline(card, false, 13, Color.TRANSPARENT);
+ card.setContentDescription(video.title);
+ card.setOnClickListener(v -> a.openListing(site, video));
+ card.setOnFocusChangeListener(
+ (v, f) -> {
+ outline(card, f, 13, Color.TRANSPARENT);
+ title.setTextColor(a.userTextColor(f ? Color.WHITE : 0xffc8d5ea));
+ if (f && ambient != null) ambient.follow(art);
+ if (f) {
+ v.requestRectangleOnScreen(
+ new Rect(0, -a.dp(8), v.getWidth(), v.getHeight() + a.dp(10)),
+ false);
+ if (!a.reduced) {
+ v.postDelayed(
+ () -> {
+ if (v.hasFocus() && active()) {
+ SourceController.prefetchDetail(a, site, video);
+ }
+ },
+ 200);
+ }
+ }
+ });
+ if (index == 0
+ && ambient != null
+ && (ambient.wanted == null || !ambient.wanted.isAttachedToWindow()))
+ ambient.follow(art);
+ return card;
+ }
+
+ void outline(View view, boolean focused, int radius, int color) {
+ // 1.9.72 设计规范：卡片=内环+底条，chip/按钮=10% 粉底+内环；不缩放/不 unclip/不 elevation
+ TvNav.tagFocus(a, view, focused, radius);
+ }
+
+ void single(TextView text) {
+ text.setSingleLine(true);
+ text.setEllipsize(TextUtils.TruncateAt.END);
+ }
+
+ void focusable(View view, String tag) {
+ view.setTag(tag);
+ view.setId(View.generateViewId());
+ view.setFocusable(true);
+ view.setFocusableInTouchMode(true);
+ view.setClickable(true);
+ a.pressFeedback(view);
+ }
+
+ TextView pill(String label, String tag, Runnable action) {
+ TextView b = a.text(label, 12f * navScale, MainActivity.WHITE);
+ single(b);
+ b.setGravity(Gravity.CENTER);
+ b.setIncludeFontPadding(false);
+ int padH = a.dp(Math.round(15 * navScale));
+ int radius = Math.round(18 * navScale);
+ b.setPadding(padH, 0, padH, 0);
+ focusable(b, tag);
+ b.setBackground(a.bg(0xff172742, radius));
+ b.setOnClickListener(v -> action.run());
+ b.setOnFocusChangeListener((v, f) -> outline(b, f, radius, 0xff172742));
+ return b;
+ }
+
+ void horizontal(List<View> line) {
+ for (int i = 0; i < line.size(); i++) {
+ line.get(i).setNextFocusLeftId(line.get(Math.max(0, i - 1)).getId());
+ line.get(i).setNextFocusRightId(line.get(Math.min(line.size() - 1, i + 1)).getId());
+ }
+ }
+
+ void wireNavigation() {
+ wireNavigation(0);
+ }
+
+ void wireNavigation(int firstRow) {
+ View nav = a.root.findViewWithTag("nav-home");
+ if (nav != null && nav.getId() == View.NO_ID) nav.setId(View.generateViewId());
+ boolean stackedHistory = a.useBottomDock();
+ horizontal(historyCards);
+ for (int i = 0; i < historyCards.size(); i++) {
+ View card = historyCards.get(i);
+ card.setNextFocusUpId(
+ stackedHistory
+ ? (i == 0 ? allHistory : historyCards.get(i - 1)).getId()
+ : card.getId());
+ card.setNextFocusDownId(
+ stackedHistory && i + 1 < historyCards.size()
+ ? historyCards.get(i + 1).getId()
+ : source.getId());
+ if (stackedHistory) {
+ card.setNextFocusLeftId(card.getId());
+ card.setNextFocusRightId(card.getId());
+ }
+ }
+ if (!historyCards.isEmpty()) {
+ View lastHistory = historyCards.get(historyCards.size() - 1);
+ if (!stackedHistory) lastHistory.setNextFocusRightId(allHistory.getId());
+ allHistory.setNextFocusLeftId(
+ stackedHistory ? allHistory.getId() : lastHistory.getId());
+ allHistory.setNextFocusDownId(
+ stackedHistory ? historyCards.get(0).getId() : source.getId());
+ }
+ source.setNextFocusUpId(
+ historyCards.isEmpty()
+ ? source.getId()
+ : historyCards.get(stackedHistory ? historyCards.size() - 1 : 0).getId());
+ source.setNextFocusDownId(selectedTab().getId());
+ for (int r = 0; r < filters.lines.size(); r++) {
+ List<View> line = filters.lines.get(r);
+ horizontal(line);
+ for (View tab : line) {
+ tab.setNextFocusUpId(
+ r == 0
+ ? source.getId()
+ : filters.nearest(filters.lines.get(r - 1), tab).getId());
+ tab.setNextFocusDownId(
+ r + 1 < filters.lines.size()
+ ? filters.nearest(filters.lines.get(r + 1), tab).getId()
+ : earlier.isShown()
+ ? earlier.getId()
+ : rows.isEmpty()
+ ? (more.isShown() ? more.getId() : tab.getId())
+ : rows.get(0).get(0).getId());
+ }
+ if (a.homeDock != null && !line.isEmpty())
+ a.homeDock.rightEdge(line.get(line.size() - 1));
+ }
+ for (int r = Math.max(0, firstRow); r < rows.size(); r++) {
+ List<View> row = rows.get(r);
+ horizontal(row);
+ for (int c = 0; c < row.size(); c++) {
+ View card = row.get(c);
+ card.setNextFocusUpId(
+ r == 0
+ ? (earlier.isShown() ? earlier.getId() : selectedTab().getId())
+ : rows.get(r - 1)
+ .get(Math.min(c, rows.get(r - 1).size() - 1))
+ .getId());
+ card.setNextFocusDownId(
+ r + 1 < rows.size()
+ ? rows.get(r + 1)
+ .get(Math.min(c, rows.get(r + 1).size() - 1))
+ .getId()
+ : more.isShown() ? more.getId() : card.getId());
+ }
+ }
+ earlier.setNextFocusUpId(selectedTab().getId());
+ earlier.setNextFocusDownId(rows.isEmpty() ? more.getId() : rows.get(0).get(0).getId());
+ more.setNextFocusUpId(
+ rows.isEmpty() ? selectedTab().getId() : rows.get(rows.size() - 1).get(0).getId());
+ if (a.homeDock != null) {
+ a.homeDock.rightEdge(source);
+ a.homeDock.rightEdge(allHistory);
+ a.homeDock.rightEdge(more);
+ a.homeDock.rightEdge(earlier);
+ if (!tabs.isEmpty()) a.homeDock.rightEdge(tabs.get(tabs.size() - 1));
+ for (int r = Math.max(0, firstRow); r < rows.size(); r++) {
+ List<View> row = rows.get(r);
+ if (!row.isEmpty()) a.homeDock.rightEdge(row.get(row.size() - 1));
+ }
+ }
+ }
+
+ static boolean navigationKey(MainActivity a, android.view.KeyEvent event) {
+ int key = event.getKeyCode();
+ if (key != android.view.KeyEvent.KEYCODE_DPAD_UP
+ && key != android.view.KeyEvent.KEYCODE_DPAD_DOWN
+ && key != android.view.KeyEvent.KEYCODE_DPAD_LEFT
+ && key != android.view.KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+ View focus = a.getCurrentFocus();
+ if (focus == null || a.scroll == null) return false;
+ android.view.ViewParent parent = focus.getParent();
+ while (parent != null && parent != a.scroll) parent = parent.getParent();
+ if (parent != a.scroll) return false;
+ int id =
+ key == android.view.KeyEvent.KEYCODE_DPAD_UP
+ ? focus.getNextFocusUpId()
+ : key == android.view.KeyEvent.KEYCODE_DPAD_DOWN
+ ? focus.getNextFocusDownId()
+ : key == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+ ? focus.getNextFocusLeftId()
+ : focus.getNextFocusRightId();
+ View target = id == View.NO_ID ? null : a.root.findViewById(id);
+ if (target == null || !target.isShown() || !target.isFocusable()) return false;
+ if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+ target.requestFocus();
+ String tag = String.valueOf(target.getTag());
+ if (key == android.view.KeyEvent.KEYCODE_DPAD_UP
+ && (tag.startsWith("home-history:")
+ || tag.equals("home-history-all")
+ || target == focus)) {
+ a.smoothHomeScroll(0);
+ } else if (!(a.scroll instanceof TvScrollView))
+ target.requestRectangleOnScreen(
+ new Rect(0, -a.dp(12), target.getWidth(), target.getHeight() + a.dp(12)),
+ false);
+ }
+ return true;
+ }
+
+ void styleSource(boolean focused) {
+ FocusMotion.style(
+ a,
+ source,
+ focused,
+ 0x66344352,
+ 0xff344452,
+ // Fully rounded capsule matching the 34dp pill height.
+ 17,
+ 0xffd8e6fb,
+ Color.WHITE,
+ true,
+ 1.02f);
+ }
+
+ final class AmbientPoster extends ImageView {
+ AmbientPoster() {
+ super(a);
+ }
+
+ @Override
+ public void setImageBitmap(android.graphics.Bitmap bitmap) {
+ super.setImageBitmap(bitmap);
+ if (ambient != null) ambient.posterReady(this);
+ }
+ }
+
+ static final class SourceChevron extends android.graphics.drawable.Drawable {
+ final android.graphics.Paint paint = new android.graphics.Paint(3);
+ final MainActivity a;
+
+ SourceChevron(MainActivity a) {
+ this.a = a;
+ setBounds(0, 0, a.dp(10), a.dp(10));
+ }
+
+ public void draw(android.graphics.Canvas canvas) {
+ android.graphics.Rect b = getBounds();
+ paint.setColor(0xffd8e6fb);
+ paint.setStyle(android.graphics.Paint.Style.STROKE);
+ paint.setStrokeWidth(a.dp(1.4f));
+ paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+ paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+ android.graphics.Path path = new android.graphics.Path();
+ path.moveTo(b.left + b.width() * .15f, b.top + b.height() * .35f);
+ path.lineTo(b.exactCenterX(), b.top + b.height() * .65f);
+ path.lineTo(b.left + b.width() * .85f, b.top + b.height() * .35f);
+ canvas.drawPath(path, paint);
+ }
+
+ public void setAlpha(int value) {
+ paint.setAlpha(value);
+ }
+
+ public void setColorFilter(android.graphics.ColorFilter value) {
+ paint.setColorFilter(value);
+ }
+
+ public int getOpacity() {
+ return android.graphics.PixelFormat.TRANSLUCENT;
+ }
+ }
+
+ /** Late home data must not pull focus back once the user has moved it (dock, account panel). */
+ void restoreFocus() {
+ a.ui.post(
+ () -> {
+ if (!active() || a.current == null) return;
+ View saved =
+ a.current.focus == null
+ ? null
+ : a.root.findViewWithTag(a.current.focus);
+ View now = a.getCurrentFocus();
+ if (saved != null && (now == null || now == a.autoFocus || now == saved)) {
+ saved.requestFocus();
+ a.autoFocus = saved;
+ a.scroll.scrollTo(0, a.current.scroll);
+ }
+ });
+ }
 }

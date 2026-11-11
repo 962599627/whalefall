@@ -5,120 +5,120 @@ import java.util.*;
 
 /** Device-local bookmarks. Resolve fresh media URLs; never persist signed playback URLs. */
 final class WatchHistory {
-    static final int LIMIT = 60;
+ static final int LIMIT = 60;
 
-    static final class Entry {
-        String site, id, title, poster, line, episode;
-        int index, position, duration;
-        long updated;
+ static final class Entry {
+ String site, id, title, poster, line, episode;
+ int index, position, duration;
+ long updated;
 
-        String key() {
-            return site + "\n" + id;
-        }
+ String key() {
+ return site + "\n" + id;
+ }
 
-        boolean complete() {
-            return duration > 0 && position >= duration - Math.min(5000, duration / 20);
-        }
+ boolean complete() {
+ return duration > 0 && position >= duration - Math.min(5000, duration / 20);
+ }
 
-        int resume() {
-            return complete() ? 0 : Math.max(0, position);
-        }
+ int resume() {
+ return complete() ? 0 : Math.max(0, position);
+ }
 
-        JSONObject json() throws JSONException {
-            return new JSONObject()
-                    .put("site", site)
-                    .put("id", id)
-                    .put("title", title)
-                    .put("poster", poster)
-                    .put("line", line)
-                    .put("episode", episode)
-                    .put("index", index)
-                    .put("position", position)
-                    .put("duration", duration)
-                    .put("updated", updated);
-        }
-    }
+ JSONObject json() throws JSONException {
+ return new JSONObject()
+ .put("site", site)
+ .put("id", id)
+ .put("title", title)
+ .put("poster", poster)
+ .put("line", line)
+ .put("episode", episode)
+ .put("index", index)
+ .put("position", position)
+ .put("duration", duration)
+ .put("updated", updated);
+ }
+ }
 
-    static List<Entry> read(String text) {
-        List<Entry> out = new ArrayList<>();
-        Set<String> keys = new HashSet<>();
-        try {
-            JSONArray a = new JSONArray(text);
-            for (int i = 0; i < a.length() && out.size() < LIMIT; i++) {
-                JSONObject o = a.optJSONObject(i);
-                if (o == null) continue;
-                Entry e = new Entry();
-                e.site = o.optString("site");
-                e.id = o.optString("id");
-                e.title = o.optString("title");
-                e.poster = o.optString("poster");
-                e.line = o.optString("line");
-                e.episode = o.optString("episode");
-                e.index = Math.max(0, o.optInt("index"));
-                e.position = Math.max(0, o.optInt("position"));
-                e.duration = Math.max(0, o.optInt("duration"));
-                e.updated = o.optLong("updated");
-                if (!e.site.isEmpty() && !e.id.isEmpty() && keys.add(e.key())) out.add(e);
-            }
-        } catch (Exception ignored) {
-        }
-        return out;
-    }
+ static List<Entry> read(String text) {
+ List<Entry> out = new ArrayList<>();
+ Set<String> keys = new HashSet<>();
+ try {
+ JSONArray a = new JSONArray(text);
+ for (int i = 0; i < a.length() && out.size() < LIMIT; i++) {
+ JSONObject o = a.optJSONObject(i);
+ if (o == null) continue;
+ Entry e = new Entry();
+ e.site = o.optString("site");
+ e.id = o.optString("id");
+ e.title = o.optString("title");
+ e.poster = o.optString("poster");
+ e.line = o.optString("line");
+ e.episode = o.optString("episode");
+ e.index = Math.max(0, o.optInt("index"));
+ e.position = Math.max(0, o.optInt("position"));
+ e.duration = Math.max(0, o.optInt("duration"));
+ e.updated = o.optLong("updated");
+ if (!e.site.isEmpty() && !e.id.isEmpty() && keys.add(e.key())) out.add(e);
+ }
+ } catch (Exception ignored) {
+ }
+ return out;
+ }
 
-    static String upsert(String text, Entry entry) {
-        List<Entry> entries = read(text);
-        for (Iterator<Entry> it = entries.iterator(); it.hasNext(); ) {
-            if (it.next().key().equals(entry.key())) it.remove();
-        }
-        entries.add(0, entry);
-        JSONArray a = new JSONArray();
-        for (int i = 0; i < Math.min(LIMIT, entries.size()); i++)
-            try {
-                a.put(entries.get(i).json());
-            } catch (Exception ignored) {
-            }
-        return a.toString();
-    }
+ static String upsert(String text, Entry entry) {
+ List<Entry> entries = read(text);
+ for (Iterator<Entry> it = entries.iterator(); it.hasNext(); ) {
+ if (it.next().key().equals(entry.key())) it.remove();
+ }
+ entries.add(0, entry);
+ JSONArray a = new JSONArray();
+ for (int i = 0; i < Math.min(LIMIT, entries.size()); i++)
+ try {
+ a.put(entries.get(i).json());
+ } catch (Exception ignored) {
+ }
+ return a.toString();
+ }
 
-    static String remove(String text, String key) {
-        JSONArray a = new JSONArray();
-        for (Entry e : read(text))
-            if (!e.key().equals(key))
-                try {
-                    a.put(e.json());
-                } catch (Exception ignored) {
-                }
-        return a.toString();
-    }
+ static String remove(String text, String key) {
+ JSONArray a = new JSONArray();
+ for (Entry e : read(text))
+ if (!e.key().equals(key))
+ try {
+ a.put(e.json());
+ } catch (Exception ignored) {
+ }
+ return a.toString();
+ }
 
-    /** 1.8.0 同一部剧折叠为一条：按标题分组取最近更新的集/进度。 */
-    static List<Entry> collapsed(List<Entry> entries) {
-        java.util.LinkedHashMap<String, Entry> groups = new java.util.LinkedHashMap<>();
-        if (entries == null) return new ArrayList<>();
-        for (Entry e : entries) {
-            String key = e.title == null ? "" : e.title.trim().toLowerCase(java.util.Locale.ROOT);
-            if (key.isEmpty()) key = e.key();
-            Entry existing = groups.get(key);
-            if (existing == null || e.updated > existing.updated) groups.put(key, e);
-        }
-        return new ArrayList<>(groups.values());
-    }
+ /** 1.8.0 同一部剧折叠为一条：按标题分组取最近更新的集/进度。 */
+ static List<Entry> collapsed(List<Entry> entries) {
+ java.util.LinkedHashMap<String, Entry> groups = new java.util.LinkedHashMap<>();
+ if (entries == null) return new ArrayList<>();
+ for (Entry e : entries) {
+ String key = e.title == null ? "" : e.title.trim().toLowerCase(java.util.Locale.ROOT);
+ if (key.isEmpty()) key = e.key();
+ Entry existing = groups.get(key);
+ if (existing == null || e.updated > existing.updated) groups.put(key, e);
+ }
+ return new ArrayList<>(groups.values());
+ }
 
-    /** 折叠项移除：同一部剧的所有历史一起移除。 */
-    static String removeGroup(String text, Entry target) {
-        String title = target.title == null ? "" : target.title.trim();
-        JSONArray a = new JSONArray();
-        for (Entry e : read(text)) {
-            boolean same =
-                    !title.isEmpty()
-                            && e.title != null
-                            && title.equals(e.title.trim());
-            if (!same && !e.key().equals(target.key()))
-                try {
-                    a.put(e.json());
-                } catch (Exception ignored) {
-                }
-        }
-        return a.toString();
-    }
+ /** 折叠项移除：同一部剧的所有历史一起移除。 */
+ static String removeGroup(String text, Entry target) {
+ String title = target.title == null ? "" : target.title.trim();
+ JSONArray a = new JSONArray();
+ for (Entry e : read(text)) {
+ boolean same =
+ !title.isEmpty()
+ && e.title != null
+ && title.equals(e.title.trim());
+ if (!same && !e.key().equals(target.key()))
+ try {
+ a.put(e.json());
+ } catch (Exception ignored) {
+ }
+ }
+ return a.toString();
+ }
 }
