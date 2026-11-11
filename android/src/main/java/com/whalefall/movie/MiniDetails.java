@@ -78,9 +78,19 @@ final class MiniDetails {
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[] {0x00000000, 0xcc000000});
         bar.setBackground(barBg);
-        TextView playPause = miniButton(tv ? "⏸" : "⏯", "mini-play", () -> {
-            a.togglePlayback();
-        });
+        TextView playPause =
+                miniButton(
+                        a.player != null && a.playing ? "⏸" : "▶",
+                        "mini-play",
+                        () -> {
+                            a.togglePlayback();
+                            playPause.setText(a.playing ? "⏸" : "▶");
+                            AppLog.i(
+                                    "Mini",
+                                    "playstate="
+                                            + (a.playing ? "playing" : "paused")
+                                            + " focus=mini-play");
+                        });
         TextView expand = miniButton("⛶", "mini-expand", () -> a.expandPlayback());
         TextView stop = miniButton("✕", "mini-stop", () -> {
             AppLog.i("Mini", "exit stop");
@@ -139,9 +149,38 @@ final class MiniDetails {
                         if (detailPlay.getId() == View.NO_ID)
                             detailPlay.setId(View.generateViewId());
                         playPause.setNextFocusDownId(detailPlay.getId());
+                        playPause.setNextFocusUpId(detailPlay.getId());
                         hit.setNextFocusDownId(detailPlay.getId());
+                        hit.setNextFocusUpId(detailPlay.getId());
                     }
+                    // 三个小窗按钮显式左右/上下导航
+                    playPause.setNextFocusRightId(expand.getId());
+                    expand.setNextFocusLeftId(playPause.getId());
+                    expand.setNextFocusRightId(stop.getId());
+                    stop.setNextFocusLeftId(expand.getId());
+                    if (detailPlay != null) {
+                        expand.setNextFocusDownId(detailPlay.getId());
+                        stop.setNextFocusDownId(detailPlay.getId());
+                        expand.setNextFocusUpId(detailPlay.getId());
+                        stop.setNextFocusUpId(detailPlay.getId());
+                    }
+                    AppLog.i(
+                            "Mini",
+                            "playstate="
+                                    + (a.playing ? "playing" : "paused")
+                                    + " focus=mini-play");
                 });
+        // 图标跟随真实播放状态（暂停/播放切换后同步）
+        final Runnable tick =
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!a.miniMode) return;
+                        playPause.setText(a.playing ? "⏸" : "▶");
+                        a.ui.postDelayed(this, 500);
+                    }
+                };
+        a.ui.postDelayed(tick, 500);
         // 详情异步加载可能重新显示 hero 海报：延迟再隐藏一次，保证小窗始终是视频
         a.ui.postDelayed(
                 () -> {
@@ -157,6 +196,19 @@ final class MiniDetails {
         b.setIncludeFontPadding(false);
         b.setFocusable(true);
         b.setFocusableInTouchMode(true);
+        if (b.getId() == View.NO_ID) b.setId(View.generateViewId());
+        b.setOnFocusChangeListener(
+                (v, focused) -> {
+                    if (focused) {
+                        GradientDrawable ring = new GradientDrawable();
+                        ring.setColor(0x99000000);
+                        ring.setCornerRadius(a.dp(8));
+                        ring.setStroke(a.dp(2), 0xffffffff);
+                        v.setBackground(ring);
+                    } else {
+                        v.setBackground(null);
+                    }
+                });
         b.setOnClickListener(
                 v -> {
                     if (v.hasFocus()) action.run();
@@ -164,6 +216,15 @@ final class MiniDetails {
                 });
         b.setOnKeyListener(
                 (v, key, event) -> {
+                    if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                        AppLog.i(
+                                "TvKey",
+                                "page=mini code="
+                                        + android.view.KeyEvent.keyCodeToString(key)
+                                        + " focus="
+                                        + tag
+                                        + " action=nav");
+                    }
                     if (event.getAction() == android.view.KeyEvent.ACTION_DOWN
                             && key == android.view.KeyEvent.KEYCODE_DPAD_CENTER) {
                         action.run();

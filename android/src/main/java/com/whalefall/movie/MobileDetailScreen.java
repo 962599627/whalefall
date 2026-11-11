@@ -471,8 +471,10 @@ final class MobileDetailScreen {
         if (a.current != null) a.current.home = false;
         a.stopWeb();
         a.stopMagnet();
-        a.releasePlayer();
-        a.generation++;
+        // 1.9.57：小窗/全屏浮层返回详情时保留正在播放的 player，不重建
+        boolean keepPlayback = a.miniMode || a.expandedOverDetail;
+        if (!keepPlayback) a.releasePlayer();
+        if (!keepPlayback) a.generation++;
 
         // Edge-to-edge transparent status bar so the preview reaches near the physical top
         a.applyMobileSystemBars(false);

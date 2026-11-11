@@ -1299,11 +1299,15 @@ public final class MainActivity extends Activity {
         }
         stopWeb();
         stopMagnet();
-        releasePlayer();
+        // 1.9.57：小窗/全屏浮层下的详情重建不能释放或打断正在播放的 player
+        boolean keepPlayback = miniMode || expandedOverDetail;
+        if (!keepPlayback) {
+            releasePlayer();
+            generation++;
+        }
         if (!isTvDevice()) {
             applyMobileSystemBars(false);
         }
-        generation++;
     }
 
     static final String BACKDROP_TAG = "whale-backdrop";
