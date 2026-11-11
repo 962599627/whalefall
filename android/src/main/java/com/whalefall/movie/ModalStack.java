@@ -38,7 +38,11 @@ final class ModalStack {
 
     static synchronized void popByRoot(View root) {
         if (root == null) return;
-        stack.removeIf(e -> e.root == root);
+        // 1.9.85：避免 lambda 合成类（Android 6.0 上曾报 NoClassDefFoundError）
+        java.util.Iterator<Entry> it = stack.iterator();
+        while (it.hasNext()) {
+            if (it.next().root == root) it.remove();
+        }
     }
 
     static synchronized Entry top() {
