@@ -228,12 +228,7 @@ public final class MainActivity extends Activity {
  /** 1.9.84：物理遥控按键即进入焦点模式（不依赖 LEANBACK 上报）。 */
  boolean keyFocusMode;
  /** 1.9.128：播放器长按 OK 进入进度拖动模式。 */
- /** 1.9.128：播放器长按 OK 进入进度拖动模式。 */
  boolean scrubMode;
- /** 1.9.132：播放中异常退出检测只做一次。 */
- boolean crashRecoveryDone;
- /** 1.9.131：播放器已释放标志，忽略迟到的 surface 回调。 */
- volatile boolean playerReleased;
  /** 1.9.102：播放器自动隐藏计时用的最后一次输入。 */
  String lastPlayerKey = "none";
 
@@ -489,8 +484,6 @@ public final class MainActivity extends Activity {
  String episodeFocusLine = "";
  final EpisodeSelection selection = new EpisodeSelection();
  boolean player, home;
- /** 1.9.130：详情页是唯一允许小窗保留播放的页面。 */
- boolean detail;
  HomeScreen.State homeState;
  HomeScreen retainedHome;
 
@@ -890,9 +883,7 @@ public final class MainActivity extends Activity {
  crossSearch(Cms.searchTitle(v));
  return;
  }
- Screen detailScreen = new Screen(() -> detail(s, v));
- detailScreen.detail = true;
- open(detailScreen, true);
+ open(new Screen(() -> detail(s, v)), true);
  }
 
  /**
@@ -1615,20 +1606,8 @@ public final class MainActivity extends Activity {
  }
  stopWeb();
  stopMagnet();
- // 1.9.130：只有详情页允许小窗/全屏保留播放；其它页面一律释放
- boolean keepPlayback =
- (miniMode || expandedOverDetail) && current != null && current.detail;
- AppLog.i(
- "Player",
- "policy target="
- + (current == null
- ? "null"
- : (current.detail
- ? "detail"
- : current.player ? "player" : current.home ? "home" : "other"))
- + " keep="
- + keepPlayback
- + " reason=page-change");
+ // 1.9.57：小窗/全屏浮层下的详情重建不能释放或打断正在播放的 player
+ boolean keepPlayback = miniMode || expandedOverDetail;
  if (!keepPlayback) {
  // 1.9.106：页面重建统一释放（手机与电视一致）
  releasePlaybackOnPageChange("page", false);
@@ -1695,19 +1674,6 @@ public final class MainActivity extends Activity {
  });
  } catch (Throwable error) {
  AppLog.w("Wallpaper", "fallback failed", error);
- }
- }
-
- void crashRecoverIfNeeded() {
- try {
- String url = prefs.getString("playing_url", "");
- if (url == null || url.isEmpty()) return;
- prefs.edit().remove("playing_url").apply();
-            AppLog.i("Player", "crash-recovery record skipped revert=true");
- AppLog.i("Player", "crash-recovery url=" + url + " fallback=software");
- toast("上次播放异常，已对该视频启用兼容模式");
- } catch (Throwable error) {
- AppLog.w("Player", "crash recovery skipped", error);
  }
  }
 
@@ -2979,23 +2945,14 @@ public final class MainActivity extends Activity {
  .remove(Prefs.WATCH_HISTORY)
  .remove(TvLive.LAST)
  .apply();
- AppLog.i("History", "clear source=watch_history removed=" + removed);
- AppLog.i("History", "clear source=tv_last removed=" + (prefs.contains(TvLive.LAST) ? 0 : 1));
- AppLog.i("History", "clear source=home retained=true scope=home+live removed=" + removed);
+ AppLog.i("History", "clear scope=home+live removed=" + removed);
  toast("已清空观看历史与直播记录");
- // 1.9.129：作废首页/历史页缓存实例，返回时强制重建（不能只清 prefs）
  try {
- if (current != null) {
- current.retainedHome = null;
- current.mobileHome = null;
+ if (current != null && current.home) {
+ renderReturn(current);
+ } else {
+ refresh();
  }
- if (back != null)
- for (Screen s : back) {
- s.retainedHome = null;
- s.mobileHome = null;
- }
- if (current != null && current.home) renderReturn(current);
- else refresh();
  } catch (Throwable ignored) {
  }
  return removed;
@@ -3520,11 +3477,6 @@ public final class MainActivity extends Activity {
  scheduleFocusAudit();
  ui.postDelayed(this::cleanupOldCrashLogs, 1500);
  ui.postDelayed(this::purgeUnsupportedVideoWallpaper, 1200);
- // 1.9.132：上次播放异常退出 → 对残留 URL 启用软解兼容
- if (!crashRecoveryDone) {
- crashRecoveryDone = true;
- ui.postDelayed(this::crashRecoverIfNeeded, 400);
- }
  if (bgPlayback) {
  bgPlayback = false;
  // 1.9.53：回到前台继续播放，不释放音频焦点/不暂停，仅撤掉常驻通知

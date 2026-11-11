@@ -1170,14 +1170,6 @@ final class HomeScreen {
  }
 
  void toggleHomeFilterValue(VideoFilters.Definition def, VideoFilters.Choice choice) {
- AppLog.i(
- "FilterOption",
- "inline pick dim="
- + normalizeFilterDim(def.dimension)
- + " value="
- + choice.value
- + " label="
- + choice.label);
  java.util.LinkedHashSet<String> values =
  filterValueSet(state.selectedFilters.get(def.dimension));
  boolean remoteSingle = MobileShell.siteHasRemoteApi(site) && !remoteMultiAllowed(def);
@@ -1409,7 +1401,7 @@ final class HomeScreen {
  clear.setOnClickListener(
  v -> {
  state.selectedFilters.clear();
- AppLog.i("FilterFocus", "clear category=" + state.category);
+ AppLog.i("FilterOption", "clear-all category=" + state.category);
  applyFilters();
  collapseFilterUi();
  if (selectedTab() != null) selectedTab().requestFocus();
@@ -1480,11 +1472,19 @@ final class HomeScreen {
 
  /** L3：单行横滚紧凑 chip（TV 34dp/10 间距）。 */
  /** 1.9.117：TV 筛选选项弹窗（每行一个选项，当前选中高亮；BACK=关闭）。 */
- /** 1.9.137：统一内嵌展开（手机/电视一致，不再弹窗）。 */
+ /** 1.9.125：触摸模式才内嵌展开；遥控/按键模式一律弹窗（不依赖 isTvDevice）。 */
  void openFilterFor(final VideoFilters.Definition def) {
- AppLog.i(
- "FilterOption", "inline open dim=" + normalizeFilterDim(def.dimension) + " first=pending");
+ boolean touchMode = !a.keyFocusMode && !a.remoteFocusMode;
+ String dim = normalizeFilterDim(def.dimension);
+ if (touchMode) {
+ AppLog.i("FilterOption", "path=inline touch=true keyMode=" + a.keyFocusMode + " dim=" + dim);
  showFilterOptions(def);
+ } else {
+ AppLog.i(
+ "FilterOption",
+ "path=dialog tv=" + a.isTvDevice() + " keyMode=" + a.keyFocusMode + " dim=" + dim);
+ showFilterOptionDialog(def);
+ }
  }
 
  void showFilterOptionDialog(final VideoFilters.Definition def) {

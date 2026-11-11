@@ -248,7 +248,8 @@ final class UpdateScreen {
  .show();
  }
 
- static Intent installIntent() { Intent intent =
+ static Intent installIntent() {
+ Intent intent =
  new Intent(Intent.ACTION_INSTALL_PACKAGE)
  .setDataAndType(
  UpdateApkProvider.URI, "application/vnd.android.package-archive")
@@ -289,7 +290,8 @@ final class UpdateScreen {
  .edit()
  .putInt("pending_code", release.code)
  .commit();
- installApkWithFallback(a, updates.apk(), release.version);
+ a.startActivityForResult(installIntent(), INSTALL);
+ updates.message = "请在系统安装页面确认或返回";
  } catch (RuntimeException error) {
  updates.prefs.edit().remove("pending_code").apply();
  updates.message = "无法打开安装器，请使用电脑或 U 盘安装";
@@ -307,101 +309,8 @@ final class UpdateScreen {
  });
  }
 
- /** 1.9.134：多路安装回退；全部失败时复制 APK 到 Download 供手动安装。 */
- static boolean installApkWithFallback(MainActivity a, java.io.File apk, String version) {
- try {
- java.io.File cache = new java.io.File(a.getCacheDir(), "updates");
- if (!cache.isDirectory() && !cache.mkdirs()) throw new java.io.IOException("cache");
- java.io.File release = new java.io.File(cache, "release.apk");
- try (java.io.InputStream in = new java.io.FileInputStream(apk);
- java.io.OutputStream out = new java.io.FileOutputStream(release)) {
- byte[] buf = new byte[65536];
- int n;
- while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
- }
- android.net.Uri uri = UpdateApkProvider.URI;
- android.content.Intent base =
- new android.content.Intent()
- .setDataAndType(uri, "application/vnd.android.package-archive")
- .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
- .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
- android.content.Intent install =
- new android.content.Intent(android.content.Intent.ACTION_INSTALL_PACKAGE, uri)
- .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
- .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
- .putExtra(android.content.Intent.EXTRA_RETURN_RESULT, true);
- if (launchInstall(a, install, "install_package")) return true;
- android.content.Intent view =
- new android.content.Intent(android.content.Intent.ACTION_VIEW)
- .setDataAndType(uri, "application/vnd.android.package-archive")
- .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
- .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
- if (launchInstall(a, view, "view")) return true;
- String[] components = {
- "com.miui.packageinstaller/.PackageInstallerActivity",
- "com.android.packageinstaller/.ui.PackageInstallerActivity",
- "com.android.packageinstaller/.PackageInstallerActivity",
- "com.google.android.packageinstaller/.PackageInstallerActivity"
- };
- for (String component : components) {
- try {
- String[] parts = component.split("/");
- android.content.Intent explicit =
- new android.content.Intent(android.content.Intent.ACTION_VIEW)
- .setComponent(
- new android.content.ComponentName(
- parts[0],
- parts[1].startsWith(".") ? parts[0] + parts[1] : parts[1]))
- .setDataAndType(uri, "application/vnd.android.package-archive")
- .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
- .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
- if (launchInstall(a, explicit, "explicit:" + parts[0])) return true;
- } catch (Throwable ignored) {
- }
- }
- // 全部失败：复制到 Download，提示手动安装
- try {
- java.io.File external = android.os.Environment.getExternalStorageDirectory();
- java.io.File dir = new java.io.File(external, "Download/DSH-Go/鲸落");
- if (!dir.isDirectory()) dir.mkdirs();
- String name = "WhaleFall-" + (version == null ? "update" : version) + ".apk";
- java.io.File saved = new java.io.File(dir, name);
- try (java.io.InputStream in = new java.io.FileInputStream(apk);
- java.io.OutputStream out = new java.io.FileOutputStream(saved)) {
- byte[] buf = new byte[65536];
- int n;
- while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
- }
- AppLog.i("Update", "install try=download-copy result=ok path=" + saved.getAbsolutePath());
- a.toast("已保存到 Download，请用文件管理器手动安装");
- a.notice("自动安装失败。\nAPK 已保存到：\n" + saved.getAbsolutePath() + "\n请在文件管理器中打开安装。");
- return false;
- } catch (Throwable copyError) {
- AppLog.w("Update", "install try=saved-copy result=fail", copyError);
- }
- a.toast("安装失败，请用 U 盘或文件管理器手动安装");
- return false;
- } catch (Throwable error) {
- AppLog.w("Update", "install fallback failed", error);
- a.toast("安装失败：" + error.getMessage());
- return false;
- }
- }
-
- private static boolean launchInstall(MainActivity a, android.content.Intent intent, String tag) {
- try {
- a.startActivity(intent);
- AppLog.i("Update", "install try=" + tag + " result=ok");
- return true;
- } catch (Throwable error) {
- AppLog.i(
- "Update",
- "install try=" + tag + " result=fail reason=" + error.getClass().getSimpleName());
- return false;
- }
- }
-
- static void result(MainActivity a) { UpdateManager updates = UpdateManager.get(a);
+ static void result(MainActivity a) {
+ UpdateManager updates = UpdateManager.get(a);
  updates.prefs.edit().remove("pending_code").apply();
  updates.message = "已返回应用；若取消安装，原版本继续保留";
  if (a.updateScreen != null) a.updateScreen.refresh();

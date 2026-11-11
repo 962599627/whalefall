@@ -512,8 +512,25 @@ final class FilesScreen {
 
  /** 安装上传的 APK：复制到更新缓存目录，用现有 provider 交给系统安装器。 */
  private static void installApk(MainActivity a, File file) {
- // 1.9.134：与更新页共用多路安装回退（ACTION_INSTALL_PACKAGE/VIEW/小米安装器/Download 兜底）
- UpdateScreen.installApkWithFallback(a, file, "local");
+ try {
+ File cacheDir = new File(a.getCacheDir(), "updates");
+ if (!cacheDir.isDirectory() && !cacheDir.mkdirs()) throw new java.io.IOException("cache");
+ File target = new File(cacheDir, "release.apk");
+ try (java.io.InputStream in = new java.io.FileInputStream(file);
+ java.io.OutputStream out = new java.io.FileOutputStream(target)) {
+ byte[] buf = new byte[65536];
+ int n;
+ while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+ }
+ android.content.Intent intent =
+ new android.content.Intent(android.content.Intent.ACTION_VIEW);
+ intent.setDataAndType(UpdateApkProvider.URI, "application/vnd.android.package-archive");
+ intent.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+ intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+ a.startActivity(intent);
+ } catch (Exception e) {
+ a.toast("安装失败：" + e.getMessage());
+ }
  }
 
  private static String fileBadge(String name) {
