@@ -971,7 +971,10 @@ final class SettingsScreen {
  }
  boolean h264 =
  mime.contains("avc") || mime.contains("h264") || mime.contains("video/avc");
- boolean tooLarge = width > 1920 || height > 1080;
+ // 1.9.111：竖屏也支持：短边≤1080 且 长边≤1920
+ int shortSide = Math.min(width, height);
+ int longSide = Math.max(width, height);
+ boolean tooLarge = shortSide > 1080 || longSide > 1920;
  boolean tooFast = fps > 30f;
  boolean ok = h264 && !tooLarge && !tooFast;
  AppLog.i(
@@ -987,7 +990,7 @@ final class SettingsScreen {
  + " accepted="
  + ok);
  if (!h264) return "动态壁纸仅支持 H.264 视频（当前 " + mime + "）";
- if (tooLarge) return "动态壁纸仅支持 ≤1080p（当前 " + width + "×" + height + "）";
+ if (tooLarge) return "动态壁纸仅支持 ≤1080p（长边≤1920，当前 " + width + "×" + height + "）";
  if (tooFast) return "动态壁纸仅支持 ≤30fps（当前 " + Math.round(fps) + "fps）";
  return null;
  }

@@ -112,7 +112,11 @@ final class VideoWallpaper extends FrameLayout {
                     public void surfaceCreated(SurfaceHolder holder) {
                         if (released) return;
                         try {
+                            final String path = file(host).getAbsolutePath();
+                            AppLog.i("Wallpaper", "video engine=mediaplayer path=" + path);
                             mediaPlayer = new MediaPlayer();
+                            // 1.9.111：setDataSource 必须最先设置，旧机否则 RuntimeException
+                            mediaPlayer.setDataSource(path);
                             mediaPlayer.setSurface(holder.getSurface());
                             mediaPlayer.setLooping(true);
                             float vol =
@@ -120,13 +124,13 @@ final class VideoWallpaper extends FrameLayout {
                             mediaPlayer.setVolume(vol, vol);
                             mediaPlayer.setVideoScalingMode(
                                     MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT);
-                            mediaPlayer.setDataSource(file(host).getAbsolutePath());
                             mediaPlayer.setOnPreparedListener(
                                     mp -> {
                                         try {
                                             mp.start();
                                         } catch (Throwable error) {
-                                            fail("mediaplayer-start");
+                                            AppLog.w("Wallpaper", "mediaplayer start failed", error);
+                                            fail("mediaplayer-start:" + describe(error));
                                         }
                                     });
                             mediaPlayer.setOnInfoListener(
@@ -145,7 +149,8 @@ final class VideoWallpaper extends FrameLayout {
                                     });
                             mediaPlayer.prepareAsync();
                         } catch (Throwable error) {
-                            fail("mediaplayer-init:" + error.getClass().getSimpleName());
+                            AppLog.w("Wallpaper", "mediaplayer init failed", error);
+                            fail("mediaplayer-init:" + describe(error));
                         }
                     }
 
@@ -157,6 +162,13 @@ final class VideoWallpaper extends FrameLayout {
                     public void surfaceDestroyed(SurfaceHolder holder) {}
                 });
         addView(surfaceView, 0, new LayoutParams(-1, -1));
+    }
+
+    private static String describe(Throwable error) {
+        String message = error == null ? null : error.getMessage();
+        return error == null
+                ? "unknown"
+                : error.getClass().getSimpleName() + (message == null ? "" : ": " + message);
     }
 
     /** 播放失败/首帧超时：恢复默认壁纸并提示。 */
