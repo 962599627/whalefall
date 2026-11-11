@@ -145,7 +145,7 @@ final class PlayerToolsSheet {
                             new LinearLayout.LayoutParams(0, a.dp(cellHeightDp), 1f);
                     cellLp.setMargins(a.dp(3), a.dp(2), a.dp(3), a.dp(2));
                     row.addView(cell, cellLp);
-                    cell.setTag("tool:" + label);
+                    cell.setTag("tool:" + tool.label);
                     cell.setOnKeyListener(
                             (v, keyCode, event) -> {
                                 if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
