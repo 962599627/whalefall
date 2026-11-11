@@ -1244,6 +1244,11 @@ final class FileManagerScreen {
  });
  holder.setOnLongClickListener(
  v -> {
+ // 1.9.98：长按本地文件给出「设为壁纸/播放/删除」菜单（遥控 OK 长按也生效）
+ if (!selecting && !entry.folder) {
+ showLocalFileMenu(entry);
+ return true;
+ }
  if (!selecting) {
  selecting = true;
  selFiles.clear();
@@ -1256,6 +1261,132 @@ final class FileManagerScreen {
  });
  holder.setTag("filemgr-card:" + index);
  return finalHolder;
+ }
+
+ /** 1.9.98：本地文件长按菜单：视频→设为动态壁纸/播放；图片→设为壁纸/查看；含删除/重命名。 */
+ private void showLocalFileMenu(final FileManagerCore.LocalEntry entry) {
+ final boolean video = entry.video;
+ final boolean image = TextViewerScreen.isImageName(entry.name);
+ java.util.List<String> labels = new java.util.ArrayList<>();
+ if (video) labels.add("设为动态壁纸");
+ if (image) labels.add("设为壁纸");
+ labels.add(video ? "播放" : "查看");
+ labels.add("重命名");
+ labels.add("删除");
+ labels.add("取消");
+ String[] items = labels.toArray(new String[0]);
+ new AppDialog.Builder(a)
+ .setTitle(entry.name)
+ .setItems(
+ items,
+ (dialog, which) -> {
+ String choice = items[which];
+ if ("设为动态壁纸".equals(choice) || "设为壁纸".equals(choice)) {
+ setWallpaperFromFile(entry.file, video);
+ } else if ("播放".equals(choice)) {
+ FileManagerCore.playLocal(a, entry.file);
+ } else if ("查看".equals(choice)) {
+ if (image) ImageViewerScreen.show(a, entry.file);
+ else TextViewerScreen.show(a, entry.file);
+ } else if ("重命名".equals(choice)) {
+ renameSingle(entry.file);
+ } else if ("删除".equals(choice)) {
+ new AppDialog.Builder(a)
+ .setTitle("删除 " + entry.name + "？")
+ .setNegativeButton("取消", null)
+ .setPositiveButton(
+ "删除",
+ (d, w) -> {
+ a.toast(FileManagerCore.delete(entry.file) ? "已删除" : "删除失败（无权限）");
+ refresh();
+ })
+ .show();
+ }
+ })
+ .show();
+ }
+
+ private void renameSingle(final java.io.File file) {
+ final android.widget.EditText input = new android.widget.EditText(a);
+ input.setText(file.getName());
+ input.setSelection(input.getText().length());
+ new AppDialog.Builder(a)
+ .setTitle("重命名")
+ .setView(input)
+ .setNegativeButton("取消", null)
+ .setPositiveButton(
+ "确定",
+ (d, w) -> {
+ boolean ok = FileManagerCore.rename(file, input.getText().toString());
+ a.toast(ok ? "已重命名" : "重命名失败（可能重名或无权限）");
+ refresh();
+ })
+ .show();
+ }
+
+ /** 1.9.98：文件直接设为壁纸（复制到 files/wallpaper.jpg|mp4 → 启用 → 立即应用）。 */
+ void setWallpaperFromFile(final java.io.File file, final boolean video) {
+ a.worker.execute(
+ () -> {
+ try (java.io.InputStream input = new java.io.FileInputStream(file)) {
+ if (video) {
+ boolean supported = videoCodecSupported(file);
+ AppLog.i(
+ "Wallpaper",
+ "set-from-file type=video path="
+ + file.getName()
+ + " supported="
+ + supported);
+ if (!supported) {
+ a.ui.post(() -> a.notice("该视频编码不支持壁纸播放（请换 H.264/VP9 视频）"));
+ return;
+ }
+ SettingsScreen.saveVideoWallpaper(a, input);
+ a.prefs.edit()
+ .putBoolean(Prefs.WALLPAPER_VIDEO, true)
+ .putBoolean(Prefs.WALLPAPER_ENABLED, true)
+ .apply();
+ a.ui.post(
+ () -> {
+ a.toast("已设为动态壁纸");
+ if (a.root != null) a.applyWallpaper(a.root);
+ a.refresh();
+ });
+ } else {
+ AppLog.i("Wallpaper", "set-from-file type=image path=" + file.getName() + " supported=true");
+ SettingsScreen.saveWallpaper(a, input);
+ a.ui.post(
+ () -> {
+ a.toast("已设为壁纸");
+ if (a.root != null) a.applyWallpaper(a.root);
+ a.refresh();
+ });
+ }
+ } catch (Exception error) {
+ AppLog.w("Wallpaper", "set-from-file failed", error);
+ a.ui.post(() -> a.notice("设置壁纸失败：" + a.message(error)));
+ }
+ });
+ }
+
+ /** 简单编码探测：H.265/HEVC、Dolby Vision 壁纸解码不可靠，提前提示。 */
+ static boolean videoCodecSupported(java.io.File file) {
+ try {
+ android.media.MediaExtractor extractor = new android.media.MediaExtractor();
+ extractor.setDataSource(file.getAbsolutePath());
+ for (int i = 0; i < extractor.getTrackCount(); i++) {
+ android.media.MediaFormat format = extractor.getTrackFormat(i);
+ String mime = format.getString(android.media.MediaFormat.KEY_MIME);
+ if (mime != null && mime.startsWith("video/")) {
+ extractor.release();
+ return !(mime.contains("hevc") || mime.contains("h265") || mime.contains("dolby"));
+ }
+ }
+ extractor.release();
+ return true;
+ } catch (Throwable ignored) {
+ return true;
+ }
  }
 
  private View buildNetdiskCard(final QuarkUcApi.FileItem item) {

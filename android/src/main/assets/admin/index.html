@@ -175,6 +175,35 @@ footer{margin-top:26px;text-align:center;font-size:11px;color:#5f6f88;line-heigh
     </div>
   </section>
 
+  <!-- 1.9.98 壁纸 -->
+  <section v-if="tab==='wallpaper'" class="grid">
+    <div class="card">
+      <h2>当前壁纸 <span class="tag">{{wallpaper.type==='video'?'动态':wallpaper.type==='image'?'静态':'默认'}}</span></h2>
+      <div class="sub">
+        {{wallpaper.file||'内置默认壁纸'}} · {{wallpaper.enabled?'已启用':'已关闭'}}
+        <span v-if="wallpaper.size"> · {{Math.round(wallpaper.size/1024)}} KB</span>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="file" ref="wp" style="display:none" @change="pickWallpaper">
+        <button class="btn" @click="openWallpaper('image')" :disabled="uploadBusy||offline">上传图片设为壁纸</button>
+        <button class="btn ghost" @click="openWallpaper('video')" :disabled="uploadBusy||offline">上传视频设为动态壁纸</button>
+        <button class="btn ghost" @click="post('/api/wallpaper/default',{}).then(loadWallpaper)">恢复默认壁纸</button>
+        <button class="btn ghost" @click="post('/api/wallpaper/off',{}).then(loadWallpaper)">关闭壁纸</button>
+        <span style="font-size:11.5px;color:var(--dim)" v-if="uploadName">{{uploadName}}</span>
+      </div>
+      <div class="sub" v-if="wallpaperError" style="color:#ffb454;margin-top:10px">{{wallpaperError}}</div>
+    </div>
+    <div class="card">
+      <h2>从已上传文件选择</h2>
+      <div class="sub">与 App「文件」页同一目录；结果与 App 内长按设为壁纸完全一致</div>
+      <div class="row" v-for="f in wallpaperFiles()" :key="f.name">
+        <div class="grow"><div class="name">{{f.name}}</div><div class="meta">{{f.sizeLabel}}</div></div>
+        <button class="btn ghost" @click="setWallpaperFromUpload(f)">设为壁纸</button>
+      </div>
+      <div class="empty" v-if="!wallpaperFiles().length">还没有图片/视频，先在「文件」页上传</div>
+    </div>
+  </section>
+
   <!-- 收藏 -->
   <section v-if="tab==='fav'" class="grid">
     <div class="card">
@@ -349,10 +378,11 @@ createApp({
   data(){
     return {
       tab:'home',
-      tabs:[{k:'home',n:'概览'},{k:'sites',n:'片源'},{k:'fav',n:'收藏'},{k:'tv',n:'电视台'},{k:'files',n:'文件'},{k:'push',n:'推送'},{k:'settings',n:'设置'},{k:'about',n:'关于'}],
+      tabs:[{k:'home',n:'概览'},{k:'sites',n:'片源'},{k:'fav',n:'收藏'},{k:'tv',n:'电视台'},{k:'files',n:'文件'},{k:'wallpaper',n:'壁纸'},{k:'push',n:'推送'},{k:'settings',n:'设置'},{k:'about',n:'关于'}],
       uploadName:'', uploadBusy:false, pushUrl:'', pushTitle:'', mdText:'', mdName:'',
       state:{version:'',package:'',device:'',ip:'',port:'',sites:[],selectedSite:'',favorites:[],history:[],tv:{total:0,builtinSat:0,custom:[]},prefs:{}},
       files:[], ftp:'', queue:[], offline:false,
+      wallpaper:{type:'default',enabled:false,file:'',size:0,video:false}, wallpaperError:'',
       configText:'', newChannel:{name:'',url:''}, toastText:'', toastTimer:null
     };
   },
@@ -360,7 +390,7 @@ createApp({
     aspectLabel(){const v=this.state.prefs.tv_aspect|0;return ['自适应','16:9','4:3'][v]||'自适应';},
     fillLabel(){const v=this.state.prefs.tv_fill|0;return ['适应','裁剪','拉伸'][v]||'适应';}
   },
-  mounted(){this.load();this.loadFiles();this.loadQueue();setInterval(()=>this.ping(),10000);},
+  mounted(){this.load();this.loadFiles();this.loadQueue();this.loadWallpaper();setInterval(()=>this.ping(),10000);},
   methods:{
     async load(){
       try{
@@ -378,6 +408,48 @@ createApp({
         this.files=j.files||[];
         this.ftp=this.ftpAddress();
       }catch(e){}
+    },
+    async loadWallpaper(){
+      try{
+        const r=await fetch(apiUrl('/api/wallpaper'),{cache:'no-store'});
+        this.wallpaper=await r.json();
+      }catch(e){}
+    },
+    wallpaperFiles(){
+      return (this.files||[]).filter(f=>/\.(mp4|webm|mkv|mov|jpg|jpeg|png|webp)$/i.test(f.name));
+    },
+    openWallpaper(kind){
+      this.$refs.wp.accept = kind==='video' ? 'video/*' : 'image/*';
+      this.$refs.wp.dataset.kind = kind;
+      this.$refs.wp.value='';
+      this.$refs.wp.click();
+    },
+    pickWallpaper(ev){
+      const file=ev.target.files[0]; if(!file) return;
+      const kind=this.$refs.wp.dataset.kind||'image';
+      this.uploadBusy=true; this.wallpaperError='';
+      const xhr=new XMLHttpRequest();
+      xhr.open('POST',apiUrl('/api/wallpaper/'+kind));
+      xhr.setRequestHeader('Content-Type','application/octet-stream');
+      xhr.upload.onprogress=(e)=>{ if(e.lengthComputable) this.uploadName=file.name+' '+Math.round(e.loaded*100/e.total)+'%'; };
+      xhr.onload=()=>{
+        this.uploadBusy=false; this.uploadName='';
+        let j={}; try{ j=JSON.parse(xhr.responseText); }catch(e){}
+        if(j.ok){ this.say('壁纸已更新'); this.loadWallpaper(); }
+        else { this.wallpaperError=j.reason||'设置失败'; this.say('设置失败'); }
+        ev.target.value='';
+      };
+      xhr.onerror=()=>{this.uploadBusy=false; this.uploadName=''; this.say('上传失败');};
+      xhr.send(file);
+    },
+    async setWallpaperFromUpload(f){
+      try{
+        const r=await fetch(apiUrl('/api/wallpaper/select'),{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({name:f.name})});
+        const j=await r.json().catch(()=>({}));
+        if(j.ok){this.say('壁纸已更新');this.loadWallpaper();}
+        else {this.wallpaperError=j.reason||'设置失败';this.say('视频编码不支持');}
+      }catch(e){this.say('设置失败');}
     },
     openPicker(kind){
       const map={
