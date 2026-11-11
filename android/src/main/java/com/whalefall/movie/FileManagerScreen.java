@@ -87,7 +87,22 @@ final class FileManagerScreen {
 
  private FileManagerScreen(MainActivity a) {
  this.a = a;
- this.localDir = FileManagerCore.downloadDir(a);
+ // 1.9.104：根目录聚合 /sdcard 本地存储，不再只看 App 私有目录
+ this.localDir = localRoot(a);
+ AppLog.i("FileManager", "scan root=" + this.localDir.getAbsolutePath());
+ }
+
+ /** 1.9.104：本地根目录优先 /sdcard/Download，失败回退 App 下载目录。 */
+ static java.io.File localRoot(MainActivity a) {
+ try {
+ java.io.File external = android.os.Environment.getExternalStorageDirectory();
+ if (external != null) {
+ java.io.File download = new java.io.File(external, "Download");
+ if (download.isDirectory()) return download;
+ }
+ } catch (Throwable ignored) {
+ }
+ return FileManagerCore.downloadDir(a);
  }
 
  private void open() {
@@ -278,7 +293,9 @@ final class FileManagerScreen {
  private void buildToolbar() {
  LinearLayout row = a.row();
  row.setGravity(Gravity.CENTER_VERTICAL);
- row.setPadding(0, a.dp(6), 0, a.dp(6));
+ // 1.9.104：TV overscan/手机左右安全边 ≥24dp，避免排序/新建被裁切
+ int sidePad = a.dp(a.isTvDevice() ? 24 : 12);
+ row.setPadding(sidePad, a.dp(6), sidePad, a.dp(6));
  pathLabel = a.text("", 11.5f, UiTokens.TEXT_TERTIARY);
  pathLabel.setSingleLine(true);
  pathLabel.setEllipsize(android.text.TextUtils.TruncateAt.START);
@@ -524,7 +541,7 @@ final class FileManagerScreen {
  } else path = "网盘 / " + providerName() + " / " + netdiskPath;
  pathLabel.setText(path);
  breadcrumbRow.setPadding(a.dp(16), 0, a.dp(16), a.dp(4));
- if (tab == 0 && !localDir.equals(FileManagerCore.downloadDir(a))) {
+ if (tab == 0 && localDir.getParentFile() != null) {
  TextView up = a.text("‹ 上级", 12, UiTokens.ACCENT);
  up.setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5));
  up.setFocusable(true);
@@ -541,6 +558,23 @@ final class FileManagerScreen {
  return;
  }
  List<FileManagerCore.LocalEntry> entries = FileManagerCore.scan(localDir);
+ // 1.9.104：扫描统计（本地文件能看到多少）
+ int apkCount = 0, videoCount = 0;
+ for (FileManagerCore.LocalEntry e : entries) {
+ String ln = e.name == null ? "" : e.name.toLowerCase(java.util.Locale.ROOT);
+ if (ln.endsWith(".apk")) apkCount++;
+ if (e.video) videoCount++;
+ }
+ AppLog.i(
+ "FileManager",
+ "scan root="
+ + localDir.getAbsolutePath()
+ + " count="
+ + entries.size()
+ + " apk="
+ + apkCount
+ + " video="
+ + videoCount);
  items.addAll(entries);
  sortEntries(entries);
  updateFilterChips();
@@ -1282,7 +1316,7 @@ final class FileManagerScreen {
  (dialog, which) -> {
  String choice = items[which];
  if ("设为动态壁纸".equals(choice) || "设为壁纸".equals(choice)) {
- setWallpaperFromFile(entry.file, video);
+ setWallpaperFromFile(a, entry.file, video);
  } else if ("播放".equals(choice)) {
  FileManagerCore.playLocal(a, entry.file);
  } else if ("查看".equals(choice)) {
@@ -1325,7 +1359,7 @@ final class FileManagerScreen {
  }
 
  /** 1.9.98：文件直接设为壁纸（复制到 files/wallpaper.jpg|mp4 → 启用 → 立即应用）。 */
- void setWallpaperFromFile(final java.io.File file, final boolean video) {
+ static void setWallpaperFromFile(final MainActivity a, final java.io.File file, final boolean video) {
  a.worker.execute(
  () -> {
  try (java.io.InputStream input = new java.io.FileInputStream(file)) {
@@ -2094,7 +2128,7 @@ final class FileManagerScreen {
  exitSelection();
  return true;
  }
- if (tab == 0 && !localDir.equals(FileManagerCore.downloadDir(a))) {
+ if (tab == 0 && localDir.getParentFile() != null) {
  localDir = localDir.getParentFile() != null ? localDir.getParentFile() : FileManagerCore.downloadDir(a);
  refresh();
  return true;

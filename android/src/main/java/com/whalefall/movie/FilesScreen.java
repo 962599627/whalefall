@@ -287,6 +287,23 @@ final class FilesScreen {
  });
  row.setOnLongClickListener(
  v -> {
+ // 1.9.104：App 内置文件长按图片/视频 → 壁纸菜单
+ if (PushFiles.isImage(target) || PushFiles.isVideo(target)) {
+ AppLog.i(
+ "FileScreen",
+ "longpress type=" + (PushFiles.isVideo(target) ? "video" : "image") + " action=wallpaper");
+ new AppDialog.Builder(a)
+ .setTitle(PushFiles.isVideo(target) ? "设为动态壁纸" : "设为壁纸")
+ .setMessage("复制到 App 壁纸目录并立即启用，与文件管理器长按设壁纸一致。")
+ .setNegativeButton("取消", null)
+ .setPositiveButton(
+ "设为壁纸",
+ (d, w) ->
+ FileManagerScreen.setWallpaperFromFile(
+ a, targetFile, PushFiles.isVideo(target)))
+ .show();
+ return true;
+ }
  fileMenu(a, rel, path);
  return true;
  });
