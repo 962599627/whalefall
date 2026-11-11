@@ -340,7 +340,12 @@ final class LanRemoteServer implements Closeable {
                                             "primary",
                                             "nav-home");
                         if (target != null) {
-                            if (target.isClickable()) target.performClick();
+                            if (target.isClickable()) {
+                                AppLog.i(
+                                        "Remote",
+                                        "click focus=" + String.valueOf(target.getTag()));
+                                target.performClick();
+                            }
                             AppLog.i(
                                     "TvKey",
                                     "page=inject focus="

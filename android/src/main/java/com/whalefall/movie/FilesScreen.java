@@ -70,8 +70,20 @@ final class FilesScreen {
         ExtraPages.tvFocus(a, back, 999);
         back.setOnClickListener(
                 v -> {
-                    // TV：返回箭头统一走 Activity BACK（逐级 pop 已有 Screen 栈），不再重复压栈
-                    if (a.isTvDevice() || path.isEmpty()) {
+                    AppLog.i("Back", "files path=" + path);
+                    // 1.9.81：TV 返回按钮显式 popBack，避免被 onBackPressed 早退分支吞掉
+                    if (a.isTvDevice()) {
+                        a.onBackPressed();
+                        a.ui.postDelayed(
+                                () -> {
+                                    if (a.body != null
+                                            && "files".equals(String.valueOf(a.body.getTag())))
+                                        a.popBack();
+                                },
+                                120);
+                        return;
+                    }
+                    if (path.isEmpty()) {
                         a.onBackPressed();
                         return;
                     }

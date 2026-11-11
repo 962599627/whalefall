@@ -1892,14 +1892,21 @@ public final class MainActivity extends Activity {
                         + (current != null && current.home)
                         + " player="
                         + (current != null && current.player));
-        if (tvPlayer != null && tvPlayer.back()) return;
+        if (tvPlayer != null && current != null && current.player && tvPlayer.back()) {
+            AppLog.i("Back", "branch=tvPlayer");
+            return;
+        }
+        if (tvPlayer != null && (current == null || !current.player))
+            AppLog.i("Back", "branch=tvPlayer-stale skipped=true");
         // 1.9.53：从小窗放大后，BACK 重新缩回左上角小窗（详情页仍在下方）
         if (expandedOverDetail) {
+            AppLog.i("Back", "branch=expanded");
             PlaybackController.minimizePlayback(this);
             return;
         }
         // 1.9.59：从小窗详情页 BACK 回首页/列表时停止并释放播放
         if (miniMode && current != null && !current.player) {
+            AppLog.i("Back", "branch=mini");
             AppLog.i("Player", "release reason=leave-detail page=detail back=true");
             PlaybackController.releasePlayer(this);
         }
@@ -1916,17 +1923,30 @@ public final class MainActivity extends Activity {
                 && current.home
                 && !current.player
                 && current.retainedHome != null
-                && current.retainedHome.backFilterUi()) return;
+                && current.retainedHome.backFilterUi()) {
+            AppLog.i("Back", "branch=filter");
+            return;
+        }
         String tag = body == null ? null : String.valueOf(body.getTag());
         // 1.9.30：先给页面自己的 handleBack 机会（退全屏/子目录/多选），再按入栈记录 pop
-        if ("file-manager".equals(tag) && FileManagerScreen.handleBack()) return;
-        if ("web-live".equals(tag) && WebLiveScreen.handleBack(this)) return;
-        if ("web-player".equals(tag) && WebPlayerScreen.handleBack(this)) return;
+        if ("file-manager".equals(tag) && FileManagerScreen.handleBack()) {
+            AppLog.i("Back", "branch=handle target=file-manager");
+            return;
+        }
+        if ("web-live".equals(tag) && WebLiveScreen.handleBack(this)) {
+            AppLog.i("Back", "branch=handle target=web-live");
+            return;
+        }
+        if ("web-player".equals(tag) && WebPlayerScreen.handleBack(this)) {
+            AppLog.i("Back", "branch=handle target=web-player");
+            return;
+        }
         if (!back.isEmpty()
                 && current != null
                 && !current.home
                 && !current.player) {
             // 1.9.80：入栈页面统一 BACK=pop 回上一级（不再依赖 body tag 匹配）
+            AppLog.i("Back", "branch=pop");
             logBackAction("pop");
             capture();
             current = back.pop();
@@ -2129,6 +2149,27 @@ public final class MainActivity extends Activity {
             default:
                 return false;
         }
+    }
+
+    /** 1.9.81：显式 pop 回上一级（文件管理等自定义返回按钮调用，避免 onBackPressed 被早退分支吞）。 */
+    void popBack() {
+        if (!back.isEmpty()) {
+            AppLog.i(
+                    "Back",
+                    "from="
+                            + (body == null ? "null" : String.valueOf(body.getTag()))
+                            + " action=popBack target="
+                            + back.peek().pushedTag);
+            capture();
+            current = back.pop();
+            renderReturn(current);
+            restore(current);
+            return;
+        }
+        AppLog.i("Back", "action=popBack-home");
+        current = new Screen(this::home);
+        current.home = true;
+        renderReturn(current);
     }
 
     void logBackAction(String action) {
