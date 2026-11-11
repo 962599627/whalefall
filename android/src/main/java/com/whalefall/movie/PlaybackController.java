@@ -1790,10 +1790,6 @@ final class PlaybackController {
             a.playbackLayer.setVisibility(View.GONE);
             layers++;
         }
-        if (a.playerChrome != null) {
-            a.playerChrome.setVisibility(View.GONE);
-            layers++;
-        }
         if (a.playbackControls != null) a.playbackControls.close();
         a.playbackControls = null;
         a.prepared = false;
