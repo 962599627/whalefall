@@ -157,6 +157,8 @@ final class TvNav {
  private static void applyFocus(
  MainActivity a, View view, boolean focused, int style, int radiusDp) {
  try {
+ // 1.9.93：焦点移走时立即清除其它残留环，仅保留真正的当前焦点
+ if (!focused && a != null) clearOthers(a, a.getCurrentFocus());
  applyFocusInner(a, view, focused, style, radiusDp);
  } catch (Throwable error) {
  AppLog.w("FocusDraw", "draw skipped " + view.getTag(), error);
@@ -200,6 +202,9 @@ final class TvNav {
  }
  }
  if (focused && canOverlay) {
+ // 1.9.93：同一时刻只允许一个焦点环
+ clearOthers(a, view);
+ ringOwner = new java.lang.ref.WeakReference<>(view);
  if (stored == null) {
  try {
  view.setTag(FG_KEY, view.getForeground());
@@ -349,6 +354,36 @@ final class TvNav {
  private static final int TEXT_KEY = 0x7f0f9e02;
  private static final int RING_KEY = 0x7f0f9e03;
  private static final int FG_KEY = 0x7f0f9e04;
+ /** 1.9.93：全局唯一焦点环持有者。 */
+ private static java.lang.ref.WeakReference<View> ringOwner = new java.lang.ref.WeakReference<>(null);
+
+ /** 1.9.93：清除除 keep 外所有控件的焦点 overlay（单焦点环硬保证）。 */
+ static int clearOthers(MainActivity a, View keep) {
+ if (a == null || a.root == null) return 0;
+ int[] removed = new int[1];
+ clearOthersWalk(a.root, keep, removed);
+ if (removed[0] > 0)
+ AppLog.i(
+ "TvNav",
+ "clear-others keep="
+ + (keep == null ? "null" : String.valueOf(keep.getTag()))
+ + " removed="
+ + removed[0]);
+ return removed[0];
+ }
+
+ private static void clearOthersWalk(MainActivity a, View view, View keep, int[] removed) {
+ if (view == null) return;
+ if (view != keep && hasFocusOverlay(view)) {
+ clearFocusOverlay(view);
+ removed[0]++;
+ }
+ if (view instanceof ViewGroup) {
+ ViewGroup group = (ViewGroup) view;
+ for (int i = 0; i < group.getChildCount(); i++)
+ clearOthersWalk(a, group.getChildAt(i), keep, removed);
+ }
+ }
 
  /** 标记该控件已有焦点动效（审计用）。 */
  static void markRing(View view) {

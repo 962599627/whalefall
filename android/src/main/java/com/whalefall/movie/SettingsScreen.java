@@ -691,11 +691,15 @@ final class SettingsScreen {
  () -> {
  // 1.9.83：手动自检时才开启自动补齐
  TvNav.setAutoFix(true);
- String report =
+ String report;
+ try {
+ report =
  TvNav.audit(
  a,
  a.body == null ? "settings" : String.valueOf(a.body.getTag()));
+ } finally {
  TvNav.setAutoFix(false);
+ }
  new AppDialog.Builder(a)
  .setTitle("焦点审计")
  .setMessage(report)
