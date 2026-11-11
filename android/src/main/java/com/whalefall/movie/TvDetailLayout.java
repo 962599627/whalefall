@@ -385,9 +385,19 @@ final class TvDetailLayout {
  boolean canTake =
  focus == null || !focus.isAttachedToWindow() || focus == a.autoFocus;
  if (canTake && a.current != null) {
+ // 1.9.118：首焦点落在 hero 视频/海报区；无 hero 时回退播放按钮
+ View heroFocus = a.root.findViewWithTag("detail-hero");
+ if (heroFocus != null && heroFocus.isShown() && heroFocus.isFocusable()) {
+ a.current.focus = "detail-hero";
+ heroFocus.requestFocus();
+ a.autoFocus = heroFocus;
+ AppLog.i("DetailFocus", "first=hero");
+ } else {
  a.current.focus = "detail-play";
  play.requestFocus();
  a.autoFocus = play;
+ AppLog.i("DetailFocus", "first=play");
+ }
  }
  }
  };
@@ -424,6 +434,17 @@ final class TvDetailLayout {
  private static View buildPreview(MainActivity a, Cms.Video listing, int height) {
  FrameLayout card = new FrameLayout(a);
  card.setTag("detail-hero");
+ // 1.9.118：hero 焦点与 tag 分离：容器仍用 detail-hero 供小窗测矩形
+ card.setFocusable(true);
+ card.setFocusableInTouchMode(true);
+ TvNav.focusRing(a, card, 20);
+ card.setContentDescription("播放当前视频");
+ card.setOnClickListener(
+ v -> {
+ AppLog.i("DetailFocus", "hero ok=play");
+ View pb = a.root.findViewWithTag("detail-play");
+ if (pb != null) pb.performClick();
+ });
  GradientDrawable bg = new GradientDrawable();
  bg.setColor(0xff0d1a2b);
  bg.setCornerRadius(a.dp(20));
@@ -908,13 +929,15 @@ final class TvDetailLayout {
  View fav = a.root.findViewWithTag("detail-favorite");
  View play = a.root.findViewWithTag("detail-play");
  if (play == null) play = a.root.findViewWithTag("detail-play-big");
+ View heroFocus = a.root.findViewWithTag("detail-hero");
  java.util.List<View> lines = collectByPrefix(a.root, "detail-line:", 64);
  java.util.List<View> episodes = collectByPrefix(a.root, "episode:", 512);
  View synopsis = a.root.findViewWithTag("synopsis-toggle");
  View copy = a.root.findViewWithTag("detail-act-copy");
  View allEpisodes = a.root.findViewWithTag("episodes-all");
  java.util.List<View> chain = new java.util.ArrayList<>();
- for (View v : new View[] {back, fav, play, synopsis, copy, allEpisodes}) if (v != null) chain.add(v);
+ for (View v : new View[] {heroFocus, back, fav, play, synopsis, copy, allEpisodes})
+ if (v != null) chain.add(v);
  chain.addAll(lines);
  chain.addAll(episodes);
  for (View v : chain) if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
@@ -926,6 +949,17 @@ final class TvDetailLayout {
  play.setNextFocusLeftId(lines.get(0).getId());
  }
  if (fav != null) play.setNextFocusRightId(fav.getId());
+ }
+ // 1.9.118：hero 视频/海报区 DOWN→播放按钮，RIGHT→收藏；播放/返回 UP→hero
+ if (heroFocus != null) {
+ if (play != null) {
+ heroFocus.setNextFocusDownId(play.getId());
+ play.setNextFocusUpId(heroFocus.getId());
+ }
+ if (fav != null) heroFocus.setNextFocusRightId(fav.getId());
+ if (back != null) heroFocus.setNextFocusUpId(back.getId());
+ if (back != null) back.setNextFocusDownId(heroFocus.getId());
+ if (!lines.isEmpty()) lines.get(0).setNextFocusUpId(heroFocus.getId());
  }
  if (fav != null) {
  if (back != null) fav.setNextFocusLeftId(back.getId());
@@ -1103,6 +1137,9 @@ final class TvDetailLayout {
  /** 1.9.60/1.9.62：首焦点顺序：播放 → 线路第一项 → 返回 → 收藏（收藏绝不优先）。 */
  static View firstDetailFocus(MainActivity a) {
  if (a == null || a.root == null) return null;
+ // 1.9.118：首焦点=左上视频/海报区
+ View hero = a.root.findViewWithTag("detail-hero");
+ if (hero != null && hero.isShown() && hero.isFocusable()) return hero;
  View play = a.root.findViewWithTag("detail-play");
  if (play != null && play.isShown()) return play;
  View line = findByTagPrefix(a.root, "detail-line:");

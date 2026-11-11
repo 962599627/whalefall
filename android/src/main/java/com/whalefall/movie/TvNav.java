@@ -211,7 +211,8 @@ final class TvNav {
  } catch (Throwable ignored) {
  }
  }
- android.graphics.drawable.Drawable d = new FocusDrawable(a, radiusDp, style);
+ android.graphics.drawable.Drawable d =
+ new FocusDrawable(a, radiusDp, style, String.valueOf(view.getTag()));
  if (android.os.Build.VERSION.SDK_INT >= 23) {
  d.setAlpha(255);
  try {
@@ -281,10 +282,13 @@ final class TvNav {
  private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
  private final int radiusPx, style;
  private final float inset, barInsetLR, barBottom;
+ private final String tag;
+ private boolean logged;
 
- FocusDrawable(MainActivity a, int radiusDp, int style) {
+ FocusDrawable(MainActivity a, int radiusDp, int style, String tag) {
  this.radiusPx = a.dp(Math.max(0, radiusDp));
  this.style = style;
+ this.tag = tag;
  this.inset = a.dp(1);
  this.barInsetLR = a.dp(8);
  this.barBottom = a.dp(6);
@@ -293,7 +297,12 @@ final class TvNav {
  @Override
  public void draw(android.graphics.Canvas canvas) {
  android.graphics.Rect b = getBounds();
- float r = Math.max(0, radiusPx);
+ // 1.9.118：圆角跟随控件形状（药丸=高/2），禁止直角矩形盖成方形
+ float r = Math.min(radiusPx, Math.min(b.width(), b.height()) / 2f);
+ if (!logged) {
+ logged = true;
+ AppLog.i("FocusDraw", "radius=" + Math.round(r) + " view=" + tag);
+ }
  paint.setStyle(android.graphics.Paint.Style.FILL);
  if (style != STYLE_CARD) {
  paint.setColor(0x1AFF8FB1);

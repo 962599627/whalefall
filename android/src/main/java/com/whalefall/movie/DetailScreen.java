@@ -152,9 +152,10 @@ final class DetailScreen {
  b.setTextColor(0xff070d18);
  b.animate().scaleX(1.05f).scaleY(1.05f).setDuration(140).start();
  } else {
- d.setColor(0xd8ffffff);
- d.setStroke(Math.max(1, a.dp(1)), 0x66ffffff);
- b.setTextColor(0xff0c101a);
+ // 1.9.118：未聚焦深色玻璃底，去掉白色“按下感”高亮
+ d.setColor(0xcc16283f);
+ d.setStroke(Math.max(1, a.dp(1)), 0x33ffffff);
+ b.setTextColor(0xfff5f7fc);
  b.animate().scaleX(1f).scaleY(1f).setDuration(140).start();
  }
  b.setBackground(d);
