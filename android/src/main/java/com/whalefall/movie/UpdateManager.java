@@ -344,37 +344,46 @@ final class UpdateManager {
     private void downloadFile(Release r) throws Exception {
         final int selected = selectedVariant();
         final long size = r.targetSize(selected);
+        final boolean unknownSize = size <= 0;
         final String sha = r.targetSha(selected);
         final String[] sources = r.targetDownloads(selected);
-        if (folder().getUsableSpace() < size + 16 * 1024 * 1024L) throw new IOException("space");
+        if (!unknownSize && folder().getUsableSpace() < size + 16 * 1024 * 1024L)
+            throw new IOException("space");
         File part = new File(folder(), "release.part");
-        if (!sha.equals(prefs.getString("partial_sha", "")) || part.length() > size) {
+        if (unknownSize
+                || !sha.equals(prefs.getString("partial_sha", ""))
+                || part.length() > size) {
             part.delete();
             prefs.edit().putString("partial_sha", sha).commit();
         }
-        percent = (int) (part.length() * 100 / size);
+        percent = unknownSize ? -1 : (int) (part.length() * 100 / size);
         boolean verified = false;
         try {
             Exception failure = null;
             boolean valid = false;
             for (int source = 0; source < sources.length && !valid; source++) {
-                for (int attempt = 0; attempt < 2 && part.length() < size; attempt++) {
+                for (int attempt = 0;
+                        attempt < 2 && (unknownSize || part.length() < size);
+                        attempt++) {
                     if (cancel) throw new InterruptedIOException();
-                    message =
-                            (sources[source].startsWith(UpdatePolicy.MIRROR)
-                                            ? "正在从镜像站下载 "
-                                            : "正在从 GitHub 下载 ")
-                                    + r.version;
+                    message = "正在下载 " + r.version + "（" + (source + 1) + "/" + sources.length + "）";
                     changed();
                     try {
                         transfer(part, sources[source], size);
                         failure = null;
+                        AppLog.i(
+                                "Update",
+                                "try=" + sources[source] + " result=downloaded bytes=" + part.length());
                     } catch (IOException e) {
                         failure = e;
+                        AppLog.i(
+                                "Update",
+                                "try=" + sources[source] + " result=fail error="
+                                        + e.getClass().getSimpleName());
                         if (cancel) throw new InterruptedIOException();
                     }
                 }
-                if (part.length() == size) {
+                if (unknownSize ? part.length() > 0 : part.length() == size) {
                     try {
                         verifyApk(context, part, r, selected);
                         valid = true;
@@ -408,18 +417,25 @@ final class UpdateManager {
     }
 
     private void transfer(File part, String address, long size) throws Exception {
+        boolean unknownSize = size <= 0;
         long offset = part.length();
-        HttpURLConnection conn = connector.open(address, offset);
+        HttpURLConnection conn = connector.open(address, unknownSize ? 0 : offset);
         activeConnection = conn;
         try {
-            long start =
-                    UpdatePolicy.resumeOffset(
-                            offset,
-                            conn.getResponseCode(),
-                            conn.getHeaderField("Content-Range"),
-                            size);
+            long start;
+            if (unknownSize) {
+                start = 0;
+            } else {
+                start =
+                        UpdatePolicy.resumeOffset(
+                                offset,
+                                conn.getResponseCode(),
+                                conn.getHeaderField("Content-Range"),
+                                size);
+            }
             long declared = conn.getContentLength();
-            if (declared > 0 && declared != size - start) throw new IOException("size");
+            if (!unknownSize && declared > 0 && declared != size - start)
+                throw new IOException("size");
             try (InputStream in = conn.getInputStream();
                     OutputStream out = new FileOutputStream(part, start > 0)) {
                 byte[] bytes = new byte[32768];
@@ -428,16 +444,18 @@ final class UpdateManager {
                 while ((n = in.read(bytes)) != -1) {
                     if (cancel) throw new InterruptedIOException();
                     total += n;
-                    if (total > size) throw new IOException("limit");
+                    if (!unknownSize && total > size) throw new IOException("limit");
                     out.write(bytes, 0, n);
-                    int now = (int) (total * 100 / size);
-                    if (now != last) {
-                        last = now;
-                        percent = now;
-                        changed();
+                    if (!unknownSize) {
+                        int now = (int) (total * 100 / size);
+                        if (now != last) {
+                            last = now;
+                            percent = now;
+                            changed();
+                        }
                     }
                 }
-                if (total != size) throw new IOException("short download");
+                if (!unknownSize && total != size) throw new IOException("short download");
             }
         } finally {
             activeConnection = null;
@@ -450,8 +468,10 @@ final class UpdateManager {
     }
 
     static void verifyApk(Context c, File file, Release r, int variantIndex) throws Exception {
-        if (file.length() != r.targetSize(variantIndex)
-                || !sha(file).equals(r.targetSha(variantIndex))) throw new IOException("digest");
+        long expectedSize = r.targetSize(variantIndex);
+        if ((expectedSize > 0 && file.length() != expectedSize)
+                || !sha(file).equals(r.targetSha(variantIndex)))
+            throw new IOException("digest");
         PackageManager pm = c.getPackageManager();
         int flags =
                 Build.VERSION.SDK_INT >= 28
@@ -516,16 +536,21 @@ final class UpdateManager {
     }
 
     static HttpURLConnection open(String address) throws Exception {
-        return open(address, 0);
+        return open(address, 0, 12000, 45000);
     }
 
     private static HttpURLConnection open(String address, long offset) throws Exception {
+        return open(address, offset, 12000, 45000);
+    }
+
+    private static HttpURLConnection open(
+            String address, long offset, int connectMs, int readMs) throws Exception {
         for (int hops = 0; hops < 6; hops++) {
             if (!UpdatePolicy.transferUrl(address)) throw new IOException("untrusted host");
             HttpURLConnection c = (HttpURLConnection) new URL(address).openConnection();
             c.setInstanceFollowRedirects(false);
-            c.setConnectTimeout(12000);
-            c.setReadTimeout(45000);
+            c.setConnectTimeout(connectMs);
+            c.setReadTimeout(readMs);
             if (offset > 0) c.setRequestProperty("Range", "bytes=" + offset + "-");
             c.setRequestProperty("User-Agent", "WhaleFall-Updater");
             c.setRequestProperty("Accept-Encoding", "identity");
@@ -558,9 +583,13 @@ final class UpdateManager {
             try {
                 JSONObject data = new JSONObject(new String(readFeed(address), "UTF-8"));
                 new Release(data, channel, mobileEdition());
+                AppLog.i("Update", "try=" + address + " result=ok");
                 return data;
             } catch (Exception e) {
                 failure = e;
+                AppLog.i(
+                        "Update",
+                        "try=" + address + " result=fail error=" + e.getClass().getSimpleName());
                 if (cancel) throw new InterruptedIOException();
             }
         }
@@ -568,7 +597,8 @@ final class UpdateManager {
     }
 
     private byte[] readFeed(String address) throws Exception {
-        HttpURLConnection c = connector.open(address, 0);
+        // 1.9.51：每个源 8s 超时，快速切换到下一个镜像/CDN
+        HttpURLConnection c = open(address, 0, 8000, 8000);
         activeConnection = c;
         try (InputStream in = c.getInputStream();
                 ByteArrayOutputStream out = new ByteArrayOutputStream()) {

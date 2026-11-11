@@ -12,14 +12,33 @@ final class UpdatePolicy {
     // 更新检查以 GitHub 最新发布版为准：清单与安装包都放在 Release 资产里，
     // releases/latest/download/<文件名> 永远指向最新一版，不需要每次改代码。
     static final String FEED = "https://github.com/962599627/whalefall/releases/latest/download/";
-    /** 下载/清单镜像前缀（按可用性排序，最后一个直连 GitHub）。 */
+    /** 下载/清单镜像前缀（按可用性排序，最后是直连 GitHub）。 */
+    static final String JSDELIVR =
+            "https://cdn.jsdelivr.net/gh/962599627/whalefall@whalefall-rebrand/updates/";
+    static final String GH_RAW =
+            "https://raw.githubusercontent.com/962599627/whalefall/whalefall-rebrand/updates/";
+    static final String GH_RAW_PROXY =
+            "https://ghproxy.net/https://raw.githubusercontent.com/962599627/whalefall/whalefall-rebrand/updates/";
     static final String[] MIRRORS = {
         "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/latest/download/",
         "https://gh-proxy.com/https://github.com/962599627/whalefall/releases/latest/download/",
         "https://ghproxy.net/https://github.com/962599627/whalefall/releases/latest/download/",
+        JSDELIVR,
+        GH_RAW_PROXY,
+        GH_RAW,
         FEED
     };
     static final String MIRROR = MIRRORS[0];
+
+    /** 1.9.51：清单检查顺序：镜像 → GitHub raw → jsDelivr → ghproxy → Release。 */
+    static final String[] FEED_SOURCES = {
+        "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/latest/download/",
+        "https://gh-proxy.com/https://github.com/962599627/whalefall/releases/latest/download/",
+        FEED,
+        GH_RAW,
+        JSDELIVR,
+        GH_RAW_PROXY
+    };
 
     /** 允许的更新源主机；留空表示接受任意 HTTPS 主机（自建源最省事）。 */
     static final String[] ALLOWED_HOSTS = {};
@@ -49,8 +68,8 @@ final class UpdatePolicy {
             throw new IllegalArgumentException("channel");
         // Release 资产名不能带 "/"，清单直接命名为 android-mobile.json 等
         String name = platform(mobile) + ("preview".equals(channel) ? "-preview" : "");
-        String[] out = new String[MIRRORS.length];
-        for (int i = 0; i < MIRRORS.length; i++) out[i] = MIRRORS[i] + name + ".json";
+        String[] out = new String[FEED_SOURCES.length];
+        for (int i = 0; i < FEED_SOURCES.length; i++) out[i] = FEED_SOURCES[i] + name + ".json";
         return out;
     }
 
@@ -108,7 +127,7 @@ final class UpdatePolicy {
                 || version.length() > 48
                 || minSdk < 23
                 || minSdk > 100
-                || size < 1
+                || size < 0
                 || size > MAX_APK
                 || sha == null
                 || !sha.matches("[a-f0-9]{64}")
@@ -231,7 +250,7 @@ final class UpdatePolicy {
                 || version.length() > 48
                 || minSdk < 23
                 || minSdk > 100
-                || size < 1
+                || size < 0
                 || size > MAX_APK
                 || sha == null
                 || !sha.matches("[a-f0-9]{64}")
