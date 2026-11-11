@@ -1298,7 +1298,7 @@ final class HomeScreen {
  keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
  || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
  if (confirm) {
- AppLog.i("FilterOk", "chip=" + dimKey + " options=" + defF.choices.size());
+ AppLog.i("FilterOk", "chip=" + dimKeyF + " options=" + defF.choices.size());
  return false;
  }
  int dir =
