@@ -106,26 +106,17 @@ final class PlaybackControls {
  .inflate(R.layout.whale_time_bar, null);
  timeline.setTag("timeline");
  timeline.setFocusable(true);
+ timeline.setFocusableInTouchMode(true);
+ // 1.9.101：进度条焦点=10% ACCENT 背景条 + 2dp ACCENT_SOFT 内环
+ TvNav.focusRing(a, timeline, 16);
+ final View.OnFocusChangeListener timelineRing = timeline.getOnFocusChangeListener();
  timeline.setOnFocusChangeListener(
  (focusedView, f) -> {
- FocusMotion.style(
- a,
- timeline,
- f,
- 0,
- 0x16ffffff,
- 16,
- MainActivity.WHITE,
- MainActivity.WHITE,
- false,
- 1);
- // 1.9.92：进度条为独立焦点分区；左右快进快退、上下进出其它区
+ if (timelineRing != null) timelineRing.onFocusChange(focusedView, f);
  if (f)
  AppLog.i(
  "PlayerFocus",
- "zone=progress focus="
- + String.valueOf(timeline.getTag())
- + " hint=左右快退/快进");
+ "bg focus=timeline zone=progress hint=左右快退/快进");
  });
  // 三段式进度：时间在轨道左右，轨道不再用 68dp 内边距避让文本
  timeline.setPadding(0, 0, 0, 0);
@@ -381,7 +372,7 @@ final class PlaybackControls {
  timeline.setNextFocusDownId(v.getId());
  AppLog.i(
  "PlayerFocus",
- "zone=buttons focus=" + String.valueOf(v.getTag()));
+ "bg focus=" + String.valueOf(v.getTag()) + " zone=buttons");
  }
  });
  child.setOnKeyListener(

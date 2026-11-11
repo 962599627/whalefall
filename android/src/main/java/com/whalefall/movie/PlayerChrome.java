@@ -487,7 +487,8 @@ final class PlayerChrome {
  button.setOnFocusChangeListener(
  (v, focused) -> {
  if (baseRing != null) baseRing.onFocusChange(v, focused);
- if (focused) AppLog.i("PlayerFocus", "zone=top focus=" + tag);
+ if (focused)
+ AppLog.i("PlayerFocus", "bg focus=" + tag + " zone=top");
  });
  button.setOnKeyListener(
  (v, keyCode, event) -> {
