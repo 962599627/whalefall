@@ -2522,6 +2522,52 @@ public final class MainActivity extends Activity {
             }
         }
         if (liveKey(event)) return true;
+        // 1.9.54：TV 二级页（详情/播放除外）按键诊断 + 无焦点时强制落焦点，避免 DPAD/OK 无效
+        if (isTvDevice() && current != null && !current.home && !current.player) {
+            int key = event.getKeyCode();
+            View focus = getCurrentFocus();
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                AppLog.i(
+                        "TvKey",
+                        "page="
+                                + (body == null ? "detail" : String.valueOf(body.getTag()))
+                                + " code="
+                                + KeyEvent.keyCodeToString(key)
+                                + " action="
+                                + event.getAction()
+                                + " focus="
+                                + (focus == null
+                                        ? "null"
+                                        : String.valueOf(focus.getTag()))
+                                + " device="
+                                + event.getDeviceId()
+                                + " source=0x"
+                                + Integer.toHexString(event.getSource()));
+                boolean nav =
+                        key == KeyEvent.KEYCODE_DPAD_UP
+                                || key == KeyEvent.KEYCODE_DPAD_DOWN
+                                || key == KeyEvent.KEYCODE_DPAD_LEFT
+                                || key == KeyEvent.KEYCODE_DPAD_RIGHT
+                                || key == KeyEvent.KEYCODE_DPAD_CENTER
+                                || key == KeyEvent.KEYCODE_ENTER;
+                if (nav && (focus == null || !focus.isAttachedToWindow() || !focus.isShown())) {
+                    View first = root == null ? null : root.findViewWithTag("detail-play");
+                    if (first == null && root != null) {
+                        ArrayList<View> available = new ArrayList<>();
+                        root.addFocusables(available, View.FOCUS_FORWARD);
+                        if (!available.isEmpty()) first = available.get(0);
+                    }
+                    if (first != null) {
+                        first.requestFocus();
+                        AppLog.i(
+                                "TvKey",
+                                "page=detail focus-fixed tag="
+                                        + String.valueOf(first.getTag()));
+                        return true;
+                    }
+                }
+            }
+        }
         View feedbackFocus = getCurrentFocus();
         if (feedbackFocus != null) FocusMotion.key(this, feedbackFocus, event.getKeyCode(), event);
         if (current != null && current.home && homeDock != null && homeDock.key(event)) return true;

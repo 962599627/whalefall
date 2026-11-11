@@ -245,6 +245,23 @@ final class TvDetailLayout {
                     }
                 },
                 450);
+        a.ui.postDelayed(
+                () -> {
+                    View current = a.getCurrentFocus();
+                    if (current == null || !current.isShown() || !current.isAttachedToWindow()) {
+                        View play = a.root == null ? null : a.root.findViewWithTag("detail-play");
+                        if (play == null) play = backBtn;
+                        if (play != null) {
+                            play.requestFocus();
+                            AppLog.i(
+                                    "TvFocus",
+                                    "page=detail first="
+                                            + String.valueOf(play.getTag())
+                                            + " delayed=true");
+                        }
+                    }
+                },
+                1400);
 
         // ---------------- 数据填充 ----------------
         final int[] lineIndex = {Math.max(0, SourcePreferences.lineIndex(a, listing))};

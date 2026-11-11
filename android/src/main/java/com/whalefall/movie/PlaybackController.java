@@ -1551,7 +1551,15 @@ final class PlaybackController {
         }
         if (visible) {
             if (changed && a.playbackControls != null && a.isTvDevice()) {
-                a.playbackControls.timeline.requestFocus();
+                // 1.9.54：控制条默认焦点放「下一集」而不是进度条，方向键才能在按钮间移动
+                View first = a.playbackControls.buttons.get("next-episode");
+                if (first == null) first = a.playbackControls.timeline;
+                if (first != null) first.requestFocus();
+                AppLog.i(
+                        "TvKey",
+                        "page=player controls=visible focus="
+                                + (first == null ? "null" : String.valueOf(first.getTag()))
+                                + " action=show");
             }
             scheduleHide(a);
         } else if (a.hideControls != null) a.ui.removeCallbacks(a.hideControls);
@@ -1888,6 +1896,37 @@ final class PlaybackController {
         if (a.seekGesture.active && !horizontal && down)
             finishSeek(a, key != KeyEvent.KEYCODE_BACK);
         boolean confirm = key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER;
+        boolean navKey =
+                key == KeyEvent.KEYCODE_DPAD_LEFT
+                        || key == KeyEvent.KEYCODE_DPAD_RIGHT
+                        || key == KeyEvent.KEYCODE_DPAD_UP
+                        || key == KeyEvent.KEYCODE_DPAD_DOWN;
+        // 1.9.54：控制条可见时方向键优先做焦点导航（不再被左右快进抢走）
+        if (a.controlsVisible && navKey && !a.seekGesture.active) {
+            View timeline = a.playbackControls == null ? null : a.playbackControls.timeline;
+            boolean onControl = focus != null && focus != a.root && focus != timeline;
+            if (onControl) {
+                AppLog.i(
+                        "TvKey",
+                        "page=player controls=visible focus="
+                                + (focus.getTag() == null ? "null" : focus.getTag())
+                                + " action=nav");
+                return false;
+            }
+            if (focus == null || focus == a.root) {
+                View target =
+                        a.playbackControls == null
+                                ? null
+                                : a.playbackControls.buttons.get("next-episode");
+                if (target != null) {
+                    target.requestFocus();
+                    AppLog.i(
+                            "TvKey",
+                            "page=player controls=visible focus=next-episode action=nav");
+                    return true;
+                }
+            }
+        }
         if (confirm
                 && (!a.controlsVisible
                         || focus == a.root
@@ -1895,6 +1934,7 @@ final class PlaybackController {
             if (down && event.getRepeatCount() == 0) {
                 togglePlayback(a);
                 showControls(a, true);
+                AppLog.i("TvKey", "page=player controls=toggle action=confirm");
             }
             return true;
         }
@@ -1906,6 +1946,7 @@ final class PlaybackController {
                 showControls(a, true, false);
                 if (a.playbackControls != null)
                     a.playbackControls.buttons.get("next-episode").requestFocus();
+                AppLog.i("TvKey", "page=player controls=hidden focus=null action=show");
             }
             return true;
         }
@@ -1936,6 +1977,13 @@ final class PlaybackController {
             } else if (event.getAction() == KeyEvent.ACTION_UP
                     && a.seekGesture.active
                     && a.seekGesture.direction == direction) finishSeek(a, !event.isCanceled());
+            AppLog.i(
+                    "TvKey",
+                    "page=player controls="
+                            + (a.controlsVisible ? "visible" : "hidden")
+                            + " focus="
+                            + (focus == null ? "null" : String.valueOf(focus.getTag()))
+                            + " action=seek");
             return true;
         }
         if (key == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
