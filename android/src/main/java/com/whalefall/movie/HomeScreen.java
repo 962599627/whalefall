@@ -1289,6 +1289,8 @@ final class HomeScreen {
  else if (dimKey.contains("type") || dimKey.contains("class")) dimKey = "type";
  chip.setTag("filter-" + dimKey);
  TvNav.focusRing(a, chip, 12);
+ final String dimKeyF = dimKey;
+ final VideoFilters.Definition defF = def;
  chip.setOnKeyListener(
  (v, keyCode, event) -> {
  if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
@@ -1296,7 +1298,7 @@ final class HomeScreen {
  keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
  || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
  if (confirm) {
- AppLog.i("FilterOk", "chip=" + dimKey + " options=" + def.choices.size());
+ AppLog.i("FilterOk", "chip=" + dimKey + " options=" + defF.choices.size());
  return false;
  }
  int dir =
@@ -1325,7 +1327,7 @@ final class HomeScreen {
  + (next == null || next == v ? "none" : String.valueOf(next.getTag())));
  return false;
  });
- chip.setOnClickListener(v -> showFilterOptions(def));
+ chip.setOnClickListener(v -> showFilterOptions(defF));
  tagWrap.addView(chip, new LinearLayout.LayoutParams(-2, -2));
  if (active || open) {
  View underline = new View(a);
