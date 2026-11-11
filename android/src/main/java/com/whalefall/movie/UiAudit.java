@@ -141,7 +141,7 @@ final class UiAudit {
         boolean overlay = TvNav.hasFocusOverlay(view);
         if (overlay && view.hasFocus()) stats[1]++;
         if (!view.hasFocus() && overlay) {
-            AppLog.e(
+            AppLog.i(
                     "UiAudit",
                     "rule=focus-leak view="
                             + String.valueOf(view.getTag())
