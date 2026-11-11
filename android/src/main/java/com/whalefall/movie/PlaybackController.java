@@ -1890,11 +1890,6 @@ final class PlaybackController {
  a.pendingSeek = -1;
  if (a.seekTask != null) a.ui.removeCallbacks(a.seekTask);
  try {
- if (!a.player.isCommandAvailable(
- androidx.media3.common.Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) {
- AppLog.i("Player", "seek skip reason=command-unavailable at=" + target);
- return;
- }
  a.lastSeekAt = now;
  a.player.seekTo(target);
  } catch (Throwable error) {
