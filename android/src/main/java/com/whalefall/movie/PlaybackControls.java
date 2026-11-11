@@ -29,6 +29,8 @@ final class PlaybackControls {
  final Map<String, View> buttons = new LinkedHashMap<>();
  /** 1.9.61：TV 控制条第一个可聚焦按钮（默认焦点）。 */
  View dockFirst;
+ /** 1.9.92：记住最近聚焦的底部按钮，进度条 DOWN 回到该按钮。 */
+ View lastDockFocus;
  Dialog activeDialog;
  View menuAnchor;
  String lastSubtitle = "";
@@ -105,7 +107,7 @@ final class PlaybackControls {
  timeline.setTag("timeline");
  timeline.setFocusable(true);
  timeline.setOnFocusChangeListener(
- (focusedView, f) ->
+ (focusedView, f) -> {
  FocusMotion.style(
  a,
  timeline,
@@ -116,7 +118,15 @@ final class PlaybackControls {
  MainActivity.WHITE,
  MainActivity.WHITE,
  false,
- 1));
+ 1);
+ // 1.9.92：进度条为独立焦点分区；左右快进快退、上下进出其它区
+ if (f)
+ AppLog.i(
+ "PlayerFocus",
+ "zone=progress focus="
+ + String.valueOf(timeline.getTag())
+ + " hint=左右快退/快进");
+ });
  // 三段式进度：时间在轨道左右，轨道不再用 68dp 内边距避让文本
  timeline.setPadding(0, 0, 0, 0);
  timeline.setKeyTimeIncrement(15000);
@@ -362,6 +372,18 @@ final class PlaybackControls {
  if (child.getId() == View.NO_ID) child.setId(UiCompat.generateViewId());
  // 1.9.68：统一焦点动效（粉色叠加 + ACCENT 亮边 + 1.03× 放大）
  TvNav.focusRing(a, child, 10);
+ final View.OnFocusChangeListener baseRing = child.getOnFocusChangeListener();
+ child.setOnFocusChangeListener(
+ (v, f) -> {
+ if (baseRing != null) baseRing.onFocusChange(v, f);
+ if (f) {
+ lastDockFocus = v;
+ timeline.setNextFocusDownId(v.getId());
+ AppLog.i(
+ "PlayerFocus",
+ "zone=buttons focus=" + String.valueOf(v.getTag()));
+ }
+ });
  child.setOnKeyListener(
  (v, keyCode, event) -> {
  if (event.getAction() == KeyEvent.ACTION_DOWN
@@ -384,7 +406,9 @@ final class PlaybackControls {
  }
  timeline.setId(UiCompat.generateViewId());
  if (!focusable.isEmpty()) {
- timeline.setNextFocusDownId(focusable.get(0).getId());
+ // 1.9.92：进度条 DOWN 回到最近聚焦按钮（默认第一项）
+ timeline.setNextFocusDownId(
+ lastDockFocus != null ? lastDockFocus.getId() : focusable.get(0).getId());
  if (a.playerChrome != null && a.playerChrome.backBtn != null) {
  if (a.playerChrome.backBtn.getId() == View.NO_ID)
  a.playerChrome.backBtn.setId(UiCompat.generateViewId());
@@ -399,13 +423,11 @@ final class PlaybackControls {
  if (more.getId() == View.NO_ID) more.setId(UiCompat.generateViewId());
  back.setNextFocusRightId(more.getId());
  more.setNextFocusLeftId(back.getId());
- View first = focusable.get(0);
- if (first.getTag() != null)
- back.setTag("top-back");
+ if (back.getTag() != null) back.setTag("top-back");
  more.setTag("top-more");
- back.setNextFocusDownId(first.getId());
- more.setNextFocusDownId(first.getId());
- first.setNextFocusUpId(back.getId());
+ // 顶部栏 DOWN 到进度条（不是按钮区），形成三区链
+ back.setNextFocusDownId(timeline.getId());
+ more.setNextFocusDownId(timeline.getId());
  }
  }
  dockFirst = focusable.get(0);

@@ -470,6 +470,12 @@ final class PlayerChrome {
  button.setFocusableInTouchMode(true);
  // 1.9.68：顶部栏也走统一焦点动效
  TvNav.focusRing(a, button, 24);
+ final View.OnFocusChangeListener baseRing = button.getOnFocusChangeListener();
+ button.setOnFocusChangeListener(
+ (v, focused) -> {
+ if (baseRing != null) baseRing.onFocusChange(v, focused);
+ if (focused) AppLog.i("PlayerFocus", "zone=top focus=" + tag);
+ });
  button.setOnKeyListener(
  (v, keyCode, event) -> {
  if (event.getAction() == android.view.KeyEvent.ACTION_DOWN

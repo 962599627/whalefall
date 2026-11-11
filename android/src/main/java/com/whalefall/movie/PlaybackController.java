@@ -2120,6 +2120,16 @@ final class PlaybackController {
  if (a.seekGesture.active && !horizontal && down)
  finishSeek(a, key != KeyEvent.KEYCODE_BACK);
  boolean confirm = key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER;
+ // 1.9.92：进度条 OK = 切换「可拖动/可跳转」提示，左右为快退/快进
+ if (confirm
+ && a.playbackControls != null
+ && focus == a.playbackControls.timeline) {
+ if (down && event.getRepeatCount() == 0) {
+ a.toast("进度条：左右快退/快进（长按加速），上下切换区域");
+ AppLog.i("PlayerFocus", "zone=progress action=confirm mode=seek");
+ }
+ return true;
+ }
  boolean navKey =
  key == KeyEvent.KEYCODE_DPAD_LEFT
  || key == KeyEvent.KEYCODE_DPAD_RIGHT
