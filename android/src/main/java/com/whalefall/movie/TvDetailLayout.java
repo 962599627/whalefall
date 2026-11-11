@@ -95,17 +95,6 @@ final class TvDetailLayout {
         row.addView(rightScroll, new LinearLayout.LayoutParams(rightW, -1));
         a.scroll = rightScroll;
         a.body = rightCol;
-        // 1.9.62：容器不抢焦点，只让子项可聚焦
-        for (View container :
-                new View[] {
-                    topRow, content, row, leftCol, rightCol, lineScroll, lineList, rightScroll
-                }) {
-            if (container == null) continue;
-            container.setFocusable(false);
-            if (container instanceof ViewGroup)
-                ((ViewGroup) container)
-                        .setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
-        }
 
         // ---------------- 左栏：16:9 预览卡 + 片源·线路 ----------------
         int previewH = Math.round(leftW * 9f / 16f);
