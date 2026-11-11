@@ -78,19 +78,22 @@ final class MiniDetails {
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[] {0x00000000, 0xcc000000});
         bar.setBackground(barBg);
-        TextView playPause =
+        final TextView[] playHolder = new TextView[1];
+        playHolder[0] =
                 miniButton(
                         a.player != null && a.playing ? "⏸" : "▶",
                         "mini-play",
                         () -> {
                             a.togglePlayback();
-                            playPause.setText(a.playing ? "⏸" : "▶");
+                            if (playHolder[0] != null)
+                                playHolder[0].setText(a.playing ? "⏸" : "▶");
                             AppLog.i(
                                     "Mini",
                                     "playstate="
                                             + (a.playing ? "playing" : "paused")
                                             + " focus=mini-play");
                         });
+        TextView playPause = playHolder[0];
         TextView expand = miniButton("⛶", "mini-expand", () -> a.expandPlayback());
         TextView stop = miniButton("✕", "mini-stop", () -> {
             AppLog.i("Mini", "exit stop");
