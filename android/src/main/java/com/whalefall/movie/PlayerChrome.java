@@ -53,6 +53,8 @@ final class PlayerChrome {
  TextView episodeLabel, titleView, seekHint, resolution;
  final TextView timeCurrent, timeTotal, clockBig, clockEnd, gesturePill;
  final ImageButton backBtn, moreBtn, foldBtn, state, seekBack, seekFwd;
+ // 1.9.166（R2/R3）：中央三键自绘图标 + 专用焦点渲染器
+ PlayerCenterIconDrawable seekBackIcon, seekFwdIcon, stateIcon;
  final TextView seekBubble;
  /** 弹层锚点（不可见）：位于底部控制区上方中央，供 PlayerBubble 向上展开。 */
  View menuAnchor;
@@ -214,40 +216,13 @@ final class PlayerChrome {
  centerCapsule.setCornerRadius(a.dp(40));
  centerCapsule.setStroke(Math.max(1, a.dp(1)), UiTokens.STROKE_SOFT);
  centerCluster.setBackground(centerCapsule);
- seekBack =
- UiIcon.circleButton(
- a,
- UiIcon.REW,
- "快退 10 秒",
- 48,
- 24,
- UiTokens.PLAYER_CHIP,
- UiTokens.STROKE_SOFT,
- () -> {
+ seekBack = centerIconButton(PlayerCenterIconDrawable.REW, "快退 10 秒", () -> {
  if (a.playbackControls != null) a.playbackControls.nudge(-10000);
  });
- seekFwd =
- UiIcon.circleButton(
- a,
- UiIcon.FF,
- "快进 10 秒",
- 48,
- 24,
- UiTokens.PLAYER_CHIP,
- UiTokens.STROKE_SOFT,
- () -> {
+ seekFwd = centerIconButton(PlayerCenterIconDrawable.FF, "快进 10 秒", () -> {
  if (a.playbackControls != null) a.playbackControls.nudge(10000);
  });
- state =
- UiIcon.circleButton(
- a,
- UiIcon.PLAY,
- "播放",
- 64,
- 40,
- UiTokens.PLAYER_BTN_STRONG,
- UiTokens.PLAYER_BTN_STROKE,
- () -> {
+ state = centerIconButton(PlayerCenterIconDrawable.STATE, "播放/暂停", () -> {
  a.togglePlayback();
  a.showControls(true);
  });
@@ -255,14 +230,12 @@ final class PlayerChrome {
  // 1.9.163/164：去掉中央键独立深色圆底与 elevation（统一由胶囊承载）
  state.setBackground(null);
  UiCompat.setElevation(state, 0);
- // 1.9.159：中央三键在 keyFocusMode/remoteFocusMode 下也必须可聚焦（盒子 isTvDevice=false）
- boolean centerFocusMode = a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode;
- styleCenterButton(seekBack, "seek-back");
- styleCenterButton(seekFwd, "seek-fwd");
- if (centerFocusMode) {
- state.setFocusable(true);
- state.setFocusableInTouchMode(true);
- TvNav.focusRing(a, state, 36);
+ seekBackIcon = (PlayerCenterIconDrawable) seekBack.getDrawable();
+ seekFwdIcon = (PlayerCenterIconDrawable) seekFwd.getDrawable();
+ stateIcon = (PlayerCenterIconDrawable) state.getDrawable();
+ bindCenterIconFocus(seekBack, seekBackIcon, "seek-back");
+ bindCenterIconFocus(seekFwd, seekFwdIcon, "seek-fwd");
+ bindCenterIconFocus(state, stateIcon, "state");
  state.setOnKeyListener(
  (v, keyCode, event) -> {
  if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
@@ -289,7 +262,6 @@ final class PlayerChrome {
  }
  return false;
  });
- }
  // 1.9.164 R1b：侧键视觉 44dp / hit 48dp（48 容器内居中 44），state 64×64、margin 0
  FrameLayout backWrap = new FrameLayout(a);
  backWrap.setClickable(true);
@@ -559,48 +531,66 @@ final class PlayerChrome {
  });
  }
 
- /** 1.9.159：中央快退/快进焦点与日志。 */
- private void styleCenterButton(final ImageButton button, final String tag) {
- if (button == null) return;
- button.setTag(tag);
+ /** 1.9.166（R2）：中央键 ImageButton + 自绘图标（无背景/无 elevation，几何由外部 LP 决定）。 */
+ private ImageButton centerIconButton(int kind, String desc, Runnable click) {
+ ImageButton button = new ImageButton(a);
+ button.setBackground(null);
+ PlayerCenterIconDrawable icon = new PlayerCenterIconDrawable(a, kind);
+ if (kind == PlayerCenterIconDrawable.STATE) icon.setPlaying(a.playing);
+ button.setImageDrawable(icon);
+ button.setPadding(0, 0, 0, 0);
+ button.setScaleType(ImageView.ScaleType.FIT_CENTER);
+ button.setContentDescription(desc);
+ button.setClickable(true);
+ button.setOnClickListener(v -> click.run());
+ // R2 icon 日志
+ String iconTag =
+ kind == PlayerCenterIconDrawable.REW
+ ? "rew"
+ : kind == PlayerCenterIconDrawable.FF ? "ffw" : (a.playing ? "pause" : "play");
+ AppLog.i("PlayerCenter", "icon=" + iconTag);
+ return button;
+ }
+
+ /** 1.9.166（R3）：中央专用焦点渲染：框固定不缩放、icon 1.04、120/100ms；不用 TvNav。 */
+ private void bindCenterIconFocus(
+ final ImageButton button, final PlayerCenterIconDrawable icon, final String tag) {
+ if (button == null || icon == null) return;
  boolean mode = a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode;
  button.setFocusable(mode);
  button.setFocusableInTouchMode(mode);
  button.setClickable(true);
- if (!mode) return;
- TvNav.focusRing(a, button, 999);
- final View.OnFocusChangeListener baseRing = button.getOnFocusChangeListener();
  button.setOnFocusChangeListener(
  (v, focused) -> {
- if (baseRing != null) baseRing.onFocusChange(v, focused);
- if (focused) AppLog.i("PlayerFocus", "focus=" + tag + " zone=center");
+ if (!(a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode)) {
+ icon.setFocusFraction(0f);
+ return;
+ }
+ android.animation.ValueAnimator animator =
+ android.animation.ValueAnimator.ofFloat(icon.focusFraction(), focused ? 1f : 0f);
+ animator.setDuration(focused ? 120 : 100);
+ if (focused && !a.reduced)
+ animator.setInterpolator(new android.view.animation.DecelerateInterpolator());
+ animator.addUpdateListener(
+ animation ->
+ icon.setFocusFraction(((Number) animation.getAnimatedValue()).floatValue()));
+ animator.start();
+ if (focused) AppLog.i("PlayerFocus", "center focus=" + tag + " style=capsule");
  });
  }
 
- /** 1.9.159：进入按键/遥控焦点模式后补挂中央三键。 */
+ /** 1.9.166：进入按键/遥控焦点模式后重新绑定中央三键（专用渲染器）。 */
  void refreshCenterFocus() {
  boolean mode = a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode;
- ImageButton[] buttons = {seekBack, seekFwd, state};
- for (ImageButton button : buttons) {
- if (button == null) continue;
- button.setFocusable(mode);
- button.setFocusableInTouchMode(mode);
- button.setClickable(true);
- if (mode) {
- TvNav.focusRing(a, button, button == state ? 36 : 999);
- final View.OnFocusChangeListener base =
- button.getOnFocusChangeListener();
- final String tag =
- button == seekBack ? "seek-back" : button == seekFwd ? "seek-fwd" : "play-pause";
- button.setOnFocusChangeListener(
- (v, focused) -> {
- if (base != null) base.onFocusChange(v, focused);
- if (focused && !"play-pause".equals(tag))
- AppLog.i("PlayerFocus", "focus=" + tag + " zone=center");
- });
+ bindCenterIconFocus(seekBack, seekBackIcon, "seek-back");
+ bindCenterIconFocus(seekFwd, seekFwdIcon, "seek-fwd");
+ bindCenterIconFocus(state, stateIcon, "state");
+ if (!mode) {
+ if (seekBackIcon != null) seekBackIcon.setFocusFraction(0f);
+ if (seekFwdIcon != null) seekFwdIcon.setFocusFraction(0f);
+ if (stateIcon != null) stateIcon.setFocusFraction(0f);
  }
- }
- AppLog.i("PlayerFocus", "refresh center mode=" + mode);
+ AppLog.i("PlayerFocus", "refresh center mode=" + mode + " style=capsule");
  }
 
  void safeInsets(int left, int top, int right, int bottom) {
@@ -862,8 +852,11 @@ final class PlayerChrome {
  + (loadingLayer.getVisibility() == View.VISIBLE));
  }
 
- // 中央播放钮：图标 + 描述跟随播放状态；未就绪时降透明度
- UiIcon.setIcon(state, a.playing ? UiIcon.PAUSE : UiIcon.PLAY);
+ // 中央播放钮：自绘图标跟随播放状态；未就绪时降透明度
+ if (stateIcon != null) {
+ stateIcon.setPlaying(a.playing);
+ AppLog.i("PlayerCenter", "icon=" + (a.playing ? "pause" : "play"));
+ } else UiIcon.setIcon(state, a.playing ? UiIcon.PAUSE : UiIcon.PLAY);
  state.setAlpha(!a.prepared ? 0.45f : 1f);
  state.setContentDescription(
  !a.prepared ? "正在准备" : a.playing ? "正在播放，点击暂停" : "已暂停，点击继续");

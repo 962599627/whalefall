@@ -410,6 +410,9 @@ final class ImageLoader {
  boolean decodeLogged;
  boolean usingBuiltin;
  boolean drawLogged;
+ boolean released;
+ /** 1.9.166：同一进程内复用内置鲸鱼娘降采样结果。 */
+ static Bitmap cachedDefault;
 
  Atmosphere(Context c) {
  super(c);
@@ -436,6 +439,16 @@ final class ImageLoader {
 
  private Bitmap loadDefaultWallpaper() {
  try {
+ if (cachedDefault != null && !cachedDefault.isRecycled()) {
+ AppLog.i(
+ "Wallpaper",
+ "default bitmap=cache"
+ + cachedDefault.getWidth()
+ + "x"
+ + cachedDefault.getHeight()
+ + " cache=true");
+ return cachedDefault;
+ }
  // 1.9.126：旧机 4K 默认图直接解码会原生崩溃，按屏幕降采样
  int maxEdge = wallpaperMaxEdge(a);
  android.graphics.BitmapFactory.Options bounds =
@@ -464,6 +477,7 @@ final class ImageLoader {
  + " sample="
  + sample
  + " cache=true");
+ cachedDefault = bitmap;
  return bitmap;
  } catch (Throwable error) {
  AppLog.w("Wallpaper", "default wallpaper load failed", error);
@@ -553,13 +567,51 @@ final class ImageLoader {
  }
 
  @Override
+ protected void onAttachedToWindow() {
+ super.onAttachedToWindow();
+ // 1.9.166：复用 View 重新 attach 时若 bitmap 为空则补载
+ if (!released && wallpaper == null && fallbackWallpaper == null) {
+ if (!a.prefs.getBoolean("force_builtin_wallpaper", false)
+ && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) wallpaper = loadWallpaper();
+ if (wallpaper == null) {
+ fallbackWallpaper = loadDefaultWallpaper();
+ usingBuiltin = fallbackWallpaper != null;
+ }
+ AppLog.i("Wallpaper", "atmosphere attach reload=true");
+ } else {
+ AppLog.i("Wallpaper", "atmosphere attach reload=false");
+ }
+ }
+
+ @Override
  protected void onDetachedFromWindow() {
- // 1.9.148：页面销毁时释放壁纸 bitmap，避免旧页面残留占内存
- if (wallpaper != null && !wallpaper.isRecycled()) wallpaper.recycle();
- wallpaper = null;
- if (fallbackWallpaper != null && !fallbackWallpaper.isRecycled()) fallbackWallpaper.recycle();
- fallbackWallpaper = null;
+ // 1.9.166：detach 只保留 bitmap；明确 release 时才回收
+ AppLog.i("Wallpaper", "atmosphere detach keep=true released=" + released);
+ if (released) recycleBitmaps();
  super.onDetachedFromWindow();
+ }
+
+ /** 1.9.166：明确销毁（Activity destroy）时才回收。 */
+ void release() {
+ released = true;
+ recycleBitmaps();
+ AppLog.i("Wallpaper", "atmosphere release recycled=true");
+ }
+
+ private void recycleBitmaps() {
+ try {
+ if (wallpaper != null
+ && !wallpaper.isRecycled()
+ && wallpaper != cachedDefault) wallpaper.recycle();
+ wallpaper = null;
+ if (fallbackWallpaper != null
+ && !fallbackWallpaper.isRecycled()
+ && fallbackWallpaper != cachedDefault) fallbackWallpaper.recycle();
+ fallbackWallpaper = null;
+ if (cachedDefault != null && !cachedDefault.isRecycled()) cachedDefault.recycle();
+ cachedDefault = null;
+ } catch (Throwable ignored) {
+ }
  }
  }
 }
