@@ -308,6 +308,10 @@ final class MiniDetails {
  + "x"
  + h
  + " hero=true");
+ if (!a.isTvDevice())
+ AppLog.i(
+ "MiniMobile",
+ "rect=" + x + "," + y + " " + w + "x" + h + " hero=true playing=" + a.playing);
  AppLog.i("Mini", "videoScale=centerCrop");
  } else if (attempt < 8) {
  a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 100);

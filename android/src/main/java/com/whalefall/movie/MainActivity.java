@@ -2582,8 +2582,14 @@ public final class MainActivity extends Activity {
  AppLog.i(
  "Back",
  "page=player target=" + (back.isEmpty() ? "home" : "detail") + " stack=" + back.size());
- // 1.9.106/1.9.109：手机 BACK 直接停止播放并回上一级
- AppLog.i("Back", "page=player tv=false action=release");
+ // 1.9.214：手机/平板与电视一致——点播 BACK 回详情并缩小窗
+ if (!isLive()) {
+ AppLog.i("Back", "page=player mobile=true action=mini");
+ minimizePlayback();
+ return;
+ }
+ // 直播 BACK 仍直接停止播放并回上一级
+ AppLog.i("Back", "page=player tv=false action=release live=1");
  releasePlaybackOnPageChange("back", false);
  if (!back.isEmpty()) {
  capture();
