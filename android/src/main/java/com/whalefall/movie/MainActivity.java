@@ -1919,9 +1919,16 @@ public final class MainActivity extends Activity {
  }
  }
 
- /** 1.9.244：TV 小窗判定按设备类型。 */
+ /** 1.9.248：按分辨率判电视/盒子（横屏且长边≤1920），不依赖触摸能力。 */
  boolean tvMiniMode() {
- return "tv".equals(deviceType) || isTvDevice();
+ try {
+ if (isTvDevice()) return true;
+ android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+ int longEdge = Math.max(dm.widthPixels, dm.heightPixels);
+ return dm.widthPixels > dm.heightPixels && longEdge <= 1920;
+ } catch (Throwable ignored) {
+ return false;
+ }
  }
 
  String tvMiniReason() {
