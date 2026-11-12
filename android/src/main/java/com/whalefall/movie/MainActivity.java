@@ -1920,6 +1920,14 @@ public final class MainActivity extends Activity {
  releaseWallpaper();
  }
 
+ // 1.9.202：所有页面统一背景板日志
+ AppLog.i(
+ "Wallpaper",
+ "apply page="
+ + (target.getTag() == null ? target.getClass().getSimpleName() : target.getTag())
+ + " plate=static"
+ + " wallpaperLayer="
+ + (target.findViewWithTag(WALLPAPER_TAG) != null));
  // 4. 一次性诊断（仅状态变化时）
  final String signature =
  System.identityHashCode(target)

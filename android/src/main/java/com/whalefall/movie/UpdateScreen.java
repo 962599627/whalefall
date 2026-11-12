@@ -33,8 +33,9 @@ final class UpdateScreen {
  SettingsScreen settings = new SettingsScreen(a);
  settings.page("软件更新", "镜像优先，连接失败时尝试 GitHub。安装前会核对版本、文件完整性与签名。");
  // 1.9.107：黑屏兜底：页面必须有深色底，不能依赖透明 root
- if (a.root != null) a.root.setBackgroundColor(0xff070b14);
- if (a.scroll != null) a.scroll.setBackgroundColor(0xff070b14);
+ // 1.9.202：页面底层保留壁纸板，仅内容卡片自带背景
+ if (a.root != null) a.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+ if (a.scroll != null) a.scroll.setBackgroundColor(android.graphics.Color.TRANSPARENT);
  if (a.body != null) a.body.setTag("update");
  a.updateScreen = this;
  // 已存在的旧检查结果不自动弹窗，仅本次新检测到才弹
@@ -93,7 +94,7 @@ final class UpdateScreen {
  private void showFallback(Throwable error) {
  try {
  a.renderPage("软件更新", "");
- if (a.root != null) a.root.setBackgroundColor(0xff070b14);
+ if (a.root != null) a.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
  if (a.body != null) {
  a.body.setTag("update");
  a.body.addView(a.text("软件更新", 26, MainActivity.WHITE));
