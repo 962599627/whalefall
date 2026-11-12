@@ -2230,9 +2230,20 @@ public final class MainActivity extends Activity {
  * side shading. Sits above the poster colors or wallpaper and below all content.
  */
  boolean videoWallpaperEnabled() {
- return !reduced
+ boolean on =
+ !reduced
  && prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
  && VideoWallpaper.file(this).isFile();
+ // 1.9.229：已保存的 4K/超大壁纸自动回退静态（保留文件）
+ if (on && VideoWallpaper.tooLarge(this)) {
+ boolean notified = prefs.getBoolean("wallpaper_video_too_large_notified", false);
+ if (!notified) {
+ prefs.edit().putBoolean("wallpaper_video_too_large_notified", true).apply();
+ ui.post(() -> toast("壁纸视频分辨率过高，已回退静态壁纸（文件保留，可重新选择）"));
+ }
+ return false;
+ }
+ return on;
  }
 
  void releaseWallpaper() {

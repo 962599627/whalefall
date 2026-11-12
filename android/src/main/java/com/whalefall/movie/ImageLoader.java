@@ -487,7 +487,8 @@ final class ImageLoader {
  if (a.isTvDevice()
  && android.os.Build.VERSION.SDK_INT < 26
  && a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
- && VideoWallpaper.file(a).isFile()) startAtomVideo();
+ && VideoWallpaper.file(a).isFile()
+ && !VideoWallpaper.tooLarge(a)) startAtomVideo();
  atomActive = this;
  if (atomPlayerRunning && atomTexture != null)
  atomTexture.setVisibility(android.view.View.INVISIBLE);

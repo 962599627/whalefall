@@ -679,9 +679,9 @@ final class PlaybackController {
  AppLog.i("Playback", "resolve fail reason=timeout elapsed=" + elapsed);
  Runnable retry = a.playbackRetry;
  clearPlaybackLoading(a);
- showResolveFail(a, "解析超时（30 秒），旧设备首次解析可能较慢。", retry);
+ showResolveFail(a, "解析超时（45 秒），旧设备/线路较慢可重试或换线路。", retry);
  },
- 30000);
+ 45000);
  }
 
  /** 1.9.89：解析失败统一提示（隐藏 loading + 重试按钮，可换线路）。 */
@@ -901,7 +901,14 @@ final class PlaybackController {
  savePlaybackHistory(a, true);
  stopWeb(a);
  stopMagnet(a);
+ // 1.9.229：切集前记录内存并完整释放旧播放器/Surface
+ int beforeMb = pssMb(a);
  if (a.player != null) {
+ try {
+ // 先解绑 Surface，释放 EGL/解码输出
+ a.player.setSurface(null);
+ } catch (Throwable ignored) {
+ }
  try {
  a.player.release();
  } catch (Exception error) {
@@ -913,6 +920,34 @@ final class PlaybackController {
  a.playing = false;
  if (a.playerChrome != null) {
  a.playerChrome.switchEpisode(episode, line);
+ }
+ final int before = beforeMb;
+ a.ui.postDelayed(
+ () -> {
+ int after = pssMb(a);
+ AppLog.i(
+ "Memory",
+ "after-switch before="
+ + before
+ + "MB after="
+ + after
+ + "MB delta="
+ + (before < 0 || after < 0 ? "?" : (after - before) + "MB"));
+ },
+ 1500);
+ }
+
+ /** 1.9.229：进程 PSS。 */
+ private static int pssMb(MainActivity a) {
+ try {
+ android.app.ActivityManager am =
+ (android.app.ActivityManager)
+ a.getSystemService(android.content.Context.ACTIVITY_SERVICE);
+ android.os.Debug.MemoryInfo[] info =
+ am.getProcessMemoryInfo(new int[] {android.os.Process.myPid()});
+ return info == null || info.length == 0 ? -1 : info[0].getTotalPss() / 1024;
+ } catch (Throwable ignored) {
+ return -1;
  }
  }
 

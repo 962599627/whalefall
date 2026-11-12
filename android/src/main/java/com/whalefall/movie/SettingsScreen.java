@@ -1053,10 +1053,30 @@ final class SettingsScreen {
  .apply();
  throw new java.io.IOException(reason);
  }
+ // 1.9.229：记录尺寸便于应用时快速判断
+ int[] size = VideoWallpaper.probeSize(target);
+ if (size != null) {
+ a.prefs.edit()
+ .putInt("wallpaper_video_width", size[0])
+ .putInt("wallpaper_video_height", size[1])
+ .apply();
+ }
  }
 
  /** 1.9.108：动态壁纸严格限制 H.264 + ≤1080p + ≤30fps，避免旧 TV 黑屏。 */
  static String videoWallpaperRejectReason(MainActivity a, File target) {
+ // 1.9.229：所有系统统一拦截 4K/超大视频（避免 700MB PSS/掉帧）
+ int[] size = VideoWallpaper.probeSize(target);
+ if (size != null) {
+ int longSide = Math.max(size[0], size[1]);
+ int shortSide = Math.min(size[0], size[1]);
+ if (longSide > 1920 || shortSide > 1080) {
+ AppLog.i(
+ "Wallpaper",
+ "video reject reason=too-large size=" + size[0] + "x" + size[1]);
+ return "请选择 1080p 以内的视频（当前 " + size[0] + "×" + size[1] + "）";
+ }
+ }
  // 1.9.113：新系统（SDK>=26）行为回到 1.9.82：允许 ExoPlayer + 4K/HEVC，不做严格规格限制
  if (android.os.Build.VERSION.SDK_INT >= 26) {
  String decoderProblem = FileManagerScreen.videoCodecProblem(target);

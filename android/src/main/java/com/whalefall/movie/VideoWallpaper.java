@@ -58,6 +58,72 @@ final class VideoWallpaper extends FrameLayout {
         return new File(c.getFilesDir(), FILE);
     }
 
+    /** 1.9.229：读取视频宽高（失败返回 null）。 */
+    static int[] probeSize(File file) {
+        if (file == null || !file.isFile()) return null;
+        android.media.MediaMetadataRetriever r = new android.media.MediaMetadataRetriever();
+        try {
+            r.setDataSource(file.getAbsolutePath());
+            int w =
+                    parseInt(
+                            r.extractMetadata(
+                                    android.media.MediaMetadataRetriever
+                                            .METADATA_KEY_VIDEO_WIDTH));
+            int h =
+                    parseInt(
+                            r.extractMetadata(
+                                    android.media.MediaMetadataRetriever
+                                            .METADATA_KEY_VIDEO_HEIGHT));
+            if (w > 0 && h > 0) return new int[] {w, h};
+        } catch (Throwable ignored) {
+        } finally {
+            try {
+                r.release();
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static int parseInt(String text) {
+        try {
+            return Integer.parseInt(text);
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    /** 1.9.229：已保存壁纸是否超大（长边>1920 或 短边>1080）；读不到按不超限。 */
+    static boolean tooLarge(MainActivity a) {
+        try {
+            int w = a.prefs.getInt("wallpaper_video_width", 0);
+            int h = a.prefs.getInt("wallpaper_video_height", 0);
+            if (w <= 0 || h <= 0) {
+                int[] size = probeSize(file(a));
+                if (size == null) return false;
+                w = size[0];
+                h = size[1];
+                a.prefs
+                        .edit()
+                        .putInt("wallpaper_video_width", w)
+                        .putInt("wallpaper_video_height", h)
+                        .apply();
+            }
+            boolean over = Math.max(w, h) > 1920 || Math.min(w, h) > 1080;
+            if (over)
+                AppLog.i(
+                        "Wallpaper",
+                        "video disabled reason=too-large size="
+                                + w
+                                + "x"
+                                + h
+                                + " kept=true");
+            return over;
+        } catch (Throwable error) {
+            return false;
+        }
+    }
+
     VideoWallpaper(MainActivity host) {
         super(host);
         this.host = host;
