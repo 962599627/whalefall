@@ -261,8 +261,30 @@ final class UpdatePolicy {
  throw new IllegalArgumentException("Invalid update metadata");
  }
 
- static boolean newer(int offered, int installed) {
- return offered > installed;
+ static boolean newer(int offered, int installed) { return offered > installed;
+ }
+
+ /** 1.9.204：语义化版本比较（1.9.203 > 1.9.178），非数字段按 0。 */
+ static boolean versionNewer(String offered, String installed) {
+ if (offered == null || installed == null) return false;
+ int[] a = parseVersion(offered), b = parseVersion(installed);
+ for (int i = 0; i < 4; i++) {
+ if (a[i] != b[i]) return a[i] > b[i];
+ }
+ return false;
+ }
+
+ private static int[] parseVersion(String text) {
+ int[] out = new int[4];
+ java.util.regex.Matcher m =
+ java.util.regex.Pattern.compile("(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?(?:\\.(\\d+))?")
+ .matcher(text == null ? "" : text);
+ if (!m.find()) return out;
+ for (int i = 0; i < 4; i++) {
+ String part = m.group(i + 1);
+ out[i] = part == null ? 0 : Integer.parseInt(part);
+ }
+ return out;
  }
 
  static long resumeOffset(long requested, int status, String range, long size)

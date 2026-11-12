@@ -101,6 +101,11 @@ def main():
     catpaw_files, catpaw_assets = build_catpaw()
     native_files.update({k:v for k,v in catpaw_files.items() if k.startswith('lib/armeabi-v7a/')})
     native_files_mobile.update(catpaw_files)
+    tv_abis = os.environ.get('MARCOMOVIE_TV_ABIS', '').strip()
+    if 'arm64-v8a' in tv_abis:
+        for src in (deadline_files, catpaw_files):
+            native_files.update({k: v for k, v in src.items() if k.startswith('lib/arm64-v8a/')})
+        print('tv abi: arm64-v8a added libs:', sum(1 for k in native_files if k.startswith('lib/arm64-v8a/')))
     abi_filter = os.environ.get('MARCOMOVIE_MOBILE_ABIS', '').strip()
     if abi_filter:
         allowed = [('lib/' + a.strip() + '/') for a in abi_filter.split(',') if a.strip()]

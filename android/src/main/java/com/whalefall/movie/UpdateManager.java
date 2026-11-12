@@ -249,11 +249,18 @@ final class UpdateManager {
 
  synchronized void check(boolean manual) {
  if (busy) return;
+ if (manual) {
+ // 1.9.204：手动检查强制刷新，清掉上次缓存的版本信息
+ available = null;
+ prefs.edit().remove("metadata").remove("download_sha").remove("download_kind").apply();
+ }
  busy = true;
  cancel = false;
  message = "正在检查更新…";
  percent = -1;
  changed();
+ final String installedName = installedVersion(context);
+ AppLog.i("Update", "current=" + installedName + " source=packageManager manual=" + manual);
  final String channel = channel();
  prefs.edit().putLong("last_attempt", System.currentTimeMillis()).apply();
  worker.execute(
@@ -266,15 +273,44 @@ final class UpdateManager {
  JSONObject data = readRelease(channel);
  Release r = new Release(data, channel, mobileEdition());
  if (cancel) throw new InterruptedIOException();
+ String ghTag = readLatestTag();
+ String ghVersion = versionFromTag(ghTag);
+ boolean ghNewer = ghVersion != null && UpdatePolicy.versionNewer(ghVersion, installedName);
+ if (ghTag != null)
+ AppLog.i(
+ "Update",
+ "latest="
+ + ghTag
+ + " version="
+ + ghVersion
+ + " newer="
+ + ghNewer
+ + " feed="
+ + r.version);
  if (!UpdatePolicy.newer(r.code, installedCode(context))) {
+ // 1.9.204：清单滞后但 GitHub Release 已更新 → 给出可操作提示，不误报「暂无更高版本」
+ if (ghNewer && UpdatePolicy.versionNewer(ghVersion, r.version)) {
  clearOffer();
- message = "当前渠道暂无更高版本（本机 " + installedVersion(context) + "）";
+ message = "发现新版本 " + ghVersion + "（更新清单滞后），请到 GitHub Release 下载";
+ AppLog.i("Update", "feed stale latest=" + ghVersion + " feed=" + r.version);
+ } else {
+ clearOffer();
+ message = "当前渠道暂无更高版本（本机 " + installedName + "）";
+ }
  } else if (r.minSdk > Build.VERSION.SDK_INT) {
  clearOffer();
  message = "发现新版，但其系统版本要求不适合本机，已停止下载";
  } else {
  available = r;
- variantIndex = 0;
+ variantIndex = recommendVariant(r);
+ AppLog.i(
+ "Update",
+ "choose variant="
+ + r.variants.length
+ + " index="
+ + variantIndex
+ + " abi="
+ + java.util.Arrays.toString(Build.SUPPORTED_ABIS));
  message = "发现新版 " + r.version;
  prefs.edit().putString("metadata", data.toString()).apply();
  AppLog.i(
@@ -594,8 +630,53 @@ final class UpdateManager {
  throw new IOException("redirect limit");
  }
 
- private JSONObject readRelease(String channel) throws Exception {
- Exception failure = null;
+ /** 1.9.204：GitHub 最新 Release tag（用于识别 whalefall-1.9.203 这类版本）。 */
+ private String readLatestTag() {
+ try {
+ byte[] bytes =
+ readFeed(
+ "https://api.github.com/repos/962599627/whalefall/releases/latest");
+ org.json.JSONObject json = new org.json.JSONObject(new String(bytes, "UTF-8"));
+ String tag = json.optString("tag_name", "");
+ return tag.isEmpty() ? null : tag;
+ } catch (Throwable error) {
+ AppLog.i("Update", "latest tag fail=" + error.getClass().getSimpleName());
+ return null;
+ }
+ }
+
+ /** 从 tag 提取语义化版本，如 whalefall-1.9.203 → 1.9.203。 */
+ static String versionFromTag(String tag) {
+ if (tag == null) return null;
+ java.util.regex.Matcher m =
+ java.util.regex.Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)").matcher(tag);
+ return m.find() ? m.group(1) + "." + m.group(2) + "." + m.group(3) : null;
+ }
+
+ /** 1.9.204：按当前设备 ABI/版本挑推荐包。 */
+ private int recommendVariant(Release r) {
+ if (r == null || r.variants.length == 0) return 0;
+ boolean arm64 = false;
+ try {
+ for (String abi : Build.SUPPORTED_ABIS)
+ if (abi != null && abi.contains("arm64")) arm64 = true;
+ } catch (Throwable ignored) {
+ }
+ boolean mobile = mobileEdition();
+ for (int i = 0; i < r.variants.length; i++) {
+ String kind = r.variants[i].kind == null ? "" : r.variants[i].kind;
+ if (mobile) {
+ if (kind.contains("mobile")) return i;
+ } else if (arm64) {
+ if (kind.contains("arm64")) return i;
+ } else if (kind.contains("tv") && !kind.contains("arm64")) {
+ return i;
+ }
+ }
+ return 0;
+ }
+
+ private JSONObject readRelease(String channel) throws Exception { Exception failure = null;
  for (String address : UpdatePolicy.feeds(channel, mobileEdition())) {
  if (cancel) throw new InterruptedIOException();
  try {
@@ -624,7 +705,7 @@ final class UpdateManager {
  int n;
  while ((n = in.read(bytes)) != -1) {
  if (cancel) throw new InterruptedIOException();
- if (out.size() + n > 32768) throw new IOException("feed limit");
+ if (out.size() + n > 262144) throw new IOException("feed limit");
  out.write(bytes, 0, n);
  }
  return out.toByteArray();
