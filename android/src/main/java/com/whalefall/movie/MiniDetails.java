@@ -267,12 +267,64 @@ final class MiniDetails {
  /** 1.9.211：把视频/控制层对齐到详情 hero 图片矩形（保持 16:9 不拉伸）。 */
  private void applyHeroRect(int attempt) {
  if (!a.miniMode || a.root == null) return;
- View hero = a.root.findViewWithTag("detail-hero");
- if (!a.isTvDevice() && hero != null && hero.getWidth() > a.windowWidth() * 0.75f) {
- // 1.9.221：手机 hero 過宽时优先用封面海报矩形
+ // 1.9.224：手机/平板只取封面海报矩形；取不到回退 40% 窗口 16:9
+ if (!a.isTvDevice()) {
+ int w = 0, h = 0, x = a.dp(16), y = a.dp(16);
+ String source = "fallback";
  View cover = a.root.findViewWithTag("detail-cover");
- if (cover != null && cover.getWidth() > 0 && cover.getHeight() > 0) hero = cover;
+ int maxW = Math.round(a.windowWidth() * 0.45f);
+ if (cover != null && cover.getWidth() > 0 && cover.getHeight() > 0
+ && cover.getWidth() <= maxW) {
+ int[] cv = new int[2];
+ cover.getLocationOnScreen(cv);
+ int[] rv = new int[2];
+ a.root.getLocationOnScreen(rv);
+ x = Math.max(0, cv[0] - rv[0]);
+ y = Math.max(0, cv[1] - rv[1]);
+ w = cover.getWidth();
+ h = cover.getHeight();
+ source = "cover";
+ } else {
+ w = Math.round(a.windowWidth() * 0.40f) - a.dp(32);
+ h = Math.round(w * 9f / 16f);
  }
+ FrameLayout.LayoutParams vlp =
+ new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
+ vlp.leftMargin = x;
+ vlp.topMargin = y;
+ a.playbackLayer.setLayoutParams(vlp);
+ FrameLayout.LayoutParams plp =
+ new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
+ plp.leftMargin = x;
+ plp.topMargin = y;
+ page.setLayoutParams(plp);
+ if (a.player != null) {
+ try {
+ a.player.setScaleMode(true);
+ } catch (Throwable ignored) {
+ }
+ }
+ PlaybackController.hideDetailHero(a, true);
+ a.playbackLayer.bringToFront();
+ page.bringToFront();
+ AppLog.i(
+ "MiniMobile",
+ "rect="
+ + w
+ + "x"
+ + h
+ + " at="
+ + x
+ + ","
+ + y
+ + " source="
+ + source
+ + " playing="
+ + a.playing);
+ if (attempt < 2) a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 300);
+ return;
+ }
+ View hero = a.root.findViewWithTag("detail-hero");
  if (hero != null && hero.getWidth() > 0 && hero.getHeight() > 0) {
  int[] hv = new int[2];
  hero.getLocationOnScreen(hv);

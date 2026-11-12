@@ -40,6 +40,11 @@ public class MoviePlayer {
  void onCompletion(MoviePlayer player);
  }
 
+ /** 1.9.224：真实播放状态变化（用于暂停动态壁纸）。 */
+ public interface OnPlayingChangedListener {
+ void onPlayingChanged(MoviePlayer player, boolean playing);
+ }
+
  public interface OnVideoSizeChangedListener {
  void onVideoSizeChanged(MoviePlayer player, int width, int height);
  }
@@ -55,6 +60,7 @@ public class MoviePlayer {
  private Map<String, String> headers = Collections.emptyMap();
  private OnPreparedListener preparedListener;
  private OnCompletionListener completionListener;
+ private OnPlayingChangedListener playingChangedListener;
  private OnVideoSizeChangedListener sizeListener;
  private OnErrorListener errorListener;
  private boolean readySent, unsupportedVideo;
@@ -304,6 +310,13 @@ public class MoviePlayer {
  }
 
  @Override
+ public void onIsPlayingChanged(boolean isPlaying) {
+ if (released) return;
+ if (playingChangedListener != null)
+ playingChangedListener.onPlayingChanged(MoviePlayer.this, isPlaying);
+ }
+
+ @Override
  public void onTracksChanged(androidx.media3.common.Tracks tracks) {
  boolean video = false, supported = false;
  for (androidx.media3.common.Tracks.Group group :
@@ -474,6 +487,15 @@ public class MoviePlayer {
  onMain(
  () -> {
  completionListener = listener;
+ return null;
+ });
+ }
+
+ /** 1.9.224：播放状态回调。 */
+ public void setOnPlayingChangedListener(OnPlayingChangedListener listener) {
+ onMain(
+ () -> {
+ playingChangedListener = listener;
  return null;
  });
  }

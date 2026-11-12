@@ -1490,6 +1490,20 @@ final class PlaybackController {
  }
  a.player = ready;
  ready.setSurface(renderSurface);
+ // 1.9.224：真实播放状态变化时暂停/恢复动态壁纸
+ ready.setOnPlayingChangedListener(
+ (p, isPlaying) -> {
+ if (a.videoWallpaper == null) return;
+ if (isPlaying) {
+ a.videoWallpaper.pause();
+ AppLog.i(
+ "Wallpaper",
+ "mobile pause reason=playing-state state=playing mini=" + a.miniMode);
+ } else if (!(a.current != null && a.current.player) && !a.miniMode) {
+ a.videoWallpaper.resume();
+ AppLog.i("Wallpaper", "mobile resume reason=playing-state state=paused");
+ }
+ });
  // 1.9.173：删除 8s 首帧自动回落，Exo 正常播放时不切内核
  ready.bindSubtitles(
  controls.subtitle,

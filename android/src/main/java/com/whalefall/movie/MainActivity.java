@@ -3925,7 +3925,16 @@ public final class MainActivity extends Activity {
  PerfOverlay.attachIfEnabled(this);
  // 1.9.223：测试模式日志初始化
  TestModeLog.configure(this);
- if (videoWallpaper != null && (current == null || !current.player)) videoWallpaper.resume();
+ if (videoWallpaper != null) {
+ boolean playerActive =
+ (current != null && (current.player || (current.detail && miniMode)));
+ if (playerActive) {
+ // 1.9.224：播放器活跃时切回前台也不恢复壁纸
+ AppLog.i("Wallpaper", "mobile resume skipped reason=player-active mini=" + miniMode);
+ } else {
+ videoWallpaper.resume();
+ }
+ }
  ui.postDelayed(this::cleanupOldCrashLogs, 1500);
  ui.postDelayed(this::purgeUnsupportedVideoWallpaper, 1200);
  startMemoryLog();
