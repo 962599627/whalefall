@@ -243,7 +243,7 @@ final class PlayerChrome {
  a,
  UiIcon.PLAY,
  "播放",
- 72,
+ 64,
  40,
  UiTokens.PLAYER_BTN_STRONG,
  UiTokens.PLAYER_BTN_STROKE,
@@ -252,7 +252,7 @@ final class PlayerChrome {
  a.showControls(true);
  });
  state.setTag("play-pause");
- // 1.9.163：去掉中央键独立深色圆底与 elevation（统一由胶囊承载）
+ // 1.9.163/164：去掉中央键独立深色圆底与 elevation（统一由胶囊承载）
  state.setBackground(null);
  UiCompat.setElevation(state, 0);
  // 1.9.159：中央三键在 keyFocusMode/remoteFocusMode 下也必须可聚焦（盒子 isTvDevice=false）
@@ -290,20 +290,44 @@ final class PlayerChrome {
  return false;
  });
  }
- UiCompat.setElevation(state, 0);
- // 1.9.159：seek 两侧按钮焦点环 + 日志（48dp 点击区由 UiIcon.circleButton 保证）
- centerCluster.addView(seekBack, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
+ // 1.9.164 R1b：侧键视觉 44dp / hit 48dp（48 容器内居中 44），state 64×64、margin 0
+ FrameLayout backWrap = new FrameLayout(a);
+ backWrap.setClickable(true);
+ backWrap.setOnClickListener(v -> seekBack.performClick());
+ backWrap.addView(
+ seekBack, new FrameLayout.LayoutParams(a.dp(44), a.dp(44), Gravity.CENTER));
+ FrameLayout fwdWrap = new FrameLayout(a);
+ fwdWrap.setClickable(true);
+ fwdWrap.setOnClickListener(v -> seekFwd.performClick());
+ fwdWrap.addView(
+ seekFwd, new FrameLayout.LayoutParams(a.dp(44), a.dp(44), Gravity.CENTER));
  LinearLayout.LayoutParams stateLp =
- new LinearLayout.LayoutParams(a.dp(72), a.dp(72));
- stateLp.leftMargin = a.dp(28);
- stateLp.rightMargin = a.dp(28);
+ new LinearLayout.LayoutParams(a.dp(64), a.dp(64));
+ stateLp.leftMargin = a.dp(18);
+ stateLp.rightMargin = a.dp(18);
+ centerCluster.addView(backWrap, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
  centerCluster.addView(state, stateLp);
- centerCluster.addView(seekFwd, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
+ centerCluster.addView(fwdWrap, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
  overlay.addView(centerCluster, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
- // 直播没有可 seek 的时长，中央只留播放/暂停
+ centerCluster.post(
+ () ->
+ AppLog.i(
+ "PlayerChrome",
+ "center capsule=" + centerCluster.getWidth() + "x" + centerCluster.getHeight()));
+ // 直播没有可 seek 的时长，中央只留播放/暂停；胶囊收为 80×80
  if (live) {
- seekBack.setVisibility(View.GONE);
- seekFwd.setVisibility(View.GONE);
+ backWrap.setVisibility(View.GONE);
+ fwdWrap.setVisibility(View.GONE);
+ stateLp.leftMargin = 0;
+ stateLp.rightMargin = 0;
+ state.setLayoutParams(stateLp);
+ centerCluster.requestLayout();
+ state.requestLayout();
+ centerCluster.post(
+ () ->
+ AppLog.i(
+ "PlayerChrome",
+ "live capsule=" + centerCluster.getWidth() + "x" + centerCluster.getHeight()));
  }
 
  // ---------------- 底部控制区：时钟 + 三段进度 + 10 格图标行 ----------------
