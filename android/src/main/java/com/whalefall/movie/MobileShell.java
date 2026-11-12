@@ -6176,6 +6176,21 @@ final class MobileShell {
  a.toast(on ? "性能浮层已开启" : "性能浮层已关闭");
  refreshInPlace.run();
  });
+ // 1.9.245：挂机自动清理开关
+ addSettingCard(
+ body,
+ 5,
+ "挂机自动清理",
+ a.prefs.getBoolean("idle_clean_enabled", true)
+ ? "已开启：空闲每5分钟清缓存/释放壁纸解码"
+ : "已关闭：只清缓存，不 GC、不释放壁纸",
+ () -> {
+ boolean on = !a.prefs.getBoolean("idle_clean_enabled", true);
+ a.prefs.edit().putBoolean("idle_clean_enabled", on).apply();
+ AppLog.i("Memory", "idle-clean enabled=" + on);
+ a.toast(on ? "挂机自动清理已开启" : "挂机自动清理已关闭");
+ refreshInPlace.run();
+ });
  addSettingCard(
  body,
  5,

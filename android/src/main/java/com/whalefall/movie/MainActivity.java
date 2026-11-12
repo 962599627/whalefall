@@ -3454,6 +3454,7 @@ public final class MainActivity extends Activity {
 
  @Override
  public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+ noteInteraction();
  if (keyFocusMode
  && !remoteFocusMode
  && event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
@@ -3539,6 +3540,87 @@ public final class MainActivity extends Activity {
  };
  ui.postDelayed(memoryLogTask, 5 * 60_000L);
  AppLog.i("Memory", "observe interval=5min start=true");
+ startIdleClean();
+ }
+
+ /** 1.9.245：挂机清理（每5分钟检查）。 */
+ Runnable idleCleanTask;
+ long lastInteractionAt, idleWallpaperAt;
+ boolean idleWallpaperReleased;
+
+ void startIdleClean() {
+ if (idleCleanTask != null) return;
+ idleCleanTask =
+ () -> {
+ runIdleClean();
+ ui.postDelayed(idleCleanTask, 5 * 60_000L);
+ };
+ ui.postDelayed(idleCleanTask, 5 * 60_000L);
+ AppLog.i("Memory", "idle-clean schedule=5min enabled=" + prefs.getBoolean("idle_clean_enabled", true));
+ }
+
+ void noteInteraction() {
+ lastInteractionAt = android.os.SystemClock.elapsedRealtime();
+ if (idleWallpaperReleased
+ && lastInteractionAt - idleWallpaperAt <= 30000
+ && videoWallpaper != null) {
+ idleWallpaperReleased = false;
+ videoWallpaper.ensureDecoder("idle-interaction");
+ AppLog.i("Wallpaper", "decoder recreated reason=idle-interaction");
+ }
+ }
+
+ void runIdleClean() {
+ try {
+ boolean idle =
+ player == null
+ && !miniMode
+ && (current == null || !current.player);
+ if (!idle) return;
+ int before = pssMbValue();
+ ImageLoader.clearForBackground(this);
+ boolean enabled = prefs.getBoolean("idle_clean_enabled", true);
+ boolean gc = false;
+ String wp = "kept";
+ if (enabled) {
+ System.gc();
+ gc = true;
+ long now = android.os.SystemClock.elapsedRealtime();
+ if (now - lastInteractionAt >= 10 * 60_000L && videoWallpaper != null && !videoWallpaper.isReleased()) {
+ videoWallpaper.stopAndReleaseDecoder("idle");
+ idleWallpaperReleased = true;
+ idleWallpaperAt = now;
+ wp = "released";
+ }
+ }
+ int after = pssMbValue();
+ AppLog.i(
+ "Memory",
+ "idle-clean pss-before="
+ + before
+ + "MB after="
+ + after
+ + "MB freed="
+ + Math.max(0, before - after)
+ + "MB gc="
+ + gc
+ + " wallpaper="
+ + wp);
+ } catch (Throwable error) {
+ AppLog.w("Memory", "idle-clean failed", error);
+ }
+ }
+
+ int pssMbValue() {
+ try {
+ android.app.ActivityManager am =
+ (android.app.ActivityManager) getSystemService(android.content.Context.ACTIVITY_SERVICE);
+ android.os.Debug.MemoryInfo[] info =
+ am.getProcessMemoryInfo(new int[] {android.os.Process.myPid()});
+ return info == null || info.length == 0 ? -1 : info[0].getTotalPss() / 1024;
+ } catch (Throwable ignored) {
+ return -1;
+ }
  }
 
  void logMemory() {
@@ -3674,6 +3756,7 @@ public final class MainActivity extends Activity {
 
  @Override
  public boolean dispatchKeyEvent(KeyEvent event) {
+ noteInteraction();
  // 1.9.84：物理遥控/键盘方向键按下即进入焦点模式（isTvDevice 可能为 false）
  int pressed = event.getKeyCode();
  // 1.9.147：控制条隐藏时左右键直接快退/快进 10 秒（不唤出控制条、无需先聚焦进度条）

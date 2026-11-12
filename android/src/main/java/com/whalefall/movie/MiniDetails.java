@@ -493,59 +493,6 @@ final class MiniDetails {
  if (attempt < 2) a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 300);
  return;
  }
- View hero = a.root.findViewWithTag("detail-hero");
- if (hero != null && hero.getWidth() > 0 && hero.getHeight() > 0) {
- int[] hv = new int[2];
- hero.getLocationOnScreen(hv);
- int[] rv = new int[2];
- a.root.getLocationOnScreen(rv);
- int x = Math.max(0, hv[0] - rv[0]);
- int y = Math.max(0, hv[1] - rv[1]);
- int w = hero.getWidth();
- int h = hero.getHeight();
- // 1.9.213：容器与 hero 完全同矩形，视频 center-crop 铺满
- FrameLayout.LayoutParams vlp =
- new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
- vlp.leftMargin = x;
- vlp.topMargin = y;
- a.playbackLayer.setLayoutParams(vlp);
- FrameLayout.LayoutParams plp =
- new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
- plp.leftMargin = x;
- plp.topMargin = y;
- page.setLayoutParams(plp);
- if (a.player != null) {
- try {
- a.player.setScaleMode(true);
- } catch (Throwable ignored) {
- }
- }
- PlaybackController.hideDetailHero(a, true);
- a.playbackLayer.bringToFront();
- page.bringToFront();
- AppLog.i(
- "Mini",
- "rect="
- + x
- + ","
- + y
- + " "
- + w
- + "x"
- + h
- + " hero=true");
- if (!a.isTvDevice())
- AppLog.i(
- "MiniMobile",
- "rect=" + x + "," + y + " " + w + "x" + h + " hero=true playing=" + a.playing);
- AppLog.i("Mini", "videoScale=centerCrop");
- // 1.9.221：手机/平板布局可能稍后才稳定，再做两轮校正
- if (!a.isTvDevice() && attempt < 2) {
- a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 300);
- }
- } else if (attempt < 8) {
- a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 100);
- }
  }
 
  private TextView miniButton(String label, String tag, Runnable action) {
