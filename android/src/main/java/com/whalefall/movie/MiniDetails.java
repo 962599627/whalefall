@@ -26,9 +26,10 @@ final class MiniDetails {
  int width;
  int height;
  if (tv) {
- // 1.9.207：回到 1.9.159 的固定左侧小窗，不再按 hero 放大
- width = a.dp(160);
- height = a.dp(90);
+ // 1.9.209：按详情左栏 hero 区域（约 40% 宽、16:9），16dp 边距
+ int colW = Math.round(a.windowWidth() * 0.40f);
+ width = Math.max(a.dp(320), colW - a.dp(32));
+ height = Math.round(width * 9f / 16f);
  } else {
  width = Math.round(a.windowWidth() * 0.45f);
  height = Math.round(width * 9f / 16f);
@@ -106,11 +107,14 @@ final class MiniDetails {
  if (play != null) play.requestFocus();
  });
  });
- bar.addView(playPause, new LinearLayout.LayoutParams(0, a.dp(tv ? 40 : 32), 1f));
- bar.addView(expand, new LinearLayout.LayoutParams(0, a.dp(tv ? 40 : 32), 1f));
- bar.addView(stop, new LinearLayout.LayoutParams(0, a.dp(tv ? 40 : 32), 1f));
+ bar.addView(playPause, new LinearLayout.LayoutParams(0, a.dp(tv ? 24 : 28), 1f));
+ bar.addView(expand, new LinearLayout.LayoutParams(0, a.dp(tv ? 24 : 28), 1f));
+ bar.addView(stop, new LinearLayout.LayoutParams(0, a.dp(tv ? 24 : 28), 1f));
  FrameLayout.LayoutParams barLp =
- new FrameLayout.LayoutParams(-1, a.dp(tv ? 40 : 32), Gravity.BOTTOM);
+ new FrameLayout.LayoutParams(-1, a.dp(tv ? 24 : 28), Gravity.BOTTOM);
+ barLp.bottomMargin = a.dp(8);
+ barLp.leftMargin = a.dp(8);
+ barLp.rightMargin = a.dp(8);
  page.addView(bar, barLp);
 
  // 小窗内一个不可见可聚焦载体：OK 回全屏，下方向进入详情控件
@@ -166,12 +170,47 @@ final class MiniDetails {
  + miniMargin
  + " reason=player-back");
  });
-
+ // 1.9.209：测左栏 hero 宽度，按 1.9.159 布局（左16/上16/宽=左栏-32/16:9）
+ a.ui.postDelayed(
+ () -> {
+ if (!a.miniMode || a.root == null) return;
+ View hero = a.root.findViewWithTag("detail-hero");
+ int w =
+ hero != null && hero.getWidth() > 0
+ ? hero.getWidth()
+ : Math.round(a.windowWidth() * 0.40f) - a.dp(32);
+ int maxW = Math.round(a.windowWidth() * 0.55f);
+ if (w > maxW) w = Math.round(a.windowWidth() * 0.40f) - a.dp(32);
+ w = Math.max(a.dp(320), w - a.dp(32));
+ int h = Math.round(w * 9f / 16f);
+ FrameLayout.LayoutParams lp =
+ new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
+ lp.leftMargin = a.dp(16);
+ lp.topMargin = a.dp(16);
+ a.playbackLayer.setLayoutParams(lp);
+ FrameLayout.LayoutParams pageLp2 =
+ new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
+ pageLp2.leftMargin = a.dp(16);
+ pageLp2.topMargin = a.dp(16);
+ page.setLayoutParams(pageLp2);
+ a.playbackLayer.bringToFront();
+ page.bringToFront();
+ AppLog.i(
+ "Mini",
+ "layout left="
+ + a.dp(16)
+ + " top="
+ + a.dp(16)
+ + " w="
+ + w
+ + " h="
+ + h
+ + " source=159");
+ },
+ 300);
  a.ui.post(
  () -> {
  if (!a.miniMode) return;
- a.playbackLayer.bringToFront();
- page.bringToFront();
  if (controls != null) controls.resize(controls.videoWidth, controls.videoHeight);
  View output = PlaybackController.findTagged(a.playbackLayer, "video-output");
  android.view.Surface surface =
@@ -285,7 +324,7 @@ final class MiniDetails {
  }
 
  private TextView miniButton(String label, String tag, Runnable action) {
- TextView b = a.text(label, a.isTvDevice() ? 16 : 13, 0xffffffff);
+ TextView b = a.text(label, a.isTvDevice() ? 11 : 12, 0xffffffff);
  b.setTag(tag);
  b.setGravity(Gravity.CENTER);
  b.setIncludeFontPadding(false);
