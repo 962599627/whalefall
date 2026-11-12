@@ -24,7 +24,7 @@ final class MiniDetails {
  MiniDetails(MainActivity host) {
  a = host;
  controls = a.playbackControls;
- boolean tv = a.isTvDevice();
+ boolean tv = a.tvMiniMode();
  int width;
  int height;
  if (tv) {
@@ -273,8 +273,13 @@ final class MiniDetails {
 
  private void applyHeroRect(int attempt) {
  if (!a.miniMode || a.root == null) return;
- // 1.9.239：TV 固定 480×270px 左栏小窗（不做左栏宽度/maxW 放大）
- if (a.formFactor == TvLayoutPolicy.FORM_TV) {
+ // 1.9.241：TV 小窗判定（isTvDevice 不可靠）
+ boolean tvMini =
+ a.isTvDevice() || a.remoteFocusMode || a.keyFocusMode
+ || (a.getResources().getConfiguration().orientation
+ == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+ && a.getResources().getConfiguration().smallestScreenWidthDp >= 960);
+ if (tvMini) {
  int w = 480, h = 270, x = 32, y = 32;
  FrameLayout.LayoutParams vlp =
  new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
@@ -295,7 +300,17 @@ final class MiniDetails {
  PlaybackController.hideDetailHero(a, true);
  a.playbackLayer.bringToFront();
  page.bringToFront();
- AppLog.i("Mini", "tv=true size=480x270 at=32,32 formFactor=tv");
+ AppLog.i(
+ "Mini",
+ "tvMini=true reason="
+ + a.tvMiniReason()
+ + " formFactor="
+ + a.formFactor
+ + " isTv="
+ + a.isTvDevice()
+ + " remote="
+ + a.remoteFocusMode
+ + " size=480x270 at=32,32");
  return;
  }
  // 1.9.233：手机/平板统一走封面矩形 + clamp
@@ -341,8 +356,11 @@ final class MiniDetails {
  h = cachedCover[3];
  source = "cover-cached";
  } else {
- w = Math.round(a.windowWidth() * 0.40f) - a.dp(32);
+ // 1.9.240：拿不到海报 View → 左右 16dp、顶部 16dp、宽=窗口宽-32dp、16:9
+ w = Math.max(a.dp(160), a.windowWidth() - a.dp(32));
  h = Math.round(w * 9f / 16f);
+ x = a.dp(16);
+ y = a.dp(16);
  }
  // 1.9.227：右侧信息区/下方片源区不得被覆盖
  boolean clamped = false;
@@ -379,25 +397,13 @@ final class MiniDetails {
  }
  boolean portrait = a.windowWidth() < a.windowHeight();
  if (w < a.dp(120) || h < a.dp(68)) {
- // 1.9.234：rect 过小/取不到 → 兜底 40% 窗口宽、16:9、16dp 边距
- int fallbackW = Math.round(a.windowWidth() * 0.40f);
- if (portrait) fallbackW = Math.min(fallbackW, Math.round(a.windowWidth() * 0.92f));
- w = Math.max(a.dp(120), fallbackW);
- h = Math.max(a.dp(68), Math.round(w * 9f / 16f));
+ // 1.9.240：rect 过小/取不到 → 海报兜底（窗口宽-32dp、16:9、16dp 边距），绝不允许不显示
+ w = Math.max(a.dp(160), a.windowWidth() - a.dp(32));
+ h = Math.max(a.dp(90), Math.round(w * 9f / 16f));
  x = a.dp(16);
  y = a.dp(16);
  clamped = true;
- source = source.startsWith("cover") ? "cover-too-small" : "fallback-40pct";
- AppLog.i(
- "MiniMobile",
- "fallback=40pct w="
- + w
- + " h="
- + h
- + " visible="
- + (w > 0 && h > 0)
- + " portrait="
- + portrait);
+ source = "fallback-poster";
  }
  if (w > 0 && h > 0) {
  cachedCover[0] = x;
@@ -421,6 +427,30 @@ final class MiniDetails {
  } catch (Throwable ignored) {
  }
  }
+ AppLog.i(
+ "MiniMobile",
+ "poster="
+ + cx
+ + ","
+ + cy
+ + ","
+ + (cx + cw)
+ + ","
+ + (cy + ch)
+ + " rect="
+ + x
+ + ","
+ + y
+ + ","
+ + (x + w)
+ + ","
+ + (y + h)
+ + " visible="
+ + (w > 0 && h > 0)
+ + " playing="
+ + a.playing
+ + " source="
+ + source);
  AppLog.i(
  "MiniMobile",
  "cover="

@@ -1064,6 +1064,20 @@ final class PlaybackController {
  if (miniLayer.getWidth() <= 0 || miniLayer.getHeight() <= 0) {
  a.miniDetails.refreshRect();
  AppLog.i("Mini", "restore retry rect reason=zero-size");
+ // 1.9.240：再给两次 300ms 校正机会
+ for (int i = 0; i < 2; i++) {
+ final int pass = i;
+ a.ui.postDelayed(
+ () -> {
+ if (a.miniMode && a.playbackLayer != null
+ && (a.playbackLayer.getWidth() <= 0 || a.playbackLayer.getHeight() <= 0)
+ && a.miniDetails != null) {
+ a.miniDetails.refreshRect();
+ AppLog.i("Mini", "restore retry pass=" + (pass + 1));
+ }
+ },
+ 300L * (pass + 1));
+ }
  }
  AppLog.i(
  "Mini",

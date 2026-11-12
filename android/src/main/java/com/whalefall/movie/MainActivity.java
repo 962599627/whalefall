@@ -1867,6 +1867,32 @@ public final class MainActivity extends Activity {
  }
  }
 
+ /** 1.9.241：TV 小窗/电视交互判定（无 LEANBACK 的盒子 isTvDevice=false 也要覆盖）。 */
+ boolean tvMiniMode() {
+ try {
+ if (isTvDevice()) return true;
+ if (remoteFocusMode || keyFocusMode) return true;
+ android.content.res.Configuration cfg = getResources().getConfiguration();
+ return cfg.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+ && cfg.smallestScreenWidthDp >= 960;
+ } catch (Throwable ignored) {
+ return false;
+ }
+ }
+
+ String tvMiniReason() {
+ if (isTvDevice()) return "tv";
+ if (remoteFocusMode) return "remote";
+ if (keyFocusMode) return "key";
+ try {
+ android.content.res.Configuration cfg = getResources().getConfiguration();
+ if (cfg.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+ && cfg.smallestScreenWidthDp >= 960) return "landscape960";
+ } catch (Throwable ignored) {
+ }
+ return "none";
+ }
+
  void applyWallpaper(android.widget.FrameLayout target) {
  if (target == null) return;
  if (SafeMode.enabled(this)) {
