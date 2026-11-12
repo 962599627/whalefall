@@ -39,6 +39,12 @@ final class VideoWallpaper extends FrameLayout {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final boolean useExo = Build.VERSION.SDK_INT >= 26;
     private boolean released, moving, firstFrame;
+    /** 1.9.220：性能观测。 */
+    private String codecName = "?";
+    private int videoW = 0, videoH = 0;
+    private int lastDropLog;
+    /** 1.9.220：宿主暂停期间不要被 attach 自动恢复。 */
+    private boolean pausedByHost;
     /** 1.9.180：失败只本次回退，可重试；Surface 每次页面挂载都重建。 */
     private boolean failed, surfaceRecreated;
     private final Runnable firstFrameTimeout =
@@ -129,7 +135,41 @@ final class VideoWallpaper extends FrameLayout {
 
                     @Override
                     public void onPlayerError(androidx.media3.common.PlaybackException error) {
+                        AppLog.i(
+                                "Wallpaper",
+                                "video error codec="
+                                        + codecName
+                                        + " reason="
+                                        + error.getErrorCodeName());
                         fail("exo:" + error.getErrorCodeName());
+                    }
+                });
+        // 1.9.220：解码器/掉帧观测
+        player.addAnalyticsListener(
+                new androidx.media3.exoplayer.analytics.AnalyticsListener() {
+                    @Override
+                    public void onVideoDecoderInitialized(
+                            EventTime time,
+                            String name,
+                            long completed,
+                            long duration) {
+                        codecName = name;
+                        perfLog("playing", "decoder");
+                    }
+
+                    @Override
+                    public void onDroppedVideoFrames(
+                            EventTime time, int dropped, long elapsedMs) {
+                        long now = android.os.SystemClock.elapsedRealtime();
+                        if (now - lastDropLog >= 5000) {
+                            lastDropLog = (int) now;
+                            AppLog.i(
+                                    "Wallpaper",
+                                    "perf codec="
+                                            + codecName
+                                            + " state=playing dropped="
+                                            + dropped);
+                        }
                     }
                 });
         view.setPlayer(player);
@@ -140,6 +180,39 @@ final class VideoWallpaper extends FrameLayout {
         } catch (Throwable error) {
             fail("exo-prepare:" + error.getClass().getSimpleName());
         }
+    }
+
+    /** 1.9.220：壁纸性能日志。 */
+    private void perfLog(String state, String reason) {
+        try {
+            if (player != null) {
+                androidx.media3.common.VideoSize vs = player.getVideoSize();
+                videoW = vs.width;
+                videoH = vs.height;
+            }
+        } catch (Throwable ignored) {
+        }
+        boolean hw =
+                codecName != null
+                        && !codecName.startsWith("c2.android")
+                        && !codecName.startsWith("OMX.google")
+                        && !codecName.startsWith("c2.google");
+        AppLog.i(
+                "Wallpaper",
+                "perf codec="
+                        + (hw ? "hw" : "sw")
+                        + " name="
+                        + codecName
+                        + " size="
+                        + videoW
+                        + "x"
+                        + videoH
+                        + " state="
+                        + state
+                        + " reason="
+                        + reason
+                        + " sdk="
+                        + Build.VERSION.SDK_INT);
     }
 
     private void addSurfaceView() {
@@ -308,7 +381,9 @@ final class VideoWallpaper extends FrameLayout {
     /** 1.9.179：视频播放时暂停动态壁纸，省 CPU/内存。 */
     void pause() {
         if (released) return;
+        pausedByHost = true;
         AppLog.i("Wallpaper", "video engine=" + (useExo ? "exo" : "mediaplayer") + " action=pause");
+        perfLog("paused", "pause");
         try {
             if (player != null) player.setPlayWhenReady(false);
         } catch (Throwable ignored) {
@@ -540,7 +615,9 @@ final class VideoWallpaper extends FrameLayout {
 
     void resume() {
         if (released) return;
+        pausedByHost = false;
         AppLog.i("Wallpaper", "video engine=" + (useExo ? "exo" : "mediaplayer") + " action=resume");
+        perfLog("playing", "resume");
         try {
             if (player != null) player.setPlayWhenReady(true);
         } catch (Throwable ignored) {
@@ -589,8 +666,8 @@ final class VideoWallpaper extends FrameLayout {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        if (!released && player != null) player.setPlayWhenReady(true);
-        if (!released && mediaPlayer != null && !mediaPlayer.isPlaying()) {
+        if (!released && !pausedByHost && player != null) player.setPlayWhenReady(true);
+        if (!released && !pausedByHost && mediaPlayer != null && !mediaPlayer.isPlaying()) {
             try {
                 mediaPlayer.start();
             } catch (Throwable ignored) {
