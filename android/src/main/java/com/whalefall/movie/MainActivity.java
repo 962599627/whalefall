@@ -497,6 +497,8 @@ public final class MainActivity extends Activity {
  String episodeFocusLine = "";
  final EpisodeSelection selection = new EpisodeSelection();
  boolean player, home;
+ /** 1.9.167：仅详情页允许小窗保留播放。 */
+ boolean detail;
  HomeScreen.State homeState;
  HomeScreen retainedHome;
 
@@ -896,7 +898,9 @@ public final class MainActivity extends Activity {
  crossSearch(Cms.searchTitle(v));
  return;
  }
- open(new Screen(() -> detail(s, v)), true);
+ Screen detailScreen = new Screen(() -> detail(s, v));
+ detailScreen.detail = true;
+ open(detailScreen, true);
  }
 
  /**
@@ -1641,8 +1645,19 @@ public final class MainActivity extends Activity {
  }
  stopWeb();
  stopMagnet();
- // 1.9.57：小窗/全屏浮层下的详情重建不能释放或打断正在播放的 player
- boolean keepPlayback = miniMode || expandedOverDetail;
+ // 1.9.167：只有详情页小窗/全屏浮层重建时保留播放器（其它页面一律释放）
+ boolean keepPlayback =
+ (miniMode || expandedOverDetail) && current != null && current.detail;
+ AppLog.i(
+ "Player",
+ "policy target="
+ + (current == null
+ ? "null"
+ : (current.detail ? "detail" : current.player ? "player" : current.home ? "home" : "other"))
+ + " keep="
+ + keepPlayback
+ + " mini="
+ + miniMode);
  if (!keepPlayback) {
  // 1.9.106：页面重建统一释放（手机与电视一致）
  releasePlaybackOnPageChange("page", false);
@@ -2968,6 +2983,9 @@ public final class MainActivity extends Activity {
  PlaybackController.finishSeek(this, commit);
  }
 
+ /** 1.9.167：清空后首页历史区显示「暂无观看记录」空态。 */
+ boolean historyJustCleared;
+
  /** 1.9.122：统一清理观看历史 + 直播上次记录 + 首页历史缓存，并立即重绘。 */
  int clearAllHistory() {
  int removed = 0;
@@ -2982,12 +3000,27 @@ public final class MainActivity extends Activity {
  .apply();
  AppLog.i("History", "clear scope=home+live removed=" + removed);
  toast("已清空观看历史与直播记录");
+ // 1.9.167：作废首页历史缓存并立即重绘（含空态）
+ historyJustCleared = true;
  try {
- if (current != null && current.home) {
- renderReturn(current);
- } else {
- refresh();
+ if (current != null) {
+ current.retainedHome = null;
+ current.mobileHome = null;
  }
+ if (back != null)
+ for (Screen s : back) {
+ s.retainedHome = null;
+ s.mobileHome = null;
+ }
+ if (current != null && current.home) renderReturn(current);
+ else refresh();
+ ui.postDelayed(
+ () -> {
+ View all = root == null ? null : root.findViewWithTag("home-history-all");
+ if (all != null && all.isShown()) all.requestFocus();
+ AppLog.i("History", "clear cards=0 focus=home-history-all");
+ },
+ 200);
  } catch (Throwable ignored) {
  }
  return removed;
@@ -3201,6 +3234,51 @@ public final class MainActivity extends Activity {
  * 控制条隐藏时按左/右键：直接相对 seek ±10 秒，不再「先唤出控制条再聚焦进度条」。
  * 长按 repeat>0 只更新提示气泡、不重复 seek（避免频繁 seek 触发解码器风暴/卡顿）。
  */
+ /** 1.9.167：每 5 分钟打印内存/缓冲观测日志。 */
+ Runnable memoryLogTask;
+
+ void startMemoryLog() {
+ if (memoryLogTask != null) return;
+ memoryLogTask =
+ () -> {
+ logMemory();
+ ui.postDelayed(memoryLogTask, 5 * 60_000L);
+ };
+ ui.postDelayed(memoryLogTask, 5 * 60_000L);
+ AppLog.i("Memory", "observe interval=5min start=true");
+ }
+
+ void logMemory() {
+ try {
+ int pssMb = -1;
+ android.app.ActivityManager am =
+ (android.app.ActivityManager) getSystemService(android.content.Context.ACTIVITY_SERVICE);
+ if (am != null) {
+ android.os.Debug.MemoryInfo[] info =
+ am.getProcessMemoryInfo(new int[] {android.os.Process.myPid()});
+ if (info != null && info.length > 0) pssMb = info[0].getTotalPss() / 1024;
+ }
+ boolean lowRam = am != null && am.isLowRamDevice();
+ int cacheMb = imageCacheBytes() / (1024 * 1024);
+ int bufferSec = lowRam ? 20 : 15;
+ int wideMb = Runtime.getRuntime().maxMemory() <= 256L * 1024 * 1024 ? 6 : 12;
+ AppLog.i(
+ "Memory",
+ "cache="
+ + cacheMb
+ + "MB buffer="
+ + bufferSec
+ + "s wide="
+ + wideMb
+ + "MB pss="
+ + (pssMb < 0 ? "?" : pssMb + "MB")
+ + " lowRam="
+ + lowRam);
+ } catch (Throwable error) {
+ AppLog.w("Memory", "observe failed", error);
+ }
+ }
+
  boolean handleHiddenSeekKey(KeyEvent event) {
  int code = event.getKeyCode();
  if (code != KeyEvent.KEYCODE_DPAD_LEFT && code != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
@@ -3613,6 +3691,7 @@ public final class MainActivity extends Activity {
  scheduleFocusAudit();
  ui.postDelayed(this::cleanupOldCrashLogs, 1500);
  ui.postDelayed(this::purgeUnsupportedVideoWallpaper, 1200);
+ startMemoryLog();
  if (bgPlayback) {
  bgPlayback = false;
  // 1.9.53：回到前台继续播放，不释放音频焦点/不暂停，仅撤掉常驻通知

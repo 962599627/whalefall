@@ -1392,6 +1392,12 @@ final class FileManagerScreen {
  exitSelection();
  refresh();
  } else if (entry.video) FileManagerCore.playLocal(a, entry.file);
+ else if (entry.name != null
+ && entry.name.toLowerCase(java.util.Locale.ROOT).endsWith(".apk")) {
+ // 1.9.167：本地 APK 走多路安装回退
+ AppLog.i("FileManager", "apk install path=" + entry.file.getAbsolutePath());
+ UpdateScreen.installApkWithFallback(a, entry.file, "file-manager");
+ }
  else if (TextViewerScreen.isImageName(entry.name))
  ImageViewerScreen.show(a, entry.file);
  else if (TextViewerScreen.isTextName(entry.name))
@@ -1423,9 +1429,13 @@ final class FileManagerScreen {
  private void showLocalFileMenu(final FileManagerCore.LocalEntry entry) {
  final boolean video = entry.video;
  final boolean image = TextViewerScreen.isImageName(entry.name);
+ final boolean apk =
+ entry.name != null
+ && entry.name.toLowerCase(java.util.Locale.ROOT).endsWith(".apk");
  java.util.List<String> labels = new java.util.ArrayList<>();
  if (video) labels.add("设为动态壁纸");
  if (image) labels.add("设为壁纸");
+ if (apk) labels.add("安装");
  labels.add(video ? "播放" : "查看");
  labels.add("重命名");
  labels.add("删除");
@@ -1444,6 +1454,9 @@ final class FileManagerScreen {
  } else if ("查看".equals(choice)) {
  if (image) ImageViewerScreen.show(a, entry.file);
  else TextViewerScreen.show(a, entry.file);
+ } else if ("安装".equals(choice)) {
+ AppLog.i("FileManager", "apk install path=" + entry.file.getAbsolutePath());
+ UpdateScreen.installApkWithFallback(a, entry.file, "file-manager-menu");
  } else if ("重命名".equals(choice)) {
  renameSingle(entry.file);
  } else if ("删除".equals(choice)) {

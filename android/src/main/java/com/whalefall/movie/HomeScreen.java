@@ -846,7 +846,34 @@ final class HomeScreen {
 
  void historySection() {
  List<WatchHistory.Entry> entries = WatchHistory.collapsed(a.watchHistory());
- if (entries.isEmpty()) return;
+ if (entries.isEmpty()) {
+ // 1.9.167：清空后显示空态（仅一次，避免首次安装也占位）
+ if (!a.historyJustCleared) return;
+ a.historyJustCleared = false;
+ LinearLayout emptySection = a.vertical();
+ emptySection.setTag("home-history-section");
+ a.body.addView(emptySection);
+ LinearLayout emptyHeading = a.row();
+ emptyHeading.setGravity(Gravity.CENTER_VERTICAL);
+ TextView emptyTitle = a.text("历史记录", 17, MainActivity.WHITE);
+ emptyTitle.setTypeface(null, Typeface.BOLD);
+ emptyHeading.addView(emptyTitle, new LinearLayout.LayoutParams(0, -2, 1f));
+ allHistory =
+ pill(
+ "全部历史 ›",
+ "home-history-all",
+ () -> a.open(new MainActivity.Screen(a::historyPage), true));
+ emptyHeading.addView(
+ allHistory, new LinearLayout.LayoutParams(-2, a.dp(Math.round(30 * navScale))));
+ emptySection.addView(emptyHeading, new LinearLayout.LayoutParams(-1, -2));
+ a.gap(emptySection, 6);
+ TextView empty = a.text("暂无观看记录", 13, 0xff8d9cb6);
+ empty.setTag("home-history-empty");
+ empty.setPadding(a.dp(4), a.dp(10), a.dp(4), a.dp(10));
+ emptySection.addView(empty, new LinearLayout.LayoutParams(-1, -2));
+ AppLog.i("History", "home cards=0 empty=true");
+ return;
+ }
  boolean compactStack = a.useBottomDock();
  LinearLayout section = a.vertical();
  section.setTag("home-history-section");
