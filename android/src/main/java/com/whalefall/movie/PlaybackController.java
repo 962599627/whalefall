@@ -1027,6 +1027,13 @@ final class PlaybackController {
  a.current = a.back.pop();
  a.renderReturn(a.current);
  }
+ // 1.9.238：从小窗放大后再返回时，current 仍是全屏播放页 → 先回详情页
+ if (overDetail && a.current != null && a.current.player && !a.back.isEmpty()) {
+ a.current = a.back.pop();
+ a.renderReturn(a.current);
+ overDetail = false;
+ AppLog.i("Mini", "restore after-expand render=detail");
+ }
  View layer = a.playbackLayer;
  if (layer != null && a.root != null && layer.getParent() != a.root) {
  if (layer.getParent() instanceof ViewGroup)
@@ -1048,6 +1055,26 @@ final class PlaybackController {
  if (!overDetail && a.current != null) a.restore(a.current);
  // 1.9.58：由 MiniDetails 先测 hero 矩形再隐藏，保证小窗与海报区域一致
  a.miniDetails = new MiniDetails(a);
+ // 1.9.238：小窗恢复自检（尺寸=0/不可见时重算）
+ a.ui.postDelayed(
+ () -> {
+ if (!a.miniMode || a.miniDetails == null) return;
+ View layer = a.playbackLayer;
+ if (layer == null) return;
+ if (layer.getWidth() <= 0 || layer.getHeight() <= 0) {
+ a.miniDetails.refreshRect();
+ AppLog.i("Mini", "restore retry rect reason=zero-size");
+ }
+ AppLog.i(
+ "Mini",
+ "restore after-expand rect="
+ + (layer == null ? "null" : layer.getWidth() + "x" + layer.getHeight())
+ + " visible="
+ + (a.miniDetails != null && a.miniDetails.page != null && a.miniDetails.page.isShown())
+ + " playing="
+ + a.playing);
+ },
+ 400);
  // 1.9.235：返回详情小窗 → 恢复动态壁纸
  if (a.videoWallpaper != null) {
  a.videoWallpaper.ensureDecoder("mini");
