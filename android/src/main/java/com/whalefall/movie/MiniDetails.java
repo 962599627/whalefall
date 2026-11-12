@@ -45,9 +45,9 @@ final class MiniDetails {
  UiCompat.setClipToOutline(a.playbackLayer, true);
  android.graphics.drawable.GradientDrawable frame =
  new android.graphics.drawable.GradientDrawable();
- frame.setColor(0xff000000);
+ frame.setColor(0x00000000);
  frame.setCornerRadius(radius);
- frame.setStroke(a.dp(1), 0x66ffffff);
+ // 1.9.213：去掉白色细边，仅聚焦时由粉框绘制
  a.playbackLayer.setBackground(frame);
  a.playbackLayer.setOutlineProvider(
  new android.view.ViewOutlineProvider() {
@@ -277,36 +277,38 @@ final class MiniDetails {
  int y = Math.max(0, hv[1] - rv[1]);
  int w = hero.getWidth();
  int h = hero.getHeight();
- // 16:9 内居中裁切（与 hero 同宽，高度按比例；超出则按高度反算）
- int targetH = Math.round(w * 9f / 16f);
- if (targetH > h) {
- targetH = h;
- w = Math.round(h * 16f / 9f);
- }
+ // 1.9.213：容器与 hero 完全同矩形，视频 center-crop 铺满
  FrameLayout.LayoutParams vlp =
- new FrameLayout.LayoutParams(w, targetH, Gravity.TOP | Gravity.LEFT);
+ new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
  vlp.leftMargin = x;
  vlp.topMargin = y;
  a.playbackLayer.setLayoutParams(vlp);
  FrameLayout.LayoutParams plp =
- new FrameLayout.LayoutParams(w, targetH, Gravity.TOP | Gravity.LEFT);
+ new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
  plp.leftMargin = x;
  plp.topMargin = y;
  page.setLayoutParams(plp);
+ if (a.player != null) {
+ try {
+ a.player.setScaleMode(true);
+ } catch (Throwable ignored) {
+ }
+ }
  PlaybackController.hideDetailHero(a, true);
  a.playbackLayer.bringToFront();
  page.bringToFront();
  AppLog.i(
  "Mini",
- "align=hero rect="
+ "rect="
  + x
  + ","
  + y
  + " "
  + w
  + "x"
- + targetH
- + " source=159");
+ + h
+ + " hero=true");
+ AppLog.i("Mini", "videoScale=centerCrop");
  } else if (attempt < 8) {
  a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 100);
  }

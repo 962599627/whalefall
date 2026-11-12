@@ -770,6 +770,22 @@ public class MoviePlayer {
  });
  }
 
+ /** 1.9.213：小窗 center-crop / 全屏恢复 fit。 */
+ public void setScaleMode(boolean crop) {
+ onMain(
+ () -> {
+ if (released) return null;
+ try {
+ exo.setVideoScalingMode(
+ crop
+ ? androidx.media3.common.C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+ : androidx.media3.common.C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
+ } catch (Throwable ignored) {
+ }
+ return null;
+ });
+ }
+
  public void seekTo(int ms) {
  onMain(
  () -> {

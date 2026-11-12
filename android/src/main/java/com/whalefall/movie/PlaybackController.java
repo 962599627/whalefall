@@ -1030,6 +1030,14 @@ final class PlaybackController {
  if (!a.miniMode) return;
  AppLog.i("Mini", "exit reason=expand");
  a.miniMode = false;
+ // 1.9.213：全屏恢复 fit 缩放
+ if (a.player != null) {
+ try {
+ a.player.setScaleMode(false);
+ AppLog.i("Mini", "videoScale=fit");
+ } catch (Throwable ignored) {
+ }
+ }
  a.expandedOverDetail = true;
  if (a.miniDetails != null) {
  a.miniDetails.remove();
