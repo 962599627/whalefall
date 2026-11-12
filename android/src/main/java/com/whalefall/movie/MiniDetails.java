@@ -269,8 +269,9 @@ final class MiniDetails {
  /** 1.9.211：把视频/控制层对齐到详情 hero 图片矩形（保持 16:9 不拉伸）。 */
  private void applyHeroRect(int attempt) {
  if (!a.miniMode || a.root == null) return;
- // 1.9.226：手机/平板小窗严格等于封面/hero 矩形（统一 window 坐标系）
- if (!a.isTvDevice()) {
+ // 1.9.233：TV 与手机/平板统一走封面矩形 + clamp
+ boolean unifiedMini = true;
+ if (unifiedMini) {
  int w = 0, h = 0, x = a.dp(16), y = a.dp(16);
  int cx = 0, cy = 0, cw = 0, ch = 0, rx = 0, ry = 0;
  String source = "fallback";
@@ -401,7 +402,9 @@ final class MiniDetails {
  + " source="
  + source
  + " clamp="
- + clamped);
+ + clamped
+ + " tv="
+ + a.isTvDevice());
  PlaybackController.hideDetailHero(a, true);
  a.playbackLayer.bringToFront();
  page.bringToFront();
