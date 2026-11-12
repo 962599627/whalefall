@@ -37,6 +37,9 @@ final class UpdateManager {
  volatile String message = "尚未检查更新";
  volatile boolean busy;
  volatile int percent = -1;
+ /** 1.9.210：下载进度（合并 9 段为总进度）。 */
+ volatile long downloadedBytes, totalBytes, speedBps;
+ private long lastProgressAt;
  private volatile boolean cancel;
  private volatile HttpURLConnection activeConnection;
  private Runnable listener;
@@ -359,18 +362,46 @@ final class UpdateManager {
  + (urls.length > 0 ? urls[0] : r.url));
  busy = true;
  cancel = false;
+ downloadedBytes = 0;
+ totalBytes = r.targetSize(variant);
+ speedBps = 0;
+ lastProgressAt = android.os.SystemClock.elapsedRealtime();
+ AppLog.i(
+ "Update",
+ "downloading start variant="
+ + variant
+ + " size="
+ + totalBytes
+ + " version="
+ + r.version);
  worker.execute(
  () -> {
  try {
  downloadFile(r);
+ AppLog.i(
+ "Update",
+ "done version=" + r.version + " bytes=" + downloadedBytes + "/" + totalBytes + " pct=" + percent);
  } catch (InterruptedIOException e) {
  message = cancel ? "下载已取消" : "下载超时，已保留进度，可再次下载继续";
+ AppLog.i("Update", "failed reason=interrupted cancel=" + cancel);
  } catch (Exception e) {
  message = "下载或校验失败，未安装。请重试或从官方发布页下载";
+ AppLog.i(
+ "Update",
+ "failed reason=" + e.getClass().getSimpleName() + " msg=" + e.getMessage());
  AppLog.w("UpdateManager", "Download failed", e);
  } finally {
  busy = false;
  percent = -1;
+ if (cancel) {
+ try {
+ new File(folder(), "release.part").delete();
+ prefs.edit().remove("partial_sha").apply();
+ } catch (Throwable ignored) {
+ }
+ downloadedBytes = 0;
+ speedBps = 0;
+ }
  changed();
  }
  });
@@ -501,11 +532,29 @@ final class UpdateManager {
  if (!unknownSize && total > size) throw new IOException("limit");
  out.write(bytes, 0, n);
  if (!unknownSize) {
+ totalBytes = size;
+ downloadedBytes = total;
+ long nowMs = android.os.SystemClock.elapsedRealtime();
+ if (nowMs - lastProgressAt >= 500) {
+ long deltaMs = Math.max(1, nowMs - lastProgressAt);
+ speedBps = (long) (n * 1000.0 / deltaMs);
+ lastProgressAt = nowMs;
  int now = (int) (total * 100 / size);
  if (now != last) {
  last = now;
  percent = now;
+ AppLog.i(
+ "Update",
+ "progress pct="
+ + percent
+ + " bytes="
+ + downloadedBytes
+ + "/"
+ + totalBytes
+ + " speed="
+ + speedBps);
  changed();
+ }
  }
  }
  }

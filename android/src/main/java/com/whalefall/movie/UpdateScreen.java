@@ -18,6 +18,11 @@ final class UpdateScreen {
  TextView status;
  LinearLayout variantBox;
  TextView variantTitle;
+ /** 1.9.210：下载进度 UI。 */
+ LinearLayout progressBox;
+ android.widget.ProgressBar progressBar;
+ TextView progressText;
+ TextView retryBtn;
  /** 1.9.179：检测到新版只弹选择包体窗口，选中后才下载。 */
  String promptedVersion = "";
  boolean chooseDialogOpen;
@@ -50,6 +55,43 @@ final class UpdateScreen {
  a.body.addView(variantTitle);
  variantBox = a.vertical();
  a.body.addView(variantBox);
+ // 1.9.210：下载进度卡片（百分比/大小/速度/进度条 + 取消/重试）
+ progressBox = a.vertical();
+ progressBox.setVisibility(View.GONE);
+ progressBox.setPadding(a.dp(16), a.dp(10), a.dp(16), a.dp(10));
+ progressBox.setBackground(MobileDetailScreen.glassBg(a, 0x14ffffff, 0x24ffffff, 12));
+ a.body.addView(progressBox);
+ progressBar = new android.widget.ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal);
+ progressBar.setMax(100);
+ try {
+ progressBar.setProgressTintList(
+ android.content.res.ColorStateList.valueOf(0xFFFF8FB1));
+ } catch (Throwable ignored) {
+ }
+ progressBox.addView(
+ progressBar, new LinearLayout.LayoutParams(-1, a.dp(6)));
+ progressText = a.text("", 12, MainActivity.WHITE);
+ progressText.setPadding(0, a.dp(6), 0, 0);
+ progressBox.addView(progressText);
+ retryBtn = a.text("重试下载", 12, 0xFFFFB3C8);
+ retryBtn.setFocusable(true);
+ retryBtn.setFocusableInTouchMode(true);
+ retryBtn.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+ retryBtn.setOnClickListener(v -> updates.download());
+ retryBtn.setVisibility(View.GONE);
+ progressBox.addView(retryBtn);
+ TextView cancelBtn = a.text("取消下载", 12, MainActivity.MUTED);
+ cancelBtn.setFocusable(true);
+ cancelBtn.setFocusableInTouchMode(true);
+ cancelBtn.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+ cancelBtn.setOnClickListener(
+ v -> {
+ if (updates.busy) {
+ updates.cancel();
+ AppLog.i("Update", "cancel requested from progress");
+ }
+ });
+ progressBox.addView(cancelBtn);
  settings.link("检查更新", "当前使用正式版更新渠道", "update-check", () -> updates.check(true));
  settings.link(
  "下载新版",
@@ -124,7 +166,52 @@ final class UpdateScreen {
  + "\n"
  + modeName(updates.mode()));
  rebuildVariants();
+ updateProgressUi();
  maybeChooseBodyDialog();
+ }
+
+ /** 1.9.210：实时进度（9 段合并为总进度，500ms 刷新）。 */
+ void updateProgressUi() {
+ try {
+ if (progressBox == null) return;
+ boolean active = updates.busy && updates.percent >= 0;
+ if (active) {
+ progressBox.setVisibility(View.VISIBLE);
+ progressBar.setProgress(updates.percent);
+ long total = updates.totalBytes;
+ long done = updates.downloadedBytes;
+ double speedMb = updates.speedBps / 1048576.0;
+ progressText.setText(
+ updates.percent
+ + "%  "
+ + sizeText(done)
+ + " / "
+ + sizeText(total)
+ + "  "
+ + String.format(java.util.Locale.US, "%.1f", speedMb)
+ + " MB/s  · 正在下载（可取消）");
+ retryBtn.setVisibility(View.GONE);
+ return;
+ }
+ if (updates.ready()) {
+ progressBox.setVisibility(View.VISIBLE);
+ progressBar.setProgress(100);
+ progressText.setText("下载完成，点击安装");
+ retryBtn.setVisibility(View.GONE);
+ return;
+ }
+ String msg = updates.message == null ? "" : updates.message;
+ boolean failed = msg.contains("失败") || msg.contains("超时") || msg.contains("取消");
+ if (failed) {
+ progressBox.setVisibility(View.VISIBLE);
+ progressBar.setProgress(0);
+ progressText.setText(msg);
+ retryBtn.setVisibility(View.VISIBLE);
+ } else {
+ progressBox.setVisibility(View.GONE);
+ }
+ } catch (Throwable ignored) {
+ }
  }
 
  /** 1.9.179：检测到新版后弹「选择安装包」窗口，不选不下载。 */
