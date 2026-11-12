@@ -52,6 +52,9 @@ def main():
         from prepare_android_platform import prepare
         prepare()
     dependencies=[];native_files={};native_files_mobile={};resource_dirs=[];packages=[]
+    _tbs=ROOT/'libs/tbssdk-44286.jar'
+    if _tbs.is_file():
+        dependencies.append(_tbs)
     items=json.loads((ROOT/'android/dependencies.json').read_text(encoding='utf-8'))
     for filename in ('media-dependencies.json','torrent-dependencies.json','decoder-dependencies.json'):
         manifest=ROOT/'android'/filename
