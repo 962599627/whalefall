@@ -145,8 +145,7 @@ final class MiniDetails {
  // 1.9.56：保证视频层在详情海报之上，再叠加控制层
  a.playbackLayer.bringToFront();
  page.bringToFront();
- // 1.9.58：小窗精确覆盖 hero 海报矩形
- // 1.9.207：固定左侧小窗，不再跟随 hero 海报放大
+ // 1.9.211：只对齐详情页左侧 hero 图片区域（沿用原小窗布局/按钮样式）
  final int miniW = width;
  final int miniH = height;
  final int miniMargin = margin;
@@ -160,54 +159,17 @@ final class MiniDetails {
  page.bringToFront();
  AppLog.i(
  "Mini",
- "fixed size="
+ "enter size="
  + miniW
  + "x"
  + miniH
- + " left="
+ + " at="
  + miniMargin
- + " top="
- + miniMargin
- + " reason=player-back");
+ + ","
+ + miniMargin);
  });
- // 1.9.209：测左栏 hero 宽度，按 1.9.159 布局（左16/上16/宽=左栏-32/16:9）
- a.ui.postDelayed(
- () -> {
- if (!a.miniMode || a.root == null) return;
- View hero = a.root.findViewWithTag("detail-hero");
- int w =
- hero != null && hero.getWidth() > 0
- ? hero.getWidth()
- : Math.round(a.windowWidth() * 0.40f) - a.dp(32);
- int maxW = Math.round(a.windowWidth() * 0.55f);
- if (w > maxW) w = Math.round(a.windowWidth() * 0.40f) - a.dp(32);
- w = Math.max(a.dp(320), w - a.dp(32));
- int h = Math.round(w * 9f / 16f);
- FrameLayout.LayoutParams lp =
- new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
- lp.leftMargin = a.dp(16);
- lp.topMargin = a.dp(16);
- a.playbackLayer.setLayoutParams(lp);
- FrameLayout.LayoutParams pageLp2 =
- new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
- pageLp2.leftMargin = a.dp(16);
- pageLp2.topMargin = a.dp(16);
- page.setLayoutParams(pageLp2);
- a.playbackLayer.bringToFront();
- page.bringToFront();
- AppLog.i(
- "Mini",
- "layout left="
- + a.dp(16)
- + " top="
- + a.dp(16)
- + " w="
- + w
- + " h="
- + h
- + " source=159");
- },
- 300);
+ // 1.9.211：等详情 hero 布局完成后对齐到 hero rect
+ a.ui.postDelayed(() -> applyHeroRect(0), 120);
  a.ui.post(
  () -> {
  if (!a.miniMode) return;
@@ -279,7 +241,7 @@ final class MiniDetails {
  600);
  }
 
- /** 1.9.58：把视频/控制层对齐到详情 hero 海报矩形，并隐藏 hero 整层。 */
+ /** 1.9.211：把视频/控制层对齐到详情 hero 图片矩形（保持 16:9 不拉伸）。 */
  private void applyHeroRect(int attempt) {
  if (!a.miniMode || a.root == null) return;
  View hero = a.root.findViewWithTag("detail-hero");
@@ -292,13 +254,19 @@ final class MiniDetails {
  int y = Math.max(0, hv[1] - rv[1]);
  int w = hero.getWidth();
  int h = hero.getHeight();
+ // 16:9 内居中裁切（与 hero 同宽，高度按比例；超出则按高度反算）
+ int targetH = Math.round(w * 9f / 16f);
+ if (targetH > h) {
+ targetH = h;
+ w = Math.round(h * 16f / 9f);
+ }
  FrameLayout.LayoutParams vlp =
- new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
+ new FrameLayout.LayoutParams(w, targetH, Gravity.TOP | Gravity.LEFT);
  vlp.leftMargin = x;
  vlp.topMargin = y;
  a.playbackLayer.setLayoutParams(vlp);
  FrameLayout.LayoutParams plp =
- new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
+ new FrameLayout.LayoutParams(w, targetH, Gravity.TOP | Gravity.LEFT);
  plp.leftMargin = x;
  plp.topMargin = y;
  page.setLayoutParams(plp);
@@ -307,17 +275,15 @@ final class MiniDetails {
  page.bringToFront();
  AppLog.i(
  "Mini",
- "rect=hero x="
+ "align=hero rect="
  + x
- + " y="
+ + ","
  + y
- + " w="
+ + " "
  + w
- + " h="
- + h
- + " mobile="
- + (!a.isTvDevice())
- + " poster=hidden");
+ + "x"
+ + targetH
+ + " source=159");
  } else if (attempt < 8) {
  a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 100);
  }
