@@ -485,6 +485,7 @@ final class ImageLoader {
  }
  // 1.9.200：视频动态壁纸在同一个 Atmosphere 内叠加 TextureView
  if (a.isTvDevice()
+ && android.os.Build.VERSION.SDK_INT < 26
  && a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
  && VideoWallpaper.file(a).isFile()) startAtomVideo();
  atomActive = this;

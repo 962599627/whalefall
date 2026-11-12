@@ -1840,9 +1840,13 @@ public final class MainActivity extends Activity {
  // 绝不铺壁纸，否则壁纸层会插到 playbackLayer 之上盖住视频。
  if ("player-surface".equals(target.getTag())) return;
  final boolean staticEnabled = prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false);
- // 1.9.218：手机/平板恢复独立 VideoWallpaper 层；TV 仍由 Atmosphere 内部承载
+ // 1.9.219：新系统 TV/手机走独立 VideoWallpaper；老 TV(SDK<26) 走 Atmosphere 内嵌
+ final boolean tvNewRoute =
+ isTvDevice() && android.os.Build.VERSION.SDK_INT >= 26;
  final boolean videoEnabled =
- !isTvDevice() && videoWallpaperEnabled() && !videoWallpaperRetryPending;
+ (!isTvDevice() || tvNewRoute)
+ && videoWallpaperEnabled()
+ && !videoWallpaperRetryPending;
 
  // 1. base 渐变：没有就补（动态壁纸时不铺不透明底，否则会盖住 SurfaceView）
  boolean hasBase = false;
@@ -1893,6 +1897,7 @@ public final class MainActivity extends Activity {
  // 1.9.217：手机/平板动态壁纸——Atmosphere 内部承载视频，按 prefs 判断
  boolean wantAtomVideo =
  isTvDevice()
+ && android.os.Build.VERSION.SDK_INT < 26
  && prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
  && VideoWallpaper.file(this).isFile();
  if (wantAtomVideo && target.findViewWithTag("atom-video") == null) {
@@ -1938,18 +1943,25 @@ public final class MainActivity extends Activity {
  releaseWallpaper();
  }
 
- // 1.9.218：手机/平板动态壁纸层日志
- if (videoEnabled && videoWallpaper != null) {
- int layer = target.indexOfChild(videoWallpaper);
+ // 1.9.219：壁纸路线日志
+ String route =
+ isTvDevice()
+ ? (tvNewRoute ? "tv-new" : "tv-old")
+ : "mobile";
+ boolean routeValid =
+ videoEnabled
+ ? videoWallpaper != null && videoWallpaper.getParent() == target
+ : target.findViewWithTag(WALLPAPER_TAG) != null;
  AppLog.i(
  "Wallpaper",
- "mobile engine="
+ "route="
+ + route
+ + " engine="
  + (android.os.Build.VERSION.SDK_INT >= 26 ? "exo" : "mediaplayer")
- + " layer="
- + layer
+ + " sdk="
+ + android.os.Build.VERSION.SDK_INT
  + " valid="
- + (videoWallpaper.getParent() == target));
- }
+ + routeValid);
  // 1.9.202：所有页面统一背景板日志
  AppLog.i(
  "Wallpaper",
