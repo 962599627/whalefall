@@ -1836,8 +1836,8 @@ public final class MainActivity extends Activity {
  // 绝不铺壁纸，否则壁纸层会插到 playbackLayer 之上盖住视频。
  if ("player-surface".equals(target.getTag())) return;
  final boolean staticEnabled = prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false);
- final boolean videoEnabled =
- videoWallpaperEnabled() && !videoWallpaperRetryPending;
+ // 1.9.200：动态壁纸统一由 Atmosphere 内部承载，页面/窗口一律走静态路径
+ final boolean videoEnabled = false;
 
  // 1. base 渐变：没有就补（动态壁纸时不铺不透明底，否则会盖住 SurfaceView）
  boolean hasBase = false;
