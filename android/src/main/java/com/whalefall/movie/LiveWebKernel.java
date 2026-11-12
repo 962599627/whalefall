@@ -48,25 +48,29 @@ final class LiveWebKernel {
     return X5;
   }
 
-  /** 按设置创建 WebView；X5 失败自动回退系统并提示。 */
+  /** 按设置创建 WebView；X5 模式因缺少全屏/错误回调支持，统一回退系统 WebView 并提示。 */
   static Page create(MainActivity a, ErrorSink sink) {
     String mode = mode(a);
-    boolean wantX5 = X5.equals(mode) || (AUTO.equals(mode) && canUseX5());
-    if (wantX5) {
-      try {
-        Page page = createX5(a);
-        if (page != null) {
-          log(mode, true);
-          return page;
-        }
-      } catch (Throwable error) {
-        AppLog.w(TAG, "x5 create failed mode=" + mode, error);
-      }
-      a.toast("X5 内核不可用，已回退系统 WebView");
+    if (X5.equals(mode)) {
+      AppLog.i(TAG, "mode=x5 used=system reason=x5-client-unsupported");
+      a.toast("X5 内核暂不支持全屏与加载错误回调，已使用系统 WebView");
     }
-    Page page = createSystem(a, sink);
-    log(mode, false);
-    return page;
+    try {
+      Page page = createSystem(a, sink);
+      log(mode, false);
+      return page;
+    } catch (Throwable error) {
+      AppLog.w(TAG, "system webview create failed", error);
+      a.toast("网页组件不可用，请重启应用");
+      android.widget.TextView fallback = new android.widget.TextView(a);
+      fallback.setText("网页组件加载失败\n请返回后重试");
+      fallback.setGravity(android.view.Gravity.CENTER);
+      fallback.setTextColor(0xffffffff);
+      Page page = new Page(fallback, false, sink);
+      page.loadFailedStatic = true;
+      log(mode, false);
+      return page;
+    }
   }
 
   private static void log(String mode, boolean x5) {
@@ -99,9 +103,14 @@ final class LiveWebKernel {
     } catch (Throwable ignored) {
     }
     settings.setUserAgentString(UA);
-    final Page page = new Page(view, false);
+    final Page page = new Page(view, false, sink);
     view.setWebViewClient(
         new WebViewClient() {
+          @Override
+          public void onPageFinished(WebView wv, String url) {
+            page.markLoaded();
+          }
+
           @Override
           public void onReceivedError(
               WebView wv, int code, String desc, String failingUrl) {
@@ -208,21 +217,59 @@ final class LiveWebKernel {
     java.lang.reflect.Method x5LoadUrl, x5Reload, x5StopLoading, x5Destroy;
     private View fullscreenView;
     private WebChromeClient.CustomViewCallback fullscreenCallback;
+    // 1.9.148：加载超时兜底与错误提示
+    private ErrorSink sink;
+    private boolean loaded;
+    private Runnable loadTimeout;
+    boolean loadFailedStatic;
 
     Page(View view, boolean x5) {
+      this(view, x5, null);
+    }
+
+    Page(View view, boolean x5, ErrorSink sink) {
       this.view = view;
       this.x5 = x5;
+      this.sink = sink;
+    }
+
+    void markLoaded() {
+      loaded = true;
+      if (loadTimeout != null) {
+        view.removeCallbacks(loadTimeout);
+        loadTimeout = null;
+      }
+    }
+
+    private void reportLoadError(String description) {
+      if (loaded) return;
+      loaded = true;
+      if (loadTimeout != null) {
+        view.removeCallbacks(loadTimeout);
+        loadTimeout = null;
+      }
+      AppLog.i(TAG, "load error x5=" + x5 + " desc=" + description);
+      if (sink != null) sink.onLoadError(description);
+      else if (view.getContext() instanceof MainActivity)
+        ((MainActivity) view.getContext()).toast("网页加载失败");
     }
 
     void loadUrl(String url) {
       try {
         if (x5) {
           if (x5LoadUrl != null) x5LoadUrl.invoke(view, url);
-        } else {
+        } else if (view instanceof WebView) {
           ((WebView) view).loadUrl(url);
+        } else {
+          return;
         }
+        loaded = false;
+        if (loadTimeout != null) view.removeCallbacks(loadTimeout);
+        loadTimeout = () -> reportLoadError("timeout");
+        view.postDelayed(loadTimeout, 12000);
       } catch (Throwable error) {
         AppLog.w(TAG, "loadUrl failed x5=" + x5, error);
+        reportLoadError(error.getClass().getSimpleName());
       }
     }
 

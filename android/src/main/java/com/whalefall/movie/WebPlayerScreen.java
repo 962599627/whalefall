@@ -51,7 +51,12 @@ final class WebPlayerScreen {
     back.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
     back.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
     MobileDetailScreen.bindTouchFeedback(back);
-    back.setOnClickListener(v -> FileManagerScreen.resume(a));
+    back.setOnClickListener(
+        v -> {
+          // 1.9.148：返回前释放 WebView，避免页面残留
+          destroy();
+          FileManagerScreen.resume(a);
+        });
     actions.addView(back);
     TextView reload = a.text("重新加载", 12, UiTokens.ACCENT);
     reload.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));

@@ -45,10 +45,27 @@ final class WebLiveScreen {
     actions.addView(reload, reloadLp);
     a.body.addView(actions);
 
+    // 1.9.148：加载失败给出可点击的提示，而不是只打日志白屏
+    final TextView loadState = a.text("", 12, 0xffff6b81);
+    loadState.setPadding(a.dp(16), a.dp(6), a.dp(16), a.dp(6));
+    loadState.setVisibility(android.view.View.GONE);
+    loadState.setOnClickListener(
+        v -> {
+          if (page != null) {
+            loadState.setVisibility(android.view.View.GONE);
+            page.reload();
+          }
+        });
+    a.body.addView(loadState);
+
     page =
         LiveWebKernel.create(
             a,
-            description -> AppLog.i("WebLive", "error desc=" + description));
+            description -> {
+              AppLog.i("WebLive", "error desc=" + description);
+              loadState.setText("网页加载失败，点击重新加载");
+              loadState.setVisibility(android.view.View.VISIBLE);
+            });
     a.body.addView(
         page.view,
         new LinearLayout.LayoutParams(

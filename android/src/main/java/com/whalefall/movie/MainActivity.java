@@ -85,12 +85,20 @@ public final class MainActivity extends Activity {
  long lastBookmarkSave;
  final ArrayDeque<Screen> back = new ArrayDeque<>();
  final LruCache<String, Bitmap> images =
- // 1.9.147（1GB 内存优化）：海报内存缓存上限 64MB（原 10MB 太小，反复解码更卡）
- new LruCache<String, Bitmap>(64 * 1024 * 1024) {
+ // 1.9.148：海报缓存按 maxMemory/8 动态计算，低内存设备 24–32MB
+ new LruCache<String, Bitmap>(imageCacheBytes()) {
  protected int sizeOf(String k, Bitmap b) {
  return b.getByteCount();
  }
  };
+
+ /** 1.9.148：内存受限设备的海报缓存上限。 */
+ static int imageCacheBytes() {
+ long max = Runtime.getRuntime().maxMemory();
+ long cap = Math.min(64L * 1024 * 1024, max / 8);
+ if (max <= 256L * 1024 * 1024) cap = Math.min(cap, 24L * 1024 * 1024);
+ return (int) Math.max(16L * 1024 * 1024, cap);
+ }
  final HomeKeyTracker homeKeys = new HomeKeyTracker();
  Screen shortcutScreen;
  StartupIntro startupIntro;
@@ -243,6 +251,7 @@ public final class MainActivity extends Activity {
  remoteFocusMode = true;
  TvNav.setTouchFocusMode(this, true);
  TvNav.enableRemoteFocus(this, page);
+ if (playbackControls != null) playbackControls.refreshFocusMode();
  scheduleFocusAudit();
  } catch (Throwable error) {
  AppLog.w("Remote", "enterRemoteFocus failed", error);
@@ -3196,16 +3205,32 @@ public final class MainActivity extends Activity {
  int code = event.getKeyCode();
  if (code != KeyEvent.KEYCODE_DPAD_LEFT && code != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
  if (current == null || !current.player || controlsVisible || isLive()) return false;
+ // 1.9.148：小窗、未就绪/无时长时放行，去唤起控制条处理
+ if (miniMode) return false;
+ if (player == null || !prepared) return false;
+ int duration = 0;
+ try {
+ duration = Math.max(0, player.getDuration());
+ } catch (Throwable ignored) {
+ }
+ if (duration <= 0) return false;
  boolean forward = code == KeyEvent.KEYCODE_DPAD_RIGHT;
+ int delta = forward ? 10000 : -10000;
+ int base = 0;
+ try {
+ base = Math.max(0, player.getCurrentPosition());
+ } catch (Throwable ignored) {
+ }
+ int target = Math.max(0, Math.min(duration, base + delta));
  int action = event.getAction();
  if (action == KeyEvent.ACTION_UP) return true;
  if (action != KeyEvent.ACTION_DOWN) return false;
  if (event.getRepeatCount() == 0) {
- PlaybackController.seekRelative(this, forward ? 10000 : -10000);
+ PlaybackController.seekRelative(this, delta);
  AppLog.i(
  "Player",
  "key=" + (forward ? "right" : "left") + " hidden=true action=seek-relative");
- showPlayerSeekHint(forward, false);
+ showPlayerSeekHint(forward, false, target, duration);
  } else {
  AppLog.i(
  "Player",
@@ -3214,13 +3239,18 @@ public final class MainActivity extends Activity {
  + " hidden=true repeat="
  + event.getRepeatCount()
  + " action=hint-only");
- showPlayerSeekHint(forward, true);
+ showPlayerSeekHint(forward, true, target, duration);
  }
  return true;
  }
 
  /** 隐藏控制条时的独立提示气泡（不依赖控制条，控制条隐藏也能看到）。 */
  void showPlayerSeekHint(boolean forward, boolean holding) {
+ showPlayerSeekHint(forward, holding, -1, 0);
+ }
+
+ /** 1.9.148：提示气泡显示 seek 后的目标位置。 */
+ void showPlayerSeekHint(boolean forward, boolean holding, int target, int duration) {
  if (playbackLayer == null) return;
  try {
  if (playerSeekHint == null) {
@@ -3236,8 +3266,11 @@ public final class MainActivity extends Activity {
  playbackLayer.addView(playerSeekHint, lp);
  }
  String base = forward ? "快进 10 秒" : "快退 10 秒";
- int duration = player == null ? 0 : Math.max(0, player.getDuration());
- int position = player == null ? 0 : Math.max(0, player.getCurrentPosition());
+ if (duration <= 0) duration = player == null ? 0 : Math.max(0, player.getDuration());
+ int position =
+ target >= 0
+ ? target
+ : (player == null ? 0 : Math.max(0, player.getCurrentPosition()));
  if (duration > 0) {
  base +=
  " · "
@@ -3308,6 +3341,8 @@ public final class MainActivity extends Activity {
  }
  }
  if (focusKey && event.getAction() == KeyEvent.ACTION_DOWN && !keyFocusMode) { keyFocusMode = true;
+ // 1.9.148：按键模式晚于 dock 构建时，补挂底部按钮焦点链
+ if (playbackControls != null) playbackControls.refreshFocusMode();
  AppLog.i(
  "Remote",
  "keyFocus=on key="

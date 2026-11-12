@@ -166,21 +166,33 @@ public class MoviePlayer {
  selected.add(codec);
  return selected.isEmpty() ? raw : selected;
  });
- // 1.9.147（1GB 内存优化）：固定小缓冲 min 5s / max 15s / 起播 3s，
- // 不再跟随「网络缓冲 15~50s」设置，避免长时间播放后缓冲区/内存持续膨胀。
+ // 1.9.148：1GB 设备进一步收紧缓冲（低内存 8s/20s/4s），并按字节上限而不仅是时长
+ boolean lowRam =
+ ((android.app.ActivityManager)
+ this.context.getSystemService(android.content.Context.ACTIVITY_SERVICE))
+ .isLowRamDevice();
+ int minBuffer = lowRam ? 8000 : 5000;
+ int maxBuffer = lowRam ? 20000 : 15000;
+ int playBuffer = lowRam ? 4000 : 3000;
  exo =
  new ExoPlayer.Builder(this.context, renderers)
  .setLoadControl(
  new androidx.media3.exoplayer.DefaultLoadControl
  .Builder()
- .setBufferDurationsMs(5000, 15000, 3000, 3000)
- .setPrioritizeTimeOverSizeThresholds(true)
+ .setBufferDurationsMs(minBuffer, maxBuffer, playBuffer, playBuffer)
+ .setPrioritizeTimeOverSizeThresholds(false)
  .setTargetBufferBytes(32 * 1024 * 1024)
  .build())
  .setLooper(Looper.getMainLooper())
  .build();
- // 1.9.147：1GB 设备内存策略打点（缓冲 15s 上限 / 海报缓存 64MB / 壁纸 1280 降采样）
- AppLog.i("Memory", "buffer=15s cache=64MB wallpaper=sample");
+ AppLog.i(
+ "Memory",
+ "buffer="
+ + (maxBuffer / 1000)
+ + "s cache="
+ + (MainActivity.imageCacheBytes() / (1024 * 1024))
+ + "MB wallpaper=sample lowRam="
+ + lowRam);
  androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters.Builder
  trackParams =
  new androidx.media3.exoplayer.trackselection

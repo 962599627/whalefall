@@ -318,6 +318,8 @@ final class PlaybackControls {
  "next-episode", "episodes", "lines", "speed", "more"
  };
 
+ private LinearLayout dockRow;
+
  /** 底部图标行：宽屏均分铺满，窄屏横向滚动；控件是 vector 图标的 48dp ImageButton。 */
  private void rebuildToolDock(boolean wide) {
  dockOverlay.removeAllViews();
@@ -347,12 +349,18 @@ final class PlaybackControls {
  scroller.addView(row);
  dockOverlay.addView(scroller, new LinearLayout.LayoutParams(-1, a.dp(56)));
  }
+ dockRow = row;
  wireTvDockFocus(row);
+ }
+
+ /** 1.9.148：按键/遥控模式后置为 true 时，补挂底部按钮焦点链（不依赖 isTvDevice）。 */
+ void refreshFocusMode() {
+ if (dockRow != null) wireTvDockFocus(dockRow);
  }
 
  /** 1.9.61：TV 底部控制条按钮全部可聚焦 + 可见焦点描边 + 左右/上下焦点链。 */
  private void wireTvDockFocus(LinearLayout row) {
- if (a.isTvDevice()) {
+ if (a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode) {
  List<View> focusable = new ArrayList<>();
  for (int i = 0; i < row.getChildCount(); i++) {
  View child = row.getChildAt(i);

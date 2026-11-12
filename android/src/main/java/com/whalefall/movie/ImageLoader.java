@@ -423,10 +423,21 @@ final class ImageLoader {
  }
  }
 
+ /** 1.9.148：壁纸最大边（低内存 1080，其它 1280）。 */
+ private static int wallpaperMaxEdge(Context c) {
+ try {
+ android.app.ActivityManager am =
+ (android.app.ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
+ if (am != null && am.isLowRamDevice()) return 1080;
+ } catch (Throwable ignored) {
+ }
+ return WALLPAPER_MAX_EDGE;
+ }
+
  private Bitmap loadDefaultWallpaper() {
  try {
  // 1.9.126：旧机 4K 默认图直接解码会原生崩溃，按屏幕降采样
- int maxEdge = 1280;
+ int maxEdge = wallpaperMaxEdge(a);
  android.graphics.BitmapFactory.Options bounds =
  new android.graphics.BitmapFactory.Options();
  bounds.inJustDecodeBounds = true;
@@ -436,7 +447,7 @@ final class ImageLoader {
  int sample = 1;
  if (bounds.outWidth > 0 && bounds.outHeight > 0) {
  int edge = Math.max(bounds.outWidth, bounds.outHeight);
- while (edge / sample > maxEdge * 2) sample *= 2;
+ while (edge / sample > maxEdge) sample *= 2;
  }
  android.graphics.BitmapFactory.Options opts =
  new android.graphics.BitmapFactory.Options();
@@ -479,7 +490,7 @@ final class ImageLoader {
  int sample = 1;
  if (bounds.outWidth > 0 && bounds.outHeight > 0) {
  int edge = Math.max(bounds.outWidth, bounds.outHeight);
- while (edge / sample > 2560) sample *= 2;
+ while (edge / sample > wallpaperMaxEdge(a)) sample *= 2;
  }
  android.graphics.BitmapFactory.Options opts = new android.graphics.BitmapFactory.Options();
  opts.inSampleSize = sample;
@@ -542,10 +553,13 @@ final class ImageLoader {
  }
 
  @Override
- protected void onAttachedToWindow() {
- super.onAttachedToWindow();
- if (wallpaper == null && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false))
- wallpaper = loadWallpaper();
+ protected void onDetachedFromWindow() {
+ // 1.9.148：页面销毁时释放壁纸 bitmap，避免旧页面残留占内存
+ if (wallpaper != null && !wallpaper.isRecycled()) wallpaper.recycle();
+ wallpaper = null;
+ if (fallbackWallpaper != null && !fallbackWallpaper.isRecycled()) fallbackWallpaper.recycle();
+ fallbackWallpaper = null;
+ super.onDetachedFromWindow();
  }
  }
 }
