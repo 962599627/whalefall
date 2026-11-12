@@ -45,6 +45,14 @@ final class SourcePreferences {
  .apply();
  a.toast(index == 0 ? "已取消默认偏好源" : "已保存默认偏好源");
  SourcePicker.show(a);
+ // 1.9.145：选择默认偏好源后立即切换首页发现源，无需重启
+ if (index > 0) {
+ a.prefs.edit().putString(Prefs.SELECTED_SITE, sites.get(index - 1).key).apply();
+ AppLog.i("Source", "preferred switch immediately site=" + sites.get(index - 1).key);
+ a.closeEngines();
+ if (a.isTvDevice()) a.open(new MainActivity.Screen(a::home), false);
+ else MobileShell.show(a);
+ }
  })
  .show();
  }

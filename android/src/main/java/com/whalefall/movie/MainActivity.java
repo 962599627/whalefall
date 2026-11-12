@@ -1071,7 +1071,6 @@ public final class MainActivity extends Activity {
  super.attachBaseContext(base.createConfigurationContext(layout));
  }
 
- @Override
  /** 1.9.144：腾讯 X5(TBS) 内核初始化，老电视网页直播/网页播放兼容；失败自动回退系统 WebView。 */
  void initX5Kernel() {
  try {
@@ -1093,6 +1092,7 @@ public final class MainActivity extends Activity {
  }
  }
 
+ @Override
  public void onCreate(Bundle b) {
  super.onCreate(b);
  privateMode = PrivacySpace.active;
