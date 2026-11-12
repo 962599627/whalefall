@@ -75,9 +75,9 @@ final class TvLive {
  static final String GROUP_SAT = "卫视频道";
  static final String GROUP_MINE = "我的收藏";
  /** 1.9.19：网页直播分组（内置+自定义 weblive_sources）。 */
- static final String GROUP_WEB = "网页直播";
+ static final String GROUP_WEB = "网页直播（需浏览器）";
  /** 1.9.150：开源 IPTV（iptv-org M3U，原生 ExoPlayer）。 */
- static final String GROUP_IPTV = "开源 IPTV";
+ static final String GROUP_IPTV = "开源 IPTV（原生）";
 
  static final Object[][] WEBLIVE = {
  {"深视 4K 超高清", "https://www.sztv.com.cn/dianshi.shtml?id=24725"},
@@ -270,6 +270,10 @@ final class TvLive {
  String selected;
  int listScrollY;
  Runnable render;
+ // 1.9.154：右侧信息面板即时刷新
+ android.view.ViewGroup previewParent;
+ LinearLayout previewView;
+ int previewTotal;
 
  PageState(
  MainActivity a,
@@ -288,6 +292,22 @@ final class TvLive {
 
  void refresh() {
  if (render != null) render.run();
+ }
+
+ /** 1.9.154：选中频道时立即刷新右侧面板（频道名/台标/分类/编号/收藏/观看按钮）。 */
+ void updatePreview(Channel channel, int number) {
+ if (channel == null) return;
+ selected = channel.name;
+ if (previewParent == null || previewView == null) return;
+ int index = previewParent.indexOfChild(previewView);
+ if (index < 0) return;
+ LinearLayout panel = buildPreview(this, channel);
+ previewParent.removeViewAt(index);
+ previewParent.addView(panel, index, previewView.getLayoutParams());
+ previewView = panel;
+ AppLog.i(
+ "TvLive",
+ "preview channel=" + channel.name + " index=" + number + "/" + previewTotal);
  }
 
  /** 切换分组：清空搜索、重置高亮，然后整页重绘。 */
@@ -724,9 +744,12 @@ final class TvLive {
  View gap2 = new View(a);
  bodyRow.addView(gap2, new LinearLayout.LayoutParams(a.dp(12), 1));
 
+ LinearLayout previewPanel = buildPreview(page, chosen);
+ page.previewParent = bodyRow;
+ page.previewView = previewPanel;
+ page.previewTotal = list.size();
  bodyRow.addView(
- buildPreview(page, chosen),
- new LinearLayout.LayoutParams(page.previewWidth, -1));
+ previewPanel, new LinearLayout.LayoutParams(page.previewWidth, -1));
  }
  wireTvFocus(page);
  focusFirstTvItem(page);
@@ -1266,6 +1289,14 @@ final class TvLive {
  row.setTag("tv-focus-channel:" + ch.name);
  TvNav.focusRing(a, row, 14);
  row.setOnClickListener(v -> onOpen.run());
+ // 1.9.154：焦点移动即刷新右侧信息面板（保留 TvNav 焦点环）
+ final android.view.View.OnFocusChangeListener baseRowRing =
+ row.getOnFocusChangeListener();
+ row.setOnFocusChangeListener(
+ (v, focused) -> {
+ if (baseRowRing != null) baseRowRing.onFocusChange(v, focused);
+ if (focused) page.updatePreview(ch, number);
+ });
  row.setOnLongClickListener(
  v -> {
  onFav.run();

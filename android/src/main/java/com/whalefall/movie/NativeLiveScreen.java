@@ -55,6 +55,24 @@ final class NativeLiveScreen {
  new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.LEFT);
  titleLp.setMargins(a.dp(24), a.dp(18), 0, 0);
  root.addView(title, titleLp);
+ // 1.9.154：IPTV 播放页 OK 唤出频道选择器（透明捕获层）
+ View catcher = new View(a);
+ catcher.setFocusable(true);
+ catcher.setFocusableInTouchMode(true);
+ catcher.setBackgroundColor(Color.TRANSPARENT);
+ root.addView(catcher, new FrameLayout.LayoutParams(-1, -1));
+ catcher.setOnKeyListener(
+ (v, keyCode, event) -> {
+ if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
+ if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+ || keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
+ AppLog.i("IptvOrg", "picker open current=" + name);
+ showIptvPicker(a, name);
+ return true;
+ }
+ return false;
+ });
+ catcher.requestFocus();
 
  output.listen(
  new VideoOutput.Listener() {
@@ -150,5 +168,49 @@ final class NativeLiveScreen {
  close(a);
  a.popBack();
  return true;
+ }
+
+ /** 1.9.154：IPTV 频道选择器（按 央视/卫视/地方/其他 前缀分组显示，当前台高亮）。 */
+ static void showIptvPicker(final MainActivity a, final String currentName) {
+ try {
+ TvLive.Store store = new TvLive.Store(a);
+ final java.util.List<TvLive.Channel> list = store.group(TvLive.GROUP_IPTV);
+ if (list.isEmpty()) {
+ a.toast("暂无开源 IPTV 频道");
+ return;
+ }
+ String[] labels = new String[list.size()];
+ int checked = 0;
+ for (int i = 0; i < list.size(); i++) {
+ TvLive.Channel channel = list.get(i);
+ labels[i] =
+ channel.name + (store.favorites.contains(channel.name) ? " ♥" : "");
+ if (channel.name.equals(currentName)) checked = i;
+ }
+ new AppDialog.Builder(a)
+ .setTitle("开源 IPTV 频道（" + list.size() + "）")
+ .setSingleChoiceItems(
+ labels,
+ checked,
+ (dialog, which) -> {
+ TvLive.Channel chosen = list.get(which);
+ int dot = chosen.name.indexOf(" · ");
+ String group = dot > 0 ? chosen.name.substring(0, dot) : "其他";
+ java.util.List<String> urls = new java.util.ArrayList<>();
+ for (TvLive.Channel candidate : list)
+ if (candidate.name.equals(chosen.name) && !urls.contains(candidate.url))
+ urls.add(candidate.url);
+ if (urls.isEmpty()) urls.add(chosen.url);
+ AppLog.i(
+ "IptvOrg",
+ "picker group=" + group + " select=" + chosen.name + " urls=" + urls.size());
+ show(a, chosen.name, urls);
+ })
+ .setNegativeButton("取消", null)
+ .show();
+ } catch (Throwable error) {
+ AppLog.w("IptvOrg", "picker failed", error);
+ a.toast("频道列表加载失败");
+ }
  }
 }

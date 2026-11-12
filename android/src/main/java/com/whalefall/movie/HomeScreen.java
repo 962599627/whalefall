@@ -1338,7 +1338,7 @@ final class HomeScreen {
  return false;
  });
  chip.setOnClickListener(v -> openFilterFor(defF));
- // 1.9.120：重渲染后显式绑定 OK，避免遥控在已选状态下打不开其它筛选
+ // 1.9.154：RIGHT/OK 展开选项；DOWN 直接进卡片网格；LEFT/UP 交给默认焦点
  chip.setClickable(true);
  chip.setOnKeyListener(
  (v, keyCode, event) -> {
@@ -1347,33 +1347,21 @@ final class HomeScreen {
  keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
  || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
  if (ok) {
- openFilterFor(defF);
+ openFilterFor(defF, "ok");
  return true;
  }
- int dir =
- keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
- ? View.FOCUS_LEFT
- : keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
- ? View.FOCUS_RIGHT
- : keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP
- ? View.FOCUS_UP
- : keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
- ? View.FOCUS_DOWN
- : -1;
- if (dir < 0) return false;
- View next = v.focusSearch(dir);
+ if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+ // 选项行未展开时才展开；已展开时 RIGHT 移到下一个筛选芯片
+ if (!filterOptionsVisible() || !defF.dimension.equals(filterOpenDim)) {
+ openFilterFor(defF, "right");
+ return true;
+ }
+ return false;
+ }
+ if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) return false;
  AppLog.i(
  "FilterFocus",
- "chip="
- + dimKeyF
- + " dir="
- + (dir == View.FOCUS_LEFT
- ? "left"
- : dir == View.FOCUS_RIGHT
- ? "right"
- : dir == View.FOCUS_UP ? "up" : "down")
- + " to="
- + (next == null || next == v ? "none" : String.valueOf(next.getTag())));
+ "chip=" + dimKeyF + " action=nav key=" + keyCode);
  return false;
  });
  tagWrap.addView(chip, new LinearLayout.LayoutParams(-2, -2));
@@ -1409,10 +1397,18 @@ final class HomeScreen {
  clear.setOnClickListener(
  v -> {
  state.selectedFilters.clear();
- AppLog.i("FilterOption", "clear-all category=" + state.category);
+ AppLog.i("FilterFocus", "clear category=" + state.category);
  applyFilters();
  collapseFilterUi();
- if (selectedTab() != null) selectedTab().requestFocus();
+ a.ui.postDelayed(
+ () -> {
+ View typeChip = a.root == null ? null : a.root.findViewWithTag("filter-type");
+ if (typeChip == null && a.root != null)
+ typeChip = a.root.findViewWithTag("filter-" + normalizeFilterDim("type"));
+ if (typeChip != null && typeChip.isShown()) typeChip.requestFocus();
+ else if (selectedTab() != null) selectedTab().requestFocus();
+ },
+ 150);
  });
  LinearLayout.LayoutParams clearLp =
  new LinearLayout.LayoutParams(-2, a.dp(40));
@@ -1426,10 +1422,11 @@ final class HomeScreen {
  animateFilterPanelHeight(
  filterPanel, measureFilterPanelHeight(filterPanel), duration);
  filterSkipAnim = false;
- if (filterTagRow.getChildCount() > 0 && a.isTvDevice()) {
+ if (filterTagRow.getChildCount() > 0
+ && (a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode)) {
  View first = filterTagRow.getChildAt(0);
  if (!first.hasFocus() && filterPendingTag.isEmpty()) first.requestFocus();
- if (a.isTvDevice()) a.ui.post(this::wireFilterFocus);
+ a.ui.post(this::wireFilterFocus);
  }
  }
 
@@ -1445,7 +1442,7 @@ final class HomeScreen {
 
  /** 1.9.99：分类 tab ↔ 筛选条 ↔ 卡片网格的显式焦点链。 */
  void wireFilterFocus() {
- if (!a.isTvDevice() || a.root == null) return;
+ if (a.root == null) return;
  java.util.List<View> chips = collectPrefix(a.root, "filter-", 32);
  if (chips.isEmpty()) return;
  for (View chip : chips) if (chip.getId() == View.NO_ID) chip.setId(View.generateViewId());
@@ -1483,10 +1480,14 @@ final class HomeScreen {
  /** 1.9.125：触摸模式才内嵌展开；遥控/按键模式一律弹窗（不依赖 isTvDevice）。 */
  /** 1.9.149：统一内嵌展开（用户明确否决弹窗/新页面）。 */
  void openFilterFor(final VideoFilters.Definition def) {
+ openFilterFor(def, "ok");
+ }
+
+ void openFilterFor(final VideoFilters.Definition def, String source) {
  String dim = normalizeFilterDim(def.dimension);
  AppLog.i(
  "FilterOption",
- "inline open dim=" + dim + " first=pending keyMode=" + a.keyFocusMode);
+ "open dim=" + dim + " source=" + source + " keyMode=" + a.keyFocusMode);
  showFilterOptions(def);
  }
 
@@ -1727,11 +1728,25 @@ final class HomeScreen {
  + " value="
  + choice.value);
  filterPendingTag = def.dimension;
+ boolean wasInline = filterOptionsVisible();
  hideFilterOptions();
  applyFilters();
  renderFilterTags();
- // 1.9.127：筛选后强制恢复焦点（芯片 → 卡片 → tab），两次兜底
+ // 1.9.154：选中后选项行保持展开，焦点回对应筛选芯片
  final String dimKey = normalizeFilterDim(def.dimension);
+ if (wasInline) {
+ a.ui.post(
+ () -> {
+ showFilterOptions(def);
+ a.ui.postDelayed(
+ () -> {
+ View chip = a.root == null ? null : a.root.findViewWithTag("filter-" + dimKey);
+ if (chip != null && chip.isShown()) chip.requestFocus();
+ },
+ 120);
+ });
+ }
+ // 1.9.127：筛选后强制恢复焦点（芯片 → 卡片 → tab），两次兜底
  a.ui.postDelayed(() -> restoreFilterFocus(dimKey), 200);
  a.ui.postDelayed(() -> restoreFilterFocus(dimKey), 500);
  a.ui.postDelayed(this::wireFilterFocus, 600);
