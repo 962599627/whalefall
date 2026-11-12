@@ -1389,11 +1389,12 @@ final class PlaybackController {
  }
  AppLog.i("Player", "seek-crash fallback=software url=" + ep.url);
  }
- // 1.9.170：播放内核 auto / exo / system
- final String kernel = a.prefs.getString(Prefs.PLAYER_KERNEL, "auto");
- final boolean useSystemKernel =
- "system".equals(kernel)
- || ("auto".equals(kernel) && a.prefs.getInt(Prefs.PLAYER_ENGINE, 0) == 1);
+ // 1.9.172：播放内核两档 auto / system；旧值 exo 兼容按 auto
+ final String rawKernel = a.prefs.getString(Prefs.PLAYER_KERNEL, "auto");
+ final String kernel = "system".equals(rawKernel) ? "system" : "auto";
+ if (!kernel.equals(rawKernel))
+ a.prefs.edit().putString(Prefs.PLAYER_KERNEL, kernel).apply();
+ final boolean useSystemKernel = "system".equals(kernel);
  AppLog.i(
  "Player",
  "kernel=mode=" + kernel + " used=" + (useSystemKernel ? "system" : "exo"));
