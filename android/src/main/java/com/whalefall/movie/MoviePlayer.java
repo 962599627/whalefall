@@ -290,20 +290,6 @@ public class MoviePlayer {
  exo.addListener(
  new Player.Listener() {
  @Override
- public void onPlayerError(androidx.media3.common.PlaybackException error) {
- AppLog.i(
- "Player",
- "decode="
- + decoderKind(videoDecoder)
- + " name="
- + videoDecoder
- + " error="
- + error.getErrorCodeName()
- + " msg="
- + error.getMessage());
- }
-
- @Override
  public void onPlaybackStateChanged(int state) {
  if (released) return;
  if (state == Player.STATE_READY
@@ -353,6 +339,17 @@ public class MoviePlayer {
  @Override
  public void onPlayerError(PlaybackException error) {
  if (released) return;
+ if (error != null)
+ AppLog.i(
+ "Player",
+ "decode="
+ + decoderKind(videoDecoder)
+ + " name="
+ + videoDecoder
+ + " error="
+ + error.getErrorCodeName()
+ + " msg="
+ + error.getMessage());
  lastError = error.getErrorCodeName();
  lastErrorTrack =
  error
