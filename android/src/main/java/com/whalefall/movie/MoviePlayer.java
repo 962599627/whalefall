@@ -761,6 +761,15 @@ public class MoviePlayer {
  });
  }
 
+ /** 1.9.208：小窗继续播放用（不重新 prepare）。 */
+ public void play() {
+ onMain(
+ () -> {
+ if (!released) exo.play();
+ return null;
+ });
+ }
+
  public void seekTo(int ms) {
  onMain(
  () -> {

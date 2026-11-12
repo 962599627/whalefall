@@ -1013,10 +1013,22 @@ final class PlaybackController {
  if (!overDetail && a.current != null) a.restore(a.current);
  // 1.9.58：由 MiniDetails 先测 hero 矩形再隐藏，保证小窗与海报区域一致
  a.miniDetails = new MiniDetails(a);
+ // 1.9.208：进入小窗必须保持播放（进度连续，不重新 prepare）
+ if (a.player != null) {
+ try {
+ a.player.play();
+ a.playing = true;
+ int position = a.player.getCurrentPosition();
+ AppLog.i("Mini", "resume position=" + position + " playing=true");
+ } catch (Throwable error) {
+ AppLog.w("Mini", "resume failed", error);
+ }
+ }
  }
 
  static void expandPlayback(MainActivity a) {
  if (!a.miniMode) return;
+ AppLog.i("Mini", "exit reason=expand");
  a.miniMode = false;
  a.expandedOverDetail = true;
  if (a.miniDetails != null) {
@@ -2316,6 +2328,7 @@ final class PlaybackController {
  static void releasePlayer(MainActivity a) {
  // 1.9.203：播放结束恢复动态壁纸
  ImageLoader.Atmosphere.resumeAtomVideo("player-stop");
+ if (a.miniMode) AppLog.i("Mini", "exit reason=release");
  finishSeek(a, false);
  a.clearLiveNumber();
  savePlaybackHistory(a, true);

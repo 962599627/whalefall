@@ -26,8 +26,9 @@ final class MiniDetails {
  int width;
  int height;
  if (tv) {
- width = a.dp(480);
- height = a.dp(270);
+ // 1.9.207：回到 1.9.159 的固定左侧小窗，不再按 hero 放大
+ width = a.dp(160);
+ height = a.dp(90);
  } else {
  width = Math.round(a.windowWidth() * 0.45f);
  height = Math.round(width * 9f / 16f);
@@ -56,7 +57,9 @@ final class MiniDetails {
  });
  a.playbackLayer.setElevation(a.dp(8));
  a.playbackLayer.setLayoutParams(videoLp);
- AppLog.i("Mini", "enter size=" + width + "x" + height + " at=" + margin + "," + margin);
+ AppLog.i(
+ "Mini",
+ "enter reason=player-back size=" + width + "x" + height + " at=" + margin + "," + margin);
 
  // 小窗控制层（与视频同尺寸同位置，透明背景）
  page = new FrameLayout(a);
@@ -139,7 +142,30 @@ final class MiniDetails {
  a.playbackLayer.bringToFront();
  page.bringToFront();
  // 1.9.58：小窗精确覆盖 hero 海报矩形
- a.ui.post(() -> applyHeroRect(0));
+ // 1.9.207：固定左侧小窗，不再跟随 hero 海报放大
+ final int miniW = width;
+ final int miniH = height;
+ final int miniMargin = margin;
+ a.ui.post(
+ () -> {
+ if (!a.miniMode) return;
+ a.playbackLayer.setLayoutParams(videoLp);
+ page.setLayoutParams(pageLp);
+ PlaybackController.hideDetailHero(a, true);
+ a.playbackLayer.bringToFront();
+ page.bringToFront();
+ AppLog.i(
+ "Mini",
+ "fixed size="
+ + miniW
+ + "x"
+ + miniH
+ + " left="
+ + miniMargin
+ + " top="
+ + miniMargin
+ + " reason=player-back");
+ });
 
  a.ui.post(
  () -> {
