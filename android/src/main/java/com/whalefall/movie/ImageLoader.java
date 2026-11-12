@@ -415,6 +415,8 @@ final class ImageLoader {
  Bitmap frameCache;
  /** 1.9.166：同一进程内复用内置鲸鱼娘降采样结果。 */
  static Bitmap cachedDefault;
+ /** 1.9.180：缓存键带目标最大边，避免小图全局复用发黑。 */
+ static int cachedDefaultEdge;
 
  Atmosphere(Context c) {
  super(c);
@@ -430,12 +432,15 @@ final class ImageLoader {
  }
  }
 
- /** 1.9.148：壁纸最大边（低内存 1080，其它 1280）。 */
+ /** 1.9.148：壁纸最大边；1.9.180：TV 1920/低内存1080，手机 1280/低内存1080。 */
  private static int wallpaperMaxEdge(Context c) {
  try {
  android.app.ActivityManager am =
  (android.app.ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
- if (am != null && am.isLowRamDevice()) return 1080;
+ boolean low = am != null && am.isLowRamDevice();
+ boolean tv = c instanceof MainActivity && ((MainActivity) c).isTvDevice();
+ if (low) return 1080;
+ return tv ? 1920 : 1280;
  } catch (Throwable ignored) {
  }
  return WALLPAPER_MAX_EDGE;
@@ -443,18 +448,26 @@ final class ImageLoader {
 
  private Bitmap loadDefaultWallpaper() {
  try {
- if (cachedDefault != null && !cachedDefault.isRecycled()) {
+ // 1.9.126：旧机 4K 默认图直接解码会原生崩溃，按屏幕降采样
+ int maxEdge = wallpaperMaxEdge(a);
+ if (cachedDefault != null
+ && !cachedDefault.isRecycled()
+ && cachedDefaultEdge == maxEdge) {
  AppLog.i(
  "Wallpaper",
- "default bitmap=cache"
+ "default bitmap="
  + cachedDefault.getWidth()
  + "x"
  + cachedDefault.getHeight()
+ + " asked="
+ + maxEdge
  + " cache=true");
  return cachedDefault;
  }
- // 1.9.126：旧机 4K 默认图直接解码会原生崩溃，按屏幕降采样
- int maxEdge = wallpaperMaxEdge(a);
+ if (cachedDefault != null && !cachedDefault.isRecycled()) {
+ cachedDefault.recycle();
+ cachedDefault = null;
+ }
  android.graphics.BitmapFactory.Options bounds =
  new android.graphics.BitmapFactory.Options();
  bounds.inJustDecodeBounds = true;
@@ -478,10 +491,13 @@ final class ImageLoader {
  "Wallpaper",
  "default bitmap="
  + (bitmap == null ? "null" : bitmap.getWidth() + "x" + bitmap.getHeight())
+ + " asked="
+ + maxEdge
  + " sample="
  + sample
  + " cache=true");
  cachedDefault = bitmap;
+ cachedDefaultEdge = maxEdge;
  return bitmap;
  } catch (Throwable error) {
  AppLog.w("Wallpaper", "default wallpaper load failed", error);

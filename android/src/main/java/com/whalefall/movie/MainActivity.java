@@ -22,6 +22,8 @@ public final class MainActivity extends Activity {
  static final int WHITE = Skin.INK, MUTED = Skin.INK_DIM, DARK = Skin.BG;
  static final int PINK = Skin.PINK;
  VideoWallpaper videoWallpaper;
+ /** 1.9.180：本次失败仅回退静态，切页后自动重试动态壁纸。 */
+ boolean videoWallpaperRetryPending;
  AdminConsole adminConsole;
  View screensaverOverlay;
  final Runnable screensaverTask = this::showScreensaver;
@@ -1708,6 +1710,11 @@ public final class MainActivity extends Activity {
  }
 
  void preparePage(boolean navigation) {
+ // 1.9.180：切页后允许动态壁纸重试
+ if (videoWallpaperRetryPending) {
+ videoWallpaperRetryPending = false;
+ AppLog.i("Wallpaper", "video retry reason=page-change");
+ }
  NativeLiveScreen.close(this);
  // 1.9.106：直播浮层是页面级 WebView，任何页面重建都必须先关掉，否则会在后台继续出声
  releaseLiveOnPageChange("page");
@@ -1794,15 +1801,14 @@ public final class MainActivity extends Activity {
  /** 1.9.108：动态壁纸失败自动回退默认/静态壁纸，避免整屏黑。 */
  void videoWallpaperFailed(String reason) {
  try {
- prefs.edit()
- .putBoolean(Prefs.WALLPAPER_VIDEO, false)
- .putBoolean(Prefs.WALLPAPER_ENABLED, true)
- .putBoolean("force_builtin_wallpaper", true)
- .apply();
- toast("动态壁纸播放失败，已恢复默认壁纸");
+ // 1.9.180：本次失败只回退静态，不永久关闭动态壁纸
+ videoWallpaperRetryPending = true;
+ toast("动态壁纸本次播放失败，已临时显示静态壁纸");
  AppLog.i(
  "Wallpaper",
- "video fallback reason=" + reason + " restored=true source=builtin-default");
+ "video fallback reason="
+ + reason
+ + " videoEnabled kept=true retry=true source=builtin-default");
  ui.post(
  () -> {
  if (root != null) applyWallpaper(root);
@@ -1828,7 +1834,8 @@ public final class MainActivity extends Activity {
  // 绝不铺壁纸，否则壁纸层会插到 playbackLayer 之上盖住视频。
  if ("player-surface".equals(target.getTag())) return;
  final boolean staticEnabled = prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false);
- final boolean videoEnabled = videoWallpaperEnabled();
+ final boolean videoEnabled =
+ videoWallpaperEnabled() && !videoWallpaperRetryPending;
 
  // 1. base 渐变：没有就补
  boolean hasBase = false;
@@ -1897,6 +1904,9 @@ public final class MainActivity extends Activity {
  }
  } else if (videoWallpaper.getParent() != target) {
  videoWallpaper.attachTo(target);
+ } else if (videoWallpaper.isFailed()) {
+ // 1.9.180：同一 root 下失败后下次页面渲染重试
+ videoWallpaper.retry();
  }
  } else {
  if (videoWallpaper != null
