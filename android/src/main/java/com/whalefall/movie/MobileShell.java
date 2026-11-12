@@ -6118,6 +6118,64 @@ final class MobileShell {
  a.open(
  new MainActivity.Screen(() -> new UpdateScreen(a).show()),
  true));
+ // 1.9.225：测试模式 + 性能浮层入口（三端同一页面）
+ AppLog.i("TestMode", "entry page=backup-diag");
+ addSettingCard(
+ body,
+ 5,
+ "测试模式",
+ (TestModeLog.enabled() ? "当前：开" : "当前：关")
+ + " · 已记录 "
+ + TestModeLog.lines()
+ + " 行（复制后自动清空）",
+ () -> {
+ boolean on = !TestModeLog.enabled();
+ TestModeLog.set(a, on);
+ a.toast(on ? "测试模式已开启" : "测试模式已关闭（已记录内容保留）");
+ refreshInPlace.run();
+ });
+ addSettingCard(
+ body,
+ 5,
+ "复制测试日志",
+ "写入剪贴板并清空当前缓冲（最多 5000 行 / 2MB 文件）",
+ () -> TestModeLog.copyToClipboard(a));
+ addSettingCard(
+ body,
+ 5,
+ "清空测试日志",
+ "不复制，直接清空内存缓冲与 files/test-log.txt",
+ () ->
+ new AppDialog.Builder(a)
+ .setTitle("清空测试日志？")
+ .setMessage("将删除当前内存缓冲与日志文件，不可恢复。")
+ .setNegativeButton("取消", null)
+ .setPositiveButton(
+ "清空",
+ (d, w) -> {
+ TestModeLog.clear();
+ refreshInPlace.run();
+ })
+ .show());
+ addSettingCard(
+ body,
+ 5,
+ "导出测试日志到文件",
+ "写入 Download/DSH-Go/鲸落/test-<时间>.txt",
+ () -> TestModeLog.export(a));
+ addSettingCard(
+ body,
+ 5,
+ "性能浮层",
+ PerfOverlay.enabled(a)
+ ? "当前：开 · 右上角显示 FPS/掉帧/PSS/页面/壁纸"
+ : "当前：关 · 打开后右上角显示实时性能",
+ () -> {
+ boolean on = !PerfOverlay.enabled(a);
+ PerfOverlay.set(a, on);
+ a.toast(on ? "性能浮层已开启" : "性能浮层已关闭");
+ refreshInPlace.run();
+ });
  addSettingCard(
  body,
  5,
