@@ -1370,6 +1370,23 @@ final class FileManagerScreen {
  final MemoCard finalHolder = holder;
  holder.setOnClickListener(
  v -> {
+ String nm = entry.name == null ? "" : entry.name;
+ String ext =
+ nm.contains(".") ? nm.substring(nm.lastIndexOf('.') + 1).toLowerCase(java.util.Locale.ROOT) : "";
+ AppLog.i(
+ "FileManager",
+ "click name="
+ + nm
+ + " ext="
+ + ext
+ + " folder="
+ + entry.folder
+ + " video="
+ + entry.video
+ + " pick="
+ + (pickCallback != null)
+ + " selecting="
+ + selecting);
  if (pickCallback != null && !entry.folder) {
  boolean ok = pickVideoMode ? entry.video : TextViewerScreen.isImageName(entry.name);
  if (!ok) {
@@ -1392,9 +1409,8 @@ final class FileManagerScreen {
  exitSelection();
  refresh();
  } else if (entry.video) FileManagerCore.playLocal(a, entry.file);
- else if (entry.name != null
- && entry.name.toLowerCase(java.util.Locale.ROOT).endsWith(".apk")) {
- // 1.9.167：本地 APK 走多路安装回退
+ else if ("apk".equals(ext)) {
+ // 1.9.169：本地 APK 走多路安装回退（大小写/空格/中文名均按后缀判断）
  AppLog.i("FileManager", "apk install path=" + entry.file.getAbsolutePath());
  UpdateScreen.installApkWithFallback(a, entry.file, "file-manager");
  }
@@ -1429,9 +1445,15 @@ final class FileManagerScreen {
  private void showLocalFileMenu(final FileManagerCore.LocalEntry entry) {
  final boolean video = entry.video;
  final boolean image = TextViewerScreen.isImageName(entry.name);
- final boolean apk =
- entry.name != null
- && entry.name.toLowerCase(java.util.Locale.ROOT).endsWith(".apk");
+ final String menuName = entry.name == null ? "" : entry.name;
+ final String menuExt =
+ menuName.contains(".")
+ ? menuName.substring(menuName.lastIndexOf('.') + 1).toLowerCase(java.util.Locale.ROOT)
+ : "";
+ final boolean apk = "apk".equals(menuExt);
+ AppLog.i(
+ "FileManager",
+ "longpress name=" + menuName + " ext=" + menuExt + " apk=" + apk);
  java.util.List<String> labels = new java.util.ArrayList<>();
  if (video) labels.add("设为动态壁纸");
  if (image) labels.add("设为壁纸");

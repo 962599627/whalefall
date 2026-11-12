@@ -22,6 +22,8 @@ final class IptvPickerPanel {
 
   private static FrameLayout root;
   private static MainActivity host;
+  private static LinearLayout railRef;
+  private static int selectedCatIndex;
 
   static boolean isOpen() {
     return root != null;
@@ -49,9 +51,10 @@ final class IptvPickerPanel {
       return;
     }
     host = a;
+    hostIptv = all;
     root = new FrameLayout(a);
     root.setTag("iptv-picker");
-    root.setBackgroundColor(0x99000000);
+    root.setBackgroundColor(0x66000000);
     root.setClickable(true);
     FrameLayout.LayoutParams rootLp = new FrameLayout.LayoutParams(-1, -1);
     a.root.addView(root, rootLp);
@@ -61,10 +64,11 @@ final class IptvPickerPanel {
     final int panelH = Math.min(a.dp(420), safeH - a.dp(24));
     final FrameLayout panel = new FrameLayout(a);
     GradientDrawable bg = new GradientDrawable();
-    bg.setColor(0xE6070b14);
+    bg.setColor(0xE60B1220);
     bg.setCornerRadius(a.dp(20));
     bg.setStroke(Math.max(1, a.dp(1)), 0x33ffffff);
     panel.setBackground(bg);
+    panel.setElevation(0);
     FrameLayout.LayoutParams panelLp =
         new FrameLayout.LayoutParams(panelW, panelH, Gravity.CENTER);
     root.addView(panel, panelLp);
@@ -76,15 +80,21 @@ final class IptvPickerPanel {
     LinearLayout header = a.row();
     header.setGravity(Gravity.CENTER_VERTICAL);
     header.setPadding(a.dp(16), 0, a.dp(8), 0);
-    TextView title = a.text("选择频道", 17, 0xfff5f7fc);
+    TextView title = a.text("选择频道", 16, 0xfff5f7fc);
     title.setTypeface(null, android.graphics.Typeface.BOLD);
     header.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
-    TextView closeBtn = a.text("×", 20, 0xffffb3c8);
+    TextView closeBtn = a.text("×", 18, 0xfff5f7fc);
     closeBtn.setGravity(Gravity.CENTER);
+    GradientDrawable closeBg = new GradientDrawable();
+    closeBg.setShape(GradientDrawable.OVAL);
+    closeBg.setColor(0x1AFFFFFF);
+    closeBg.setStroke(Math.max(1, a.dp(1)), 0x1AFFFFFF);
+    closeBtn.setBackground(closeBg);
     closeBtn.setFocusable(true);
     closeBtn.setFocusableInTouchMode(true);
     closeBtn.setClickable(true);
-    ExtraPages.tvFocus(a, closeBtn, 999);
+    closeBtn.setOnFocusChangeListener(
+        (v, focused) -> PlayerFocusRenderer.background(v, focused, 16));
     closeBtn.setOnClickListener(v -> close());
     header.addView(closeBtn, new LinearLayout.LayoutParams(a.dp(32), a.dp(32)));
     column.addView(header, new LinearLayout.LayoutParams(-1, a.dp(48)));
@@ -93,31 +103,70 @@ final class IptvPickerPanel {
     body.setPadding(0, 0, 0, 0);
     column.addView(body, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-    // 左分类 240
+    // 左分类 1/3（TV 240dp），右列表 2/3（TV 480dp），中间 1dp 分隔
     LinearLayout left = a.vertical();
-    left.setPadding(0, a.dp(4), a.dp(6), a.dp(4));
-    body.addView(left, new LinearLayout.LayoutParams(a.dp(240), -1));
+    left.setBackgroundColor(0x08000000);
+    left.setPadding(a.dp(8), a.dp(8), a.dp(8), a.dp(8));
+    body.addView(left, new LinearLayout.LayoutParams(0, -1, 1f));
+
+    View divider = new View(a);
+    divider.setBackgroundColor(0x1AFFFFFF);
+    body.addView(divider, new LinearLayout.LayoutParams(1, -1));
 
     // 右频道 FrameLayout（列表 + 空态/加载叠层）
     FrameLayout rightFrame = new FrameLayout(a);
-    body.addView(rightFrame, new LinearLayout.LayoutParams(0, -1, 1f));
+    body.addView(rightFrame, new LinearLayout.LayoutParams(0, -1, 2f));
     final LinearLayout rightList = a.vertical();
     ScrollView rightScroll = new ScrollView(a);
     rightScroll.setVerticalScrollBarEnabled(false);
     rightScroll.addView(rightList);
     rightFrame.addView(rightScroll, new FrameLayout.LayoutParams(-1, -1));
-    final TextView overlay = a.text("", 14, 0xffc9d6e4);
-    overlay.setGravity(Gravity.CENTER);
-    overlay.setBackgroundColor(0xCC070b14);
+    // 空态/加载态叠层（只覆盖右栏）
+    final FrameLayout overlay = new FrameLayout(a);
+    overlay.setBackgroundColor(0xE6070B14);
     overlay.setVisibility(View.GONE);
     overlay.setClickable(true);
-    overlay.setFocusable(true);
     rightFrame.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
 
+    final LinearLayout emptyBox = a.vertical();
+    emptyBox.setGravity(Gravity.CENTER);
+    emptyBox.setVisibility(View.GONE);
+    TextView emptyTitle = a.text("暂无频道", 14, 0xffa9b7d0);
+    emptyTitle.setGravity(Gravity.CENTER);
+    emptyBox.addView(emptyTitle);
+    TextView emptyDesc = a.text("换个分类看看，或稍后重试", 11, 0xff8d9cb6);
+    emptyDesc.setGravity(Gravity.CENTER);
+    emptyDesc.setPadding(0, a.dp(4), 0, a.dp(8));
+    emptyBox.addView(emptyDesc);
+    final TextView retry = a.text("重试", 11, 0xFFFFB3C8);
+    retry.setGravity(Gravity.CENTER);
+    GradientDrawable retryBg = new GradientDrawable();
+    retryBg.setColor(0x1AFFFFFF);
+    retryBg.setCornerRadius(999);
+    retryBg.setStroke(Math.max(1, a.dp(1)), 0x1AFFFFFF);
+    retry.setBackground(retryBg);
+    retry.setFocusable(true);
+    retry.setFocusableInTouchMode(true);
+    retry.setClickable(true);
+    retry.setOnFocusChangeListener(
+        (v, focused) -> PlayerFocusRenderer.background(v, focused, 999));
+    emptyBox.addView(retry, new LinearLayout.LayoutParams(a.dp(88), a.dp(28)));
+    overlay.addView(
+        emptyBox, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+    final LoadingRing ring = new LoadingRing(a);
+    overlay.addView(ring, new FrameLayout.LayoutParams(a.dp(20), a.dp(20), Gravity.CENTER));
+    final TextView loadingText = a.text("正在加载频道…", 11, 0xff8d9cb6);
+    loadingText.setGravity(Gravity.CENTER);
+    FrameLayout.LayoutParams loadingLp =
+        new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
+    loadingLp.topMargin = a.dp(36);
+    overlay.addView(loadingText, loadingLp);
+
     // Footer 32
-    TextView footer = a.text("左右切换分类 · 上下选台 · OK 播放 · 长按收藏", 11, 0x8899aabb);
-    footer.setGravity(Gravity.CENTER_VERTICAL);
-    footer.setPadding(a.dp(16), 0, a.dp(16), 0);
+    TextView footer =
+        a.text("←→ 切换分类   ↑↓ 选择频道   OK 播放并关闭   BACK 关闭", 11, 0xFF8D9CB6);
+    footer.setGravity(Gravity.CENTER);
+    footer.setPadding(a.dp(16), 0, a.dp(16), a.dp(8));
     column.addView(footer, new LinearLayout.LayoutParams(-1, a.dp(32)));
 
     final String[] groups = {"全部", "央视", "卫视", "地方", "其他"};
@@ -125,9 +174,16 @@ final class IptvPickerPanel {
     int dot = currentName == null ? -1 : currentName.indexOf(" · ");
     if (dot > 0) initial = currentName.substring(0, dot);
     final String[] selectedGroup = {initial};
+    selectedCatIndex = 0;
+    for (int i = 0; i < groups.length; i++)
+      if (groups[i].equals(initial)) {
+        selectedCatIndex = i;
+        break;
+      }
     final int[] generation = {0};
     final View[] currentRow = {null};
     final LinearLayout[] cats = {left};
+    railRef = left;
 
     final Runnable[] renderList = new Runnable[1];
     renderList[0] =
@@ -141,7 +197,9 @@ final class IptvPickerPanel {
               filtered.add(c);
           }
           overlay.setVisibility(View.VISIBLE);
-          overlay.setText("加载中…");
+          emptyBox.setVisibility(View.GONE);
+          loadingText.setVisibility(View.VISIBLE);
+          ring.setVisibility(View.VISIBLE);
           AppLog.i(
               "IptvOrg",
               "picker loading=true group=" + selectedGroup[0] + " gen=" + myGen);
@@ -150,12 +208,16 @@ final class IptvPickerPanel {
                 if (myGen != generation[0] || !isOpen()) return;
                 rightList.removeAllViews();
                 if (filtered.isEmpty()) {
-                  overlay.setText("该分类暂无频道");
                   overlay.setVisibility(View.VISIBLE);
+                  ring.setVisibility(View.GONE);
+                  loadingText.setVisibility(View.GONE);
+                  emptyBox.setVisibility(View.VISIBLE);
                   AppLog.i("IptvOrg", "picker empty=true group=" + selectedGroup[0]);
                   return;
                 }
                 overlay.setVisibility(View.GONE);
+                ring.setVisibility(View.GONE);
+                emptyBox.setVisibility(View.GONE);
                 for (final TvLive.Channel channel : filtered) {
                   rightList.addView(buildRow(a, store, all, channel, currentName, currentRow), rowLp(a));
                 }
@@ -175,54 +237,106 @@ final class IptvPickerPanel {
               },
               900);
         };
+    retry.setOnClickListener(v -> renderList[0].run());
 
-    for (final String g : groups) {
+    for (int gi = 0; gi < groups.length; gi++) {
+      final String g = groups[gi];
+      final int catIndex = gi;
       LinearLayout item = a.row();
       item.setGravity(Gravity.CENTER_VERTICAL);
-      item.setPadding(a.dp(12), 0, a.dp(8), 0);
+      item.setPadding(a.dp(10), 0, a.dp(10), 0);
       item.setFocusable(true);
       item.setFocusableInTouchMode(true);
       item.setClickable(true);
-      ExtraPages.tvFocus(a, item, 10);
       item.setTag("iptv-picker-cat:" + g);
-      TextView label = a.text(g, 15, g.equals(selectedGroup[0]) ? 0xffffb3c8 : 0xffd6e1f0);
-      item.addView(label, new LinearLayout.LayoutParams(0, -2, 1f));
+      View bar = new View(a);
+      bar.setTag("cat-bar");
+      bar.setBackgroundColor(0xFFFF8FB1);
+      item.addView(bar, new LinearLayout.LayoutParams(a.dp(3), a.dp(24)));
+      TextView label = a.text(g, 14, 0xffa9b7d0);
+      label.setTag("cat-label");
+      LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(0, -2, 1f);
+      labelLp.leftMargin = a.dp(7);
+      item.addView(label, labelLp);
+      TextView count = a.text("", 11, 0xff8d9cb6);
+      count.setTag("cat-count");
+      item.addView(count);
+      item.setOnFocusChangeListener(
+          (v, focused) -> {
+            if (focused) PlayerFocusRenderer.background(v, true, 10);
+            else {
+              refreshCats(cats[0], groups, selectedGroup[0], null);
+              AppLog.i("PlayerFocus", "style=common mode=background view=iptv-cat");
+            }
+          });
+      item.setOnKeyListener(
+          (v, keyCode, event) -> {
+            if (event.getAction() == android.view.KeyEvent.ACTION_DOWN
+                && keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+              if (rightList.getChildCount() > 0) {
+                rightList.getChildAt(0).requestFocus();
+                AppLog.i("IptvOrg", "picker focus rail->list group=" + g);
+              }
+              return true;
+            }
+            return false;
+          });
       item.setOnClickListener(
           v -> {
             selectedGroup[0] = g;
+            selectedCatIndex = catIndex;
             refreshCats(cats[0], groups, selectedGroup[0], null);
             renderList[0].run();
             AppLog.i("IptvOrg", "picker level=1 group=" + g + " gen=" + generation[0]);
           });
       left.addView(item, new LinearLayout.LayoutParams(-1, a.dp(44)));
+      LinearLayout.LayoutParams itemLp =
+          (LinearLayout.LayoutParams) item.getLayoutParams();
+      itemLp.bottomMargin = a.dp(4);
+      item.setLayoutParams(itemLp);
     }
+    refreshCats(left, groups, selectedGroup[0], null);
 
     renderList[0].run();
     AppLog.i("IptvOrg", "picker open group=" + selectedGroup[0] + " gen=" + generation[0]);
+  }
+
+  private static int groupCount(java.util.List<TvLive.Channel> all, String group) {
+    if ("全部".equals(group)) return all.size();
+    int n = 0;
+    for (TvLive.Channel c : all) if (c.name.startsWith(group + " · ")) n++;
+    return n;
   }
 
   private static void noop() {}
 
   private static void refreshCats(
       LinearLayout left, String[] groups, String selected, Runnable unused) {
-    for (int i = 0; i < left.getChildCount(); i++) {
+    for (int i = 0; i < left.getChildCount() && i < groups.length; i++) {
       View item = left.getChildAt(i);
       if (!(item instanceof LinearLayout)) continue;
       LinearLayout row = (LinearLayout) item;
-      TextView label = row.getChildCount() > 0 ? (TextView) row.getChildAt(0) : null;
-      if (label == null) continue;
       boolean on = groups[i].equals(selected);
-      label.setTextColor(on ? 0xffffb3c8 : 0xffd6e1f0);
-      if (on) {
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0x1AFF8FB1);
-        bg.setCornerRadius(10);
-        row.setBackground(bg);
-      } else {
-        row.setBackground(null);
+      TextView label = row.findViewWithTag("cat-label");
+      TextView count = row.findViewWithTag("cat-count");
+      View bar = row.findViewWithTag("cat-bar");
+      if (label != null) {
+        label.setTextColor(on ? 0xFFFFB3C8 : 0xFFA9B7D0);
+        label.setTypeface(null, on ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
       }
+      if (bar != null) bar.setVisibility(on ? View.VISIBLE : View.INVISIBLE);
+      if (count != null) {
+        count.setTextColor(on ? 0xFFFFB3C8 : 0xFF8D9CB6);
+        count.setText(String.valueOf(groupCount(host == null ? java.util.Collections.emptyList() : hostIptv, groups[i])));
+      }
+      GradientDrawable bg = new GradientDrawable();
+      bg.setCornerRadius(10);
+      bg.setColor(on ? 0x1AFF8FB1 : 0x00000000);
+      row.setBackground(bg);
     }
   }
+
+  private static java.util.List<TvLive.Channel> hostIptv = new java.util.ArrayList<>();
 
   private static LinearLayout.LayoutParams rowLp(MainActivity a) {
     LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, a.dp(48));
@@ -243,11 +357,26 @@ final class IptvPickerPanel {
     row.setFocusable(true);
     row.setFocusableInTouchMode(true);
     row.setClickable(true);
-    ExtraPages.tvFocus(a, row, 10);
+    row.setContentDescription(channel.name);
     row.setTag("iptv-picker-row:" + channel.name);
+    row.setOnFocusChangeListener(
+        (v, focused) -> PlayerFocusRenderer.background(v, focused, 10));
+    row.setOnKeyListener(
+        (v, keyCode, event) -> {
+          if (event.getAction() == android.view.KeyEvent.ACTION_DOWN
+              && keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT) {
+            View cat = railRef == null ? null : railRef.getChildAt(Math.max(0, selectedCatIndex));
+            if (cat != null) {
+              cat.requestFocus();
+              AppLog.i("IptvOrg", "picker focus list->rail");
+            }
+            return true;
+          }
+          return false;
+        });
 
-    TextView num = a.text("", 12, 0xff8d9cb6);
-    num.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+    TextView num = a.text("", 11, 0xff8d9cb6);
+    num.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
     num.setGravity(Gravity.CENTER);
     num.setWidth(a.dp(30));
     row.addView(num);
@@ -255,27 +384,28 @@ final class IptvPickerPanel {
     if (channel.name.equals(currentName)) {
       View bar = new View(a);
       bar.setBackgroundColor(0xFFFF8FB1);
-      LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(a.dp(3), a.dp(24));
+      LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(a.dp(3), a.dp(32));
       barLp.rightMargin = a.dp(6);
       row.addView(bar, barLp);
       num.setText("▶");
       num.setTextColor(0xFFFFB3C8);
     }
 
-    TextView name = a.text(channel.name, 14, 0xffe8eff9);
+    TextView name = a.text(channel.name, 15, 0xfff5f7fc);
     name.setSingleLine(true);
     name.setEllipsize(android.text.TextUtils.TruncateAt.END);
     row.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
 
     boolean fav = store.favorites.contains(channel.name);
-    TextView heart = a.text(fav ? "♥" : "♡", 16, fav ? 0xFFFF8FB1 : 0x66c9d6ea);
+    TextView heart = a.text(fav ? "♥" : "♡", 16, fav ? 0xFFFF8FB1 : 0xFF8D9CB6);
     heart.setGravity(Gravity.CENTER);
+    heart.setFocusable(false);
     heart.setPadding(a.dp(6), 0, a.dp(6), 0);
     heart.setOnClickListener(
         v -> {
           boolean now = TvLive.toggleFavorite(a, store, channel);
           heart.setText(now ? "♥" : "♡");
-          heart.setTextColor(now ? 0xFFFF8FB1 : 0x66c9d6ea);
+          heart.setTextColor(now ? 0xFFFF8FB1 : 0xFF8D9CB6);
           AppLog.i("IptvOrg", "favorite channel=" + channel.name + " on=" + now);
         });
     row.addView(heart, new LinearLayout.LayoutParams(a.dp(28), a.dp(28)));
@@ -299,5 +429,62 @@ final class IptvPickerPanel {
           return true;
         });
     return row;
+  }
+
+  /** 1.9.168：加载态 20dp 圆环（900ms 线性旋转；Reduced 静态）。 */
+  static final class LoadingRing extends android.view.View {
+    private final android.graphics.Paint track = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+    private final android.graphics.Paint arc = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+    private final android.graphics.RectF oval = new android.graphics.RectF();
+    private float rotation;
+    private android.animation.ValueAnimator animator;
+
+    LoadingRing(MainActivity a) {
+      super(a);
+      track.setStyle(android.graphics.Paint.Style.STROKE);
+      track.setStrokeWidth(a.dp(3f));
+      track.setColor(0x1AFFFFFF);
+      arc.setStyle(android.graphics.Paint.Style.STROKE);
+      arc.setStrokeWidth(a.dp(2f));
+      arc.setColor(0xFFFFB3C8);
+      arc.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+      if (!a.reduced) {
+        animator = android.animation.ValueAnimator.ofFloat(0f, 360f);
+        animator.setDuration(900);
+        animator.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+        animator.setInterpolator(new android.view.animation.LinearInterpolator());
+        animator.addUpdateListener(
+            animation -> {
+              rotation = ((Number) animation.getAnimatedValue()).floatValue();
+              invalidate();
+            });
+        animator.start();
+      }
+    }
+
+    @Override
+    protected void onDraw(android.graphics.Canvas canvas) {
+      float inset = Math.max(getWidth(), getHeight()) == 0 ? 0 : Math.min(getWidth(), getHeight()) / 2f;
+      oval.set(
+          getWidth() / 2f - inset + android.util.TypedValue.applyDimension(
+              android.util.TypedValue.COMPLEX_UNIT_DIP, 1.5f, getResources().getDisplayMetrics()),
+          getHeight() / 2f - inset + android.util.TypedValue.applyDimension(
+              android.util.TypedValue.COMPLEX_UNIT_DIP, 1.5f, getResources().getDisplayMetrics()),
+          getWidth() / 2f + inset - android.util.TypedValue.applyDimension(
+              android.util.TypedValue.COMPLEX_UNIT_DIP, 1.5f, getResources().getDisplayMetrics()),
+          getHeight() / 2f + inset - android.util.TypedValue.applyDimension(
+              android.util.TypedValue.COMPLEX_UNIT_DIP, 1.5f, getResources().getDisplayMetrics()));
+      canvas.drawOval(oval, track);
+      canvas.save();
+      canvas.rotate(rotation, getWidth() / 2f, getHeight() / 2f);
+      canvas.drawArc(oval, -90f, 90f, false, arc);
+      canvas.restore();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+      if (animator != null) animator.cancel();
+      super.onDetachedFromWindow();
+    }
   }
 }

@@ -285,6 +285,10 @@ final class FilesScreen {
  final File targetFile = f;
  row.setOnClickListener(
  v -> {
+ // 1.9.169：与文件管理统一可观测入口
+ AppLog.i(
+ "FileManager",
+ "click name=" + target + " ext=" + fileBadge(target) + " apps-files=true");
  if (targetFile.isDirectory()) {
  show(a, target);
  } else if (PushFiles.isMarkdown(target)) {

@@ -311,6 +311,20 @@ final class UpdateScreen {
 
  /** 1.9.167：多路 APK 安装回退；全部失败时复制到 Download 供手动安装。 */
  static boolean installApkWithFallback(MainActivity a, java.io.File apk, String tag) {
+ AppLog.i(
+ "Update",
+ "install enter tag="
+ + tag
+ + " path="
+ + (apk == null ? "null" : apk.getAbsolutePath())
+ + " exists="
+ + (apk != null && apk.isFile())
+ + " canRead="
+ + (apk != null && apk.canRead()));
+ if (apk == null || !apk.isFile()) {
+ a.toast("安装包不存在或无法读取");
+ return false;
+ }
  try {
  java.io.File cache = new java.io.File(a.getCacheDir(), "updates");
  if (!cache.isDirectory() && !cache.mkdirs()) throw new java.io.IOException("cache");
@@ -353,7 +367,13 @@ final class UpdateScreen {
  .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
  .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
  if (launchInstall(a, explicit, "explicit:" + parts[0])) return true;
- } catch (Throwable ignored) {
+ } catch (Throwable error) {
+ AppLog.i(
+ "Update",
+ "install try=explicit:"
+ + component
+ + " result=fail reason="
+ + error.getClass().getSimpleName());
  }
  }
  // 全部失败：复制到 Download，提示手动安装
@@ -371,7 +391,11 @@ final class UpdateScreen {
  }
  AppLog.i("Update", "install try=download-copy result=ok path=" + saved.getAbsolutePath());
  a.toast("已保存到 Download，请用文件管理器手动安装");
- a.notice("自动安装失败。\nAPK 已保存到：\n" + saved.getAbsolutePath());
+ new AppDialog.Builder(a)
+ .setTitle("无法调起安装器")
+ .setMessage("已复制到：\n/download/DSH-Go/鲸落/" + name + "\n\n请在文件管理器中打开安装。")
+ .setPositiveButton("知道了", null)
+ .show();
  return false;
  } catch (Throwable copyError) {
  AppLog.w("Update", "install try=saved-copy result=fail", copyError);
@@ -393,7 +417,11 @@ final class UpdateScreen {
  } catch (Throwable error) {
  AppLog.i(
  "Update",
- "install try=" + tag + " result=fail reason=" + error.getClass().getSimpleName());
+ "install try="
+ + tag
+ + " result=fail reason="
+ + error.getClass().getSimpleName()
+ + (error.getMessage() == null ? "" : ":" + error.getMessage()));
  return false;
  }
  }

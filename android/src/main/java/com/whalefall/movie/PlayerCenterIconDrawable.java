@@ -15,7 +15,8 @@ import android.graphics.drawable.Drawable;
  * <p>几何/焦点框由外部 View 尺寸决定（侧键 44、中心 64）；本类只画图标并让 icon 1.0→1.04 缩放，
  * 焦点框固定不缩放。颜色仅 PLAYER_ICON / 10% 粉 / ACCENT_SOFT。
  */
-final class PlayerCenterIconDrawable extends Drawable {
+final class PlayerCenterIconDrawable extends Drawable
+    implements PlayerFocusRenderer.Fraction {
   static final int REW = 0, STATE = 1, FF = 2, MORE = 3;
 
   private final MainActivity a;
@@ -60,6 +61,11 @@ final class PlayerCenterIconDrawable extends Drawable {
   void setFocusFraction(float value) {
     focus = Math.max(0f, Math.min(1f, value));
     invalidateSelf();
+  }
+
+  @Override
+  public void set(float value) {
+    setFocusFraction(value);
   }
 
   float focusFraction() {
