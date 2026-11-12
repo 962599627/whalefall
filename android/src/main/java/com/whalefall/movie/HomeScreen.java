@@ -1360,7 +1360,11 @@ final class HomeScreen {
  }
  return false;
  }
- if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) return false;
+ if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+ // 1.9.156：第二层 DOWN → 展开第三层并聚焦第一个选项
+ openFilterFor(defF, "down");
+ return true;
+ }
  AppLog.i(
  "FilterFocus",
  "chip=" + dimKeyF + " action=nav key=" + keyCode);
@@ -1399,6 +1403,7 @@ final class HomeScreen {
  clear.setOnClickListener(
  v -> {
  state.selectedFilters.clear();
+ AppLog.i("FilterLayer", "clear category=" + state.category);
  AppLog.i("FilterFocus", "clear category=" + state.category);
  applyFilters();
  collapseFilterUi();
@@ -1515,6 +1520,7 @@ final class HomeScreen {
 
  void openFilterFor(final VideoFilters.Definition def, String source) {
  String dim = normalizeFilterDim(def.dimension);
+ AppLog.i("FilterLayer", "level=2 dim=" + dim + " source=" + source);
  AppLog.i(
  "FilterOption",
  "open dim=" + dim + " source=" + source + " keyMode=" + a.keyFocusMode);
@@ -1588,6 +1594,9 @@ final class HomeScreen {
  }
  hideFilterOptions();
  filterOpenDim = def.dimension;
+ AppLog.i(
+ "FilterLayer",
+ "level=3 open dim=" + normalizeFilterDim(def.dimension) + " options=" + def.choices.size());
  filterPanel.setVisibility(View.VISIBLE);
  filterTagScroll.setVisibility(View.VISIBLE);
  filterOptionRow.removeAllViews();
@@ -1697,12 +1706,23 @@ final class HomeScreen {
  chip.setNextFocusLeftId(prev.getId());
  }
  }
+ // 1.9.156：第三层选项 DOWN 统一回卡片第一排
+ View cardBelow = a.root == null ? null : a.root.findViewWithTag("home-video:0");
+ if (cardBelow != null && cardBelow.getId() != View.NO_ID)
+ chip.setNextFocusDownId(cardBelow.getId());
  count++;
  }
  // 1.9.116：建立「筛选芯片 ↔ 选项行 ↔ 卡片」焦点链
  String openedDim = normalizeFilterDim(def.dimension);
  View parentChip = a.root == null ? null : a.root.findViewWithTag("filter-" + openedDim);
  View firstOption = filterOptionRow.getChildCount() > 0 ? filterOptionRow.getChildAt(0) : null;
+ if (parentChip != null && parentChip.getId() != View.NO_ID) {
+ // 1.9.156：第三层任一选项 UP 回第二层芯片
+ for (int i = 0; i < filterOptionRow.getChildCount(); i++) {
+ View option = filterOptionRow.getChildAt(i);
+ if (option.getId() != View.NO_ID) option.setNextFocusUpId(parentChip.getId());
+ }
+ }
  if (firstOption != null && firstOption.getId() != View.NO_ID) {
  if (parentChip != null && parentChip.getId() != View.NO_ID) {
  parentChip.setNextFocusDownId(firstOption.getId());
@@ -1758,6 +1778,10 @@ final class HomeScreen {
  + " value="
  + choice.value);
  filterPendingTag = def.dimension;
+ lastFilterDim = normalizeFilterDim(def.dimension);
+ AppLog.i(
+ "FilterLayer",
+ "pick dim=" + lastFilterDim + " value=" + choice.value + " label=" + choice.label);
  boolean wasInline = filterOptionsVisible();
  hideFilterOptions();
  applyFilters();

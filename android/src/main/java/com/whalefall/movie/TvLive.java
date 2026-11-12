@@ -606,6 +606,8 @@ final class TvLive {
  }
 
  static volatile boolean iptvFetching;
+ /** 1.9.156：分类顺序日志只打一次。 */
+ static boolean categoryOrderLogged;
 
  /** 重绘内容区：三段式（平板横向）或单列（手机竖屏）。 */
  static void renderTvPage(PageState page) {
@@ -640,6 +642,10 @@ final class TvLive {
  final int iptvCount = store.group(GROUP_IPTV).size();
  final int favCount = store.favorites.size();
  final int total = store.every().size();
+ if (!categoryOrderLogged) {
+ categoryOrderLogged = true;
+ AppLog.i("TvLive", "categories order=fav-first");
+ }
  if (page.subTitle != null) {
  if (wide) {
  page.subTitle.setText(
@@ -676,8 +682,8 @@ final class TvLive {
  LinearLayout chipRow = a.row();
  chipScroll.addView(chipRow);
 
- String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_IPTV, GROUP_WEB, GROUP_MINE};
- int[] counts = {cctvCount, satCount, iptvCount, webCount, favCount};
+ String[] gs = {GROUP_MINE, GROUP_CCTV, GROUP_SAT, GROUP_IPTV, GROUP_WEB};
+ int[] counts = {favCount, cctvCount, satCount, iptvCount, webCount};
  for (int i = 0; i < gs.length; i++) {
  final String g = gs[i];
  boolean on = !searching && g.equals(page.group);
@@ -911,8 +917,8 @@ final class TvLive {
  cap.setPadding(a.dp(7), 0, 0, a.dp(8));
  rail.addView(cap, new LinearLayout.LayoutParams(-1, -2));
 
- String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_IPTV, GROUP_WEB, GROUP_MINE};
- int[] counts = {cctvCount, satCount, iptvCount, webCount, favCount};
+ String[] gs = {GROUP_MINE, GROUP_CCTV, GROUP_SAT, GROUP_IPTV, GROUP_WEB};
+ int[] counts = {favCount, cctvCount, satCount, iptvCount, webCount};
  for (int i = 0; i < gs.length; i++) {
  final String g = gs[i];
  boolean on = page.query.isEmpty() && g.equals(page.group);
