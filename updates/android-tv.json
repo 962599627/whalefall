@@ -19,6 +19,14 @@
       "sha256": "3d9f54a9a7f748aaa0360654f9117e50d222bd446269b403fd9211bd738cd929",
       "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv.apk",
       "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv.apk"
+    },
+    {
+      "kind": "tv-arm64",
+      "label": "TV / 盒子版（64位）",
+      "size": 57470925,
+      "sha256": "25ce5c220c60facc3fcadb0f57dbff5323ebecff3c492ab3a2880ee87a462867",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv-arm64.apk"
     }
   ]
 }
