@@ -188,6 +188,7 @@ final class PlayerChrome {
  // 1.9.168：More = 48 wrapper + 44×40 胶囊（PLAYER_CHIP + 1dp STROKE_SOFT，圆角20）
  FrameLayout moreWrap = new FrameLayout(a);
  moreWrap.setClickable(true);
+ moreWrap.setPadding(a.dp(2), a.dp(2), a.dp(2), a.dp(2));
  moreBtn = new ImageButton(a);
  GradientDrawable moreCapsule = new GradientDrawable();
  moreCapsule.setColor(UiTokens.PLAYER_CHIP);

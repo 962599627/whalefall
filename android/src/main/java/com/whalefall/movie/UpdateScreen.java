@@ -341,7 +341,9 @@ final class UpdateScreen {
  .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
  .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
  .putExtra(android.content.Intent.EXTRA_RETURN_RESULT, true);
+ AppLog.i("Update", "install step=launch_package tag=" + tag);
  if (launchInstall(a, install, "install_package")) return true;
+ AppLog.i("Update", "install step=launch_view tag=" + tag);
  android.content.Intent view =
  new android.content.Intent(android.content.Intent.ACTION_VIEW)
  .setDataAndType(uri, "application/vnd.android.package-archive")
@@ -378,6 +380,7 @@ final class UpdateScreen {
  }
  // 全部失败：复制到 Download，提示手动安装
  try {
+ AppLog.i("Update", "install step=explicit tag=" + tag);
  java.io.File external = android.os.Environment.getExternalStorageDirectory();
  java.io.File dir = new java.io.File(external, "Download/DSH-Go/鲸落");
  if (!dir.isDirectory()) dir.mkdirs();
@@ -390,18 +393,39 @@ final class UpdateScreen {
  while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
  }
  AppLog.i("Update", "install try=download-copy result=ok path=" + saved.getAbsolutePath());
+ AppLog.i("Update", "install step=dialog tag=" + tag + " path=" + saved.getAbsolutePath());
  a.toast("已保存到 Download，请用文件管理器手动安装");
+ final String shownPath = saved.getAbsolutePath();
  new AppDialog.Builder(a)
  .setTitle("无法调起安装器")
- .setMessage("已复制到：\n/download/DSH-Go/鲸落/" + name + "\n\n请在文件管理器中打开安装。")
+ .setMessage("已复制到：\n" + shownPath + "\n\n请在文件管理器中打开安装。")
+ .setNeutralButton(
+ "复制路径",
+ (d, w) -> {
+ try {
+ android.content.ClipboardManager cm =
+ (android.content.ClipboardManager) a.getSystemService(
+ android.content.Context.CLIPBOARD_SERVICE);
+ cm.setPrimaryClip(android.content.ClipData.newPlainText("apk", shownPath));
+ a.toast("路径已复制");
+ } catch (Throwable ignored) {
+ }
+ })
  .setPositiveButton("知道了", null)
  .show();
  return false;
  } catch (Throwable copyError) {
  AppLog.w("Update", "install try=saved-copy result=fail", copyError);
- }
+ final String apkPath = apk.getAbsolutePath();
+ AppLog.i("Update", "install step=dialog tag=" + tag + " path=" + apkPath + " copied=false");
+ new AppDialog.Builder(a)
+ .setTitle("无法调起安装器")
+ .setMessage("安装包路径：\n" + apkPath + "\n\n请用文件管理器手动打开安装。")
+ .setPositiveButton("知道了", null)
+ .show();
  a.toast("安装失败，请用文件管理器手动安装");
  return false;
+ }
  } catch (Throwable error) {
  AppLog.w("Update", "install fallback failed", error);
  a.toast("安装失败：" + error.getMessage());

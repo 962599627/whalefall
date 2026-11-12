@@ -1410,8 +1410,9 @@ final class FileManagerScreen {
  refresh();
  } else if (entry.video) FileManagerCore.playLocal(a, entry.file);
  else if ("apk".equals(ext)) {
- // 1.9.169：本地 APK 走多路安装回退（大小写/空格/中文名均按后缀判断）
- AppLog.i("FileManager", "apk install path=" + entry.file.getAbsolutePath());
+ // 1.9.173：先给可见反馈，再走多路安装
+ a.toast("准备安装：" + nm);
+ AppLog.i("FileManager", "apk click=" + nm + " path=" + entry.file.getAbsolutePath());
  UpdateScreen.installApkWithFallback(a, entry.file, "file-manager");
  }
  else if (TextViewerScreen.isImageName(entry.name))
@@ -1419,6 +1420,19 @@ final class FileManagerScreen {
  else if (TextViewerScreen.isTextName(entry.name))
  TextViewerScreen.show(a, entry.file);
  else a.toast("当前仅支持视频/图片/文本查看与下载");
+ });
+ // 1.9.173：电视 OK 兜底手动触发 click（并留可观测日志）
+ holder.setOnKeyListener(
+ (v, keyCode, event) -> {
+ boolean ok =
+ keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+ || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
+ if (ok && event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+ AppLog.i("FileManager", "apk click=" + entry.name + " key=center");
+ v.performClick();
+ return true;
+ }
+ return false;
  });
  holder.setOnLongClickListener(
  v -> {

@@ -1389,15 +1389,19 @@ final class PlaybackController {
  }
  AppLog.i("Player", "seek-crash fallback=software url=" + ep.url);
  }
- // 1.9.172：播放内核两档 auto / system；旧值 exo 兼容按 auto
- final String rawKernel = a.prefs.getString(Prefs.PLAYER_KERNEL, "auto");
- final String kernel = "system".equals(rawKernel) ? "system" : "auto";
+ // 1.9.173：默认 ExoPlayer；系统播放器仅手动选择，不再自动回落
+ final String rawKernel = a.prefs.getString(Prefs.PLAYER_KERNEL, "exo");
+ final String kernel = "system".equals(rawKernel) ? "system" : "exo";
  if (!kernel.equals(rawKernel))
  a.prefs.edit().putString(Prefs.PLAYER_KERNEL, kernel).apply();
  final boolean useSystemKernel = "system".equals(kernel);
  AppLog.i(
  "Player",
- "kernel=mode=" + kernel + " used=" + (useSystemKernel ? "system" : "exo"));
+ "kernel=mode="
+ + kernel
+ + " used="
+ + (useSystemKernel ? "system" : "exo")
+ + (useSystemKernel ? "" : " fallback=disabled"));
  candidate =
  useSystemKernel
  ? new SystemPlayer(a)
@@ -1416,10 +1420,15 @@ final class PlaybackController {
  : ep.url),
  mediaHeaders);
  candidate.setOptions(ep.media);
+ if (useSystemKernel) {
+ candidate.setOnErrorListener(
+ (p, what, extra) -> {
+ AppLog.i("Player", "kernel=system error=" + what + " extra=" + extra);
+ a.toast("系统播放器不支持该视频，请切回自动/Exo");
+ return true;
+ });
+ }
  final MoviePlayer ready = candidate;
- final boolean autoKernel = "auto".equals(kernel) && !useSystemKernel;
- final Map<String, String> headersForFallback = mediaHeaders;
- final String urlForFallback = ep.url;
  a.ui.post(
  () -> {
  try {
@@ -1433,24 +1442,7 @@ final class PlaybackController {
  }
  a.player = ready;
  ready.setSurface(renderSurface);
- // 1.9.170：自动模式 Exo 8s 未出首帧 → 回落系统播放器
- if (autoKernel) {
- final android.view.Surface fallbackSurface = renderSurface;
- a.ui.postDelayed(
- () -> {
- try {
- if (ticket != a.generation
- || a.player != ready
- || a.isFinishing()
- || ready.hasRenderedFirstFrame()) return;
- fallbackToSystem(
- a, ready, urlForFallback, headersForFallback, fallbackSurface, ticket);
- } catch (Throwable error) {
- AppLog.w("Player", "kernel fallback check failed", error);
- }
- },
- 8000);
- }
+ // 1.9.173：删除 8s 首帧自动回落，Exo 正常播放时不切内核
  ready.bindSubtitles(
  controls.subtitle,
  text -> {

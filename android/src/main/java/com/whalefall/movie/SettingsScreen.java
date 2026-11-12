@@ -444,25 +444,27 @@ if (a.isTvDevice()) pickWallpaperBuiltin(true);
  + "（下次打开网页直播/网页播放生效）");
  a.refresh();
  });
- // 1.9.172：播放内核简化为两档（auto / system）；旧值 exo 兼容为 auto
- String kernelMode = a.prefs.getString(Prefs.PLAYER_KERNEL, "auto");
- if ("exo".equals(kernelMode)) {
- kernelMode = "auto";
- a.prefs.edit().putString(Prefs.PLAYER_KERNEL, "auto").apply();
+ // 1.9.173：两档 exo / system；默认 ExoPlayer，不再自动回落
+ String kernelMode = a.prefs.getString(Prefs.PLAYER_KERNEL, "exo");
+ if (!"system".equals(kernelMode)) {
+ kernelMode = "exo";
+ a.prefs.edit().putString(Prefs.PLAYER_KERNEL, "exo").apply();
  }
  final String kernelCurrent = kernelMode;
- String kernelLabel = "system".equals(kernelCurrent) ? "系统播放器" : "自动（推荐）";
+ String kernelLabel = "system".equals(kernelCurrent) ? "系统播放器" : "ExoPlayer（推荐）";
  link(
  "播放内核",
- "当前：" + kernelLabel + "；自动=ExoPlayer，失败/8s 未出首帧自动切系统播放器",
+ "当前："
+ + kernelLabel
+ + "；默认 ExoPlayer（推荐）；系统播放器仅部分老电视可用",
  "setting-player-kernel",
  () -> {
- String next = "system".equals(kernelCurrent) ? "auto" : "system";
+ String next = "system".equals(kernelCurrent) ? "exo" : "system";
  a.prefs.edit().putString(Prefs.PLAYER_KERNEL, next).apply();
  AppLog.i("Player", "kernel=mode=" + next + " saved=true");
  a.toast(
  "播放内核："
- + ("system".equals(next) ? "系统播放器" : "自动（推荐）")
+ + ("system".equals(next) ? "系统播放器" : "ExoPlayer（推荐）")
  + "（下次起播生效）");
  a.refresh();
  });
