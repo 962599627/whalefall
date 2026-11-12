@@ -471,16 +471,11 @@ if (a.isTvDevice()) pickWallpaperBuiltin(true);
  // 1.9.172：不再展示旧的「播放器 Media3/系统」选项，统一由「播放内核」控制
  if (a.prefs.getInt(Prefs.PLAYER_ENGINE, 0) != 0)
  a.prefs.edit().putInt(Prefs.PLAYER_ENGINE, 0).apply();
- // 1.9.121：SDK<26 旧设备默认软件解码，避免硬解原生崩溃
- if (android.os.Build.VERSION.SDK_INT < 26
- && a.prefs.getInt(Prefs.DECODER_MODE, 0) == 0) {
- a.prefs.edit().putInt(Prefs.DECODER_MODE, 2).apply();
- a.toast("旧设备默认软件解码（更稳定）");
- }
+ // 1.9.175：删除 SDK<26 强制软解；自动=硬解优先（无硬解才软解）
  ints(
  "解码方式",
  Prefs.DECODER_MODE,
- new String[] {"自动", "硬件解码", "软件解码优先"},
+ new String[] {"自动（硬解优先）", "硬件解码", "软件解码"},
  new int[] {0, 1, 2},
  0);
  toggle("优先使用兼容音频解码", Prefs.SOFTWARE_AUDIO, false, null);

@@ -68,7 +68,9 @@ public class MoviePlayer {
  private static String decoderKind(String name) {
  if (name == null || name.isEmpty()) return "?";
  String lower = name.toLowerCase(java.util.Locale.ROOT);
- return lower.contains("sw") || lower.contains("google") || lower.contains("android")
+ return lower.startsWith("c2.android")
+ || lower.startsWith("omx.google")
+ || lower.contains(".sw.")
  ? "sw"
  : "hw";
  }
@@ -159,12 +161,22 @@ public class MoviePlayer {
  if (!exists) raw.add(eac3);
  }
  }
- // 1.9.121：SDK<26 旧电视默认软解，避开 Amlogic 硬解器频繁 seek 崩溃
+ // 1.9.175：自动/硬解必须优先硬件解码；软解只在无硬件解码器时降级
  int effectiveMode = decoderMode;
- if (android.os.Build.VERSION.SDK_INT < 26 && decoderMode == 0) {
- effectiveMode = 2;
- AppLog.i("Player", "decoder=software reason=sdk<26 mode=auto->software"); }
- if (effectiveMode == 0 || effectiveMode == 3) return raw;
+ AppLog.i(
+ "Player",
+ "decode mode="
+ + (effectiveMode == 2 ? "sw" : effectiveMode == 1 ? "hw" : "auto")
+ + " source=prefs");
+ if (effectiveMode == 0 || effectiveMode == 3) {
+ java.util.List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo> hwOnly =
+ new java.util.ArrayList<>();
+ for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo codec : raw)
+ if (!mime.startsWith("video/") || codec.hardwareAccelerated) hwOnly.add(codec);
+ if (!hwOnly.isEmpty()) return hwOnly;
+ AppLog.i("Player", "decode mode=auto source=fallback reason=no-hw-codec");
+ return raw;
+ }
  java.util.List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo>
  selected = new java.util.ArrayList<>();
  for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo codec :
@@ -174,6 +186,10 @@ public class MoviePlayer {
  ? codec.softwareOnly
  : codec.hardwareAccelerated))
  selected.add(codec);
+ if (selected.isEmpty() && effectiveMode == 1) {
+ AppLog.i("Player", "decode mode=hw source=fallback reason=no-hw-codec");
+ return raw;
+ }
  return selected.isEmpty() ? raw : selected;
  });
  // 1.9.148：1GB 设备进一步收紧缓冲（低内存 8s/20s/4s），并按字节上限而不仅是时长
@@ -227,6 +243,7 @@ public class MoviePlayer {
  long completed,
  long duration) {
  videoDecoder = name;
+ AppLog.i("Player", "decode=" + decoderKind(name) + " name=" + name);
  }
 
  @Override
@@ -250,6 +267,8 @@ public class MoviePlayer {
  "Player",
  "decode="
  + decoderKind(videoDecoder)
+ + " name="
+ + videoDecoder
  + " output=surface dropped="
  + droppedFrames);
  }
@@ -262,12 +281,28 @@ public class MoviePlayer {
  "Player",
  "decode="
  + decoderKind(videoDecoder)
+ + " name="
+ + videoDecoder
  + " output=surface dropped="
  + MoviePlayer.this.droppedFrames);
  }
  });
  exo.addListener(
  new Player.Listener() {
+ @Override
+ public void onPlayerError(androidx.media3.common.PlaybackException error) {
+ AppLog.i(
+ "Player",
+ "decode="
+ + decoderKind(videoDecoder)
+ + " name="
+ + videoDecoder
+ + " error="
+ + error.getErrorCodeName()
+ + " msg="
+ + error.getMessage());
+ }
+
  @Override
  public void onPlaybackStateChanged(int state) {
  if (released) return;

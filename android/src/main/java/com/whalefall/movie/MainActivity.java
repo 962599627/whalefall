@@ -1101,6 +1101,11 @@ public final class MainActivity extends Activity {
  prefs.edit().putString(Prefs.PLAYER_KERNEL, "exo").apply();
  AppLog.i("Player", "kernel=migrate system->exo last=" + last + " code=" + code);
  }
+ // 1.9.175：历史被强制写入的「软件解码」迁移回自动（硬解优先）
+ if (last < 19175 && prefs.getInt(Prefs.DECODER_MODE, 0) == 2) {
+ prefs.edit().putInt(Prefs.DECODER_MODE, 0).apply();
+ AppLog.i("Player", "decode=migrate sw->auto last=" + last);
+ }
  prefs.edit().putInt("last_version", code).apply();
  } catch (Throwable error) {
  AppLog.w("Player", "kernel migrate failed", error);
