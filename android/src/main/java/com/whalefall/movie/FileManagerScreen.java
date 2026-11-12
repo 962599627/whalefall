@@ -199,6 +199,8 @@ final class FileManagerScreen {
  buildSegment();
  if (tab == 1) buildProviderChips();
  buildToolbar();
+ // 1.9.174：根列表入口「App 内置文件（只读）」——含后台上传的 APK
+ if (tab == 0) buildAppFilesEntry();
  content = a.vertical();
  a.body.addView(content);
  globalStrip = a.row();
@@ -652,8 +654,45 @@ final class FileManagerScreen {
  }
  }
 
- private void refreshLocal() {
- items.clear();
+ /** 1.9.174：App 内置文件（pushed/，含后台上传 APK）入口。 */
+ private void buildAppFilesEntry() {
+ try {
+ java.io.File root = PushFiles.root(a);
+ if (!root.isDirectory()) root.mkdirs();
+ java.io.File[] files = root == null ? null : root.listFiles();
+ int count = files == null ? 0 : files.length;
+ if (count <= 0) return;
+ LinearLayout row = a.row();
+ row.setGravity(Gravity.CENTER_VERTICAL);
+ row.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
+ row.setBackground(MobileDetailScreen.glassBg(a, 0x14ffffff, 0x24ffffff, 12));
+ row.setFocusable(true);
+ row.setFocusableInTouchMode(true);
+ row.setClickable(true);
+ row.setTag("filemgr-app-files");
+ focusable(row);
+ TextView name = a.text("App 内置文件（只读）", 14, UiTokens.TEXT_PRIMARY);
+ TextView meta = a.text(count + " 项 · 含后台上传 APK", 11, UiTokens.TEXT_TERTIARY);
+ LinearLayout col = a.vertical();
+ col.addView(name);
+ col.addView(meta);
+ row.addView(col, new LinearLayout.LayoutParams(0, -2, 1f));
+ row.setOnClickListener(
+ v -> {
+ AppLog.i("FileManager", "root=app-files entries=" + count);
+ FilesScreen.show(a);
+ });
+ LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+ lp.leftMargin = a.dp(24);
+ lp.rightMargin = a.dp(24);
+ lp.bottomMargin = a.dp(8);
+ a.body.addView(row, lp);
+ } catch (Throwable error) {
+ AppLog.w("FileManager", "app-files entry failed", error);
+ }
+ }
+
+ private void refreshLocal() { items.clear();
  if (!aggregateRoot() && localDir.exists() && !localDir.canRead()) {
  showEmpty("读取目录失败", "请检查存储权限后重试", "重试", () -> refresh());
  return;

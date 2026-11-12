@@ -1424,6 +1424,11 @@ final class PlaybackController {
  candidate.setOnErrorListener(
  (p, what, extra) -> {
  AppLog.i("Player", "kernel=system error=" + what + " extra=" + extra);
+ try {
+ p.pause();
+ } catch (Throwable ignored) {
+ }
+ a.playing = false;
  a.toast("系统播放器不支持该视频，请切回自动/Exo");
  return true;
  });

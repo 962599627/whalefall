@@ -236,6 +236,29 @@ final class PlayerChrome {
  moreWrap.addView(
  moreBtn, new FrameLayout.LayoutParams(a.dp(44), a.dp(40), Gravity.CENTER));
  topRight.addView(moreWrap, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
+ moreWrap.post(
+ () -> {
+ try {
+ int[] loc = new int[2];
+ moreBtn.getLocationOnScreen(loc);
+ AppLog.i(
+ "PlayerChrome",
+ "more size="
+ + moreBtn.getWidth()
+ + "x"
+ + moreBtn.getHeight()
+ + " wrapper="
+ + moreWrap.getWidth()
+ + "x"
+ + moreWrap.getHeight()
+ + " center=("
+ + loc[0]
+ + ","
+ + loc[1]
+ + ")");
+ } catch (Throwable ignored) {
+ }
+ });
  overlay.addView(
  topRight, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT));
  topActions = topRight;

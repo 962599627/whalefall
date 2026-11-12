@@ -1088,6 +1088,25 @@ public final class MainActivity extends Activity {
  super.attachBaseContext(base.createConfigurationContext(layout));
  }
 
+ /** 1.9.174：一次性迁移旧 system 内核（此前自动回落/测试写入）到 exo。 */
+ void migratePlayerKernel() {
+ try {
+ int code = 0;
+ try {
+ code = getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+ } catch (Throwable ignored) {
+ }
+ int last = prefs.getInt("last_version", 0);
+ if (last < 19174 && "system".equals(prefs.getString(Prefs.PLAYER_KERNEL, "exo"))) {
+ prefs.edit().putString(Prefs.PLAYER_KERNEL, "exo").apply();
+ AppLog.i("Player", "kernel=migrate system->exo last=" + last + " code=" + code);
+ }
+ prefs.edit().putInt("last_version", code).apply();
+ } catch (Throwable error) {
+ AppLog.w("Player", "kernel migrate failed", error);
+ }
+ }
+
  /** 1.9.144：腾讯 X5(TBS) 内核初始化，老电视网页直播/网页播放兼容；失败自动回退系统 WebView。 */
  void initX5Kernel() {
  try {
@@ -1135,6 +1154,7 @@ public final class MainActivity extends Activity {
  applyMobileSystemBars(false);
  }
  prefs = getSharedPreferences(privateMode ? "movie-private" : Prefs.FILE, MODE_PRIVATE);
+ migratePlayerKernel();
  reduced = prefs.getBoolean(Prefs.REDUCED, false);
  // 1.9.89：Android<8 强制 ExoPlayer，修正旧设备保存的系统播放器设置
  if (android.os.Build.VERSION.SDK_INT < 26
