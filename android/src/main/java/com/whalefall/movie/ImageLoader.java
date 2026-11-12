@@ -484,7 +484,8 @@ final class ImageLoader {
  usingBuiltin = fallbackWallpaper != null;
  }
  // 1.9.200：视频动态壁纸在同一个 Atmosphere 内叠加 TextureView
- if (a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
+ if (a.isTvDevice()
+ && a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
  && VideoWallpaper.file(a).isFile()) startAtomVideo();
  atomActive = this;
  if (atomPlayerRunning && atomTexture != null)

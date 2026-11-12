@@ -1810,7 +1810,11 @@ public final class MainActivity extends Activity {
  "Wallpaper",
  "video fallback reason="
  + reason
- + " videoEnabled kept=true retry=true source=builtin-default");
+ + " videoEnabled kept=true retry=true mobile="
+ + (!isTvDevice())
+ + " source=builtin-default");
+ if (!isTvDevice())
+ AppLog.i("Wallpaper", "mobile fallback=static reason=" + reason);
  ui.post(
  () -> {
  if (root != null) applyWallpaper(root);
@@ -1836,8 +1840,9 @@ public final class MainActivity extends Activity {
  // 绝不铺壁纸，否则壁纸层会插到 playbackLayer 之上盖住视频。
  if ("player-surface".equals(target.getTag())) return;
  final boolean staticEnabled = prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false);
- // 1.9.200：动态壁纸统一由 Atmosphere 内部承载，页面/窗口一律走静态路径
- final boolean videoEnabled = false;
+ // 1.9.218：手机/平板恢复独立 VideoWallpaper 层；TV 仍由 Atmosphere 内部承载
+ final boolean videoEnabled =
+ !isTvDevice() && videoWallpaperEnabled() && !videoWallpaperRetryPending;
 
  // 1. base 渐变：没有就补（动态壁纸时不铺不透明底，否则会盖住 SurfaceView）
  boolean hasBase = false;
@@ -1887,7 +1892,9 @@ public final class MainActivity extends Activity {
 
  // 1.9.217：手机/平板动态壁纸——Atmosphere 内部承载视频，按 prefs 判断
  boolean wantAtomVideo =
- prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false) && VideoWallpaper.file(this).isFile();
+ isTvDevice()
+ && prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
+ && VideoWallpaper.file(this).isFile();
  if (wantAtomVideo && target.findViewWithTag("atom-video") == null) {
  for (int i = target.getChildCount() - 1; i >= 0; i--)
  if (WALLPAPER_TAG.equals(target.getChildAt(i).getTag())) target.removeViewAt(i);
@@ -1931,6 +1938,18 @@ public final class MainActivity extends Activity {
  releaseWallpaper();
  }
 
+ // 1.9.218：手机/平板动态壁纸层日志
+ if (videoEnabled && videoWallpaper != null) {
+ int layer = target.indexOfChild(videoWallpaper);
+ AppLog.i(
+ "Wallpaper",
+ "mobile engine="
+ + (android.os.Build.VERSION.SDK_INT >= 26 ? "exo" : "mediaplayer")
+ + " layer="
+ + layer
+ + " valid="
+ + (videoWallpaper.getParent() == target));
+ }
  // 1.9.202：所有页面统一背景板日志
  AppLog.i(
  "Wallpaper",
