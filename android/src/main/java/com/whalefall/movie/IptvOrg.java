@@ -23,6 +23,8 @@ final class IptvOrg {
   private IptvOrg() {}
 
   static final String URL_CN = "https://iptv-org.github.io/iptv/countries/cn.m3u";
+  static final String URL_CN_HTTP = "http://iptv-org.github.io/iptv/countries/cn.m3u";
+  static final String URL_ZHO_HTTP = "http://iptv-org.github.io/iptv/languages/zho.m3u";
   static final String URL_ZHO = "https://iptv-org.github.io/iptv/languages/zho.m3u";
   static final String CACHE_M3U = "iptv-org-cn.m3u";
   static final String CACHE_JSON = "iptv-org-channels.json";
@@ -65,11 +67,13 @@ final class IptvOrg {
           List<TvLive.Channel> channels = null;
           String error = null;
           boolean fromCache = false;
+          String usedUrl = "";
           try {
-            String text = httpGet(URL_CN);
-            channels = parse(text);
+            Download download = downloadWithFallback();
+            usedUrl = download.url;
+            channels = parse(download.text);
             if (channels.isEmpty()) throw new IOException("播放列表为空");
-            writeText(cacheM3u(a), text);
+            writeText(cacheM3u(a), download.text);
             writeText(cacheJson(a), toJson(channels));
           } catch (Throwable failure) {
             error = failure.getClass().getSimpleName() + ": " + failure.getMessage();
@@ -79,12 +83,15 @@ final class IptvOrg {
           final List<TvLive.Channel> result = channels == null ? new ArrayList<>() : channels;
           final boolean cachedResult = fromCache;
           final String errorResult = error;
+          final String finalUrl = usedUrl;
           AppLog.i(
               "IptvOrg",
               "fetch url="
-                  + URL_CN
+                  + (finalUrl.isEmpty() ? URL_CN : finalUrl)
                   + " channels="
                   + result.size()
+                  + " try="
+                  + (finalUrl.startsWith("http://") ? "http" : "https")
                   + " fromCache="
                   + cachedResult
                   + (errorResult == null ? "" : " error=" + errorResult));
@@ -101,6 +108,61 @@ final class IptvOrg {
   }
 
   // ---------------- HTTP / 缓存 ----------------
+
+  static final class Download {
+    final String url;
+    final String text;
+
+    Download(String url, String text) {
+      this.url = url;
+      this.text = text;
+    }
+  }
+
+  /** 1.9.151：https 证书链不认（老电视）时降级 http，再失败换中文语言列表。 */
+  private static Download downloadWithFallback() throws Exception {
+    Exception first;
+    try {
+      String text = httpGet(URL_CN);
+      AppLog.i("IptvOrg", "try=" + URL_CN + " result=ok");
+      return new Download(URL_CN, text);
+    } catch (Exception error) {
+      first = error;
+      AppLog.i(
+          "IptvOrg",
+          "try=" + URL_CN + " result=fail reason=" + error.getClass().getSimpleName());
+    }
+    // 仅在 SSL/证书异常时降级到 HTTP（公开列表，不涉及用户数据）
+    if (!isSslRelated(first)) throw first;
+    try {
+      String text = httpGet(URL_CN_HTTP);
+      AppLog.i("IptvOrg", "try=" + URL_CN_HTTP + " result=ok");
+      return new Download(URL_CN_HTTP, text);
+    } catch (Exception error) {
+      AppLog.i(
+          "IptvOrg",
+          "try=" + URL_CN_HTTP + " result=fail reason=" + error.getClass().getSimpleName());
+    }
+    try {
+      String text = httpGet(URL_ZHO_HTTP);
+      AppLog.i("IptvOrg", "try=" + URL_ZHO_HTTP + " result=ok");
+      return new Download(URL_ZHO_HTTP, text);
+    } catch (Exception error) {
+      AppLog.i(
+          "IptvOrg",
+          "try=" + URL_ZHO_HTTP + " result=fail reason=" + error.getClass().getSimpleName());
+      error.addSuppressed(first);
+      throw error;
+    }
+  }
+
+  private static boolean isSslRelated(Throwable error) {
+    for (Throwable t = error; t != null; t = t.getCause()) {
+      if (t instanceof javax.net.ssl.SSLHandshakeException
+          || t instanceof java.security.cert.CertificateException) return true;
+    }
+    return false;
+  }
 
   private static String httpGet(String address) throws IOException {
     HttpURLConnection connection = null;
