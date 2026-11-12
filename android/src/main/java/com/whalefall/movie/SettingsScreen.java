@@ -726,6 +726,45 @@ final class SettingsScreen {
  AppLog.i("Perf", "export requested lines=" + PerfOverlay.lines());
  PerfOverlay.export(a);
  });
+ // 1.9.223：测试模式（全量日志 + 复制清空）
+ link(
+ "测试模式",
+ (TestModeLog.enabled() ? "当前：开" : "当前：关")
+ + " · 已记录 "
+ + TestModeLog.lines()
+ + " 行（最多 5000 行 / 2MB 文件）",
+ "settings-test-mode",
+ () -> {
+ boolean on = !TestModeLog.enabled();
+ TestModeLog.set(a, on);
+ a.toast(on ? "测试模式已开启" : "测试模式已关闭（已记录内容保留）");
+ a.refresh();
+ });
+ link(
+ "复制测试日志",
+ "写入剪贴板，复制成功后自动清空缓冲与文件",
+ "settings-test-copy",
+ () -> TestModeLog.copyToClipboard(a));
+ link(
+ "清空测试日志",
+ "不复制，直接清空内存缓冲与文件",
+ "settings-test-clear",
+ () -> new AppDialog.Builder(a)
+ .setTitle("清空测试日志？")
+ .setMessage("将删除当前内存缓冲与 files/test-log.txt，不可恢复。")
+ .setNegativeButton("取消", null)
+ .setPositiveButton(
+ "清空",
+ (d, w) -> {
+ TestModeLog.clear();
+ a.refresh();
+ })
+ .show());
+ link(
+ "导出测试日志到文件",
+ "写入 Download/DSH-Go/鲸落/test-<时间>.txt",
+ "settings-test-export",
+ () -> TestModeLog.export(a));
  link(
  "UI 自检",
  "检查导航选中唯一、焦点唯一、无重复/残留浮层",

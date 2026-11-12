@@ -3923,6 +3923,8 @@ public final class MainActivity extends Activity {
  ui.post(() -> applyPageOrientation("resume"));
  // 1.9.222：恢复性能浮层
  PerfOverlay.attachIfEnabled(this);
+ // 1.9.223：测试模式日志初始化
+ TestModeLog.configure(this);
  if (videoWallpaper != null && (current == null || !current.player)) videoWallpaper.resume();
  ui.postDelayed(this::cleanupOldCrashLogs, 1500);
  ui.postDelayed(this::purgeUnsupportedVideoWallpaper, 1200);

@@ -72,6 +72,11 @@ final class AppLog {
  while (ENTRIES.size() >= CAPACITY) ENTRIES.pollFirst();
  ENTRIES.addLast(line.toString());
  }
+ // 1.9.223：测试模式全量记录（内存环形 + 文件）
+ try {
+ TestModeLog.record(line.toString());
+ } catch (Throwable ignored) {
+ }
  }
 
  static List<String> entries() {
