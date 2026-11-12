@@ -1839,14 +1839,19 @@ public final class MainActivity extends Activity {
  final boolean videoEnabled =
  videoWallpaperEnabled() && !videoWallpaperRetryPending;
 
- // 1. base 渐变：没有就补
+ // 1. base 渐变：没有就补（动态壁纸时不铺不透明底，否则会盖住 SurfaceView）
  boolean hasBase = false;
  for (int i = 0; i < target.getChildCount(); i++)
  if (BACKDROP_TAG.equals(target.getChildAt(i).getTag())) {
  hasBase = true;
  break;
  }
- if (!hasBase) {
+ if (videoEnabled) {
+ // 1.9.183：动态壁纸模式移除不透明 base，并让根容器透明
+ for (int i = target.getChildCount() - 1; i >= 0; i--)
+ if (BACKDROP_TAG.equals(target.getChildAt(i).getTag())) target.removeViewAt(i);
+ target.setBackground(null);
+ } else if (!hasBase) {
  View base = new View(this);
  base.setTag(BACKDROP_TAG);
  base.setBackground(Skin.backdrop(this));
@@ -1892,8 +1897,9 @@ public final class MainActivity extends Activity {
  videoWallpaper = new VideoWallpaper(this);
  target.addView(
  videoWallpaper,
- Math.min(1, target.getChildCount()),
+ 0,
  new FrameLayout.LayoutParams(-1, -1));
+ videoWallpaper.verifyVisible("create");
  } catch (Throwable error) {
  AppLog.w("Wallpaper", "video create failed; fallback default", error);
  releaseWallpaper();

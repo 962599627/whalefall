@@ -125,6 +125,7 @@ final class VideoWallpaper extends FrameLayout {
     private void addSurfaceView() {
         surfaceView = new SurfaceView(host);
         surfaceView.setZOrderMediaOverlay(false);
+        surfaceView.setZOrderOnTop(false);
         surfaceView.setBackgroundColor(Color.BLACK);
         surfaceView.getHolder().setFormat(android.graphics.PixelFormat.RGBA_8888);
         surfaceView.getHolder().addCallback(
@@ -287,6 +288,51 @@ final class VideoWallpaper extends FrameLayout {
     }
 
     /** 1.9.179：回到非播放页恢复动态壁纸。 */
+    /** 1.9.183：自检可见性/层级/根背景，必要时把根背景改透明。 */
+    void verifyVisible(String reason) {
+        try {
+            android.view.ViewParent parent = getParent();
+            int index = -1;
+            if (parent instanceof android.view.ViewGroup) {
+                android.view.ViewGroup group = (android.view.ViewGroup) parent;
+                index = group.indexOfChild(this);
+                if (group instanceof android.view.View) {
+                    android.view.View rootView = (android.view.View) group;
+                    android.graphics.drawable.Drawable bg = rootView.getBackground();
+                    boolean opaque = false;
+                    if (bg instanceof android.graphics.drawable.ColorDrawable) {
+                        opaque = ((android.graphics.drawable.ColorDrawable) bg).getAlpha() >= 250;
+                    }
+                    if (opaque) {
+                        rootView.setBackground(null);
+                        AppLog.i("Wallpaper", "video root background=transparent reason=" + reason);
+                    }
+                }
+            }
+            boolean surfaceValid =
+                    surfaceView != null
+                            && surfaceView.getHolder() != null
+                            && surfaceView.getHolder().getSurface() != null
+                            && surfaceView.getHolder().getSurface().isValid();
+            AppLog.i(
+                    "Wallpaper",
+                    "video visible="
+                            + (getVisibility() == View.VISIBLE)
+                            + " surfaceValid="
+                            + surfaceValid
+                            + " rootAlpha="
+                            + (parent instanceof android.view.View
+                                    ? ((android.view.View) parent).getAlpha()
+                                    : -1f)
+                            + " layer="
+                            + index
+                            + " reason="
+                            + reason);
+        } catch (Throwable error) {
+            AppLog.w("Wallpaper", "video verify failed", error);
+        }
+    }
+
     void resume() {
         if (released) return;
         AppLog.i("Wallpaper", "video engine=" + (useExo ? "exo" : "mediaplayer") + " action=resume");
@@ -373,12 +419,13 @@ final class VideoWallpaper extends FrameLayout {
         }
         if (getParent() instanceof android.view.ViewGroup)
             ((android.view.ViewGroup) getParent()).removeView(this);
-        // 始终垫在 base 渐变之上、页面内容之下（index 0 = base）
+        // 1.9.183：视频层固定在最底层（index 0），根背景透明
         root.addView(
                 this,
-                Math.min(1, root.getChildCount()),
+                0,
                 new android.widget.FrameLayout.LayoutParams(-1, -1));
         moving = false;
+        handler.postDelayed(() -> verifyVisible("attach"), 500);
         // 1.9.117：页面切换不重建播放器；未出首帧时重置守候（仅日志，不 fallback）
         if (!firstFrame) {
             handler.removeCallbacks(firstFrameTimeout);
