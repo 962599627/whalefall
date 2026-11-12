@@ -360,7 +360,11 @@ final class SettingsScreen {
  link(
  "选择视频壁纸",
  "MP4 / WebM / MKV，循环静音，仅首页背景播放", "wallpaper-video-file",
- () -> pickWallpaperBuiltin(true));
+ () -> {
+ // 1.9.215：手机/平板用系统选择器，TV 用内置 pick
+ if (a.isTvDevice()) pickWallpaperBuiltin(true);
+ else pick(47, "video/*", false);
+ });
  if (VideoWallpaper.file(a).isFile())
  link(
  "壁纸声音",
@@ -889,9 +893,25 @@ final class SettingsScreen {
  intent.addCategory(Intent.CATEGORY_OPENABLE);
  intent.setType(mime);
  if (create) intent.putExtra(Intent.EXTRA_TITLE, "WhaleFall-backup.json");
+ AppLog.i(
+ "Wallpaper",
+ "pick source=system request="
+ + request
+ + " mime="
+ + mime
+ + " create="
+ + create);
  a.startActivityForResult(intent, request);
  } catch (Exception error) {
+ // 1.9.215：系统选择器不可用 → 壁纸回退内置 pick
+ if (request == 44 || request == 47) {
+ AppLog.i(
+ "Wallpaper",
+ "pick source=system unavailable=" + error.getClass().getSimpleName() + " fallback=builtin");
+ pickWallpaperBuiltin(request == 47);
+ } else {
  a.notice("电视没有文件选择器。壁纸也可以通过图片地址导入；文件导入导出需要安装文件管理器。");
+ }
  }
  }
 
@@ -1169,10 +1189,12 @@ final class SettingsScreen {
  () -> {
  try {
  if (request == 44) {
+ AppLog.i("Wallpaper", "pick source=system uri=" + uri + " type=image");
  try (InputStream input = a.getContentResolver().openInputStream(uri)) {
  saveWallpaper(a, input);
  }
  } else if (request == 47) {
+ AppLog.i("Wallpaper", "pick source=system uri=" + uri + " type=video");
  try (InputStream input = a.getContentResolver().openInputStream(uri)) {
  saveVideoWallpaper(a, input);
  }
