@@ -458,6 +458,8 @@ final class ImageLoader {
  android.view.TextureView atomTexture;
  boolean atomVideoFailed;
  int atomSurfaceRetries;
+ boolean atomFirstFrame;
+ boolean atomDrawLogged;
 
  /** 1.9.181：供外层 trim 清理默认壁纸缓存。 */
  static void clearCachedDefault() {
@@ -503,7 +505,7 @@ final class ImageLoader {
  try {
  atomTexture = new android.view.TextureView(a);
  atomTexture.setAlpha(1f);
- atomTexture.setVisibility(android.view.View.VISIBLE);
+ atomTexture.setVisibility(android.view.View.INVISIBLE);
  atomTexture.setSurfaceTextureListener(
  new android.view.TextureView.SurfaceTextureListener() {
  @Override
@@ -534,12 +536,18 @@ final class ImageLoader {
  new androidx.media3.common.Player.Listener() {
  @Override
  public void onRenderedFirstFrame() {
- AppLog.i("Wallpaper", "atom video engine=exo texture=valid fallback=static");
+ atomFirstFrame = true;
+ if (atomTexture != null)
+ atomTexture.setVisibility(android.view.View.VISIBLE);
+ AppLog.i(
+ "Wallpaper",
+ "atom video engine=exo texture=valid firstFrame=true fallback=none");
  }
  @Override
  public void onPlayerError(
  androidx.media3.common.PlaybackException error) {
  atomVideoFailed = true;
+ atomFirstFrame = false;
  if (atomTexture != null) atomTexture.setVisibility(android.view.View.GONE);
  AppLog.i(
  "Wallpaper",
@@ -561,9 +569,30 @@ final class ImageLoader {
  + (valid ? "valid" : "invalid")
  + " fallback=static page=bind");
  checkAtomTexture(0);
+ // 1.9.201：复用播放器时首帧回调可能已过去，600ms 后按 surface 就绪显示
+ postDelayed(
+ () -> {
+ if (atomVideoFailed || atomTexture == null) return;
+ if (atomTexture.isAvailable()) {
+ atomFirstFrame = true;
+ atomTexture.setVisibility(android.view.View.VISIBLE);
+ AppLog.i(
+ "Wallpaper",
+ "atom video engine=exo texture=valid firstFrame=cached fallback=none");
+ }
+ },
+ 600);
  } catch (Throwable error) {
  atomVideoFailed = true;
- AppLog.w("Wallpaper", "atom video init failed; fallback static", error);
+ atomFirstFrame = false;
+ try {
+ if (atomTexture != null) atomTexture.setVisibility(android.view.View.GONE);
+ } catch (Throwable ignored) {
+ }
+ AppLog.w(
+ "Wallpaper",
+ "atom video fallback=static reason=" + error.getClass().getSimpleName(),
+ error);
  }
  }
 
@@ -694,8 +723,26 @@ final class ImageLoader {
  wallpaper = fallbackWallpaper;
  usingBuiltin = wallpaper != null;
  }
+ // 1.9.201：静态兜底必须始终可画，避免纯色
+ if (wallpaper == null) {
+ wallpaper = loadDefaultWallpaper();
+ usingBuiltin = wallpaper != null;
+ }
  if (wallpaper != null) {
  try {
+ if (!atomDrawLogged) {
+ atomDrawLogged = true;
+ AppLog.i(
+ "Wallpaper",
+ "atom draw static=true videoVisible="
+ + (atomTexture != null
+  && atomTexture.getVisibility() == android.view.View.VISIBLE
+  && atomTexture.isAvailable())
+ + " firstFrame="
+ + atomFirstFrame
+ + " hasBitmap="
+ + (wallpaper != null));
+ }
  // 1.9.171：首次绘制生成整屏缓存，之后只贴一次 bitmap，避免每帧重算缩放+渐变
  if (frameCache == null
  || frameCache.getWidth() != Math.max(1, getWidth())
@@ -761,6 +808,8 @@ final class ImageLoader {
  if (!atomVideoFailed && atomPlayer != null && atomTexture != null) {
  atomPlayer.setVideoTextureView(atomTexture);
  atomPlayer.setPlayWhenReady(true);
+ atomTexture.setVisibility(
+ atomFirstFrame ? android.view.View.VISIBLE : android.view.View.INVISIBLE);
  AppLog.i("Wallpaper", "atom video page=attach action=resume");
  }
  }
