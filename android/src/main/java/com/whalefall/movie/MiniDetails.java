@@ -21,6 +21,9 @@ final class MiniDetails {
  /** 1.9.226：首次测量的封面矩形（hide 后兜底）。 */
  final int[] cachedCover = new int[4];
 
+ /** 1.9.250：被小窗替换隐藏的海报 View（退出时恢复）。 */
+ View hiddenPoster;
+
  MiniDetails(MainActivity host) {
  a = host;
  controls = a.playbackControls;
@@ -271,8 +274,66 @@ final class MiniDetails {
  applyHeroRect(0);
  }
 
+ /** 1.9.250：把播放层放进海报父容器并复制海报 LayoutParams，保证与海报完全重合。 */
+ private boolean placeInPosterSlot() {
+ if (a.root == null) return false;
+ View poster = a.root.findViewWithTag("detail-cover");
+ if (poster == null) poster = a.root.findViewWithTag("detail-hero");
+ if (poster == null) return false;
+ if (!(poster.getParent() instanceof android.view.ViewGroup)) return false;
+ android.view.ViewGroup parent = (android.view.ViewGroup) poster.getParent();
+ // 1.9.253：线性布局无法用槽位绝对定位，改走坐标公式
+ if (!(parent instanceof FrameLayout)
+ && !(parent instanceof android.widget.RelativeLayout)) return false;
+ android.view.ViewGroup.LayoutParams src = poster.getLayoutParams();
+ if (src == null) return false;
+ android.view.ViewGroup.MarginLayoutParams lp =
+ new android.view.ViewGroup.MarginLayoutParams(src.width, src.height);
+ if (src instanceof android.view.ViewGroup.MarginLayoutParams) {
+ android.view.ViewGroup.MarginLayoutParams s = (android.view.ViewGroup.MarginLayoutParams) src;
+ lp.leftMargin = s.leftMargin;
+ lp.topMargin = s.topMargin;
+ lp.rightMargin = s.rightMargin;
+ lp.bottomMargin = s.bottomMargin;
+ }
+ int index = Math.max(0, parent.indexOfChild(poster));
+ int slot = Math.min(index, parent.getChildCount());
+ if (a.playbackLayer.getParent() instanceof android.view.ViewGroup) {
+ ((android.view.ViewGroup) a.playbackLayer.getParent()).removeView(a.playbackLayer);
+ }
+ parent.addView(a.playbackLayer, slot, lp);
+ if (page.getParent() instanceof android.view.ViewGroup) {
+ ((android.view.ViewGroup) page.getParent()).removeView(page);
+ }
+ a.playbackLayer.addView(
+ page,
+ new FrameLayout.LayoutParams(
+ FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+ poster.setVisibility(View.INVISIBLE);
+ hiddenPoster = poster;
+ if (a.player != null) {
+ try {
+ a.player.setScaleMode(true);
+ } catch (Throwable ignored) {
+ }
+ }
+ a.playbackLayer.bringToFront();
+ page.bringToFront();
+ AppLog.i(
+ "Mini",
+ "slot=poster parent="
+ + parent.getClass().getSimpleName()
+ + " w="
+ + poster.getWidth()
+ + " h="
+ + poster.getHeight());
+ return true;
+ }
+
  private void applyHeroRect(int attempt) {
  if (!a.miniMode || a.root == null) return;
+ // 1.9.250：优先放进海报槽位（同父容器同 LayoutParams）
+ if (placeInPosterSlot()) return;
  // 1.9.248：按分辨率判电视/盒子（横屏且长边≤1920），不再依赖触摸能力
  android.util.DisplayMetrics dm = a.getResources().getDisplayMetrics();
  int longEdge = Math.max(dm.widthPixels, dm.heightPixels);
@@ -299,6 +360,13 @@ final class MiniDetails {
  if (tvMini) {
  // 1.9.248：电视/盒子固定 480×270px、left/top 32px
  int w = 480, h = 270, x = 32, y = 32;
+ // 1.9.254：确保播放层挂在页面 root 上（避免被移入线性布局后不可见）
+ if (a.playbackLayer.getParent() != a.root) {
+ if (a.playbackLayer.getParent() instanceof android.view.ViewGroup) {
+ ((android.view.ViewGroup) a.playbackLayer.getParent()).removeView(a.playbackLayer);
+ }
+ a.root.addView(a.playbackLayer);
+ }
  FrameLayout.LayoutParams vlp =
  new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
  vlp.leftMargin = x;
@@ -360,7 +428,8 @@ final class MiniDetails {
  int posterW = 0, posterH = 0, cx = 0, cy = 0, cw = 0, ch = 0;
  String source = "formula";
  View poster = a.root.findViewWithTag("detail-cover");
- if (poster == null) poster = a.root.findViewWithTag("detail-poster");
+ if (poster == null || poster.getWidth() <= 0) poster = a.root.findViewWithTag("detail-poster");
+ if (poster == null || poster.getWidth() <= 0) poster = a.root.findViewWithTag("detail-hero");
  if (poster != null && poster.getWidth() > 0 && poster.getHeight() > 0) {
  posterW = poster.getWidth();
  posterH = poster.getHeight();
@@ -418,6 +487,11 @@ final class MiniDetails {
  a.player.setScaleMode(true);
  } catch (Throwable ignored) {
  }
+ }
+ a.playbackLayer.setVisibility(View.VISIBLE);
+ if (poster != null && poster.getParent() instanceof android.view.ViewGroup) {
+ poster.setVisibility(View.INVISIBLE);
+ hiddenPoster = poster;
  }
  AppLog.i(
  "MiniMobile",
@@ -482,6 +556,17 @@ final class MiniDetails {
  }
  },
  350);
+ a.ui.postDelayed(
+ () ->
+ AppLog.i(
+ "Mini",
+ "check w="
+ + a.playbackLayer.getWidth()
+ + " h="
+ + a.playbackLayer.getHeight()
+ + " vis="
+ + a.playbackLayer.getVisibility()),
+ 500);
  if (attempt < 2) a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 300);
  return;
  }
@@ -541,6 +626,10 @@ final class MiniDetails {
  }
 
  void remove() {
+ if (hiddenPoster != null) {
+ hiddenPoster.setVisibility(View.VISIBLE);
+ hiddenPoster = null;
+ }
  if (page.getParent() != null) ((FrameLayout) page.getParent()).removeView(page);
  if (hit != null && hit.getParent() == a.playbackLayer)
  a.playbackLayer.removeView(hit);
