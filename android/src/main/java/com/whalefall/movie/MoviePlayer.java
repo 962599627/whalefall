@@ -62,6 +62,16 @@ public class MoviePlayer {
  private int preparation;
  private volatile RequestScope probeScope;
  private long prepareStarted, firstFrameMs = -1;
+ private long droppedFrames;
+ private boolean decodeLogged;
+
+ private static String decoderKind(String name) {
+ if (name == null || name.isEmpty()) return "?";
+ String lower = name.toLowerCase(java.util.Locale.ROOT);
+ return lower.contains("sw") || lower.contains("google") || lower.contains("android")
+ ? "sw"
+ : "hw";
+ }
  private String lastError = "";
  private String videoDecoder = "", audioDecoder = "";
  private int lastHttpStatus, lastErrorTrack;
@@ -234,6 +244,26 @@ public class MoviePlayer {
  firstFrameMs =
  android.os.SystemClock.elapsedRealtime()
  - prepareStarted;
+ if (!decodeLogged) {
+ decodeLogged = true;
+ AppLog.i(
+ "Player",
+ "decode="
+ + decoderKind(videoDecoder)
+ + " output=surface dropped="
+ + droppedFrames);
+ }
+ }
+
+ @Override
+ public void onDroppedVideoFrames(EventTime time, int droppedFrames, long elapsedMs) {
+ MoviePlayer.this.droppedFrames += droppedFrames;
+ AppLog.i(
+ "Player",
+ "decode="
+ + decoderKind(videoDecoder)
+ + " output=surface dropped="
+ + MoviePlayer.this.droppedFrames);
  }
  });
  exo.addListener(

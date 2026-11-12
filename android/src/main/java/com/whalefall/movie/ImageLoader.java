@@ -411,12 +411,16 @@ final class ImageLoader {
  boolean usingBuiltin;
  boolean drawLogged;
  boolean released;
+ /** 1.9.171：整屏壁纸缓存，避免每帧重算。 */
+ Bitmap frameCache;
  /** 1.9.166：同一进程内复用内置鲸鱼娘降采样结果。 */
  static Bitmap cachedDefault;
 
  Atmosphere(Context c) {
  super(c);
  a = (MainActivity) c;
+ // 1.9.171：缓存层走硬件层，静止时不需要持续重绘
+ setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null);
  if (!a.prefs.getBoolean("force_builtin_wallpaper", false)
  && a.prefs.getBoolean(Prefs.WALLPAPER_ENABLED, false)) wallpaper = loadWallpaper();
  // 1.9.112：自定义壁纸关闭/缺失时永远用内置默认壁纸兜底
@@ -533,12 +537,22 @@ final class ImageLoader {
  }
  if (wallpaper != null) {
  try {
+ // 1.9.171：首次绘制生成整屏缓存，之后只贴一次 bitmap，避免每帧重算缩放+渐变
+ if (frameCache == null
+ || frameCache.getWidth() != Math.max(1, getWidth())
+ || frameCache.getHeight() != Math.max(1, getHeight())
+ || frameCache.isRecycled()) {
+ frameCache =
+ Bitmap.createBitmap(
+ Math.max(1, getWidth()), Math.max(1, getHeight()),
+ android.graphics.Bitmap.Config.ARGB_8888);
+ android.graphics.Canvas cacheCanvas = new android.graphics.Canvas(frameCache);
  float scale =
  Math.max(
  (float) getWidth() / wallpaper.getWidth(),
  (float) getHeight() / wallpaper.getHeight());
  float w = wallpaper.getWidth() * scale, h = wallpaper.getHeight() * scale;
- canvas.drawBitmap(
+ cacheCanvas.drawBitmap(
  wallpaper,
  null,
  new RectF(
@@ -549,12 +563,15 @@ final class ImageLoader {
  paint);
  int dim = Prefs.clampWallpaperDim(a.prefs.getInt(Prefs.WALLPAPER_DIM, 40));
  if (usingBuiltin) dim = Math.min(dim, 30);
- canvas.drawColor(Color.argb(Math.round(255 * dim / 100f), 0, 0, 0));
+ cacheCanvas.drawColor(Color.argb(Math.round(255 * dim / 100f), 0, 0, 0));
+ AppLog.i("Wallpaper", "draw=cached size=" + getWidth() + "x" + getHeight());
+ }
+ canvas.drawBitmap(frameCache, 0, 0, null);
  if (!drawLogged) {
  drawLogged = true;
  AppLog.i(
  "Wallpaper",
- "draw source=" + (usingBuiltin ? "builtin-default" : "custom") + " alpha=" + dim);
+ "draw source=" + (usingBuiltin ? "builtin-default" : "custom") + " cached=true");
  }
  } catch (Throwable error) {
  // 1.9.126：绘制异常退化为纯色底，绝不原生崩溃
@@ -600,6 +617,8 @@ final class ImageLoader {
 
  private void recycleBitmaps() {
  try {
+ if (frameCache != null && !frameCache.isRecycled()) frameCache.recycle();
+ frameCache = null;
  if (wallpaper != null
  && !wallpaper.isRecycled()
  && wallpaper != cachedDefault) wallpaper.recycle();
