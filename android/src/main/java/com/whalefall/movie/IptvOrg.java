@@ -41,22 +41,45 @@ final class IptvOrg {
     return new File(a.getFilesDir(), CACHE_JSON);
   }
 
-  /** 读取本地缓存（m3u 优先，其次 json）；无缓存返回空列表。 */
+  /** 1.9.152：缓存 m3u（网络刷新成功）优先 → 内置 asset → json 缓存。 */
   static List<TvLive.Channel> cached(MainActivity a) {
     try {
       File m3u = cacheM3u(a);
       if (m3u.isFile()) {
         List<TvLive.Channel> list = parse(readText(m3u));
-        if (!list.isEmpty()) return list;
+        if (!list.isEmpty()) {
+          AppLog.i("IptvOrg", "source=cache channels=" + list.size());
+          return list;
+        }
       }
     } catch (Throwable ignored) {
     }
     try {
+      List<TvLive.Channel> assetList = parse(readAsset(a));
+      if (!assetList.isEmpty()) {
+        AppLog.i("IptvOrg", "source=asset channels=" + assetList.size());
+        return assetList;
+      }
+    } catch (Throwable error) {
+      AppLog.w("IptvOrg", "asset read failed", error);
+    }
+    try {
       File json = cacheJson(a);
-      if (json.isFile()) return parseJson(readText(json));
+      if (json.isFile()) {
+        List<TvLive.Channel> list = parseJson(readText(json));
+        if (!list.isEmpty()) AppLog.i("IptvOrg", "source=json channels=" + list.size());
+        return list;
+      }
     } catch (Throwable ignored) {
     }
     return new ArrayList<>();
+  }
+
+  /** 内置快照：assets/iptv-org-cn.m3u（2026-11-12，314 行）。 */
+  static String readAsset(MainActivity a) throws IOException {
+    try (InputStream in = a.getAssets().open("iptv-org-cn.m3u")) {
+      return readStream(in);
+    }
   }
 
   /** 后台下载并解析；失败回退缓存。完成后回主线程。 */
@@ -164,22 +187,37 @@ final class IptvOrg {
     return false;
   }
 
+  /** 1.9.152：手动跟随最多 3 跳重定向（http 301→https 时若 SSL 失败按失败处理）。 */
   private static String httpGet(String address) throws IOException {
-    HttpURLConnection connection = null;
-    try {
-      connection = (HttpURLConnection) new URL(address).openConnection();
-      connection.setConnectTimeout(10000);
-      connection.setReadTimeout(10000);
-      connection.setInstanceFollowRedirects(true);
-      connection.setRequestProperty("User-Agent", "WhaleFall/1.9.150");
-      int code = connection.getResponseCode();
-      if (code != 200) throw new IOException("HTTP " + code);
-      try (InputStream in = connection.getInputStream()) {
-        return readStream(in);
+    String current = address;
+    for (int hop = 0; hop <= 3; hop++) {
+      HttpURLConnection connection = null;
+      try {
+        connection = (HttpURLConnection) new URL(current).openConnection();
+        connection.setConnectTimeout(10000);
+        connection.setReadTimeout(10000);
+        // 手动处理重定向：老电视 http→https 跳转需要明确失败而不是自动吞掉
+        connection.setInstanceFollowRedirects(false);
+        connection.setRequestProperty("User-Agent", "WhaleFall/1.9.152");
+        int code = connection.getResponseCode();
+        if (code >= 300 && code < 400) {
+          String location = connection.getHeaderField("Location");
+          if (location == null || location.isEmpty())
+            throw new IOException("HTTP " + code + " no location");
+          if (hop == 3) throw new IOException("HTTP redirect loop");
+          current = new URL(new URL(current), location).toString();
+          AppLog.i("IptvOrg", "redirect hop=" + (hop + 1) + " to=" + current);
+          continue;
+        }
+        if (code != 200) throw new IOException("HTTP " + code);
+        try (InputStream in = connection.getInputStream()) {
+          return readStream(in);
+        }
+      } finally {
+        if (connection != null) connection.disconnect();
       }
-    } finally {
-      if (connection != null) connection.disconnect();
     }
+    throw new IOException("HTTP redirect too many");
   }
 
   private static String readStream(InputStream in) throws IOException {

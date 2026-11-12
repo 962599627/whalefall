@@ -571,8 +571,12 @@ final class TvLive {
  }
  page.store.setIptv(channels);
  page.pickGroup(GROUP_IPTV);
+ if (fromCache && error != null) {
+ page.a.toast("网络不可用，已使用内置频道");
+ } else {
  page.a.toast(
  (fromCache ? "离线缓存：" : "已更新：") + channels.size() + " 个频道");
+ }
  };
  if (clear) IptvOrg.refresh(page.a, callback);
  else IptvOrg.fetch(page.a, callback);
