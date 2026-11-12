@@ -313,98 +313,58 @@ final class MiniDetails {
  + " size=480x270 at=32,32");
  return;
  }
- // 1.9.233：手机/平板统一走封面矩形 + clamp
- boolean unifiedMini = true;
- if (unifiedMini) {
- int w = 0, h = 0, x = a.dp(16), y = a.dp(16);
- int cx = 0, cy = 0, cw = 0, ch = 0, rx = 0, ry = 0;
- String source = "fallback";
- View cover = a.root.findViewWithTag("detail-cover");
- if (cover == null || cover.getWidth() <= 0 || cover.getHeight() <= 0)
- cover = a.root.findViewWithTag("detail-hero");
+ {
+ // 1.9.243：手机/平板按海报公式硬实现（不再 clamp/dump）
+ int sw = a.windowWidth();
+ boolean portrait = a.windowHeight() > sw;
+ int w = portrait ? (sw - a.dp(32)) : Math.round(sw * 0.45f);
+ int h = Math.round(w * 9f / 16f);
+ int x = a.dp(16), y = a.dp(16);
+ int posterW = 0, posterH = 0, cx = 0, cy = 0, cw = 0, ch = 0;
+ String source = "formula";
+ View poster = a.root.findViewWithTag("detail-cover");
+ if (poster == null) poster = a.root.findViewWithTag("detail-poster");
+ if (poster != null && poster.getWidth() > 0 && poster.getHeight() > 0) {
+ posterW = poster.getWidth();
+ posterH = poster.getHeight();
+ boolean near =
+ Math.abs(posterW - w) <= Math.max(a.dp(24), w * 0.12f)
+ && Math.abs(posterH - h) <= Math.max(a.dp(24), h * 0.12f);
+ if (near && posterW < sw * 0.92f) {
+ int[] pv = new int[2];
  View anchor =
  a.playbackLayer.getParent() instanceof android.view.ViewGroup
  ? (View) a.playbackLayer.getParent()
  : a.root;
- int[] anchorPos = new int[2];
- anchor.getLocationInWindow(anchorPos);
- rx = anchorPos[0];
- ry = anchorPos[1];
- if (cover != null && cover.getWidth() > 0 && cover.getHeight() > 0) {
- int[] cv = new int[2];
- cover.getLocationInWindow(cv);
- int[] pv = new int[2];
- anchor.getLocationInWindow(pv);
- cw = cover.getWidth() - cover.getPaddingLeft() - cover.getPaddingRight();
- ch = cover.getHeight() - cover.getPaddingTop() - cover.getPaddingBottom();
- if (cw <= 0) cw = cover.getWidth();
- if (ch <= 0) ch = cover.getHeight();
- cx = cv[0] + cover.getPaddingLeft();
- cy = cv[1] + cover.getPaddingTop();
- rx = pv[0];
- ry = pv[1];
- x = Math.max(0, cx - rx);
- y = Math.max(0, cy - ry);
- w = cw;
- h = ch;
- source = "cover";
- } else if (cachedCover[2] > 0 && cachedCover[3] > 0) {
- // 封面已被隐藏时的兜底：使用首次测量保存的矩形
- x = cachedCover[0];
- y = cachedCover[1];
- w = cachedCover[2];
- h = cachedCover[3];
- source = "cover-cached";
- } else {
- // 1.9.240：拿不到海报 View → 左右 16dp、顶部 16dp、宽=窗口宽-32dp、16:9
- w = Math.max(a.dp(160), a.windowWidth() - a.dp(32));
- h = Math.round(w * 9f / 16f);
- x = a.dp(16);
- y = a.dp(16);
+ int[] av = new int[2];
+ poster.getLocationInWindow(pv);
+ anchor.getLocationInWindow(av);
+ x = Math.max(0, pv[0] - av[0]);
+ y = Math.max(0, pv[1] - av[1]);
+ w = posterW;
+ h = posterH;
+ cw = posterW;
+ ch = posterH;
+ cx = x;
+ cy = y;
+ source = "poster";
  }
- // 1.9.227：右侧信息区/下方片源区不得被覆盖
+ }
  boolean clamped = false;
- float ratio = h > 0 && w > 0 ? (float) h / w : 9f / 16f;
- View infoView = a.root.findViewWithTag("detail-title");
- int infoLeft = -1;
- if (infoView != null && infoView.getWidth() > 0) {
- int[] iv = new int[2];
- infoView.getLocationInWindow(iv);
- int infoX = iv[0] - rx;
- if (infoX > x) infoLeft = infoX;
- }
- if (infoLeft > 0) {
- int maxRight = infoLeft - a.dp(8);
- if (x + w > maxRight) {
- w = Math.max(a.dp(120), maxRight - x);
- h = Math.round(w * ratio);
- clamped = true;
- }
- }
- View linesView = a.root.findViewWithTag("detail-lines");
- if (linesView != null && linesView.getWidth() > 0) {
- int[] lv = new int[2];
- linesView.getLocationInWindow(lv);
- int linesTop = lv[1] - ry;
- if (linesTop > y + a.dp(40)) {
- int maxBottom = linesTop - a.dp(8);
- if (y + h > maxBottom) {
- h = maxBottom - y;
- w = Math.round(h / ratio);
- clamped = true;
- }
- }
- }
- boolean portrait = a.windowWidth() < a.windowHeight();
- if (w < a.dp(120) || h < a.dp(68)) {
- // 1.9.240：rect 过小/取不到 → 海报兜底（窗口宽-32dp、16:9、16dp 边距），绝不允许不显示
- w = Math.max(a.dp(160), a.windowWidth() - a.dp(32));
- h = Math.max(a.dp(90), Math.round(w * 9f / 16f));
- x = a.dp(16);
- y = a.dp(16);
- clamped = true;
- source = "fallback-poster";
- }
+ AppLog.i(
+ "MiniMobile",
+ "formula w="
+ + w
+ + " h="
+ + h
+ + " posterW="
+ + posterW
+ + " posterH="
+ + posterH
+ + " match="
+ + (posterW == w && posterH == h)
+ + " source="
+ + source);
  if (w > 0 && h > 0) {
  cachedCover[0] = x;
  cachedCover[1] = y;
@@ -453,18 +413,14 @@ final class MiniDetails {
  + source);
  AppLog.i(
  "MiniMobile",
- "cover="
- + cx
+ "poster="
+ + (cx - x)
  + ","
- + cy
+ + (cy - y)
  + ","
- + (cx + cw)
+ + (cx - x + cw)
  + ","
- + (cy + ch)
- + " info="
- + infoLeft
- + ","
- + ry
+ + (cy - y + ch)
  + " rect="
  + x
  + ","
@@ -473,6 +429,8 @@ final class MiniDetails {
  + (x + w)
  + ","
  + (y + h)
+ + " match="
+ + (w == cw && h == ch)
  + " source="
  + source
  + " clamp="
