@@ -281,15 +281,21 @@ final class MiniDetails {
  a.playbackLayer.getParent() instanceof android.view.ViewGroup
  ? (View) a.playbackLayer.getParent()
  : a.root;
+ int[] anchorPos = new int[2];
+ anchor.getLocationInWindow(anchorPos);
+ rx = anchorPos[0];
+ ry = anchorPos[1];
  if (cover != null && cover.getWidth() > 0 && cover.getHeight() > 0) {
  int[] cv = new int[2];
  cover.getLocationInWindow(cv);
  int[] pv = new int[2];
  anchor.getLocationInWindow(pv);
- cx = cv[0];
- cy = cv[1];
- cw = cover.getWidth();
- ch = cover.getHeight();
+ cw = cover.getWidth() - cover.getPaddingLeft() - cover.getPaddingRight();
+ ch = cover.getHeight() - cover.getPaddingTop() - cover.getPaddingBottom();
+ if (cw <= 0) cw = cover.getWidth();
+ if (ch <= 0) ch = cover.getHeight();
+ cx = cv[0] + cover.getPaddingLeft();
+ cy = cv[1] + cover.getPaddingTop();
  rx = pv[0];
  ry = pv[1];
  x = Math.max(0, cx - rx);
@@ -307,6 +313,46 @@ final class MiniDetails {
  } else {
  w = Math.round(a.windowWidth() * 0.40f) - a.dp(32);
  h = Math.round(w * 9f / 16f);
+ }
+ // 1.9.227：右侧信息区/下方片源区不得被覆盖
+ boolean clamped = false;
+ float ratio = h > 0 && w > 0 ? (float) h / w : 9f / 16f;
+ View infoView = a.root.findViewWithTag("detail-title");
+ int infoLeft = -1;
+ if (infoView != null && infoView.getWidth() > 0) {
+ int[] iv = new int[2];
+ infoView.getLocationInWindow(iv);
+ int infoX = iv[0] - rx;
+ if (infoX > x) infoLeft = infoX;
+ }
+ if (infoLeft > 0) {
+ int maxRight = infoLeft - a.dp(8);
+ if (x + w > maxRight) {
+ w = Math.max(a.dp(120), maxRight - x);
+ h = Math.round(w * ratio);
+ clamped = true;
+ }
+ }
+ View linesView = a.root.findViewWithTag("detail-lines");
+ if (linesView != null && linesView.getWidth() > 0) {
+ int[] lv = new int[2];
+ linesView.getLocationInWindow(lv);
+ int linesTop = lv[1] - ry;
+ if (linesTop > y + a.dp(40)) {
+ int maxBottom = linesTop - a.dp(8);
+ if (y + h > maxBottom) {
+ h = maxBottom - y;
+ w = Math.round(h / ratio);
+ clamped = true;
+ }
+ }
+ }
+ if (w <= 0 || h <= 0) {
+ w = Math.round(a.windowWidth() * 0.40f) - a.dp(32);
+ h = Math.round(w * 9f / 16f);
+ x = a.dp(16);
+ y = a.dp(16);
+ clamped = true;
  }
  if (w > 0 && h > 0) {
  cachedCover[0] = x;
@@ -332,28 +378,30 @@ final class MiniDetails {
  }
  AppLog.i(
  "MiniMobile",
- "rect="
- + x
- + ","
- + y
- + " "
- + w
- + "x"
- + h
- + " cover="
+ "cover="
  + cx
  + ","
  + cy
- + " "
- + cw
- + "x"
- + ch
- + " rootOffset="
- + rx
+ + ","
+ + (cx + cw)
+ + ","
+ + (cy + ch)
+ + " info="
+ + infoLeft
  + ","
  + ry
+ + " rect="
+ + x
+ + ","
+ + y
+ + ","
+ + (x + w)
+ + ","
+ + (y + h)
  + " source="
- + source);
+ + source
+ + " clamp="
+ + clamped);
  PlaybackController.hideDetailHero(a, true);
  a.playbackLayer.bringToFront();
  page.bringToFront();
