@@ -455,6 +455,8 @@ final class ImageLoader {
  static int cachedDefaultEdge;
  /** 1.9.200：跨页面复用的 Exo 实例（只 pause/resume）。 */
  static androidx.media3.exoplayer.ExoPlayer atomPlayer;
+ static Atmosphere atomActive;
+ static boolean atomPlayerRunning;
  android.view.TextureView atomTexture;
  boolean atomVideoFailed;
  int atomSurfaceRetries;
@@ -484,6 +486,9 @@ final class ImageLoader {
  // 1.9.200：视频动态壁纸在同一个 Atmosphere 内叠加 TextureView
  if (a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
  && VideoWallpaper.file(a).isFile()) startAtomVideo();
+ atomActive = this;
+ if (atomPlayerRunning && atomTexture != null)
+ atomTexture.setVisibility(android.view.View.INVISIBLE);
  }
 
  /** 1.9.148：壁纸最大边；1.9.180：TV 1920/低内存1080，手机 1280/低内存1080。 */
@@ -501,6 +506,41 @@ final class ImageLoader {
  }
 
  /** 1.9.200：在静态壁纸同一 View 内叠加视频；失败露出静态兜底，不黑屏。 */
+ /** 1.9.203：播放器起播时暂停动态壁纸。 */
+ static void pauseAtomVideo(String reason, boolean mini) {
+ try {
+ atomPlayerRunning = true;
+ if (atomPlayer != null) atomPlayer.setPlayWhenReady(false);
+ if (atomActive != null && atomActive.atomTexture != null)
+ atomActive.atomTexture.setVisibility(android.view.View.INVISIBLE);
+ AppLog.i(
+ "Wallpaper",
+ "atom video state=paused player=true mini="
+ + mini
+ + " reason="
+ + reason);
+ } catch (Throwable ignored) {
+ }
+ }
+
+ /** 1.9.203：播放结束后恢复动态壁纸。 */
+ static void resumeAtomVideo(String reason) {
+ try {
+ atomPlayerRunning = false;
+ if (atomPlayer != null) atomPlayer.setPlayWhenReady(true);
+ if (atomActive != null
+ && !atomActive.atomVideoFailed
+ && atomActive.atomTexture != null)
+ atomActive.atomTexture.setVisibility(
+ atomActive.atomFirstFrame
+ ? android.view.View.VISIBLE
+ : android.view.View.INVISIBLE);
+ AppLog.i(
+ "Wallpaper", "atom video state=playing player=false reason=" + reason);
+ } catch (Throwable ignored) {
+ }
+ }
+
  private void startAtomVideo() {
  try {
  atomTexture = new android.view.TextureView(a);
@@ -562,6 +602,11 @@ final class ImageLoader {
  android.net.Uri.fromFile(VideoWallpaper.file(a))));
  atomPlayer.prepare();
  atomPlayer.setPlayWhenReady(true);
+ // 1.9.203：若当前正在播放视频（小窗/全屏），壁纸保持暂停
+ if (atomPlayerRunning) {
+ atomPlayer.setPlayWhenReady(false);
+ atomTexture.setVisibility(android.view.View.INVISIBLE);
+ }
  boolean valid = atomTexture.isAvailable();
  AppLog.i(
  "Wallpaper",
@@ -792,6 +837,9 @@ final class ImageLoader {
  @Override
  protected void onAttachedToWindow() {
  super.onAttachedToWindow();
+ atomActive = this;
+ if (atomPlayerRunning && atomTexture != null)
+ atomTexture.setVisibility(android.view.View.INVISIBLE);
  // 1.9.166：复用 View 重新 attach 时若 bitmap 为空则补载
  if (!released && wallpaper == null && fallbackWallpaper == null) {
  if (!a.prefs.getBoolean("force_builtin_wallpaper", false)

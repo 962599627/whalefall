@@ -1202,6 +1202,8 @@ final class PlaybackController {
 
  static void playerPage(MainActivity a, Cms.Site s, Cms.Video v, Cms.Episode ep) {
  if (a == null || s == null || v == null || ep == null) return;
+ // 1.9.203：起播（含 mini/全屏）暂停动态壁纸，避免双硬解
+ ImageLoader.Atmosphere.pauseAtomVideo("player-start", a.miniMode);
  if (ep.url == null) ep.url = "";
  if (ep.media == null) ep.media = new JSONObject();
  ep.url = LocalProxy.rewrite(ep.url);
@@ -2312,6 +2314,8 @@ final class PlaybackController {
  }
 
  static void releasePlayer(MainActivity a) {
+ // 1.9.203：播放结束恢复动态壁纸
+ ImageLoader.Atmosphere.resumeAtomVideo("player-stop");
  finishSeek(a, false);
  a.clearLiveNumber();
  savePlaybackHistory(a, true);
