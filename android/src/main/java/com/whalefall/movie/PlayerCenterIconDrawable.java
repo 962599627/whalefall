@@ -16,7 +16,7 @@ import android.graphics.drawable.Drawable;
  * 焦点框固定不缩放。颜色仅 PLAYER_ICON / 10% 粉 / ACCENT_SOFT。
  */
 final class PlayerCenterIconDrawable extends Drawable {
-  static final int REW = 0, STATE = 1, FF = 2;
+  static final int REW = 0, STATE = 1, FF = 2, MORE = 3;
 
   private final MainActivity a;
   private final int kind;
@@ -27,6 +27,12 @@ final class PlayerCenterIconDrawable extends Drawable {
   private final Path path = new Path();
   private boolean playing;
   private float focus;
+  private boolean pressed;
+
+  void setPressedState(boolean value) {
+    pressed = value;
+    invalidateSelf();
+  }
 
   PlayerCenterIconDrawable(MainActivity a, int kind) {
     this.a = a;
@@ -66,7 +72,7 @@ final class PlayerCenterIconDrawable extends Drawable {
     if (b.width() <= 0 || b.height() <= 0) return;
     // 焦点框固定（side=44/center=64 即 bounds）不缩放
     if (focus > 0f) {
-      float radius = a.dp(kind == STATE ? 20f : 14f);
+      float radius = a.dp(kind == STATE || kind == MORE ? 20f : 14f);
       RectF box = new RectF(b.left, b.top, b.right, b.bottom);
       int alpha = Math.round(0x1A * focus);
       focusFill.setColor((alpha << 24) | 0x00FF8FB1);
@@ -78,8 +84,26 @@ final class PlayerCenterIconDrawable extends Drawable {
     canvas.save();
     canvas.scale(scale, scale, b.exactCenterX(), b.exactCenterY());
     if (kind == STATE) drawPlayPause(canvas, b);
+    else if (kind == MORE) drawMore(canvas, b);
     else drawSeek(canvas, b, kind == REW);
     canvas.restore();
+    if (pressed) {
+      Paint press = new Paint(Paint.ANTI_ALIAS_FLAG);
+      press.setColor(0x26FF8FB1);
+      canvas.drawRoundRect(
+          new RectF(b.left, b.top, b.right, b.bottom), a.dp(20f), a.dp(20f), press);
+    }
+  }
+
+  private void drawMore(Canvas canvas, Rect b) {
+    Paint dot = new Paint(icon);
+    dot.setStyle(Paint.Style.FILL);
+    dot.setColor(0xFFF2F6FF);
+    float r = a.dp(2f);
+    float cx = b.exactCenterX(), cy = b.exactCenterY();
+    canvas.drawCircle(cx - a.dp(9f), cy, r, dot);
+    canvas.drawCircle(cx, cy, r, dot);
+    canvas.drawCircle(cx + a.dp(9f), cy, r, dot);
   }
 
   private void drawSeek(Canvas canvas, Rect b, boolean back) {

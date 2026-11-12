@@ -353,54 +353,9 @@ final class PlaybackControls {
  wireTvDockFocus(row);
  }
 
- /** 1.9.158：播放器底部文字按钮统一粉底框（与「更多工具」网格同款）。 */
- private static final java.util.WeakHashMap<View, android.graphics.drawable.Drawable>
- ORIGINAL_BG = new java.util.WeakHashMap<>();
-
+ /** 1.9.168：调用公共焦点渲染器（背景+前景环形态）。 */
  private void applyFocusBox(View v, boolean focused) {
- if (android.os.Build.VERSION.SDK_INT < 23) return;
- if (!(a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode)) return;
- try {
- android.graphics.drawable.GradientDrawable box =
- new android.graphics.drawable.GradientDrawable();
- box.setCornerRadius(a.dp(10));
- box.setColor(0x1AFF8FB1);
- box.setStroke(Math.max(1, a.dp(2)), 0xFFFFB3C8);
- android.graphics.drawable.GradientDrawable clear =
- new android.graphics.drawable.GradientDrawable();
- clear.setCornerRadius(a.dp(10));
- clear.setColor(0x00000000);
- if (focused) {
- if (!ORIGINAL_BG.containsKey(v)) ORIGINAL_BG.put(v, v.getBackground());
- final android.graphics.drawable.TransitionDrawable td =
- new android.graphics.drawable.TransitionDrawable(
- new android.graphics.drawable.Drawable[] {clear, box});
- td.setCrossFadeEnabled(true);
- v.setBackground(td);
- td.startTransition(120);
- if (v instanceof android.widget.TextView)
- ((android.widget.TextView) v).setTextColor(MainActivity.WHITE);
- AppLog.i(
- "PlayerFocus",
- "text-button focus=" + String.valueOf(v.getTag()) + " style=box");
- } else {
- final android.graphics.drawable.TransitionDrawable td =
- new android.graphics.drawable.TransitionDrawable(
- new android.graphics.drawable.Drawable[] {box, clear});
- v.setBackground(td);
- td.startTransition(100);
- if (v instanceof android.widget.TextView)
- ((android.widget.TextView) v).setTextColor(UiTokens.PLAYER_ICON);
- a.ui.postDelayed(
- () -> {
- if (v.hasFocus()) return;
- v.setBackground(ORIGINAL_BG.get(v));
- },
- 110);
- }
- } catch (Throwable error) {
- AppLog.w("PlayerFocus", "text-button box failed", error);
- }
+ PlayerFocusRenderer.background(v, focused, 10);
  }
 
  /** 1.9.148：按键/遥控模式后置为 true 时，补挂底部按钮焦点链（不依赖 isTvDevice）。 */

@@ -67,7 +67,7 @@ final class NativeLiveScreen {
  if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
  || keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
  AppLog.i("IptvOrg", "picker open current=" + name);
- showIptvPicker(a, name);
+ IptvPickerPanel.show(a, name);
  return true;
  }
  return false;

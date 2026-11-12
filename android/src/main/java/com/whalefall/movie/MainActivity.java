@@ -2252,6 +2252,11 @@ public final class MainActivity extends Activity {
 
  @Override
  public void onBackPressed() {
+ // 1.9.168：IPTV 选择器自绘面板优先关闭
+ if (IptvPickerPanel.handleBack()) {
+ AppLog.i("IptvOrg", "picker close source=back");
+ return;
+ }
  String ownerTag = body == null ? "null" : String.valueOf(body.getTag());
  AppLog.i(
  "Back",

@@ -185,23 +185,56 @@ final class PlayerChrome {
 
  topRight = a.row();
  topRight.setGravity(Gravity.CENTER_VERTICAL);
- moreBtn =
- UiIcon.circleButton(
- a,
- UiIcon.MORE,
- "更多工具",
- 48,
- 24,
- UiTokens.PLAYER_BTN_FILL,
- UiTokens.PLAYER_BTN_STROKE,
- () -> {
+ // 1.9.168：More = 48 wrapper + 44×40 胶囊（PLAYER_CHIP + 1dp STROKE_SOFT，圆角20）
+ FrameLayout moreWrap = new FrameLayout(a);
+ moreWrap.setClickable(true);
+ moreBtn = new ImageButton(a);
+ GradientDrawable moreCapsule = new GradientDrawable();
+ moreCapsule.setColor(UiTokens.PLAYER_CHIP);
+ moreCapsule.setCornerRadius(a.dp(20));
+ moreCapsule.setStroke(Math.max(1, a.dp(1)), UiTokens.STROKE_SOFT);
+ moreBtn.setBackground(moreCapsule);
+ PlayerCenterIconDrawable moreIcon = new PlayerCenterIconDrawable(a, PlayerCenterIconDrawable.MORE);
+ moreBtn.setImageDrawable(moreIcon);
+ moreBtn.setPadding(0, 0, 0, 0);
+ moreBtn.setScaleType(ImageView.ScaleType.FIT_CENTER);
+ moreBtn.setContentDescription("更多工具");
+ moreBtn.setClickable(true);
+ moreBtn.setOnClickListener(
+ v -> {
  if (a.playbackControls != null) {
  a.playbackControls.menuAnchor = menuAnchor;
  a.playbackControls.more();
  }
  });
- topRight.addView(moreBtn, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
- styleTopFocus(moreBtn, "top-more");
+ moreBtn.setOnTouchListener(
+ (v, event) -> {
+ moreIcon.setPressedState(
+ event.getAction() == android.view.MotionEvent.ACTION_DOWN);
+ return false;
+ });
+ moreBtn.setOnKeyListener(
+ (v, keyCode, event) -> {
+ boolean center =
+ keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+ || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
+ if (center && event.getAction() == android.view.KeyEvent.ACTION_DOWN)
+ moreIcon.setPressedState(true);
+ if (center && event.getAction() == android.view.KeyEvent.ACTION_UP)
+ moreIcon.setPressedState(false);
+ return false;
+ });
+ bindCenterIconFocus(moreBtn, moreIcon, "more");
+ final View.OnFocusChangeListener moreBase = moreBtn.getOnFocusChangeListener();
+ moreBtn.setOnFocusChangeListener(
+ (v, focused) -> {
+ if (moreBase != null) moreBase.onFocusChange(v, focused);
+ if (focused) AppLog.i("PlayerFocus", "more style=capsule");
+ });
+ moreWrap.setOnClickListener(v -> moreBtn.performClick());
+ moreWrap.addView(
+ moreBtn, new FrameLayout.LayoutParams(a.dp(44), a.dp(40), Gravity.CENTER));
+ topRight.addView(moreWrap, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
  overlay.addView(
  topRight, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT));
  topActions = topRight;
@@ -566,15 +599,7 @@ final class PlayerChrome {
  icon.setFocusFraction(0f);
  return;
  }
- android.animation.ValueAnimator animator =
- android.animation.ValueAnimator.ofFloat(icon.focusFraction(), focused ? 1f : 0f);
- animator.setDuration(focused ? 120 : 100);
- if (focused && !a.reduced)
- animator.setInterpolator(new android.view.animation.DecelerateInterpolator());
- animator.addUpdateListener(
- animation ->
- icon.setFocusFraction(((Number) animation.getAnimatedValue()).floatValue()));
- animator.start();
+ PlayerFocusRenderer.animated(a, icon, focused);
  if (focused) AppLog.i("PlayerFocus", "center focus=" + tag + " style=capsule");
  });
  }
@@ -637,8 +662,8 @@ final class PlayerChrome {
  -2,
  Gravity.TOP | Gravity.RIGHT,
  0,
- Math.max(a.dp(6), topMargin - a.dp(4)),
- side,
+ a.dp(8),
+ a.dp(8),
  0);
  place(bottomPanel, -1, -2, Gravity.BOTTOM, side, 0, side, wideLayout ? a.dp(20) : a.dp(14));
  place(centerCluster, -2, -2, Gravity.CENTER, 0, 0, 0, 0);
