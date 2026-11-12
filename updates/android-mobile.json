@@ -1,40 +1,40 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.9.205",
-  "versionCode": 19205,
+  "versionName": "1.9.213",
+  "versionCode": 19213,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.9.205\n\n- 更新检查修复：当前版本实时读取、GitHub Release tag semver 比较、按设备 ABI 推荐安装包\n- 检测到新版本先弹「选择安装包」窗口，不选不下载",
+  "notes": "# 鲸落 1.9.213\n\n- 详情页小窗：对齐左侧海报区域、铺满裁切、继续播放、聚焦粉色焦点框\n- 更新：检测到新版本先选包，下载显示进度/速度/剩余，取消清理\n- 更新检查：实时版本号 + semver + 按 ABI 推荐包\n- 全页面壁纸板（鲸鱼娘兜底）；老电视动态壁纸自动回退静态\n- 播放：硬解优先、默认 Exo、系统播放器报错不卡死\n- 焦点：筛选三层、中央三键/底部按钮粉框、More 胶囊\n- 直播：开源 IPTV 原生播放、二级选择器、收藏\n- 文件管理：内置文件 + APK 安装\n- 手机版：播放横屏、退出竖屏，平板不强制",
   "size": 62890108,
-  "sha256": "87786940a51e1d71b089906d6478b82020db19a0a0d6625cc430a13a94ccb99e",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.205",
+  "sha256": "b43cc424c6f8633b1ebf80a9bf12ba4824a431c0f5f6a9ec838ee7e45be61702",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.213",
   "variants": [
     {
       "kind": "mobile",
       "label": "手机 / 平板版",
       "size": 62890108,
-      "sha256": "87786940a51e1d71b089906d6478b82020db19a0a0d6625cc430a13a94ccb99e",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-mobile.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-mobile.apk"
+      "sha256": "b43cc424c6f8633b1ebf80a9bf12ba4824a431c0f5f6a9ec838ee7e45be61702",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-mobile.apk"
     },
     {
       "kind": "mobile-r8",
       "label": "手机 R8 版",
-      "size": 60325954,
-      "sha256": "d88aac8052e73a18bc3d1b2dd84f62b7d4b6ceeea8746902e017944f1c9c9144",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-mobile-r8.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-mobile-r8.apk"
+      "size": 60330050,
+      "sha256": "307561b90a11ff2b397eb09991915adf42e119ed62ae8189dd84d196ce13f4f0",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-mobile-r8.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-mobile-r8.apk"
     },
     {
       "kind": "mobile-arm64",
       "label": "手机 64 位版",
       "size": 36453799,
-      "sha256": "d37ad56067974296babcf835f0155d6741df0f736c024ecb7ea8e29f2aeb099e",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-mobile-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-mobile-arm64.apk"
+      "sha256": "b6feca17559b7b1ff0fb60323ef8343bea7d4fd512f72f8b91f67b82d1524636",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-mobile-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-mobile-arm64.apk"
     }
   ]
 }

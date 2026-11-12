@@ -1,32 +1,32 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.9.205",
-  "versionCode": 19205,
+  "versionName": "1.9.213",
+  "versionCode": 19213,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.9.205\n\n- 更新检查修复：当前版本实时读取、GitHub Release tag semver 比较、按设备 ABI 推荐安装包\n- 检测到新版本先弹「选择安装包」窗口，不选不下载",
-  "size": 37113495,
-  "sha256": "3d9f54a9a7f748aaa0360654f9117e50d222bd446269b403fd9211bd738cd929",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.205",
+  "notes": "# 鲸落 1.9.213\n\n- 详情页小窗：对齐左侧海报区域、铺满裁切、继续播放、聚焦粉色焦点框\n- 更新：检测到新版本先选包，下载显示进度/速度/剩余，取消清理\n- 更新检查：实时版本号 + semver + 按 ABI 推荐包\n- 全页面壁纸板（鲸鱼娘兜底）；老电视动态壁纸自动回退静态\n- 播放：硬解优先、默认 Exo、系统播放器报错不卡死\n- 焦点：筛选三层、中央三键/底部按钮粉框、More 胶囊\n- 直播：开源 IPTV 原生播放、二级选择器、收藏\n- 文件管理：内置文件 + APK 安装\n- 手机版：播放横屏、退出竖屏，平板不强制",
+  "size": 37117591,
+  "sha256": "11595bf771861c71162322b518d309dec59875b2ef378013d9662d10286f87ef",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.213",
   "variants": [
     {
       "kind": "tv",
       "label": "TV / 盒子版（32位）",
-      "size": 37113495,
-      "sha256": "3d9f54a9a7f748aaa0360654f9117e50d222bd446269b403fd9211bd738cd929",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv.apk"
+      "size": 37117591,
+      "sha256": "11595bf771861c71162322b518d309dec59875b2ef378013d9662d10286f87ef",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-tv.apk"
     },
     {
       "kind": "tv-arm64",
       "label": "TV / 盒子版（64位）",
-      "size": 57470925,
-      "sha256": "25ce5c220c60facc3fcadb0f57dbff5323ebecff3c492ab3a2880ee87a462867",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv-arm64.apk"
+      "size": 57475021,
+      "sha256": "d2a038e41b8c5aa14d21e079ec81cd93eafc9c9ac38f9f526988dd59cdaa27f2",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-tv-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.213/WhaleFall-1.9.213-android-tv-arm64.apk"
     }
   ]
 }
