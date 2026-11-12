@@ -920,7 +920,9 @@ final class PlaybackController {
  releasePlayer(a);
  if (!a.isTvDevice()) {
  a.applyMobileSystemBars(false);
- a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
+ a.setRequestedOrientation(
+ android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+ AppLog.i("Orient", "page=detail set=portrait reason=episode-details");
  }
  if (a.current != null && a.current.player)
  a.current =
@@ -936,7 +938,9 @@ final class PlaybackController {
  static void leavePlayback(MainActivity a) {
  if (!a.isTvDevice()) {
  a.applyMobileSystemBars(false);
- a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
+ a.setRequestedOrientation(
+ android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+ AppLog.i("Orient", "page=detail set=portrait reason=leave-playback");
  // 1.9.62：手机返回详情与 TV 一致：进入左上角小窗，而不是释放播放器回海报
  if (!a.isLive() && !a.miniMode && a.playbackControls != null && a.player != null) {
  minimizePlayback(a);
@@ -1259,6 +1263,7 @@ final class PlaybackController {
  a.applyMobileSystemBars(true);
  a.setRequestedOrientation(
  android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+ AppLog.i("Orient", "page=player set=landscape reason=enter-player");
  }
  a.root = new FrameLayout(a);
  a.root.setBackgroundColor(Color.BLACK);

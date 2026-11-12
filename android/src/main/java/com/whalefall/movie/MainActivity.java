@@ -1656,6 +1656,38 @@ public final class MainActivity extends Activity {
  renderPage(title, eyebrow, false);
  }
 
+ /** 1.9.177：手机版按当前页面强制方向（平板/电视不干预）。 */
+ void applyPageOrientation(String reason) {
+ try {
+ if (isTvDevice() || formFactor != TvLayoutPolicy.FORM_PHONE) return;
+ String tag = body == null ? "" : String.valueOf(body.getTag());
+ boolean playerPage =
+ (current != null && current.player)
+ || "native-live".equals(tag)
+ || "web-live".equals(tag)
+ || "web-player".equals(tag)
+ || (root != null && "player-surface".equals(root.getTag()));
+ int target =
+ playerPage
+ ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+ : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+ if (getRequestedOrientation() == target) return;
+ setRequestedOrientation(target);
+ AppLog.i(
+ "Orient",
+ "page="
+ + (playerPage ? "player" : ("detail".equals(tag) ? "detail" : "page"))
+ + " set="
+ + (playerPage ? "landscape" : "portrait")
+ + " reason="
+ + reason
+ + " tag="
+ + tag);
+ } catch (Throwable error) {
+ AppLog.w("Orient", "apply failed reason=" + reason, error);
+ }
+ }
+
  void preparePage(boolean navigation) {
  NativeLiveScreen.close(this);
  // 1.9.106：直播浮层是页面级 WebView，任何页面重建都必须先关掉，否则会在后台继续出声
@@ -1691,6 +1723,8 @@ public final class MainActivity extends Activity {
  if (!isTvDevice()) {
  applyMobileSystemBars(false);
  }
+ // 1.9.177：页面渲染完成后再决定方向（避免在 Activity 级写死横屏）
+ ui.post(() -> applyPageOrientation("page"));
  }
 
  static final String BACKDROP_TAG = "whale-backdrop";
@@ -2264,6 +2298,8 @@ public final class MainActivity extends Activity {
  }
 
  void renderReturn(Screen screen) {
+ // 1.9.177：返回后按目标页恢复方向
+ ui.post(() -> applyPageOrientation("return"));
  if (!isTvDevice() && screen.mobileHome != null && screen.mobileHome.resume()) return;
  if (isTvDevice() && screen.retainedHome != null && screen.retainedHome.resume()) return;
  if (screen.resume != null) {
@@ -3135,7 +3171,8 @@ public final class MainActivity extends Activity {
  applyMobileSystemBars(false);
  try {
  setRequestedOrientation(
- android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
+ android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+ AppLog.i("Orient", "page=page set=portrait reason=release");
  } catch (Throwable ignored) {
  }
  }
@@ -3719,6 +3756,7 @@ public final class MainActivity extends Activity {
  // 1.9.65：切后台回来网络连接可能已被系统断开，用同一 URL 自动重连
  ui.postDelayed(() -> PlaybackController.retryAfterResume(this), 700);
  scheduleFocusAudit();
+ ui.post(() -> applyPageOrientation("resume"));
  ui.postDelayed(this::cleanupOldCrashLogs, 1500);
  ui.postDelayed(this::purgeUnsupportedVideoWallpaper, 1200);
  startMemoryLog();
