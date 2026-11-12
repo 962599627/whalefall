@@ -1072,11 +1072,33 @@ public final class MainActivity extends Activity {
  }
 
  @Override
+ /** 1.9.144：腾讯 X5(TBS) 内核初始化，老电视网页直播/网页播放兼容；失败自动回退系统 WebView。 */
+ void initX5Kernel() {
+ try {
+ Class<?> qbs = Class.forName("com.tencent.smtt.sdk.QbSdk");
+ Class<?> cb = Class.forName("com.tencent.smtt.sdk.QbSdk$PreInitCallback");
+ Object callback =
+ java.lang.reflect.Proxy.newProxyInstance(
+ cb.getClassLoader(),
+ new Class<?>[] {cb},
+ (proxy, method, args) -> {
+ AppLog.i("X5", "init callback=" + method.getName());
+ return null;
+ });
+ qbs.getMethod("initX5Environment", android.content.Context.class, cb)
+ .invoke(null, getApplicationContext(), callback);
+ AppLog.i("X5", "init requested jar=44286");
+ } catch (Throwable error) {
+ AppLog.w("X5", "init failed fallback=system-webview", error);
+ }
+ }
+
  public void onCreate(Bundle b) {
  super.onCreate(b);
  privateMode = PrivacySpace.active;
  if (privateMode) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
  activeActivity = this;
+ initX5Kernel();
  installPluginCrashGuard();
  SafeMode.installCrashHandler(getApplication());
  SafeMode.onLaunch(getApplication());
