@@ -360,10 +360,7 @@ final class SettingsScreen {
  link(
  "选择视频壁纸",
  "MP4 / WebM / MKV，循环静音，仅首页背景播放", "wallpaper-video-file",
- () -> {
-if (a.isTvDevice()) pickWallpaperBuiltin(true);
-                    else pick(47, "video/*", false);
-                });
+ () -> pickWallpaperBuiltin(true));
  if (VideoWallpaper.file(a).isFile())
  link(
  "壁纸声音",
@@ -1109,6 +1106,10 @@ if (a.isTvDevice()) pickWallpaperBuiltin(true);
  try (InputStream input = new java.io.FileInputStream(file)) {
  if (video) saveVideoWallpaper(a, input);
  else saveWallpaper(a, input);
+ if (video)
+ AppLog.i(
+ "Wallpaper",
+ "video select path=" + file.getAbsolutePath() + " size=" + file.length());
  AppLog.i(
  "Wallpaper",
  "picker=builtin type="

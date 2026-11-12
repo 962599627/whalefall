@@ -194,6 +194,8 @@ final class FileManagerScreen {
  "page=FileManager tab=" + (tab == 0 ? "local" : "netdisk") + " items=0");
  buildHeader();
  if (!MainActivity.cloudEnabled(a)) tab = 0;
+ // 1.9.182：选择模式只显示视频/图片
+ if (pickCallback != null) filter = pickVideoMode ? 2 : 3;
  // 1.9.105：第一行（标题+存储）紧跟第二行（chips + 排序/新建），分段放在其下
  buildTopBar();
  buildSegment();
@@ -203,6 +205,20 @@ final class FileManagerScreen {
  if (tab == 0) buildAppFilesEntry();
  content = a.vertical();
  a.body.addView(content);
+ // 1.9.182：壁纸选择模式提示
+ if (pickCallback != null) {
+ TextView pickHint =
+ a.text(
+ "选择视频作为动态壁纸 · OK 选定 / BACK 取消",
+ 13,
+ UiTokens.ACCENT_SOFT);
+ pickHint.setTag("filemgr-pick-hint");
+ pickHint.setPadding(a.dp(24), a.dp(8), a.dp(24), a.dp(8));
+ a.body.addView(pickHint);
+ AppLog.i(
+ "FileManager",
+ "pick=" + (pickVideoMode ? "video" : "image") + " mode=true path=enter");
+ }
  globalStrip = a.row();
  globalStrip.setGravity(Gravity.CENTER_VERTICAL);
  globalStrip.setPadding(a.dp(12), a.dp(8), a.dp(12), a.dp(8));
@@ -1432,6 +1448,12 @@ final class FileManagerScreen {
  a.toast(pickVideoMode ? "请选择视频文件" : "请选择图片文件");
  return;
  }
+ AppLog.i(
+ "FileManager",
+ "pick="
+ + (pickVideoMode ? "video" : "image")
+ + " file="
+ + entry.file.getAbsolutePath());
  PickCallback callback = pickCallback;
  pickCallback = null;
  callback.picked(entry.file);

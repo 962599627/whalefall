@@ -26,6 +26,20 @@ final class FilesScreen {
  show(a, "");
  }
 
+ /** 1.9.182：壁纸等场景的「选择模式」：点击只回传文件，不播放。 */
+ interface PickCallback {
+ void picked(java.io.File file);
+ }
+
+ static PickCallback pickCallback;
+ static boolean pickVideoMode;
+
+ static void pick(MainActivity a, boolean video, PickCallback callback) {
+ pickCallback = callback;
+ pickVideoMode = video;
+ show(a);
+ }
+
  static void show(MainActivity a, String relDir) {
  a.open(new MainActivity.Screen(() -> render(a, relDir)), true);
  }
@@ -65,6 +79,21 @@ final class FilesScreen {
  TextView eyebrow = a.text("APP FILES", 12, 0xffffc2d4);
  eyebrow.setLetterSpacing(.15f);
  column.addView(eyebrow);
+ if (pickCallback != null) {
+ TextView pickHint =
+ a.text(
+ pickVideoMode
+ ? "选择视频作为动态壁纸 · OK 选定 / BACK 取消"
+ : "选择图片作为壁纸 · OK 选定 / BACK 取消",
+ 13,
+ 0xffffb3c8);
+ pickHint.setTag("files-pick-hint");
+ pickHint.setPadding(0, a.dp(6), 0, a.dp(6));
+ column.addView(pickHint);
+ AppLog.i(
+ "FileManager",
+ "pick=" + (pickVideoMode ? "video" : "image") + " mode=true path=app-files");
+ }
  a.gap(column, 8);
 
  LinearLayout nav = a.row();
@@ -285,6 +314,22 @@ final class FilesScreen {
  final File targetFile = f;
  row.setOnClickListener(
  v -> {
+ // 1.9.182：选择模式只回传文件，不播放
+ if (pickCallback != null && !targetFile.isDirectory()) {
+ boolean isVideo = PushFiles.isVideo(target);
+ if (pickVideoMode && !isVideo) {
+ a.toast("请选择视频文件");
+ return;
+ }
+ AppLog.i(
+ "FileManager",
+ "pick=" + (pickVideoMode ? "video" : "image") + " file=" + targetFile.getAbsolutePath());
+ PickCallback callback = pickCallback;
+ pickCallback = null;
+ callback.picked(targetFile);
+ a.popBack();
+ return;
+ }
  // 1.9.169：与文件管理统一可观测入口
  AppLog.i(
  "FileManager",
