@@ -1753,12 +1753,12 @@ public final class MainActivity extends Activity {
  boolean playingVideo =
  (current != null && (current.player || (current.detail && miniMode)));
  if (playingVideo) {
- videoWallpaper.pause();
+ videoWallpaper.stopAndReleaseDecoder("player-start");
  AppLog.i(
  "Wallpaper",
  "mobile pause reason=player-start mini=" + miniMode + " tv=" + isTvDevice());
  } else {
- videoWallpaper.resume();
+ videoWallpaper.ensureDecoder("player-stop");
  AppLog.i("Wallpaper", "mobile resume reason=player-stop tv=" + isTvDevice());
  }
  }
@@ -1974,7 +1974,7 @@ public final class MainActivity extends Activity {
  boolean playingVideo =
  (current != null && (current.player || (current.detail && miniMode)));
  if (playingVideo) {
- videoWallpaper.pause();
+ videoWallpaper.stopAndReleaseDecoder("player-start");
  AppLog.i(
  "Wallpaper",
  "mobile pause reason=player-start mini=" + miniMode + " source=create");
@@ -2230,20 +2230,10 @@ public final class MainActivity extends Activity {
  * side shading. Sits above the poster colors or wallpaper and below all content.
  */
  boolean videoWallpaperEnabled() {
- boolean on =
- !reduced
+ // 1.9.231：默认保留源分辨率（4K 也直接播）；转码仅作为可选入口
+ return !reduced
  && prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false)
  && VideoWallpaper.file(this).isFile();
- // 1.9.229：已保存的 4K/超大壁纸自动回退静态（保留文件）
- if (on && VideoWallpaper.tooLarge(this)) {
- boolean notified = prefs.getBoolean("wallpaper_video_too_large_notified", false);
- if (!notified) {
- prefs.edit().putBoolean("wallpaper_video_too_large_notified", true).apply();
- ui.post(() -> toast("壁纸视频分辨率过高，已回退静态壁纸（文件保留，可重新选择）"));
- }
- return false;
- }
- return on;
  }
 
  void releaseWallpaper() {
@@ -3943,7 +3933,7 @@ public final class MainActivity extends Activity {
  // 1.9.224：播放器活跃时切回前台也不恢复壁纸
  AppLog.i("Wallpaper", "mobile resume skipped reason=player-active mini=" + miniMode);
  } else {
- videoWallpaper.resume();
+ videoWallpaper.ensureDecoder("on-resume");
  }
  }
  ui.postDelayed(this::cleanupOldCrashLogs, 1500);

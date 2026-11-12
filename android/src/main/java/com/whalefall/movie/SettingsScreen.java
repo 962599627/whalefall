@@ -1053,30 +1053,107 @@ final class SettingsScreen {
  .apply();
  throw new java.io.IOException(reason);
  }
- // 1.9.229：记录尺寸便于应用时快速判断
+ // 1.9.231：默认保留源分辨率（4K 直接播放），仅记录尺寸
  int[] size = VideoWallpaper.probeSize(target);
  if (size != null) {
  a.prefs.edit()
  .putInt("wallpaper_video_width", size[0])
  .putInt("wallpaper_video_height", size[1])
  .apply();
+ AppLog.i(
+ "Wallpaper",
+ "video accepted size=" + size[0] + "x" + size[1] + " transcode=optional");
  }
  }
 
  /** 1.9.108：动态壁纸严格限制 H.264 + ≤1080p + ≤30fps，避免旧 TV 黑屏。 */
- static String videoWallpaperRejectReason(MainActivity a, File target) {
- // 1.9.229：所有系统统一拦截 4K/超大视频（避免 700MB PSS/掉帧）
- int[] size = VideoWallpaper.probeSize(target);
- if (size != null) {
- int longSide = Math.max(size[0], size[1]);
- int shortSide = Math.min(size[0], size[1]);
- if (longSide > 1920 || shortSide > 1080) {
+ /** 1.9.230：超大壁纸后台转码（进度弹窗，可取消）。 */
+ static void startWallpaperTranscode(
+ MainActivity a, final File src, final int srcW, final int srcH) {
+ final File dst = new File(a.getFilesDir(), "wallpaper-video-1080.mp4");
+ final TextView progress = a.text("正在转码 0%", 14, MainActivity.WHITE);
+ progress.setPadding(a.dp(16), a.dp(8), a.dp(16), a.dp(8));
+ final AppDialog dialog =
+ new AppDialog.Builder(a)
+ .setTitle("优化视频壁纸")
+ .setMessage("视频分辨率过高（" + srcW + "x" + srcH + "），将自动转为 1080p。")
+ .setView(progress)
+ .setNegativeButton(
+ "取消",
+ (d, w) -> WallpaperTranscoder.cancel())
+ .show();
  AppLog.i(
  "Wallpaper",
- "video reject reason=too-large size=" + size[0] + "x" + size[1]);
- return "请选择 1080p 以内的视频（当前 " + size[0] + "×" + size[1] + "）";
+ "transcode start src=" + srcW + "x" + srcH + " dst=1920x1080 pct=0");
+ WallpaperTranscoder.start(
+ src,
+ dst,
+ new WallpaperTranscoder.Callback() {
+ @Override
+ public void progress(final int pct) {
+ a.ui.post(() -> progress.setText("正在转码 " + pct + "%"));
  }
+
+ @Override
+ public void done(final File out) {
+ a.ui.post(
+ () -> {
+ try {
+ dialog.dismiss();
+ File target = VideoWallpaper.file(a);
+ File original = new File(a.getFilesDir(), "wallpaper-video-orig.mp4");
+ if (target.exists()) target.renameTo(original);
+ if (!out.renameTo(target)) throw new java.io.IOException("rename");
+ int[] size = VideoWallpaper.probeSize(target);
+ if (size != null) {
+ a.prefs.edit()
+ .putInt("wallpaper_video_width", size[0])
+ .putInt("wallpaper_video_height", size[1])
+ .putBoolean("wallpaper_video_too_large_notified", false)
+ .apply();
  }
+ a.prefs.edit().putBoolean(Prefs.WALLPAPER_VIDEO, true).apply();
+ AppLog.i("Wallpaper", "transcode done path=" + target.getAbsolutePath());
+ a.toast("视频壁纸已优化为 1080p");
+ a.refresh();
+ if (a.root != null) a.applyWallpaper(a.root);
+ } catch (Throwable error) {
+ AppLog.w("Wallpaper", "transcode apply failed", error);
+ a.notice("转码完成但应用失败：" + a.message(error));
+ }
+ });
+ }
+
+ @Override
+ public void failed(final String reason) {
+ a.ui.post(
+ () -> {
+ dialog.dismiss();
+ a.prefs.edit().putBoolean(Prefs.WALLPAPER_VIDEO, false).apply();
+ AppLog.i("Wallpaper", "transcode failed reason=" + reason);
+ a.notice("视频壁纸转码失败（" + reason + "），已回退静态壁纸");
+ a.refresh();
+ });
+ }
+ });
+ }
+
+ /** 1.9.230：启动/应用时发现已存 4K 壁纸 → 后台转码一次。 */
+ static void transcodeExisting(final MainActivity a) {
+ File target = VideoWallpaper.file(a);
+ if (!target.isFile() || WallpaperTranscoder.running()) return;
+ if (a.prefs.getBoolean("wallpaper_transcode_tried", false)) return;
+ int[] size = VideoWallpaper.probeSize(target);
+ if (size == null) return;
+ a.prefs.edit().putBoolean("wallpaper_transcode_tried", true).apply();
+ AppLog.i(
+ "Wallpaper",
+ "transcode existing src=" + size[0] + "x" + size[1] + " reason=too-large");
+ startWallpaperTranscode(a, target, size[0], size[1]);
+ }
+
+ static String videoWallpaperRejectReason(MainActivity a, File target) {
+ // 1.9.230：4K/超大不再拒绝，改为导入后自动转码（见 saveVideoWallpaper）
  // 1.9.113：新系统（SDK>=26）行为回到 1.9.82：允许 ExoPlayer + 4K/HEVC，不做严格规格限制
  if (android.os.Build.VERSION.SDK_INT >= 26) {
  String decoderProblem = FileManagerScreen.videoCodecProblem(target);

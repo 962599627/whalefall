@@ -1530,12 +1530,12 @@ final class PlaybackController {
  (p, isPlaying) -> {
  if (a.videoWallpaper == null) return;
  if (isPlaying) {
- a.videoWallpaper.pause();
+ a.videoWallpaper.stopAndReleaseDecoder("player-start");
  AppLog.i(
  "Wallpaper",
  "mobile pause reason=playing-state state=playing mini=" + a.miniMode);
  } else if (!(a.current != null && a.current.player) && !a.miniMode) {
- a.videoWallpaper.resume();
+ a.videoWallpaper.ensureDecoder("player-stop");
  AppLog.i("Wallpaper", "mobile resume reason=playing-state state=paused");
  }
  });
@@ -2387,7 +2387,7 @@ final class PlaybackController {
  ImageLoader.Atmosphere.resumeAtomVideo("player-stop");
  // 1.9.221：手机/平板独立 VideoWallpaper 层同步恢复
  if (a.videoWallpaper != null) {
- a.videoWallpaper.resume();
+ a.videoWallpaper.ensureDecoder("player-stop");
  AppLog.i("Wallpaper", "mobile resume reason=player-stop source=release");
  }
  if (a.miniMode) AppLog.i("Mini", "exit reason=release");

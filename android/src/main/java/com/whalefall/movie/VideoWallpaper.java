@@ -47,6 +47,8 @@ final class VideoWallpaper extends FrameLayout {
     private boolean pausedByHost;
     /** 1.9.180：失败只本次回退，可重试；Surface 每次页面挂载都重建。 */
     private boolean failed, surfaceRecreated;
+    /** 1.9.231：播放期间已释放解码器。 */
+    private boolean decoderReleased;
     private final Runnable firstFrameTimeout =
             () -> {
                 // 1.9.117：页面切换/重建导致首帧计时误判，仅记录不 fallback
@@ -445,6 +447,54 @@ final class VideoWallpaper extends FrameLayout {
     }
 
     /** 1.9.179：视频播放时暂停动态壁纸，省 CPU/内存。 */
+    /** 1.9.231：播放器起播时彻底释放壁纸解码器（不留解码资源）。 */
+    void stopAndReleaseDecoder(String reason) {
+        if (released) return;
+        pausedByHost = true;
+        decoderReleased = true;
+        AppLog.i("Wallpaper", "decoder released reason=" + reason);
+        try {
+            if (view != null) view.setVisibility(View.GONE);
+        } catch (Throwable ignored) {
+        }
+        try {
+            if (player != null) {
+                player.stop();
+                player.release();
+                player = null;
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            if (mediaPlayer != null) {
+                mediaPlayer.setSurface(null);
+                mediaPlayer.reset();
+                mediaPlayer.release();
+                mediaPlayer = null;
+            }
+        } catch (Throwable ignored) {
+        }
+        setVisibility(View.GONE);
+    }
+
+    /** 1.9.231：退出播放后重建解码器。 */
+    void ensureDecoder(String reason) {
+        if (released || !decoderReleased) {
+            resume();
+            return;
+        }
+        decoderReleased = false;
+        pausedByHost = false;
+        AppLog.i("Wallpaper", "decoder recreated reason=" + reason);
+        try {
+            setVisibility(View.VISIBLE);
+            if (useExo) startExo();
+            else addSurfaceView();
+        } catch (Throwable error) {
+            AppLog.w("Wallpaper", "decoder recreate failed", error);
+        }
+    }
+
     void pause() {
         if (released) return;
         pausedByHost = true;
