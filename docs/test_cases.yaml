@@ -1,44 +1,51 @@
 meta:
   suite: whalefall-tv-sop
   target: TV
-  version: "1.9.158"
-  version_source: "android/version.properties（以实际安装包为准，证据目录随版本命名）"
-  device: "MiBox4C / Android 6.0.1 / API 23 / 1080p（1920x1080）/ WiFi"
+  version: "1.9.164"
+  version_code: "以 adb shell dumpsys package com.whalefall.movie 实测为准"
+  version_source: "android/version.properties；电视已装 1.9.164，启动 JNI/FATAL=0"
+  fallback_baseline: "1.9.162"
+  device: "MiBox4C / Android 6.0.1 / API 23 / armeabi-v7a / 1920x1080 / WiFi / 遥控器"
   execution: "Lead 在电视真机按批执行；QA 产出用例与判定标准；证据由执行者归档"
-  evidence_root: "/sdcard/Download/DSH-Go/鲸落/verify/1.9.158-tv"
-  sop: "docs/QA_ANDROID_SOP.md"
+  evidence_root: "/sdcard/Download/DSH-Go/鲸落/verify/1.9.164-tv"
+  sop: "docs/QA_ANDROID_SOP.md（提交 7b4bcfb，v1.0）"
   plan: "docs/test_plan.md"
+  stage_order: ["3 冒烟门禁", "4 功能", "5 专项（稳定/性能/弱网/功耗/安全/升级）", "6 回归发布", "7 线上监控复盘"]
+  defect_levels: { S1: "致命·立即阻断", S2: "24h", S3: "本迭代", S4: "排期" }
+  priority_map: { P0: "S1", P1: "S2", P2: "S3", P3: "S4" }
   log_cmd: "adb logcat -c && adb logcat -v time | grep -E \"FilterLayer|FilterOk|FilterOption|FilterFocus|PlayerFocus|Player:|Mini|IptvOrg|Wallpaper|History|LiveKernel|X5|Update|FileMgr|Memory|ANR|FATAL\""
   counts: { P0: 15, P1: 8, P2: 2 }
 
 cases:
-  # ===================== P0（先执行，15 条） =====================
+  # ===================== P0（阶段3 冒烟门禁 → 阶段4 功能，15 条） =====================
 
   - case_id: WLTV-P0-001
     module: 首页发现
     priority: P0
     precondition: |
-      1.9.158 TV 包已覆盖安装；点播源已导入且可用；观看历史 ≥3 条；电视已连 WiFi。
+      1.9.164 TV 包已覆盖安装；点播源已导入且可用；观看历史 ≥3 条；电视已连 WiFi。
     steps:
-      - 冷启动 App（先在设置里强制停止），记录首页首帧出现时间。
-      - 等待 10s，按 ↓ 在首页分类行/内容区移动焦点，逐项停留 1s。
+      - `adb shell am force-stop com.whalefall.movie` 后冷启动，计时到首页首帧。
+      - 前后台切换 3 次（HOME→回 App），每次停留 2s。
+      - 按 ↓ 在首页分类行/内容区移动焦点，逐项停留 1s。
       - 按 OK 打开第一张卡片（详情），再按 BACK 返回首页。
       - 重复冷启动 3 次。
     expected: |
-      3 次冷启动均无闪退/黑屏/白屏；首页首帧 ≤5s；卡片有海报与标题；焦点移动有可见焦点框；
-      详情可打开，BACK 回首页且保留原焦点/滚动位置。
+      3 次冷启动均无闪退/黑屏/白屏；冷启动 ≤5s；前后台切换 3 次不崩；
+      卡片有海报与标题；焦点移动有可见焦点框；详情可打开，BACK 回首页保留原位置。
     assert:
       - type: UI_ASSERT
-        detail: "首页首帧 ≤5s；卡片海报/标题非空；焦点框可见；BACK 后回到首页原位置"
+        detail: "冷启动 ≤5s；前后台切换 3 次不崩不黑屏；卡片海报/标题非空；焦点框可见"
       - type: LOG_ASSERT
-        tag: "MainActivity"
-        pattern: "FATAL EXCEPTION|ANR in com.whalefall.movie"
-        expect: "absent"
+        tag: "AndroidRuntime"
+        pattern: "FATAL EXCEPTION"
+        expect: absent
       - type: LOG_ASSERT
-        tag: "Wallpaper"
-        pattern: "page=.*bg=transparent"
-    evidence: "1.9.158-tv/WLTV-P0-001_*.png|.mp4；tv.log 摘录"
-    requirement: "SOP 阶段3 P0；必测模块：首页发现/启动可用"
+        tag: "ActivityManager"
+        pattern: "ANR in com.whalefall.movie"
+        expect: absent
+    evidence: "1.9.164-tv/WLTV-P0-001_*.png|.mp4；tv.log + crash.log 摘录；冷启动计时截图"
+    requirement: "SOP 阶段3 冒烟门禁（crash FATAL=0/ANR=0/冷启动≤5s/前后台3次）；必测：首页发现"
 
   - case_id: WLTV-P0-002
     module: 首页发现
@@ -60,8 +67,8 @@ cases:
       - type: LOG_ASSERT
         tag: "FilterLayer"
         pattern: "level=2 dim="
-    evidence: "1.9.158-tv/WLTV-P0-002_*.png|.mp4；tv.log 摘录"
-    requirement: "必测模块：筛选三层焦点（tab↓→芯片）"
+    evidence: "1.9.164-tv/WLTV-P0-002_*.png|.mp4；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：筛选三层焦点（tab↓→芯片）"
 
   - case_id: WLTV-P0-003
     module: 首页发现
@@ -84,8 +91,8 @@ cases:
       - type: LOG_ASSERT
         tag: "FilterOk"
         pattern: "chip=.*options="
-    evidence: "1.9.158-tv/WLTV-P0-003_*.png|.mp4；tv.log 摘录"
-    requirement: "必测模块：筛选三层焦点（芯片→选项→生效）"
+    evidence: "1.9.164-tv/WLTV-P0-003_*.png|.mp4；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：筛选三层焦点（芯片→选项→生效）"
 
   - case_id: WLTV-P0-004
     module: 首页发现
@@ -107,8 +114,8 @@ cases:
       - type: LOG_ASSERT
         tag: "FilterFocus"
         pattern: "clear category="
-    evidence: "1.9.158-tv/WLTV-P0-004_*.png|.mp4；tv.log 摘录"
-    requirement: "必测模块：筛选三层焦点（收起/清筛选/焦点回位）"
+    evidence: "1.9.164-tv/WLTV-P0-004_*.png|.mp4；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：筛选三层焦点（收起/清筛选/焦点回位）"
 
   - case_id: WLTV-P0-005
     module: 历史清理
@@ -128,8 +135,8 @@ cases:
       - type: LOG_ASSERT
         tag: "History"
         pattern: "clear scope=home\\+live removed=\\d+"
-    evidence: "1.9.158-tv/WLTV-P0-005_*.png；tv.log 摘录"
-    requirement: "必测模块：历史清理"
+    evidence: "1.9.164-tv/WLTV-P0-005_*.png；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：历史清理"
 
   - case_id: WLTV-P0-006
     module: 播放器
@@ -152,8 +159,8 @@ cases:
       - type: LOG_ASSERT
         tag: "PlayerFocus"
         pattern: "ok=play-pause action=toggle"
-    evidence: "1.9.158-tv/WLTV-P0-006_*.mp4（焦点动画必录）；tv.log 摘录"
-    requirement: "必测模块：播放器中央三键焦点（用户反馈 1.9.147 两侧按钮无焦点动画）"
+    evidence: "1.9.164-tv/WLTV-P0-006_*.mp4（焦点动画必录）；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：播放器中央三键焦点（用户反馈两侧按钮无焦点动画）"
 
   - case_id: WLTV-P0-007
     module: 播放器
@@ -174,8 +181,8 @@ cases:
       - type: LOG_ASSERT
         tag: "PlayerFocus"
         pattern: "text-button focus=.*zone=buttons"
-    evidence: "1.9.158-tv/WLTV-P0-007_*.mp4；tv.log 摘录"
-    requirement: "必测模块：播放器底部按钮焦点"
+    evidence: "1.9.164-tv/WLTV-P0-007_*.mp4；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：播放器底部按钮焦点"
 
   - case_id: WLTV-P0-008
     module: 播放器
@@ -198,8 +205,8 @@ cases:
       - type: LOG_ASSERT
         tag: "Player"
         pattern: "repeat=\\d+ action=hint-only"
-    evidence: "1.9.158-tv/WLTV-P0-008_*.mp4（含长按 3s）；tv.log 摘录"
-    requirement: "必测模块：隐藏控制条左右 ±10s 与长按不风暴"
+    evidence: "1.9.164-tv/WLTV-P0-008_*.mp4（含长按 3s）；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：隐藏控制条左右 ±10s 与长按不风暴"
 
   - case_id: WLTV-P0-009
     module: 播放器
@@ -222,8 +229,8 @@ cases:
       - type: LOG_ASSERT
         tag: "MiniFocus"
         pattern: "zone=mini focus="
-    evidence: "1.9.158-tv/WLTV-P0-009_*.mp4；tv.log 摘录"
-    requirement: "必测模块：播放器选集小窗"
+    evidence: "1.9.164-tv/WLTV-P0-009_*.mp4；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：播放器选集小窗"
 
   - case_id: WLTV-P0-010
     module: 直播
@@ -243,8 +250,8 @@ cases:
       - type: LOG_ASSERT
         tag: "IptvOrg"
         pattern: "favorite channel=.*on=true"
-    evidence: "1.9.158-tv/WLTV-P0-010_*.png；tv.log 摘录"
-    requirement: "必测模块：直播分类顺序/收藏置顶"
+    evidence: "1.9.164-tv/WLTV-P0-010_*.png；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：直播分类顺序/收藏置顶"
 
   - case_id: WLTV-P0-011
     module: 直播
@@ -264,8 +271,8 @@ cases:
       - type: LOG_ASSERT
         tag: "IptvOrg"
         pattern: "filter=.*selected=true"
-    evidence: "1.9.158-tv/WLTV-P0-011_*.png；tv.log 摘录"
-    requirement: "必测模块：直播右侧信息"
+    evidence: "1.9.164-tv/WLTV-P0-011_*.png；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：直播右侧信息"
 
   - case_id: WLTV-P0-012
     module: 直播
@@ -284,8 +291,8 @@ cases:
       - type: LOG_ASSERT
         tag: "IptvOrg"
         pattern: "source=(asset|cache) channels=\\d+"
-    evidence: "1.9.158-tv/WLTV-P0-012_*.png；tv.log 摘录"
-    requirement: "必测模块：开源 IPTV 列表"
+    evidence: "1.9.164-tv/WLTV-P0-012_*.png；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：开源 IPTV 列表"
 
   - case_id: WLTV-P0-013
     module: 直播
@@ -305,8 +312,8 @@ cases:
       - type: LOG_ASSERT
         tag: "IptvOrg"
         pattern: "picker level=1 group="
-    evidence: "1.9.158-tv/WLTV-P0-013_*.png；tv.log 摘录"
-    requirement: "必测模块：直播搜索/收藏/二级选择器"
+    evidence: "1.9.164-tv/WLTV-P0-013_*.png；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：直播搜索/收藏/二级选择器"
 
   - case_id: WLTV-P0-014
     module: 设置
@@ -317,22 +324,23 @@ cases:
       - 连续点击 3 次，记录循环（自动→腾讯 X5→系统）与提示。
       - 选「自动」后打开网页直播频道与网页播放页，确认可播放。
       - 选「系统」重复；再选「腾讯 X5」重复（若未打包 X5 观察回退提示）。
+      - 切「解码方式」（自动/硬解/软解）各试一次起播，确认不崩。
       - 重启 App 后检查设置值是否保持。
     expected: |
       设置项存在且显示当前内核；点击循环顺序正确、每次有提示「下次打开生效」；
       三档下网页直播/网页播放均能打开（X5 缺失时回退系统 WebView 并提示，不白屏不崩溃）；
-      重启后设置值保持。
+      解码方式切换后起播不崩溃；重启后设置值保持。
     assert:
       - type: UI_ASSERT
-        detail: "直播内核项存在、循环正确、提示正确；三档均可打开网页直播/播放；重启保持"
+        detail: "直播内核项存在、循环/提示正确；三档可打开网页直播/播放；解码切换不崩；重启保持"
       - type: LOG_ASSERT
         tag: "LiveKernel"
         pattern: "mode=(auto|x5|system) used=(x5|system)"
       - type: LOG_ASSERT
         tag: "LiveKernel"
         pattern: "(x5 create failed|canUseX5=false)"
-    evidence: "1.9.158-tv/WLTV-P0-014_*.png；tv.log 摘录"
-    requirement: "必测模块：设置（播放与字幕/直播内核生效与回退）"
+    evidence: "1.9.164-tv/WLTV-P0-014_*.png；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：设置（壁纸/内核/解码）→ 内核生效与回退、解码健壮性"
 
   - case_id: WLTV-P0-015
     module: 壁纸
@@ -355,10 +363,10 @@ cases:
       - type: LOG_ASSERT
         tag: "Wallpaper"
         pattern: "(video engine=.*firstFrame=true|video page-change keep=true)"
-    evidence: "1.9.158-tv/WLTV-P0-015_*.png|.mp4；tv.log 摘录"
-    requirement: "必测模块：壁纸稳定性"
+    evidence: "1.9.164-tv/WLTV-P0-015_*.png|.mp4；tv.log 摘录"
+    requirement: "SOP 阶段4 功能；必测：壁纸稳定性"
 
-  # ===================== P1（P0 通过后执行，8 条） =====================
+  # ===================== P1（阶段5 专项 → 阶段6 回归发布，8 条） =====================
 
   - case_id: WLTV-P1-001
     module: 文件管理
@@ -378,8 +386,8 @@ cases:
       - type: LOG_ASSERT
         tag: "FileMgr"
         pattern: "(scan root=|play local=)"
-    evidence: "1.9.158-tv/WLTV-P1-001_*.png；tv.log + 安装器截图"
-    requirement: "必测模块：文件管理 APK 安装"
+    evidence: "1.9.164-tv/WLTV-P1-001_*.png；tv.log + 安装器截图"
+    requirement: "SOP 阶段6 回归发布；必测模块：文件管理 APK 安装"
 
   - case_id: WLTV-P1-002
     module: 文件管理
@@ -396,8 +404,8 @@ cases:
       - type: LOG_ASSERT
         tag: "FileMgr"
         pattern: "download"
-    evidence: "1.9.158-tv/WLTV-P1-002_*.png；tv.log 摘录"
-    requirement: "必测模块：文件管理基础"
+    evidence: "1.9.164-tv/WLTV-P1-002_*.png；tv.log 摘录"
+    requirement: "SOP 阶段6 回归发布；必测模块：文件管理基础"
 
   - case_id: WLTV-P1-003
     module: 更新
@@ -417,8 +425,8 @@ cases:
       - type: LOG_ASSERT
         tag: "Update"
         pattern: "(page=enter|try=.*result=ok)"
-    evidence: "1.9.158-tv/WLTV-P1-003_*.png；tv.log 摘录"
-    requirement: "必测模块：更新"
+    evidence: "1.9.164-tv/WLTV-P1-003_*.png；tv.log 摘录"
+    requirement: "SOP 阶段5 专项·升级；必测模块：更新"
 
   - case_id: WLTV-P1-004
     module: 设置
@@ -436,8 +444,8 @@ cases:
       - type: LOG_ASSERT
         tag: "Theme"
         pattern: "(userTextColor=#|defaultTextColor=#4CFF80)"
-    evidence: "1.9.158-tv/WLTV-P1-004_*.png；tv.log 摘录"
-    requirement: "必测模块：设置（持久化）"
+    evidence: "1.9.164-tv/WLTV-P1-004_*.png；tv.log 摘录"
+    requirement: "SOP 阶段6 回归发布；必测：设置（壁纸/内核/解码）持久化"
 
   - case_id: WLTV-P1-005
     module: 播放器
@@ -455,8 +463,8 @@ cases:
       - type: LOG_ASSERT
         tag: "Player"
         pattern: "(换源|speed|subtitle)"
-    evidence: "1.9.158-tv/WLTV-P1-005_*.mp4；tv.log 摘录"
-    requirement: "必测模块：播放器换源/倍速/字幕"
+    evidence: "1.9.164-tv/WLTV-P1-005_*.mp4；tv.log 摘录"
+    requirement: "SOP 阶段6 回归发布；必测：播放器换源/倍速/字幕"
 
   - case_id: WLTV-P1-006
     module: 性能
@@ -468,16 +476,16 @@ cases:
       - 观察 20 分钟内是否出现明显掉帧/卡顿/发热/自动重载。
       - 20 分钟时统计 Memory 日志。
     expected: |
-      5 分钟后 PSS 平稳，20 分钟增长 ≤10%；janky 帧 <5%；
+      5 分钟后 PSS 平稳，20 分钟增长 ≤10%；janky 帧 <5%；20 分钟 0 崩溃；
       无频繁 blocking GC、无 ANR、无自动退出/重载；Memory 日志参数稳定。
     assert:
       - type: PERF_ASSERT
-        detail: "PSS 20min 增长 ≤10%；janky 帧 <5%；无 blocking GC 风暴/ANR"
+        detail: "PSS 20min 增长 ≤10%；janky 帧 <5%；20min 0 崩溃；无 blocking GC 风暴/ANR"
       - type: LOG_ASSERT
         tag: "Memory"
         pattern: "buffer=15s cache=64MB wallpaper=sample"
-    evidence: "1.9.158-tv/meminfo-0/5/10/15/20min.txt、gfxinfo-*.txt；tv.log 摘录"
-    requirement: "必测模块：连续播放 20 分钟稳定性（用户反馈掉帧）"
+    evidence: "1.9.164-tv/meminfo-0/5/10/15/20min.txt、gfxinfo-*.txt；tv.log 摘录"
+    requirement: "SOP 阶段5 专项·性能与稳定（gfxinfo janky<5%、meminfo 20min 无持续增长、20min 0 崩溃）"
 
   - case_id: WLTV-P1-007
     module: 稳定性
@@ -492,10 +500,11 @@ cases:
       - type: UI_ASSERT
         detail: "断网提示明确；恢复可播；快速切换不崩"
       - type: LOG_ASSERT
-        tag: "MainActivity"
-        pattern: "无 ANR in com.whalefall.movie"
-    evidence: "1.9.158-tv/WLTV-P1-007_*.mp4；tv.log 摘录"
-    requirement: "SOP 阶段6 兼容与异常"
+        tag: "ActivityManager"
+        pattern: "ANR in com.whalefall.movie"
+        expect: absent
+    evidence: "1.9.164-tv/WLTV-P1-007_*.mp4；tv.log 摘录"
+    requirement: "SOP 阶段5 专项·弱网"
 
   - case_id: WLTV-P1-008
     module: 壁纸
@@ -512,10 +521,10 @@ cases:
       - type: LOG_ASSERT
         tag: "Wallpaper"
         pattern: "video (engine=|page-change keep=true)"
-    evidence: "1.9.158-tv/WLTV-P1-008_*.mp4；tv.log 摘录"
-    requirement: "必测模块：壁纸稳定性（动态）"
+    evidence: "1.9.164-tv/WLTV-P1-008_*.mp4；tv.log 摘录"
+    requirement: "SOP 阶段5 专项·稳定；必测模块：壁纸稳定性（动态）"
 
-  # ===================== P2（记录项，2 条） =====================
+  # ===================== P2（阶段6 回归发布，记录项，2 条） =====================
 
   - case_id: WLTV-P2-001
     module: 首页发现
@@ -529,8 +538,8 @@ cases:
     assert:
       - type: UI_ASSERT
         detail: "有明确空态提示；无白屏；焦点不卡死"
-    evidence: "1.9.158-tv/WLTV-P2-001_*.png"
-    requirement: "SOP 阶段6 边界"
+    evidence: "1.9.164-tv/WLTV-P2-001_*.png"
+    requirement: "SOP 阶段6 回归发布（边界）"
 
   - case_id: WLTV-P2-002
     module: 直播
@@ -543,5 +552,5 @@ cases:
     assert:
       - type: UI_ASSERT
         detail: "切台声音不叠加；返回后无残留音频"
-    evidence: "1.9.158-tv/WLTV-P2-002_*.mp4"
-    requirement: "历史缺陷回归（直播音频残留）"
+    evidence: "1.9.164-tv/WLTV-P2-002_*.mp4"
+    requirement: "SOP 阶段6 回归发布（历史缺陷回归：直播音频残留）"

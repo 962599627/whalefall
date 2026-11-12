@@ -1272,7 +1272,7 @@ final class HomeScreen {
  boolean active = value != null && !value.isEmpty();
  boolean open = def.dimension.equals(filterOpenDim);
  LinearLayout tagWrap = a.vertical();
- tagWrap.setGravity(Gravity.CENTER_HORIZONTAL);
+ tagWrap.setGravity(Gravity.CENTER);
  TextView chip =
  a.text(
  active
@@ -1307,44 +1307,8 @@ final class HomeScreen {
  chip.setClickable(true);
  final String dimKeyF = dimKey;
  final VideoFilters.Definition defF = def;
- chip.setOnKeyListener(
- (v, keyCode, event) -> {
- if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
- boolean confirm =
- keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
- || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
- if (confirm) {
- AppLog.i("FilterOk", "chip=" + dimKeyF + " options=" + defF.choices.size());
- return false;
- }
- int dir =
- keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
- ? View.FOCUS_LEFT
- : keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
- ? View.FOCUS_RIGHT
- : keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP
- ? View.FOCUS_UP
- : keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
- ? View.FOCUS_DOWN
- : -1;
- if (dir < 0) return false;
- View next = v.focusSearch(dir);
- AppLog.i(
- "FilterFocus",
- "chip="
- + dimKeyF
- + " dir="
- + (dir == View.FOCUS_LEFT
- ? "left"
- : dir == View.FOCUS_RIGHT
- ? "right"
- : dir == View.FOCUS_UP ? "up" : "down")
- + " to="
- + (next == null || next == v ? "none" : String.valueOf(next.getTag())));
- return false;
- });
  chip.setOnClickListener(v -> openFilterFor(defF));
- // 1.9.154：RIGHT/OK 展开选项；DOWN 直接进卡片网格；LEFT/UP 交给默认焦点
+ // 1.9.165：每次重渲染只保留这一个 click/key 监听，OK/RIGHT/DOWN 都强制重建 L3
  chip.setClickable(true);
  chip.setOnKeyListener(
  (v, keyCode, event) -> {
@@ -1357,15 +1321,10 @@ final class HomeScreen {
  return true;
  }
  if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
- // 选项行未展开时才展开；已展开时 RIGHT 移到下一个筛选芯片
- if (!filterOptionsVisible() || !defF.dimension.equals(filterOpenDim)) {
  openFilterFor(defF, "right");
  return true;
  }
- return false;
- }
  if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
- // 1.9.156：第二层 DOWN → 展开第三层并聚焦第一个选项
  AppLog.i("FilterLayer", "chip-down dim=" + dimKeyF + " to=option:first");
  openFilterFor(defF, "down");
  return true;
@@ -1386,7 +1345,7 @@ final class HomeScreen {
  tagWrap.addView(underline, underlineLp);
  }
  LinearLayout.LayoutParams lp =
- new LinearLayout.LayoutParams(-2, a.dp(40));
+ new LinearLayout.LayoutParams(-2, a.dp(36));
  lp.rightMargin = a.dp(16);
  filterTagRow.addView(tagWrap, lp);
  if (def.dimension.equals(filterPendingTag)) {
@@ -1396,8 +1355,9 @@ final class HomeScreen {
  }
  if (!state.selectedFilters.isEmpty()) {
  TextView clear = a.text("清除", 13, 0xff8d9cb6);
- clear.setPadding(a.dp(4), 0, a.dp(4), 0);
- clear.setMinHeight(a.dp(40));
+ clear.setPadding(a.dp(8), 0, a.dp(8), 0);
+ clear.setMinHeight(a.dp(36));
+ clear.setHeight(a.dp(36));
  clear.setGravity(Gravity.CENTER);
  MobileDetailScreen.bindTouchFeedback(clear);
  clear.setFocusable(true);
@@ -1425,10 +1385,9 @@ final class HomeScreen {
  150);
  });
  LinearLayout.LayoutParams clearLp =
- new LinearLayout.LayoutParams(-2, a.dp(40));
- clearLp.leftMargin = a.dp(10);
+ new LinearLayout.LayoutParams(-2, a.dp(36));
+ clearLp.leftMargin = a.dp(16);
  clearLp.gravity = Gravity.CENTER_VERTICAL;
- clear.setGravity(Gravity.CENTER_VERTICAL);
  filterTagRow.addView(clear, clearLp);
  // 1.9.155：清除与筛选芯片同行且可滚动到可见
  filterTagRow.post(
@@ -1531,11 +1490,16 @@ final class HomeScreen {
 
  void openFilterFor(final VideoFilters.Definition def, String source) {
  String dim = normalizeFilterDim(def.dimension);
+ AppLog.i("FilterLayer", "reopen dim=" + dim + " source=" + source);
  AppLog.i("FilterLayer", "level=2 dim=" + dim + " source=" + source);
- AppLog.i(
- "FilterOption",
- "open dim=" + dim + " source=" + source + " keyMode=" + a.keyFocusMode);
+ // 1.9.165：无论是否已选中/同维度，都先作废旧 L3 再按当前 def 重建
+ filterOpenDim = "";
+ if (filterOptionRow != null) filterOptionRow.removeAllViews();
  showFilterOptions(def);
+ AppLog.i(
+ "FilterLayer",
+ "reopen bind ok count="
+ + (filterTagRow == null ? 0 : filterTagRow.getChildCount()));
  }
 
  void showFilterOptionDialog(final VideoFilters.Definition def) {
