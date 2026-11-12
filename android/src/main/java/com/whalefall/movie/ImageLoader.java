@@ -65,9 +65,7 @@ final class ImageLoader {
  synchronized (IN_FLIGHT) {
  IN_FLIGHT.clear();
  }
- if (cachedDefault != null && !cachedDefault.isRecycled()) cachedDefault.recycle();
- cachedDefault = null;
- cachedDefaultEdge = 0;
+ Atmosphere.clearCachedDefault();
  AppLog.i("Memory", "caches cleared background=true");
  } catch (Throwable error) {
  AppLog.w("Memory", "clear caches failed", error);
@@ -455,6 +453,13 @@ final class ImageLoader {
  static Bitmap cachedDefault;
  /** 1.9.180：缓存键带目标最大边，避免小图全局复用发黑。 */
  static int cachedDefaultEdge;
+
+ /** 1.9.181：供外层 trim 清理默认壁纸缓存。 */
+ static void clearCachedDefault() {
+ if (cachedDefault != null && !cachedDefault.isRecycled()) cachedDefault.recycle();
+ cachedDefault = null;
+ cachedDefaultEdge = 0;
+ }
 
  Atmosphere(Context c) {
  super(c);
