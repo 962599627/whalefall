@@ -3921,6 +3921,8 @@ public final class MainActivity extends Activity {
  ui.postDelayed(() -> PlaybackController.retryAfterResume(this), 700);
  scheduleFocusAudit();
  ui.post(() -> applyPageOrientation("resume"));
+ // 1.9.222：恢复性能浮层
+ PerfOverlay.attachIfEnabled(this);
  if (videoWallpaper != null && (current == null || !current.player)) videoWallpaper.resume();
  ui.postDelayed(this::cleanupOldCrashLogs, 1500);
  ui.postDelayed(this::purgeUnsupportedVideoWallpaper, 1200);

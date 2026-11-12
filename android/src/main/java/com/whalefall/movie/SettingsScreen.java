@@ -705,6 +705,27 @@ final class SettingsScreen {
  a.toast("已清除首页缓存");
  });
  link("运行日志", "查看本机最近异常与诊断记录", "settings-logs", this::diagnostics);
+ // 1.9.222：性能浮层 + 导出（无 ADB 时采集 FPS/PSS）
+ link(
+ "性能浮层",
+ PerfOverlay.enabled(a)
+ ? "当前：开 · 显示 FPS/掉帧/PSS/页面/壁纸状态"
+ : "当前：关 · 打开后右上角显示实时性能数值",
+ "settings-perf-overlay",
+ () -> {
+ boolean on = !PerfOverlay.enabled(a);
+ PerfOverlay.set(a, on);
+ a.toast(on ? "性能浮层已开启" : "性能浮层已关闭");
+ a.refresh();
+ });
+ link(
+ "导出性能日志",
+ "最近 300 条 I/Perf 记录写入 Download/DSH-Go/鲸落",
+ "settings-perf-export",
+ () -> {
+ AppLog.i("Perf", "export requested lines=" + PerfOverlay.lines());
+ PerfOverlay.export(a);
+ });
  link(
  "UI 自检",
  "检查导航选中唯一、焦点唯一、无重复/残留浮层",
