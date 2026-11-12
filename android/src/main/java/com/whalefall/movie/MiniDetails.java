@@ -273,14 +273,28 @@ final class MiniDetails {
 
  private void applyHeroRect(int attempt) {
  if (!a.miniMode || a.root == null) return;
- // 1.9.241：TV 小窗判定（isTvDevice 不可靠）
- boolean tvMini =
- a.isTvDevice() || a.remoteFocusMode || a.keyFocusMode
- || (a.getResources().getConfiguration().orientation
- == android.content.res.Configuration.ORIENTATION_LANDSCAPE
- && a.getResources().getConfiguration().smallestScreenWidthDp >= 960);
+ // 1.9.244：TV 小窗判定（无触摸 + 1080p 横屏分辨率）
+ boolean tvMini = a.tvMiniMode();
+ android.util.DisplayMetrics dm = a.getResources().getDisplayMetrics();
+ AppLog.i(
+ "Mini",
+ "tvMini="
+ + tvMini
+ + " screen="
+ + dm.widthPixels
+ + "x"
+ + dm.heightPixels
+ + " noTouch="
+ + a.noTouchscreen()
+ + " landscape="
+ + (dm.widthPixels > dm.heightPixels)
+ + " device="
+ + a.deviceType
+ + " res="
+ + a.resClass);
  if (tvMini) {
- int w = 480, h = 270, x = 32, y = 32;
+ // 1.9.244：电视统一 320×180dp（4K 电视按 dp 自动放大）
+ int w = a.dp(320), h = a.dp(180), x = a.dp(16), y = a.dp(16);
  FrameLayout.LayoutParams vlp =
  new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
  vlp.leftMargin = x;
@@ -302,15 +316,41 @@ final class MiniDetails {
  page.bringToFront();
  AppLog.i(
  "Mini",
- "tvMini=true reason="
- + a.tvMiniReason()
- + " formFactor="
- + a.formFactor
- + " isTv="
- + a.isTvDevice()
- + " remote="
- + a.remoteFocusMode
- + " size=480x270 at=32,32");
+ "tvMini=true size=320x180dp screen="
+ + dm.widthPixels
+ + "x"
+ + dm.heightPixels
+ + " noTouch="
+ + a.noTouchscreen()
+ + " landscape="
+ + (dm.widthPixels > dm.heightPixels)
+ + " device="
+ + a.deviceType
+ + " res="
+ + a.resClass);
+ // 1.9.244：布局后再强制校验尺寸
+ a.ui.postDelayed(
+ () -> {
+ if (!a.miniMode || !tvMini || a.playbackLayer == null) return;
+ int lw = a.playbackLayer.getWidth(), lh = a.playbackLayer.getHeight();
+ if (lw > a.dp(600) || lh > a.dp(400)) {
+ int fw = a.dp(320), fh = a.dp(180);
+ FrameLayout.LayoutParams fp =
+ new FrameLayout.LayoutParams(fw, fh, Gravity.TOP | Gravity.LEFT);
+ fp.leftMargin = a.dp(16);
+ fp.topMargin = a.dp(16);
+ a.playbackLayer.setLayoutParams(fp);
+ FrameLayout.LayoutParams pp =
+ new FrameLayout.LayoutParams(fw, fh, Gravity.TOP | Gravity.LEFT);
+ pp.leftMargin = a.dp(16);
+ pp.topMargin = a.dp(16);
+ page.setLayoutParams(pp);
+ a.playbackLayer.bringToFront();
+ page.bringToFront();
+ AppLog.i("Mini", "force-resize from=" + lw + "x" + lh + " to=320x180dp");
+ }
+ },
+ 400);
  return;
  }
  {

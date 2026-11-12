@@ -946,6 +946,11 @@ public final class MainActivity extends Activity {
  boolean layoutReady, layoutIntro;
  int usableWidth, usableHeight;
  int formFactor = TvLayoutPolicy.FORM_TV;
+ /** 1.9.244：设备类型与分辨率档位（全局响应式基线）。 */
+ String deviceType = "phone";
+ String resClass = "1K";
+ int deviceLongEdge;
+ boolean deviceTouch, deviceLandscape;
  /** 1.9.178：最小宽度（dp），响应式断点用。 */
  int smallestWidthDp;
 
@@ -1159,6 +1164,7 @@ public final class MainActivity extends Activity {
  this, rawScreen.widthPixels, rawScreen.heightPixels, rawScreen.densityDpi);
  smallestWidthDp =
  getResources().getConfiguration().smallestScreenWidthDp;
+ classifyDevice();
  setRequestedOrientation(
  isTvDevice()
  ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -1867,29 +1873,62 @@ public final class MainActivity extends Activity {
  }
  }
 
- /** 1.9.241：TV 小窗/电视交互判定（无 LEANBACK 的盒子 isTvDevice=false 也要覆盖）。 */
- boolean tvMiniMode() {
+ /** 1.9.244：是否无触摸屏（TV 盒子最可靠判据）。 */
+ boolean noTouchscreen() {
  try {
- if (isTvDevice()) return true;
- if (remoteFocusMode || keyFocusMode) return true;
- android.content.res.Configuration cfg = getResources().getConfiguration();
- return cfg.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
- && cfg.smallestScreenWidthDp >= 960;
+ return !getPackageManager()
+ .hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN);
  } catch (Throwable ignored) {
  return false;
  }
  }
 
+ /** 1.9.244：按分辨率 + 触摸能力判定设备类型，启动日志一次。 */
+ void classifyDevice() {
+ try {
+ android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+ int w = dm.widthPixels, h = dm.heightPixels;
+ deviceLongEdge = Math.max(w, h);
+ int shortEdge = Math.min(w, h);
+ deviceLandscape = w > h;
+ deviceTouch =
+ getPackageManager()
+ .hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN);
+ resClass = deviceLongEdge <= 1920 ? "1K" : deviceLongEdge <= 2880 ? "2K" : "4K";
+ if (!deviceTouch) deviceType = "tv";
+ else if (deviceLandscape) deviceType = "tablet";
+ else deviceType = "phone";
+ AppLog.i(
+ "Device",
+ "type="
+ + deviceType
+ + " res="
+ + resClass
+ + " screen="
+ + w
+ + "x"
+ + h
+ + " touch="
+ + deviceTouch
+ + " landscape="
+ + deviceLandscape
+ + " short="
+ + shortEdge);
+ } catch (Throwable error) {
+ AppLog.w("Device", "classify failed", error);
+ }
+ }
+
+ /** 1.9.244：TV 小窗判定按设备类型。 */
+ boolean tvMiniMode() {
+ return "tv".equals(deviceType) || isTvDevice();
+ }
+
  String tvMiniReason() {
  if (isTvDevice()) return "tv";
+ if (tvMiniMode()) return "no-touch-1080p";
  if (remoteFocusMode) return "remote";
  if (keyFocusMode) return "key";
- try {
- android.content.res.Configuration cfg = getResources().getConfiguration();
- if (cfg.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
- && cfg.smallestScreenWidthDp >= 960) return "landscape960";
- } catch (Throwable ignored) {
- }
  return "none";
  }
 

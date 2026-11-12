@@ -95,7 +95,20 @@ final class VideoWallpaper extends FrameLayout {
         }
     }
 
-    /** 1.9.229：已保存壁纸是否超大（长边>1920 或 短边>1080）；读不到按不超限。 */
+    /** 1.9.244：按分辨率档位的解码上限。 */
+    private static int maxLong(MainActivity a) {
+        if ("4K".equals(a.resClass)) return 3840;
+        if ("2K".equals(a.resClass)) return 2560;
+        return 1920;
+    }
+
+    private static int maxShort(MainActivity a) {
+        if ("4K".equals(a.resClass)) return 2160;
+        if ("2K".equals(a.resClass)) return 1440;
+        return 1080;
+    }
+
+    /** 1.9.229：已保存壁纸是否超大；读不到按不超限。 */
     static boolean tooLarge(MainActivity a) {
         try {
             int w = a.prefs.getInt("wallpaper_video_width", 0);
@@ -111,7 +124,8 @@ final class VideoWallpaper extends FrameLayout {
                         .putInt("wallpaper_video_height", h)
                         .apply();
             }
-            boolean over = Math.max(w, h) > 1920 || Math.min(w, h) > 1080;
+            boolean over =
+                    Math.max(w, h) > maxLong(a) || Math.min(w, h) > maxShort(a);
             if (over)
                 AppLog.i(
                         "Wallpaper",
@@ -119,6 +133,8 @@ final class VideoWallpaper extends FrameLayout {
                                 + w
                                 + "x"
                                 + h
+                                + " res="
+                                + a.resClass
                                 + " kept=true");
             return over;
         } catch (Throwable error) {
