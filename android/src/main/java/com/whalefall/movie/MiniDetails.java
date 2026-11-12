@@ -18,6 +18,8 @@ final class MiniDetails {
  final FrameLayout page;
  final View hit;
  final PlaybackControls controls;
+ /** 1.9.226：首次测量的封面矩形（hide 后兜底）。 */
+ final int[] cachedCover = new int[4];
 
  MiniDetails(MainActivity host) {
  a = host;
@@ -267,26 +269,50 @@ final class MiniDetails {
  /** 1.9.211：把视频/控制层对齐到详情 hero 图片矩形（保持 16:9 不拉伸）。 */
  private void applyHeroRect(int attempt) {
  if (!a.miniMode || a.root == null) return;
- // 1.9.224：手机/平板只取封面海报矩形；取不到回退 40% 窗口 16:9
+ // 1.9.226：手机/平板小窗严格等于封面/hero 矩形（统一 window 坐标系）
  if (!a.isTvDevice()) {
  int w = 0, h = 0, x = a.dp(16), y = a.dp(16);
+ int cx = 0, cy = 0, cw = 0, ch = 0, rx = 0, ry = 0;
  String source = "fallback";
  View cover = a.root.findViewWithTag("detail-cover");
- int maxW = Math.round(a.windowWidth() * 0.45f);
- if (cover != null && cover.getWidth() > 0 && cover.getHeight() > 0
- && cover.getWidth() <= maxW) {
+ if (cover == null || cover.getWidth() <= 0 || cover.getHeight() <= 0)
+ cover = a.root.findViewWithTag("detail-hero");
+ View anchor =
+ a.playbackLayer.getParent() instanceof android.view.ViewGroup
+ ? (View) a.playbackLayer.getParent()
+ : a.root;
+ if (cover != null && cover.getWidth() > 0 && cover.getHeight() > 0) {
  int[] cv = new int[2];
- cover.getLocationOnScreen(cv);
- int[] rv = new int[2];
- a.root.getLocationOnScreen(rv);
- x = Math.max(0, cv[0] - rv[0]);
- y = Math.max(0, cv[1] - rv[1]);
- w = cover.getWidth();
- h = cover.getHeight();
+ cover.getLocationInWindow(cv);
+ int[] pv = new int[2];
+ anchor.getLocationInWindow(pv);
+ cx = cv[0];
+ cy = cv[1];
+ cw = cover.getWidth();
+ ch = cover.getHeight();
+ rx = pv[0];
+ ry = pv[1];
+ x = Math.max(0, cx - rx);
+ y = Math.max(0, cy - ry);
+ w = cw;
+ h = ch;
  source = "cover";
+ } else if (cachedCover[2] > 0 && cachedCover[3] > 0) {
+ // 封面已被隐藏时的兜底：使用首次测量保存的矩形
+ x = cachedCover[0];
+ y = cachedCover[1];
+ w = cachedCover[2];
+ h = cachedCover[3];
+ source = "cover-cached";
  } else {
  w = Math.round(a.windowWidth() * 0.40f) - a.dp(32);
  h = Math.round(w * 9f / 16f);
+ }
+ if (w > 0 && h > 0) {
+ cachedCover[0] = x;
+ cachedCover[1] = y;
+ cachedCover[2] = w;
+ cachedCover[3] = h;
  }
  FrameLayout.LayoutParams vlp =
  new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
@@ -304,23 +330,33 @@ final class MiniDetails {
  } catch (Throwable ignored) {
  }
  }
- PlaybackController.hideDetailHero(a, true);
- a.playbackLayer.bringToFront();
- page.bringToFront();
  AppLog.i(
  "MiniMobile",
  "rect="
- + w
- + "x"
- + h
- + " at="
  + x
  + ","
  + y
+ + " "
+ + w
+ + "x"
+ + h
+ + " cover="
+ + cx
+ + ","
+ + cy
+ + " "
+ + cw
+ + "x"
+ + ch
+ + " rootOffset="
+ + rx
+ + ","
+ + ry
  + " source="
- + source
- + " playing="
- + a.playing);
+ + source);
+ PlaybackController.hideDetailHero(a, true);
+ a.playbackLayer.bringToFront();
+ page.bringToFront();
  if (attempt < 2) a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 300);
  return;
  }
