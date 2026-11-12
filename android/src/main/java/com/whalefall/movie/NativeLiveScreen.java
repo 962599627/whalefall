@@ -17,9 +17,21 @@ final class NativeLiveScreen {
 
  private static MoviePlayer player;
  private static VideoOutput output;
+ // 1.9.150：开源 IPTV 同名频道备用 URL 列表（播放失败自动尝试下一个）
+ private static java.util.List<String> fallbackUrls;
+ private static int fallbackIndex;
+ private static android.view.Surface currentSurface;
 
  static void show(final MainActivity a, final String name, final String url) {
+ show(a, name, java.util.Collections.singletonList(url));
+ }
+
+ static void show(final MainActivity a, final String name, final java.util.List<String> urls) {
  close(a);
+ fallbackUrls = urls == null || urls.isEmpty() ? null : new java.util.ArrayList<>(urls);
+ fallbackIndex = 0;
+ final String firstUrl =
+ fallbackUrls == null ? "" : fallbackUrls.get(0);
  a.renderPage("", "");
  a.body.setTag("native-live");
  FrameLayout root = a.root;
@@ -48,8 +60,9 @@ final class NativeLiveScreen {
  new VideoOutput.Listener() {
  @Override
  public void available(android.view.Surface surface) {
+ currentSurface = surface;
  if (player != null) player.setSurface(surface);
- else start(a, name, url, surface, status);
+ else start(a, name, firstUrl, surface, status);
  }
 
  @Override
@@ -57,7 +70,7 @@ final class NativeLiveScreen {
  if (player != null) player.setSurface(null);
  }
  });
- AppLog.i("TvLive", "weblive native=yes channel=" + name + " url=" + url);
+ AppLog.i("TvLive", "weblive native=yes channel=" + name + " url=" + firstUrl);
  }
 
  private static void start(
@@ -78,11 +91,35 @@ final class NativeLiveScreen {
  });
  candidate.setOnErrorListener(
  (p, code, extra) -> {
- status.setText(
- "直播流加载失败（"
+ AppLog.i(
+ "TvLive",
+ "weblive native=error channel="
+ + name
+ + " code="
  + code
- + "）。该频道暂不可用，请换台或稍后重试。");
- AppLog.i("TvLive", "weblive native=error channel=" + name + " code=" + code);
+ + " url="
+ + url
+ + " next="
+ + (fallbackUrls == null ? 0 : fallbackUrls.size() - fallbackIndex - 1));
+ // 1.9.150：失败自动尝试同名频道的下一个源
+ if (fallbackUrls != null && fallbackIndex + 1 < fallbackUrls.size()) {
+ fallbackIndex++;
+ String next = fallbackUrls.get(fallbackIndex);
+ status.setText(
+ "该源不可用，正在尝试备用源 "
+ + (fallbackIndex + 1)
+ + "/"
+ + fallbackUrls.size()
+ + " …");
+ try {
+ player = null;
+ p.release();
+ } catch (Throwable ignored) {
+ }
+ start(a, name, next, currentSurface, status);
+ return true;
+ }
+ status.setText("该源不可用（" + code + "）。请换台或稍后重试。");
  return true;
  });
  player = candidate;
@@ -104,6 +141,9 @@ final class NativeLiveScreen {
  if (output != null) {
  output = null;
  }
+ fallbackUrls = null;
+ fallbackIndex = 0;
+ currentSurface = null;
  }
 
  static boolean handleBack(MainActivity a) {

@@ -76,6 +76,8 @@ final class TvLive {
  static final String GROUP_MINE = "我的收藏";
  /** 1.9.19：网页直播分组（内置+自定义 weblive_sources）。 */
  static final String GROUP_WEB = "网页直播";
+ /** 1.9.150：开源 IPTV（iptv-org M3U，原生 ExoPlayer）。 */
+ static final String GROUP_IPTV = "开源 IPTV";
 
  static final Object[][] WEBLIVE = {
  {"深视 4K 超高清", "https://www.sztv.com.cn/dianshi.shtml?id=24725"},
@@ -164,6 +166,8 @@ final class TvLive {
  static final class Store {
  final List<Channel> builtin = new ArrayList<>();
  final List<Channel> custom = new ArrayList<>();
+ /** 1.9.150：开源 IPTV 频道（缓存/下载后注入，不落 tv_channels.json）。 */
+ final List<Channel> iptv = new ArrayList<>();
  final Set<String> favorites = new LinkedHashSet<>();
 
  Store(MainActivity a) {
@@ -192,13 +196,24 @@ final class TvLive {
  GROUP_WEB));
  builtin.addAll(readWebLive(a));
  custom.addAll(readCustom(a));
+ // 1.9.150：恢复本地缓存的开源 IPTV 频道（离线可用）
+ if (!hidden.contains(GROUP_IPTV))
+ for (Channel channel : IptvOrg.cached(a))
+ if (!hidden.contains(channel.name)) iptv.add(channel);
  favorites.addAll(readFavorites(a));
  }
 
- /** 全部频道（内置 + 自定义），顺序稳定，不做收藏置顶。 */
+ /** 1.9.150：下载完成后替换开源 IPTV 频道并重绘。 */
+ void setIptv(List<Channel> channels) {
+ iptv.clear();
+ if (channels != null) iptv.addAll(channels);
+ }
+
+ /** 全部频道（内置 + 自定义 + 开源 IPTV），顺序稳定，不做收藏置顶。 */
  List<Channel> every() {
  List<Channel> list = new ArrayList<>(builtin);
  list.addAll(custom);
+ list.addAll(iptv);
  return list;
  }
 
@@ -226,7 +241,6 @@ final class TvLive {
  for (Channel c : source) if (group.equals(c.group)) list.add(c);
  return list;
  }
-
  Channel byName(String name) {
  for (Channel c : every()) if (c.name.equals(name)) return c;
  return null;
@@ -281,6 +295,9 @@ final class TvLive {
  query = "";
  if (search != null) search.setText("");
  refresh();
+ // 1.9.150：首次进入「开源 IPTV」且无缓存时自动下载
+ if (GROUP_IPTV.equals(g) && store.group(g).isEmpty() && !iptvFetching)
+ refreshIptv(this, false);
  }
 
  /** 实时搜索：频道名 / 去分隔符全名 / 拼音首字母都能命中。 */
@@ -540,6 +557,29 @@ final class TvLive {
  return root;
  }
 
+ /** 1.9.150：下载/刷新开源 IPTV（clear=true 时先清缓存）。 */
+ static void refreshIptv(final PageState page, final boolean clear) {
+ if (page == null || iptvFetching) return;
+ iptvFetching = true;
+ page.a.toast(clear ? "正在刷新开源 IPTV…" : "正在获取开源 IPTV…");
+ IptvOrg.Callback callback =
+ (channels, fromCache, error) -> {
+ iptvFetching = false;
+ if (channels == null || channels.isEmpty()) {
+ page.a.toast(error == null ? "开源 IPTV 为空" : "下载失败，请检查网络");
+ return;
+ }
+ page.store.setIptv(channels);
+ page.pickGroup(GROUP_IPTV);
+ page.a.toast(
+ (fromCache ? "离线缓存：" : "已更新：") + channels.size() + " 个频道");
+ };
+ if (clear) IptvOrg.refresh(page.a, callback);
+ else IptvOrg.fetch(page.a, callback);
+ }
+
+ static volatile boolean iptvFetching;
+
  /** 重绘内容区：三段式（平板横向）或单列（手机竖屏）。 */
  static void renderTvPage(PageState page) {
  final MainActivity a = page.a;
@@ -559,6 +599,7 @@ final class TvLive {
  final int cctvCount = store.group(GROUP_CCTV).size();
  final int satCount = store.group(GROUP_SAT).size();
  final int webCount = store.group(GROUP_WEB).size();
+ final int iptvCount = store.group(GROUP_IPTV).size();
  final int favCount = store.favorites.size();
  final int total = store.every().size();
  if (page.subTitle != null) {
@@ -597,8 +638,8 @@ final class TvLive {
  LinearLayout chipRow = a.row();
  chipScroll.addView(chipRow);
 
- String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_WEB, GROUP_MINE};
- int[] counts = {cctvCount, satCount, webCount, favCount};
+ String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_IPTV, GROUP_WEB, GROUP_MINE};
+ int[] counts = {cctvCount, satCount, iptvCount, webCount, favCount};
  for (int i = 0; i < gs.length; i++) {
  final String g = gs[i];
  boolean on = !searching && g.equals(page.group);
@@ -625,6 +666,18 @@ final class TvLive {
  chipLp.rightMargin = a.dp(8);
  chipRow.addView(chip, chipLp);
  }
+ // 1.9.150：刷新开源 IPTV
+ LinearLayout refreshChip = a.row();
+ refreshChip.setGravity(Gravity.CENTER);
+ refreshChip.setPadding(a.dp(13), 0, a.dp(13), 0);
+ refreshChip.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
+ MobileDetailScreen.bindTouchFeedback(refreshChip);
+ ExtraPages.tvFocus(a, refreshChip, 999);
+ refreshChip.setTag("tv-focus-live-iptv");
+ refreshChip.addView(a.text("刷新开源", 12.5f, 0xffc9d6ea));
+ refreshChip.setOnClickListener(v -> refreshIptv(page, true));
+ LinearLayout.LayoutParams refreshLp = new LinearLayout.LayoutParams(-2, a.dp(38));
+ chipRow.addView(refreshChip, refreshLp);
  body.addView(chipScroll, new LinearLayout.LayoutParams(-1, a.dp(42)));
 
  LinearLayout mid = buildMiddle(page, list, chosen);
@@ -643,7 +696,7 @@ final class TvLive {
  page.contentSlot.addView(bodyRow, bodyLp);
 
  bodyRow.addView(
- buildCategoryRail(page, cctvCount, satCount, webCount, favCount),
+ buildCategoryRail(page, cctvCount, satCount, webCount, favCount, iptvCount),
  new LinearLayout.LayoutParams(page.railWidth, -1));
  View gap1 = new View(a);
  bodyRow.addView(gap1, new LinearLayout.LayoutParams(a.dp(12), 1));
@@ -806,7 +859,7 @@ final class TvLive {
 
  /** 左侧分组栏：名称 + 数量，选中项用樱花粉渐变块。 */
  static LinearLayout buildCategoryRail(
- PageState page, int cctvCount, int satCount, int webCount, int favCount) {
+ PageState page, int cctvCount, int satCount, int webCount, int favCount, int iptvCount) {
  final MainActivity a = page.a;
  LinearLayout rail = a.vertical();
  rail.setPadding(a.dp(9), a.dp(12), a.dp(9), a.dp(12));
@@ -817,8 +870,8 @@ final class TvLive {
  cap.setPadding(a.dp(7), 0, 0, a.dp(8));
  rail.addView(cap, new LinearLayout.LayoutParams(-1, -2));
 
- String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_WEB, GROUP_MINE};
- int[] counts = {cctvCount, satCount, webCount, favCount};
+ String[] gs = {GROUP_CCTV, GROUP_SAT, GROUP_IPTV, GROUP_WEB, GROUP_MINE};
+ int[] counts = {cctvCount, satCount, iptvCount, webCount, favCount};
  for (int i = 0; i < gs.length; i++) {
  final String g = gs[i];
  boolean on = page.query.isEmpty() && g.equals(page.group);
@@ -916,6 +969,20 @@ final class TvLive {
  impPillLp.rightMargin = a.dp(6);
  actions.addView(impPill, impPillLp);
 
+ // 1.9.150：刷新开源 IPTV（清缓存重新下载）
+ LinearLayout iptvPill = a.row();
+ iptvPill.setGravity(Gravity.CENTER);
+ iptvPill.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
+ MobileDetailScreen.bindTouchFeedback(iptvPill);
+ ExtraPages.tvFocus(a, iptvPill, 999);
+ iptvPill.setTag("tv-focus-live-iptv");
+ TextView iptvTxt = a.text("开源", 11, 0xffc9d6ea);
+ iptvPill.addView(iptvTxt);
+ iptvPill.setOnClickListener(v -> refreshIptv(page, true));
+ LinearLayout.LayoutParams iptvPillLp = new LinearLayout.LayoutParams(0, a.dp(34), 1f);
+ iptvPillLp.rightMargin = a.dp(6);
+ actions.addView(iptvPill, iptvPillLp);
+
  // M2：TV 暂不提供「管理」（ChannelManagerScreen 尚未做 TV 焦点/输入适配，下轮单独处理）
  if (!a.isTvDevice()) {
  LinearLayout managePill = a.row();
@@ -977,17 +1044,25 @@ final class TvLive {
  if (list.isEmpty()) {
  LinearLayout emptyBox = a.vertical();
  emptyBox.setPadding(a.dp(5), 0, a.dp(5), a.dp(10));
+ final boolean iptvEmpty = GROUP_IPTV.equals(page.group) && page.query.isEmpty();
  emptyBox.addView(
  emptyState(
  a,
  !page.query.isEmpty(),
- page.query.isEmpty() ? "收藏夹还是空的" : "没有找到频道",
- page.query.isEmpty()
+ iptvEmpty
+ ? "开源 IPTV 暂无频道"
+ : (page.query.isEmpty() ? "收藏夹还是空的" : "没有找到频道"),
+ iptvEmpty
+ ? "可能尚未下载或网络不可用，点下方按钮重新下载"
+ : (page.query.isEmpty()
  ? "长按任意频道，或点列表右侧的 ，就能收藏到这里"
- : "换个关键词试试，频道名或拼音首字母都可以，例如 hnws、cctv5",
- page.query.isEmpty() ? "去央视频道看看" : "清空搜索",
+ : "换个关键词试试，频道名或拼音首字母都可以，例如 hnws、cctv5"),
+ iptvEmpty
+ ? "刷新开源 IPTV"
+ : (page.query.isEmpty() ? "去央视频道看看" : "清空搜索"),
  () -> {
- if (page.query.isEmpty()) page.pickGroup(GROUP_CCTV);
+ if (iptvEmpty) refreshIptv(page, true);
+ else if (page.query.isEmpty()) page.pickGroup(GROUP_CCTV);
  else page.search.setText("");
  }),
  new LinearLayout.LayoutParams(-1, -2));
@@ -1822,6 +1897,24 @@ final class TvLive {
  static void open(
  MainActivity a, Store store, String group, Channel channel, Runnable onClosed) {
  a.prefs.edit().putString(LAST, channel.name + "\n" + channel.url).apply();
+ // 1.9.150：开源 IPTV 用内置 ExoPlayer 原生播放；同名频道互为备用源
+ if (GROUP_IPTV.equals(group)) {
+ java.util.List<String> urls = new java.util.ArrayList<>();
+ for (Channel c : store.every())
+ if (GROUP_IPTV.equals(c.group) && c.name.equals(channel.name) && !urls.contains(c.url))
+ urls.add(c.url);
+ if (urls.isEmpty()) urls.add(channel.url);
+ final java.util.List<String> playlist = urls;
+ AppLog.i(
+ "IptvOrg",
+ "open channel=" + channel.name + " url=" + channel.url + " fallbacks=" + urls.size());
+ a.open(
+ new MainActivity.Screen(
+ () -> NativeLiveScreen.show(a, channel.name, playlist)),
+ true);
+ if (onClosed != null) onClosed.run();
+ return;
+ }
  // 1.9.87：网页直播分组在旧 TV 上优先原生 HLS；无原生流则明确提示，不打开假页面
  if (GROUP_WEB.equals(group)) {
  if (webLiveRestricted(a)) {
