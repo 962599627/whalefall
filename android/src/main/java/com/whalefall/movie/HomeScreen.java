@@ -1301,6 +1301,10 @@ final class HomeScreen {
  else if (dimKey.contains("type") || dimKey.contains("class")) dimKey = "type";
  chip.setTag("filter-" + dimKey);
  TvNav.focusRing(a, chip, 12);
+ // 1.9.157：focusRing 会把 inTouchMode 重置为 false（该盒子 isTvDevice=false），这里强制补回
+ chip.setFocusable(true);
+ chip.setFocusableInTouchMode(true);
+ chip.setClickable(true);
  final String dimKeyF = dimKey;
  final VideoFilters.Definition defF = def;
  chip.setOnKeyListener(
@@ -1362,6 +1366,7 @@ final class HomeScreen {
  }
  if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
  // 1.9.156：第二层 DOWN → 展开第三层并聚焦第一个选项
+ AppLog.i("FilterLayer", "chip-down dim=" + dimKeyF + " to=option:first");
  openFilterFor(defF, "down");
  return true;
  }
@@ -1400,6 +1405,8 @@ final class HomeScreen {
  clear.setClickable(true);
  clear.setTag("filter-clear");
  TvNav.focusRing(a, clear, 999);
+ clear.setFocusable(true);
+ clear.setFocusableInTouchMode(true);
  clear.setOnClickListener(
  v -> {
  state.selectedFilters.clear();
@@ -1497,6 +1504,10 @@ final class HomeScreen {
  AppLog.i(
  "FilterFocus",
  "row chips=" + chips.size() + " tab=" + (tab != null) + " grid=" + (card != null));
+ if (filterTagScroll != null && filterTagScroll.getVisibility() == View.VISIBLE)
+ AppLog.i("FilterLayer", "tab-down to=" + String.valueOf(chips.get(0).getTag()));
+ // 1.9.157：重新统一 tab/卡片 ↔ 筛选层的显式链
+ wireNavigation();
  }
 
  private boolean filterOptionsVisible() {
@@ -1663,6 +1674,8 @@ final class HomeScreen {
  chip.setFocusableInTouchMode(true);
  chip.setClickable(true);
  TvNav.focusRing(a, chip, 999);
+ chip.setFocusable(true);
+ chip.setFocusableInTouchMode(true);
  final View.OnFocusChangeListener optionRing = chip.getOnFocusChangeListener();
  final String optionDim = dimKey;
  final String optionValue = choice.value;
@@ -2664,6 +2677,24 @@ final class HomeScreen {
  void wireNavigation(int firstRow) {
  View nav = a.root.findViewWithTag("nav-home");
  if (nav != null && nav.getId() == View.NO_ID) nav.setId(View.generateViewId());
+ // 1.9.157：筛选面板可见时，tab DOWN 与卡片第一排 UP 都必须经过筛选层
+ View filterFirst = a.root.findViewWithTag("filter-type");
+ if (filterFirst != null && filterFirst.getId() == View.NO_ID)
+ filterFirst.setId(View.generateViewId());
+ final boolean filterRowVisible =
+ filterTagScroll != null
+ && filterTagScroll.getVisibility() == View.VISIBLE
+ && filterFirst != null
+ && filterFirst.isShown();
+ View filterPreferred = null;
+ if (!lastFilterDim.isEmpty())
+ filterPreferred = a.root.findViewWithTag("filter-" + lastFilterDim);
+ final int filterTargetId =
+ filterRowVisible
+ ? (filterPreferred != null && filterPreferred.getId() != View.NO_ID
+ ? filterPreferred.getId()
+ : filterFirst.getId())
+ : -1;
  boolean stackedHistory = a.useBottomDock();
  horizontal(historyCards);
  for (int i = 0; i < historyCards.size(); i++) {
@@ -2705,6 +2736,8 @@ final class HomeScreen {
  tab.setNextFocusDownId(
  r + 1 < filters.lines.size()
  ? filters.nearest(filters.lines.get(r + 1), tab).getId()
+ : filterRowVisible
+ ? filterFirst.getId()
  : earlier.isShown()
  ? earlier.getId()
  : rows.isEmpty()
@@ -2721,7 +2754,9 @@ final class HomeScreen {
  View card = row.get(c);
  card.setNextFocusUpId(
  r == 0
- ? (earlier.isShown() ? earlier.getId() : selectedTab().getId())
+ ? (filterTargetId >= 0
+ ? filterTargetId
+ : (earlier.isShown() ? earlier.getId() : selectedTab().getId()))
  : rows.get(r - 1)
  .get(Math.min(c, rows.get(r - 1).size() - 1))
  .getId());
