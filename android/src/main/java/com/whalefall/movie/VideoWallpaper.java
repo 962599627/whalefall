@@ -199,6 +199,10 @@ final class VideoWallpaper extends FrameLayout {
                         firstFrame = true;
                         handler.removeCallbacks(firstFrameTimeout);
                         AppLog.i("Wallpaper", "video engine=exo firstFrame=true");
+                        try {
+                            host.hideStaticPlate("first-frame");
+                        } catch (Throwable ignored) {
+                        }
                     }
 
                     @Override
@@ -356,6 +360,10 @@ final class VideoWallpaper extends FrameLayout {
                                             firstFrame = true;
                                             handler.removeCallbacks(firstFrameTimeout);
                                             AppLog.i("Wallpaper", "video engine=mediaplayer firstFrame=true");
+                                            try {
+                                                host.hideStaticPlate("first-frame");
+                                            } catch (Throwable ignored) {
+                                            }
                                         }
                                         return false;
                                     });
@@ -415,6 +423,10 @@ final class VideoWallpaper extends FrameLayout {
         } catch (Throwable ignored) {
         }
         setVisibility(View.GONE);
+        try {
+            host.ensureStaticPlate("video-failed");
+        } catch (Throwable ignored) {
+        }
         host.videoWallpaperFailed(reason);
     }
 
@@ -475,6 +487,10 @@ final class VideoWallpaper extends FrameLayout {
         } catch (Throwable ignored) {
         }
         setVisibility(View.GONE);
+        try {
+            host.ensureStaticPlate("decoder-released");
+        } catch (Throwable ignored) {
+        }
     }
 
     /** 1.9.231：退出播放后重建解码器。 */

@@ -1831,6 +1831,35 @@ public final class MainActivity extends Activity {
  }
  }
 
+ /** 1.9.232：确保静态壁纸板（鲸鱼娘）可见。 */
+ void ensureStaticPlate(String reason) {
+ try {
+ if (root == null) return;
+ if (root.findViewWithTag(WALLPAPER_TAG) != null) return;
+ View plate = ImageLoader.createAtmosphere(this);
+ plate.setTag(WALLPAPER_TAG);
+ root.addView(plate, 0, new FrameLayout.LayoutParams(-1, -1));
+ AppLog.i("Wallpaper", "static plate shown reason=" + reason);
+ } catch (Throwable error) {
+ AppLog.w("Wallpaper", "static plate add failed", error);
+ }
+ }
+
+ /** 1.9.232：视频恢复后隐藏静态板，避免叠两层。 */
+ void hideStaticPlate(String reason) {
+ try {
+ if (root == null) return;
+ boolean removed = false;
+ for (int i = root.getChildCount() - 1; i >= 0; i--)
+ if (WALLPAPER_TAG.equals(root.getChildAt(i).getTag())) {
+ root.removeViewAt(i);
+ removed = true;
+ }
+ if (removed) AppLog.i("Wallpaper", "static plate hidden reason=" + reason);
+ } catch (Throwable ignored) {
+ }
+ }
+
  void applyWallpaper(android.widget.FrameLayout target) {
  if (target == null) return;
  if (SafeMode.enabled(this)) {
