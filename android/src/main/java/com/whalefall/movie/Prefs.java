@@ -39,6 +39,8 @@ final class Prefs {
  static final String REDUCED = "reduced";
  static final String REDUCED_TRANSPARENCY = "reduced_transparency";
  static final String PLAYER_ENGINE = "player_engine";
+ /** 1.9.170：播放内核 auto / exo / system。 */
+ static final String PLAYER_KERNEL = "player_kernel";
  static final String VIDEO_OUTPUT = "video_output";
  static final String DECODER_MODE = "decoder_mode";
  static final String SOFTWARE_AUDIO = "software_audio";
@@ -113,6 +115,7 @@ final class Prefs {
  REDUCED,
  REDUCED_TRANSPARENCY,
  PLAYER_ENGINE,
+ PLAYER_KERNEL,
  VIDEO_OUTPUT,
  DECODER_MODE,
  SOFTWARE_AUDIO,
@@ -226,6 +229,11 @@ final class Prefs {
  // 1.9.147：直播内核只接受 auto / x5 / system
  String text = value instanceof String ? ((String) value).trim() : "";
  return "auto".equals(text) || "x5".equals(text) || "system".equals(text) ? text : null;
+ }
+ if (PLAYER_KERNEL.equals(key)) {
+ // 1.9.170：播放内核只接受 auto / exo / system
+ String text = value instanceof String ? ((String) value).trim() : "";
+ return "auto".equals(text) || "exo".equals(text) || "system".equals(text) ? text : null;
  }
  int[] range = INT_RANGES.get(key);
  if (range == null || !(value instanceof Number)) return null;

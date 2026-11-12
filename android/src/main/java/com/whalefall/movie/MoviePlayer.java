@@ -727,6 +727,11 @@ public class MoviePlayer {
 
  private int maxKnownDurationMs = 0;
 
+ /** 1.9.170：自动内核切换判定用。 */
+ public boolean hasRenderedFirstFrame() {
+ return firstFrameMs >= 0;
+ }
+
  public int getDuration() {
  return onMain(
  () -> {

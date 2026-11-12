@@ -1389,8 +1389,16 @@ final class PlaybackController {
  }
  AppLog.i("Player", "seek-crash fallback=software url=" + ep.url);
  }
+ // 1.9.170：播放内核 auto / exo / system
+ final String kernel = a.prefs.getString(Prefs.PLAYER_KERNEL, "auto");
+ final boolean useSystemKernel =
+ "system".equals(kernel)
+ || ("auto".equals(kernel) && a.prefs.getInt(Prefs.PLAYER_ENGINE, 0) == 1);
+ AppLog.i(
+ "Player",
+ "kernel=mode=" + kernel + " used=" + (useSystemKernel ? "system" : "exo"));
  candidate =
- a.prefs.getInt(Prefs.PLAYER_ENGINE, 0) == 1
+ useSystemKernel
  ? new SystemPlayer(a)
  : ep.media.optBoolean("_softwareFallback")
  ? new MoviePlayer(
@@ -1408,6 +1416,9 @@ final class PlaybackController {
  mediaHeaders);
  candidate.setOptions(ep.media);
  final MoviePlayer ready = candidate;
+ final boolean autoKernel = "auto".equals(kernel) && !useSystemKernel;
+ final Map<String, String> headersForFallback = mediaHeaders;
+ final String urlForFallback = ep.url;
  a.ui.post(
  () -> {
  try {
@@ -1421,6 +1432,24 @@ final class PlaybackController {
  }
  a.player = ready;
  ready.setSurface(renderSurface);
+ // 1.9.170：自动模式 Exo 8s 未出首帧 → 回落系统播放器
+ if (autoKernel) {
+ final android.view.Surface fallbackSurface = renderSurface;
+ a.ui.postDelayed(
+ () -> {
+ try {
+ if (ticket != a.generation
+ || a.player != ready
+ || a.isFinishing()
+ || ready.hasRenderedFirstFrame()) return;
+ fallbackToSystem(
+ a, ready, urlForFallback, headersForFallback, fallbackSurface, ticket);
+ } catch (Throwable error) {
+ AppLog.w("Player", "kernel fallback check failed", error);
+ }
+ },
+ 8000);
+ }
  ready.bindSubtitles(
  controls.subtitle,
  text -> {
@@ -2207,6 +2236,60 @@ final class PlaybackController {
  + "]"
  + " fill="
  + a.prefs.getInt(Prefs.ASPECT, 4));
+ }
+
+ /** 1.9.170：自动内核回落系统 MediaPlayer（同一 URL，尽量保持选集/进度）。 */
+ private static void fallbackToSystem(
+ final MainActivity a,
+ final MoviePlayer old,
+ final String url,
+ final Map<String, String> headers,
+ final android.view.Surface surface,
+ final int ticket) {
+ AppLog.i("Player", "kernel=exo fallback=system reason=first-frame-timeout url=" + url);
+ try {
+ if (ticket != a.generation) return;
+ int position = 0;
+ try {
+ position = old.getCurrentPosition();
+ } catch (Throwable ignored) {
+ }
+ old.release();
+ SystemPlayer system = new SystemPlayer(a);
+ system.configureDefaultAudio();
+ system.setDataSource(
+ a,
+ Uri.parse(Cms.isHttp(url) ? Cms.normalizeHttp(url) : url),
+ headers);
+ system.setSurface(surface);
+ final int startAt = Math.max(0, position);
+ system.setOnPreparedListener(
+ p -> {
+ if (ticket != a.generation) return;
+ a.prepared = true;
+ a.playing = true;
+ if (a.playerChrome != null) a.playerChrome.setLoading(false);
+ if (startAt > 0) {
+ try {
+ p.seekTo(startAt);
+ } catch (Throwable ignored) {
+ }
+ }
+ p.start();
+ });
+ system.setOnErrorListener(
+ (p, what, extra) -> {
+ AppLog.i("Player", "kernel=system error=" + what + " extra=" + extra);
+ a.toast("系统播放器不支持该视频");
+ return true;
+ });
+ a.player = system;
+ system.prepareAsync();
+ a.toast("已自动切换系统播放器");
+ AppLog.i("Player", "kernel=system fallback=true position=" + startAt);
+ } catch (Throwable error) {
+ AppLog.w("Player", "kernel fallback failed", error);
+ }
  }
 
  static void releasePlayer(MainActivity a) {

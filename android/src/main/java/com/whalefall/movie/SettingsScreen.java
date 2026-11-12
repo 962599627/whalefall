@@ -444,13 +444,30 @@ if (a.isTvDevice()) pickWallpaperBuiltin(true);
  + "（下次打开网页直播/网页播放生效）");
  a.refresh();
  });
+ // 1.9.170：播放内核 auto / exo / system（老电视也可选系统）
+ final String kernelMode = a.prefs.getString(Prefs.PLAYER_KERNEL, "auto");
+ String kernelLabel =
+ "auto".equals(kernelMode)
+ ? "自动（Exo，失败回落系统）"
+ : "exo".equals(kernelMode) ? "ExoPlayer" : "系统播放器";
+ link(
+ "播放内核",
+ "当前：" + kernelLabel + "；自动模式 8s 未出首帧会回落系统",
+ "setting-player-kernel",
+ () -> {
+ String next = "auto".equals(kernelMode) ? "exo" : "exo".equals(kernelMode) ? "system" : "auto";
+ a.prefs.edit().putString(Prefs.PLAYER_KERNEL, next).apply();
+ AppLog.i("Player", "kernel=mode=" + next + " saved=true");
+ a.toast("播放内核：" + ("auto".equals(next) ? "自动" : "exo".equals(next) ? "ExoPlayer" : "系统播放器") + "（下次起播生效）");
+ a.refresh();
+ });
  // 1.9.89：Android<8 隐藏「系统播放器」选项，强制 Media3
  if (android.os.Build.VERSION.SDK_INT >= 26)
  ints("播放器", Prefs.PLAYER_ENGINE, new String[] {"Media3", "系统播放器"}, new int[] {0, 1}, 0);
  else {
  if (a.prefs.getInt(Prefs.PLAYER_ENGINE, 0) != 0)
  a.prefs.edit().putInt(Prefs.PLAYER_ENGINE, 0).apply();
- a.paragraph("当前 Android 版本低于 8.0，仅支持内置 Media3 播放器（系统播放器在旧电视上可能崩溃）。");
+ a.paragraph("当前 Android 版本低于 8.0，系统播放器兼容性较差；仍可在「播放内核」里手动选系统播放器。");
  }
  // 1.9.121：SDK<26 旧设备默认软件解码，避免硬解原生崩溃
  if (android.os.Build.VERSION.SDK_INT < 26
