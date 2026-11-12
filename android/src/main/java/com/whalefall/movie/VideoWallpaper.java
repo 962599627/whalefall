@@ -33,6 +33,9 @@ final class VideoWallpaper extends FrameLayout {
     private PlayerView view;
     private MediaPlayer mediaPlayer;
     private SurfaceView surfaceView;
+    /** 1.9.184：老机 SurfaceView 拿不到 surface 时回退 TextureView。 */
+    private android.view.TextureView textureView;
+    private android.view.Surface textureSurface;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final boolean useExo = Build.VERSION.SDK_INT >= 26;
     private boolean released, moving, firstFrame;
@@ -66,8 +69,25 @@ final class VideoWallpaper extends FrameLayout {
                         + " path="
                         + file(host).getAbsolutePath());
         if (useExo) startExo();
-        else addSurfaceView();
+        // 1.9.184：MediaPlayer 的 SurfaceView 延迟到窗口 attach 后再创建
         handler.postDelayed(firstFrameTimeout, 3000);
+        // 1.9.184：窗口 attach 后再挂 SurfaceView（避免早期拿不到 surface）
+        addOnAttachStateChangeListener(
+                new View.OnAttachStateChangeListener() {
+                    @Override
+                    public void onViewAttachedToWindow(View v) {
+                        if (released || useExo) return;
+                        if (surfaceView == null && textureView == null) {
+                            surfaceRecreated = mediaPlayer != null;
+                            addSurfaceView();
+                        }
+                        scheduleSurfaceCheck(0);
+                        verifyVisible("window-attach");
+                    }
+
+                    @Override
+                    public void onViewDetachedFromWindow(View v) {}
+                });
         AppLog.i(
                 "Compat",
                 "sdk="
@@ -133,6 +153,18 @@ final class VideoWallpaper extends FrameLayout {
                     @Override
                     public void surfaceCreated(SurfaceHolder holder) {
                         if (released) return;
+                        boolean valid =
+                                holder.getSurface() != null && holder.getSurface().isValid();
+                        AppLog.i(
+                                "Wallpaper",
+                                "video surface created valid="
+                                        + valid
+                                        + " size="
+                                        + (surfaceView == null
+                                                ? "?"
+                                                : surfaceView.getWidth()
+                                                        + "x"
+                                                        + surfaceView.getHeight()));
                         // 1.9.117：Surface 重挂后再启动首帧守候（仅日志）
                         handler.removeCallbacks(firstFrameTimeout);
                         handler.postDelayed(firstFrameTimeout, 3000);
@@ -314,12 +346,38 @@ final class VideoWallpaper extends FrameLayout {
                             && surfaceView.getHolder() != null
                             && surfaceView.getHolder().getSurface() != null
                             && surfaceView.getHolder().getSurface().isValid();
+            String surfaceSize =
+                    surfaceView == null
+                            ? (textureView != null
+                                    ? textureView.getWidth() + "x" + textureView.getHeight()
+                                    : "?")
+                            : surfaceView.getWidth() + "x" + surfaceView.getHeight();
+            String parentBg = "none";
+            if (parent instanceof android.view.View) {
+                android.graphics.drawable.Drawable bg =
+                        ((android.view.View) parent).getBackground();
+                parentBg =
+                        bg == null
+                                ? "transparent"
+                                : (bg instanceof android.graphics.drawable.ColorDrawable
+                                                && ((android.graphics.drawable.ColorDrawable) bg)
+                                                                .getAlpha()
+                                                        >= 250
+                                        ? "opaque"
+                                        : "transparent");
+            }
             AppLog.i(
                     "Wallpaper",
                     "video visible="
                             + (getVisibility() == View.VISIBLE)
                             + " surfaceValid="
-                            + surfaceValid
+                            + (surfaceValid || (textureView != null && textureView.isAvailable()))
+                            + " surfaceSize="
+                            + surfaceSize
+                            + " attached="
+                            + isAttachedToWindow()
+                            + " parentBg="
+                            + parentBg
                             + " rootAlpha="
                             + (parent instanceof android.view.View
                                     ? ((android.view.View) parent).getAlpha()
@@ -330,6 +388,153 @@ final class VideoWallpaper extends FrameLayout {
                             + reason);
         } catch (Throwable error) {
             AppLog.w("Wallpaper", "video verify failed", error);
+        }
+    }
+
+    /** 1.9.184：surface 未就绪时 3 次重试，最终回退 TextureView。 */
+    private boolean surfaceValid() {
+        try {
+            return surfaceView != null
+                    && surfaceView.getHolder() != null
+                    && surfaceView.getHolder().getSurface() != null
+                    && surfaceView.getHolder().getSurface().isValid();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private void scheduleSurfaceCheck(final int n) {
+        handler.postDelayed(
+                () -> {
+                    if (released) return;
+                    boolean valid = surfaceValid();
+                    AppLog.i(
+                            "Wallpaper",
+                            "video surface check n="
+                                    + n
+                                    + " valid="
+                                    + valid
+                                    + " attached="
+                                    + isAttachedToWindow());
+                    if (valid) {
+                        verifyVisible("surface");
+                        return;
+                    }
+                    if (n < 3) {
+                        AppLog.i("Wallpaper", "video surface retry n=" + n);
+                        scheduleSurfaceCheck(n + 1);
+                    } else {
+                        switchToTexture();
+                    }
+                },
+                n == 0 ? 300 : 500);
+    }
+
+    /** 1.9.184：TextureView 兜底（MediaPlayer 支持 SurfaceTexture）。 */
+    private void switchToTexture() {
+        if (released || useExo || textureView != null) return;
+        AppLog.i("Wallpaper", "video surface fallback=textureview");
+        try {
+            if (mediaPlayer != null) mediaPlayer.setSurface(null);
+            if (surfaceView != null && surfaceView.getParent() == this) removeView(surfaceView);
+            surfaceView = null;
+            textureView = new android.view.TextureView(host);
+            textureView.setSurfaceTextureListener(
+                    new android.view.TextureView.SurfaceTextureListener() {
+                        @Override
+                        public void onSurfaceTextureAvailable(
+                                android.graphics.SurfaceTexture st, int w, int h) {
+                            try {
+                                textureSurface = new android.view.Surface(st);
+                                if (mediaPlayer != null) {
+                                    mediaPlayer.setSurface(textureSurface);
+                                    if (!mediaPlayer.isPlaying()) mediaPlayer.start();
+                                } else {
+                                    addTextureMediaPlayer(st);
+                                }
+                                AppLog.i(
+                                        "Wallpaper",
+                                        "video surface created source=textureview valid="
+                                                + (textureSurface != null
+                                                        && textureSurface.isValid()));
+                                verifyVisible("texture");
+                            } catch (Throwable error) {
+                                fail("texture:" + describe(error));
+                            }
+                        }
+
+                        @Override
+                        public void onSurfaceTextureSizeChanged(
+                                android.graphics.SurfaceTexture st, int w, int h) {}
+
+                        @Override
+                        public boolean onSurfaceTextureDestroyed(
+                                android.graphics.SurfaceTexture st) {
+                            try {
+                                if (mediaPlayer != null) mediaPlayer.setSurface(null);
+                            } catch (Throwable ignored) {
+                            }
+                            if (textureSurface != null) {
+                                textureSurface.release();
+                                textureSurface = null;
+                            }
+                            return true;
+                        }
+
+                        @Override
+                        public void onSurfaceTextureUpdated(android.graphics.SurfaceTexture st) {}
+                    });
+            addView(textureView, 0, new LayoutParams(-1, -1));
+            handler.postDelayed(
+                    () -> {
+                        if (released || textureView == null) return;
+                        if (!textureView.isAvailable()) {
+                            AppLog.i("Wallpaper", "video surface fallback failed=textureview");
+                            fail("surface-unavailable");
+                        }
+                    },
+                    1200);
+        } catch (Throwable error) {
+            AppLog.w("Wallpaper", "textureview fallback failed", error);
+            fail("textureview-init:" + describe(error));
+        }
+    }
+
+    /** 1.9.184：TextureView 路径下首次创建 MediaPlayer。 */
+    private void addTextureMediaPlayer(android.graphics.SurfaceTexture st) {
+        try {
+            textureSurface = new android.view.Surface(st);
+            final String path = file(host).getAbsolutePath();
+            mediaPlayer = new MediaPlayer();
+            mediaPlayer.setDataSource(path);
+            mediaPlayer.setSurface(textureSurface);
+            mediaPlayer.setLooping(true);
+            float vol = host.prefs.getBoolean(Prefs.WALLPAPER_SOUND, false) ? 1f : 0f;
+            mediaPlayer.setVolume(vol, vol);
+            mediaPlayer.setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT);
+            mediaPlayer.setOnPreparedListener(
+                    mp -> {
+                        try {
+                            mp.start();
+                        } catch (Throwable ignored) {
+                        }
+                    });
+            mediaPlayer.setOnInfoListener(
+                    (mp, what, extra) -> {
+                        if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                            firstFrame = true;
+                            AppLog.i("Wallpaper", "video engine=mediaplayer firstFrame=true source=texture");
+                        }
+                        return false;
+                    });
+            mediaPlayer.setOnErrorListener(
+                    (mp, what, extra) -> {
+                        fail("mediaplayer-texture:" + what + "/" + extra);
+                        return true;
+                    });
+            mediaPlayer.prepareAsync();
+        } catch (Throwable error) {
+            fail("mediaplayer-texture-init:" + describe(error));
         }
     }
 
@@ -425,6 +630,19 @@ final class VideoWallpaper extends FrameLayout {
                 0,
                 new android.widget.FrameLayout.LayoutParams(-1, -1));
         moving = false;
+        // 1.9.184：窗口 attach 且可见后再挂 SurfaceView，并重试检测 surface
+        post(
+                () -> {
+                    if (released || useExo) return;
+                    if (surfaceView == null) {
+                        surfaceRecreated = mediaPlayer != null;
+                        addSurfaceView();
+                    } else if (surfaceView.getParent() != this) {
+                        addView(surfaceView, 0, new LayoutParams(-1, -1));
+                    }
+                    scheduleSurfaceCheck(0);
+                    verifyVisible("attach");
+                });
         handler.postDelayed(() -> verifyVisible("attach"), 500);
         // 1.9.117：页面切换不重建播放器；未出首帧时重置守候（仅日志，不 fallback）
         if (!firstFrame) {

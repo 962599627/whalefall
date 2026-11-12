@@ -1895,10 +1895,7 @@ public final class MainActivity extends Activity {
  releaseWallpaper();
  try {
  videoWallpaper = new VideoWallpaper(this);
- target.addView(
- videoWallpaper,
- 0,
- new FrameLayout.LayoutParams(-1, -1));
+ videoWallpaper.attachTo(target);
  videoWallpaper.verifyVisible("create");
  } catch (Throwable error) {
  AppLog.w("Wallpaper", "video create failed; fallback default", error);
