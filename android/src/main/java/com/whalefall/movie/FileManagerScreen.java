@@ -182,6 +182,16 @@ final class FileManagerScreen {
  if (a.body == null) return;
  a.body.setBackgroundColor(android.graphics.Color.TRANSPARENT);
  a.body.setTag("file-manager");
+ // 1.9.216：pick 模式默认筛选视频/图片；否则沿用本次会话筛选
+ if (pendingFilter >= 0) {
+ filter = pendingFilter;
+ AppLog.i(
+ "FileManager",
+ "filter=" + filterName(filter) + " default=true pick=true");
+ pendingFilter = -1;
+ } else {
+ filter = sessionFilter;
+ }
  // 1.9.2：自行控制左右留白，避免 renderPage 默认 padding 与网格 margin 叠加导致超宽/贴边
  a.body.setPadding(0, statusBarHeightSafe() + a.dp(8), 0, a.dp(24));
  selectionBar = null;
@@ -477,8 +487,21 @@ final class FileManagerScreen {
  // ---------------- 刷新内容 ----------------
 
  private static final String[] FILTER_NAMES = {
- "全部", "文件夹", "视频", "图片", "文本", "其他"
+ "全部", "文件夹", "视频", "图片", "文本", "其他", "音频", "安装包"
  };
+
+ /** 1.9.216：筛选稳定名（日志/持久化用）。 */
+ static String filterName(int index) {
+ switch (index) {
+ case 2: return "video";
+ case 3: return "image";
+ case 4: return "text";
+ case 6: return "audio";
+ case 7: return "apk";
+ case 1: return "folder";
+ default: return "all";
+ }
+ }
 
  /** 1.9.94：内置文件选择模式（壁纸等），只允许选择图片或视频。 */
  interface PickCallback {
@@ -487,15 +510,19 @@ final class FileManagerScreen {
 
  static PickCallback pickCallback;
  static boolean pickVideoMode;
+ /** 1.9.216：pick 进入时默认筛选（-1 表示无）。 */
+ static int pendingFilter = -1;
+ /** 1.9.216：本次会话筛选状态（返回不重置）。 */
+ static int sessionFilter = 0;
 
  static void pick(MainActivity a, boolean video, PickCallback callback) {
  pickCallback = callback;
  pickVideoMode = video;
+ pendingFilter = video ? 2 : 3;
+ AppLog.i(
+ "FileManager",
+ "pick filter=" + (video ? "video" : "image") + " default=true");
  showFrom(a, 0);
- if (current != null) {
- current.filter = video ? 2 : 3;
- current.refresh();
- }
  }
 
  static void clearPick() {
@@ -503,7 +530,7 @@ final class FileManagerScreen {
  }
 
  private int[] filterCounts() {
- int[] counts = new int[6];
+ int[] counts = new int[8];
  synchronized (items) {
  for (Object item : items) {
  boolean folder;
@@ -542,6 +569,11 @@ final class FileManagerScreen {
  case "conf": case "srt": case "ass": case "js": case "pdf": case "doc":
  case "docx": case "epub":
  return 4;
+ case "mp3": case "flac": case "wav": case "aac": case "m4a": case "ogg":
+ case "ape": case "wma":
+ return 6;
+ case "apk": case "apks": case "xapk":
+ return 7;
  default:
  return 5;
  }
@@ -551,7 +583,9 @@ final class FileManagerScreen {
  if (filterChips == null) return;
  filterChips.removeAllViews();
  int[] counts = filterCounts();
+ int shown = 0;
  for (int i = 0; i < FILTER_NAMES.length; i++) {
+ if (i == 1 || i == 5) continue; // 隐藏「文件夹 / 其他」，保留全部/视频/图片/文本/音频/安装包
  final int index = i;
  String label = FILTER_NAMES[i] + (i == 0 ? "" : " " + counts[i]);
  TextView chip =
@@ -567,18 +601,28 @@ final class FileManagerScreen {
  chip.setOnClickListener(
  v -> {
  filter = index;
+ sessionFilter = index;
  updateFilterChips();
  renderFiltered();
  AppLog.i(
- "FileMgr",
+ "FileManager",
  "filter="
- + FILTER_NAMES[index]
- + " items="
+ + filterName(index)
+ + " entries="
  + (filterCounts()[index]));
  });
  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
- if (i > 0) lp.leftMargin = a.dp(6);
+ if (shown > 0) lp.leftMargin = a.dp(6);
  filterChips.addView(chip, lp);
+ shown++;
+ }
+ // 1.9.216：chips 左右可遥控移动
+ for (int i = 0; i < filterChips.getChildCount(); i++) {
+ View v = filterChips.getChildAt(i);
+ if (v.getId() == View.NO_ID) v.setId(View.generateViewId());
+ if (i > 0) v.setNextFocusLeftId(filterChips.getChildAt(i - 1).getId());
+ if (i < filterChips.getChildCount() - 1)
+ v.setNextFocusRightId(filterChips.getChildAt(i + 1).getId());
  }
  }
 
