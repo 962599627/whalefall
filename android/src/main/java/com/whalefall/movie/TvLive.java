@@ -265,6 +265,8 @@ final class TvLive {
  TextView clearBtn;
  String group = GROUP_CCTV;
  String query = "";
+ /** 1.9.153：开源 IPTV 二级筛选（央视/卫视/地方/其他，空=全部）。 */
+ String iptvFilter = "";
  String selected;
  int listScrollY;
  Runnable render;
@@ -293,6 +295,7 @@ final class TvLive {
  group = g;
  selected = null;
  query = "";
+ iptvFilter = "";
  if (search != null) search.setText("");
  refresh();
  // 1.9.150：首次进入「开源 IPTV」且无缓存时自动下载
@@ -593,8 +596,19 @@ final class TvLive {
 
  final String q = page.query;
  final boolean searching = !q.isEmpty();
- final List<Channel> list =
- searching ? searchChannels(store, q) : store.group(page.group);
+ List<Channel> list = searching ? searchChannels(store, q) : store.group(page.group);
+ // 1.9.153：IPTV 分组内二级筛选（央视/卫视/地方/其他）
+ if (!searching && GROUP_IPTV.equals(page.group) && !page.iptvFilter.isEmpty()) {
+ List<Channel> filtered = new ArrayList<>();
+ for (Channel c : list)
+ if (c.name != null && c.name.startsWith(page.iptvFilter + " · ")) filtered.add(c);
+ list = filtered;
+ }
+ if (GROUP_IPTV.equals(page.group)) {
+ AppLog.i(
+ "IptvOrg",
+ "search=" + q + " filter=" + page.iptvFilter + " hits=" + list.size());
+ }
  if (page.selected == null || findChannel(list, page.selected) == null) {
  page.selected = list.isEmpty() ? null : list.get(0).name;
  }
@@ -1012,6 +1026,53 @@ final class TvLive {
  return rail;
  }
 
+ /** 1.9.153：IPTV 二级快捷筛选（全部/央视/卫视/地方/其他）。 */
+ static View buildIptvFilters(final PageState page) {
+ final MainActivity a = page.a;
+ HorizontalScrollView scroller = new HorizontalScrollView(a);
+ scroller.setHorizontalScrollBarEnabled(false);
+ scroller.setClipToPadding(false);
+ LinearLayout row = a.row();
+ row.setPadding(a.dp(10), a.dp(2), a.dp(10), a.dp(8));
+ String[] names = {"全部", "央视", "卫视", "地方", "其他"};
+ for (String name : names) {
+ final String value = "全部".equals(name) ? "" : name;
+ boolean on = value.equals(page.iptvFilter);
+ TextView chip = a.text(name, 12, on ? 0xff31141f : 0xffd6e1f0);
+ chip.setGravity(Gravity.CENTER);
+ chip.setPadding(a.dp(12), a.dp(5), a.dp(12), a.dp(5));
+ chip.setBackground(
+ on
+ ? TvUiKit.accentFill(a, 999)
+ : MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
+ MobileDetailScreen.bindTouchFeedback(chip);
+ chip.setFocusable(true);
+ chip.setFocusableInTouchMode(true);
+ chip.setClickable(true);
+ ExtraPages.tvFocus(a, chip, 999);
+ chip.setTag("tv-focus-iptv-filter:" + value);
+ chip.setOnClickListener(
+ v -> {
+ page.iptvFilter = value;
+ page.selected = null;
+ page.refresh();
+ a.ui.postDelayed(
+ () -> {
+ if (a.root == null) return;
+ View target = a.root.findViewWithTag("tv-focus-iptv-filter:" + value);
+ if (target != null && target.isShown()) target.requestFocus();
+ },
+ 150);
+ AppLog.i("IptvOrg", "filter=" + value + " selected=true");
+ });
+ LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, a.dp(34));
+ lp.rightMargin = a.dp(8);
+ row.addView(chip, lp);
+ }
+ scroller.addView(row);
+ return scroller;
+ }
+
  /** 中间编号频道列表（平板）或单列列表（手机）。 */
  static LinearLayout buildMiddle(PageState page, List<Channel> list, Channel chosen) {
  final MainActivity a = page.a;
@@ -1044,6 +1105,9 @@ final class TvLive {
  });
  head.addView(hint);
  mid.addView(head, new LinearLayout.LayoutParams(-1, -2));
+ // 1.9.153：开源 IPTV 二级筛选（全部/央视/卫视/地方/其他）
+ if (GROUP_IPTV.equals(page.group) && page.query.isEmpty())
+ mid.addView(buildIptvFilters(page), new LinearLayout.LayoutParams(-1, -2));
 
  if (list.isEmpty()) {
  LinearLayout emptyBox = a.vertical();
@@ -1882,6 +1946,7 @@ final class TvLive {
  StringBuilder sb = new StringBuilder();
  for (String s : store.favorites) sb.append(s).append('\n');
  a.prefs.edit().putString(FAVORITES, sb.toString()).apply();
+ AppLog.i("IptvOrg", "favorite channel=" + c.name + " on=" + fav);
  return fav;
  }
 

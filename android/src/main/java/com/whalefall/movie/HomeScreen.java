@@ -1618,6 +1618,10 @@ final class HomeScreen {
  String dimKey = normalizeFilterDim(def.dimension);
  if (chip.getId() == View.NO_ID) chip.setId(View.generateViewId());
  chip.setTag("filter-option:" + dimKey + ":" + choice.value);
+ // 1.9.153：不依赖 isTvDevice，选项始终可聚焦（遥控/按键模式）
+ chip.setFocusable(true);
+ chip.setFocusableInTouchMode(true);
+ chip.setClickable(true);
  TvNav.focusRing(a, chip, 999);
  final View.OnFocusChangeListener optionRing = chip.getOnFocusChangeListener();
  final String optionDim = dimKey;
@@ -1640,6 +1644,19 @@ final class HomeScreen {
  a.root == null ? null : a.root.findViewWithTag("filter-" + dimKey);
  if (parentChip != null && parentChip.getId() != View.NO_ID)
  parentChip.setNextFocusDownId(chip.getId());
+ AppLog.i("FilterOption", "focus=first dim=" + dimKey + " value=" + optionValue);
+ // 1.9.153：列表刷新可能重建，150ms 后再兜底聚焦一次
+ final View firstOption = chip;
+ a.ui.postDelayed(
+ () -> {
+ if (firstOption.isAttachedToWindow()
+ && firstOption.isShown()
+ && a.getCurrentFocus() == null) {
+ firstOption.requestFocus();
+ AppLog.i("FilterOption", "focus=retry dim=" + dimKey);
+ }
+ },
+ 150);
  }
  if (count > 0) {
  TextView prev =
@@ -1661,9 +1678,16 @@ final class HomeScreen {
  firstOption.setNextFocusUpId(parentChip.getId());
  }
  View gridCard = a.root == null ? null : a.root.findViewWithTag("home-video:0");
- if (gridCard != null && gridCard.getId() != View.NO_ID)
- firstOption.setNextFocusDownId(gridCard.getId());
+ if (gridCard != null && gridCard.getId() != View.NO_ID) {
+ View lastOption =
+ filterOptionRow.getChildCount() > 0
+ ? filterOptionRow.getChildAt(filterOptionRow.getChildCount() - 1)
+ : null;
+ if (lastOption != null && lastOption.getId() != View.NO_ID)
+ lastOption.setNextFocusDownId(gridCard.getId());
  }
+ }
+ if (parentChip != null) ExtraPages.tvFocus(a, parentChip, 999);
  AppLog.i(
  "FilterFocus",
  "open dim=" + openedDim + " options=" + count + " firstFocused=" + (firstOption != null));
