@@ -277,7 +277,15 @@ final class UpdateManager {
  variantIndex = 0;
  message = "发现新版 " + r.version;
  prefs.edit().putString("metadata", data.toString()).apply();
- if ("download".equals(mode()) && !ready()) downloadFile(r);
+ AppLog.i(
+ "Update",
+ "check found="
+ + r.version
+ + " code="
+ + r.code
+ + " variants="
+ + r.variants.length
+ + " autoDownload=disabled");
  }
  } catch (InterruptedIOException e) {
  message = cancel ? "已取消，当前版本不受影响" : "网络连接超时；若已有下载进度，再次下载可继续";
@@ -303,6 +311,16 @@ final class UpdateManager {
  if (busy || available == null) return;
  Release r = available;
  if (r.minSdk > Build.VERSION.SDK_INT || r.code <= installedCode(context)) return;
+ final int variant = selectedVariant();
+ final String[] urls = r.targetDownloads(variant);
+ AppLog.i(
+ "Update",
+ "download start="
+ + r.version
+ + " variant="
+ + variant
+ + " url="
+ + (urls.length > 0 ? urls[0] : r.url));
  busy = true;
  cancel = false;
  worker.execute(

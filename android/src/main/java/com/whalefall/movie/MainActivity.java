@@ -1739,6 +1739,13 @@ public final class MainActivity extends Activity {
  releasePlaybackOnPageChange("page", false);
  generation++;
  }
+ // 1.9.179：播放页暂停动态壁纸，其它页恢复
+ if (videoWallpaper != null) {
+ boolean playingVideo =
+ (current != null && (current.player || (current.detail && miniMode)));
+ if (playingVideo) videoWallpaper.pause();
+ else videoWallpaper.resume();
+ }
  if (!isTvDevice()) {
  applyMobileSystemBars(false);
  }
@@ -3783,6 +3790,7 @@ public final class MainActivity extends Activity {
  ui.postDelayed(() -> PlaybackController.retryAfterResume(this), 700);
  scheduleFocusAudit();
  ui.post(() -> applyPageOrientation("resume"));
+ if (videoWallpaper != null && (current == null || !current.player)) videoWallpaper.resume();
  ui.postDelayed(this::cleanupOldCrashLogs, 1500);
  ui.postDelayed(this::purgeUnsupportedVideoWallpaper, 1200);
  startMemoryLog();
@@ -3850,6 +3858,8 @@ public final class MainActivity extends Activity {
  introSkipKey = false;
  savePlaybackHistory(true);
  foreground = false;
+ // 1.9.179：切后台暂停动态壁纸
+ if (videoWallpaper != null) videoWallpaper.pause();
  super.onStop();
  boolean background =
  prefs.getBoolean("bg_play", true)
@@ -3864,9 +3874,7 @@ public final class MainActivity extends Activity {
  + miniMode
  + " background="
  + background);
- if (background) {
- startBackgroundPlayback();
- } else if (player != null)
+ if (player != null) {
  try {
  player.pause();
  playing = false;
@@ -3874,6 +3882,12 @@ public final class MainActivity extends Activity {
  if (playStatus != null) playStatus.setText("已暂停 · 按确认继续");
  } catch (Exception ignored) {
  }
+ }
+ // 1.9.179：切后台/主页键暂停并释放音频焦点，不自动续播
+ releaseAudioFocus();
+ AppLog.i(
+ "Player",
+ "background=stop player=" + (player != null) + " mini=" + miniMode + " bg=" + background);
  }
 
  @Override

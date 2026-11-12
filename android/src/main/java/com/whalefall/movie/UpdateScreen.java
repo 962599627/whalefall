@@ -18,6 +18,9 @@ final class UpdateScreen {
  TextView status;
  LinearLayout variantBox;
  TextView variantTitle;
+ /** 1.9.179：检测到新版只弹选择包体窗口，选中后才下载。 */
+ String promptedVersion = "";
+ boolean chooseDialogOpen;
 
  UpdateScreen(MainActivity host) {
  a = host;
@@ -34,6 +37,8 @@ final class UpdateScreen {
  if (a.scroll != null) a.scroll.setBackgroundColor(0xff070b14);
  if (a.body != null) a.body.setTag("update");
  a.updateScreen = this;
+ // 已存在的旧检查结果不自动弹窗，仅本次新检测到才弹
+ if (updates.available != null) promptedVersion = updates.available.version;
  status = a.text("正在加载更新信息…", 16, MainActivity.MUTED);
  status.setTag("update-status");
  status.setLineSpacing(a.dp(4), 1);
@@ -118,6 +123,65 @@ final class UpdateScreen {
  + "\n"
  + modeName(updates.mode()));
  rebuildVariants();
+ maybeChooseBodyDialog();
+ }
+
+ /** 1.9.179：检测到新版后弹「选择安装包」窗口，不选不下载。 */
+ void maybeChooseBodyDialog() {
+ UpdateManager.Release r = updates.available;
+ if (r == null || updates.busy || chooseDialogOpen) return;
+ if (r.version.equals(promptedVersion)) return;
+ promptedVersion = r.version;
+ chooseDialogOpen = true;
+ AppLog.i("Update", "check found=" + r.version + " dialog=choose-body");
+ a.ui.post(() -> showChooseBodyDialog(r));
+ }
+
+ void showChooseBodyDialog(final UpdateManager.Release r) {
+ String[] labels;
+ int checked = updates.selectedVariant();
+ if (r.variants.length == 0) {
+ labels = new String[] {"当前设备推荐包 · " + sizeText(r.size)};
+ checked = 0;
+ } else {
+ labels = new String[r.variants.length];
+ for (int i = 0; i < r.variants.length; i++) {
+ labels[i] = r.variants[i].label + " · " + sizeText(r.variants[i].size);
+ }
+ }
+ String notes = r.notes == null ? "" : r.notes;
+ if (notes.length() > 300) notes = notes.substring(0, 300) + "…";
+ new AppDialog.Builder(a)
+ .setTitle("发现新版本 " + r.version)
+ .setMessage(
+ (notes.isEmpty() ? "" : notes + "\n\n")
+ + "请选择要下载的安装包（选择后才开始下载）：")
+ .setSingleChoiceItems(
+ labels,
+ checked,
+ (dialog, which) -> {
+ chooseDialogOpen = false;
+ if (r.variants.length > 0) updates.selectVariant(which);
+ AppLog.i("Update", "download choose=" + which + " version=" + r.version);
+ updates.download();
+ })
+ .setNegativeButton(
+ "取消",
+ (d, w) -> {
+ chooseDialogOpen = false;
+ AppLog.i("Update", "dialog cancel version=" + r.version);
+ })
+ .setOnCancelListener(
+ d -> {
+ chooseDialogOpen = false;
+ AppLog.i("Update", "dialog cancel version=" + r.version);
+ })
+ .show();
+ }
+
+ private static String sizeText(long bytes) {
+ if (bytes <= 0) return "大小未知";
+ return String.format(java.util.Locale.US, "%.1f MB", bytes / 1048576.0);
  }
 
  /** 检查结果里有多包体时显示单选列表；自动模式仍用第一项（默认选中）。 */

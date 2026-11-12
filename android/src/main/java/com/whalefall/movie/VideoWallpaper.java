@@ -228,6 +228,34 @@ final class VideoWallpaper extends FrameLayout {
         dim.bringToFront();
     }
 
+    /** 1.9.179：视频播放时暂停动态壁纸，省 CPU/内存。 */
+    void pause() {
+        if (released) return;
+        AppLog.i("Wallpaper", "video engine=" + (useExo ? "exo" : "mediaplayer") + " action=pause");
+        try {
+            if (player != null) player.setPlayWhenReady(false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            if (mediaPlayer != null && mediaPlayer.isPlaying()) mediaPlayer.pause();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 1.9.179：回到非播放页恢复动态壁纸。 */
+    void resume() {
+        if (released) return;
+        AppLog.i("Wallpaper", "video engine=" + (useExo ? "exo" : "mediaplayer") + " action=resume");
+        try {
+            if (player != null) player.setPlayWhenReady(true);
+        } catch (Throwable ignored) {
+        }
+        try {
+            if (mediaPlayer != null && !mediaPlayer.isPlaying()) mediaPlayer.start();
+        } catch (Throwable ignored) {
+        }
+    }
+
     void release() {
         if (released) return;
         released = true;
@@ -299,7 +327,15 @@ final class VideoWallpaper extends FrameLayout {
         if (player != null) player.setPlayWhenReady(true);
         if (mediaPlayer != null) {
             try {
-                mediaPlayer.start();
+                // 1.9.179：Surface 未就绪时不要 start，否则黑屏
+                if (surfaceView != null && surfaceView.getHolder() != null
+                        && surfaceView.getHolder().getSurface() != null
+                        && surfaceView.getHolder().getSurface().isValid()) {
+                    mediaPlayer.start();
+                    AppLog.i("Wallpaper", "video engine=mediaplayer action=resume-valid");
+                } else {
+                    AppLog.i("Wallpaper", "video engine=mediaplayer action=wait-surface");
+                }
             } catch (Throwable ignored) {
             }
         }

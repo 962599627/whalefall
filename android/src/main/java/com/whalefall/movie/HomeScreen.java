@@ -2650,7 +2650,22 @@ final class HomeScreen {
  focusable(b, tag);
  b.setBackground(a.bg(0xff172742, radius));
  b.setOnClickListener(v -> action.run());
- b.setOnFocusChangeListener((v, f) -> outline(b, f, radius, 0xff172742));
+ b.setOnFocusChangeListener(
+ (v, f) -> {
+ outline(b, f, radius, 0xff172742);
+ if ("home-history-all".equals(tag)) {
+ // 1.9.179：全部历史必须有可见焦点框与粉色描边
+ AppLog.i("HomeFocus", "all-history focus=" + f);
+ if (f) {
+ PlayerFocusRenderer.background(b, true, 18);
+ b.setTextColor(MainActivity.WHITE);
+ } else {
+ b.setTextColor(MainActivity.WHITE);
+ }
+ } else if (f && !(a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode)) {
+ outline(b, true, radius, 0xff172742);
+ }
+ });
  return b;
  }
 
