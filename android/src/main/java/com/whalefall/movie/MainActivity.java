@@ -85,7 +85,8 @@ public final class MainActivity extends Activity {
  long lastBookmarkSave;
  final ArrayDeque<Screen> back = new ArrayDeque<>();
  final LruCache<String, Bitmap> images =
- new LruCache<String, Bitmap>(10 * 1024 * 1024) {
+ // 1.9.147（1GB 内存优化）：海报内存缓存上限 64MB（原 10MB 太小，反复解码更卡）
+ new LruCache<String, Bitmap>(64 * 1024 * 1024) {
  protected int sizeOf(String k, Bitmap b) {
  return b.getByteCount();
  }
@@ -349,6 +350,9 @@ public final class MainActivity extends Activity {
  MoviePlayer player;
  /** 1.9.22 后台播放状态。 */
  boolean bgPlayback;
+ /** 1.9.147：控制条隐藏时左右键直接 ±10 秒的提示气泡（独立于控制条，不唤出控制条）。 */
+ TextView playerSeekHint;
+ Runnable playerSeekHintHide;
 
  android.media.AudioManager bgAudioManager;
  android.media.AudioManager.OnAudioFocusChangeListener bgFocusListener;
@@ -3182,10 +3186,85 @@ public final class MainActivity extends Activity {
  return null;
  }
 
+ // ---------------- 1.9.147：控制条隐藏时左右键直接快退/快进 ----------------
+
+ /**
+ * 控制条隐藏时按左/右键：直接相对 seek ±10 秒，不再「先唤出控制条再聚焦进度条」。
+ * 长按 repeat>0 只更新提示气泡、不重复 seek（避免频繁 seek 触发解码器风暴/卡顿）。
+ */
+ boolean handleHiddenSeekKey(KeyEvent event) {
+ int code = event.getKeyCode();
+ if (code != KeyEvent.KEYCODE_DPAD_LEFT && code != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+ if (current == null || !current.player || controlsVisible || isLive()) return false;
+ boolean forward = code == KeyEvent.KEYCODE_DPAD_RIGHT;
+ int action = event.getAction();
+ if (action == KeyEvent.ACTION_UP) return true;
+ if (action != KeyEvent.ACTION_DOWN) return false;
+ if (event.getRepeatCount() == 0) {
+ PlaybackController.seekRelative(this, forward ? 10000 : -10000);
+ AppLog.i(
+ "Player",
+ "key=" + (forward ? "right" : "left") + " hidden=true action=seek-relative");
+ showPlayerSeekHint(forward, false);
+ } else {
+ AppLog.i(
+ "Player",
+ "key="
+ + (forward ? "right" : "left")
+ + " hidden=true repeat="
+ + event.getRepeatCount()
+ + " action=hint-only");
+ showPlayerSeekHint(forward, true);
+ }
+ return true;
+ }
+
+ /** 隐藏控制条时的独立提示气泡（不依赖控制条，控制条隐藏也能看到）。 */
+ void showPlayerSeekHint(boolean forward, boolean holding) {
+ if (playbackLayer == null) return;
+ try {
+ if (playerSeekHint == null) {
+ playerSeekHint = text("", 13, 0xffffffff);
+ playerSeekHint.setGravity(Gravity.CENTER);
+ playerSeekHint.setPadding(dp(14), dp(8), dp(14), dp(8));
+ playerSeekHint.setBackground(
+ UiTokens.round(this, UiTokens.RADIUS_16, 0xb3000000, UiTokens.STROKE_SOFT));
+ playerSeekHint.setShadowLayer(dp(6), 0, dp(2), 0xcc000000);
+ FrameLayout.LayoutParams lp =
+ new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+ lp.bottomMargin = dp(96);
+ playbackLayer.addView(playerSeekHint, lp);
+ }
+ String base = forward ? "快进 10 秒" : "快退 10 秒";
+ int duration = player == null ? 0 : Math.max(0, player.getDuration());
+ int position = player == null ? 0 : Math.max(0, player.getCurrentPosition());
+ if (duration > 0) {
+ base +=
+ " · "
+ + PlaybackController.formatTime(position)
+ + " / "
+ + PlaybackController.formatTime(duration);
+ }
+ if (holding) base += " · 按住不重复跳转";
+ playerSeekHint.setText(base);
+ playerSeekHint.setVisibility(View.VISIBLE);
+ playerSeekHint.bringToFront();
+ if (playerSeekHintHide != null) ui.removeCallbacks(playerSeekHintHide);
+ playerSeekHintHide =
+ () -> {
+ if (playerSeekHint != null) playerSeekHint.setVisibility(View.GONE);
+ };
+ ui.postDelayed(playerSeekHintHide, 1200);
+ } catch (Throwable ignored) {
+ }
+ }
+
  @Override
  public boolean dispatchKeyEvent(KeyEvent event) {
  // 1.9.84：物理遥控/键盘方向键按下即进入焦点模式（isTvDevice 可能为 false）
  int pressed = event.getKeyCode();
+ // 1.9.147：控制条隐藏时左右键直接快退/快进 10 秒（不唤出控制条、无需先聚焦进度条）
+ if (handleHiddenSeekKey(event)) return true;
  // 1.9.102：播放器控制条任何按键输入都重置自动隐藏计时
  if (event.getAction() == KeyEvent.ACTION_DOWN
  && current != null

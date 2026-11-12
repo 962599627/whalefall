@@ -27,6 +27,15 @@ import java.util.concurrent.ThreadPoolExecutor;
 final class ImageLoader {
  private static final java.util.Map<String, java.util.List<ImageView>> IN_FLIGHT =
  new java.util.HashMap<>();
+ /** 1.9.147（1GB 内存优化）：壁纸按最大边 1280 降采样 + RGB_565，并跨页面缓存。 */
+ private static final int WALLPAPER_MAX_EDGE = 1280;
+ private static final android.util.LruCache<String, Bitmap> WALLPAPER_CACHE =
+ new android.util.LruCache<String, Bitmap>(8 * 1024 * 1024) {
+ @Override
+ protected int sizeOf(String key, Bitmap value) {
+ return value == null ? 0 : value.getByteCount();
+ }
+ };
 
  private ImageLoader() {}
 

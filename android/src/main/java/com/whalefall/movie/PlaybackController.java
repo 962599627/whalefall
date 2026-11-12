@@ -1911,6 +1911,28 @@ final class PlaybackController {
  }
  }
 
+ /** 1.9.147：相对 seek（±ms）：clamp 到 [0,duration] 后直接 seekTo，异常只记日志。 */
+ static void seekRelative(final MainActivity a, final int deltaMs) {
+ if (a == null || a.player == null || !a.prepared) return;
+ try {
+ int duration = a.player.getDuration();
+ if (duration <= 0) return;
+ int current = a.player.getCurrentPosition();
+ int target = Math.max(0, Math.min(duration, current + deltaMs));
+ a.player.seekTo(target);
+ AppLog.i(
+ "Player",
+ "seek relative delta=" + deltaMs + " from=" + current + " to=" + target);
+ } catch (Throwable error) {
+ AppLog.i(
+ "Player",
+ "seek relative delta="
+ + deltaMs
+ + " fail="
+ + error.getClass().getSimpleName());
+ }
+ }
+
  private static java.io.File seekCrashFile(MainActivity a) {
  return new java.io.File(a.getFilesDir(), "seek-crash.json");
  }

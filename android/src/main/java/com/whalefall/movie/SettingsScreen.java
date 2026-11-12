@@ -430,6 +430,20 @@ if (a.isTvDevice()) pickWallpaperBuiltin(true);
  new String[] {"保真输出 · HDR 与流畅度优先", "兼容输出 · 支持应用内调色"},
  new int[] {0, 1},
  0);
+ // 1.9.147：网页直播/网页播放 WebView 内核（自动 → 腾讯 X5 → 系统，下次打开生效）
+ link(
+ "直播内核",
+ LiveWebKernel.label(LiveWebKernel.mode(a)),
+ "setting-" + Prefs.LIVE_WEB_KERNEL,
+ () -> {
+ String next = LiveWebKernel.cycle(LiveWebKernel.mode(a));
+ a.prefs.edit().putString(Prefs.LIVE_WEB_KERNEL, next).apply();
+ a.toast(
+ "直播内核："
+ + LiveWebKernel.label(next)
+ + "（下次打开网页直播/网页播放生效）");
+ a.refresh();
+ });
  // 1.9.89：Android<8 隐藏「系统播放器」选项，强制 Media3
  if (android.os.Build.VERSION.SDK_INT >= 26)
  ints("播放器", Prefs.PLAYER_ENGINE, new String[] {"Media3", "系统播放器"}, new int[] {0, 1}, 0);
@@ -1283,6 +1297,7 @@ if (a.isTvDevice()) pickWallpaperBuiltin(true);
  if (clean instanceof Boolean) edit.putBoolean(key, (Boolean) clean);
  else if (clean instanceof Float) edit.putFloat(key, (Float) clean);
  else if (clean instanceof Integer) edit.putInt(key, (Integer) clean);
+ else if (clean instanceof String) edit.putString(key, (String) clean);
  }
  for (String dataKey :
  new String[] {

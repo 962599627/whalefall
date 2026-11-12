@@ -45,6 +45,8 @@ final class Prefs {
  static final String PREFER_AAC = "prefer_aac";
  static final String ASPECT = "aspect";
  static final String BUFFER_SECONDS = "buffer_seconds";
+ /** 1.9.147：网页直播/网页播放 WebView 内核：auto / x5 / system。 */
+ static final String LIVE_WEB_KERNEL = "live_web_kernel";
  static final String PLAY_SPEED = "play_speed";
  static final String AUTO_NEXT = "auto_next";
  static final String REPEAT_MODE = "repeat_mode";
@@ -117,6 +119,7 @@ final class Prefs {
  PREFER_AAC,
  ASPECT,
  BUFFER_SECONDS,
+ LIVE_WEB_KERNEL,
  PLAY_SPEED,
  AUTO_NEXT,
  REPEAT_MODE,
@@ -218,6 +221,11 @@ final class Prefs {
  if (TEXT_COLOR.equals(key)) {
  // 仅保留 RGB，alpha 统一按用户选择处理（0xffffffff 默认白）
  return value instanceof Number ? (0xff000000 | (((Number) value).intValue() & 0xffffff)) : null;
+ }
+ if (LIVE_WEB_KERNEL.equals(key)) {
+ // 1.9.147：直播内核只接受 auto / x5 / system
+ String text = value instanceof String ? ((String) value).trim() : "";
+ return "auto".equals(text) || "x5".equals(text) || "system".equals(text) ? text : null;
  }
  int[] range = INT_RANGES.get(key);
  if (range == null || !(value instanceof Number)) return null;

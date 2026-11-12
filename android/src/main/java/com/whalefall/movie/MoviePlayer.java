@@ -166,29 +166,21 @@ public class MoviePlayer {
  selected.add(codec);
  return selected.isEmpty() ? raw : selected;
  });
- int buffer =
- Math.max(
- 15,
- Math.min(
- 50,
- this.context
- .getSharedPreferences(Prefs.FILE, 0)
- .getInt(Prefs.BUFFER_SECONDS, 30)))
- * 1000;
- int minBuffer = Math.min(12000, buffer);
- int maxBuffer = Math.max(20000, buffer);
+ // 1.9.147（1GB 内存优化）：固定小缓冲 min 5s / max 15s / 起播 3s，
+ // 不再跟随「网络缓冲 15~50s」设置，避免长时间播放后缓冲区/内存持续膨胀。
  exo =
  new ExoPlayer.Builder(this.context, renderers)
  .setLoadControl(
  new androidx.media3.exoplayer.DefaultLoadControl
  .Builder()
- .setBufferDurationsMs(
- minBuffer, maxBuffer, 800, 1600)
+ .setBufferDurationsMs(5000, 15000, 3000, 3000)
  .setPrioritizeTimeOverSizeThresholds(true)
- .setTargetBufferBytes(64 * 1024 * 1024)
+ .setTargetBufferBytes(32 * 1024 * 1024)
  .build())
  .setLooper(Looper.getMainLooper())
  .build();
+ // 1.9.147：1GB 设备内存策略打点（缓冲 15s 上限 / 海报缓存 64MB / 壁纸 1280 降采样）
+ AppLog.i("Memory", "buffer=15s cache=64MB wallpaper=sample");
  androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters.Builder
  trackParams =
  new androidx.media3.exoplayer.trackselection
