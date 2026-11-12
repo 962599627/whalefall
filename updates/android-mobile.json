@@ -1,40 +1,24 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.9.82",
-  "versionCode": 19082,
+  "versionName": "1.9.205",
+  "versionCode": 19205,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.9.82\n\n- 遥控焦点体系：统一 TvNav（可聚焦/焦点动效/几何方向搜索/模态栈），手机遥控可控制手机与 TV\n- 修复弹窗打开时遥控穿透到背景页；BACK 只关最上层弹窗\n- 修复焦点泄漏（未聚焦控件不绘制焦点环）、触摸单击即响应（不再点两下）\n- TV App 内置文件双入栈导致无法返回的问题\n- 片库三层筛选、type3 爬虫源筛选（中文维度、extend 传参）\n- 详情页小窗持续播放（手机+TV）、离开详情停止播放、切后台自动重连\n- 统一加载动画、薄玻璃卡片、默认字体色 #4CFF80、TV 安全模式开关\n- 更新检查多源回退（jsDelivr/ghproxy）+ 包体选择\n- 已知：未真机全量验证；R8 为实验包",
-  "size": 62599040,
-  "sha256": "a5d2a73dcb0806e21a3fc9517a364c7289d0e4b707e6f8f64f3ef4e2d21d227e",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.82",
+  "notes": "# 鲸落 1.9.205\n\n- 更新检查修复：当前版本实时读取、GitHub Release tag semver 比较、按设备 ABI 推荐安装包\n- 检测到新版本先弹「选择安装包」窗口，不选不下载",
+  "size": 62890108,
+  "sha256": "87786940a51e1d71b089906d6478b82020db19a0a0d6625cc430a13a94ccb99e",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.205",
   "variants": [
     {
       "kind": "mobile",
-      "label": "通用版（双 ABI，推荐）",
-      "size": 62599040,
-      "sha256": "a5d2a73dcb0806e21a3fc9517a364c7289d0e4b707e6f8f64f3ef4e2d21d227e",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile.apk"
-    },
-    {
-      "kind": "arm64",
-      "label": "arm64 精简版（约 36MB）",
-      "size": 36162731,
-      "sha256": "40f83aea6ea0bffc9ec05168224c5f96030ab7e4946d561ddee1588cbae8ae54",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile-arm64.apk"
-    },
-    {
-      "kind": "r8",
-      "label": "R8 精简版（实验，未真机验证）",
-      "size": 33803377,
-      "sha256": "4ee091f98f680bed407b0b66d3a1f20dff9102d961f4fe30a8b108155547e13d",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile-r8-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-mobile-r8-arm64.apk"
+      "label": "手机 / 平板版",
+      "size": 62890108,
+      "sha256": "87786940a51e1d71b089906d6478b82020db19a0a0d6625cc430a13a94ccb99e",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-mobile.apk"
     }
   ]
 }

@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.9.82",
-  "versionCode": 19082,
+  "versionName": "1.9.205",
+  "versionCode": 19205,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "# 鲸落 1.9.82\n\n- 遥控焦点体系：统一 TvNav（可聚焦/焦点动效/几何方向搜索/模态栈），手机遥控可控制手机与 TV\n- 修复弹窗打开时遥控穿透到背景页；BACK 只关最上层弹窗\n- 修复焦点泄漏（未聚焦控件不绘制焦点环）、触摸单击即响应（不再点两下）\n- TV App 内置文件双入栈导致无法返回的问题\n- 片库三层筛选、type3 爬虫源筛选（中文维度、extend 传参）\n- 详情页小窗持续播放（手机+TV）、离开详情停止播放、切后台自动重连\n- 统一加载动画、薄玻璃卡片、默认字体色 #4CFF80、TV 安全模式开关\n- 更新检查多源回退（jsDelivr/ghproxy）+ 包体选择\n- 已知：未真机全量验证；R8 为实验包",
-  "size": 36822427,
-  "sha256": "8f9f0007fc59795a755fe9599dbd0b9bd685574081b047b75b39be6f48cf6560",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.82",
+  "notes": "# 鲸落 1.9.205\n\n- 更新检查修复：当前版本实时读取、GitHub Release tag semver 比较、按设备 ABI 推荐安装包\n- 检测到新版本先弹「选择安装包」窗口，不选不下载",
+  "size": 37113495,
+  "sha256": "3d9f54a9a7f748aaa0360654f9117e50d222bd446269b403fd9211bd738cd929",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.205",
   "variants": [
     {
       "kind": "tv",
-      "label": "TV / 盒子版",
-      "size": 36822427,
-      "sha256": "8f9f0007fc59795a755fe9599dbd0b9bd685574081b047b75b39be6f48cf6560",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.82/WhaleFall-1.9.82-android-tv.apk"
+      "label": "TV / 盒子版（32位）",
+      "size": 37113495,
+      "sha256": "3d9f54a9a7f748aaa0360654f9117e50d222bd446269b403fd9211bd738cd929",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.205/WhaleFall-1.9.205-android-tv.apk"
     }
   ]
 }
