@@ -205,8 +205,15 @@ final class PlayerChrome {
  topActions = topRight;
 
  // ---------------- 中央播放簇：-10s / 播放暂停 / +10s ----------------
+ // 1.9.163（第1步，仅容器视觉）：单玻璃胶囊，不改子项尺寸/图标/焦点
  centerCluster = a.row();
  centerCluster.setGravity(Gravity.CENTER_VERTICAL);
+ centerCluster.setPadding(a.dp(8), a.dp(8), a.dp(8), a.dp(8));
+ GradientDrawable centerCapsule = new GradientDrawable();
+ centerCapsule.setColor(UiTokens.PLAYER_CHIP);
+ centerCapsule.setCornerRadius(a.dp(40));
+ centerCapsule.setStroke(Math.max(1, a.dp(1)), UiTokens.STROKE_SOFT);
+ centerCluster.setBackground(centerCapsule);
  seekBack =
  UiIcon.circleButton(
  a,
@@ -245,6 +252,9 @@ final class PlayerChrome {
  a.showControls(true);
  });
  state.setTag("play-pause");
+ // 1.9.163：去掉中央键独立深色圆底与 elevation（统一由胶囊承载）
+ state.setBackground(null);
+ UiCompat.setElevation(state, 0);
  // 1.9.159：中央三键在 keyFocusMode/remoteFocusMode 下也必须可聚焦（盒子 isTvDevice=false）
  boolean centerFocusMode = a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode;
  styleCenterButton(seekBack, "seek-back");
@@ -280,7 +290,7 @@ final class PlayerChrome {
  return false;
  });
  }
- UiCompat.setElevation(state, a.dp(4));
+ UiCompat.setElevation(state, 0);
  // 1.9.159：seek 两侧按钮焦点环 + 日志（48dp 点击区由 UiIcon.circleButton 保证）
  centerCluster.addView(seekBack, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
  LinearLayout.LayoutParams stateLp =
