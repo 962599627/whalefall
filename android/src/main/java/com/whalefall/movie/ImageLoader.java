@@ -57,6 +57,44 @@ final class ImageLoader {
  }
  }
 
+ /** 1.9.181：后台/低内存时释放全部可重建缓存。 */
+ static void clearForBackground(MainActivity a) {
+ try {
+ if (a.images != null) a.images.evictAll();
+ WALLPAPER_CACHE.evictAll();
+ synchronized (IN_FLIGHT) {
+ IN_FLIGHT.clear();
+ }
+ if (cachedDefault != null && !cachedDefault.isRecycled()) cachedDefault.recycle();
+ cachedDefault = null;
+ cachedDefaultEdge = 0;
+ AppLog.i("Memory", "caches cleared background=true");
+ } catch (Throwable error) {
+ AppLog.w("Memory", "clear caches failed", error);
+ }
+ }
+
+ /** 1.9.181：页面切换释放上一页约一半图片缓存（保留当前页热门图）。 */
+ static void onPageChange(MainActivity a) {
+ try {
+ if (a.images != null) UiCompat.trimCache(a.images, a.images.maxSize() / 2);
+ } catch (Throwable ignored) {
+ }
+ }
+
+ static long cacheBytes(MainActivity a) {
+ long bytes = 0;
+ try {
+ if (a.images != null) bytes += a.images.size();
+ } catch (Throwable ignored) {
+ }
+ try {
+ bytes += WALLPAPER_CACHE.size();
+ } catch (Throwable ignored) {
+ }
+ return bytes;
+ }
+
  static void poster(MainActivity a, String address, ImageView image, boolean detail) {
  image.setTag(address);
  if (!Cms.isHttp(address) && !address.startsWith("catpaw://")) return;

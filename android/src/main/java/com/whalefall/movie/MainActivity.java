@@ -1721,6 +1721,8 @@ public final class MainActivity extends Activity {
  clearPlaybackLoading();
  cancelArtwork();
  cancelPageRequests();
+ // 1.9.181：页面切换释放上一页约一半图片缓存
+ ImageLoader.onPageChange(this);
  if (current != null) current.home = navigation;
  if (searchScreen != null) {
  searchScreen.close();
@@ -3370,6 +3372,10 @@ public final class MainActivity extends Activity {
  }
  boolean lowRam = am != null && am.isLowRamDevice();
  int cacheMb = imageCacheBytes() / (1024 * 1024);
+ long javaMb =
+ (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory())
+ / (1024 * 1024);
+ long nativeMb = android.os.Debug.getNativeHeapAllocatedSize() / (1024 * 1024);
  int bufferSec = lowRam ? 20 : 15;
  int wideMb = Runtime.getRuntime().maxMemory() <= 256L * 1024 * 1024 ? 6 : 12;
  AppLog.i(
@@ -3383,7 +3389,12 @@ public final class MainActivity extends Activity {
  + "MB pss="
  + (pssMb < 0 ? "?" : pssMb + "MB")
  + " lowRam="
- + lowRam);
+ + lowRam
+ + " java="
+ + javaMb
+ + "MB native="
+ + nativeMb
+ + "MB");
  } catch (Throwable error) {
  AppLog.w("Memory", "observe failed", error);
  }
@@ -3656,13 +3667,46 @@ public final class MainActivity extends Activity {
  @Override
  public void onTrimMemory(int level) {
  super.onTrimMemory(level);
+ long before = ImageLoader.cacheBytes(this);
  ImageLoader.trimMemory(this, level);
+ // 1.9.181：后台/内存不足清空图片与壁纸缓存
+ if (level == android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN
+ || level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+ ImageLoader.clearForBackground(this);
+ if (images != null) images.evictAll();
+ }
+ long after = ImageLoader.cacheBytes(this);
+ int freedMb = (int) Math.max(0, (before - after) / (1024 * 1024));
+ AppLog.i(
+ "Memory",
+ "trim level="
+ + level
+ + " freed="
+ + freedMb
+ + "MB pss="
+ + pssMb()
+ + "MB");
+ }
+
+ private int pssMb() {
+ try {
+ android.app.ActivityManager am =
+ (android.app.ActivityManager) getSystemService(android.content.Context.ACTIVITY_SERVICE);
+ if (am == null) return -1;
+ android.os.Debug.MemoryInfo[] info =
+ am.getProcessMemoryInfo(new int[] {android.os.Process.myPid()});
+ return info == null || info.length == 0 ? -1 : info[0].getTotalPss() / 1024;
+ } catch (Throwable ignored) {
+ return -1;
+ }
  }
 
  @Override
  public void onLowMemory() {
  super.onLowMemory();
- images.evictAll();
+ if (images != null) images.evictAll();
+ ImageLoader.clearForBackground(this);
+ AppLog.i("Memory", "lowmemory caches cleared pss=" + pssMb() + "MB");
  }
 
  /** 5 分钟无操作后进入动态壁纸屏保；触摸任意位置退出。 */

@@ -2344,6 +2344,11 @@ final class PlaybackController {
  a.playing = false;
  if (a.player != null) {
  try {
+ // 1.9.181：先解绑 Surface，释放 EGL/解码输出引用
+ a.player.setSurface(null);
+ } catch (Throwable ignored) {
+ }
+ try {
  a.player.release();
  } catch (Exception error) {
  AppLog.w("PlaybackController", "player.release failed", error);
