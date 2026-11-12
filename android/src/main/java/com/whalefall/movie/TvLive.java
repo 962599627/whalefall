@@ -1246,21 +1246,22 @@ final class TvLive {
  });
  mid.addView(recycler, new LinearLayout.LayoutParams(-1, 0, 1f));
 
- final int savedIndex = page.listScrollY > 0 ? page.listScrollY / Math.max(1, rowH) : 0;
- int topPosition = savedIndex;
- if (page.listScrollY <= 0 && page.query.isEmpty()) {
- String lastWatched = a.prefs.getString(LAST, "");
- if (!lastWatched.isEmpty()) {
- String lastName = lastWatched.split("\n", 2)[0];
- for (int i = 0; i < list.size(); i++)
- if (list.get(i).name.equals(lastName)) {
- topPosition = Math.max(0, i - 1);
- break;
+ // 1.9.155：进入分组焦点落在第一排第一个频道，列表回到顶部
+ recycler.post(
+ () -> {
+ layout.scrollToPositionWithOffset(0, 0);
+ recycler.smoothScrollToPosition(0);
+ RecyclerView.ViewHolder vh = recycler.findViewHolderForAdapterPosition(0);
+ View first = vh != null ? vh.itemView : null;
+ if (first == null && recycler.getChildCount() > 0) first = recycler.getChildAt(0);
+ if (first instanceof android.view.ViewGroup
+ && ((android.view.ViewGroup) first).getChildCount() > 0)
+ first = ((android.view.ViewGroup) first).getChildAt(0);
+ if (first != null && first.isShown()) {
+ first.requestFocus();
+ AppLog.i("TvLive", "first-focus=row0");
  }
- }
- }
- final int scrollTo = topPosition;
- recycler.post(() -> layout.scrollToPositionWithOffset(scrollTo, 0));
+ });
  return mid;
  }
 
@@ -1998,7 +1999,11 @@ final class TvLive {
  MainActivity a, Store store, String group, Channel channel, Runnable onClosed) {
  a.prefs.edit().putString(LAST, channel.name + "\n" + channel.url).apply();
  // 1.9.150：开源 IPTV 用内置 ExoPlayer 原生播放；同名频道互为备用源
- if (GROUP_IPTV.equals(group)) {
+ // 1.9.155：从「我的收藏」打开的 IPTV 频道同样走原生分支
+ if (GROUP_IPTV.equals(group)
+ || (channel != null && GROUP_IPTV.equals(channel.group))) {
+ if (GROUP_MINE.equals(group))
+ AppLog.i("IptvOrg", "play-from-favorite channel=" + channel.name);
  java.util.List<String> urls = new java.util.ArrayList<>();
  for (Channel c : store.every())
  if (GROUP_IPTV.equals(c.group) && c.name.equals(channel.name) && !urls.contains(c.url))

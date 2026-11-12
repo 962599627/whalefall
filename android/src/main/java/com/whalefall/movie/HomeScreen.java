@@ -42,6 +42,8 @@ final class HomeScreen {
  android.widget.HorizontalScrollView filterTagScroll, filterOptionScroll;
  String filterOpenDim = "";
  String filterPendingTag = "";
+ /** 1.9.155：最近选择的筛选维度，用于卡片↑优先回该芯片。 */
+ String lastFilterDim = "";
  boolean filterSkipAnim;
  int filterAnimSeq;
  /** 1.9.43：远程单选提示只弹一次。 */
@@ -1413,7 +1415,14 @@ final class HomeScreen {
  LinearLayout.LayoutParams clearLp =
  new LinearLayout.LayoutParams(-2, a.dp(40));
  clearLp.leftMargin = a.dp(10);
+ clearLp.gravity = Gravity.CENTER_VERTICAL;
+ clear.setGravity(Gravity.CENTER_VERTICAL);
  filterTagRow.addView(clear, clearLp);
+ // 1.9.155：清除与筛选芯片同行且可滚动到可见
+ filterTagRow.post(
+ () -> {
+ if (filterTagScroll != null) filterTagScroll.fullScroll(View.FOCUS_RIGHT);
+ });
  }
  int duration;
  if (filterSkipAnim) duration = 0;
@@ -1459,9 +1468,30 @@ final class HomeScreen {
  }
  if (card != null && card.getId() != View.NO_ID) {
  for (View chip : chips) chip.setNextFocusDownId(card.getId());
- card.setNextFocusUpId(chips.get(0).getId());
+ // 1.9.155：卡片第一排 ↑ 优先回到当前筛选维度芯片，再 ↑ 才到分类 tab
+ View preferred = null;
+ if (!lastFilterDim.isEmpty())
+ preferred = a.root.findViewWithTag("filter-" + lastFilterDim);
+ final int upId =
+ preferred != null && preferred.getId() != View.NO_ID
+ ? preferred.getId()
+ : chips.get(0).getId();
+ java.util.List<View> videos = collectPrefix(a.root, "home-video:", 300);
+ if (!videos.isEmpty()) {
+ final int[] pos = new int[2];
+ videos.get(0).getLocationOnScreen(pos);
+ final int topY = pos[1];
+ for (View videoCard : videos) {
+ int[] p = new int[2];
+ videoCard.getLocationOnScreen(p);
+ if (Math.abs(p[1] - topY) <= a.dp(8)) videoCard.setNextFocusUpId(upId);
  }
- AppLog.i("FilterFocus", "row chips=" + chips.size() + " tab=" + (tab != null) + " grid=" + (card != null));
+ }
+ card.setNextFocusUpId(upId);
+ }
+ AppLog.i(
+ "FilterFocus",
+ "row chips=" + chips.size() + " tab=" + (tab != null) + " grid=" + (card != null));
  }
 
  private boolean filterOptionsVisible() {
@@ -1734,6 +1764,7 @@ final class HomeScreen {
  renderFilterTags();
  // 1.9.154：选中后选项行保持展开，焦点回对应筛选芯片
  final String dimKey = normalizeFilterDim(def.dimension);
+ lastFilterDim = dimKey;
  if (wasInline) {
  a.ui.post(
  () -> {
