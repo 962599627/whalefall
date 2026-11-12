@@ -543,7 +543,13 @@ final class ImageLoader {
 
  private void startAtomVideo() {
  try {
+ AppLog.i(
+ "Wallpaper",
+ "atom video start source="
+ + (a.isTvDevice() ? "tv" : "mobile")
+ + " engine=exo textureview=true");
  atomTexture = new android.view.TextureView(a);
+ atomTexture.setTag("atom-video");
  atomTexture.setAlpha(1f);
  atomTexture.setVisibility(android.view.View.INVISIBLE);
  atomTexture.setSurfaceTextureListener(

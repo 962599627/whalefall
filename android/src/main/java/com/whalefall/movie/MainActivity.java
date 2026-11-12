@@ -1885,6 +1885,17 @@ public final class MainActivity extends Activity {
  staticCount = 1;
  }
 
+ // 1.9.217：手机/平板动态壁纸——Atmosphere 内部承载视频，按 prefs 判断
+ boolean wantAtomVideo =
+ prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false) && VideoWallpaper.file(this).isFile();
+ if (wantAtomVideo && target.findViewWithTag("atom-video") == null) {
+ for (int i = target.getChildCount() - 1; i >= 0; i--)
+ if (WALLPAPER_TAG.equals(target.getChildAt(i).getTag())) target.removeViewAt(i);
+ staticCount = 0;
+ AppLog.i(
+ "Wallpaper",
+ "video enabled=true source=atmosphere mobile=" + (!isTvDevice()));
+ }
  // 3. 动态壁纸：存在但挂在旧 root 时搬过来；否则释放并新建
  // 1.9.105：动态层必须视觉上位于静态壁纸之上（上面第 2 步在 videoEnabled 时已移除静态层，
  // 这里再兜底清一次，避免索引错位时视频被静态图盖住）

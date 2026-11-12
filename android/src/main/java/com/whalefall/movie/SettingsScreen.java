@@ -1198,6 +1198,14 @@ final class SettingsScreen {
  try (InputStream input = a.getContentResolver().openInputStream(uri)) {
  saveVideoWallpaper(a, input);
  }
+ AppLog.i(
+ "Wallpaper",
+ "mobile pick path="
+ + VideoWallpaper.file(a).getAbsolutePath()
+ + " exists="
+ + VideoWallpaper.file(a).isFile()
+ + " enabled="
+ + a.prefs.getBoolean(Prefs.WALLPAPER_VIDEO, false));
  } else if (request == 45) {
  org.json.JSONObject backup =
  new org.json.JSONObject()
