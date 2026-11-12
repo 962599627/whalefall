@@ -48,16 +48,57 @@ final class LiveWebKernel {
     return X5;
   }
 
-  /** 按设置创建 WebView；X5 模式因缺少全屏/错误回调支持，统一回退系统 WebView 并提示。 */
+  /** 按设置创建 WebView：x5/auto 优先真实 X5（含全屏/错误 client），不可用才回退系统。 */
   static Page create(MainActivity a, ErrorSink sink) {
     String mode = mode(a);
-    if (X5.equals(mode)) {
-      AppLog.i(TAG, "mode=x5 used=system reason=x5-client-unsupported");
-      a.toast("X5 内核暂不支持全屏与加载错误回调，已使用系统 WebView");
+    boolean wantX5 = X5.equals(mode) || AUTO.equals(mode);
+    if (wantX5) {
+      boolean can = canUseX5(a);
+      if (can) {
+        try {
+          Page x5 = createX5(a, sink);
+          if (x5 != null) {
+            logX5(mode, a);
+            return x5;
+          }
+        } catch (Throwable error) {
+          AppLog.w(TAG, "x5 create failed mode=" + mode, error);
+        }
+      } else {
+        try {
+          com.tencent.smtt.sdk.QbSdk.initX5Environment(
+              a,
+              new com.tencent.smtt.sdk.QbSdk.PreInitCallback() {
+                @Override
+                public void onCoreInitFinished() {
+                  AppLog.i(TAG, "x5 core init finished");
+                }
+
+                @Override
+                public void onViewInitFinished(boolean success) {
+                  AppLog.i(TAG, "x5 view init success=" + success);
+                }
+              });
+        } catch (Throwable error) {
+          AppLog.w(TAG, "x5 init failed", error);
+        }
+        if (X5.equals(mode)) a.toast("正在下载 X5 内核，本次先用系统 WebView，完成后重试");
+      }
     }
+    String reason =
+        wantX5 ? (canUseX5(a) ? "x5-create-failed" : "x5-core-not-ready") : "mode-system";
     try {
       Page page = createSystem(a, sink);
-      log(mode, false);
+      AppLog.i(
+          TAG,
+          "mode="
+              + mode
+              + " used=system reason="
+              + reason
+              + " canUseX5="
+              + canUseX5(a)
+              + " tbsVersion="
+              + tbsVersion(a));
       return page;
     } catch (Throwable error) {
       AppLog.w(TAG, "system webview create failed", error);
@@ -68,7 +109,7 @@ final class LiveWebKernel {
       fallback.setTextColor(0xffffffff);
       Page page = new Page(fallback, false, sink);
       page.loadFailedStatic = true;
-      log(mode, false);
+      AppLog.i(TAG, "mode=" + mode + " used=system reason=system-create-failed");
       return page;
     }
   }
@@ -77,13 +118,28 @@ final class LiveWebKernel {
     AppLog.i(TAG, "mode=" + mode + " used=" + (x5 ? "x5" : "system"));
   }
 
-  /** 反射 QbSdk.canUseX5()：类不存在/方法缺失/返回 false 都视为不可用。 */
-  private static boolean canUseX5() {
+  private static void logX5(String mode, MainActivity a) {
+    AppLog.i(
+        TAG,
+        "mode="
+            + mode
+            + " used=x5 canUseX5=true tbsVersion="
+            + tbsVersion(a));
+  }
+
+  private static int tbsVersion(MainActivity a) {
     try {
-      Class<?> qbs = Class.forName("com.tencent.smtt.sdk.QbSdk");
-      Object result = qbs.getMethod("canUseX5").invoke(null);
-      boolean usable = result instanceof Boolean && (Boolean) result;
-      AppLog.i(TAG, "canUseX5=" + usable);
+      return com.tencent.smtt.sdk.QbSdk.getTbsVersion(a);
+    } catch (Throwable error) {
+      return -1;
+    }
+  }
+
+  /** TBS 核心是否可用（直接调用，编译期依赖 libs/tbssdk-*.jar）。 */
+  private static boolean canUseX5(MainActivity a) {
+    try {
+      boolean usable = com.tencent.smtt.sdk.QbSdk.canUseX5();
+      AppLog.i(TAG, "canUseX5=" + usable + " tbsVersion=" + tbsVersion(a));
       return usable;
     } catch (Throwable error) {
       AppLog.i(TAG, "canUseX5=false reason=" + error.getClass().getSimpleName());
@@ -133,41 +189,31 @@ final class LiveWebKernel {
     return page;
   }
 
-  /** 反射创建腾讯 X5 WebView；任何一步失败都抛异常由调用方回退。 */
-  private static Page createX5(MainActivity a) throws Exception {
-    Class<?> cls = Class.forName("com.tencent.smtt.sdk.WebView");
-    Object webView = cls.getConstructor(android.content.Context.class).newInstance(a);
-    Object settings = cls.getMethod("getSettings").invoke(webView);
+  /** 1.9.149：真实创建腾讯 X5 WebView，并挂全屏/错误 client。 */
+  private static Page createX5(final MainActivity a, final ErrorSink sink) throws Exception {
+    com.tencent.smtt.sdk.WebView view = new com.tencent.smtt.sdk.WebView(a);
+    com.tencent.smtt.sdk.WebSettings settings = view.getSettings();
     if (settings != null) {
-      setBoolean(settings, "setJavaScriptEnabled", true);
-      setBoolean(settings, "setDomStorageEnabled", true);
-      setBoolean(settings, "setMediaPlaybackRequiresUserGesture", false);
       try {
-        settings
-            .getClass()
-            .getMethod("setUserAgentString", String.class)
-            .invoke(settings, UA);
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setMediaPlaybackRequiresUserGesture(false);
+      } catch (Throwable ignored) {
+      }
+      try {
+        settings.setUserAgentString(UA);
       } catch (Throwable ignored) {
       }
     }
-    // client 基本配置：使用 X5 默认 client（找不到就保持默认，不影响加载）
-    try {
-      Class<?> clientClass = Class.forName("com.tencent.smtt.sdk.WebViewClient");
-      Object client = clientClass.getDeclaredConstructor().newInstance();
-      cls.getMethod("setWebViewClient", clientClass).invoke(webView, client);
-    } catch (Throwable ignored) {
-    }
-    try {
-      Class<?> chromeClass = Class.forName("com.tencent.smtt.sdk.WebChromeClient");
-      Object chrome = chromeClass.getDeclaredConstructor().newInstance();
-      cls.getMethod("setWebChromeClient", chromeClass).invoke(webView, chrome);
-    } catch (Throwable ignored) {
-    }
-    Page page = new Page((View) webView, true);
-    page.x5LoadUrl = cls.getMethod("loadUrl", String.class);
-    page.x5Reload = cls.getMethod("reload");
-    page.x5StopLoading = cls.getMethod("stopLoading");
-    page.x5Destroy = cls.getMethod("destroy");
+    Page page = new Page(view, true, sink);
+    X5LiveChromeClient chrome = new X5LiveChromeClient(a);
+    view.setWebViewClient(new X5LiveClient(page));
+    view.setWebChromeClient(chrome);
+    page.x5Chrome = chrome;
+    page.x5LoadUrl = view.getClass().getMethod("loadUrl", String.class);
+    page.x5Reload = view.getClass().getMethod("reload");
+    page.x5StopLoading = view.getClass().getMethod("stopLoading");
+    page.x5Destroy = view.getClass().getMethod("destroy");
     return page;
   }
 
@@ -222,6 +268,11 @@ final class LiveWebKernel {
     private boolean loaded;
     private Runnable loadTimeout;
     boolean loadFailedStatic;
+    X5LiveChromeClient x5Chrome;
+
+    void onX5Error(String description) {
+      reportLoadError(description);
+    }
 
     Page(View view, boolean x5) {
       this(view, x5, null);
@@ -307,7 +358,7 @@ final class LiveWebKernel {
     }
 
     boolean fullscreen() {
-      return fullscreenView != null;
+      return fullscreenView != null || (x5Chrome != null && x5Chrome.isFullscreen());
     }
 
     void enterFullscreen(
@@ -321,6 +372,10 @@ final class LiveWebKernel {
 
     /** @return 是否真的退出了全屏。 */
     boolean exitFullscreen() {
+      if (x5Chrome != null && x5Chrome.isFullscreen()) {
+        x5Chrome.exitFullscreen();
+        return true;
+      }
       if (fullscreenView == null) return false;
       if (fullscreenView.getParent() instanceof ViewGroup) {
         ((ViewGroup) fullscreenView.getParent()).removeView(fullscreenView);

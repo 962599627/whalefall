@@ -353,6 +353,53 @@ final class PlaybackControls {
  wireTvDockFocus(row);
  }
 
+ /** 1.9.149：焦点粉底框（8dp 圆角、10% ACCENT 填充 + 2dp ACCENT_SOFT 描边、120ms 淡入）。 */
+ private void applyFocusBox(View v, boolean focused) {
+ if (android.os.Build.VERSION.SDK_INT < 23) return;
+ if (!(a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode)) return;
+ try {
+ if (focused) {
+ android.graphics.drawable.GradientDrawable clear =
+ new android.graphics.drawable.GradientDrawable();
+ clear.setCornerRadius(a.dp(8));
+ clear.setColor(0x00000000);
+ android.graphics.drawable.GradientDrawable box =
+ new android.graphics.drawable.GradientDrawable();
+ box.setCornerRadius(a.dp(8));
+ box.setColor(0x1AFF8FB1);
+ box.setStroke(Math.max(1, a.dp(2)), 0xACFF8FB1);
+ final android.graphics.drawable.TransitionDrawable td =
+ new android.graphics.drawable.TransitionDrawable(
+ new android.graphics.drawable.Drawable[] {clear, box});
+ td.setCrossFadeEnabled(true);
+ v.setForeground(td);
+ td.startTransition(120);
+ } else {
+ // 失焦：100ms 淡出（即使 TvNav 已清 foreground 也补一次淡出）
+ android.graphics.drawable.GradientDrawable box =
+ new android.graphics.drawable.GradientDrawable();
+ box.setCornerRadius(a.dp(8));
+ box.setColor(0x1AFF8FB1);
+ box.setStroke(Math.max(1, a.dp(2)), 0xACFF8FB1);
+ android.graphics.drawable.GradientDrawable clear =
+ new android.graphics.drawable.GradientDrawable();
+ clear.setCornerRadius(a.dp(8));
+ clear.setColor(0x00000000);
+ final android.graphics.drawable.TransitionDrawable td =
+ new android.graphics.drawable.TransitionDrawable(
+ new android.graphics.drawable.Drawable[] {box, clear});
+ v.setForeground(td);
+ td.startTransition(100);
+ a.ui.postDelayed(
+ () -> {
+ if (!v.hasFocus() && v.getForeground() == td) v.setForeground(null);
+ },
+ 110);
+ }
+ } catch (Throwable ignored) {
+ }
+ }
+
  /** 1.9.148：按键/遥控模式后置为 true 时，补挂底部按钮焦点链（不依赖 isTvDevice）。 */
  void refreshFocusMode() {
  if (dockRow != null) wireTvDockFocus(dockRow);
@@ -375,12 +422,14 @@ final class PlaybackControls {
  child.setOnFocusChangeListener(
  (v, f) -> {
  if (baseRing != null) baseRing.onFocusChange(v, f);
+ // 1.9.149：文字按钮粉底选择框（下一集同样生效），触摸模式不显示
+ applyFocusBox(v, f);
  if (f) {
  lastDockFocus = v;
  timeline.setNextFocusDownId(v.getId());
  AppLog.i(
  "PlayerFocus",
- "bg focus=" + String.valueOf(v.getTag()) + " zone=buttons");
+ "text-button focus=" + String.valueOf(v.getTag()) + " bg=focus zone=buttons");
  }
  });
  child.setOnKeyListener(
@@ -525,14 +574,12 @@ final class PlaybackControls {
  b.setFocusableInTouchMode(true);
  b.setOnFocusChangeListener(
  (v, focused) -> {
- android.graphics.drawable.GradientDrawable bg =
- new android.graphics.drawable.GradientDrawable();
- bg.setCornerRadius(a.dp(8));
- bg.setColor(focused ? 0x33ff8fb1 : android.graphics.Color.TRANSPARENT);
- if (focused) bg.setStroke(a.dp(2), 0x99ffb3c8);
- v.setBackground(bg);
+ // 1.9.149：文字按钮统一走粉底选择框（8dp 圆角 + 120ms 淡入），下一集同样生效
+ applyFocusBox(v, focused);
  ((Button) v).setTextColor(focused ? 0xffffffff : UiTokens.PLAYER_ICON);
- AppLog.i("PlayerFocus", "text-button focus=" + v.getTag() + " on=" + focused);
+ AppLog.i(
+ "PlayerFocus",
+ "text-button focus=" + v.getTag() + " on=" + focused);
  });
  b.setContentDescription(title);
  b.setText(title);

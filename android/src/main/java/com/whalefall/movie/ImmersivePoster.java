@@ -42,7 +42,18 @@ final class ImmersivePoster extends FrameLayout {
  void onAmbientChanged(int color);
  }
 
- private static final LruCache<String, Bitmap> WIDE_MEM_CACHE = new LruCache<>(18);
+ // 1.9.149：宽幅海报缓存加字节上限（低内存 6MB / 其它 12MB），不再只按 18 条计数
+ private static final int WIDE_CACHE_BYTES =
+ Runtime.getRuntime().maxMemory() <= 256L * 1024 * 1024
+ ? 6 * 1024 * 1024
+ : 12 * 1024 * 1024;
+ private static final LruCache<String, Bitmap> WIDE_MEM_CACHE =
+ new LruCache<String, Bitmap>(WIDE_CACHE_BYTES) {
+ @Override
+ protected int sizeOf(String key, Bitmap value) {
+ return value == null ? 0 : value.getByteCount();
+ }
+ };
  private static final Pattern YEAR_PATTERN = Pattern.compile("((?:19|20)\\d{2})");
  private static final java.util.concurrent.ExecutorService HD_POOL =
  java.util.concurrent.Executors.newFixedThreadPool(

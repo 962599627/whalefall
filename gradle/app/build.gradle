@@ -36,6 +36,8 @@ android {
 dependencies {
     implementation fileTree(dir: '../../tools/java-dependencies', include: ['*.jar'], exclude: ['annotations-13.0.jar'])
     implementation fileTree(dir: '../../tools/java-dependencies', include: ['*.aar'])
+    // 1.9.149：腾讯 X5 内核（真实 client 子类需要编译期类）
+    implementation files('../../libs/tbssdk-44286.jar')
 }
 
 // ---- P1 正式化：复用脚本产物（运行时 assets / jniLibs / release 签名） ----

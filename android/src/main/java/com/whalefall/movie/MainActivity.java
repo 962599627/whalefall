@@ -96,7 +96,7 @@ public final class MainActivity extends Activity {
  static int imageCacheBytes() {
  long max = Runtime.getRuntime().maxMemory();
  long cap = Math.min(64L * 1024 * 1024, max / 8);
- if (max <= 256L * 1024 * 1024) cap = Math.min(cap, 24L * 1024 * 1024);
+ if (max <= 256L * 1024 * 1024) cap = Math.min(cap, 20L * 1024 * 1024);
  return (int) Math.max(16L * 1024 * 1024, cap);
  }
  final HomeKeyTracker homeKeys = new HomeKeyTracker();

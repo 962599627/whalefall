@@ -181,17 +181,19 @@ public class MoviePlayer {
  .Builder()
  .setBufferDurationsMs(minBuffer, maxBuffer, playBuffer, playBuffer)
  .setPrioritizeTimeOverSizeThresholds(false)
- .setTargetBufferBytes(32 * 1024 * 1024)
+ .setTargetBufferBytes(24 * 1024 * 1024)
  .build())
  .setLooper(Looper.getMainLooper())
  .build();
  AppLog.i(
  "Memory",
- "buffer="
- + (maxBuffer / 1000)
- + "s cache="
+ "cache="
  + (MainActivity.imageCacheBytes() / (1024 * 1024))
- + "MB wallpaper=sample lowRam="
+ + "MB buffer="
+ + (maxBuffer / 1000)
+ + "s targetBytes=24MB wide="
+ + (Runtime.getRuntime().maxMemory() <= 256L * 1024 * 1024 ? "6MB" : "12MB")
+ + " lowRam="
  + lowRam);
  androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters.Builder
  trackParams =
