@@ -920,9 +920,14 @@ final class PlaybackController {
  releasePlayer(a);
  if (!a.isTvDevice()) {
  a.applyMobileSystemBars(false);
+ if (a.formFactor == TvLayoutPolicy.FORM_PHONE) {
  a.setRequestedOrientation(
  android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
- AppLog.i("Orient", "page=detail set=portrait reason=episode-details");
+ AppLog.i("Orient", "form=phone page=detail set=portrait reason=episode-details");
+ } else {
+ a.setRequestedOrientation(
+ android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+ }
  }
  if (a.current != null && a.current.player)
  a.current =
@@ -938,9 +943,14 @@ final class PlaybackController {
  static void leavePlayback(MainActivity a) {
  if (!a.isTvDevice()) {
  a.applyMobileSystemBars(false);
+ if (a.formFactor == TvLayoutPolicy.FORM_PHONE) {
  a.setRequestedOrientation(
  android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
- AppLog.i("Orient", "page=detail set=portrait reason=leave-playback");
+ AppLog.i("Orient", "form=phone page=player set=portrait reason=leave-playback");
+ } else {
+ a.setRequestedOrientation(
+ android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+ }
  // 1.9.62：手机返回详情与 TV 一致：进入左上角小窗，而不是释放播放器回海报
  if (!a.isLive() && !a.miniMode && a.playbackControls != null && a.player != null) {
  minimizePlayback(a);
@@ -1261,9 +1271,15 @@ final class PlaybackController {
  a.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
  if (!a.isTvDevice()) {
  a.applyMobileSystemBars(true);
+ if (a.formFactor == TvLayoutPolicy.FORM_PHONE) {
  a.setRequestedOrientation(
  android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
- AppLog.i("Orient", "page=player set=landscape reason=enter-player");
+ AppLog.i("Orient", "form=phone page=player set=landscape reason=enter-player");
+ } else {
+ a.setRequestedOrientation(
+ android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+ AppLog.i("Orient", "form=tablet page=player set=unspecified reason=enter-player");
+ }
  }
  a.root = new FrameLayout(a);
  a.root.setBackgroundColor(Color.BLACK);

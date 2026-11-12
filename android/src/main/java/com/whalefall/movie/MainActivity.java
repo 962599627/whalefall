@@ -944,6 +944,8 @@ public final class MainActivity extends Activity {
  boolean layoutReady, layoutIntro;
  int usableWidth, usableHeight;
  int formFactor = TvLayoutPolicy.FORM_TV;
+ /** 1.9.178：最小宽度（dp），响应式断点用。 */
+ int smallestWidthDp;
 
  static int detectFormFactor(Context base, int widthPixels, int heightPixels, int densityDpi) {
  int smallestDp =
@@ -1038,6 +1040,11 @@ public final class MainActivity extends Activity {
 
  void togglePlayerOrientation() {
  if (isTvDevice()) return;
+ // 1.9.178：手机播放器固定横屏，禁止切竖屏
+ if (formFactor == TvLayoutPolicy.FORM_PHONE) {
+ AppLog.i("Orient", "form=phone page=player set=landscape reason=phone-fixed");
+ return;
+ }
  if (isPortrait()) {
  setRequestedOrientation(
  android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
@@ -1148,10 +1155,14 @@ public final class MainActivity extends Activity {
  formFactor =
  detectFormFactor(
  this, rawScreen.widthPixels, rawScreen.heightPixels, rawScreen.densityDpi);
+ smallestWidthDp =
+ getResources().getConfiguration().smallestScreenWidthDp;
  setRequestedOrientation(
  isTvDevice()
  ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
- : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
+ : formFactor == TvLayoutPolicy.FORM_PHONE
+ ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+ : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
  configStore = new ConfigStore(getFilesDir());
  if (isTvDevice()) {
  getWindow().getDecorView().setSystemUiVisibility(5894);
@@ -1660,6 +1671,14 @@ public final class MainActivity extends Activity {
  void applyPageOrientation(String reason) {
  try {
  if (isTvDevice() || formFactor != TvLayoutPolicy.FORM_PHONE) return;
+ // 1.9.178：多窗口/画中画不强制方向
+ try {
+ if (isInMultiWindowMode() || isInPictureInPictureMode()) {
+ AppLog.i("Orient", "skip=true form=phone reason=multiwindow");
+ return;
+ }
+ } catch (Throwable ignored) {
+ }
  String tag = body == null ? "" : String.valueOf(body.getTag());
  boolean playerPage =
  (current != null && current.player)
@@ -1675,7 +1694,7 @@ public final class MainActivity extends Activity {
  setRequestedOrientation(target);
  AppLog.i(
  "Orient",
- "page="
+ "form=phone page="
  + (playerPage ? "player" : ("detail".equals(tag) ? "detail" : "page"))
  + " set="
  + (playerPage ? "landscape" : "portrait")
@@ -3170,9 +3189,16 @@ public final class MainActivity extends Activity {
  if (!isTvDevice()) {
  applyMobileSystemBars(false);
  try {
+ if (isInMultiWindowMode() || isInPictureInPictureMode()) {
+ AppLog.i("Orient", "skip=true reason=release multiwindow");
+ } else if (formFactor == TvLayoutPolicy.FORM_PHONE) {
  setRequestedOrientation(
  android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
- AppLog.i("Orient", "page=page set=portrait reason=release");
+ AppLog.i("Orient", "form=phone page=page set=portrait reason=release");
+ } else {
+ setRequestedOrientation(
+ android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+ }
  } catch (Throwable ignored) {
  }
  }

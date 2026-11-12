@@ -1110,8 +1110,14 @@ final class MobileShell {
  homeRestorePos = restorePos;
  homeRestoreOffset = restoreOffset;
  float homeWidthDp = a.windowWidth() / a.getResources().getDisplayMetrics().density;
+ if (a.formFactor == TvLayoutPolicy.FORM_PHONE) {
+ // 1.9.178：手机首页固定 2 列，左右 16dp、列距 12dp
+ homeCols = 2;
+ homeHorizontalPaddingDp = 32;
+ } else {
  homeCols = homeWidthDp >= 720 ? 5 : (homeWidthDp >= 520 ? 4 : 3);
- int homeHorizontalPaddingDp = homeWidthDp >= 640 ? 116 : 32;
+ homeHorizontalPaddingDp = homeWidthDp >= 640 ? 116 : 32;
+ }
  homeCardWidthDp =
  Math.max(
  92,
@@ -3074,15 +3080,15 @@ final class MobileShell {
  if (index < homeAdapter.videos.size()) {
  LinearLayout card = buildVideoCard(homeAdapter.videos.get(index), index);
  LinearLayout.LayoutParams cellLp = new LinearLayout.LayoutParams(0, -2, 1);
- cellLp.leftMargin = col == 0 ? 0 : a.dp(5);
- cellLp.rightMargin = col == homeCols - 1 ? 0 : a.dp(5);
+ cellLp.leftMargin = col == 0 ? 0 : a.dp(6);
+ cellLp.rightMargin = col == homeCols - 1 ? 0 : a.dp(6);
  cellLp.topMargin = a.dp(4);
  cellLp.bottomMargin = a.dp(14);
  row.addView(card, cellLp);
  } else {
  LinearLayout.LayoutParams blankLp = new LinearLayout.LayoutParams(0, 1, 1);
- blankLp.leftMargin = a.dp(5);
- blankLp.rightMargin = col == homeCols - 1 ? 0 : a.dp(5);
+ blankLp.leftMargin = a.dp(6);
+ blankLp.rightMargin = col == homeCols - 1 ? 0 : a.dp(6);
  row.addView(new View(a), blankLp);
  }
  }
