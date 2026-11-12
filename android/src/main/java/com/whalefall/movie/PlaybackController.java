@@ -1048,6 +1048,11 @@ final class PlaybackController {
  if (!overDetail && a.current != null) a.restore(a.current);
  // 1.9.58：由 MiniDetails 先测 hero 矩形再隐藏，保证小窗与海报区域一致
  a.miniDetails = new MiniDetails(a);
+ // 1.9.235：返回详情小窗 → 恢复动态壁纸
+ if (a.videoWallpaper != null) {
+ a.videoWallpaper.ensureDecoder("mini");
+ AppLog.i("Wallpaper", "state=playing page=detail mini=true");
+ }
  // 1.9.208：进入小窗必须保持播放（进度连续，不重新 prepare）
  if (a.player != null) {
  try {
@@ -1065,6 +1070,11 @@ final class PlaybackController {
  if (!a.miniMode) return;
  AppLog.i("Mini", "exit reason=expand");
  a.miniMode = false;
+ // 1.9.235：放大到全屏 → 释放壁纸解码器
+ if (a.videoWallpaper != null) {
+ a.videoWallpaper.stopAndReleaseDecoder("fullscreen");
+ AppLog.i("Wallpaper", "pause page=player reason=fullscreen");
+ }
  // 1.9.213：全屏恢复 fit 缩放
  if (a.player != null) {
  try {
@@ -1530,10 +1540,16 @@ final class PlaybackController {
  (p, isPlaying) -> {
  if (a.videoWallpaper == null) return;
  if (isPlaying) {
+ if (!a.miniMode) {
  a.videoWallpaper.stopAndReleaseDecoder("player-start");
  AppLog.i(
  "Wallpaper",
- "mobile pause reason=playing-state state=playing mini=" + a.miniMode);
+ "pause page=player reason=fullscreen state=playing");
+ } else {
+ // 1.9.235：详情小窗播放时保留动态壁纸
+ a.videoWallpaper.ensureDecoder("mini");
+ AppLog.i("Wallpaper", "state=playing page=detail mini=true");
+ }
  } else if (!(a.current != null && a.current.player) && !a.miniMode) {
  a.videoWallpaper.ensureDecoder("player-stop");
  AppLog.i("Wallpaper", "mobile resume reason=playing-state state=paused");

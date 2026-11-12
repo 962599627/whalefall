@@ -266,10 +266,49 @@ final class MiniDetails {
  600);
  }
 
- /** 1.9.211：把视频/控制层对齐到详情 hero 图片矩形（保持 16:9 不拉伸）。 */
+ /** 1.9.234：横竖屏切换时重算矩形。 */
+ void refreshRect() {
+ cachedCover[0] = cachedCover[1] = cachedCover[2] = cachedCover[3] = 0;
+ applyHeroRect(0);
+ }
+
  private void applyHeroRect(int attempt) {
  if (!a.miniMode || a.root == null) return;
- // 1.9.233：TV 与手机/平板统一走封面矩形 + clamp
+ // 1.9.236：TV 回退为左栏固定尺寸小窗（手机/平板仍走 cover+clamp）
+ if (a.isTvDevice()) {
+ int w = a.dp(320), h = a.dp(180);
+ int maxW = Math.round(a.windowWidth() * 0.40f) - a.dp(32);
+ if (maxW > a.dp(160) && w > maxW) {
+ w = maxW;
+ h = Math.round(w * 9f / 16f);
+ }
+ int x = a.dp(16), y = a.dp(16);
+ FrameLayout.LayoutParams vlp =
+ new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
+ vlp.leftMargin = x;
+ vlp.topMargin = y;
+ a.playbackLayer.setLayoutParams(vlp);
+ FrameLayout.LayoutParams plp =
+ new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
+ plp.leftMargin = x;
+ plp.topMargin = y;
+ page.setLayoutParams(plp);
+ if (a.player != null) {
+ try {
+ a.player.setScaleMode(true);
+ } catch (Throwable ignored) {
+ }
+ }
+ PlaybackController.hideDetailHero(a, true);
+ a.playbackLayer.bringToFront();
+ page.bringToFront();
+ AppLog.i(
+ "Mini",
+ "tv=true rect=" + x + "," + y + " " + w + "x" + h + " size=left-window");
+ if (attempt < 2) a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 300);
+ return;
+ }
+ // 1.9.233：手机/平板统一走封面矩形 + clamp
  boolean unifiedMini = true;
  if (unifiedMini) {
  int w = 0, h = 0, x = a.dp(16), y = a.dp(16);
@@ -348,12 +387,27 @@ final class MiniDetails {
  }
  }
  }
- if (w <= 0 || h <= 0) {
- w = Math.round(a.windowWidth() * 0.40f) - a.dp(32);
- h = Math.round(w * 9f / 16f);
+ boolean portrait = a.windowWidth() < a.windowHeight();
+ if (w < a.dp(120) || h < a.dp(68)) {
+ // 1.9.234：rect 过小/取不到 → 兜底 40% 窗口宽、16:9、16dp 边距
+ int fallbackW = Math.round(a.windowWidth() * 0.40f);
+ if (portrait) fallbackW = Math.min(fallbackW, Math.round(a.windowWidth() * 0.92f));
+ w = Math.max(a.dp(120), fallbackW);
+ h = Math.max(a.dp(68), Math.round(w * 9f / 16f));
  x = a.dp(16);
  y = a.dp(16);
  clamped = true;
+ source = source.startsWith("cover") ? "cover-too-small" : "fallback-40pct";
+ AppLog.i(
+ "MiniMobile",
+ "fallback=40pct w="
+ + w
+ + " h="
+ + h
+ + " visible="
+ + (w > 0 && h > 0)
+ + " portrait="
+ + portrait);
  }
  if (w > 0 && h > 0) {
  cachedCover[0] = x;
@@ -408,6 +462,16 @@ final class MiniDetails {
  PlaybackController.hideDetailHero(a, true);
  a.playbackLayer.bringToFront();
  page.bringToFront();
+ // 1.9.234：布局后若尺寸仍为 0/不可见，再校正一次
+ final int pass = attempt;
+ a.ui.postDelayed(
+ () -> {
+ if (!a.miniMode) return;
+ if (a.playbackLayer.getWidth() <= 0 || a.playbackLayer.getHeight() <= 0) {
+ if (pass < 4) applyHeroRect(pass + 1);
+ }
+ },
+ 350);
  if (attempt < 2) a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 300);
  return;
  }

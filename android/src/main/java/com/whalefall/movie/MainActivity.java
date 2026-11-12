@@ -1329,6 +1329,11 @@ public final class MainActivity extends Activity {
  @Override
  public void onConfigurationChanged(android.content.res.Configuration newConfig) {
  super.onConfigurationChanged(newConfig);
+ // 1.9.234：横竖屏切换后重算小窗矩形
+ if (miniMode && miniDetails != null) {
+ miniDetails.refreshRect();
+ AppLog.i("Mini", "rect refresh config-change portrait=" + (newConfig.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT));
+ }
  if (!layoutReady || root == null) return;
  // 旋转/分屏时 root 在 config 回调里可能还是旧尺寸（横屏 2560 残留 → usableWidth 错误 →
  // 电视页按 2560px 重建成三栏）。改为等「真正完成新布局」的全局布局回调再读取尺寸。
@@ -1750,16 +1755,18 @@ public final class MainActivity extends Activity {
  }
  // 1.9.179：播放页暂停动态壁纸，其它页恢复
  if (videoWallpaper != null) {
- boolean playingVideo =
- (current != null && (current.player || (current.detail && miniMode)));
- if (playingVideo) {
+ // 1.9.235：仅全屏播放页释放壁纸；详情小窗保留动态壁纸
+ boolean fullscreenPlayer = (current != null && current.player);
+ if (fullscreenPlayer) {
  videoWallpaper.stopAndReleaseDecoder("player-start");
  AppLog.i(
  "Wallpaper",
- "mobile pause reason=player-start mini=" + miniMode + " tv=" + isTvDevice());
+ "pause page=player reason=fullscreen mini=" + miniMode + " tv=" + isTvDevice());
  } else {
- videoWallpaper.ensureDecoder("player-stop");
- AppLog.i("Wallpaper", "mobile resume reason=player-stop tv=" + isTvDevice());
+ videoWallpaper.ensureDecoder("page");
+ if (current != null && current.detail && miniMode)
+ AppLog.i("Wallpaper", "state=playing page=detail mini=true");
+ else AppLog.i("Wallpaper", "mobile resume reason=player-stop tv=" + isTvDevice());
  }
  }
  if (!isTvDevice()) {
@@ -1998,15 +2005,17 @@ public final class MainActivity extends Activity {
  + android.os.Build.VERSION.SDK_INT
  + " valid="
  + routeValid);
- // 1.9.221：播放器占屏时新建的壁纸层必须立即暂停
+ // 1.9.235：仅全屏播放页新建壁纸层时立即释放；详情小窗保留壁纸
  if (videoEnabled && videoWallpaper != null) {
- boolean playingVideo =
- (current != null && (current.player || (current.detail && miniMode)));
- if (playingVideo) {
+ boolean fullscreen = (current != null && current.player);
+ if (fullscreen) {
  videoWallpaper.stopAndReleaseDecoder("player-start");
  AppLog.i(
  "Wallpaper",
- "mobile pause reason=player-start mini=" + miniMode + " source=create");
+ "pause page=player reason=fullscreen mini=" + miniMode + " source=create");
+ } else if (current != null && current.detail && miniMode) {
+ videoWallpaper.ensureDecoder("mini");
+ AppLog.i("Wallpaper", "state=playing page=detail mini=true source=create");
  }
  }
  // 1.9.202：所有页面统一背景板日志
