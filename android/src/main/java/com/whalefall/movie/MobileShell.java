@@ -1110,6 +1110,7 @@ final class MobileShell {
  homeRestorePos = restorePos;
  homeRestoreOffset = restoreOffset;
  float homeWidthDp = a.windowWidth() / a.getResources().getDisplayMetrics().density;
+ int homeHorizontalPaddingDp;
  if (a.formFactor == TvLayoutPolicy.FORM_PHONE) {
  // 1.9.178：手机首页固定 2 列，左右 16dp、列距 12dp
  homeCols = 2;
