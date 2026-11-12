@@ -512,6 +512,20 @@ final class PlaybackControls {
  };
  if (a.isTvDevice()) {
  Button b = a.button("", key, click);
+ // 1.9.146：底部文字按钮可聚焦 + 焦点变色背景（遥控可达）
+ b.setFocusable(true);
+ b.setFocusableInTouchMode(true);
+ b.setOnFocusChangeListener(
+ (v, focused) -> {
+ android.graphics.drawable.GradientDrawable bg =
+ new android.graphics.drawable.GradientDrawable();
+ bg.setCornerRadius(a.dp(8));
+ bg.setColor(focused ? 0x33ff8fb1 : android.graphics.Color.TRANSPARENT);
+ if (focused) bg.setStroke(a.dp(2), 0x99ffb3c8);
+ v.setBackground(bg);
+ ((Button) v).setTextColor(focused ? 0xffffffff : UiTokens.PLAYER_ICON);
+ AppLog.i("PlayerFocus", "text-button focus=" + v.getTag() + " on=" + focused);
+ });
  b.setContentDescription(title);
  b.setText(title);
  b.setSingleLine(true);
@@ -539,6 +553,13 @@ final class PlaybackControls {
  View b = createAction(title, key, action);
  if (b instanceof Button) {
  row.addView(b, new LinearLayout.LayoutParams(a.dp(44), a.dp(56)));
+ int index = row.getChildCount() - 1;
+ if (index > 0) {
+ View prev = row.getChildAt(index - 1);
+ prev.setNextFocusRightId(b.getId());
+ b.setNextFocusLeftId(prev.getId());
+ }
+ if (b.getId() == View.NO_ID) b.setId(View.generateViewId());
  }
  buttons.put(key, b);
  return b;
