@@ -335,7 +335,40 @@ final class UpdateScreen {
  int n;
  while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
  }
- android.net.Uri uri = UpdateApkProvider.URI;
+ // 1.9.176：系统安装器只认 file://；先准备一个可被安装器读取的绝对路径文件
+ java.io.File staged = apk;
+ try {
+ java.io.File external = android.os.Environment.getExternalStorageDirectory();
+ String sourcePath = apk.getAbsolutePath();
+ if (external != null
+ && !sourcePath.startsWith(external.getAbsolutePath())) {
+ java.io.File dir = new java.io.File(external, "Download/DSH-Go/鲸落");
+ if (!dir.isDirectory()) dir.mkdirs();
+ java.io.File target = new java.io.File(dir, apk.getName());
+ try (java.io.InputStream in2 = new java.io.FileInputStream(apk);
+ java.io.OutputStream out2 = new java.io.FileOutputStream(target)) {
+ byte[] buf = new byte[65536];
+ int n;
+ while ((n = in2.read(buf)) > 0) out2.write(buf, 0, n);
+ }
+ staged = target;
+ AppLog.i("Update", "install stage copy=" + target.getAbsolutePath());
+ }
+ } catch (Throwable stageError) {
+ AppLog.w("Update", "install stage failed", stageError);
+ }
+ final java.io.File installFile = staged;
+ android.net.Uri fileUri = android.net.Uri.fromFile(installFile);
+ final android.net.Uri contentUri = UpdateApkProvider.URI;
+ AppLog.i(
+ "Update",
+ "install file="
+ + installFile.getAbsolutePath()
+ + " uri="
+ + fileUri
+ + " bytes="
+ + installFile.length());
+ android.net.Uri uri = fileUri;
  android.content.Intent install =
  new android.content.Intent(android.content.Intent.ACTION_INSTALL_PACKAGE, uri)
  .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -351,9 +384,9 @@ final class UpdateScreen {
  .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
  if (launchInstall(a, view, "view")) return true;
  String[] components = {
- "com.miui.packageinstaller/.PackageInstallerActivity",
  "com.android.packageinstaller/.ui.PackageInstallerActivity",
  "com.android.packageinstaller/.PackageInstallerActivity",
+ "com.miui.packageinstaller/.PackageInstallerActivity",
  "com.google.android.packageinstaller/.PackageInstallerActivity"
  };
  for (String component : components) {
@@ -378,27 +411,47 @@ final class UpdateScreen {
  + error.getClass().getSimpleName());
  }
  }
- // 全部失败：复制到 Download，提示手动安装
+ // 1.9.176：SDK>=24 file:// 被拦时，再试 content provider（指向 cache/release.apk）
+ if (android.os.Build.VERSION.SDK_INT >= 24) {
+ AppLog.i("Update", "install step=content_fallback tag=" + tag);
+ android.content.Intent installContent =
+ new android.content.Intent(android.content.Intent.ACTION_INSTALL_PACKAGE, contentUri)
+ .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+ .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+ if (launchInstall(a, installContent, "install_package_content")) return true;
+ android.content.Intent viewContent =
+ new android.content.Intent(android.content.Intent.ACTION_VIEW)
+ .setDataAndType(contentUri, "application/vnd.android.package-archive")
+ .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+ .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+ if (launchInstall(a, viewContent, "view_content")) return true;
+ for (String component : components) {
  try {
- AppLog.i("Update", "install step=explicit tag=" + tag);
- java.io.File external = android.os.Environment.getExternalStorageDirectory();
- java.io.File dir = new java.io.File(external, "Download/DSH-Go/鲸落");
- if (!dir.isDirectory()) dir.mkdirs();
- String name = "WhaleFall-" + (tag == null || tag.isEmpty() ? "local" : tag) + ".apk";
- java.io.File saved = new java.io.File(dir, name);
- try (java.io.InputStream in = new java.io.FileInputStream(apk);
- java.io.OutputStream out = new java.io.FileOutputStream(saved)) {
- byte[] buf = new byte[65536];
- int n;
- while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+ String[] parts = component.split("/");
+ android.content.Intent explicit =
+ new android.content.Intent(android.content.Intent.ACTION_VIEW)
+ .setComponent(
+ new android.content.ComponentName(
+ parts[0],
+ parts[1].startsWith(".") ? parts[0] + parts[1] : parts[1]))
+ .setDataAndType(contentUri, "application/vnd.android.package-archive")
+ .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+ .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+ if (launchInstall(a, explicit, "explicit_content:" + parts[0])) return true;
+ } catch (Throwable ignored) {
  }
- AppLog.i("Update", "install try=download-copy result=ok path=" + saved.getAbsolutePath());
- AppLog.i("Update", "install step=dialog tag=" + tag + " path=" + saved.getAbsolutePath());
- a.toast("已保存到 Download，请用文件管理器手动安装");
- final String shownPath = saved.getAbsolutePath();
+ }
+ }
+ // 全部失败：文件已在可访问路径，给出绝对路径与复制
+ try {
+ AppLog.i(
+ "Update",
+ "install step=dialog tag=" + tag + " path=" + installFile.getAbsolutePath());
+ a.toast("无法调起安装器，请用文件管理器手动安装");
+ final String shownPath = installFile.getAbsolutePath();
  new AppDialog.Builder(a)
  .setTitle("无法调起安装器")
- .setMessage("已复制到：\n" + shownPath + "\n\n请在文件管理器中打开安装。")
+ .setMessage("文件位置：\n" + shownPath + "\n\n请在文件管理器中打开安装。")
  .setNeutralButton(
  "复制路径",
  (d, w) -> {
