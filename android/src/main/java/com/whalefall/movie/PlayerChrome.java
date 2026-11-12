@@ -245,7 +245,11 @@ final class PlayerChrome {
  a.showControls(true);
  });
  state.setTag("play-pause");
- if (a.isTvDevice()) {
+ // 1.9.159：中央三键在 keyFocusMode/remoteFocusMode 下也必须可聚焦（盒子 isTvDevice=false）
+ boolean centerFocusMode = a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode;
+ styleCenterButton(seekBack, "seek-back");
+ styleCenterButton(seekFwd, "seek-fwd");
+ if (centerFocusMode) {
  state.setFocusable(true);
  state.setFocusableInTouchMode(true);
  TvNav.focusRing(a, state, 36);
@@ -277,6 +281,7 @@ final class PlayerChrome {
  });
  }
  UiCompat.setElevation(state, a.dp(4));
+ // 1.9.159：seek 两侧按钮焦点环 + 日志（48dp 点击区由 UiIcon.circleButton 保证）
  centerCluster.addView(seekBack, new LinearLayout.LayoutParams(a.dp(48), a.dp(48)));
  LinearLayout.LayoutParams stateLp =
  new LinearLayout.LayoutParams(a.dp(72), a.dp(72));
@@ -518,6 +523,50 @@ final class PlayerChrome {
  "page=player focus=" + tag + " action=confirm");
  return false;
  });
+ }
+
+ /** 1.9.159：中央快退/快进焦点与日志。 */
+ private void styleCenterButton(final ImageButton button, final String tag) {
+ if (button == null) return;
+ button.setTag(tag);
+ boolean mode = a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode;
+ button.setFocusable(mode);
+ button.setFocusableInTouchMode(mode);
+ button.setClickable(true);
+ if (!mode) return;
+ TvNav.focusRing(a, button, 999);
+ final View.OnFocusChangeListener baseRing = button.getOnFocusChangeListener();
+ button.setOnFocusChangeListener(
+ (v, focused) -> {
+ if (baseRing != null) baseRing.onFocusChange(v, focused);
+ if (focused) AppLog.i("PlayerFocus", "focus=" + tag + " zone=center");
+ });
+ }
+
+ /** 1.9.159：进入按键/遥控焦点模式后补挂中央三键。 */
+ void refreshCenterFocus() {
+ boolean mode = a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode;
+ ImageButton[] buttons = {seekBack, seekFwd, state};
+ for (ImageButton button : buttons) {
+ if (button == null) continue;
+ button.setFocusable(mode);
+ button.setFocusableInTouchMode(mode);
+ button.setClickable(true);
+ if (mode) {
+ TvNav.focusRing(a, button, button == state ? 36 : 999);
+ final View.OnFocusChangeListener base =
+ button.getOnFocusChangeListener();
+ final String tag =
+ button == seekBack ? "seek-back" : button == seekFwd ? "seek-fwd" : "play-pause";
+ button.setOnFocusChangeListener(
+ (v, focused) -> {
+ if (base != null) base.onFocusChange(v, focused);
+ if (focused && !"play-pause".equals(tag))
+ AppLog.i("PlayerFocus", "focus=" + tag + " zone=center");
+ });
+ }
+ }
+ AppLog.i("PlayerFocus", "refresh center mode=" + mode);
  }
 
  void safeInsets(int left, int top, int right, int bottom) {

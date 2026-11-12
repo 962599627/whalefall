@@ -317,20 +317,66 @@ final class UiIcon {
  b.setMinimumWidth(0);
  b.setMinimumHeight(0);
  b.setContentDescription(desc);
- b.setFocusable(a.isTvDevice());
+ // 1.9.159：不依赖 isTvDevice（盒子可能 false），按键/遥控模式也必须可聚焦
+ boolean focusMode = a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode;
+ b.setFocusable(focusMode);
+ b.setFocusableInTouchMode(focusMode);
  b.setClickable(true);
+ b.setMinimumWidth(a.dp(Math.max(48, sizeDp)));
+ b.setMinimumHeight(a.dp(Math.max(48, sizeDp)));
  b.setOnClickListener(click == null ? null : v -> click.run());
- if (a.isTvDevice()) {
+ if (focusMode) {
  b.setOnFocusChangeListener(
- (v, focused) -> {
- v.animate()
- .scaleX(focused ? 1.1f : 1f)
- .scaleY(focused ? 1.1f : 1f)
- .setDuration(UiTokens.MOTION_FAST)
- .start();
- });
+ (v, focused) -> applyCircleFocusBox(a, v, focused));
  }
  return b;
+ }
+
+ /** 1.9.159：圆钮统一焦点框：粉底 + 2dp 描边，120ms 淡入 / 100ms 淡出（替代仅缩放）。 */
+ private static final java.util.WeakHashMap<View, android.graphics.drawable.Drawable>
+ ORIGINAL_FOCUS_BG = new java.util.WeakHashMap<>();
+
+ private static void applyCircleFocusBox(
+ MainActivity a, View v, boolean focused) {
+ if (android.os.Build.VERSION.SDK_INT < 23) return;
+ try {
+ android.graphics.drawable.GradientDrawable box =
+ new android.graphics.drawable.GradientDrawable();
+ box.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+ box.setColor(0x1AFF8FB1);
+ box.setStroke(Math.max(1, a.dp(2)), 0xFFFFB3C8);
+ android.graphics.drawable.GradientDrawable clear =
+ new android.graphics.drawable.GradientDrawable();
+ clear.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+ clear.setColor(0x00000000);
+ if (focused) {
+ if (!ORIGINAL_FOCUS_BG.containsKey(v)) ORIGINAL_FOCUS_BG.put(v, v.getBackground());
+ final android.graphics.drawable.TransitionDrawable td =
+ new android.graphics.drawable.TransitionDrawable(
+ new android.graphics.drawable.Drawable[] {clear, box});
+ td.setCrossFadeEnabled(true);
+ v.setBackground(td);
+ td.startTransition(120);
+ AppLog.i(
+ "PlayerFocus",
+ "focus="
+ + String.valueOf(v.getContentDescription())
+ + " style=circle-box");
+ } else {
+ final android.graphics.drawable.TransitionDrawable td =
+ new android.graphics.drawable.TransitionDrawable(
+ new android.graphics.drawable.Drawable[] {box, clear});
+ v.setBackground(td);
+ td.startTransition(100);
+ a.ui.postDelayed(
+ () -> {
+ if (!v.hasFocus()) v.setBackground(ORIGINAL_FOCUS_BG.get(v));
+ },
+ 110);
+ }
+ } catch (Throwable error) {
+ AppLog.w("PlayerFocus", "circle box failed", error);
+ }
  }
 
  /** 中央播放/暂停圆钮：72dp 实心深色圆 + 细描边 + 白色 glyph。 */

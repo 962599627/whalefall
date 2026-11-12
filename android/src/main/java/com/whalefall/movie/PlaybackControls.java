@@ -406,6 +406,8 @@ final class PlaybackControls {
  /** 1.9.148：按键/遥控模式后置为 true 时，补挂底部按钮焦点链（不依赖 isTvDevice）。 */
  void refreshFocusMode() {
  if (dockRow != null) wireTvDockFocus(dockRow);
+ // 1.9.159：中央三键也随按键焦点模式补挂
+ if (a.playerChrome != null) a.playerChrome.refreshCenterFocus();
  }
 
  /** 1.9.61：TV 底部控制条按钮全部可聚焦 + 可见焦点描边 + 左右/上下焦点链。 */
