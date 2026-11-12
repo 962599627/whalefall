@@ -279,7 +279,8 @@ final class MiniDetails {
  int shortEdge = Math.min(dm.widthPixels, dm.heightPixels);
  boolean landscape = dm.widthPixels > dm.heightPixels;
  boolean tvSmall = landscape && longEdge <= 1920;
- boolean tvMini = tvSmall || a.isTvDevice();
+ // 1.9.249：取消电视固定小窗，三端统一跟随海报
+ boolean tvMini = false;
  AppLog.i(
  "Mini",
  "tvSmall="
@@ -363,10 +364,6 @@ final class MiniDetails {
  if (poster != null && poster.getWidth() > 0 && poster.getHeight() > 0) {
  posterW = poster.getWidth();
  posterH = poster.getHeight();
- boolean near =
- Math.abs(posterW - w) <= Math.max(a.dp(24), w * 0.12f)
- && Math.abs(posterH - h) <= Math.max(a.dp(24), h * 0.12f);
- if (near && posterW < sw * 0.92f) {
  int[] pv = new int[2];
  View anchor =
  a.playbackLayer.getParent() instanceof android.view.ViewGroup
@@ -384,7 +381,6 @@ final class MiniDetails {
  cx = x;
  cy = y;
  source = "poster";
- }
  }
  boolean clamped = false;
  AppLog.i(
