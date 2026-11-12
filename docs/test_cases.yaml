@@ -1,0 +1,547 @@
+meta:
+  suite: whalefall-tv-sop
+  target: TV
+  version: "1.9.158"
+  version_source: "android/version.properties（以实际安装包为准，证据目录随版本命名）"
+  device: "MiBox4C / Android 6.0.1 / API 23 / 1080p（1920x1080）/ WiFi"
+  execution: "Lead 在电视真机按批执行；QA 产出用例与判定标准；证据由执行者归档"
+  evidence_root: "/sdcard/Download/DSH-Go/鲸落/verify/1.9.158-tv"
+  sop: "docs/QA_ANDROID_SOP.md"
+  plan: "docs/test_plan.md"
+  log_cmd: "adb logcat -c && adb logcat -v time | grep -E \"FilterLayer|FilterOk|FilterOption|FilterFocus|PlayerFocus|Player:|Mini|IptvOrg|Wallpaper|History|LiveKernel|X5|Update|FileMgr|Memory|ANR|FATAL\""
+  counts: { P0: 15, P1: 8, P2: 2 }
+
+cases:
+  # ===================== P0（先执行，15 条） =====================
+
+  - case_id: WLTV-P0-001
+    module: 首页发现
+    priority: P0
+    precondition: |
+      1.9.158 TV 包已覆盖安装；点播源已导入且可用；观看历史 ≥3 条；电视已连 WiFi。
+    steps:
+      - 冷启动 App（先在设置里强制停止），记录首页首帧出现时间。
+      - 等待 10s，按 ↓ 在首页分类行/内容区移动焦点，逐项停留 1s。
+      - 按 OK 打开第一张卡片（详情），再按 BACK 返回首页。
+      - 重复冷启动 3 次。
+    expected: |
+      3 次冷启动均无闪退/黑屏/白屏；首页首帧 ≤5s；卡片有海报与标题；焦点移动有可见焦点框；
+      详情可打开，BACK 回首页且保留原焦点/滚动位置。
+    assert:
+      - type: UI_ASSERT
+        detail: "首页首帧 ≤5s；卡片海报/标题非空；焦点框可见；BACK 后回到首页原位置"
+      - type: LOG_ASSERT
+        tag: "MainActivity"
+        pattern: "FATAL EXCEPTION|ANR in com.whalefall.movie"
+        expect: "absent"
+      - type: LOG_ASSERT
+        tag: "Wallpaper"
+        pattern: "page=.*bg=transparent"
+    evidence: "1.9.158-tv/WLTV-P0-001_*.png|.mp4；tv.log 摘录"
+    requirement: "SOP 阶段3 P0；必测模块：首页发现/启动可用"
+
+  - case_id: WLTV-P0-002
+    module: 首页发现
+    priority: P0
+    precondition: 已进首页，焦点停在分类 tab（推荐/分类）；该分类有筛选能力（有漏斗图标）。
+    steps:
+      - 焦点停在带漏斗的分类 tab 上，按 ↓。
+      - 观察焦点是否进入「类型/地区/年份」筛选芯片行，首个芯片是否获得焦点。
+      - 按 →/← 在芯片间移动，观察每个芯片的焦点态与文案（含当前值）。
+    expected: |
+      ↓ 后焦点进入筛选芯片行（不是进入影片卡片）；首个芯片获得焦点且有粉色/高亮焦点框；
+      左右移动每个芯片均高亮、无丢焦；芯片文案正确（未选显示维度名，已选显示「维度 · 值」）。
+    assert:
+      - type: UI_ASSERT
+        detail: "↓ 后焦点在筛选芯片行；芯片左右可移动且焦点框可见；无焦点消失"
+      - type: LOG_ASSERT
+        tag: "FilterLayer"
+        pattern: "tab-down to="
+      - type: LOG_ASSERT
+        tag: "FilterLayer"
+        pattern: "level=2 dim="
+    evidence: "1.9.158-tv/WLTV-P0-002_*.png|.mp4；tv.log 摘录"
+    requirement: "必测模块：筛选三层焦点（tab↓→芯片）"
+
+  - case_id: WLTV-P0-003
+    module: 首页发现
+    priority: P0
+    precondition: 焦点在筛选芯片行（承接 P0-002），当前分类有 ≥2 个筛选项。
+    steps:
+      - 在「类型」芯片上按 ↓（或 OK），观察是否展开 L3 选项行并聚焦第一个选项。
+      - 按 →/← 遍历选项，选一个非「全部」选项按 OK。
+      - 观察列表刷新、芯片回显值、焦点是否回到该维度芯片。
+      - 切到另一个维度（如地区）重复一次。
+    expected: |
+      ↓/OK 后 L3 选项行展开、首项获得焦点；左右遍历可聚焦；选值后列表按筛选刷新；
+      芯片回显「类型 · 值」；焦点回到对应芯片；再次进入可看到选中项高亮。
+    assert:
+      - type: UI_ASSERT
+        detail: "L3 选项展开并首项聚焦；选值后列表变化 + 芯片回显值 + 焦点回芯片"
+      - type: LOG_ASSERT
+        tag: "FilterLayer"
+        pattern: "chip-down dim=.*to=option:first"
+      - type: LOG_ASSERT
+        tag: "FilterOk"
+        pattern: "chip=.*options="
+    evidence: "1.9.158-tv/WLTV-P0-003_*.png|.mp4；tv.log 摘录"
+    requirement: "必测模块：筛选三层焦点（芯片→选项→生效）"
+
+  - case_id: WLTV-P0-004
+    module: 首页发现
+    priority: P0
+    precondition: 已应用 ≥1 个筛选条件（承接 P0-003），列表为筛选结果。
+    steps:
+      - 在筛选芯片行按 BACK，观察是否收起到焦点回分类 tab（不是退出首页）。
+      - 再次 ↓ 进入芯片行，检查已选条件仍在；把选项改为「全部」或点「清除」。
+      - 观察列表恢复全量、芯片恢复未选态、焦点位置。
+    expected: |
+      BACK 逐层收起（L3→L2→收起），最终焦点回到分类 tab；
+      「全部/清除」后列表恢复全量筛选前数据，芯片不再显示已选值，焦点不丢失。
+    assert:
+      - type: UI_ASSERT
+        detail: "BACK 逐层收起且焦点回分类 tab；清除后列表恢复、芯片回未选态"
+      - type: LOG_ASSERT
+        tag: "FilterLayer"
+        pattern: "clear category="
+      - type: LOG_ASSERT
+        tag: "FilterFocus"
+        pattern: "clear category="
+    evidence: "1.9.158-tv/WLTV-P0-004_*.png|.mp4；tv.log 摘录"
+    requirement: "必测模块：筛选三层焦点（收起/清筛选/焦点回位）"
+
+  - case_id: WLTV-P0-005
+    module: 历史清理
+    priority: P0
+    precondition: 观看历史 ≥3 条（含 1 条正在观看进度）。
+    steps:
+      - 进首页「历史记录」区块，按 OK 进入历史列表，确认 ≥3 条。
+      - 找到「清理/清空」入口，按 OK，确认二次确认弹窗。
+      - 确认清理，观察列表变化与首页历史区块。
+      - 重启 App 再看历史。
+    expected: |
+      清理入口可达；有二次确认；确认后历史列表清空并显示空态；首页历史区块同步消失/空态；
+      重启后仍为空（清理持久化生效）。
+    assert:
+      - type: UI_ASSERT
+        detail: "历史清空前有二次确认；确认后列表与首页区块为空态；重启后仍空"
+      - type: LOG_ASSERT
+        tag: "History"
+        pattern: "clear scope=home\\+live removed=\\d+"
+    evidence: "1.9.158-tv/WLTV-P0-005_*.png；tv.log 摘录"
+    requirement: "必测模块：历史清理"
+
+  - case_id: WLTV-P0-006
+    module: 播放器
+    priority: P0
+    precondition: 点播可起播（非直播），进入播放页并等 5s。
+    steps:
+      - 按 OK/上下键呼出控制条，观察中央三键（快退/暂停/快进）与默认焦点。
+      - 按 ← 到快退按钮、按 → 到快进按钮，观察焦点动画（粉色焦点框/缩放）。
+      - 在中央暂停键按 OK，观察暂停/播放切换；再按 OK 恢复。
+      - 在两侧按钮按 OK，观察 ±10s 是否生效。
+    expected: |
+      控制条出现；默认焦点在中央播放/暂停键；三个按钮均可见焦点态（粉色高亮框+缩放，不只缩放）；
+      中央 OK 可暂停/恢复；两侧 OK 分别快退/快进 10 秒。
+    assert:
+      - type: UI_ASSERT
+        detail: "中央三键可聚焦；焦点态有粉色框；OK 暂停恢复；两侧 OK ±10s"
+      - type: LOG_ASSERT
+        tag: "PlayerFocus"
+        pattern: "focus=.*zone=center"
+      - type: LOG_ASSERT
+        tag: "PlayerFocus"
+        pattern: "ok=play-pause action=toggle"
+    evidence: "1.9.158-tv/WLTV-P0-006_*.mp4（焦点动画必录）；tv.log 摘录"
+    requirement: "必测模块：播放器中央三键焦点（用户反馈 1.9.147 两侧按钮无焦点动画）"
+
+  - case_id: WLTV-P0-007
+    module: 播放器
+    priority: P0
+    precondition: 播放中，控制条可见（承接 P0-006）。
+    steps:
+      - 从中央暂停键按 ↓ 进入底部按钮行（下一集/选集/倍速/换源/字幕/画面比例/更多）。
+      - 用 ←/→ 依次遍历每个按钮，观察焦点粉底框与按钮是否可达。
+      - 在每个按钮按 OK 打开面板，再按 BACK 逐层返回。
+      - 检查「更多」面板内各工具可达。
+    expected: |
+      7 个文字按钮全部可聚焦、焦点有粉色底框/高亮；左右切换不丢焦、不跳到底部 Dock；
+      每个按钮 OK 都能打开对应面板；BACK 逐层关闭且焦点回到按钮行；
+      「更多」面板内工具全部可达。
+    assert:
+      - type: UI_ASSERT
+        detail: "7 按钮可达且粉框可见；OK 触发面板；BACK 回按钮行；无丢焦"
+      - type: LOG_ASSERT
+        tag: "PlayerFocus"
+        pattern: "text-button focus=.*zone=buttons"
+    evidence: "1.9.158-tv/WLTV-P0-007_*.mp4；tv.log 摘录"
+    requirement: "必测模块：播放器底部按钮焦点"
+
+  - case_id: WLTV-P0-008
+    module: 播放器
+    priority: P0
+    precondition: 点播播放页，控制条完全隐藏（等自动隐藏 ≥3s），非直播。
+    steps:
+      - 按一次 ←，观察进度与屏幕提示气泡。
+      - 按一次 →，观察进度与提示。
+      - 长按 → 3s 后松开；再长按 ← 3s 后松开。
+      - 观察控制条是否被意外唤出、进度是否连续狂跳。
+    expected: |
+      单击 ←/→ 分别快退/快进 10 秒，并出现底部提示「快退/快进 10 秒 · 当前/总时长」，约 1.2s 消失；
+      长按期间提示变为「按住不重复跳转」，进度不再连续跳变，松开后不追加 seek；控制条不被唤出。
+    assert:
+      - type: UI_ASSERT
+        detail: "单击恰好 ±10s 且有提示；长按只更新提示不重复跳转；控制条未被唤出"
+      - type: LOG_ASSERT
+        tag: "Player"
+        pattern: "hidden=true action=seek-relative"
+      - type: LOG_ASSERT
+        tag: "Player"
+        pattern: "repeat=\\d+ action=hint-only"
+    evidence: "1.9.158-tv/WLTV-P0-008_*.mp4（含长按 3s）；tv.log 摘录"
+    requirement: "必测模块：隐藏控制条左右 ±10s 与长按不风暴"
+
+  - case_id: WLTV-P0-009
+    module: 播放器
+    priority: P0
+    precondition: 播放中点播剧集，播放页有「选集」入口。
+    steps:
+      - 播放中 BACK 一次，观察是否进入详情页 + 左上角小窗（视频不中断）。
+      - 在小窗上用遥控聚焦小窗控制（播放/暂停、放大、关闭），观察焦点与 OK 行为。
+      - 按 OK/放大键回全屏，观察播放不中断、无重新缓冲。
+      - 在播放页「选集」面板切一集，观察切换后播放正常。
+    expected: |
+      BACK 后进入左上角小窗，视频继续播放不中断；小窗控制可聚焦且焦点日志 zone=mini；
+      小窗 OK/放大可回全屏且不重新起播；选集切集后正常播放、进度/集数正确。
+    assert:
+      - type: UI_ASSERT
+        detail: "小窗出现且播放不中断；小窗控制可聚焦；放大回全屏；选集切换正常"
+      - type: LOG_ASSERT
+        tag: "Mini"
+        pattern: "enter size=\\d+x\\d+"
+      - type: LOG_ASSERT
+        tag: "MiniFocus"
+        pattern: "zone=mini focus="
+    evidence: "1.9.158-tv/WLTV-P0-009_*.mp4；tv.log 摘录"
+    requirement: "必测模块：播放器选集小窗"
+
+  - case_id: WLTV-P0-010
+    module: 直播
+    priority: P0
+    precondition: 已导入直播源；收藏 ≥2 个频道；可访问直播源网络。
+    steps:
+      - 进入「电视台/直播」页，观察分类顺序与列表。
+      - 检查收藏的频道是否置顶/有收藏标记。
+      - 收藏一个新的频道，返回列表看是否置顶。
+      - 取消收藏，看是否回到原分类顺序。
+    expected: |
+      分类顺序稳定（默认/收藏/央视/卫视…）；收藏频道置顶且状态正确；收藏/取消即时生效；
+      切换分类后收藏态不丢失；重启后收藏仍在。
+    assert:
+      - type: UI_ASSERT
+        detail: "分类顺序稳定；收藏置顶与标记正确；收藏/取消即时生效且持久"
+      - type: LOG_ASSERT
+        tag: "IptvOrg"
+        pattern: "favorite channel=.*on=true"
+    evidence: "1.9.158-tv/WLTV-P0-010_*.png；tv.log 摘录"
+    requirement: "必测模块：直播分类顺序/收藏置顶"
+
+  - case_id: WLTV-P0-011
+    module: 直播
+    priority: P0
+    precondition: 已进入某直播频道播放页，右侧信息面板可展开。
+    steps:
+      - 起播一个频道，按方向键呼出/展开右侧信息面板。
+      - 检查频道名、分组、台标、收藏按钮、清晰度/线路信息是否齐全。
+      - 在面板内切换线路/清晰度，观察播放是否恢复。
+      - 在面板内收藏该频道，观察状态。
+    expected: |
+      右侧信息面板可展开且信息正确；线路/清晰度切换后能恢复播放；
+      收藏按钮状态即时变化；面板收起后回到全屏播放。
+    assert:
+      - type: UI_ASSERT
+        detail: "右侧信息面板信息齐全；线路切换恢复播放；收藏状态即时变化"
+      - type: LOG_ASSERT
+        tag: "IptvOrg"
+        pattern: "filter=.*selected=true"
+    evidence: "1.9.158-tv/WLTV-P0-011_*.png；tv.log 摘录"
+    requirement: "必测模块：直播右侧信息"
+
+  - case_id: WLTV-P0-012
+    module: 直播
+    priority: P0
+    precondition: 开源 IPTV 列表可用（内置 asset 或网络源）。
+    steps:
+      - 进入开源直播（IPTV）列表页，观察列表是否加载、分组是否可见。
+      - 滚动列表，按 ↓/→ 浏览 10 个以上频道，观察焦点与列表流畅度。
+      - 起播一个频道，返回列表；再进入一次列表。
+    expected: |
+      列表能加载出频道（source=asset 或 source=cache）；分组/数量正常；焦点可遍历；
+      起播后返回列表状态保留；再次进入不白屏。
+    assert:
+      - type: UI_ASSERT
+        detail: "列表加载出频道且分组可见；焦点可遍历；返回后状态保留"
+      - type: LOG_ASSERT
+        tag: "IptvOrg"
+        pattern: "source=(asset|cache) channels=\\d+"
+    evidence: "1.9.158-tv/WLTV-P0-012_*.png；tv.log 摘录"
+    requirement: "必测模块：开源 IPTV 列表"
+
+  - case_id: WLTV-P0-013
+    module: 直播
+    priority: P0
+    precondition: 直播源含多分组；已收藏 ≥1 个频道。
+    steps:
+      - 在直播页/开源列表打开搜索，输入频道名关键字，观察筛选结果。
+      - 从搜索结果起播，再返回搜索态。
+      - 打开二级选择器（分组/频道选择），逐级进入再返回。
+      - 收藏/取消收藏搜索结果中的频道。
+    expected: |
+      搜索能过滤出匹配频道；结果可起播；二级选择器逐级进入/返回正常、焦点不丢；
+      收藏状态与主列表一致。
+    assert:
+      - type: UI_ASSERT
+        detail: "搜索过滤正确；结果可播；二级选择器逐级进出正常；收藏状态一致"
+      - type: LOG_ASSERT
+        tag: "IptvOrg"
+        pattern: "picker level=1 group="
+    evidence: "1.9.158-tv/WLTV-P0-013_*.png；tv.log 摘录"
+    requirement: "必测模块：直播搜索/收藏/二级选择器"
+
+  - case_id: WLTV-P0-014
+    module: 设置
+    priority: P0
+    precondition: 可进入设置→播放与字幕；网络可访问网页直播源。
+    steps:
+      - 进入设置→播放与字幕，找到「直播内核」项，记录当前值。
+      - 连续点击 3 次，记录循环（自动→腾讯 X5→系统）与提示。
+      - 选「自动」后打开网页直播频道与网页播放页，确认可播放。
+      - 选「系统」重复；再选「腾讯 X5」重复（若未打包 X5 观察回退提示）。
+      - 重启 App 后检查设置值是否保持。
+    expected: |
+      设置项存在且显示当前内核；点击循环顺序正确、每次有提示「下次打开生效」；
+      三档下网页直播/网页播放均能打开（X5 缺失时回退系统 WebView 并提示，不白屏不崩溃）；
+      重启后设置值保持。
+    assert:
+      - type: UI_ASSERT
+        detail: "直播内核项存在、循环正确、提示正确；三档均可打开网页直播/播放；重启保持"
+      - type: LOG_ASSERT
+        tag: "LiveKernel"
+        pattern: "mode=(auto|x5|system) used=(x5|system)"
+      - type: LOG_ASSERT
+        tag: "LiveKernel"
+        pattern: "(x5 create failed|canUseX5=false)"
+    evidence: "1.9.158-tv/WLTV-P0-014_*.png；tv.log 摘录"
+    requirement: "必测模块：设置（播放与字幕/直播内核生效与回退）"
+
+  - case_id: WLTV-P0-015
+    module: 壁纸
+    priority: P0
+    precondition: 已设置静态/动态壁纸各一次（若支持动态）；首页可正常显示壁纸。
+    steps:
+      - 冷启动 App，观察首页壁纸是否显示（非纯黑/纯色）。
+      - 依次进入 详情→播放→返回→片库→文件管理→设置→返回首页，逐页观察壁纸。
+      - 播放页内确认壁纸不遮挡视频（黑底或视频正常）。
+      - 灭屏 30s 后亮屏，观察壁纸是否丢失。
+    expected: |
+      首页及各二级页壁纸稳定显示、不闪不丢；播放页不出现壁纸盖视频；
+      灭屏亮屏后壁纸仍在；页面切换不出现纯色/黑屏替代。
+    assert:
+      - type: UI_ASSERT
+        detail: "首页/二级页壁纸稳定；播放页视频不被遮挡；灭屏亮屏后仍显示"
+      - type: LOG_ASSERT
+        tag: "Wallpaper"
+        pattern: "page=.*bg=transparent"
+      - type: LOG_ASSERT
+        tag: "Wallpaper"
+        pattern: "(video engine=.*firstFrame=true|video page-change keep=true)"
+    evidence: "1.9.158-tv/WLTV-P0-015_*.png|.mp4；tv.log 摘录"
+    requirement: "必测模块：壁纸稳定性"
+
+  # ===================== P1（P0 通过后执行，8 条） =====================
+
+  - case_id: WLTV-P1-001
+    module: 文件管理
+    priority: P1
+    precondition: 已通过管理员后台/FTP 上传 1 个 APK 到文件管理目录；系统「未知来源」已允许。
+    steps:
+      - 进入文件管理，找到上传的 .apk 文件（图标/类型应显示 APK）。
+      - 按 OK 打开，观察系统安装器是否弹出。
+      - 按安装/取消，观察返回文件管理是否正常。
+      - 上传 1 个 .md 文件，打开确认渲染，再返回并进入子目录返回。
+    expected: |
+      APK 可被识别（类型 APK）并调起系统安装器；安装/取消后回到文件管理不崩溃；
+      .md 可正常渲染；子目录返回上一级、根目录返回不退出 App。
+    assert:
+      - type: UI_ASSERT
+        detail: "APK 能被识别并调起安装器；返回不崩；.md 渲染；目录逐级返回正常"
+      - type: LOG_ASSERT
+        tag: "FileMgr"
+        pattern: "(scan root=|play local=)"
+    evidence: "1.9.158-tv/WLTV-P1-001_*.png；tv.log + 安装器截图"
+    requirement: "必测模块：文件管理 APK 安装"
+
+  - case_id: WLTV-P1-002
+    module: 文件管理
+    priority: P1
+    precondition: 文件管理有本地/网盘文件；1 个下载任务。
+    steps:
+      - 进入文件管理，切换本地/网盘分段，浏览目录与网格。
+      - 打开一个视频文件起播，返回。
+      - 触发下载并观察下载中心任务/进度。
+    expected: 分段切换正常；视频可播；下载任务状态可见、不丢任务。
+    assert:
+      - type: UI_ASSERT
+        detail: "分段正常；视频可播；下载任务可见且状态正确"
+      - type: LOG_ASSERT
+        tag: "FileMgr"
+        pattern: "download"
+    evidence: "1.9.158-tv/WLTV-P1-002_*.png；tv.log 摘录"
+    requirement: "必测模块：文件管理基础"
+
+  - case_id: WLTV-P1-003
+    module: 更新
+    priority: P1
+    precondition: 网络可访问更新源（GitHub/镜像）；当前版本非最新。
+    steps:
+      - 设置→备份、更新与诊断→检查更新，观察版本信息与更新包列表。
+      - 选择 TV 包下载，观察进度与校验（sha/大小）。
+      - 下载完成后触发安装，观察系统安装器。
+      - 人为断网后再检查一次，观察提示。
+    expected: |
+      能检测到新版本且只列 TV 兼容包；下载有进度、校验失败有提示；
+      安装可调起系统安装器；断网有明确失败提示可重试，不崩溃。
+    assert:
+      - type: UI_ASSERT
+        detail: "版本信息正确；下载进度可见；断网有提示；安装器可调起"
+      - type: LOG_ASSERT
+        tag: "Update"
+        pattern: "(page=enter|try=.*result=ok)"
+    evidence: "1.9.158-tv/WLTV-P1-003_*.png；tv.log 摘录"
+    requirement: "必测模块：更新"
+
+  - case_id: WLTV-P1-004
+    module: 设置
+    priority: P1
+    precondition: 可进入设置；已选一个非默认字体色。
+    steps:
+      - 设置中切换字体颜色（樱粉等），观察首页/设置/详情文字变化。
+      - 切换「安全模式」开关，观察壁纸/动效变化。
+      - 重启 App 后检查字体色与安全模式是否保持。
+      - 恢复默认字体色，确认正文颜色。
+    expected: 字体色即时生效并持久化；安全模式即时生效（禁壁纸/动效）并持久化；恢复默认成功。
+    assert:
+      - type: UI_ASSERT
+        detail: "字体色/安全模式即时生效且重启保持；恢复默认成功"
+      - type: LOG_ASSERT
+        tag: "Theme"
+        pattern: "(userTextColor=#|defaultTextColor=#4CFF80)"
+    evidence: "1.9.158-tv/WLTV-P1-004_*.png；tv.log 摘录"
+    requirement: "必测模块：设置（持久化）"
+
+  - case_id: WLTV-P1-005
+    module: 播放器
+    priority: P1
+    precondition: 点播可播放，且有 ≥2 条线路/清晰度。
+    steps:
+      - 播放页呼出控制条，打开「换源/线路」面板，切到另一条线路。
+      - 观察切换后起播与进度衔接。
+      - 打开「倍速」选 1.5×，观察生效；再切回 1.0×。
+      - 打开「字幕」面板，开关字幕/切字幕源。
+    expected: 换源可成功并继续播放；倍速生效可恢复；字幕开关/切源生效；各面板 BACK 可返回。
+    assert:
+      - type: UI_ASSERT
+        detail: "换源成功；倍速生效；字幕生效；面板返回正常"
+      - type: LOG_ASSERT
+        tag: "Player"
+        pattern: "(换源|speed|subtitle)"
+    evidence: "1.9.158-tv/WLTV-P1-005_*.mp4；tv.log 摘录"
+    requirement: "必测模块：播放器换源/倍速/字幕"
+
+  - case_id: WLTV-P1-006
+    module: 性能
+    priority: P1
+    precondition: 选取 ≥30 分钟点播；关闭屏保；电视散热正常。
+    steps:
+      - 起播后开始计时，每 5 分钟记录一次 `adb shell dumpsys meminfo com.whalefall.movie`。
+      - 每 10 分钟抓 60s `dumpsys gfxinfo com.whalefall.movie framestats`。
+      - 观察 20 分钟内是否出现明显掉帧/卡顿/发热/自动重载。
+      - 20 分钟时统计 Memory 日志。
+    expected: |
+      5 分钟后 PSS 平稳，20 分钟增长 ≤10%；janky 帧 <5%；
+      无频繁 blocking GC、无 ANR、无自动退出/重载；Memory 日志参数稳定。
+    assert:
+      - type: PERF_ASSERT
+        detail: "PSS 20min 增长 ≤10%；janky 帧 <5%；无 blocking GC 风暴/ANR"
+      - type: LOG_ASSERT
+        tag: "Memory"
+        pattern: "buffer=15s cache=64MB wallpaper=sample"
+    evidence: "1.9.158-tv/meminfo-0/5/10/15/20min.txt、gfxinfo-*.txt；tv.log 摘录"
+    requirement: "必测模块：连续播放 20 分钟稳定性（用户反馈掉帧）"
+
+  - case_id: WLTV-P1-007
+    module: 稳定性
+    priority: P1
+    precondition: 播放中可控制路由器/WiFi 断开。
+    steps:
+      - 播放中关闭 WiFi 30s，观察提示与恢复。
+      - 恢复 WiFi，观察是否自动续播/可重试。
+      - 播放中快速切台/切集 10 次。
+    expected: 断网有明确提示不崩溃；恢复后可继续播放或一键重试；快速切换不 ANR/不黑屏。
+    assert:
+      - type: UI_ASSERT
+        detail: "断网提示明确；恢复可播；快速切换不崩"
+      - type: LOG_ASSERT
+        tag: "MainActivity"
+        pattern: "无 ANR in com.whalefall.movie"
+    evidence: "1.9.158-tv/WLTV-P1-007_*.mp4；tv.log 摘录"
+    requirement: "SOP 阶段6 兼容与异常"
+
+  - case_id: WLTV-P1-008
+    module: 壁纸
+    priority: P1
+    precondition: 已设置动态视频壁纸（支持时）；否则跳过并标未验证。
+    steps:
+      - 冷启动观察动态壁纸是否循环播放、不卡顿。
+      - 进入播放页确认动态壁纸不覆盖视频；返回首页确认恢复。
+      - 切换页面 5 次后检查壁纸仍在。
+    expected: 动态壁纸正常循环、进入播放页让位视频、返回后恢复、切页不丢。
+    assert:
+      - type: UI_ASSERT
+        detail: "动态壁纸循环正常；播放页不遮挡；切页后恢复"
+      - type: LOG_ASSERT
+        tag: "Wallpaper"
+        pattern: "video (engine=|page-change keep=true)"
+    evidence: "1.9.158-tv/WLTV-P1-008_*.mp4；tv.log 摘录"
+    requirement: "必测模块：壁纸稳定性（动态）"
+
+  # ===================== P2（记录项，2 条） =====================
+
+  - case_id: WLTV-P2-001
+    module: 首页发现
+    priority: P2
+    precondition: 无可用点播源（禁用全部源）场景。
+    steps:
+      - 禁用全部点播源后冷启动，观察首页表现。
+      - 按遥控方向键，观察是否有可聚焦项与提示。
+      - 进入搜索，观察空态提示。
+    expected: 首页显示「无可用片源/请导入配置」类提示，不白屏；焦点仍可在导航/Dock 移动；搜索有空态。
+    assert:
+      - type: UI_ASSERT
+        detail: "有明确空态提示；无白屏；焦点不卡死"
+    evidence: "1.9.158-tv/WLTV-P2-001_*.png"
+    requirement: "SOP 阶段6 边界"
+
+  - case_id: WLTV-P2-002
+    module: 直播
+    priority: P2
+    precondition: 直播可播放，快速切台可用。
+    steps:
+      - 连续切台 10 次（间隔 2s），观察声音是否残留/叠加。
+      - 返回首页，观察是否还有直播声音。
+    expected: 切台后旧频道声音停止；返回后无残留声音。
+    assert:
+      - type: UI_ASSERT
+        detail: "切台声音不叠加；返回后无残留音频"
+    evidence: "1.9.158-tv/WLTV-P2-002_*.mp4"
+    requirement: "历史缺陷回归（直播音频残留）"
