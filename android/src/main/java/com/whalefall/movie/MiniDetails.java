@@ -122,7 +122,8 @@ final class MiniDetails {
  hit.setFocusable(true);
  hit.setFocusableInTouchMode(true);
  hit.setTag("mini-video");
- TvNav.focusRing(a, hit, 12);
+ // 1.9.212：焦点框改由 MiniDetails 粉框绘制，不再用通用白环
+ // TvNav.focusRing(a, hit, 12);
  hit.setOnClickListener(
  v -> {
  // 1.9.96：小窗视频区 OK/点击 = 直接放大全屏
@@ -137,6 +138,28 @@ final class MiniDetails {
  (v, focused) -> {
  FocusMotion.style(
  a, page, focused, 0x00000000, 0x66ffffff, 12, 0, 0, false, 1f);
+ // 1.9.212：小窗粉框（10%粉底 + 2dp ACCENT_SOFT，120ms/100ms）
+ try {
+ GradientDrawable box = new GradientDrawable();
+ box.setCornerRadius(a.dp(12));
+ box.setColor(0x1AFF8FB1);
+ box.setStroke(Math.max(1, a.dp(2)), 0xFFFFB3C8);
+ GradientDrawable clear = new GradientDrawable();
+ clear.setCornerRadius(a.dp(12));
+ clear.setColor(0x00000000);
+ android.graphics.drawable.TransitionDrawable td =
+ new android.graphics.drawable.TransitionDrawable(
+ new android.graphics.drawable.Drawable[] {
+ focused ? clear : box, focused ? box : clear
+ });
+ td.setCrossFadeEnabled(true);
+ page.setBackground(td);
+ td.startTransition(a.reduced ? 0 : (focused ? 120 : 100));
+ AppLog.i(
+ "MiniFocus",
+ "frame=" + (focused ? "show" : "hide") + " focused=" + focused);
+ } catch (Throwable ignored) {
+ }
  if (focused) AppLog.i("MiniFocus", "enter from=detail dir=focus");
  });
 
