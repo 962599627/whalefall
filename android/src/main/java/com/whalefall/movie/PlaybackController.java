@@ -1059,16 +1059,16 @@ final class PlaybackController {
  a.ui.postDelayed(
  () -> {
  if (!a.miniMode || a.miniDetails == null) return;
- View layer = a.playbackLayer;
- if (layer == null) return;
- if (layer.getWidth() <= 0 || layer.getHeight() <= 0) {
+ View miniLayer = a.playbackLayer;
+ if (miniLayer == null) return;
+ if (miniLayer.getWidth() <= 0 || miniLayer.getHeight() <= 0) {
  a.miniDetails.refreshRect();
  AppLog.i("Mini", "restore retry rect reason=zero-size");
  }
  AppLog.i(
  "Mini",
  "restore after-expand rect="
- + (layer == null ? "null" : layer.getWidth() + "x" + layer.getHeight())
+ + (miniLayer.getWidth() + "x" + miniLayer.getHeight())
  + " visible="
  + (a.miniDetails != null && a.miniDetails.page != null && a.miniDetails.page.isShown())
  + " playing="

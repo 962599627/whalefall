@@ -28,15 +28,14 @@ final class MiniDetails {
  int width;
  int height;
  if (tv) {
- // 1.9.209：按详情左栏 hero 区域（约 40% 宽、16:9），16dp 边距
- int colW = Math.round(a.windowWidth() * 0.40f);
- width = Math.max(a.dp(320), colW - a.dp(32));
- height = Math.round(width * 9f / 16f);
+ // 1.9.239：TV 固定 480×270px（16:9）
+ width = 480;
+ height = 270;
  } else {
  width = Math.round(a.windowWidth() * 0.45f);
  height = Math.round(width * 9f / 16f);
  }
- final int margin = a.dp(16);
+ final int margin = tv ? 32 : a.dp(16);
  final int radius = a.dp(12);
 
  // 视频层缩成左上角小窗
@@ -274,15 +273,9 @@ final class MiniDetails {
 
  private void applyHeroRect(int attempt) {
  if (!a.miniMode || a.root == null) return;
- // 1.9.236：TV 回退为左栏固定尺寸小窗（手机/平板仍走 cover+clamp）
- if (a.isTvDevice()) {
- int w = a.dp(320), h = a.dp(180);
- int maxW = Math.round(a.windowWidth() * 0.40f) - a.dp(32);
- if (maxW > a.dp(160) && w > maxW) {
- w = maxW;
- h = Math.round(w * 9f / 16f);
- }
- int x = a.dp(16), y = a.dp(16);
+ // 1.9.239：TV 固定 480×270px 左栏小窗（不做左栏宽度/maxW 放大）
+ if (a.formFactor == TvLayoutPolicy.FORM_TV) {
+ int w = 480, h = 270, x = 32, y = 32;
  FrameLayout.LayoutParams vlp =
  new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
  vlp.leftMargin = x;
@@ -302,10 +295,7 @@ final class MiniDetails {
  PlaybackController.hideDetailHero(a, true);
  a.playbackLayer.bringToFront();
  page.bringToFront();
- AppLog.i(
- "Mini",
- "tv=true rect=" + x + "," + y + " " + w + "x" + h + " size=left-window");
- if (attempt < 2) a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 300);
+ AppLog.i("Mini", "tv=true size=480x270 at=32,32 formFactor=tv");
  return;
  }
  // 1.9.233：手机/平板统一走封面矩形 + clamp
