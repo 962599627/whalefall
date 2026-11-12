@@ -2336,6 +2336,11 @@ final class PlaybackController {
  static void releasePlayer(MainActivity a) {
  // 1.9.203：播放结束恢复动态壁纸
  ImageLoader.Atmosphere.resumeAtomVideo("player-stop");
+ // 1.9.221：手机/平板独立 VideoWallpaper 层同步恢复
+ if (a.videoWallpaper != null) {
+ a.videoWallpaper.resume();
+ AppLog.i("Wallpaper", "mobile resume reason=player-stop source=release");
+ }
  if (a.miniMode) AppLog.i("Mini", "exit reason=release");
  finishSeek(a, false);
  a.clearLiveNumber();

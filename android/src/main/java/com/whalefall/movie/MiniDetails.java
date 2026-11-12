@@ -107,11 +107,11 @@ final class MiniDetails {
  if (play != null) play.requestFocus();
  });
  });
- bar.addView(playPause, new LinearLayout.LayoutParams(0, a.dp(tv ? 24 : 28), 1f));
- bar.addView(expand, new LinearLayout.LayoutParams(0, a.dp(tv ? 24 : 28), 1f));
- bar.addView(stop, new LinearLayout.LayoutParams(0, a.dp(tv ? 24 : 28), 1f));
+ bar.addView(playPause, new LinearLayout.LayoutParams(0, a.dp(24), 1f));
+ bar.addView(expand, new LinearLayout.LayoutParams(0, a.dp(24), 1f));
+ bar.addView(stop, new LinearLayout.LayoutParams(0, a.dp(24), 1f));
  FrameLayout.LayoutParams barLp =
- new FrameLayout.LayoutParams(-1, a.dp(tv ? 24 : 28), Gravity.BOTTOM);
+ new FrameLayout.LayoutParams(-1, a.dp(24), Gravity.BOTTOM);
  barLp.bottomMargin = a.dp(8);
  barLp.leftMargin = a.dp(8);
  barLp.rightMargin = a.dp(8);
@@ -268,6 +268,11 @@ final class MiniDetails {
  private void applyHeroRect(int attempt) {
  if (!a.miniMode || a.root == null) return;
  View hero = a.root.findViewWithTag("detail-hero");
+ if (!a.isTvDevice() && hero != null && hero.getWidth() > a.windowWidth() * 0.75f) {
+ // 1.9.221：手机 hero 過宽时优先用封面海报矩形
+ View cover = a.root.findViewWithTag("detail-cover");
+ if (cover != null && cover.getWidth() > 0 && cover.getHeight() > 0) hero = cover;
+ }
  if (hero != null && hero.getWidth() > 0 && hero.getHeight() > 0) {
  int[] hv = new int[2];
  hero.getLocationOnScreen(hv);
@@ -313,6 +318,10 @@ final class MiniDetails {
  "MiniMobile",
  "rect=" + x + "," + y + " " + w + "x" + h + " hero=true playing=" + a.playing);
  AppLog.i("Mini", "videoScale=centerCrop");
+ // 1.9.221：手机/平板布局可能稍后才稳定，再做两轮校正
+ if (!a.isTvDevice() && attempt < 2) {
+ a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 300);
+ }
  } else if (attempt < 8) {
  a.ui.postDelayed(() -> applyHeroRect(attempt + 1), 100);
  }

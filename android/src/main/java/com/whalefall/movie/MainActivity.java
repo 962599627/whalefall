@@ -1752,8 +1752,15 @@ public final class MainActivity extends Activity {
  if (videoWallpaper != null) {
  boolean playingVideo =
  (current != null && (current.player || (current.detail && miniMode)));
- if (playingVideo) videoWallpaper.pause();
- else videoWallpaper.resume();
+ if (playingVideo) {
+ videoWallpaper.pause();
+ AppLog.i(
+ "Wallpaper",
+ "mobile pause reason=player-start mini=" + miniMode + " tv=" + isTvDevice());
+ } else {
+ videoWallpaper.resume();
+ AppLog.i("Wallpaper", "mobile resume reason=player-stop tv=" + isTvDevice());
+ }
  }
  if (!isTvDevice()) {
  applyMobileSystemBars(false);
@@ -1962,6 +1969,17 @@ public final class MainActivity extends Activity {
  + android.os.Build.VERSION.SDK_INT
  + " valid="
  + routeValid);
+ // 1.9.221：播放器占屏时新建的壁纸层必须立即暂停
+ if (videoEnabled && videoWallpaper != null) {
+ boolean playingVideo =
+ (current != null && (current.player || (current.detail && miniMode)));
+ if (playingVideo) {
+ videoWallpaper.pause();
+ AppLog.i(
+ "Wallpaper",
+ "mobile pause reason=player-start mini=" + miniMode + " source=create");
+ }
+ }
  // 1.9.202：所有页面统一背景板日志
  AppLog.i(
  "Wallpaper",
