@@ -353,50 +353,53 @@ final class PlaybackControls {
  wireTvDockFocus(row);
  }
 
- /** 1.9.149：焦点粉底框（8dp 圆角、10% ACCENT 填充 + 2dp ACCENT_SOFT 描边、120ms 淡入）。 */
+ /** 1.9.158：播放器底部文字按钮统一粉底框（与「更多工具」网格同款）。 */
+ private static final java.util.WeakHashMap<View, android.graphics.drawable.Drawable>
+ ORIGINAL_BG = new java.util.WeakHashMap<>();
+
  private void applyFocusBox(View v, boolean focused) {
  if (android.os.Build.VERSION.SDK_INT < 23) return;
  if (!(a.isTvDevice() || a.keyFocusMode || a.remoteFocusMode)) return;
  try {
- if (focused) {
- android.graphics.drawable.GradientDrawable clear =
- new android.graphics.drawable.GradientDrawable();
- clear.setCornerRadius(a.dp(8));
- clear.setColor(0x00000000);
  android.graphics.drawable.GradientDrawable box =
  new android.graphics.drawable.GradientDrawable();
- box.setCornerRadius(a.dp(8));
+ box.setCornerRadius(a.dp(10));
  box.setColor(0x1AFF8FB1);
- box.setStroke(Math.max(1, a.dp(2)), 0xACFF8FB1);
+ box.setStroke(Math.max(1, a.dp(2)), 0xFFFFB3C8);
+ android.graphics.drawable.GradientDrawable clear =
+ new android.graphics.drawable.GradientDrawable();
+ clear.setCornerRadius(a.dp(10));
+ clear.setColor(0x00000000);
+ if (focused) {
+ if (!ORIGINAL_BG.containsKey(v)) ORIGINAL_BG.put(v, v.getBackground());
  final android.graphics.drawable.TransitionDrawable td =
  new android.graphics.drawable.TransitionDrawable(
  new android.graphics.drawable.Drawable[] {clear, box});
  td.setCrossFadeEnabled(true);
- v.setForeground(td);
+ v.setBackground(td);
  td.startTransition(120);
+ if (v instanceof android.widget.TextView)
+ ((android.widget.TextView) v).setTextColor(MainActivity.WHITE);
+ AppLog.i(
+ "PlayerFocus",
+ "text-button focus=" + String.valueOf(v.getTag()) + " style=box");
  } else {
- // 失焦：100ms 淡出（即使 TvNav 已清 foreground 也补一次淡出）
- android.graphics.drawable.GradientDrawable box =
- new android.graphics.drawable.GradientDrawable();
- box.setCornerRadius(a.dp(8));
- box.setColor(0x1AFF8FB1);
- box.setStroke(Math.max(1, a.dp(2)), 0xACFF8FB1);
- android.graphics.drawable.GradientDrawable clear =
- new android.graphics.drawable.GradientDrawable();
- clear.setCornerRadius(a.dp(8));
- clear.setColor(0x00000000);
  final android.graphics.drawable.TransitionDrawable td =
  new android.graphics.drawable.TransitionDrawable(
  new android.graphics.drawable.Drawable[] {box, clear});
- v.setForeground(td);
+ v.setBackground(td);
  td.startTransition(100);
+ if (v instanceof android.widget.TextView)
+ ((android.widget.TextView) v).setTextColor(UiTokens.PLAYER_ICON);
  a.ui.postDelayed(
  () -> {
- if (!v.hasFocus() && v.getForeground() == td) v.setForeground(null);
+ if (v.hasFocus()) return;
+ v.setBackground(ORIGINAL_BG.get(v));
  },
  110);
  }
- } catch (Throwable ignored) {
+ } catch (Throwable error) {
+ AppLog.w("PlayerFocus", "text-button box failed", error);
  }
  }
 
