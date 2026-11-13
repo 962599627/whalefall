@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.9.256",
-  "versionCode": 19256,
+  "versionName": "1.9.288",
+  "versionCode": 19288,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "电视版 1.9.256（稳定基线）：小窗、播放、IPTV、更新、测试模式等。",
+  "notes": "新增广告过滤（默认开启，设置页可关闭）。其余：小窗中央▶、片名兜底、收藏一致。",
   "size": 37138071,
-  "sha256": "a8dfa6a77136f9267b98c6374432b189927b01803fd83b4fcbecfe51aa17316e",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.285/WhaleFall-1.9.256-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.285/WhaleFall-1.9.256-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.285",
+  "sha256": "80a6adc26eb106e46a2b7a2f6fa9b3a8223ad1d0c8263fde618318bdd2090002",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.288-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.288-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.289",
   "variants": [
     {
       "kind": "tv",
       "label": "TV / 盒子版（32位）",
       "size": 37138071,
-      "sha256": "a8dfa6a77136f9267b98c6374432b189927b01803fd83b4fcbecfe51aa17316e",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.285/WhaleFall-1.9.256-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.285/WhaleFall-1.9.256-android-tv.apk"
+      "sha256": "80a6adc26eb106e46a2b7a2f6fa9b3a8223ad1d0c8263fde618318bdd2090002",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.288-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.288-android-tv.apk"
     }
   ]
 }
