@@ -377,6 +377,22 @@ final class MiniDetails {
  plp.leftMargin = x;
  plp.topMargin = y;
  page.setLayoutParams(plp);
+ // 1.9.287：电视小窗同样改为「中央单个播放图标」，点一下=全屏（遥控 OK）
+ try {
+ View stale = a.playbackLayer.findViewWithTag("mini-center-play");
+ if (stale != null && stale.getParent() instanceof ViewGroup)
+ ((ViewGroup) stale.getParent()).removeView(stale);
+ page.setVisibility(View.GONE);
+ TextView centerPlay = miniButton("▶", "mini-center-play", () -> a.expandPlayback());
+ centerPlay.setTextSize(26);
+ centerPlay.setGravity(Gravity.CENTER);
+ FrameLayout.LayoutParams cp =
+ new FrameLayout.LayoutParams(a.dp(64), a.dp(64), Gravity.CENTER);
+ a.playbackLayer.addView(centerPlay, cp);
+ centerPlayIcon = centerPlay;
+ centerPlay.bringToFront();
+ } catch (Throwable ignored) {
+ }
  if (a.player != null) {
  try {
  a.player.setScaleMode(true);

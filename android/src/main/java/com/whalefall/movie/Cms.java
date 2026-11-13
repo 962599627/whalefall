@@ -1120,7 +1120,10 @@ public final class Cms {
  private static Video video(JSONObject j) {
  Video v = new Video();
  v.id = j.optString("vod_id");
- v.title = j.optString("vod_name", "未命名影片");
+ v.title = j.optString("vod_name", "");
+ if (v.title == null || v.title.trim().isEmpty()) v.title = j.optString("vod_sub", "").trim();
+ if (v.title == null || v.title.trim().isEmpty()) v.title = j.optString("vod_en", "").trim();
+ if (v.title == null || v.title.trim().isEmpty()) v.title = "未命名影片";
  v.poster = j.optString("vod_pic");
  v.remarks = j.optString("vod_remarks");
  Object action = j.opt("action");

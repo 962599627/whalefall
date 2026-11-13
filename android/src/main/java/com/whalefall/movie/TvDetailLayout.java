@@ -825,6 +825,15 @@ final class TvDetailLayout {
  }
 
  /** 顶部 与操作区「收藏」同步。 */
+ /** 1.9.286：收藏身份统一（id/title/poster 固定）。 */
+ private static Cms.Video tvFavVideo(Cms.Video v) {
+ Cms.Video out = new Cms.Video();
+ out.id = v == null ? "" : v.id;
+ out.title = v == null ? "" : v.title;
+ out.poster = v == null ? "" : v.poster;
+ return out;
+ }
+
  private static void bindFavoriteAct(
  final MainActivity a,
  final Cms.Site s,
@@ -837,6 +846,7 @@ final class TvDetailLayout {
  boolean fav =
  Favorites.contains(
  a.prefs.getString(Prefs.FAVORITES, "[]"), s.key, v.id);
+ AppLog.i("Detail", "fav sync id=" + v.id + " fav=" + fav);
  if (act != null) {
  act.setText(fav ? " 已收藏" : " 收藏");
  }
@@ -850,7 +860,7 @@ final class TvDetailLayout {
  .putString(
  Prefs.FAVORITES,
  Favorites.toggle(
- a.prefs.getString(Prefs.FAVORITES, "[]"), s.key, v))
+ a.prefs.getString(Prefs.FAVORITES, "[]"), s.key, tvFavVideo(v)))
  .apply();
  sync[0].run();
  });
@@ -862,7 +872,7 @@ final class TvDetailLayout {
  .putString(
  Prefs.FAVORITES,
  Favorites.toggle(
- a.prefs.getString(Prefs.FAVORITES, "[]"), s.key, v))
+ a.prefs.getString(Prefs.FAVORITES, "[]"), s.key, tvFavVideo(v)))
  .apply();
  sync[0].run();
  });
