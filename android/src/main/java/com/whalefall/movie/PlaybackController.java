@@ -1860,16 +1860,8 @@ final class PlaybackController {
  AppLog.i(
  "Player",
  "lifecycle pause surface=detached revision=" + surfaceRevision);
- // 1.9.290：小窗/放大全屏时不要解绑 Surface（否则反复进出后画面丢失、只剩声音）
- if (ticket == a.generation
- && a.player != null
- && !a.miniMode
- && !a.expandedOverDetail) {
- a.player.setSurface(null);
+ if (ticket == a.generation && a.player != null) a.player.setSurface(null);
  renderSurface = null;
- } else {
- AppLog.i("Player", "lifecycle pause keep-surface mini=" + a.miniMode + " expand=" + a.expandedOverDetail);
- }
  }
  });
  a.playbackControls.timeline.requestFocus();

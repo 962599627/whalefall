@@ -4127,6 +4127,8 @@ public final class MainActivity extends Activity {
  @Override
  protected void onResume() {
  AdFilter.sync(this);
+ Skin.applyGlassPrefs(
+ prefs.getString("glass_color", "blue"), prefs.getInt("glass_alpha", 20));
  super.onResume();
  if (playerChrome != null) playerChrome.resumeLoadingAnimation();
  watchNetwork();

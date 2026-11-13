@@ -6168,6 +6168,32 @@ final class MobileShell {
  addSettingCard(
  body,
  5,
+ "卡片颜色",
+ "当前：" + glassColorLabel(a) + " · 点击切换（深蓝/黑/白/主题绿）",
+ () -> {
+ String cur = a.prefs.getString("glass_color", "blue");
+ String next = "blue".equals(cur) ? "black" : "black".equals(cur) ? "white" : "white".equals(cur) ? "accent" : "blue";
+ a.prefs.edit().putString("glass_color", next).apply();
+ Skin.applyGlassPrefs(next, a.prefs.getInt("glass_alpha", 20));
+ a.toast("卡片颜色：" + glassColorLabel(a));
+ refreshInPlace.run();
+ });
+ addSettingCard(
+ body,
+ 5,
+ "卡片透明度",
+ "当前：" + a.prefs.getInt("glass_alpha", 20) + "% · 点击切换（10/20/35/50%）",
+ () -> {
+ int cur = a.prefs.getInt("glass_alpha", 20);
+ int next = cur < 20 ? 20 : cur < 35 ? 35 : cur < 50 ? 50 : 10;
+ a.prefs.edit().putInt("glass_alpha", next).apply();
+ Skin.applyGlassPrefs(a.prefs.getString("glass_color", "blue"), next);
+ a.toast("卡片透明度：" + next + "%");
+ refreshInPlace.run();
+ });
+ addSettingCard(
+ body,
+ 5,
  "广告过滤",
  a.prefs.getBoolean(AdFilter.PREF, true) ? "已开启：拦截广告/统计域名" : "已关闭：不拦截任何请求",
  () -> {
@@ -6796,5 +6822,13 @@ final class MobileShell {
  UiIcon.tintDrawable(glyph, color);
  UiIcon.drawCentered(c, glyph, getWidth(), getHeight(), Math.min(getWidth(), getHeight()));
  }
+ }
+
+ private static String glassColorLabel(MainActivity a) {
+ String c = a.prefs.getString("glass_color", "blue");
+ if ("black".equals(c)) return "黑色";
+ if ("white".equals(c)) return "白色";
+ if ("accent".equals(c)) return "主题绿";
+ return "深蓝";
  }
 }

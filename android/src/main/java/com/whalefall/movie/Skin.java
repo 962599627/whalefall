@@ -28,6 +28,20 @@ final class Skin {
  static final int PINK_SOFT = 0x33ffb3c8;
  static final int BLUE = 0xff8fc5ff;
  static final int GLASS = 0x33ffffff;
+
+ /** 1.9.292：用户可配置的玻璃卡片底色/透明度（由 MainActivity 在 onResume 注入）。 */
+ static int glassFill = GLASS;
+ static int glassAlphaPct = 20;
+
+ static void applyGlassPrefs(String color, int alphaPct) {
+ int base;
+ if ("black".equals(color)) base = 0x000000;
+ else if ("white".equals(color)) base = 0xffffff;
+ else if ("accent".equals(color)) base = 0x2ee6a0;
+ else base = 0x1e3a5f;
+ glassAlphaPct = Math.max(0, Math.min(90, alphaPct));
+ glassFill = ((int) (glassAlphaPct * 2.55f) << 24) | base;
+ }
  static final int GLASS_STRONG = 0x4dffffff;
  static final int GLASS_STROKE = 0x4dffffff;
 
@@ -54,7 +68,7 @@ final class Skin {
  }
 
  static Drawable glass(float radius) {
- return glass(radius, GLASS, GLASS_STROKE);
+ return glass(radius, glassFill, GLASS_STROKE);
  }
 
  /** 樱花粉光晕：纯代码绘制，无图片资源。 */
