@@ -199,16 +199,18 @@ final class TvUiKit {
 
  /** 胶囊按钮：accent=true 时是樱花粉渐变主按钮，否则是蓝白玻璃次按钮。 */
  static TextView pill(MainActivity a, String label, float size, boolean accent) {
- TextView t = a.text(label, size, accent ? 0xff31141f : 0xffeaf1fb);
+ // 1.9.322：分类/筛选 chip 选中只换浅强调底，文字保持 TEXT_PRIMARY_T（不做反色）
+ TextView t = a.text(label, size, Skin.TEXT_PRIMARY_T);
+ t.setTextColor(Skin.TEXT_PRIMARY_T);
  t.setGravity(Gravity.CENTER);
  t.setSingleLine(true);
  t.setPadding(a.dp(13), 0, a.dp(13), 0);
  if (accent) {
  t.setTypeface(null, Typeface.BOLD);
- t.setBackground(accentFill(a, 999));
+ t.setBackground(Skin.accentSoftFill(a.dp(999), a.dp(1.2f)));
  t.setElevation(a.dp(2));
  } else {
- t.setBackground(MobileDetailScreen.glassBg(a, 0x1affffff, 0x33ffffff, 999));
+ t.setBackground(Skin.card(a.dp(999), a.dp(0.8f)));
  }
  MobileDetailScreen.bindTouchFeedback(t);
  return t;

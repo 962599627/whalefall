@@ -39,6 +39,13 @@ public final class GlassworkSurface extends Drawable
         boolean glassFrameAdvancing();
     }
 
+    /** 1.9.293：全局卡片覆盖色（ARGB，0=不覆盖），由 App 外观设置注入。 */
+    public static volatile int GLOBAL_TINT = 0;
+
+    public static void setGlobalTint(int argb) {
+        GLOBAL_TINT = argb;
+    }
+
     public static boolean isCapturingBackdrop() {
         return Boolean.TRUE.equals(CAPTURING.get());
     }
@@ -321,6 +328,14 @@ public final class GlassworkSurface extends Drawable
         paint.setAlpha(opacity);
         if (!options.reduceTransparency() && material != null)
             canvas.drawBitmap(material, null, rect, paint);
+        if (GLOBAL_TINT != 0) {
+            int tint = GLOBAL_TINT;
+            paint.setShader(null);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(tint);
+            paint.setAlpha((int) ((android.graphics.Color.alpha(tint) * opacity) / 255f));
+            canvas.drawRect(rect, paint);
+        }
         else {
             paint.setColor(GlassworkMaterial.DARK_TINT);
             paint.setAlpha(opacity);

@@ -183,8 +183,54 @@ final class MiniDetails {
  a.ui.post(
  () -> {
  if (!a.miniMode) return;
+ // 1.9.331：小窗顶部与详情页片名标题对齐
+ try {
+ View title = a.root == null ? null : a.root.findViewWithTag("detail-title");
+ if (title != null) {
+ int[] tvv = new int[2], rv = new int[2];
+ title.getLocationInWindow(tvv);
+ a.root.getLocationInWindow(rv);
+ int ty = Math.max(0, tvv[1] - rv[1]);
+ if (ty > 0) {
+ videoLp.topMargin = ty;
+ pageLp.topMargin = ty;
+ AppLog.i("Mini", "align title y=" + ty);
+ }
+ }
+ } catch (Throwable ignored) {
+ }
  a.playbackLayer.setLayoutParams(videoLp);
  page.setLayoutParams(pageLp);
+ // 1.9.332：第二次进入时 Surface 可能仍是 detached 状态（无 lifecycle resume 日志）→ 主动重挂
+ try {
+ if (a.player != null) {
+ View vo = a.playbackLayer.findViewWithTag("video-output");
+ if (vo instanceof ViewGroup && ((ViewGroup) vo).getChildCount() > 0) {
+ View child = ((ViewGroup) vo).getChildAt(0);
+ if (child instanceof android.view.TextureView) {
+ // 1.9.333：强制重建 TextureView 的 Surface（移出再放回会触发 onSurfaceTextureAvailable → 重新 setSurface）
+ ViewGroup vg = (ViewGroup) vo;
+ vg.removeView(child);
+ vg.addView(child, new FrameLayout.LayoutParams(-1, -1));
+ AppLog.i("Mini", "output remount for fresh surface");
+ // 1.9.334：重建瞬间保持透明，120ms 后再淡入，遮住黑一帧
+ a.playbackLayer.setAlpha(0f);
+ a.playbackLayer.postDelayed(
+ () -> {
+ if (!a.miniMode) return;
+ a.playbackLayer.animate().alpha(1f).setDuration(120).start();
+ }, 120);
+ }
+ }
+ android.view.Surface s =
+ vo instanceof VideoOutput ? ((VideoOutput) vo).currentSurface() : null;
+ if (s != null) {
+ a.player.setSurface(s);
+ AppLog.i("Mini", "surface rebind ok " + s);
+ }
+ }
+ } catch (Throwable ignored) {
+ }
  PlaybackController.hideDetailHero(a, true);
  a.playbackLayer.bringToFront();
  page.bringToFront();

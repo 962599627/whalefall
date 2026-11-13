@@ -888,6 +888,8 @@ public final class MainActivity extends Activity {
  /** Opens a list card without leaving an invisible redirect page in the back stack. */
  void openListing(Cms.Site s, Cms.Video v) {
  if (v == null) return;
+ // 1.9.328：进入详情前先关掉筛选浮层，避免残留 overlay 盖住预览/小窗
+ VideoFilterDialog.dismiss(this);
  if (v.action != null && !v.action.isEmpty()) {
  sourceAction(s, v.action);
  return;
@@ -1178,6 +1180,12 @@ public final class MainActivity extends Activity {
  applyMobileSystemBars(false);
  }
  prefs = getSharedPreferences(privateMode ? "movie-private" : Prefs.FILE, MODE_PRIVATE);
+ // 1.9.327：全新安装默认主题=樱夜（底 #3A1F2B / 选中 #FF8FB1 / 文字 #FFE3EC）；老用户保留原设置
+ if (!prefs.contains("theme_key") && !prefs.contains("glass_color")) {
+  applyTheme("sakura-night", prefs);
+ }
+ // 1.9.301：启动即恢复全局色调（此前只在保存/onResume 时设置）
+ applyGlassTint();
  migratePlayerKernel();
  reduced = prefs.getBoolean(Prefs.REDUCED, false);
  // 1.9.89：Android<8 强制 ExoPlayer，修正旧设备保存的系统播放器设置
@@ -1466,6 +1474,267 @@ public final class MainActivity extends Activity {
  return Math.round(x * getResources().getDisplayMetrics().density);
  }
 
+ /** 1.9.325：卡片底色 8 套预设（樱夜/墨夜/雾梅/咖啡/青瓷/夜蓝/紫夜/灰岩）。 */
+ static int cardPresetBase(String key) {
+ return cardPresetBase(key, null);
+ }
+
+ static int cardPresetBase(String key, android.content.SharedPreferences prefs) {
+  if ("custom".equals(key))
+   return prefs == null ? 0x3a1f2b : prefs.getInt("glass_custom_color", 0x3a1f2b) & 0xffffff;
+  return Skin.presetColor(key);
+ }
+
+ /** 1.9.325：当前卡片主题的中文名（设置页/调色盘用）。 */
+ static String cardPresetLabel(String key) {
+  return "custom".equals(key) ? "自定义" : Skin.presetName(key);
+ }
+
+ /** 设置页循环下一套主题（8 档）。 */
+ static String nextCardPreset(String key) {
+  if (key == null || "custom".equals(key)) return Skin.PRESET_KEYS[0];
+  int idx = Skin.presetIndex(key);
+  return Skin.PRESET_KEYS[(idx + 1) % Skin.PRESET_KEYS.length];
+ }
+
+ /** 1.9.327：当前主题 key（优先 theme_key，其次 glass_color 迁移值）。 */
+ static String currentThemeKey(android.content.SharedPreferences p) {
+  String key = p.getString("theme_key", "");
+  for (String k : Skin.PRESET_KEYS) if (k.equals(key)) return key;
+  return migrateCardPreset(p);
+ }
+
+ /** 1.9.327：主题切换 = 一次写入「底 / 选中色 / 文字色」三元组 + 重置微调覆盖。 */
+ static void applyTheme(String key, android.content.SharedPreferences p) {
+  int idx = Skin.presetIndex(key);
+  String theme = Skin.PRESET_KEYS[idx];
+  p.edit()
+   .putString("theme_key", theme)
+   .putString("glass_color", theme)
+   .putInt("card_accent_color", 0xff000000 | (Skin.PRESET_ACCENTS[idx] & 0xffffff))
+   .putBoolean("card_accent_custom", true)
+   .putInt(Prefs.TEXT_COLOR, 0xff000000 | (Skin.PRESET_INKS[idx] & 0xffffff))
+   .putBoolean(Prefs.TEXT_COLOR_CUSTOM, true)
+   .commit();
+  AppLog.i(
+   "Theme",
+   "apply theme="
+    + theme
+    + " base=#"
+    + String.format(java.util.Locale.ROOT, "%06X", Skin.PRESET_COLORS[idx] & 0xffffff)
+    + " accent=#"
+    + String.format(java.util.Locale.ROOT, "%06X", Skin.PRESET_ACCENTS[idx] & 0xffffff)
+    + " ink=#"
+    + String.format(java.util.Locale.ROOT, "%06X", Skin.PRESET_INKS[idx] & 0xffffff));
+ }
+
+ /** 1.9.327：主题中文名（设置卡片用）。 */
+ static String themeLabel(android.content.SharedPreferences p) {
+  return Skin.presetName(currentThemeKey(p));
+ }
+
+ /** 1.9.327：主题风格说明。 */
+ static String themeTag(android.content.SharedPreferences p) {
+  return Skin.presetTag(currentThemeKey(p));
+ }
+
+ /** 旧 glass_color / 任意 HEX → 最近预设（8 套）。 */
+ static String migrateCardPreset(android.content.SharedPreferences p) {
+  String raw = p.getString("glass_color", "sakura-night");
+  if ("custom".equals(raw)) return raw;
+  for (String key : Skin.PRESET_KEYS) if (key.equals(raw)) return raw;
+  int old = 0x1e3a5f;
+  if ("black".equals(raw)) old = 0x140b10;
+  else if ("white".equals(raw)) old = 0x9a8f96;
+  else if ("blue".equals(raw) || "accent".equals(raw)) old = 0x1e3a5f;
+  else {
+   try {
+    old = Integer.parseInt(raw.replace("#", ""), 16) & 0xffffff;
+   } catch (Throwable ignored) {
+   }
+  }
+  int best = 0, bestDist = Integer.MAX_VALUE;
+  for (int i = 0; i < Skin.PRESET_COLORS.length; i++) {
+   int preset = Skin.PRESET_COLORS[i] & 0xffffff;
+   int dr = ((old >> 16) & 0xff) - ((preset >> 16) & 0xff);
+   int dg = ((old >> 8) & 0xff) - ((preset >> 8) & 0xff);
+   int db = (old & 0xff) - (preset & 0xff);
+   int d = dr * dr + dg * dg + db * db;
+   if (d < bestDist) {
+    bestDist = d;
+    best = i;
+   }
+  }
+  p.edit().putString("glass_color", Skin.PRESET_KEYS[best]).apply();
+  return Skin.PRESET_KEYS[best];
+ }
+
+ /** 选中色 3 套预设：樱花粉/珊瑚/杏桃 + 最近值迁移。 */
+ static int migrateAccent(int raw) {
+  int value = raw & 0xffffff;
+  int[] presets = {0xff8fb1, 0xff8a7a, 0xffb37c};
+  int best = presets[0], bestDist = Integer.MAX_VALUE;
+  for (int preset : presets) {
+  int dr = ((value >> 16) & 0xff) - ((preset >> 16) & 0xff);
+  int dg = ((value >> 8) & 0xff) - ((preset >> 8) & 0xff);
+  int db = (value & 0xff) - (preset & 0xff);
+  int d = dr * dr + dg * dg + db * db;
+  if (d < bestDist) {
+  bestDist = d;
+  best = preset;
+  }
+  }
+  return 0xff000000 | (best & 0xffffff);
+ }
+
+ static int lighten(int rgb, float amount) {
+  int r = Math.min(255, Math.round(((rgb >> 16) & 0xff) + (255 - ((rgb >> 16) & 0xff)) * amount));
+  int g = Math.min(255, Math.round(((rgb >> 8) & 0xff) + (255 - ((rgb >> 8) & 0xff)) * amount));
+  int b = Math.min(255, Math.round((rgb & 0xff) + (255 - (rgb & 0xff)) * amount));
+  return (r << 16) | (g << 8) | b;
+ }
+
+ /** 1.9.300：把外观设置同步到玻璃面板与普通卡片。 */
+ void applyGlassTint() {
+ try {
+  String gc = migrateCardPreset(prefs);
+  int base = cardPresetBase(gc, prefs);
+  int alphaPct = Math.max(0, Math.min(100, prefs.getInt("glass_alpha", 40)));
+  // 1.9.319：自定义选中色（card_accent_custom=true）不做预设吸附
+ int accent =
+ prefs.getBoolean("card_accent_custom", false)
+ ? prefs.getInt("card_accent_color", 0xffff8fb1)
+ : migrateAccent(prefs.getInt("card_accent_color", 0xffff8fb1));
+  prefs.edit()
+  .putString("glass_color", gc)
+  .putInt("card_accent_color", accent)
+  .apply();
+  int accentOpaque = 0xff000000 | (accent & 0xffffff);
+  Skin.ACCENT_STRONG = accentOpaque;
+  Skin.ACCENT_MID = 0xff000000 | (lighten(accentOpaque, 0.15f) & 0xffffff);
+  Skin.ACCENT_SOFT_T = 0xff000000 | (lighten(accentOpaque, 0.30f) & 0xffffff);
+  int alpha = (int) (alphaPct * 2.55f);
+  Skin.cardFill = (alpha << 24) | base;
+  Skin.cardAccent = accent;
+  Skin.applyGlassPrefs(gc, alphaPct);
+  com.pilipala.glass.GlassworkSurface.setGlobalTint(Skin.cardFill);
+  AppLog.i(
+  "Theme",
+  "tokens=warm-night-sakura card=#"
+  + Integer.toHexString(Skin.CARD_BASE)
+  + " cardBase=#"
+  + Integer.toHexString(base)
+  + " preset="
+  + gc
+  + " accent=#"
+  + Integer.toHexString(accent)
+  + " text=#"
+  + Integer.toHexString(Skin.TEXT_PRIMARY_T)
+  + " alpha="
+  + alphaPct
+  + " cardFill=#"
+  + Integer.toHexString(Skin.cardFill));
+ } catch (Throwable ignored) {
+ }
+ }
+
+ /**
+  * 1.9.325：画在用户卡片底上的文字色。
+  *
+  * <p>用户自定义字体色优先；与卡片底对比 <3:1 时自动回退到可读字色（`Skin.inkOn`）。
+  */
+ int cardInk() {
+ int bg = Skin.cardSurface();
+ if (prefs.getBoolean(Prefs.TEXT_COLOR_CUSTOM, false)) {
+  int user = 0xff000000 | (prefs.getInt(Prefs.TEXT_COLOR, Prefs.DEFAULT_TEXT_COLOR) & 0xffffff);
+  double ratio = Skin.contrastRatio(user, bg);
+  if (ratio >= 3.0) return user;
+  AppLog.i(
+   "Theme",
+   String.format(
+    java.util.Locale.ROOT,
+    "ink custom=#%06X ratio=%.1f fallback",
+    user & 0xffffff,
+    ratio));
+ }
+ return Skin.cardInk();
+ }
+
+ /** 卡片底上的次要文字（同色系、降低不透明度）。 */
+ int cardInkDim() {
+ return Skin.dimInk(cardInk(), 0xb8);
+ }
+
+ /** 1.9.302：卡片底色 = CARD 预设 + 用户透明度；描边用 CARD_STROKE。 */
+ GradientDrawable cardBg(float radiusDp) { String gc = migrateCardPreset(prefs);
+ int base = cardPresetBase(gc, prefs);
+ int alpha = (int) (Math.max(0, Math.min(100, prefs.getInt("glass_alpha", 40))) * 2.55f);
+ GradientDrawable d = new GradientDrawable();
+ d.setColor((alpha << 24) | base);
+ d.setCornerRadius(dp(radiusDp));
+ d.setStroke(Math.max(1, dp(0.7f)), Skin.CARD_STROKE);
+ return d;
+ }
+
+ /** 1.9.300：RGB + 透明度调色台。 */
+ void showCustomCardColorDialog() {
+ try {
+ int cur = prefs.getInt("glass_custom_color", 0x1e3a5f) & 0xffffff;
+ final int[] rgb = {(cur >> 16) & 0xff, (cur >> 8) & 0xff, cur & 0xff};
+ final int[] alphaPct = {Math.max(0, Math.min(100, prefs.getInt("glass_alpha", 50)))};
+ LinearLayout panel = vertical();
+ final View preview = new View(this);
+ preview.setBackground(bg((alphaPct[0] * 255 / 100) << 24 | cur, 12));
+ panel.addView(preview, new LinearLayout.LayoutParams(-1, dp(56)));
+ String[] names = {"红 R", "绿 G", "蓝 B", "透明度"};
+ for (int i = 0; i < 4; i++) {
+ final int idx = i;
+ final TextView label =
+ text(names[i] + "：" + (i < 3 ? rgb[i] : alphaPct[0] + "%"), 13, Color.WHITE);
+ label.setPadding(0, dp(10), 0, dp(2));
+ panel.addView(label);
+ android.widget.SeekBar bar = new android.widget.SeekBar(this);
+ bar.setMax(i < 3 ? 255 : 90);
+ bar.setProgress(i < 3 ? rgb[i] : alphaPct[0]);
+ bar.setOnSeekBarChangeListener(
+ new android.widget.SeekBar.OnSeekBarChangeListener() {
+ public void onProgressChanged(android.widget.SeekBar s, int value, boolean fromUser) {
+ if (idx < 3) rgb[idx] = value;
+ else alphaPct[0] = value;
+ label.setText(names[idx] + "：" + (idx < 3 ? String.valueOf(value) : value + "%"));
+ int c = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+ preview.setBackground(bg((alphaPct[0] * 255 / 100) << 24 | c, 12));
+ }
+ public void onStartTrackingTouch(android.widget.SeekBar s) {}
+ public void onStopTrackingTouch(android.widget.SeekBar s) {}
+ });
+ panel.addView(bar, new LinearLayout.LayoutParams(-1, -2));
+ }
+ android.widget.ScrollView sc = new android.widget.ScrollView(this);
+ sc.addView(panel);
+ new android.app.AlertDialog.Builder(this)
+ .setTitle("调色台")
+ .setView(sc)
+ .setPositiveButton(
+ "应用",
+ (d, which) -> {
+ int c = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+ prefs
+ .edit()
+ .putInt("glass_custom_color", c)
+ .putString("glass_color", "custom")
+ .putInt("glass_alpha", alphaPct[0])
+ .apply();
+ applyGlassTint();
+ toast("已应用卡片颜色");
+ refresh();
+ })
+ .setNegativeButton("取消", null)
+ .show();
+ } catch (Throwable ignored) {
+ }
+ }
+
  void glass(View view, float radius) {
  com.pilipala.glass.GlassworkSurface.attach(
  view, root, dp(radius), () -> prefs.getBoolean(Prefs.REDUCED_TRANSPARENCY, false));
@@ -1654,14 +1923,24 @@ public final class MainActivity extends Activity {
  b.setPadding(dp(14), dp(6), dp(14), dp(6));
  b.setMinHeight(dp(38));
  b.setMinimumHeight(dp(38));
- GradientDrawable pill = bg(0xff1b2c49, 19);
- pill.setStroke(Math.max(1, dp(1)), 0x33ffffff);
+ GradientDrawable pill = cardBg(19);
+ pill.setStroke(Math.max(1, dp(1)), Skin.CARD_STROKE);
  b.setBackground(pill);
- b.setTextColor(themeColor(0xffe6edfb));
+ // 1.9.322：胶囊底色跟随外观设置的卡片底色，文字 TEXT_PRIMARY_T
+ b.setTextColor(Skin.TEXT_PRIMARY_T);
  b.setOnFocusChangeListener(
  (v, f) ->
  FocusMotion.style(
- this, b, f, 0xff1b2c49, WHITE, 19, 0xffe6edfb, DARK, false, 1.02f));
+ this,
+ b,
+ f,
+ (0xE6 << 24) | (Skin.cardFill & 0xffffff),
+ WHITE,
+ 19,
+ Skin.TEXT_PRIMARY_T,
+ DARK,
+ false,
+ 1.02f));
  return b;
  }
 
@@ -2429,6 +2708,8 @@ public final class MainActivity extends Activity {
  }
 
  void open(Screen s, boolean history) {
+ // 1.9.328：所有页面切换先清掉筛选浮层，防止残留 overlay 盖住新页面（含详情/小窗）
+ VideoFilterDialog.dismiss(this);
  // 1.9.106：所有页面切换统一先释放播放/直播（目标页是播放页时由 playerPage 重建播放器）
  releasePlaybackOnPageChange("open", s != null && s.player);
  capture();
@@ -3246,6 +3527,8 @@ public final class MainActivity extends Activity {
  }
 
  void resolvePlayer(Cms.Site s, Cms.Video v, Cms.Line line, Cms.Episode ep) {
+ // 1.9.328：起播前关掉筛选浮层，避免浮层跟随到播放/返回小窗
+ VideoFilterDialog.dismiss(this);
  PlaybackController.resolvePlayer(this, s, v, line, ep);
  }
 
@@ -4127,8 +4410,8 @@ public final class MainActivity extends Activity {
  @Override
  protected void onResume() {
  AdFilter.sync(this);
- Skin.applyGlassPrefs(
- prefs.getString("glass_color", "blue"), prefs.getInt("glass_alpha", 20));
+ // 1.9.301：每次回前台恢复全局色调（修复进程重启后 GLOBAL_TINT=0）
+ applyGlassTint();
  super.onResume();
  if (playerChrome != null) playerChrome.resumeLoadingAnimation();
  watchNetwork();

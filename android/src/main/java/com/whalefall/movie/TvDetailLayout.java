@@ -112,6 +112,8 @@ final class TvDetailLayout {
  lineScroll.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
  lineList.setFocusable(false);
  lineScroll.addView(lineList, new ScrollView.LayoutParams(-1, -2));
+ // 1.9.308：片源·线路区块用用户卡片颜色
+ lineScroll.setBackground(a.cardBg(14));
  leftCol.addView(lineScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
  // ---------------- 右栏骨架 ----------------
@@ -165,7 +167,7 @@ final class TvDetailLayout {
  LinearLayout.LayoutParams playLp = new LinearLayout.LayoutParams(-1, -2);
  playLp.topMargin = a.dp(10);
  rightCol.addView(playWrap, playLp);
- final TextView bookmarkTv = a.text("", 13, 0xff8d9cb6);
+ final TextView bookmarkTv = a.text("", 13, Skin.TEXT_TERTIARY_T);
  bookmarkTv.setTag("detail-history");
  LinearLayout.LayoutParams bookmarkLp = new LinearLayout.LayoutParams(-1, -2);
  bookmarkLp.topMargin = a.dp(6);
@@ -472,15 +474,15 @@ final class TvDetailLayout {
  hintLp.setMargins(a.dp(16), 0, 0, a.dp(12));
  card.addView(hint, hintLp);
 
- TextView bigPlay = a.text("播放", 16, 0xff31141f);
+ TextView bigPlay = a.text("播放", 16, Skin.TEXT_PRIMARY_T);
  bigPlay.setTag("detail-play-big");
  bigPlay.setTypeface(null, android.graphics.Typeface.BOLD);
  bigPlay.setGravity(Gravity.CENTER);
- GradientDrawable fill =
- new GradientDrawable(
- GradientDrawable.Orientation.LEFT_RIGHT,
- new int[] {0xffffc7d6, 0xfff59ab5});
+ // 1.9.322：大块粉色渐变 → 中性卡片底 + ACCENT_SOFT 细描边
+ GradientDrawable fill = new GradientDrawable();
+ fill.setColor((0xE6 << 24) | (Skin.cardFill & 0xffffff));
  fill.setCornerRadius(a.dp(999));
+ fill.setStroke(Math.max(1, a.dp(1.2f)), Skin.accentSoft());
  bigPlay.setBackground(fill);
  bigPlay.setElevation(a.dp(8));
  bigPlay.setFocusable(true);
@@ -496,13 +498,13 @@ final class TvDetailLayout {
  a,
  v,
  focused,
- 0xfff2a9c0,
- 0xffffe3ec,
+ (0xE6 << 24) | (Skin.cardFill & 0xffffff),
+ MainActivity.WHITE,
  999,
- 0xff31141f,
- 0xff31141f,
+ Skin.TEXT_PRIMARY_T,
+ MainActivity.DARK,
  true,
- 1.05f);
+ 1.02f);
  });
  card.addView(bigPlay, new FrameLayout.LayoutParams(a.dp(72), a.dp(72), Gravity.CENTER));
  return card;
@@ -524,7 +526,7 @@ final class TvDetailLayout {
  LinearLayout headRow = a.row();
  headRow.setGravity(Gravity.CENTER_VERTICAL);
  headRow.addView(head, new LinearLayout.LayoutParams(0, -2, 1f));
- TextView siteName = a.text(site.name, 13, 0xff8d9cb6);
+ TextView siteName = a.text(site.name, 13, Skin.TEXT_TERTIARY_T);
  siteName.setSingleLine(true);
  siteName.setEllipsize(TextUtils.TruncateAt.END);
  headRow.addView(siteName);
@@ -554,17 +556,18 @@ final class TvDetailLayout {
  line.setMinHeight(a.dp(44));
  line.setMinimumHeight(a.dp(44));
  line.setPadding(a.dp(14), 0, a.dp(14), 0);
- line.setBackground(a.bg(selected ? 0x14ff8fb1 : 0x8d121f33, 12));
+ line.setBackground(MobileDetailScreen.chipBg(a, 12f, selected));
+ line.setTextColor(a.cardInk());
  line.setOnFocusChangeListener(
  (v, focus) ->
  FocusMotion.style(
  a,
  v,
  focus,
- selected ? 0x14ff8fb1 : 0x8d121f33,
+ (0xE6 << 24) | (Skin.cardFill & 0xffffff),
  MainActivity.WHITE,
  12,
- selected ? MainActivity.WHITE : 0xff8d9cb6,
+ selected ? Skin.TEXT_PRIMARY_T : Skin.TEXT_TERTIARY_T,
  MainActivity.DARK,
  false,
  1.02f));
@@ -646,7 +649,7 @@ final class TvDetailLayout {
  if (first != null) first.requestFocus();
  }),
  new LinearLayout.LayoutParams(-2, a.dp(44)));
- TextView range = a.text(" " + (start + 1) + " - " + end + " / " + line.episodes.size() + " ", 13, 0xff8d9cb6);
+ TextView range = a.text(" " + (start + 1) + " - " + end + " / " + line.episodes.size() + " ", 13, Skin.TEXT_TERTIARY_T);
  pages.addView(range);
  if (end < line.episodes.size())
  pages.addView(
@@ -706,8 +709,9 @@ final class TvDetailLayout {
  cell.setPadding(a.dp(12), 0, a.dp(12), 0);
  final boolean current =
  highlightEpisode != null && highlightEpisode.equals(episode.name);
- cell.setBackground(a.bg(current ? 0xffff8fb1 : 0x1affffff, 14));
- cell.setTextColor(current ? MainActivity.DARK : a.userTextColor(0xffe6edf9));
+ // 1.9.322：当前集=卡片底 + ACCENT_SOFT 描边（统一走 chipBg 工厂），不再整块粉
+ cell.setBackground(MobileDetailScreen.chipBg(a, 14f, current));
+ cell.setTextColor(a.cardInk());
  cell.setOnFocusChangeListener(
  (v, focused) -> {
  if (focused && a.current != null) {
@@ -720,10 +724,10 @@ final class TvDetailLayout {
  a,
  v,
  focused,
- current ? 0xffff8fb1 : 0x1affffff,
+ (0xE6 << 24) | (Skin.cardFill & 0xffffff),
  MainActivity.WHITE,
  14,
- current ? MainActivity.DARK : 0xffe6edf9,
+ Skin.TEXT_PRIMARY_T,
  MainActivity.DARK,
  false,
  1.02f);
@@ -807,14 +811,14 @@ final class TvDetailLayout {
  b.setMinHeight(a.dp(48));
  b.setMinimumHeight(a.dp(48));
  b.setPadding(a.dp(12), 0, a.dp(12), 0);
- b.setBackground(a.bg(0x1affffff, 12));
+ b.setBackground(Skin.card(a.dp(12), a.dp(1)));
  b.setOnFocusChangeListener(
  (v, focused) ->
  FocusMotion.style(
  a,
  v,
  focused,
- 0x1affffff,
+ (0xE6 << 24) | (Skin.cardFill & 0xffffff),
  MainActivity.WHITE,
  12,
  0xffe6edf9,
@@ -892,7 +896,7 @@ final class TvDetailLayout {
  textWrap.removeAllViews();
  if (v.description == null || v.description.trim().isEmpty()) return;
  final boolean[] expanded = {false};
- final TextView synopsis = a.text(v.description, 14, 0xffa9b7d0);
+ final TextView synopsis = a.text(v.description, 14, Skin.TEXT_SECONDARY_T);
  synopsis.setLineSpacing(a.dp(2), 1.45f);
  synopsis.setMaxLines(4);
  synopsis.setEllipsize(TextUtils.TruncateAt.END);

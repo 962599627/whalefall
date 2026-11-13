@@ -37,8 +37,9 @@ final class SettingsScreen {
  LinearLayout row = a.row();
  row.setPadding(a.dp(18), a.dp(12), a.dp(18), a.dp(12));
  LinearLayout copy = a.vertical();
- copy.addView(a.text(title, 17, MainActivity.WHITE));
- TextView caption = a.text(detail, 12, MainActivity.MUTED);
+ // 1.9.325：设置卡片标题/副标题按用户卡片底自动搭配字色
+ copy.addView(a.text(title, 17, a.cardInk()));
+ TextView caption = a.text(detail, 12, a.cardInkDim());
  caption.setPadding(0, a.dp(4), 0, 0);
  if (!detail.isEmpty()) copy.addView(caption);
  row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
@@ -48,7 +49,7 @@ final class SettingsScreen {
  row.setFocusable(true);
  row.setFocusableInTouchMode(true);
  row.setClickable(true);
- row.setBackground(a.bg(0xff16243c, 12));
+ row.setBackground(a.cardBg(12));
  row.setOnFocusChangeListener(
  (v, f) -> {
  FocusMotion.style(

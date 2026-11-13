@@ -107,9 +107,11 @@ final class DetailScreen {
  b.setTextColor(MainActivity.DARK);
  b.animate().scaleX(1.04f).scaleY(1.04f).setDuration(130).start();
  } else {
- d.setColor(activeAccent ? 0xcc3a4e68 : 0x781c202c);
- d.setStroke(Math.max(1, a.dp(1)), activeAccent ? 0x8082b4ff : 0x38ffffff);
- b.setTextColor(MainActivity.WHITE);
+ // 1.9.322：未聚焦跟随卡片底色，强调态用 ACCENT_SOFT 细描边（不再写死深蓝灰）
+ d.setColor((0xF2 << 24) | (Skin.cardFill & 0xffffff));
+ d.setStroke(
+ Math.max(1, a.dp(1)), activeAccent ? Skin.accentSoft() : Skin.CARD_STROKE);
+ b.setTextColor(Skin.TEXT_PRIMARY_T);
  b.animate().scaleX(1f).scaleY(1f).setDuration(130).start();
  }
  b.setBackground(d);
@@ -152,10 +154,10 @@ final class DetailScreen {
  b.setTextColor(0xff070d18);
  b.animate().scaleX(1.05f).scaleY(1.05f).setDuration(140).start();
  } else {
- // 1.9.118：未聚焦深色玻璃底，去掉白色“按下感”高亮
- d.setColor(0xcc16283f);
- d.setStroke(Math.max(1, a.dp(1)), 0x33ffffff);
- b.setTextColor(0xfff5f7fc);
+ // 1.9.322：未聚焦深色卡片底（跟随外观设置的卡片底色），去掉写死的蓝色玻璃
+ d.setColor((0xF2 << 24) | (Skin.cardFill & 0xffffff));
+ d.setStroke(Math.max(1, a.dp(1)), Skin.CARD_STROKE);
+ b.setTextColor(Skin.TEXT_PRIMARY_T);
  b.animate().scaleX(1f).scaleY(1f).setDuration(140).start();
  }
  b.setBackground(d);
@@ -331,7 +333,7 @@ final class DetailScreen {
  choice.setTextSize(13);
  choice.setMinHeight(a.dp(36));
  choice.setMinimumHeight(a.dp(36));
- choice.setBackground(a.bg(selected ? 0xff33557f : 0x99122036, 18));
+ choice.setBackground(MobileDetailScreen.chipBg(a, 18f, selected));
  choice.setPadding(a.dp(15), a.dp(7), a.dp(15), a.dp(7));
  choice.setOnFocusChangeListener(
  (view, focus) -> {
@@ -339,10 +341,10 @@ final class DetailScreen {
  a,
  choice,
  focus,
- selected ? 0xff33557f : 0x99122036,
+ (0xE6 << 24) | (Skin.cardFill & 0xffffff),
  MainActivity.WHITE,
  18,
- MainActivity.WHITE,
+ Skin.TEXT_PRIMARY_T,
  MainActivity.DARK,
  false,
  1.03f);
@@ -549,17 +551,17 @@ final class DetailScreen {
  button.setMinHeight(a.dp(54));
  button.setMinimumHeight(a.dp(54));
  button.setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10));
- button.setBackground(a.bg(0xcc1e3557, 12));
+ button.setBackground(MobileDetailScreen.chipBg(a, 12f, false));
  button.setOnFocusChangeListener(
  (view, focus) -> {
  FocusMotion.style(
  a,
  button,
  focus,
- 0xcc1e3557,
+ (0xE6 << 24) | (Skin.cardFill & 0xffffff),
  MainActivity.WHITE,
  12,
- MainActivity.WHITE,
+ Skin.TEXT_PRIMARY_T,
  MainActivity.DARK,
  false,
  1.022f);
@@ -734,8 +736,8 @@ final class DetailScreen {
  btn.setMinimumHeight(a.dp(36));
  btn.setPadding(
  a.dp(14), a.dp(6), a.dp(14), a.dp(6));
- if (active) {
- btn.setBackground(a.bg(0xff3a5d8c, 10));
+ // 1.9.322：季 chip 统一卡片底（未选中/选中只差 ACCENT_SOFT 描边）
+ btn.setBackground(MobileDetailScreen.chipBg(a, 10f, active));
  btn.setPadding(
  a.dp(14), a.dp(6), a.dp(14),
  a.dp(6));
@@ -745,10 +747,10 @@ final class DetailScreen {
  a,
  btn,
  f,
- 0xff3a5d8c,
+ (0xE6 << 24) | (Skin.cardFill & 0xffffff),
  MainActivity.WHITE,
  10,
- MainActivity.WHITE,
+ Skin.TEXT_PRIMARY_T,
  MainActivity.DARK,
  true,
  1.02f);
@@ -756,7 +758,6 @@ final class DetailScreen {
  a.dp(14), a.dp(6),
  a.dp(14), a.dp(6));
  });
- }
  flow.addView(btn);
  }
  });

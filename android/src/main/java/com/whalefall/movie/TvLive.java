@@ -925,10 +925,11 @@ final class TvLive {
  LinearLayout item = a.row();
  item.setGravity(Gravity.CENTER_VERTICAL);
  item.setPadding(a.dp(10), 0, a.dp(10), 0);
- // 1.9.78：选中态轻量化：浅底 + 左侧 3dp ACCENT 竖条，不再整块亮粉
+ // 1.9.322：选中只换浅强调底，文字保持 TEXT_PRIMARY_T（不再粉字压粉底）
  if (on) {
  GradientDrawable selectedBg = new GradientDrawable();
- selectedBg.setColor(0x1AFF8FB1);
+ selectedBg.setColor((0x2E << 24) | (Skin.ACCENT_STRONG & 0xffffff));
+ selectedBg.setStroke(Math.max(1, a.dp(1.5f)), Skin.accentSoft());
  selectedBg.setCornerRadius(a.dp(10));
  item.setBackground(selectedBg);
  }
@@ -938,18 +939,20 @@ final class TvLive {
  ExtraPages.tvFocus(a, item, 14);
  if (on) {
  View bar = new View(a);
- bar.setBackgroundColor(0xFFFF8FB1);
+ bar.setBackgroundColor(Skin.accentStrong());
  LinearLayout.LayoutParams barLp =
  new LinearLayout.LayoutParams(a.dp(3), a.dp(28));
  barLp.rightMargin = a.dp(8);
  item.addView(bar, barLp);
  }
 
- TextView name = a.text(gs[i], 14, on ? 0xFFFFB3C8 : 0xffd6e1f0);
+ TextView name = a.text(gs[i], 14, a.cardInk());
+ name.setTextColor(a.cardInk());
  name.setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
  item.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
 
- TextView count = a.text(String.valueOf(counts[i]), 12, on ? 0xFFFFB3C8 : 0xff8d9cb6);
+ TextView count = a.text(String.valueOf(counts[i]), 12, Skin.dimInk(a.cardInk(), 0xb8));
+ count.setTextColor(Skin.dimInk(a.cardInk(), 0xb8));
  count.setTypeface(null, Typeface.BOLD);
  item.addView(count);
 
@@ -1067,13 +1070,15 @@ final class TvLive {
  for (String name : names) {
  final String value = "全部".equals(name) ? "" : name;
  boolean on = value.equals(page.iptvFilter);
- TextView chip = a.text(name, 12, on ? 0xff31141f : 0xffd6e1f0);
+ TextView chip = a.text(name, 12, a.cardInk());
+ chip.setTextColor(a.cardInk());
  chip.setGravity(Gravity.CENTER);
  chip.setPadding(a.dp(12), a.dp(5), a.dp(12), a.dp(5));
+ // 1.9.322：选中只换浅强调底，文字保持 TEXT_PRIMARY_T
  chip.setBackground(
  on
- ? TvUiKit.accentFill(a, 999)
- : MobileDetailScreen.glassBg(a, 0x1affffff, 0x2effffff, 999));
+ ? Skin.accentSoftFill(a.dp(999), a.dp(1.2f))
+ : Skin.card(a.dp(999), a.dp(0.8f)));
  MobileDetailScreen.bindTouchFeedback(chip);
  chip.setFocusable(true);
  chip.setFocusableInTouchMode(true);

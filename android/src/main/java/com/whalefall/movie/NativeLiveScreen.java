@@ -254,13 +254,15 @@ final class NativeLiveScreen {
  left.removeAllViews();
  for (final String name : groups) {
  boolean on = name.equals(selectedGroup[0]);
- TextView chip = a.text(name, 13, on ? 0xff31141f : 0xffd6e1f0);
+ // 1.9.322：选中只换浅强调底，文字保持 TEXT_PRIMARY_T（不再深色字压色块）
+ TextView chip = a.text(name, 13, on ? Skin.TEXT_PRIMARY_T : Skin.TEXT_SECONDARY_T);
+ chip.setTextColor(on ? Skin.TEXT_PRIMARY_T : Skin.TEXT_SECONDARY_T);
  chip.setGravity(android.view.Gravity.CENTER);
  chip.setPadding(a.dp(8), a.dp(9), a.dp(8), a.dp(9));
  chip.setBackground(
  on
- ? TvUiKit.accentFill(a, 999)
- : MobileDetailScreen.glassBg(a, 0x14ffffff, 0x24ffffff, 999));
+ ? Skin.accentSoftFill(a.dp(999), a.dp(1.2f))
+ : Skin.card(a.dp(999), a.dp(0.8f)));
  chip.setFocusable(true);
  chip.setFocusableInTouchMode(true);
  chip.setClickable(true);

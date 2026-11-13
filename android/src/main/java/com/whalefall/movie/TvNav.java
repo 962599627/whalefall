@@ -184,9 +184,9 @@ final class TvNav {
  if (view.getTag(BG_KEY) == null) view.setTag(BG_KEY, view.getBackground());
  android.graphics.drawable.GradientDrawable ring =
  new android.graphics.drawable.GradientDrawable();
- ring.setColor(0x1AFF8FB1);
+ ring.setColor((0x1A << 24) | (Skin.ACCENT_STRONG & 0xffffff));
  ring.setCornerRadius(a.dp(Math.max(0, radiusDp)));
- ring.setStroke(a.dp(2), 0xFFFFB3C8);
+ ring.setStroke(a.dp(2), Skin.accentSoft());
  view.setBackground(ring);
  } catch (Throwable error) {
  AppLog.w("TvNav", "legacy focus ring skipped", error);
@@ -225,7 +225,7 @@ final class TvNav {
  android.widget.TextView text = (android.widget.TextView) view;
  text.setTextColor(
  style == STYLE_ROW || style == STYLE_BUTTON
- ? 0xffffd0de
+ ? Skin.TEXT_PRIMARY_T
  : text.getCurrentTextColor());
  }
  } else if (!focused) {
@@ -305,7 +305,7 @@ final class TvNav {
  }
  paint.setStyle(android.graphics.Paint.Style.FILL);
  if (style != STYLE_CARD) {
- paint.setColor(0x1AFF8FB1);
+ paint.setColor((0x1A << 24) | (Skin.ACCENT_STRONG & 0xffffff));
  canvas.drawRoundRect(b.left, b.top, b.right, b.bottom, r, r, paint);
  }
  android.graphics.RectF ring =
@@ -314,12 +314,12 @@ final class TvNav {
  if (style != STYLE_ROW) {
  paint.setStyle(android.graphics.Paint.Style.STROKE);
  paint.setStrokeWidth(inset * 2);
- paint.setColor(0xFFFFB3C8);
+ paint.setColor(Skin.accentSoft());
  canvas.drawRoundRect(ring, Math.max(0, r - inset), Math.max(0, r - inset), paint);
  }
  if (style == STYLE_ROW) {
  paint.setStyle(android.graphics.Paint.Style.FILL);
- paint.setColor(0xFFFF8FB1);
+ paint.setColor(Skin.accentStrong());
  canvas.drawRoundRect(
  b.left,
  b.top + inset * 6,
@@ -330,7 +330,7 @@ final class TvNav {
  paint);
  } else if (style == STYLE_CARD) {
  paint.setStyle(android.graphics.Paint.Style.FILL);
- paint.setColor(0xFFFF8FB1);
+ paint.setColor(Skin.accentStrong());
  canvas.drawRoundRect(
  b.left + barInsetLR,
  b.bottom - barBottom - inset * 3,

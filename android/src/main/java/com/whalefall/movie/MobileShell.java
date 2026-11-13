@@ -379,6 +379,12 @@ final class MobileShell {
 
  static GradientDrawable glassBg(
  int topColor, int bottomColor, float radiusPx, float strokePx, int strokeColor) {
+ // 1.9.299：统一使用外观设置里的卡片颜色/透明度（替换模式）
+ return Skin.card(radiusPx, strokePx);
+ }
+
+ private static GradientDrawable glassBgLegacy(
+ int topColor, int bottomColor, float radiusPx, float strokePx, int strokeColor) {
  GradientDrawable gd =
  new GradientDrawable(
  GradientDrawable.Orientation.TOP_BOTTOM, new int[] {topColor, bottomColor});
@@ -421,7 +427,7 @@ final class MobileShell {
  pasteBtn.setTypeface(null, Typeface.BOLD);
  pasteBtn.setGravity(Gravity.CENTER);
  pasteBtn.setPadding(a.dp(14), a.dp(11), a.dp(14), a.dp(11));
- pasteBtn.setBackground(a.bg(0xffff8fb1, 999));
+ pasteBtn.setBackground(a.bg(Skin.ACCENT_STRONG, 999));
  MobileDetailScreen.bindTouchFeedback(pasteBtn);
  panel.addView(pasteBtn, new LinearLayout.LayoutParams(-1, -2));
  a.gap(panel, 8);
@@ -895,7 +901,7 @@ final class MobileShell {
  bar.setTag("home-dock");
  bar.setGravity(Gravity.CENTER);
  bar.setPadding(a.dp(6), a.dp(6), a.dp(6), a.dp(6));
- a.glass(bar, 26);
+ bar.setBackground(a.cardBg(26));
  bar.setElevation(a.dp(18));
 
  String[] navKeys = {
@@ -1189,14 +1195,14 @@ final class MobileShell {
  TextView hTitle = a.text("历史记录", 18, MainActivity.WHITE);
  hTitle.setTypeface(null, Typeface.BOLD);
  histHeader.addView(hTitle, new LinearLayout.LayoutParams(0, -2, 1));
- TextView clearHist = a.text("清理", 12.5f, 0xff8d9cb6);
+ TextView clearHist = a.text("清理", 12.5f, Skin.TEXT_SECONDARY_T);
  clearHist.setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6));
  MobileDetailScreen.bindTouchFeedback(clearHist);
  clearHist.setOnClickListener(v -> showHistoryCleanup());
  LinearLayout.LayoutParams clearLp = new LinearLayout.LayoutParams(-2, -2);
  clearLp.rightMargin = a.dp(10);
  histHeader.addView(clearHist, clearLp);
- TextView moreHist = a.text("查看全部", 13, 0xffff8fb1);
+ TextView moreHist = a.text("查看全部", 13, Skin.accentStrong());
  moreHist.setTypeface(null, Typeface.BOLD);
  MobileDetailScreen.bindTouchFeedback(moreHist);
  moreHist.setOnClickListener(
@@ -1223,7 +1229,7 @@ final class MobileShell {
  a.dp(UiTokens.SP_10),
  a.dp(UiTokens.SP_12),
  a.dp(UiTokens.SP_10));
- card.setBackground(thinGlass(16, true));
+ card.setBackground(a.cardBg(16));
  MobileDetailScreen.bindTouchFeedback(card);
  card.setOnClickListener(v -> a.resumeHistory(e));
  card.setFocusable(true);
@@ -1247,7 +1253,7 @@ final class MobileShell {
  t.setEllipsize(TextUtils.TruncateAt.END);
  meta.addView(t);
 
- TextView sub = a.text(a.historyLabel(e), 11.5f, 0xff9fb0c9);
+ TextView sub = a.text(a.historyLabel(e), 11.5f, Skin.TEXT_SECONDARY_T);
  sub.setSingleLine(true);
  sub.setEllipsize(TextUtils.TruncateAt.END);
  sub.setPadding(0, a.dp(3), 0, a.dp(7));
@@ -1261,7 +1267,7 @@ final class MobileShell {
  ? Math.max(0.12f, Math.min(1f, (float) e.position / e.duration))
  : 0.2f;
  View progFill = new View(a);
- progFill.setBackground(a.bg(0xffff8fb1, 2));
+ progFill.setBackground(a.bg(Skin.ACCENT_STRONG, 2));
  progTrack.addView(
  progFill,
  new FrameLayout.LayoutParams(
@@ -1290,7 +1296,7 @@ final class MobileShell {
  // 3.5 「今晚看什么」：随机三部，换一批；1.9.37 薄玻璃（透出壁纸）
  final LinearLayout tonightCard = a.vertical();
  tonightCard.setPadding(a.dp(16), a.dp(14), a.dp(16), a.dp(12));
- tonightCard.setBackground(thinGlass(16, false));
+ tonightCard.setBackground(a.cardBg(16));
  tonightCard.setVisibility(View.GONE);
  LinearLayout tonightHeader = a.row();
  tonightHeader.setGravity(Gravity.CENTER_VERTICAL);
@@ -1298,7 +1304,7 @@ final class MobileShell {
  TextView tonightTitle = a.text("今晚看什么", 17, MainActivity.WHITE);
  tonightTitle.setTypeface(null, Typeface.BOLD);
  tonightTitles.addView(tonightTitle);
- TextView tonightSub = a.text("随机三部 · 点一下直达详情", 11.5f, 0xff9fb0c9);
+ TextView tonightSub = a.text("随机三部 · 点一下直达详情", 11.5f, Skin.TEXT_SECONDARY_T);
  tonightSub.setPadding(0, a.dp(3), 0, 0);
  tonightTitles.addView(tonightSub);
  tonightHeader.addView(tonightTitles, new LinearLayout.LayoutParams(0, -2, 1));
@@ -2067,12 +2073,19 @@ final class MobileShell {
  new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.START);
  titleLp2.setMargins(a.dp(10), 0, a.dp(10), a.dp(10));
  card.addView(miniTitle, titleLp2);
- TextView miniPlay = a.text("播放", 10, 0xff31141f);
+ TextView miniPlay = a.text("▶", 12, Skin.PINK_ON_FILL_TEXT);
  miniPlay.setTypeface(null, Typeface.BOLD);
  miniPlay.setGravity(Gravity.CENTER);
- miniPlay.setBackground(glassBg(0xffffc7d6, 0xfff59ab5, a.dp(999), 0, 0));
+ miniPlay.setIncludeFontPadding(false);
+ // 1.9.322：高对比圆形播放按钮：实心强调底 + 深色字（≥32dp，右下角 10dp 内边距）
+ android.graphics.drawable.GradientDrawable miniPlayBg =
+ new android.graphics.drawable.GradientDrawable();
+ miniPlayBg.setColor(Skin.accentStrong());
+ miniPlayBg.setCornerRadius(a.dp(999));
+ miniPlay.setBackground(miniPlayBg);
+ miniPlay.setElevation(a.dp(2));
  FrameLayout.LayoutParams playLp =
- new FrameLayout.LayoutParams(a.dp(26), a.dp(26), Gravity.BOTTOM | Gravity.END);
+ new FrameLayout.LayoutParams(a.dp(32), a.dp(32), Gravity.BOTTOM | Gravity.END);
  playLp.setMargins(0, 0, a.dp(10), a.dp(10));
  card.addView(miniPlay, playLp);
  return card;
@@ -2126,7 +2139,7 @@ final class MobileShell {
  boolean hasChip = false;
  for (String rawTag : tags) {
  if (rawTag == null || rawTag.trim().isEmpty()) continue;
- TextView chip = a.text(rawTag.trim(), 9f, 0xffd2dced);
+ TextView chip = a.text(rawTag.trim(), 9f, Skin.TEXT_PRIMARY_T);
  chip.setTypeface(null, Typeface.BOLD);
  chip.setSingleLine(true);
  chip.setEllipsize(TextUtils.TruncateAt.END);
@@ -2148,11 +2161,12 @@ final class MobileShell {
  // Bottom-right Watch Now white capsule button
  LinearLayout bottomRow = a.row();
  bottomRow.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
- TextView watchBtn = a.text("立即观看", 10.5f, 0xff0b0f0d);
+ TextView watchBtn = a.text("立即观看", 10.5f, Skin.TEXT_PRIMARY_T);
  watchBtn.setTypeface(null, Typeface.BOLD);
  watchBtn.setGravity(Gravity.CENTER);
  watchBtn.setPadding(a.dp(10), a.dp(4), a.dp(10), a.dp(4));
- watchBtn.setBackground(glassBg(0xffffffff, 0xffe9eef9, a.dp(999), 0, 0));
+ // 1.9.322：CTA 只做小面积强调（浅强调底 + 细描边），不再大白底/粉底
+ watchBtn.setBackground(Skin.accentSoftFill(a.dp(999), a.dp(1)));
  bottomRow.addView(watchBtn, new LinearLayout.LayoutParams(-2, -2));
  rightCol.addView(bottomRow, new LinearLayout.LayoutParams(-1, -2));
 
@@ -2577,7 +2591,7 @@ final class MobileShell {
  + filterLabel(def, value)
  : VideoFilters.displayLabel(def),
  12,
- active || open ? UiTokens.ACCENT_SOFT : 0xffa9b7d0);
+ active || open ? UiTokens.ACCENT_SOFT : Skin.TEXT_SECONDARY_T);
  chip.setTypeface(null, (active || open) ? Typeface.BOLD : Typeface.NORMAL);
  chip.setSingleLine(true);
  chip.setEllipsize(TextUtils.TruncateAt.END);
@@ -2592,7 +2606,7 @@ final class MobileShell {
  tagWrap.addView(chip, new LinearLayout.LayoutParams(-2, -2));
  if (active || open) {
  View underline = new View(a);
- underline.setBackgroundColor(0xffff8fb1);
+ underline.setBackgroundColor(Skin.ACCENT_STRONG);
  LinearLayout.LayoutParams underlineLp =
  new LinearLayout.LayoutParams(a.dp(16), a.dp(2));
  underlineLp.topMargin = a.dp(4);
@@ -2609,7 +2623,7 @@ final class MobileShell {
  }
  }
  if (!selectedFilters.isEmpty()) {
- TextView clear = a.text("清除", 11, 0xff8d9cb6);
+ TextView clear = a.text("清除", 11, Skin.TEXT_TERTIARY_T);
  clear.setPadding(a.dp(4), 0, a.dp(4), 0);
  clear.setMinHeight(a.dp(tagHeight));
  clear.setGravity(Gravity.CENTER);
@@ -2704,7 +2718,7 @@ final class MobileShell {
  a.text(
  choice.label,
  13,
- active ? 0xff070d18 : 0xfff5f7fc);
+ active ? Skin.PINK_ON_FILL_TEXT : Skin.TEXT_PRIMARY_T);
  chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
  chip.setGravity(Gravity.CENTER);
  chip.setSingleLine(true);
@@ -2712,8 +2726,8 @@ final class MobileShell {
  android.graphics.drawable.GradientDrawable bg =
  new android.graphics.drawable.GradientDrawable();
  bg.setCornerRadius(a.dp(999));
- bg.setColor(active ? 0xffff8fb1 : 0x14ffffff);
- bg.setStroke(a.dp(1), active ? 0x66ffb3c8 : 0x1affffff);
+ bg.setColor(active ? Skin.ACCENT_STRONG : 0x14ffffff);
+ bg.setStroke(a.dp(1), active ? (0x66 << 24) | (Skin.ACCENT_STRONG & 0xffffff) : 0x1affffff);
  chip.setBackground(bg);
  MobileDetailScreen.bindTouchFeedback(chip);
  chip.setFocusable(true);
@@ -2874,31 +2888,27 @@ final class MobileShell {
  boolean hasFilters = hasMobileFiltersFor(catId);
  float navScale = Prefs.clampNavScale(a.prefs.getInt(Prefs.NAV_SCALE_PERCENT, 100)) / 100f;
  TextView chip =
- a.text(label, 13 * navScale, active ? 0xff000000 : 0xfff3f4f6);
+ a.text(label, 13 * navScale, active ? Skin.TEXT_PRIMARY_T : Skin.TEXT_SECONDARY_T);
+ // 1.9.322：强制 token 色，避免全局自定义字色（默认亮绿）在选中底色上出现「绿压绿」
+ chip.setTextColor(active ? Skin.TEXT_PRIMARY_T : Skin.TEXT_SECONDARY_T);
  chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
  chip.setGravity(Gravity.CENTER);
  chip.setPadding(
  a.dp(15 * navScale), a.dp(7 * navScale), a.dp(15 * navScale), a.dp(7 * navScale));
  if (active) {
- android.graphics.drawable.GradientDrawable grad =
- new android.graphics.drawable.GradientDrawable(
- android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
- new int[] {UiTokens.ACCENT, 0xffffb3c8});
- grad.setCornerRadius(a.dp(999));
- chip.setBackground(grad);
+ // 1.9.322：分类 chip 选中只换浅强调底，文字保持 TEXT_PRIMARY_T（不再黑字/绿字压色块）
+ chip.setBackground(Skin.accentSoftFill(a.dp(999), a.dp(1.2f)));
  } else {
- chip.setBackground(glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
+ chip.setBackground(Skin.card(a.dp(999), a.dp(0.7f)));
  }
  if (hasFilters) {
  boolean filtered = catId.equals(selectedCategoryId) && !selectedFilters.isEmpty();
- // 1.9.33：选中分类时漏斗用 BG_DEEP，避免与粉色选中底冲突
+ // 1.9.322：选中态漏斗图标同样用 TEXT_PRIMARY_T，不做反色
  int funnelColor =
- active ? 0xff070d18 : filtered ? UiTokens.ACCENT : 0xff8d9cb6;
+ active ? Skin.TEXT_PRIMARY_T : filtered ? Skin.accentStrong() : Skin.TEXT_TERTIARY_T;
  android.graphics.drawable.Drawable funnel = funnelDrawable(funnelColor, 14);
  chip.setCompoundDrawables(null, null, funnel, null);
  chip.setCompoundDrawablePadding(a.dp(6));
- // 1.9.37：未选中分类文字跟随用户字体颜色（a.text 已应用），仅选中态保留深色字
- if (active) chip.setTextColor(0xff000000);
  }
  MobileDetailScreen.bindTouchFeedback(chip);
  chip.setOnClickListener(
@@ -3325,7 +3335,7 @@ final class MobileShell {
  goBtn.setTypeface(null, Typeface.BOLD);
  goBtn.setGravity(Gravity.CENTER);
  goBtn.setPadding(a.dp(18), a.dp(10), a.dp(18), a.dp(10));
- goBtn.setBackground(a.bg(0xffff8fb1, 999));
+ goBtn.setBackground(a.bg(Skin.ACCENT_STRONG, 999));
  MobileDetailScreen.bindTouchFeedback(goBtn);
  goBtn.setOnClickListener(v -> importTextOrUrl(a, urlInput.getText().toString()));
  urlRow.addView(goBtn);
@@ -3333,7 +3343,7 @@ final class MobileShell {
  a.gap(card, 12);
 
  addMobileActionBtn(
- card, "一键粘贴剪贴板并导入", 0xffff8fb1, Color.WHITE, () -> pasteConfigFromClipboard(a));
+ card, "一键粘贴剪贴板并导入", Skin.ACCENT_STRONG, Color.WHITE, () -> pasteConfigFromClipboard(a));
  a.gap(card, 10);
  addMobileActionBtn(
  card,
@@ -3419,7 +3429,7 @@ final class MobileShell {
  searchBtn.setTypeface(null, Typeface.BOLD);
  searchBtn.setGravity(Gravity.CENTER);
  searchBtn.setPadding(a.dp(14), a.dp(7), a.dp(14), a.dp(7));
- searchBtn.setBackground(a.bg(0xffff8fb1, 999));
+ searchBtn.setBackground(a.bg(Skin.ACCENT_STRONG, 999));
  MobileDetailScreen.bindTouchFeedback(searchBtn);
  inputRow.addView(searchBtn);
 
@@ -3544,7 +3554,7 @@ final class MobileShell {
  mobileChips++;
  }
  if (!cachedSearchSourceFilter.isEmpty()) {
- TextView clear = a.text("清除", 12, 0xffff8fb1);
+ TextView clear = a.text("清除", 12, Skin.ACCENT_STRONG);
  clear.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
  MobileDetailScreen.bindTouchFeedback(clear);
  clear.setFocusable(true);
@@ -3598,7 +3608,7 @@ final class MobileShell {
  hRow.setPadding(a.dp(2), a.dp(10), a.dp(2), a.dp(4));
  TextView hLabel = a.text("历史搜索", 12, MainActivity.MUTED);
  hRow.addView(hLabel, new LinearLayout.LayoutParams(0, -2, 1));
- TextView clearHist = a.text("清空", 12, 0xffff8fb1);
+ TextView clearHist = a.text("清空", 12, Skin.ACCENT_STRONG);
  MobileDetailScreen.bindTouchFeedback(clearHist);
  clearHist.setOnClickListener(
  v -> {
@@ -4013,14 +4023,17 @@ final class MobileShell {
  /** 1.9.31：手机来源筛选 chip。 */
  private TextView mobileFilterChip(
  String label, boolean selected, int textColor, final Runnable onClick) {
- TextView chip = a.text(selected ? "✓ " + label : label, 12, selected ? 0xff0b1220 : textColor);
+ // 1.9.322：选中只换浅强调底，文字保持 TEXT_PRIMARY_T（不反色）
+ TextView chip = a.text(selected ? "✓ " + label : label, 12, Skin.TEXT_PRIMARY_T);
+ chip.setTextColor(selected ? Skin.TEXT_PRIMARY_T : textColor);
  chip.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
  chip.setSingleLine(true);
  chip.setGravity(Gravity.CENTER);
- if (selected)
- chip.setBackground(a.bg(0xffff8fb1, 999));
- else
+ if (selected) {
+ chip.setBackground(Skin.accentSoftFill(a.dp(999), a.dp(1.2f)));
+ } else {
  chip.setBackground(glassBg(0x14ffffff, 0x33ffffff, a.dp(999), a.dp(0.8f), 0x33ffffff));
+ }
  MobileDetailScreen.bindTouchFeedback(chip);
  chip.setFocusable(true);
  chip.setFocusableInTouchMode(true);
@@ -4040,7 +4053,7 @@ final class MobileShell {
  LinearLayout row = a.row();
  row.setGravity(Gravity.CENTER_VERTICAL);
  row.setPadding(a.dp(10), a.dp(10), a.dp(12), a.dp(10));
- row.setBackground(glassBg(0xcc1e3557, 0xcc17294a, a.dp(16), a.dp(0.7f), 0x33ffffff));
+ row.setBackground(glassBg(Skin.cardFill, Skin.CARD_STROKE, a.dp(16), a.dp(0.7f), 0x33ffffff));
  MobileDetailScreen.bindTouchFeedback(row);
  row.setOnClickListener(
  view -> {
@@ -4103,7 +4116,7 @@ final class MobileShell {
  ? hit.sources + " 个来源 · 当前：" + site.name
  : "来源：" + site.name,
  12,
- 0xffff8fb1);
+ Skin.ACCENT_STRONG);
  badge.setTypeface(null, Typeface.BOLD);
  badge.setPadding(0, a.dp(4), 0, 0);
  info.addView(badge);
@@ -4143,7 +4156,7 @@ final class MobileShell {
  addMobileActionBtn(
  page,
  "导入电视直播源 (M3U / TXT / JSON)",
- 0xffff8fb1,
+ Skin.ACCENT_STRONG,
  Color.WHITE,
  () -> SourceController.showLiveImportDialog(a));
  return;
@@ -4246,18 +4259,19 @@ final class MobileShell {
  final int idx = i;
  boolean active = i == activeSrcIdx[0];
  TextView chip =
- a.text(sources.get(i).name, 12, active ? Color.WHITE : 0xffd2dced);
+ a.text(sources.get(i).name, 12, a.cardInk());
+ chip.setTextColor(a.cardInk());
  chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
  chip.setPadding(a.dp(13), a.dp(5), a.dp(13), a.dp(5));
- chip.setBackground(
- active
- ? a.bg(0xffff8fb1, 999)
- : glassBg(
- 0xcc172842,
- 0xcc182b4c,
- a.dp(999),
- a.dp(0.7f),
- 0x38ffffff));
+ // 1.9.322：顶部源 tabs 选中=卡片底+浅强调描边，未选中=卡片底；文字统一 TEXT_PRIMARY_T
+ if (active) {
+ android.graphics.drawable.GradientDrawable sel =
+ a.cardBg(999);
+ sel.setStroke(Math.max(1, a.dp(1.5f)), Skin.accentSoft());
+ chip.setBackground(sel);
+ } else {
+ chip.setBackground(a.cardBg(999));
+ }
  MobileDetailScreen.bindTouchFeedback(chip);
  chip.setOnClickListener(
  v -> {
@@ -4348,13 +4362,18 @@ final class MobileShell {
  a.text(
  "全部 (" + catalog.channelCount() + ")",
  12,
- allActive ? 0xff000000 : 0xffe6edf9);
+ a.cardInk());
+ // 1.9.322：频道分组 chip 背景跟随用户卡片底色；选中只加浅强调描边，文字不变色
+ allBtn.setTextColor(a.cardInk());
  allBtn.setTypeface(null, allActive ? Typeface.BOLD : Typeface.NORMAL);
  allBtn.setPadding(a.dp(13), a.dp(5), a.dp(13), a.dp(5));
- allBtn.setBackground(
- allActive
- ? glassBg(0xffffffff, 0xffe9eef9, a.dp(999), 0, 0)
- : glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
+ if (allActive) {
+ android.graphics.drawable.GradientDrawable sel = a.cardBg(999);
+ sel.setStroke(Math.max(1, a.dp(1.5f)), Skin.accentSoft());
+ allBtn.setBackground(sel);
+ } else {
+ allBtn.setBackground(a.cardBg(999));
+ }
  MobileDetailScreen.bindTouchFeedback(allBtn);
  allBtn.setOnClickListener(
  v -> {
@@ -4374,14 +4393,18 @@ final class MobileShell {
  a.text(
  g.name + " (" + g.channels.size() + ")",
  12,
- active ? 0xff000000 : 0xffe6edf9);
+ a.cardInk());
+ gBtn.setTextColor(a.cardInk());
  gBtn.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
  gBtn.setSingleLine(true);
  gBtn.setPadding(a.dp(13), a.dp(5), a.dp(13), a.dp(5));
- gBtn.setBackground(
- active
- ? glassBg(0xffffffff, 0xffe9eef9, a.dp(999), 0, 0)
- : glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
+ if (active) {
+ android.graphics.drawable.GradientDrawable sel = a.cardBg(999);
+ sel.setStroke(Math.max(1, a.dp(1.5f)), Skin.accentSoft());
+ gBtn.setBackground(sel);
+ } else {
+ gBtn.setBackground(a.cardBg(999));
+ }
  MobileDetailScreen.bindTouchFeedback(gBtn);
  gBtn.setOnClickListener(
  v -> {
@@ -4469,7 +4492,7 @@ final class MobileShell {
  LinearLayout card = a.row();
  card.setGravity(Gravity.CENTER_VERTICAL);
  card.setPadding(a.dp(10), a.dp(10), a.dp(10), a.dp(10));
- card.setBackground(glassBg(0xb8162740, 0xb8141a18, a.dp(16), a.dp(0.8f), 0x33ffffff));
+ card.setBackground(a.cardBg(16));
  MobileDetailScreen.bindTouchFeedback(card);
 
  // Left: Smart Callsign Badge
@@ -4480,7 +4503,7 @@ final class MobileShell {
 
  // Middle: Two-Line Info
  LinearLayout infoCol = a.vertical();
- TextView name = a.text(ch.name, 13, MainActivity.WHITE);
+ TextView name = a.text(ch.name, 13, a.cardInk());
  name.setTypeface(null, Typeface.BOLD);
  name.setSingleLine(true);
  name.setEllipsize(TextUtils.TruncateAt.END);
@@ -4495,7 +4518,7 @@ final class MobileShell {
  + " · "
  + (ch.streams.size() > 1 ? ch.streams.size() + "源" : "直连"),
  11,
- 0xff9fb0c9);
+ Skin.TEXT_SECONDARY_T);
  sub.setSingleLine(true);
  sub.setEllipsize(TextUtils.TruncateAt.END);
  subRow.addView(sub, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -4604,11 +4627,11 @@ final class MobileShell {
  final EditText librarySearch = new EditText(a);
  librarySearch.setSingleLine(true);
  librarySearch.setHint("搜索片名 / 来源");
- librarySearch.setHintTextColor(a.themeColor(MainActivity.MUTED));
- librarySearch.setTextColor(MainActivity.WHITE);
+ librarySearch.setHintTextColor(Skin.TEXT_TERTIARY_T);
+ librarySearch.setTextColor(Skin.TEXT_PRIMARY_T);
  librarySearch.setTextSize(13);
- librarySearch.setBackground(
- glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
+ // 1.9.322：搜索框统一卡片底，不再用旧深蓝玻璃底
+ librarySearch.setBackground(Skin.card(a.dp(999), a.dp(0.8f)));
  librarySearch.setPadding(a.dp(14), a.dp(8), a.dp(14), a.dp(8));
  searchRow.addView(librarySearch, new LinearLayout.LayoutParams(0, a.dp(40), 1f));
  final TextView clearSearch = a.text("×", 16, 0xffef4444);
@@ -4650,23 +4673,14 @@ final class MobileShell {
  chips.put("默认", "__default");
  for (String g : favoriteGroups(a)) chips.put(g, g);
  for (java.util.Map.Entry<String, String> entry : chips.entrySet()) {
- TextView chip = a.text(entry.getKey(), 12, MainActivity.WHITE);
+ TextView chip = a.text(entry.getKey(), 12, Skin.TEXT_PRIMARY_T);
  chip.setPadding(a.dp(12), a.dp(6), a.dp(12), a.dp(6));
+ // 1.9.322：收藏分组 chip 选中只换浅强调底，文字保持 TEXT_PRIMARY_T
  chip.setBackground(
- glassBg(
  entry.getValue().equals(current)
- ? 0xffffffff
- : 0xcc172842,
- entry.getValue().equals(current)
- ? 0xffe9eef9
- : 0xcc182b4c,
- a.dp(999),
- a.dp(0.7f),
- entry.getValue().equals(current)
- ? 0xffffffff
- : 0x38ffffff));
- chip.setTextColor(
- entry.getValue().equals(current) ? 0xff000000 : a.userTextColor(0xffe6edf9));
+ ? Skin.accentSoftFill(a.dp(999), a.dp(1.2f))
+ : Skin.card(a.dp(999), a.dp(0.7f)));
+ chip.setTextColor(Skin.TEXT_PRIMARY_T);
  chip.setFocusable(true);
  MobileDetailScreen.bindTouchFeedback(chip);
  chip.setOnClickListener(
@@ -5102,7 +5116,7 @@ final class MobileShell {
  row.setGravity(Gravity.CENTER_VERTICAL);
  row.setPadding(a.dp(10), a.dp(8), a.dp(12), a.dp(8));
  row.setBackground(
- glassBg(0xcc1e3557, 0xcc17294a, a.dp(16), a.dp(0.7f), 0x33ffffff));
+ glassBg(Skin.cardFill, Skin.CARD_STROKE, a.dp(16), a.dp(0.7f), 0x33ffffff));
  MobileDetailScreen.bindTouchFeedback(row);
  row.setFocusable(true);
  RowHolder holder = new RowHolder(row);
@@ -5210,7 +5224,7 @@ final class MobileShell {
  iconWrap.setBackground(glassBg(0x33ffffff, 0x1affffff, a.dp(32), a.dp(0.8f), 0x33ffffff));
  ImageView icon = new ImageView(a);
  android.graphics.drawable.Drawable glyph = UiIcon.drawable(a, UiIcon.EPISODES);
- glyph.setTint(UiTokens.ACCENT_SOFT);
+ glyph.setTint(Skin.accentSoft());
  icon.setImageDrawable(glyph);
  FrameLayout.LayoutParams iconLp =
  new FrameLayout.LayoutParams(a.dp(26), a.dp(26), Gravity.CENTER);
@@ -5222,7 +5236,7 @@ final class MobileShell {
  ? "没有匹配的收藏/历史"
  : (favoritesMode ? "还没有收藏任何影片" : "还没有观看记录"),
  17,
- MainActivity.WHITE);
+ a.cardInk());
  title.setTypeface(null, Typeface.BOLD);
  LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-2, -2);
  titleLp.topMargin = a.dp(14);
@@ -5235,7 +5249,7 @@ final class MobileShell {
  ? "在影片详情页点「收藏」，这里就会显示"
  : "看过的影片会自动记录，方便继续播放"),
  13,
- MainActivity.MUTED);
+ a.cardInkDim());
  LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(-2, -2);
  descLp.topMargin = a.dp(8);
  box.addView(desc, descLp);
@@ -5583,13 +5597,15 @@ final class MobileShell {
  }
 
  private void styleLibraryPill(TextView pill, boolean active) {
- pill.setTextColor(active ? 0xff000000 : a.userTextColor(0xffe6edf9));
+ // 1.9.325：分段按钮文字按用户卡片底自动搭配字色（不反色）
+ int ink = a.cardInk();
+ pill.setTextColor(active ? ink : Skin.dimInk(ink, 0xc0));
  pill.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
  pill.setPadding(a.dp(15), a.dp(7), a.dp(15), a.dp(7));
  if (active) {
- pill.setBackground(glassBg(0xffffffff, 0xffe9eef9, a.dp(999), 0, 0));
+ pill.setBackground(Skin.accentSoftFill(a.dp(999), a.dp(1.2f)));
  } else {
- pill.setBackground(glassBg(0xcc172842, 0xcc182b4c, a.dp(999), a.dp(0.7f), 0x38ffffff));
+ pill.setBackground(Skin.card(a.dp(999), a.dp(0.8f)));
  }
  }
 
@@ -5957,6 +5973,40 @@ final class MobileShell {
  addSettingCard(
  body,
  4,
+ "主题",
+ "当前：" + MainActivity.themeLabel(a.prefs) + " · "
+  + MainActivity.themeTag(a.prefs)
+  + " · 点击切换（8 套）",
+ () -> {
+ String next = MainActivity.nextCardPreset(MainActivity.currentThemeKey(a.prefs));
+ // 1.9.327：切换主题 = 同时重置「底 / 选中色 / 文字色」
+ MainActivity.applyTheme(next, a.prefs);
+ a.applyGlassTint();
+ a.toast("主题：" + Skin.presetName(next));
+ a.recreate();
+ });
+ addSettingCard(
+ body,
+ 4,
+ "自定义主题颜色",
+ "底色 / 选择色 / 文字色 可分别微调（切换主题后统一重置）",
+ () -> CardColorDialog.show(a));
+ addSettingCard(
+ body,
+ 4,
+ "卡片透明度",
+ "当前：" + a.prefs.getInt("glass_alpha", 40) + "% · 点击切换（20/40/60/80%）",
+ () -> {
+ int cur = a.prefs.getInt("glass_alpha", 40);
+ int next = cur < 40 ? 40 : cur < 60 ? 60 : cur < 80 ? 80 : 20;
+ a.prefs.edit().putInt("glass_alpha", next).apply();
+ a.applyGlassTint();
+ a.toast("卡片透明度：" + next + "%");
+ refreshInPlace.run();
+ });
+ addSettingCard(
+ body,
+ 4,
  "屏幕保护",
  new StringBuilder()
  .append(a.prefs.getBoolean(Prefs.SCREENSAVER_ENABLED, false) ? "已开启" : "已关闭")
@@ -6098,7 +6148,7 @@ final class MobileShell {
  });
  a.gap(body, 10);
  body.addView(
- a.text("关闭的板块只在首页隐藏，数据不会删除；随时可以再打开。", 12, 0xff8d9cb6));
+ a.text("关闭的板块只在首页隐藏，数据不会删除；随时可以再打开。", 12, Skin.TEXT_TERTIARY_T));
  } else if (settingsSubPage == 6) {
  ExtraPages.about(a, body);
  } else if (settingsSubPage == 7) {
@@ -6165,32 +6215,6 @@ final class MobileShell {
  "导出测试日志到文件",
  "写入 Download/DSH-Go/鲸落/test-<时间>.txt",
  () -> TestModeLog.export(a));
- addSettingCard(
- body,
- 5,
- "卡片颜色",
- "当前：" + glassColorLabel(a) + " · 点击切换（深蓝/黑/白/主题绿）",
- () -> {
- String cur = a.prefs.getString("glass_color", "blue");
- String next = "blue".equals(cur) ? "black" : "black".equals(cur) ? "white" : "white".equals(cur) ? "accent" : "blue";
- a.prefs.edit().putString("glass_color", next).apply();
- Skin.applyGlassPrefs(next, a.prefs.getInt("glass_alpha", 20));
- a.toast("卡片颜色：" + glassColorLabel(a));
- refreshInPlace.run();
- });
- addSettingCard(
- body,
- 5,
- "卡片透明度",
- "当前：" + a.prefs.getInt("glass_alpha", 20) + "% · 点击切换（10/20/35/50%）",
- () -> {
- int cur = a.prefs.getInt("glass_alpha", 20);
- int next = cur < 20 ? 20 : cur < 35 ? 35 : cur < 50 ? 50 : 10;
- a.prefs.edit().putInt("glass_alpha", next).apply();
- Skin.applyGlassPrefs(a.prefs.getString("glass_color", "blue"), next);
- a.toast("卡片透明度：" + next + "%");
- refreshInPlace.run();
- });
  addSettingCard(
  body,
  5,
@@ -6491,7 +6515,7 @@ final class MobileShell {
  a.text(
  "只用你自己信任、且有权访问的配置与插件。本 App 只是播放器，不内置、不提供任何影视资源。",
  12,
- 0xff8d9cb6));
+ Skin.TEXT_TERTIARY_T));
  }
 
  private void addGuideStep(LinearLayout body, String tag, String text) {
@@ -6563,7 +6587,7 @@ final class MobileShell {
  a.dp(UiTokens.SP_14),
  a.dp(UiTokens.SP_12));
  row.setBackground(
- glassBg(0xcc1e3557, 0xcc17294a, a.dp(UiTokens.RADIUS_20), a.dp(0.7f), 0x33ffffff));
+ a.cardBg(UiTokens.RADIUS_20));
  MobileDetailScreen.bindTouchFeedback(row);
  row.setOnClickListener(v -> action.run());
 
@@ -6825,10 +6849,8 @@ final class MobileShell {
  }
 
  private static String glassColorLabel(MainActivity a) {
- String c = a.prefs.getString("glass_color", "blue");
- if ("black".equals(c)) return "黑色";
- if ("white".equals(c)) return "白色";
- if ("accent".equals(c)) return "主题绿";
- return "深蓝";
+  String c = MainActivity.migrateCardPreset(a.prefs);
+  if ("custom".equals(c)) return "自定义";
+  return Skin.presetName(c);
  }
 }

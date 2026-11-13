@@ -143,7 +143,7 @@ final class PlayerChrome {
  episodeLabel.setShadowLayer(a.dp(4), 0, a.dp(1), 0xcc000000);
  subRow.addView(episodeLabel, new LinearLayout.LayoutParams(0, -2, 1f));
 
- resolution = a.text("", UiTokens.TYPE_MICRO, 0xffe2ebf8);
+ resolution = a.text("", UiTokens.TYPE_MICRO, Skin.TEXT_PRIMARY_T);
  resolution.setTag("player-resolution");
  resolution.setSingleLine(true);
  resolution.setIncludeFontPadding(false);
@@ -1483,7 +1483,7 @@ final class PlayerChrome {
  cx,
  cy,
  radius,
- new int[] {0xFF8FA8FF, 0x008FA8FF},
+ new int[] {Skin.ACCENT_STRONG, 0x008FA8FF},
  null,
  Shader.TileMode.CLAMP));
  blue.setAlpha((int) (255 * blueAlpha));
@@ -1493,7 +1493,7 @@ final class PlayerChrome {
  cx,
  cy,
  radius * 1.12f,
- new int[] {0xFFFFB3C8, 0x00FFB3C8},
+ new int[] {Skin.ACCENT_SOFT_T, 0x00FFB3C8},
  null,
  Shader.TileMode.CLAMP));
  pink.setAlpha((int) (255 * pinkAlpha));
@@ -1510,7 +1510,7 @@ final class PlayerChrome {
  LoadingBar(MainActivity a) {
  super(a);
  track.setColor(0x33FFFFFF);
- fill.setColor(0xFFFF8FB1);
+ fill.setColor(0xff000000 | (Skin.ACCENT_STRONG & 0xffffff));
  }
 
  void setProgress(float value) {
