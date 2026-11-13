@@ -4126,6 +4126,7 @@ public final class MainActivity extends Activity {
 
  @Override
  protected void onResume() {
+ AdFilter.sync(this);
  super.onResume();
  if (playerChrome != null) playerChrome.resumeLoadingAnimation();
  watchNetwork();

@@ -6168,6 +6168,18 @@ final class MobileShell {
  addSettingCard(
  body,
  5,
+ "广告过滤",
+ a.prefs.getBoolean(AdFilter.PREF, true) ? "已开启：拦截广告/统计域名" : "已关闭：不拦截任何请求",
+ () -> {
+ boolean on = !a.prefs.getBoolean(AdFilter.PREF, true);
+ a.prefs.edit().putBoolean(AdFilter.PREF, on).apply();
+ AdFilter.sync(a);
+ a.toast(on ? "广告过滤已开启" : "广告过滤已关闭");
+ refreshInPlace.run();
+ });
+ addSettingCard(
+ body,
+ 5,
  "性能浮层",
  PerfOverlay.enabled(a)
  ? "当前：开 · 右上角显示 FPS/掉帧/PSS/页面/壁纸"

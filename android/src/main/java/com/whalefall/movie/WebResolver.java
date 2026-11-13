@@ -20,12 +20,17 @@ public final class WebResolver {
  final Listener callback;
  final Map<String, String> initial;
  final String origin;
+ Activity activity;
  boolean stopped;
 
  private final class LegacyClient extends WebViewClient {
  @Override
  @SuppressWarnings("deprecation")
  public WebResourceResponse shouldInterceptRequest(WebView web, String url) {
+ if (AdFilter.reason(url) != null && AdFilter.enabled(activity instanceof MainActivity ? (MainActivity) activity : null)) {
+ AppLog.i("AdFilter", "web block token=" + AdFilter.reason(url) + " url=" + url);
+ return new WebResourceResponse("text/plain", "utf-8", new java.io.ByteArrayInputStream(new byte[0]));
+ }
  if (url != null && isMedia(url)) found(url, Collections.<String, String>emptyMap());
  return null;
  }
@@ -63,6 +68,7 @@ public final class WebResolver {
 
  public WebResolver(
  Activity activity, String address, Map<String, String> headers, Listener listener) {
+ activity = activity;
  origin = address;
  initial = new LinkedHashMap<>(headers);
  callback = listener;
