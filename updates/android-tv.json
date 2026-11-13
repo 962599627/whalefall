@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.9.288",
-  "versionCode": 19288,
+  "versionName": "1.9.337",
+  "versionCode": 19337,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "新增广告过滤（默认开启，设置页可关闭）。其余：小窗中央▶、片名兜底、收藏一致。",
-  "size": 37138071,
-  "sha256": "80a6adc26eb106e46a2b7a2f6fa9b3a8223ad1d0c8263fde618318bdd2090002",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.288-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.288-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.289",
+  "notes": "与手机版全量同步：8套主题、卡片调色盘、自动字色、小窗修复、历史集数、片名兜底、线路15秒回退；保留TV固定小窗与中央播放键。",
+  "size": 37162647,
+  "sha256": "a004697e2a5157cc6e327f0da9c097dd5056763be046a7d2ef4bb7321f8e7a4c",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.337",
   "variants": [
     {
       "kind": "tv",
       "label": "TV / 盒子版（32位）",
-      "size": 37138071,
-      "sha256": "80a6adc26eb106e46a2b7a2f6fa9b3a8223ad1d0c8263fde618318bdd2090002",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.288-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.288-android-tv.apk"
+      "size": 37162647,
+      "sha256": "a004697e2a5157cc6e327f0da9c097dd5056763be046a7d2ef4bb7321f8e7a4c",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-tv.apk"
     }
   ]
 }

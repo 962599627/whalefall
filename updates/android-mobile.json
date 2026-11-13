@@ -1,48 +1,32 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.9.289",
-  "versionCode": 19289,
+  "versionName": "1.9.337",
+  "versionCode": 19337,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "新增广告过滤（默认开启，可在设置-备份更新诊断关闭）：拦截广告/统计域名（Cms 请求与网页解析）。其余：小窗=海报位置、中央▶横屏全屏、收藏一致、片名兜底。",
-  "size": 62914684,
-  "sha256": "cab3a52815ecd496572dc491ed905e8393c6864e7280f9b0fb417081e39eab5e",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.289-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.289-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.289",
+  "notes": "新增主题体系（8套，一次切换底色/选中色/文字色）、卡片调色盘（底色/选择色/文字颜色三段）、自动搭配字色；小窗位置对齐片名、二次进入有画面、黑帧淡入；历史记录记住第几集；播放器片名兜底；线路15秒自动切换。",
+  "size": 62935164,
+  "sha256": "0dfff87f01d820b9ccc1295cb19b1de610b479abb0ef71a1fb4d9f900749931b",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.337",
   "variants": [
     {
       "kind": "mobile",
       "label": "手机 / 平板通用版",
-      "size": 62914684,
-      "sha256": "cab3a52815ecd496572dc491ed905e8393c6864e7280f9b0fb417081e39eab5e",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.289-android-mobile.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.289-android-mobile.apk"
+      "size": 62935164,
+      "sha256": "0dfff87f01d820b9ccc1295cb19b1de610b479abb0ef71a1fb4d9f900749931b",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-mobile.apk"
     },
     {
       "kind": "mobile-arm64-r8",
-      "label": "手机 64 位 R8 版（推荐，体积最小）",
-      "size": 33914221,
-      "sha256": "7f443c74cbded6dd1803452fef97d0741e0e4059cea951f7eeab20f6ff2c0e9d",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.289-android-mobile-arm64-r8.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.289-android-mobile-arm64-r8.apk"
-    },
-    {
-      "kind": "mobile-arm64",
-      "label": "手机 64 位版",
-      "size": 36478375,
-      "sha256": "90b4136de74c48c13ed54e3afa31c0ba2db147d244c7d0618f88df7f4447b956",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.289-android-mobile-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.289-android-mobile-arm64.apk"
-    },
-    {
-      "kind": "mobile-r8",
-      "label": "手机通用 R8 版",
-      "size": 60350530,
-      "sha256": "83274d510227c96df2eafa32e4692767dfa7dd98be4476095d4a633908a03347",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.289-android-mobile-r8.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.289-android-mobile-r8.apk"
+      "label": "手机 64 位 R8 版（推荐）",
+      "size": 33938797,
+      "sha256": "268ab68621b54e5264300d6926c6c7d5eeb0f07a931e02f2e89e382f01a1bf42",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-mobile-arm64-r8.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-mobile-arm64-r8.apk"
     }
   ]
 }
