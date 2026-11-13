@@ -47,7 +47,7 @@ final class HomeDock {
  a.dp(Math.round((bottomMode ? 6 : 8) * navScale)),
  a.dp(Math.round((bottomMode ? 10 : 6) * navScale)),
  a.dp(Math.round((bottomMode ? 6 : 8) * navScale)));
- a.glass(rail, Math.round(25 * navScale));
+ rail.setBackground(a.cardBg(25 * navScale));
  rail.setElevation(a.dp(8));
  FrameLayout.LayoutParams size =
  bottomMode
@@ -62,7 +62,7 @@ final class HomeDock {
  if (bottomMode) size.bottomMargin = a.dp(14);
  else size.rightMargin = a.dp(20);
  a.root.addView(rail, size);
- hint = a.text("", 12f * navScale, MainActivity.WHITE);
+ hint = a.text("", 12f * navScale, a.cardInk());
  hint.setTag("home-dock-label");
  hint.setGravity(Gravity.CENTER);
  hint.setIncludeFontPadding(false);
@@ -272,7 +272,7 @@ final class HomeDock {
  Rect b = getBounds();
  if (bottomMode) {
  float edge = b.bottom - a.dp(4);
- paint.setColor(0xff303036);
+ paint.setColor(Skin.CARD_BASE);
  paint.setStyle(Paint.Style.FILL);
  c.drawRoundRect(new RectF(b.left, b.top, b.right, edge), a.dp(9), a.dp(9), paint);
  Path point = new Path();
@@ -284,7 +284,7 @@ final class HomeDock {
  return;
  }
  float edge = b.right - a.dp(4), middle = b.exactCenterY();
- paint.setColor(0xff303036);
+ paint.setColor(Skin.CARD_BASE);
  paint.setStyle(Paint.Style.FILL);
  c.drawRoundRect(new RectF(b.left, b.top, edge, b.bottom), a.dp(9), a.dp(9), paint);
  Path tip = new Path();
@@ -335,13 +335,13 @@ final class HomeDock {
  }
  int glyphColor =
  hasFocus()
- ? MainActivity.WHITE
- : (isSelected() ? UiTokens.ACCENT_SOFT : UiTokens.TEXT_SECONDARY);
+ ? Skin.TEXT_PRIMARY_T
+ : (isSelected() ? Skin.accentSoft() : Skin.TEXT_SECONDARY_T);
  UiIcon.tintDrawable(glyph, glyphColor);
  UiIcon.drawCentered(c, glyph, getWidth(), getHeight(), a.dp(21f * navScale));
  if (isSelected()) {
  dotPaint.setStyle(Paint.Style.FILL);
- dotPaint.setColor(hasFocus() ? MainActivity.WHITE : UiTokens.ACCENT_SOFT);
+ dotPaint.setColor(hasFocus() ? Skin.TEXT_PRIMARY_T : Skin.accentSoft());
  c.drawCircle(a.dp(5), getHeight() / 2f, a.dp(1.5f), dotPaint);
  }
  }

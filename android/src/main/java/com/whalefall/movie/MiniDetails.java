@@ -25,7 +25,7 @@ final class MiniDetails {
  /** 1.9.250：被小窗替换隐藏的海报 View（退出时恢复）。 */
  View hiddenPoster;
 
- /** 1.9.287：小窗中央播放图标。 */
+ /** 1.9.280：小窗中央播放图标（放大/关闭时移除）。 */
  TextView centerPlayIcon;
 
  MiniDetails(MainActivity host) {
@@ -183,8 +183,54 @@ final class MiniDetails {
  a.ui.post(
  () -> {
  if (!a.miniMode) return;
+ // 1.9.331：小窗顶部与详情页片名标题对齐
+ try {
+ View title = a.root == null ? null : a.root.findViewWithTag("detail-title");
+ if (title != null) {
+ int[] tvv = new int[2], rv = new int[2];
+ title.getLocationInWindow(tvv);
+ a.root.getLocationInWindow(rv);
+ int ty = Math.max(0, tvv[1] - rv[1]);
+ if (ty > 0) {
+ videoLp.topMargin = ty;
+ pageLp.topMargin = ty;
+ AppLog.i("Mini", "align title y=" + ty);
+ }
+ }
+ } catch (Throwable ignored) {
+ }
  a.playbackLayer.setLayoutParams(videoLp);
  page.setLayoutParams(pageLp);
+ // 1.9.332：第二次进入时 Surface 可能仍是 detached 状态（无 lifecycle resume 日志）→ 主动重挂
+ try {
+ if (a.player != null) {
+ View vo = a.playbackLayer.findViewWithTag("video-output");
+ if (vo instanceof ViewGroup && ((ViewGroup) vo).getChildCount() > 0) {
+ View child = ((ViewGroup) vo).getChildAt(0);
+ if (child instanceof android.view.TextureView) {
+ // 1.9.333：强制重建 TextureView 的 Surface（移出再放回会触发 onSurfaceTextureAvailable → 重新 setSurface）
+ ViewGroup vg = (ViewGroup) vo;
+ vg.removeView(child);
+ vg.addView(child, new FrameLayout.LayoutParams(-1, -1));
+ AppLog.i("Mini", "output remount for fresh surface");
+ // 1.9.334：重建瞬间保持透明，120ms 后再淡入，遮住黑一帧
+ a.playbackLayer.setAlpha(0f);
+ a.playbackLayer.postDelayed(
+ () -> {
+ if (!a.miniMode) return;
+ a.playbackLayer.animate().alpha(1f).setDuration(120).start();
+ }, 120);
+ }
+ }
+ android.view.Surface s =
+ vo instanceof VideoOutput ? ((VideoOutput) vo).currentSurface() : null;
+ if (s != null) {
+ a.player.setSurface(s);
+ AppLog.i("Mini", "surface rebind ok " + s);
+ }
+ }
+ } catch (Throwable ignored) {
+ }
  PlaybackController.hideDetailHero(a, true);
  a.playbackLayer.bringToFront();
  page.bringToFront();
@@ -334,7 +380,124 @@ final class MiniDetails {
  return true;
  }
 
- private void applyHeroRect(int attempt) {
+ /** 1.9.272：手机/平板把播放层放到海报卡原位（片名上方），不重挂父容器、不改布局。 */
+ boolean bindPosterCardRect() {
+ if (a.root == null || a.playbackLayer == null) return false;
+ View card = a.root.findViewWithTag("detail-hero");
+ if (card == null) card = a.root.findViewWithTag("detail-cover");
+ if (card == null || card.getWidth() <= 0 || card.getHeight() <= 0) return false;
+ int[] cv = new int[2], rv = new int[2];
+ card.getLocationInWindow(cv);
+ a.root.getLocationInWindow(rv);
+ int x = Math.max(0, cv[0] - rv[0]);
+ int y = Math.max(0, cv[1] - rv[1]);
+ int w = card.getWidth();
+ int h = Math.round(w * 9f / 16f);
+ if (a.playbackLayer.getParent() != a.root) {
+ if (a.playbackLayer.getParent() instanceof ViewGroup)
+ ((ViewGroup) a.playbackLayer.getParent()).removeView(a.playbackLayer);
+ a.root.addView(a.playbackLayer);
+ }
+ FrameLayout.LayoutParams lp =
+ new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
+ lp.leftMargin = x;
+ lp.topMargin = y;
+ a.playbackLayer.setLayoutParams(lp);
+ a.playbackLayer.setVisibility(View.VISIBLE);
+ FrameLayout.LayoutParams plp =
+ new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT);
+ plp.leftMargin = x;
+ plp.topMargin = y;
+ page.setLayoutParams(plp);
+ if (page.getParent() != a.playbackLayer) {
+ if (page.getParent() instanceof ViewGroup)
+ ((ViewGroup) page.getParent()).removeView(page);
+ a.playbackLayer.addView(
+ page, new FrameLayout.LayoutParams(w, h, Gravity.TOP | Gravity.LEFT));
+ page.setLayoutParams(plp);
+ }
+ // 1.9.279：不再显示三个按钮，改为视频中央一个播放图标，点击=全屏
+ page.setVisibility(View.GONE);
+ try {
+ // 1.9.281：先清掉遗留的中央播放图标，避免反复进出后叠加
+ View stale = a.playbackLayer.findViewWithTag("mini-center-play");
+ if (stale != null && stale.getParent() instanceof ViewGroup)
+ ((ViewGroup) stale.getParent()).removeView(stale);
+ TextView centerPlay = miniButton("▶", "mini-center-play", () -> a.expandPlayback());
+ centerPlay.setTextSize(28);
+ centerPlay.setGravity(Gravity.CENTER);
+ FrameLayout.LayoutParams cp =
+ new FrameLayout.LayoutParams(a.dp(72), a.dp(72), Gravity.CENTER);
+ a.playbackLayer.addView(centerPlay, cp);
+ centerPlayIcon = centerPlay;
+ centerPlay.bringToFront();
+ } catch (Throwable ignored) {
+ }
+ // 1.9.278：控制层必须在点击层(hit)之上，否则只看到粉框看不到按钮
+ try {
+ if (hit != null && hit.getParent() instanceof ViewGroup) {
+ ViewGroup hp = (ViewGroup) hit.getParent();
+ hp.removeView(hit);
+ hp.addView(hit, new FrameLayout.LayoutParams(hp.getWidth(), hp.getHeight()));
+ hit.bringToFront();
+ page.bringToFront();
+ }
+ } catch (Throwable ignored) {
+ }
+ // 1.9.273：确保小窗内三个按钮层在最上面且尺寸与小窗一致
+ try {
+ page.setLayoutParams(plp);
+ if (page.getParent() == null) a.playbackLayer.addView(page, plp);
+ } catch (Throwable ignored) {
+ }
+ card.setVisibility(View.INVISIBLE);
+ // 1.9.274：按钮层诊断与强制可见
+ try {
+ if (page instanceof ViewGroup) {
+ ViewGroup pg = (ViewGroup) page;
+ if (pg.getChildCount() == 0) {
+ TextView play = miniButton(
+ a.player != null && a.playing ? "暂停" : "播放",
+ "mini-play",
+ () -> a.togglePlayback());
+ TextView expand = miniButton("全屏", "mini-expand", () -> a.expandPlayback());
+ TextView stop = miniButton("关闭", "mini-stop", () -> PlaybackController.releasePlayer(a));
+ LinearLayout bar = a.row();
+ bar.setGravity(Gravity.CENTER_VERTICAL);
+ bar.setPadding(a.dp(8), 0, a.dp(8), 0);
+ bar.addView(play, new LinearLayout.LayoutParams(0, a.dp(24), 1f));
+ bar.addView(expand, new LinearLayout.LayoutParams(0, a.dp(24), 1f));
+ bar.addView(stop, new LinearLayout.LayoutParams(0, a.dp(24), 1f));
+ FrameLayout.LayoutParams blp =
+ new FrameLayout.LayoutParams(-1, a.dp(24), Gravity.BOTTOM);
+ page.addView(bar, blp);
+ }
+ for (int i = 0; i < pg.getChildCount(); i++) pg.getChildAt(i).setVisibility(View.VISIBLE);
+ AppLog.i("Mini", "page children=" + pg.getChildCount() + " w=" + page.getWidth() + " h=" + page.getHeight());
+ }
+ } catch (Throwable ignored) {
+ }
+ hiddenPoster = card;
+ if (a.player != null) {
+ try {
+ a.player.setScaleMode(true);
+ } catch (Throwable ignored) {
+ }
+ }
+ // 顶栏提到最上层，避免被视频盖住
+ try {
+ View nav = a.root.findViewWithTag("detail-source-picker");
+ if (nav != null && nav.getParent() instanceof View)
+ ((View) nav.getParent()).bringToFront();
+ } catch (Throwable ignored) {
+ }
+ AppLog.i("Mini", "source=poster-rect x=" + x + " y=" + y + " w=" + w + " h=" + h);
+ return true;
+ }
+
+ private void applyHeroRect(int attempt) { // 1.9.272：海报卡原位（片名上方）
+ if (bindPosterCardRect()) return;
+
  if (!a.miniMode || a.root == null) return;
  // 1.9.250：优先放进海报槽位（同父容器同 LayoutParams）
  if (placeInPosterSlot()) return;

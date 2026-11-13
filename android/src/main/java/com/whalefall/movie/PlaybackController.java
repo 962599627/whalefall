@@ -1009,6 +1009,10 @@ final class PlaybackController {
  boolean overDetail = a.expandedOverDetail;
  a.expandedOverDetail = false;
  a.miniMode = true;
+ try {
+ a.applyPageOrientation("mini-restore");
+ } catch (Throwable ignored) {
+ }
  showControls(a, false);
  if (a.playbackControls.subtitle != null)
  a.playbackControls.subtitle.setVisibility(View.GONE);
@@ -1125,6 +1129,27 @@ final class PlaybackController {
  }
  }
  a.expandedOverDetail = true;
+ // 1.9.275：确保全屏时播放层回到 root 并铺满（否则横屏看到选集页）
+ try {
+ if (a.playbackLayer.getParent() instanceof android.view.ViewGroup
+ && a.playbackLayer.getParent() != a.root) {
+ ((android.view.ViewGroup) a.playbackLayer.getParent()).removeView(a.playbackLayer);
+ if (a.root != null) a.root.addView(a.playbackLayer);
+ }
+ a.playbackLayer.setVisibility(View.VISIBLE);
+ a.playbackLayer.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+ a.playbackLayer.bringToFront();
+ a.ui.post(
+ () -> {
+ if (a.playbackLayer != null) a.playbackLayer.bringToFront();
+ });
+ AppLog.i("Player", "expand fullscreen layer=root");
+ } catch (Throwable ignored) {
+ }
+ try {
+ a.applyPageOrientation("expand-mini");
+ } catch (Throwable ignored) {
+ }
  if (a.miniDetails != null) {
  a.miniDetails.remove();
  a.miniDetails = null;
@@ -1306,6 +1331,9 @@ final class PlaybackController {
  a.ui.postDelayed(tick[0], 1500);
  }
 
+ /** 1.9.336：线路自动切换令牌（新起播自增，旧计时失效）。 */
+ private static int lineFallbackToken;
+
  static void playerPage(MainActivity a, Cms.Site s, Cms.Video v, Cms.Episode ep) {
  if (a == null || s == null || v == null || ep == null) return;
  // 1.9.203：起播（含 mini/全屏）暂停动态壁纸，避免双硬解
@@ -1376,6 +1404,25 @@ final class PlaybackController {
  }
  a.generation++;
  final int ticket = a.generation;
+ // 1.9.336：线路连不上 15 秒自动切下一条线路
+ final int lineToken = ++lineFallbackToken;
+ final Cms.Line startLine = a.activeLine;
+ a.ui.postDelayed(
+ () -> {
+ if (lineToken != lineFallbackToken) return;
+ if (a.prepared || a.player != null) return;
+ if (startLine == null || v == null) return;
+ java.util.List<Cms.Line> lines = v.lines;
+ int idx = lines == null ? -1 : lines.indexOf(startLine);
+ if (lines == null || idx < 0 || idx + 1 >= lines.size()) return;
+ Cms.Line next = lines.get(idx + 1);
+ if (next == null || next.episodes == null || next.episodes.isEmpty()) return;
+ AppLog.i("Playback", "line fallback 15s -> " + next.name);
+ a.activeLine = next;
+ Cms.Episode fallbackEp = next.episodes.get(0);
+ resolvePlayer(a, s, v, next, fallbackEp);
+ },
+ 15000);
  a.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
  if (!a.isTvDevice()) {
  a.applyMobileSystemBars(true);
@@ -1485,6 +1532,8 @@ final class PlaybackController {
  new VideoOutput.Listener() {
  Surface renderSurface;
  int surfaceRevision;
+ /** 1.9.336：线路自动切换令牌，准备成功/切集时自增以取消旧计时。 */
+ int lineFallbackToken;
 
  public void available(Surface value) {
  renderSurface = value;
@@ -2267,6 +2316,10 @@ final class PlaybackController {
  a.playingBookmark.duration = dur;
  }
  a.playingBookmark.updated = System.currentTimeMillis();
+ // 1.9.334：写入前同步当前集，保证历史记录能显示看到第几集
+ if (a.activeEpisode != null) a.playingBookmark.episode = a.activeEpisode.name;
+ if (a.activeLine != null && a.activeEpisode != null)
+ a.playingBookmark.index = a.activeLine.episodes.indexOf(a.activeEpisode);
  a.prefs
  .edit()
  .putString(
@@ -2307,6 +2360,10 @@ final class PlaybackController {
  a.playingBookmark.duration = dur;
  }
  a.playingBookmark.updated = now;
+ // 1.9.334：同步当前集/线路，修复历史记录不显示第几集
+ if (a.activeEpisode != null) a.playingBookmark.episode = a.activeEpisode.name;
+ if (a.activeLine != null && a.activeEpisode != null)
+ a.playingBookmark.index = a.activeLine.episodes.indexOf(a.activeEpisode);
  a.prefs
  .edit()
  .putString(

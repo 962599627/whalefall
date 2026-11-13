@@ -18,7 +18,6 @@ final class AdFilter {
     "googleadservices.com",
     "adservice.google",
     "pagead2.",
-    "ads.youtube.com",
     "amazon-adsystem.com",
     "adnxs.com",
     "rubiconproject.com",
@@ -33,18 +32,8 @@ final class AdFilter {
     "adcolony.com",
     "applovin.com",
     "unityads.unity3d.com",
-    "track.adform.net",
-    "analytics.126.net",
-    "ad.360.cn",
-    "cpro.baidu.com",
-    "pos.baidu.com",
     "hm.baidu.com",
-    "splash.ad",
-    "advertisement.",
-    "/ad/",
-    "adpolicy",
-    "vast.xml",
-    "preroll",
+    "cpro.baidu.com",
   };
 
   private static volatile Boolean cached;
@@ -66,6 +55,9 @@ final class AdFilter {
     if (url == null || url.isEmpty()) return null;
     String u = url.toLowerCase(Locale.ROOT);
     if (u.startsWith("data:") || u.startsWith("blob:")) return null;
+    // 媒体地址一律放行，避免误伤视频/分片
+    if (u.contains(".m3u8") || u.contains(".mp4") || u.contains(".ts")
+        || u.contains(".flv") || u.contains(".mkv") || u.startsWith("magnet:")) return null;
     for (String token : BLOCK) if (u.contains(token)) return token;
     return null;
   }

@@ -31,11 +31,16 @@ final class HomeScreen {
  LinearLayout filterTagRow, filterOptionRow, filterOptionGrid;
  /** 1.9.37：薄玻璃（筛选面板同款），壁纸透出；TV 历史卡使用。 */
  android.graphics.drawable.GradientDrawable thinGlass(int radiusDp, boolean strongerStroke) {
+ // 1.9.322：统一跟随外观设置的卡片底色，不再写死白色玻璃底
  android.graphics.drawable.GradientDrawable d =
  new android.graphics.drawable.GradientDrawable();
- d.setColor(0x1affffff);
+ d.setColor((0xE6 << 24) | (Skin.cardFill & 0xffffff));
  d.setCornerRadius(a.dp(radiusDp));
- d.setStroke(a.dp(1), strongerStroke ? 0x26ffffff : 0x1affffff);
+ d.setStroke(
+ a.dp(1),
+ strongerStroke
+ ? (0x66 << 24) | (Skin.ACCENT_SOFT_T & 0xffffff)
+ : Skin.CARD_STROKE);
  return d;
  }
  LinearLayout filterPanel;
@@ -253,12 +258,8 @@ final class HomeScreen {
  // 1.9.35 紧凑版：薄玻璃面板（圆角16 / 无 header / padding 14·10 / 外边距 24·8·24·12）
  filterPanel = a.vertical();
  filterPanel.setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10));
- android.graphics.drawable.GradientDrawable filterPanelBg =
- new android.graphics.drawable.GradientDrawable();
- filterPanelBg.setColor(0x1affffff);
- filterPanelBg.setCornerRadius(a.dp(16));
- filterPanelBg.setStroke(a.dp(1), 0x26ffffff);
- filterPanel.setBackground(filterPanelBg);
+ // 1.9.306：筛选下拉面板也用用户卡片颜色
+ filterPanel.setBackground(Skin.panel(a.dp(16), a.dp(1)));
  filterPanel.setClipChildren(false);
  filterPanel.setVisibility(View.GONE);
  LinearLayout.LayoutParams filterPanelLp = new LinearLayout.LayoutParams(-1, -2);
@@ -1308,14 +1309,18 @@ final class HomeScreen {
  + filterLabel(def, value)
  : VideoFilters.displayLabel(def),
  14,
- active || open ? UiTokens.ACCENT_SOFT : 0xffa9b7d0);
+ active || open ? Skin.TEXT_PRIMARY_T : Skin.TEXT_SECONDARY_T);
+ // 1.9.325：字色按用户卡片底自动搭配
+ chip.setTextColor(active || open ? a.cardInk() : Skin.dimInk(a.cardInk(), 0xb8));
  chip.setTypeface(null, (active || open) ? Typeface.BOLD : Typeface.NORMAL);
  chip.setSingleLine(true);
  chip.setEllipsize(TextUtils.TruncateAt.END);
  chip.setMaxWidth(a.dp(260));
  chip.setGravity(Gravity.CENTER);
  chip.setSingleLine(true);
- chip.setPadding(a.dp(2), 0, a.dp(2), 0);
+ chip.setPadding(a.dp(9), 0, a.dp(9), 0);
+ // 1.9.322：选中 chip 只换浅强调底，文字保持 TEXT_PRIMARY_T
+ if (active || open) chip.setBackground(Skin.accentSoftFill(a.dp(12), a.dp(1)));
  MobileDetailScreen.bindTouchFeedback(chip);
  chip.setFocusable(true);
  chip.setFocusableInTouchMode(true);
@@ -1364,7 +1369,7 @@ final class HomeScreen {
  tagWrap.addView(chip, new LinearLayout.LayoutParams(-2, -2));
  if (active || open) {
  View underline = new View(a);
- underline.setBackgroundColor(0xffff8fb1);
+ underline.setBackgroundColor(Skin.accentStrong());
  LinearLayout.LayoutParams underlineLp =
  new LinearLayout.LayoutParams(a.dp(20), a.dp(2));
  underlineLp.topMargin = a.dp(4);
@@ -1617,17 +1622,24 @@ final class HomeScreen {
  a.text(
  choice.label,
  14,
- active ? 0xff070d18 : 0xfff5f7fc);
+ active ? Skin.TEXT_PRIMARY_T : 0xfff5f7fc);
+ // 1.9.325：字色按用户卡片底自动搭配
+ chip.setTextColor(active ? a.cardInk() : Skin.dimInk(a.cardInk(), 0xb8));
  chip.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
  chip.setGravity(Gravity.CENTER);
  chip.setSingleLine(true);
  chip.setPadding(padH, 0, padH, 0);
+ if (active) {
+ // 1.9.322：选中态只做浅强调底 + ACCENT_SOFT 描边，不再整块粉
+ chip.setBackground(Skin.accentSoftFill(a.dp(999), a.dp(1.2f)));
+ } else {
  android.graphics.drawable.GradientDrawable optBg =
  new android.graphics.drawable.GradientDrawable();
  optBg.setCornerRadius(a.dp(999));
- optBg.setColor(active ? UiTokens.ACCENT : 0x14ffffff);
- optBg.setStroke(a.dp(1), active ? 0x66ffb3c8 : 0x1affffff);
+ optBg.setColor(0x14ffffff);
+ optBg.setStroke(a.dp(1), 0x1affffff);
  chip.setBackground(optBg);
+ }
  MobileDetailScreen.bindTouchFeedback(chip);
  chip.setFocusable(true);
  chip.setFocusableInTouchMode(true);
@@ -2075,9 +2087,9 @@ final class HomeScreen {
  if (categoryHasFilters(id)) {
  boolean selected = id.equals(state.category);
  boolean filtered = selected && !state.selectedFilters.isEmpty();
- // 1.9.33：选中分类漏斗用 BG_DEEP，未选中：有筛选 ACCENT / 无筛选 TEXT_TERTIARY
+ // 1.9.322：选中分类漏斗图标用 TEXT_PRIMARY_T，不做反色
  int funnelColor =
- selected ? 0xff070d18 : filtered ? UiTokens.ACCENT : 0xff8d9cb6;
+ selected ? Skin.TEXT_PRIMARY_T : filtered ? Skin.accentStrong() : Skin.TEXT_TERTIARY_T;
  button.setCompoundDrawables(
  null, null, funnelDrawable(funnelColor, 16), null);
  button.setCompoundDrawablePadding(a.dp(8));
@@ -2132,27 +2144,20 @@ final class HomeScreen {
  void styleTab(TextView b) {
  boolean selected = state.category.equals(tabIds.get(b));
  b.setSelected(selected);
+ // 1.9.322：分类 tab 选中只换浅强调底，文字保持 TEXT_PRIMARY_T（不再深色字/粉色渐变压色块）
  FocusMotion.style(
  a,
  b,
  b.hasFocus(),
- selected ? 0xffeef2fb : 0xff16243c,
- selected ? 0xffeef2fb : 0xff22375a,
+ selected
+ ? (0x33 << 24) | (Skin.ACCENT_STRONG & 0xffffff)
+ : (0xE6 << 24) | (Skin.cardFill & 0xffffff),
+ MainActivity.WHITE,
  Math.round(17 * navScale),
- selected ? 0xff101a2e : a.userTextColor(MainActivity.WHITE),
- selected ? 0xff101a2e : a.userTextColor(MainActivity.WHITE),
+ selected ? a.cardInk() : Skin.dimInk(a.cardInk(), 0xb8),
+ MainActivity.DARK,
  true,
  1.02f);
- if (selected && !b.hasFocus()) {
- // 1.9.33：TV 分类选中态同步手机（ACCENT→ACCENT_SOFT 渐变 + 深色字）
- android.graphics.drawable.GradientDrawable grad =
- new android.graphics.drawable.GradientDrawable(
- android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
- new int[] {UiTokens.ACCENT, 0xffffb3c8});
- grad.setCornerRadius(a.dp(Math.round(17 * navScale)));
- b.setBackground(grad);
- b.setTextColor(0xff0b1220);
- }
  }
 
  void updateTabs() {
@@ -2580,7 +2585,7 @@ final class HomeScreen {
  card.setClipChildren(false);
  ImageView art = new AmbientPoster();
  art.setScaleType(ImageView.ScaleType.CENTER_CROP);
- art.setBackground(a.bg(0xff182a45, 10));
+ art.setBackground(a.bg((0xE6 << 24) | (Skin.cardFill & 0xffffff), 10));
  art.setClipToOutline(true);
  card.addView(
  art, new LinearLayout.LayoutParams(a.dp(posterWidth), a.dp(posterWidth * 1.5f)));
@@ -2648,11 +2653,11 @@ final class HomeScreen {
  int radius = Math.round(18 * navScale);
  b.setPadding(padH, 0, padH, 0);
  focusable(b, tag);
- b.setBackground(a.bg(0xff172742, radius));
+ b.setBackground(Skin.card(a.dp(radius), a.dp(1)));
  b.setOnClickListener(v -> action.run());
  b.setOnFocusChangeListener(
  (v, f) -> {
- outline(b, f, radius, 0xff172742);
+ outline(b, f, radius, (0xE6 << 24) | (Skin.cardFill & 0xffffff));
  if ("home-history-all".equals(tag)) {
  // 1.9.179：全部历史必须有可见焦点框与粉色描边
  AppLog.i("HomeFocus", "all-history focus=" + f);

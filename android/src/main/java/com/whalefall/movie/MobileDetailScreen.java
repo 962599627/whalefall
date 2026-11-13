@@ -66,6 +66,23 @@ final class MobileDetailScreen {
 
  static GradientDrawable glassBg(
  MainActivity a, int fillColor, int strokeColor, float radiusDp) {
+ // 1.9.299：统一使用外观设置里的卡片颜色/透明度（替换模式）
+ return Skin.card(a.dp(radiusDp), a.dp(0.8f));
+ }
+
+ /**
+  * 1.9.322：线路 chip / 集数格 / 季 chip 的统一 drawable 工厂。
+  *
+  * <p>未选中 = 用户卡片底；选中 = 同一卡片底 + 1.5dp ACCENT_SOFT 描边（不换实心色、不用蓝色描边）。
+  */
+ static GradientDrawable chipBg(MainActivity a, float radiusDp, boolean selected) {
+ GradientDrawable d = a.cardBg(radiusDp);
+ if (selected) d.setStroke(Math.max(1, a.dp(1.5f)), Skin.accentSoft());
+ return d;
+ }
+
+ private static GradientDrawable glassBgLegacy(
+ MainActivity a, int fillColor, int strokeColor, float radiusDp) {
  GradientDrawable gd = new GradientDrawable();
  gd.setColor(fillColor);
  gd.setCornerRadius(a.dp(radiusDp));
@@ -498,6 +515,7 @@ final class MobileDetailScreen {
  FrameLayout.LayoutParams topNavLp = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
  topNavLp.setMargins(sidePad, topPad + a.dp(8), sidePad, 0);
  a.root.addView(topNavRow, topNavLp);
+ a.root.post(() -> { try { topNavRow.bringToFront(); } catch (Throwable ignored) {} });
 
  TextView backBtn = a.text("‹", 22, Color.WHITE);
  backBtn.setTag("detail-back");
@@ -526,7 +544,7 @@ final class MobileDetailScreen {
  sourceTopLp.rightMargin = a.dp(8);
  topNavRow.addView(sourceTopBtn, sourceTopLp);
 
- final TextView downloadTopBtn = a.text("", 16, Color.WHITE);
+ final TextView downloadTopBtn = a.text("⇩", 16, Color.WHITE);
  downloadTopBtn.setTag("episodes-download");
  downloadTopBtn.setGravity(Gravity.CENTER);
  a.glass(downloadTopBtn, 999);
@@ -536,7 +554,7 @@ final class MobileDetailScreen {
  downloadLp.rightMargin = a.dp(8);
  topNavRow.addView(downloadTopBtn, downloadLp);
 
- final TextView favTopBtn = a.text("", 17, Color.WHITE);
+ final TextView favTopBtn = a.text("♡", 17, Color.WHITE);
  favTopBtn.setTag("detail-favorite");
  favTopBtn.setGravity(Gravity.CENTER);
  a.glass(favTopBtn, 999);
@@ -548,8 +566,8 @@ final class MobileDetailScreen {
  boolean faved =
  Favorites.contains(
  a.prefs.getString(Prefs.FAVORITES, "[]"), s.key, listing.id);
- favTopBtn.setText(faved ? "" : "");
- favTopBtn.setTextColor(faved ? 0xffff8fb1 : a.themeColor(Color.WHITE));
+ favTopBtn.setText(faved ? "♥" : "♡");
+ favTopBtn.setTextColor(faved ? Skin.ACCENT_STRONG : a.themeColor(Color.WHITE));
  View actFav = a.root == null ? null : a.root.findViewWithTag("detail-act-favorite");
  if (actFav instanceof TextView)
  ((TextView) actFav).setText(faved ? " 已收藏" : " 收藏");
@@ -684,6 +702,9 @@ final class MobileDetailScreen {
  // ---------------- 片源 / 线路列表（平板在左栏下方，手机在资料列里） ----------------
  LinearLayout lineSection = a.vertical();
  lineSection.setTag("detail-lines");
+ // 1.9.322：整块“片源 · 线路”区块统一用卡片底
+ lineSection.setBackground(a.cardBg(14));
+ lineSection.setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8));
  LinearLayout lineHeader = a.row();
  lineHeader.setGravity(Gravity.CENTER_VERTICAL);
  LinearLayout.LayoutParams lineHeaderLp = new LinearLayout.LayoutParams(-1, -2);
@@ -692,7 +713,7 @@ final class MobileDetailScreen {
  TextView lineTitle = a.text("片源 · 线路", 13, MainActivity.WHITE);
  lineTitle.setTypeface(null, Typeface.BOLD);
  lineHeader.addView(lineTitle, new LinearLayout.LayoutParams(0, -2, 1f));
- TextView lineSite = a.text(s.name, 11, 0xff8d9cb6);
+ TextView lineSite = a.text(s.name, 11, Skin.TEXT_TERTIARY_T);
  lineSite.setSingleLine(true);
  lineSite.setEllipsize(TextUtils.TruncateAt.END);
  lineHeader.addView(lineSite);
@@ -714,9 +735,10 @@ final class MobileDetailScreen {
 
  FrameLayout previewCard = new FrameLayout(a);
  GradientDrawable previewBg = new GradientDrawable();
- previewBg.setColor(0xff0d1a2b);
+ // 1.9.322：跟随用户卡片底色，不再写死 0xff0d1a2b
+ previewBg.setColor((0xE6 << 24) | (Skin.cardFill & 0xffffff));
  previewBg.setCornerRadius(a.dp(wide ? 20 : 18));
- previewBg.setStroke(Math.max(1, a.dp(0.8f)), 0x22ffffff);
+ previewBg.setStroke(Math.max(1, a.dp(0.8f)), Skin.CARD_STROKE);
  previewCard.setBackground(previewBg);
  previewCard.setClipToOutline(true);
  previewCard.setTag("detail-hero");
@@ -743,15 +765,15 @@ final class MobileDetailScreen {
  bigHintLp.setMargins(a.dp(16), 0, 0, a.dp(14));
  previewCard.addView(bigPlayHint, bigHintLp);
 
- TextView bigPlay = a.text("播放", 16, 0xff31141f);
+ TextView bigPlay = a.text("播放", 16, Skin.TEXT_PRIMARY_T);
  bigPlay.setTag("detail-play-big");
  bigPlay.setTypeface(null, Typeface.BOLD);
  bigPlay.setGravity(Gravity.CENTER);
- GradientDrawable bigFill =
- new GradientDrawable(
- GradientDrawable.Orientation.LEFT_RIGHT,
- new int[] {0xffffc7d6, 0xfff59ab5});
+ // 1.9.322：大块粉底 → 中性卡片底 + 细强调描边，粉色只做小面积强调
+ GradientDrawable bigFill = new GradientDrawable();
+ bigFill.setColor((0xE6 << 24) | (Skin.cardFill & 0xffffff));
  bigFill.setCornerRadius(a.dp(999));
+ bigFill.setStroke(Math.max(1, a.dp(1.2f)), Skin.accentSoft());
  bigPlay.setBackground(bigFill);
  bigPlay.setElevation(a.dp(8));
  bindTouchFeedback(bigPlay);
@@ -822,7 +844,18 @@ final class MobileDetailScreen {
  v -> {
  if (v.poster == null || v.poster.isEmpty()) v.poster = listing.poster;
  if (v.title == null || v.title.isEmpty()) v.title = listing.title;
- titleView.setText(v.title);
+ String shownTitle = v.title;
+ if (shownTitle == null || shownTitle.trim().isEmpty() || "未命名影片".equals(shownTitle)) {
+ if (listing != null && listing.title != null && !listing.title.trim().isEmpty())
+ shownTitle = listing.title.trim();
+ if (shownTitle == null
+ || shownTitle.trim().isEmpty()
+ || "未命名影片".equals(shownTitle)) shownTitle = "未命名影片";
+ AppLog.i("Detail", "title fallback=" + shownTitle + " listing=" + (listing == null ? "-" : listing.title));
+ }
+ // 1.9.335：兜底片名回写到 video，播放器左上角才能显示正确片名
+ if (shownTitle != null && !shownTitle.trim().isEmpty()) v.title = shownTitle.trim();
+ titleView.setText(shownTitle);
  actorTv.setText(actorLine(v.actor));
  actorTv.setVisibility(
  actorTv.getText().length() == 0 ? View.GONE : View.VISIBLE);
@@ -857,22 +890,19 @@ final class MobileDetailScreen {
 
  favTopBtn.setOnClickListener(
  view -> {
- a.prefs
- .edit()
- .putString(
- Prefs.FAVORITES,
- Favorites.toggle(
- a.prefs.getString(Prefs.FAVORITES, "[]"),
- s.key,
- v))
- .apply();
- boolean faved =
- Favorites.contains(
- a.prefs.getString(Prefs.FAVORITES, "[]"),
- s.key,
- v.id);
- favTopBtn.setText(faved ? "" : "");
- favTopBtn.setTextColor(faved ? 0xffff8fb1 : a.themeColor(Color.WHITE));
+ // 1.9.284：用「列表条目」作为收藏身份（站点+listing.id），避免 video.id 为空导致无法取消/不同步
+ Cms.Video favVideo = new Cms.Video();
+ favVideo.id = listing.id;
+ favVideo.title = listing.title;
+ favVideo.poster = listing.poster;
+ String before = a.prefs.getString(Prefs.FAVORITES, "[]");
+ boolean wasFaved = Favorites.contains(before, s.key, listing.id);
+ String after = Favorites.toggle(before, s.key, favVideo);
+ a.prefs.edit().putString(Prefs.FAVORITES, after).apply();
+ AppLog.i("Detail", "fav click id=" + listing.id + " before=" + wasFaved + " after=" + Favorites.contains(after, s.key, listing.id));
+ boolean faved = !wasFaved;
+ favTopBtn.setText(faved ? "♥" : "♡");
+ favTopBtn.setTextColor(faved ? Skin.ACCENT_STRONG : a.themeColor(Color.WHITE));
  View actFav =
  a.root == null
  ? null
@@ -891,7 +921,7 @@ final class MobileDetailScreen {
  : "";
  if (!descRaw.isEmpty() || !castRaw.isEmpty()) {
  final TextView descTv =
- a.text(descRaw.isEmpty() ? castRaw : descRaw, 13, 0xffa9b7d0);
+ a.text(descRaw.isEmpty() ? castRaw : descRaw, 13, Skin.TEXT_SECONDARY_T);
  descTv.setTag("detail-synopsis");
  descTv.setGravity(Gravity.START);
  descTv.setLineSpacing(a.dp(4), 1.45f);
@@ -899,7 +929,7 @@ final class MobileDetailScreen {
  descTv.setEllipsize(TextUtils.TruncateAt.END);
  synopsisWrap.addView(descTv, new LinearLayout.LayoutParams(-1, -2));
 
- final TextView castTv = a.text(castRaw, 11.5f, 0xff8d9cb6);
+ final TextView castTv = a.text(castRaw, 11.5f, Skin.TEXT_TERTIARY_T);
  castTv.setGravity(Gravity.START);
  castTv.setPadding(0, a.dp(6), 0, 0);
  castTv.setMaxLines(3);
@@ -994,12 +1024,12 @@ final class MobileDetailScreen {
  playBtn.setIncludeFontPadding(false);
  playBtn.setTextSize(14);
  playBtn.setTypeface(null, Typeface.BOLD);
- playBtn.setTextColor(0xff31141f);
- GradientDrawable playFill =
- new GradientDrawable(
- GradientDrawable.Orientation.LEFT_RIGHT,
- new int[] {0xffffc7d6, 0xffff9ab5});
+ playBtn.setTextColor(Skin.TEXT_PRIMARY_T);
+ // 1.9.322：主播放按钮改中性卡片底 + ACCENT_SOFT 细描边（不再大块粉色渐变）
+ GradientDrawable playFill = new GradientDrawable();
+ playFill.setColor((0xE6 << 24) | (Skin.cardFill & 0xffffff));
  playFill.setCornerRadius(a.dp(999));
+ playFill.setStroke(Math.max(1, a.dp(1.2f)), Skin.accentSoft());
  playBtn.setBackground(playFill);
  playBtn.setElevation(a.dp(4));
  playBtn.setPadding(a.dp(18), 0, a.dp(18), 0);
@@ -1034,7 +1064,7 @@ final class MobileDetailScreen {
  + " · 线路："
  + remembered.line
  : "已观看 [" + bmDisp.cleanTitle + "] · 线路：" + remembered.line;
- TextView bmInfo = a.text(bmSummary, 11.5f, 0xff8d9cb6);
+ TextView bmInfo = a.text(bmSummary, 11.5f, Skin.TEXT_TERTIARY_T);
  bmInfo.setSingleLine(true);
  bmInfo.setEllipsize(TextUtils.TruncateAt.MIDDLE);
  bmInfo.setGravity(Gravity.START);
@@ -1170,7 +1200,7 @@ final class MobileDetailScreen {
  /** 资料区的操作胶囊：玻璃底 + 胶囊圆角，与电视台页按钮同色系。 */
  private static TextView actionPill(
  MainActivity a, String label, View.OnClickListener click) {
- TextView t = a.text(label, 12, 0xffe6edf9);
+ TextView t = a.text(label, 12, a.cardInk());
  t.setSingleLine(true);
  t.setGravity(Gravity.CENTER);
  t.setPadding(a.dp(14), 0, a.dp(14), 0);
@@ -1219,15 +1249,13 @@ final class MobileDetailScreen {
  boolean on = i == selected;
  LinearLayout row = a.vertical();
  row.setPadding(a.dp(12), a.dp(7), a.dp(12), a.dp(7));
- GradientDrawable bg = new GradientDrawable();
- bg.setColor(on ? 0x14ff8fb1 : 0x0affffff);
- bg.setCornerRadius(a.dp(12));
- row.setBackground(bg);
+ // 1.9.322：未选中=卡片底，选中=同底 + ACCENT_SOFT 描边
+ row.setBackground(chipBg(a, 12f, on));
  bindTouchFeedback(row);
 
  LinearLayout top = a.row();
  top.setGravity(Gravity.CENTER_VERTICAL);
- TextView name = a.text(line.name, on ? 13.5f : 13, on ? Color.WHITE : 0xff8d9cb6);
+ TextView name = a.text(line.name, on ? 13.5f : 13, a.cardInk());
  name.setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
  name.setSingleLine(true);
  name.setEllipsize(TextUtils.TruncateAt.END);
@@ -1240,7 +1268,7 @@ final class MobileDetailScreen {
  if (on) {
  View underline = new View(a);
  GradientDrawable lineBg = new GradientDrawable();
- lineBg.setColor(0xffff8fb1);
+ lineBg.setColor(0xff000000 | (Skin.cardAccent & 0xffffff));
  lineBg.setCornerRadius(a.dp(1));
  underline.setBackground(lineBg);
  LinearLayout.LayoutParams underlineLp =
@@ -1504,11 +1532,10 @@ final class MobileDetailScreen {
  cell.setPadding(a.dp(12), 0, a.dp(10), 0);
  GradientDrawable cellBg = new GradientDrawable();
  if (isCurrent) {
- cellBg.setColor(0xffff8fb1);
- cellBg.setStroke(Math.max(1, a.dp(1f)), 0x66ffb3c8);
+ // 1.9.322：当前集=卡片底 + ACCENT_SOFT 描边，不再整块粉
+ cellBg = chipBg(a, 14f, true);
  } else {
- cellBg.setColor(0x1affffff);
- cellBg.setStroke(Math.max(1, a.dp(0.8f)), 0x26ffffff);
+ cellBg = chipBg(a, 14f, false);
  }
  cellBg.setCornerRadius(a.dp(14));
  cell.setBackground(cellBg);
@@ -1529,14 +1556,14 @@ final class MobileDetailScreen {
  a.text(
  String.format(Locale.US, "%02d", posIdx + 1),
  11.5f,
- isCurrent ? 0xff31141f : 0xff8d9cb6);
+ a.cardInk());
  num.setTypeface(null, Typeface.BOLD);
  num.setGravity(Gravity.CENTER);
  num.setMinWidth(a.dp(24));
  cell.addView(num, new LinearLayout.LayoutParams(-2, -2));
 
  TextView nameTv =
- a.text(disp.cleanTitle, 12.5f, isCurrent ? Color.WHITE : 0xffe6edf9);
+ a.text(disp.cleanTitle, 12.5f, a.cardInk());
  nameTv.setTypeface(null, isCurrent ? Typeface.BOLD : Typeface.NORMAL);
  nameTv.setSingleLine(true);
  nameTv.setEllipsize(TextUtils.TruncateAt.END);
@@ -1549,7 +1576,7 @@ final class MobileDetailScreen {
  a.text(
  disp.specBadge,
  9.5f,
- isCurrent ? 0xb331141f : 0xff7f8fa9);
+ isCurrent ? Skin.TEXT_SECONDARY_T : 0xff7f8fa9);
  badge.setSingleLine(true);
  badge.setEllipsize(TextUtils.TruncateAt.END);
  LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(-2, -2);
@@ -1586,10 +1613,11 @@ final class MobileDetailScreen {
  descending
  ? (total - g * 50) + " · " + Math.max(1, total - gEnd + 1)
  : gStart + " · " + gEnd;
- TextView tab = a.text(label, 12.5f, selectedGroup ? 0xff0c1524 : 0xd9ffffff);
+ TextView tab = a.text(label, 12.5f, Skin.TEXT_PRIMARY_T);
  tab.setTypeface(null, Typeface.BOLD);
  tab.setPadding(a.dp(15), a.dp(6), a.dp(15), a.dp(6));
- tab.setBackground(a.bg(selectedGroup ? Color.WHITE : 0x30ffffff, 999));
+ // 1.9.322：范围胶囊同样走卡片底/选中描边工厂
+ tab.setBackground(chipBg(a, 999f, selectedGroup));
  bindTouchFeedback(tab);
  tab.setOnClickListener(
  v ->
@@ -1688,13 +1716,14 @@ final class MobileDetailScreen {
  && line.name.equals(remembered.line)
  && ep.name.equals(remembered.episode);
  EpisodeDisplay disp = parseEpisodeDisplay(ep.name, posIdx + 1);
- TextView cell = a.text(disp.cleanTitle, 13, isCurrent ? 0xff111114 : Color.WHITE);
+ TextView cell = a.text(disp.cleanTitle, 13, a.cardInk());
  cell.setTypeface(null, isCurrent ? Typeface.BOLD : Typeface.NORMAL);
  cell.setGravity(Gravity.CENTER);
  cell.setSingleLine(true);
  cell.setEllipsize(TextUtils.TruncateAt.END);
  cell.setPadding(a.dp(8), a.dp(10), a.dp(8), a.dp(10));
- cell.setBackground(a.bg(isCurrent ? Color.WHITE : 0xff182a45, 10));
+ // 1.9.322：全部剧集格同样走卡片底/选中描边工厂
+ cell.setBackground(chipBg(a, 10f, isCurrent));
  bindTouchFeedback(cell);
  cell.setOnClickListener(
  v -> {
@@ -1738,12 +1767,12 @@ final class MobileDetailScreen {
  boolean active =
  (targetVid != null && Objects.equals(targetVid.id, currentVideo.id))
  || sNum == curMeta.seasonNumber;
- TextView pill = a.text(sLabel, 12.5f, active ? 0xff0c1524 : 0xe6ffffff);
+ TextView pill = a.text(sLabel, 12.5f, Skin.TEXT_PRIMARY_T);
  pill.setTag("detail-season:" + sNum);
  pill.setTypeface(null, Typeface.BOLD);
  pill.setPadding(a.dp(14), a.dp(5), a.dp(14), a.dp(5));
- pill.setBackground(
- active ? a.bg(Color.WHITE, 999) : glassBg(a, 0x30ffffff, 0x30ffffff, 999));
+ // 1.9.322：季 chip 同一工厂：卡片底 + 选中 ACCENT_SOFT 描边
+ pill.setBackground(chipBg(a, 999f, active));
  bindTouchFeedback(pill);
  pill.setOnClickListener(
  v -> {

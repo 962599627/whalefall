@@ -49,6 +49,8 @@ final class VideoFilterDialog {
  Runnable changed,
  int bottomMarginDp) {
  if (a.root == null) return;
+ // 1.9.328：防重入 + 清掉上一次残留的 filter-sheet，避免切页/进播放后浅色浮层盖住画面
+ dismiss(a);
 
  final FrameLayout overlay = new FrameLayout(a);
  overlay.setTag("filter-sheet");
@@ -57,7 +59,7 @@ final class VideoFilterDialog {
 
  final LinearLayout sheet = a.vertical();
  sheet.setPadding(a.dp(18), a.dp(10), a.dp(18), a.dp(16));
- sheet.setBackground(topSheetBg(a, 0xf00b1220, 0x33ffffff, 24f));
+ sheet.setBackground(Skin.topPanel(a.dp(24)));
  sheet.setElevation(a.dp(18));
  sheet.setClickable(true);
 

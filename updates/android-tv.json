@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.9.287",
-  "versionCode": 19287,
+  "versionName": "1.9.288",
+  "versionCode": 19288,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "电视：小窗中央单个播放图标（点一下=全屏）；片名为空时用副标题/英文名兜底；收藏状态一致（可正常取消）。其余保持 1.9.256 基线。",
+  "notes": "新增广告过滤（默认开启，设置页可关闭）。其余：小窗中央▶、片名兜底、收藏一致。",
   "size": 37138071,
-  "sha256": "40e36ad2bbcfb1908eb611460137b10163ecd5e1f088dfdce990de3cafc9571b",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.287/WhaleFall-1.9.287-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.287/WhaleFall-1.9.287-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.287",
+  "sha256": "80a6adc26eb106e46a2b7a2f6fa9b3a8223ad1d0c8263fde618318bdd2090002",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.288-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.288-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.289",
   "variants": [
     {
       "kind": "tv",
       "label": "TV / 盒子版（32位）",
       "size": 37138071,
-      "sha256": "40e36ad2bbcfb1908eb611460137b10163ecd5e1f088dfdce990de3cafc9571b",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.287/WhaleFall-1.9.287-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.287/WhaleFall-1.9.287-android-tv.apk"
+      "sha256": "80a6adc26eb106e46a2b7a2f6fa9b3a8223ad1d0c8263fde618318bdd2090002",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.288-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.289/WhaleFall-1.9.288-android-tv.apk"
     }
   ]
 }

@@ -19,20 +19,20 @@ import java.util.List;
  * 设计规范见 docs/DESIGN_REVIEW_1.4.6.md：只改主色，次要 72%、弱文字 66% 自动派生。
  */
 final class TextColorDialog {
- /** 9 格色板：第 0 格是默认 #4CFF80 亮绿。 */
+ /** 9 格主题色板：樱花粉三档 + 中性三档 + 粉底深字/黑/白。 */
  private static final int[] PRESETS = {
- 0xff4cff80, 0xff2b313b, 0xffffb3c8,
- 0xffff8fb1, 0xff7fb2ff, 0xff28c7c7,
- 0xff43d17a, 0xffffd54f, 0xffa97bff
+ 0xffff8fb1, 0xffffb3c8, 0xffffd6e3,
+ 0xffffe3ec, 0xffd9bcc7, 0xffa98693,
+ 0xff2a1018, 0xff000000, 0xffffffff
  };
  private static final String[] NAMES = {
- "默认 · 亮绿 #4CFF80", "亮壁纸深灰", "樱粉",
- "樱花粉", "深海蓝", "青色",
- "绿色", "黄色", "紫色"
+ "樱花粉 #FF8FB1", "樱粉浅 #FFB3C8", "樱粉淡 #FFD6E3",
+ "暖夜白 #FFE3EC", "雾梅 #D9BCC7", "梅灰 #A98693",
+ "粉底深字 #2A1018", "黑", "白"
  };
  /** 推荐组合：只改主色，次要/弱文字按 72%/66% 自动派生。 */
- private static final int[] RECOMMENDED = {0xff4cff80, 0xff2b313b, 0xffffb3c8};
- private static final String[] RECOMMENDED_NAMES = {"亮绿", "亮壁纸深灰", "樱粉"};
+ private static final int[] RECOMMENDED = {0xffff8fb1, 0xffffe3ec, 0xffffb3c8};
+ private static final String[] RECOMMENDED_NAMES = {"樱花粉", "暖夜白", "樱粉浅"};
 
  private TextColorDialog() {}
 
@@ -76,6 +76,12 @@ final class TextColorDialog {
 
  /** {@code initialArgb >= 0} 用于对比度二次确认「返回修改」时带回用户刚选的颜色。 */
  static void show(final MainActivity a, final int initialArgb) {
+ AppLog.i(
+ "Theme",
+ "dialog=text presets=9 accent=#"
+ + Integer.toHexString(Skin.ACCENT_STRONG)
+ + " text=#"
+ + Integer.toHexString(Skin.TEXT_PRIMARY_T));
  final int initial =
  initialArgb >= 0
  ? opaque(initialArgb)
@@ -100,7 +106,6 @@ final class TextColorDialog {
  preview.setBackground(a.bg(0x33000000, 12));
  preview.setFocusable(true);
  preview.setTag("textcolor-preview");
- box.addView(preview, new LinearLayout.LayoutParams(-1, -2));
  final TextView contrastLabel =
  a.text(
  "对比度（深色底）：" + contrastText(toRgb(rgb)),
@@ -143,7 +148,7 @@ final class TextColorDialog {
  a,
  chip,
  focused,
- 0xff172742,
+ Skin.CARD_BASE,
  MainActivity.WHITE,
  999,
  MainActivity.WHITE,
@@ -187,6 +192,8 @@ final class TextColorDialog {
  box.addView(comboRow, new LinearLayout.LayoutParams(-1, -2));
  a.gap(box, 8);
 
+ box.addView(preview, new LinearLayout.LayoutParams(-1, -2));
+ a.gap(box, 6);
  // ---------------- RGB 滑条 ----------------
  String[] names = {"R", "G", "B"};
  for (int i = 0; i < 3; i++) {
