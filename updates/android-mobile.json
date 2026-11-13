@@ -19,6 +19,22 @@
       "sha256": "d3f02df3b470969e5c1a91074df41a8b7d1f8a9599025d31a0ee0ac5d1bdbdc4",
       "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.287/WhaleFall-1.9.285-android-mobile.apk",
       "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.287/WhaleFall-1.9.285-android-mobile.apk"
+    },
+    {
+      "kind": "mobile-r8",
+      "label": "手机 R8 版",
+      "size": 60350530,
+      "sha256": "e6954dd296431dfe9617760ba4dc6685a9e1be2cf7bc41c737c20dc1d266c952",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.287/WhaleFall-1.9.285-android-mobile-r8.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.287/WhaleFall-1.9.285-android-mobile-r8.apk"
+    },
+    {
+      "kind": "mobile-arm64",
+      "label": "手机 64 位版",
+      "size": 36478375,
+      "sha256": "d8fa629519e634c7fe866f5bcc538edc3de2c28f4acc1b4b928d23fec6adb8e0",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.287/WhaleFall-1.9.285-android-mobile-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.287/WhaleFall-1.9.285-android-mobile-arm64.apk"
     }
   ]
 }
