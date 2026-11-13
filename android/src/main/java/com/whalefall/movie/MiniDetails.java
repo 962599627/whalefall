@@ -3,6 +3,7 @@ package com.whalefall.movie;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -23,6 +24,9 @@ final class MiniDetails {
 
  /** 1.9.250：被小窗替换隐藏的海报 View（退出时恢复）。 */
  View hiddenPoster;
+
+ /** 1.9.287：小窗中央播放图标。 */
+ TextView centerPlayIcon;
 
  MiniDetails(MainActivity host) {
  a = host;
@@ -642,6 +646,11 @@ final class MiniDetails {
  }
 
  void remove() {
+ if (centerPlayIcon != null) {
+ if (centerPlayIcon.getParent() instanceof ViewGroup)
+ ((ViewGroup) centerPlayIcon.getParent()).removeView(centerPlayIcon);
+ centerPlayIcon = null;
+ }
  if (hiddenPoster != null) {
  hiddenPoster.setVisibility(View.VISIBLE);
  hiddenPoster = null;
