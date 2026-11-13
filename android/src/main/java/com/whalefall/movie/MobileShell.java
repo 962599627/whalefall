@@ -5286,8 +5286,10 @@ final class MobileShell {
  h.action.setVisibility(selecting ? View.GONE : View.VISIBLE);
  if (!selecting) {
  h.action.setOnClickListener(v -> removeFavorite(f));
+ // 1.9.285：收藏卡片上的操作按钮改为爱心图标（点击取消收藏），卡片本身点击进详情
+ h.action.setText(selecting ? "取消" : "♥");
+ h.action.setTextColor(a.userTextColor(0xffff6b9d));
  if (cols == 1) {
- h.action.setText("详情");
  h.action.setTextColor(a.userTextColor(0xffc9d4e6));
  }
  }

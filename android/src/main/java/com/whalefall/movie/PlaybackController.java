@@ -1009,6 +1009,10 @@ final class PlaybackController {
  boolean overDetail = a.expandedOverDetail;
  a.expandedOverDetail = false;
  a.miniMode = true;
+ try {
+ a.applyPageOrientation("mini-restore");
+ } catch (Throwable ignored) {
+ }
  showControls(a, false);
  if (a.playbackControls.subtitle != null)
  a.playbackControls.subtitle.setVisibility(View.GONE);
@@ -1125,6 +1129,27 @@ final class PlaybackController {
  }
  }
  a.expandedOverDetail = true;
+ // 1.9.275：确保全屏时播放层回到 root 并铺满（否则横屏看到选集页）
+ try {
+ if (a.playbackLayer.getParent() instanceof android.view.ViewGroup
+ && a.playbackLayer.getParent() != a.root) {
+ ((android.view.ViewGroup) a.playbackLayer.getParent()).removeView(a.playbackLayer);
+ if (a.root != null) a.root.addView(a.playbackLayer);
+ }
+ a.playbackLayer.setVisibility(View.VISIBLE);
+ a.playbackLayer.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+ a.playbackLayer.bringToFront();
+ a.ui.post(
+ () -> {
+ if (a.playbackLayer != null) a.playbackLayer.bringToFront();
+ });
+ AppLog.i("Player", "expand fullscreen layer=root");
+ } catch (Throwable ignored) {
+ }
+ try {
+ a.applyPageOrientation("expand-mini");
+ } catch (Throwable ignored) {
+ }
  if (a.miniDetails != null) {
  a.miniDetails.remove();
  a.miniDetails = null;

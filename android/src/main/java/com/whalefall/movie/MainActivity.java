@@ -1699,6 +1699,16 @@ public final class MainActivity extends Activity {
  || "web-live".equals(tag)
  || "web-player".equals(tag)
  || (root != null && "player-surface".equals(root.getTag()));
+ // 1.9.272：小窗放大全屏期间强制横屏（播放器，而不是选集页）
+ if (expandedOverDetail && player != null) {
+ if (getRequestedOrientation()
+ != android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+ setRequestedOrientation(
+ android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+ AppLog.i("Orient", "form=phone page=player set=landscape reason=expanded-guard");
+ }
+ return;
+ }
  int target =
  playerPage
  ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -2510,6 +2520,19 @@ public final class MainActivity extends Activity {
  }
 
  void refresh() {
+ // 1.9.276：小窗放大全屏（横屏）期间禁止重建详情页，否则播放层丢失只剩选集页
+ if (expandedOverDetail && player != null && playbackLayer != null) {
+ try {
+ if (playbackLayer.getParent() != root && root != null) root.addView(playbackLayer);
+ playbackLayer.setVisibility(View.VISIBLE);
+ playbackLayer.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+ playbackLayer.bringToFront();
+ AppLog.i("Player", "expand keep-layer skip-refresh");
+ return;
+ } catch (Throwable ignored) {
+ }
+ }
+
  capture();
  Screen s = current;
  s.render.run();

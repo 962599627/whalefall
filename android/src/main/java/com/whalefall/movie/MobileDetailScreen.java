@@ -498,6 +498,7 @@ final class MobileDetailScreen {
  FrameLayout.LayoutParams topNavLp = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
  topNavLp.setMargins(sidePad, topPad + a.dp(8), sidePad, 0);
  a.root.addView(topNavRow, topNavLp);
+ a.root.post(() -> { try { topNavRow.bringToFront(); } catch (Throwable ignored) {} });
 
  TextView backBtn = a.text("‹", 22, Color.WHITE);
  backBtn.setTag("detail-back");
@@ -526,7 +527,7 @@ final class MobileDetailScreen {
  sourceTopLp.rightMargin = a.dp(8);
  topNavRow.addView(sourceTopBtn, sourceTopLp);
 
- final TextView downloadTopBtn = a.text("", 16, Color.WHITE);
+ final TextView downloadTopBtn = a.text("⇩", 16, Color.WHITE);
  downloadTopBtn.setTag("episodes-download");
  downloadTopBtn.setGravity(Gravity.CENTER);
  a.glass(downloadTopBtn, 999);
@@ -536,7 +537,7 @@ final class MobileDetailScreen {
  downloadLp.rightMargin = a.dp(8);
  topNavRow.addView(downloadTopBtn, downloadLp);
 
- final TextView favTopBtn = a.text("", 17, Color.WHITE);
+ final TextView favTopBtn = a.text("♡", 17, Color.WHITE);
  favTopBtn.setTag("detail-favorite");
  favTopBtn.setGravity(Gravity.CENTER);
  a.glass(favTopBtn, 999);
@@ -548,7 +549,7 @@ final class MobileDetailScreen {
  boolean faved =
  Favorites.contains(
  a.prefs.getString(Prefs.FAVORITES, "[]"), s.key, listing.id);
- favTopBtn.setText(faved ? "" : "");
+ favTopBtn.setText(faved ? "♥" : "♡");
  favTopBtn.setTextColor(faved ? 0xffff8fb1 : a.themeColor(Color.WHITE));
  View actFav = a.root == null ? null : a.root.findViewWithTag("detail-act-favorite");
  if (actFav instanceof TextView)
@@ -822,7 +823,16 @@ final class MobileDetailScreen {
  v -> {
  if (v.poster == null || v.poster.isEmpty()) v.poster = listing.poster;
  if (v.title == null || v.title.isEmpty()) v.title = listing.title;
- titleView.setText(v.title);
+ String shownTitle = v.title;
+ if (shownTitle == null || shownTitle.trim().isEmpty() || "未命名影片".equals(shownTitle)) {
+ if (listing != null && listing.title != null && !listing.title.trim().isEmpty())
+ shownTitle = listing.title.trim();
+ if (shownTitle == null
+ || shownTitle.trim().isEmpty()
+ || "未命名影片".equals(shownTitle)) shownTitle = "未命名影片";
+ AppLog.i("Detail", "title fallback=" + shownTitle + " listing=" + (listing == null ? "-" : listing.title));
+ }
+ titleView.setText(shownTitle);
  actorTv.setText(actorLine(v.actor));
  actorTv.setVisibility(
  actorTv.getText().length() == 0 ? View.GONE : View.VISIBLE);
@@ -857,21 +867,18 @@ final class MobileDetailScreen {
 
  favTopBtn.setOnClickListener(
  view -> {
- a.prefs
- .edit()
- .putString(
- Prefs.FAVORITES,
- Favorites.toggle(
- a.prefs.getString(Prefs.FAVORITES, "[]"),
- s.key,
- v))
- .apply();
- boolean faved =
- Favorites.contains(
- a.prefs.getString(Prefs.FAVORITES, "[]"),
- s.key,
- v.id);
- favTopBtn.setText(faved ? "" : "");
+ // 1.9.284：用「列表条目」作为收藏身份（站点+listing.id），避免 video.id 为空导致无法取消/不同步
+ Cms.Video favVideo = new Cms.Video();
+ favVideo.id = listing.id;
+ favVideo.title = listing.title;
+ favVideo.poster = listing.poster;
+ String before = a.prefs.getString(Prefs.FAVORITES, "[]");
+ boolean wasFaved = Favorites.contains(before, s.key, listing.id);
+ String after = Favorites.toggle(before, s.key, favVideo);
+ a.prefs.edit().putString(Prefs.FAVORITES, after).apply();
+ AppLog.i("Detail", "fav click id=" + listing.id + " before=" + wasFaved + " after=" + Favorites.contains(after, s.key, listing.id));
+ boolean faved = !wasFaved;
+ favTopBtn.setText(faved ? "♥" : "♡");
  favTopBtn.setTextColor(faved ? 0xffff8fb1 : a.themeColor(Color.WHITE));
  View actFav =
  a.root == null
