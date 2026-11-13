@@ -904,6 +904,10 @@ public final class Cms {
  String address, Map<String, String> headers, Map<String, String> form)
  throws Exception {
  if (!isHttp(address)) throw new IOException("只支持 HTTP(S) 地址");
+ if (AdFilter.reason(address) != null && AdFilter.enabled(null)) {
+ AppLog.i("AdFilter", "block token=" + AdFilter.reason(address) + " url=" + address);
+ throw new IOException("广告请求已拦截");
+ }
  URL next = new URL(normalizeHttp(address));
  Map<String, String> forwarded = new LinkedHashMap<>();
  byte[] body = null;
