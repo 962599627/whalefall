@@ -527,10 +527,12 @@ final class UpdateManager {
  OutputStream out = new FileOutputStream(part, start > 0)) {
  byte[] bytes = new byte[32768];
  long total = start;
+ long sampleBytes = 0;
  int n, last = -1;
  while ((n = in.read(bytes)) != -1) {
  if (cancel) throw new InterruptedIOException();
  total += n;
+ sampleBytes += n;
  if (!unknownSize && total > size) throw new IOException("limit");
  out.write(bytes, 0, n);
  if (!unknownSize) {
@@ -539,7 +541,9 @@ final class UpdateManager {
  long nowMs = android.os.SystemClock.elapsedRealtime();
  if (nowMs - lastProgressAt >= 500) {
  long deltaMs = Math.max(1, nowMs - lastProgressAt);
- speedBps = (long) (n * 1000.0 / deltaMs);
+ // 1.9.340：用 500ms 窗口内累计字节算速度（旧实现只用最后一个 32KB 块 → 永远显示 0.0MB/s）
+ speedBps = (long) (sampleBytes * 1000.0 / deltaMs);
+ sampleBytes = 0;
  lastProgressAt = nowMs;
  int now = (int) (total * 100 / size);
  if (now != last) {

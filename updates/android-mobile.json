@@ -1,40 +1,40 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.9.339",
-  "versionCode": 19339,
+  "versionName": "1.9.340",
+  "versionCode": 19340,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "修复更新下载器：镜像最多 2 个、GitHub 官方源优先、不支持断点续传的源自动跳过，不再重复从 0 下载；变体清单容错（单个包体异常不再导致整次检查失败）。",
+  "notes": "修复更新下载：速度显示（改用 500ms 窗口累计字节，不再一直 0.0 MB/s）、镜像精简与跳过不支持断点续传的源（不再重复从 0 下载）、变体清单容错。",
   "size": 62935164,
-  "sha256": "ef68fb4538b53c310f204ee572be1930395e4c4076487bb6095463b2c9a14077",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.339/WhaleFall-1.9.339-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.339/WhaleFall-1.9.339-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.339",
+  "sha256": "1e65c6617ec08af8a33c4a0652e6736e125fd23bb3846f65ada3df167c143597",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.340/WhaleFall-1.9.340-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.340/WhaleFall-1.9.340-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.340",
   "variants": [
     {
       "kind": "mobile",
       "label": "标准版（双 ABI）",
       "size": 62935164,
-      "sha256": "ef68fb4538b53c310f204ee572be1930395e4c4076487bb6095463b2c9a14077",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.339/WhaleFall-1.9.339-android-mobile.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.339/WhaleFall-1.9.339-android-mobile.apk"
+      "sha256": "1e65c6617ec08af8a33c4a0652e6736e125fd23bb3846f65ada3df167c143597",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.340/WhaleFall-1.9.340-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.340/WhaleFall-1.9.340-android-mobile.apk"
     },
     {
       "kind": "arm64",
       "label": "arm64 精简版",
       "size": 36498855,
-      "sha256": "a518535b30c326970ec880233f687d0153896f79df6a41cf35b09cd0a74db4f1",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.339/WhaleFall-1.9.339-android-mobile-arm64.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.339/WhaleFall-1.9.339-android-mobile-arm64.apk"
+      "sha256": "caf6611a28536ee99a05b8dc25f020eb6a82db17e461d3b74e7d88124f4149c9",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.340/WhaleFall-1.9.340-android-mobile-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.340/WhaleFall-1.9.340-android-mobile-arm64.apk"
     },
     {
       "kind": "r8",
       "label": "R8 精简版（arm64+R8）",
       "size": 33938797,
-      "sha256": "8f455a121c29dee78b5291a1e9c9a47f009423595dc0b6dd79d3d586e0359eb1",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.339/WhaleFall-1.9.339-android-mobile-arm64-r8.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.339/WhaleFall-1.9.339-android-mobile-arm64-r8.apk"
+      "sha256": "96839787c40414466c04827878d95976be0298e94c8601f93e520339d2ab9793",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.340/WhaleFall-1.9.340-android-mobile-arm64-r8.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.340/WhaleFall-1.9.340-android-mobile-arm64-r8.apk"
     }
   ]
 }
