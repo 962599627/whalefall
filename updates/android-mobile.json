@@ -13,7 +13,7 @@
   "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.407",
   "variants": [
     {
-      "kind": "arm64",
+      "kind": "mobile",
       "label": "手机 / 平板（arm64 + R8）",
       "size": 33951085,
       "sha256": "2aa1d8dfee13be2dc03f46b394eb6403b8fc2c6e3fe977199662a1985f951fd0",
