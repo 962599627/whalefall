@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.9.407",
-  "versionCode": 19407,
+  "versionName": "1.9.409",
+  "versionCode": 19409,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "修复电视小窗冻帧/黑屏/中间态（叠加层：播放层不 detach、解码输出尺寸不变、同步摆位）；回首页与快速连点返回必定释放；小窗态纵向焦点恢复；选集格与首页分类条支持遥控聚焦；历史集数按容错回退。",
-  "size": 37174935,
-  "sha256": "69360acc3d7b857878ec1f1a9c9ac5ca7ce99766a36afcc452c6a3e0dae7ee9f",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.407",
+  "notes": "minSdk 统一为 23，修复 App 内更新下载完成后校验失败静默重下；其余同 1.9.407：电视小窗冻帧/黑屏/中间态修复、快返释放、小窗纵向焦点、选集与首页分类条遥控聚焦、历史集数容错。",
+  "size": 37170655,
+  "sha256": "c060752962e1370a8dd37b053ca8f8aaf57717f03f369205a76ee9ad64753edd",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.409/WhaleFall-1.9.409-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.409/WhaleFall-1.9.409-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.409",
   "variants": [
     {
       "kind": "tv",
       "label": "TV / 盒子版（32位）",
-      "size": 37174935,
-      "sha256": "69360acc3d7b857878ec1f1a9c9ac5ca7ce99766a36afcc452c6a3e0dae7ee9f",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-tv.apk"
+      "size": 37170655,
+      "sha256": "c060752962e1370a8dd37b053ca8f8aaf57717f03f369205a76ee9ad64753edd",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.409/WhaleFall-1.9.409-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.409/WhaleFall-1.9.409-android-tv.apk"
     }
   ]
 }
