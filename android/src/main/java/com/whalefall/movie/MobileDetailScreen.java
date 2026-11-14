@@ -1553,6 +1553,7 @@ final class MobileDetailScreen {
  cellBg.setCornerRadius(a.dp(14));
  cell.setBackground(cellBg);
  bindTouchFeedback(cell);
+ a.focusableForRemote(cell, 14);
  cell.setOnClickListener(
  v -> {
  a.resumeAt = 0;

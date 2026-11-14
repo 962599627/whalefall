@@ -1605,6 +1605,7 @@ final class MobileShell {
  for (Cms.Category c : currentCategories) {
  addCategoryChip(catRow, c.name, c.id, this, fetchCategoryPage[0]);
  }
+ wireCategoryFocusChain(catRow);
  }
  };
 
@@ -2878,6 +2879,84 @@ final class MobileShell {
  return false;
  }
 
+ /** 1.9.405：分类条左右串链，并与首页卡片网格上下互连（遥控可达）。 */
+ private void wireCategoryFocusChain(LinearLayout catRow) {
+ try {
+ if (catRow == null || catRow.getChildCount() == 0) return;
+ java.util.List<View> chips = new java.util.ArrayList<>();
+ for (int i = 0; i < catRow.getChildCount(); i++) {
+ View child = catRow.getChildAt(i);
+ if (child != null && child.isFocusable()) chips.add(child);
+ }
+ for (int i = 0; i < chips.size(); i++) {
+ View chip = chips.get(i);
+ if (chip.getId() == View.NO_ID) chip.setId(View.generateViewId());
+ if (i - 1 >= 0) chip.setNextFocusLeftId(chips.get(i - 1).getId());
+ if (i + 1 < chips.size()) chip.setNextFocusRightId(chips.get(i + 1).getId());
+ }
+ a.ui.post(
+ () -> {
+ try {
+ if (a.root == null) return;
+ // 1.9.406：不依赖固定 tag（首页卡片 tag 前缀不稳定），直接扫描第一个可聚焦元素作为落点
+ View firstCard = null;
+ java.util.ArrayDeque<View> queue = new java.util.ArrayDeque<>();
+ queue.push(a.root);
+ while (!queue.isEmpty() && firstCard == null) {
+ View v = queue.pop();
+ if (v == catRow) continue;
+ String t = v.getTag() == null ? "" : String.valueOf(v.getTag());
+ if (t.startsWith("home-cat:")) continue;
+ if (v.isFocusable() && v.isShown() && v != a.root) {
+ firstCard = v;
+ break;
+ }
+ if (v instanceof android.view.ViewGroup) {
+ android.view.ViewGroup g = (android.view.ViewGroup) v;
+ for (int i = 0; i < g.getChildCount(); i++) queue.push(g.getChildAt(i));
+ }
+ }
+ if (firstCard == null) {
+ AppLog.i("TvNav", "home cat chain no landing view");
+ return;
+ }
+ if (firstCard.getId() == View.NO_ID) firstCard.setId(View.generateViewId());
+ firstCard.setNextFocusUpId(chips.get(0).getId());
+ for (View chip : chips) chip.setNextFocusDownId(firstCard.getId());
+ // 1.9.407：分类条上方的所有可聚焦项（今晚看什么/历史等）↓ 必须先落到筛选标签，不能直接跳过
+ try {
+ int[] chipPos = new int[2];
+ chips.get(0).getLocationInWindow(chipPos);
+ int chipTop = chipPos[1];
+ java.util.ArrayDeque<View> all = new java.util.ArrayDeque<>();
+ all.push(a.root);
+ int wired = 0;
+ while (!all.isEmpty()) {
+ View v = all.pop();
+ if (v instanceof android.view.ViewGroup) {
+ android.view.ViewGroup g = (android.view.ViewGroup) v;
+ for (int i = 0; i < g.getChildCount(); i++) all.push(g.getChildAt(i));
+ }
+ if (!v.isFocusable() || !v.isShown() || v == a.root) continue;
+ String tag = v.getTag() == null ? "" : String.valueOf(v.getTag());
+ if (tag.startsWith("home-cat:")) continue;
+ int[] pv = new int[2];
+ v.getLocationInWindow(pv);
+ if (pv[1] + v.getHeight() <= chipTop + a.dp(8)) {
+ v.setNextFocusDownId(chips.get(0).getId());
+ wired++;
+ }
+ }
+ AppLog.i("TvNav", "home cat chain chips=" + chips.size() + " aboveWired=" + wired);
+ } catch (Throwable ignored) {
+ }
+ } catch (Throwable ignored) {
+ }
+ });
+ } catch (Throwable ignored) {
+ }
+ }
+
  private void addCategoryChip(
  LinearLayout row,
  String label,
@@ -2900,6 +2979,28 @@ final class MobileShell {
  chip.setBackground(Skin.accentSoftFill(a.dp(999), a.dp(1.2f)));
  } else {
  chip.setBackground(Skin.card(a.dp(999), a.dp(0.7f)));
+ }
+ // 1.9.404/1.9.405：首页分类条遥控聚焦 + 焦点自动滚到可见
+ try {
+ a.focusableForRemote(chip, 999);
+ chip.setTag("home-cat:" + catId);
+ chip.setOnFocusChangeListener(
+ (v, focused) -> {
+ if (!focused) return;
+ try {
+ android.view.ViewParent parent = v.getParent();
+ while (parent != null && !(parent instanceof android.widget.HorizontalScrollView))
+ parent = parent.getParent();
+ if (parent instanceof android.widget.HorizontalScrollView) {
+ android.widget.HorizontalScrollView scroller =
+ (android.widget.HorizontalScrollView) parent;
+ scroller.smoothScrollTo(Math.max(0, v.getLeft() - a.dp(24)), 0);
+ }
+ AppLog.i("TvNav", "home cat focus=" + v.getTag());
+ } catch (Throwable ignored) {
+ }
+ });
+ } catch (Throwable ignored) {
  }
  if (hasFilters) {
  boolean filtered = catId.equals(selectedCategoryId) && !selectedFilters.isEmpty();

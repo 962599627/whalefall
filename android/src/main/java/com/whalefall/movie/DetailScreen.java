@@ -536,6 +536,11 @@ final class DetailScreen {
  a.resolvePlayer(site, video, line, episode);
  });
  button.setContentDescription(episode.name);
+ // 1.9.402：选集格子无条件挂焦点环（之前只在 TV 分支绘制，手机/平板遥控看不到选中效果）
+ try {
+ TvNav.focusRing(a, button, 12);
+ } catch (Throwable ignored) {
+ }
  // Display the COMPLETE episode name directly inside the button (multi-line, no
  // ellipsis)
  button.setSingleLine(false);

@@ -44,12 +44,10 @@ final class PlayerOverlay {
  container.setBackgroundColor(Color.BLACK);
  container.setClipChildren(false);
  container.setClipToPadding(false);
+ // 1.9.399：页面子 View 不做 INVISIBLE 切换（那会导致选集网格高度为 0、恢复后闪烁）；
+ // 全屏时用不透明黑底遮住页面，小窗时把黑底变透明即可，页面一直保持已测量状态。
  ArrayList<View> hidden = new ArrayList<>();
- for (int i = 0; i < a.root.getChildCount(); i++) {
- View child = a.root.getChildAt(i);
- hidden.add(child);
- child.setVisibility(View.INVISIBLE);
- }
+ for (int i = 0; i < a.root.getChildCount(); i++) hidden.add(a.root.getChildAt(i));
  a.playerOverlayHidden = hidden;
  a.root.addView(container, new FrameLayout.LayoutParams(-1, -1));
  a.playerOverlayAttached = true;
@@ -69,21 +67,25 @@ final class PlayerOverlay {
 
  /** 页面（详情页/首页）重新可见：小窗状态需要它作为背景。 */
  static void showPage(MainActivity a) {
- if (a == null || a.playerOverlayHidden == null) return;
- for (View v : a.playerOverlayHidden) {
- if (v != null) v.setVisibility(View.VISIBLE);
- }
+ if (a == null) return;
+ // 1.9.399：只把叠加层变透明，页面从未被隐藏，选集网格不会丢
+ backdrop(a, false);
  // 1.9.390：叠加层拿走焦点后必须交回页面，否则 mCurrentFocus=null、遥控像失灵
  if (a.root != null) a.root.requestFocus();
  }
 
  /** 全屏播放：页面重新隐藏、播放层缩放复位。 */
  static void hidePage(MainActivity a) {
- if (a == null || a.playerOverlayHidden == null) return;
- for (View v : a.playerOverlayHidden) {
- if (v != null) v.setVisibility(View.INVISIBLE);
- }
+ if (a == null) return;
+ // 1.9.399：全屏时用黑底遮住页面，不做可见性切换
+ backdrop(a, true);
  reset(a);
+ }
+
+ /** 1.9.394：全屏=纯黑底；小窗=透明底，否则黑底会盖住恢复出来的详情页。 */
+ static void backdrop(MainActivity a, boolean opaque) {
+ FrameLayout container = host(a);
+ if (container != null) container.setBackgroundColor(opaque ? Color.BLACK : Color.TRANSPARENT);
  }
 
  /** 只缩放播放层（不改父、不改尺寸），满足「解码输出尺寸全程不变」。 */
@@ -116,6 +118,9 @@ final class PlayerOverlay {
  static void detach(MainActivity a) {
  if (a == null || a.root == null) return;
  FrameLayout container = host(a);
+ if (a.playerOverlayHidden != null) {
+ for (View v : a.playerOverlayHidden) if (v != null) v.setVisibility(View.VISIBLE);
+ }
  showPage(a);
  if (container != null && container.getParent() instanceof ViewGroup) {
  ((ViewGroup) container.getParent()).removeView(container);

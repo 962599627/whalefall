@@ -194,6 +194,8 @@ final class MiniDetailsLegacy extends MiniWindow {
  PlaybackController.hideDetailHero(a, true);
  a.playbackLayer.bringToFront();
  page.bringToFront();
+ // 1.9.397：矩形就位后一次性显示（同帧完成，无中间态）
+ a.playbackLayer.setAlpha(1f);
  AppLog.i(
  "Mini",
  "enter size="
@@ -384,8 +386,10 @@ final class MiniDetailsLegacy extends MiniWindow {
  vlp.leftMargin = x;
  vlp.topMargin = y;
  if (a.playerOverlayAttached) {
- // 1.9.387：叠加层模式只缩放播放层，保持解码输出尺寸与父节点不变
- PlayerOverlay.scaleTo(a, x, y, w, h);
+ // 1.9.395：只缩放播放层（不改解码输出尺寸/父节点）；按用户要求铺到海报区的 80%，居中
+ int mw = Math.round(w * 0.8f);
+ int mh = Math.round(h * 0.8f);
+ PlayerOverlay.scaleTo(a, x + (w - mw) / 2, y + (h - mh) / 2, mw, mh);
  } else {
  a.playbackLayer.setLayoutParams(vlp);
  }
@@ -596,6 +600,23 @@ final class MiniDetailsLegacy extends MiniWindow {
  centerPlayIcon = centerPlay;
  centerPlay.bringToFront();
  centerPlay.requestFocus();
+ // 1.9.398：小窗中央键的上下焦点要能回到详情页操作区/选集，否则小窗态右侧按钮永远选不到
+ try {
+ if (centerPlay.getId() == View.NO_ID) centerPlay.setId(View.generateViewId());
+ View downTarget = a.root == null ? null : a.root.findViewWithTag("detail-intro-chip");
+ if (downTarget == null && a.root != null) downTarget = a.root.findViewWithTag("synopsis-toggle");
+ if (downTarget == null && a.root != null) downTarget = a.root.findViewWithTag("detail-act-order");
+ if (downTarget != null) {
+ if (downTarget.getId() == View.NO_ID) downTarget.setId(View.generateViewId());
+ centerPlay.setNextFocusDownId(downTarget.getId());
+ centerPlay.setNextFocusUpId(downTarget.getId());
+ if (downTarget.getParent() instanceof android.view.ViewGroup) {
+ downTarget.setNextFocusUpId(centerPlay.getId());
+ }
+ AppLog.i("MiniFocus", "center-play chain down=" + downTarget.getTag());
+ }
+ } catch (Throwable ignored) {
+ }
  AppLog.i("Mini", "center-play icon focused");
  } catch (Throwable ignored) {
  }

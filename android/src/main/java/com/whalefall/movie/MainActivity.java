@@ -165,6 +165,54 @@ public final class MainActivity extends Activity {
  boolean playerOverlayAttached;
  /** 1.9.389：当前是否处于叠加层小窗态（决定播放层用缩放还是 LayoutParams）。 */
  boolean overlayMiniActive;
+
+ /**
+ * 1.9.393：幂等的 UI 状态收敛。任何返回/释放/异常路径都可安全调用，
+ * 保证不会停在「黑屏、页面被隐藏、mini/expanded 状态悬挂」的状态。
+ */
+ /** 1.9.403：移动端控件可遥控聚焦化（三端都要能用遥控，触摸不受影响）。 */
+ void focusableForRemote(View v) {
+ focusableForRemote(v, 12);
+ }
+
+ void focusableForRemote(View v, int radiusDp) {
+ if (v == null) return;
+ try {
+ v.setFocusable(true);
+ v.setFocusableInTouchMode(true);
+ TvNav.focusRing(this, v, radiusDp);
+ } catch (Throwable ignored) {
+ }
+ }
+
+ void restoreUiState(String reason) {
+ try {
+ if (playerOverlayAttached) {
+ if (playbackLayer != null) {
+ playbackLayer.setAlpha(1f);
+ playbackLayer.setVisibility(View.VISIBLE);
+ }
+ if (playerOverlayHidden != null) {
+ for (View v : playerOverlayHidden) if (v != null) v.setVisibility(View.VISIBLE);
+ }
+ return;
+ }
+ if (playbackLayer != null) {
+ playbackLayer.setVisibility(View.GONE);
+ playbackLayer.setAlpha(1f);
+ }
+ if (root != null) {
+ for (int i = 0; i < root.getChildCount(); i++) root.getChildAt(i).setVisibility(View.VISIBLE);
+ root.requestLayout();
+ root.requestFocus();
+ }
+ miniMode = false;
+ expandedOverDetail = false;
+ overlayMiniActive = false;
+ AppLog.i("Playback", "restoreUiState reason=" + reason);
+ } catch (Throwable ignored) {
+ }
+ }
  boolean miniMode;
  /** 1.9.53：从小窗放大回全屏、但底下仍是详情页时使用（BACK 再缩回小窗）。 */
  boolean expandedOverDetail;
@@ -2852,6 +2900,7 @@ public final class MainActivity extends Activity {
 
  @Override
  public void onBackPressed() {
+ restoreUiState("back");
  // 1.9.168：IPTV 选择器自绘面板优先关闭
  if (IptvPickerPanel.handleBack()) {
  AppLog.i("IptvOrg", "picker close source=back");
@@ -3725,8 +3774,9 @@ public final class MainActivity extends Activity {
  // 1.9.367：释放来源日志
  AppLog.i("Playback", "releaseOnPageChange reason=" + reason + " mini=" + miniMode);
 
- // 1.9.386：缩小窗/放大过渡保护期内一律不释放（过渡完成后标志自动清除）
- if (miniTransitionGuard) {
+ // 1.9.396：过渡保护期只拦「页面渲染」造成的误释放；用户按 BACK / 换 tab 时必须真释放，
+ // 否则快速连点返回会出现「已回首页但小窗/声音还在」。
+ if (miniTransitionGuard && ("page".equals(reason) || "open".equals(reason))) {
  AppLog.i("Playback", "release skipped reason=mini-transition from=" + reason);
  return;
  }
@@ -4141,11 +4191,13 @@ public final class MainActivity extends Activity {
  View f = getCurrentFocus();
  boolean insideMini =
  f != null && isDescendantOf(playbackLayer, f);
- if (!insideMini) {
+ // 1.9.401：只在「真的没有焦点」时兜底。原先无条件把 ↑↓ 抢到小窗中央键，
+ // 导致小窗态在选集页上纵向导航完全失效（第一次进选集页正常、返回小窗后失效）。
+ if (!insideMini && f == null) {
  View cp = playbackLayer.findViewWithTag("mini-center-play");
  if (cp != null) {
  cp.requestFocus();
- AppLog.i("Mini", "focus fallback from=" + (f == null ? "null" : f.getClass().getSimpleName()));
+ AppLog.i("Mini", "focus fallback dead-focus -> mini");
  return true;
  }
  }

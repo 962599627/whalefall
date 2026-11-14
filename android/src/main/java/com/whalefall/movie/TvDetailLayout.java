@@ -730,6 +730,11 @@ final class TvDetailLayout {
  a.resolvePlayer(site, video, line, episode);
  });
  cell.setContentDescription(episode.name);
+ // 1.9.402：格子无条件挂焦点环，保证遥控/手机/平板都有选中视觉反馈
+ try {
+ TvNav.focusRing(a, cell, 12);
+ } catch (Throwable ignored) {
+ }
  cell.setSingleLine(true);
  cell.setEllipsize(TextUtils.TruncateAt.END);
  cell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
@@ -983,6 +988,27 @@ final class TvDetailLayout {
 
  /** 1.9.62：详情页完整显式 nextFocus 链（播放/收藏/返回/线路/选集/简介/复制/全部剧集）。 */
  static void wireDetailFocusChain(MainActivity a) {
+ // 1.9.395：右侧操作区向下焦点链（实测卡在「加入收藏」下不去）
+ try {
+ View fav = a.root.findViewWithTag("detail-act-favorite");
+ View order = a.root.findViewWithTag("detail-act-order");
+ View copy = a.root.findViewWithTag("detail-act-copy");
+ View all = a.root.findViewWithTag("episodes-all");
+ View firstEp = all;
+ for (int i = 0; firstEp == null && i < 40; i++) {
+ firstEp = a.root.findViewWithTag("episode:\u7ebf\u8def1:" + (i + 1));
+ }
+ View[] views = new View[] {fav, order, copy, firstEp};
+ for (View v : views) if (v != null && v.getId() == View.NO_ID) v.setId(View.generateViewId());
+ if (fav != null && (order != null || copy != null))
+ fav.setNextFocusDownId(order != null ? order.getId() : copy.getId());
+ if (order != null && copy != null) order.setNextFocusDownId(copy.getId());
+ if (copy != null && firstEp != null) copy.setNextFocusDownId(firstEp.getId());
+ if (firstEp != null && copy != null) firstEp.setNextFocusUpId(copy.getId());
+ AppLog.i("TvNav", "focus wire actions-down favorite->order->copy->episodes");
+ } catch (Throwable ignored) {
+ }
+
  if (a == null || a.root == null) return;
  View back = a.root.findViewWithTag("detail-back");
  View fav = a.root.findViewWithTag("detail-favorite");
@@ -1072,7 +1098,9 @@ final class TvDetailLayout {
  if (i == 0 && back != null) line.setNextFocusUpId(play == null ? back.getId() : play.getId());
  }
  if (!lines.isEmpty() && !episodes.isEmpty()) {
- episodes.get(0).setNextFocusUpId(lines.get(lines.size() - 1).getId());
+ View copyForUp = a.root.findViewWithTag("detail-act-copy");
+ episodes.get(0).setNextFocusUpId(
+ copyForUp != null ? copyForUp.getId() : lines.get(lines.size() - 1).getId());
  }
  for (int i = 0; i < episodes.size(); i++) {
  View ep = episodes.get(i);
@@ -1089,8 +1117,16 @@ final class TvDetailLayout {
  if (fav != null) synopsis.setNextFocusLeftId(fav.getId());
  }
  if (copy != null) {
- if (allEpisodes != null) copy.setNextFocusDownId(allEpisodes.getId());
+ // 1.9.400：复制 ↓ 必须直接进选集第一格（之前指向「全部剧集」按钮，导致纵向进不去网格）
+ View firstEpCell = episodes.isEmpty() ? null : episodes.get(0);
+ View downTarget = firstEpCell != null ? firstEpCell : allEpisodes;
+ if (downTarget != null) {
+ if (downTarget.getId() == View.NO_ID) downTarget.setId(View.generateViewId());
+ copy.setNextFocusDownId(downTarget.getId());
+ downTarget.setNextFocusUpId(copy.getId());
+ }
  if (synopsis != null) copy.setNextFocusUpId(synopsis.getId());
+ AppLog.i("TvNav", "focus wire copy-down=" + (downTarget == null ? "null" : downTarget.getTag()));
  }
  if (allEpisodes != null) {
  if (copy != null) allEpisodes.setNextFocusUpId(copy.getId());

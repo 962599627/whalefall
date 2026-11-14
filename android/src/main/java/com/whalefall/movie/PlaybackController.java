@@ -1071,7 +1071,14 @@ final class PlaybackController {
  // 1.9.95：先恢复详情页，再建小窗，避免详情页 restore 抢走小窗焦点
  if (!overDetail && a.current != null) a.restore(a.current);
  // 1.9.58：由 MiniDetails 先测 hero 矩形再隐藏，保证小窗与海报区域一致
+ // 1.9.397：先藏后显，消除「先小后大 / 先左上角再移动」的中间态
+ a.playbackLayer.setAlpha(0f);
  a.miniDetails = legacyMini() ? new MiniDetailsLegacy(a) : new MiniDetails(a);
+ a.ui.postDelayed(
+ () -> {
+ if (a.playbackLayer != null) a.playbackLayer.setAlpha(1f);
+ },
+ 260);
  // 1.9.238：小窗恢复自检（尺寸=0/不可见时重算）
  a.ui.postDelayed(
  () -> {
@@ -1205,17 +1212,55 @@ final class PlaybackController {
  if (a.playbackControls != null && a.playbackControls.danmaku != null)
  a.playbackControls.danmaku.setVisibility(View.GONE);
  PlayerOverlay.showPage(a);
+ // 1.9.394：小窗态叠加层必须透明，否则黑底盖住详情页（真机现象：小窗外全黑）
+ PlayerOverlay.backdrop(a, false);
+ // 1.9.393：页面恢复可见后强制重新测量，否则右侧选集列高度为 0（集数网格不显示）
+ a.root.requestLayout();
+ a.root.invalidate();
  // 播放页没有单独 render，current 回到详情页
  if (a.current != null && a.current.player && !a.back.isEmpty()) {
  a.current = a.back.pop();
  }
  if (a.scroll != null) a.scroll.scrollTo(0, 0);
  if (a.current != null) a.restore(a.current);
+ // 1.9.399：同步摆位——先用详情页海报矩形算出目标小窗，直接缩放到位，再建 MiniDetails。
+ // 不再有 alpha 两段时序，也不会出现「先小/先左上角再移动」的中间态。
+ try {
+ View poster = a.root.findViewWithTag("detail-cover");
+ if (poster == null) poster = a.root.findViewWithTag("detail-hero");
+ if (poster != null && poster.getWidth() > 0 && poster.getHeight() > 0) {
+ int[] pv = new int[2];
+ int[] rv = new int[2];
+ poster.getLocationInWindow(pv);
+ a.root.getLocationInWindow(rv);
+ int px = Math.max(0, pv[0] - rv[0]);
+ int py = Math.max(0, pv[1] - rv[1]);
+ int pw = poster.getWidth();
+ int ph = poster.getHeight();
+ int mw = Math.round(pw * 0.8f);
+ int mh = Math.round(ph * 0.8f);
+ PlayerOverlay.scaleTo(a, px + (pw - mw) / 2, py + (ph - mh) / 2, mw, mh);
+ AppLog.i("Mini", "sync place rect=" + mw + "x" + mh + " at=" + px + "," + py);
+ }
+ } catch (Throwable ignored) {
+ }
  a.miniDetails = new MiniDetailsLegacy(a);
  a.ui.postDelayed(
  () -> {
- if (!a.miniMode || a.miniDetails == null) return;
- a.miniDetails.refreshRect();
+ if (a.miniDetails != null) a.miniDetails.refreshRect();
+ // 拉回铺满：清掉解码输出上的残留缩放/位移
+ View out = findTagged(a.playbackLayer, "video-output");
+ if (out != null) {
+ out.setScaleX(1f);
+ out.setScaleY(1f);
+ out.setTranslationX(0f);
+ out.setTranslationY(0f);
+ out.setLayoutParams(new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+ }
+ a.playbackLayer.setAlpha(1f);
+ a.playbackLayer.setVisibility(View.VISIBLE);
+ // 页面被隐藏/恢复过，显式焦点链重接一遍
+ TvDetailLayout.wireDetailFocusChain(a);
  },
  400);
  if (a.player != null) {
@@ -1247,6 +1292,7 @@ final class PlaybackController {
  }
  clearMiniResidue(a);
  PlayerOverlay.hidePage(a);
+ PlayerOverlay.backdrop(a, true);
  UiCompat.setClipToOutline(a.playbackLayer, false);
  a.playbackLayer.setElevation(0);
  a.playbackLayer.setOutlineProvider(null);
@@ -2743,6 +2789,7 @@ final class PlaybackController {
  layers++;
  }
  PlayerOverlay.detach(a);
+ a.restoreUiState("release");
  a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
  AppLog.i("Detail", "resume player=cleared layers=" + layers);
  a.ui.postDelayed(() -> UiAudit.audit(a, "player-exit"), 300);
