@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.9.340",
-  "versionCode": 19340,
+  "versionName": "1.9.341",
+  "versionCode": 19341,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "同手机版：更新下载速度显示与镜像重试修复。",
+  "notes": "同手机版：更新下载源精简、读超时与速度显示修复。",
   "size": 37162647,
-  "sha256": "ea3bdbdcf1a83a10b1d21ecdee51e8976dc11154dfdbc713068a0e499aaad584",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.340/WhaleFall-1.9.340-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.340/WhaleFall-1.9.340-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.340",
+  "sha256": "7a002c0234ccfedb7c2b71913ec4e55cde3e689dedda4ae7f08daaea4820ac78",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.341/WhaleFall-1.9.341-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.341/WhaleFall-1.9.341-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.341",
   "variants": [
     {
       "kind": "tv",
       "label": "TV / 盒子版（32位）",
       "size": 37162647,
-      "sha256": "ea3bdbdcf1a83a10b1d21ecdee51e8976dc11154dfdbc713068a0e499aaad584",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.340/WhaleFall-1.9.340-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.340/WhaleFall-1.9.340-android-tv.apk"
+      "sha256": "7a002c0234ccfedb7c2b71913ec4e55cde3e689dedda4ae7f08daaea4820ac78",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.341/WhaleFall-1.9.341-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.341/WhaleFall-1.9.341-android-tv.apk"
     }
   ]
 }

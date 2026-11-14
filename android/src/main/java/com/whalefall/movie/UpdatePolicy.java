@@ -150,8 +150,10 @@ final class UpdatePolicy {
  if (!urls.contains(github)) urls.add(github);
  }
  int mirrors = 0;
+ // 1.9.341：只保留 1 个镜像兜底，正常一遍就能下完（源太多会反复从头下）
+ int maxMirrors = github != null && !github.isEmpty() ? 0 : 1;
  for (String mirror : MIRRORS) {
- if (mirrors >= 2) break;
+ if (mirrors >= maxMirrors) break;
  String candidate = mirror + file;
  if (urls.contains(candidate)) continue;
  urls.add(candidate);

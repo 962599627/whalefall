@@ -645,11 +645,11 @@ final class UpdateManager {
  }
 
  static HttpURLConnection open(String address) throws Exception {
- return open(address, 0, 12000, 45000);
+ return open(address, 0, 12000, 20000);
  }
 
  private static HttpURLConnection open(String address, long offset) throws Exception {
- return open(address, offset, 12000, 45000);
+ return open(address, offset, 12000, 20000);
  }
 
  private static HttpURLConnection open(
