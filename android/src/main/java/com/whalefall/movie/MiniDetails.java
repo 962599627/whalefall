@@ -14,7 +14,7 @@ import android.widget.TextView;
  * <p>进入小窗时把 {@code playbackLayer} 缩到左上角固定尺寸，详情页完整显示在小窗下方/背后；
  * 小窗内叠加 播放/暂停、关闭、放大 三个控件；点小窗任意处回全屏。
  */
-final class MiniDetails {
+final class MiniDetails extends MiniWindow {
  final MainActivity a;
  final FrameLayout page;
  final View hit;
@@ -201,7 +201,9 @@ final class MiniDetails {
  }
  a.playbackLayer.setLayoutParams(videoLp);
  page.setLayoutParams(pageLp);
- // 1.9.332：第二次进入时 Surface 可能仍是 detached 状态（无 lifecycle resume 日志）→ 主动重挂
+ // 1.9.378：旧安卓（SDK<24）禁止重挂 TextureView / 重绑 Surface（libmedia_jni SIGSEGV）；
+ // 新机（手机/平板/新电视）保留 1.9.342 的自愈逻辑。
+ if (!PlaybackController.legacyMini()) {
  try {
  if (a.player != null) {
  View vo = a.playbackLayer.findViewWithTag("video-output");
@@ -230,6 +232,7 @@ final class MiniDetails {
  }
  }
  } catch (Throwable ignored) {
+ }
  }
  PlaybackController.hideDetailHero(a, true);
  a.playbackLayer.bringToFront();
@@ -423,7 +426,11 @@ final class MiniDetails {
  View stale = a.playbackLayer.findViewWithTag("mini-center-play");
  if (stale != null && stale.getParent() instanceof ViewGroup)
  ((ViewGroup) stale.getParent()).removeView(stale);
- TextView centerPlay = miniButton("▶", "mini-center-play", () -> a.expandPlayback());
+ TextView centerPlay =
+ miniButton(
+ PlaybackController.legacyMini() ? "播放" : "▶",
+ "mini-center-play",
+ () -> a.expandPlayback());
  centerPlay.setTextSize(28);
  centerPlay.setGravity(Gravity.CENTER);
  FrameLayout.LayoutParams cp =
@@ -550,7 +557,11 @@ final class MiniDetails {
  if (stale != null && stale.getParent() instanceof ViewGroup)
  ((ViewGroup) stale.getParent()).removeView(stale);
  page.setVisibility(View.GONE);
- TextView centerPlay = miniButton("▶", "mini-center-play", () -> a.expandPlayback());
+ TextView centerPlay =
+ miniButton(
+ PlaybackController.legacyMini() ? "播放" : "▶",
+ "mini-center-play",
+ () -> a.expandPlayback());
  centerPlay.setTextSize(26);
  centerPlay.setGravity(Gravity.CENTER);
  FrameLayout.LayoutParams cp =
@@ -821,5 +832,12 @@ final class MiniDetails {
  if (page.getParent() != null) ((FrameLayout) page.getParent()).removeView(page);
  if (hit != null && hit.getParent() == a.playbackLayer)
  a.playbackLayer.removeView(hit);
+ }
+
+
+
+ @Override
+ public boolean pageShown() {
+ return page != null && page.isShown();
  }
 }

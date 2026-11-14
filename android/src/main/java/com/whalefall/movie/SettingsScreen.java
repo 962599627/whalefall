@@ -95,12 +95,41 @@ final class SettingsScreen {
  "播放器内核、解码、画面比例、片头片尾与字幕",
  "settings-playback",
  () -> open(this::playback));
+ section("外观与主题");
+ link(
+ "主题",
+ "一次切换底色/选中色/文字色（8 套）",
+ "settings-theme",
+ () -> {
+ String cur = MainActivity.currentThemeKey(a.prefs);
+ String next = MainActivity.nextCardPreset(cur);
+ MainActivity.applyTheme(next, a.prefs);
+ a.applyGlassTint();
+ a.toast("主题：" + Skin.presetName(next));
+ a.recreate();
+ });
+ link(
+ "主题调色盘",
+ "底色 / 选择色 / 文字颜色 分别微调",
+ "settings-palette",
+ () -> CardColorDialog.show(a));
  section("备份与诊断");
  link(
  "软件更新",
  "检查新版本、下载与安装",
  "settings-updates",
  () -> open(() -> new UpdateScreen(a).show()));
+ link(
+ "广告过滤",
+ a.prefs.getBoolean(AdFilter.PREF, true) ? "已开启：拦截广告/统计域名" : "已关闭：不拦截任何请求",
+ "settings-adfilter",
+ () -> {
+ boolean on = !a.prefs.getBoolean(AdFilter.PREF, true);
+ a.prefs.edit().putBoolean(AdFilter.PREF, on).apply();
+ AdFilter.sync(a);
+ a.toast(on ? "广告过滤已开启" : "广告过滤已关闭");
+ a.recreate();
+ });
  // 1.4.0：「本机与工具」分组只给 TV（R2：手机设置页保持原 4 项，手机零变化）。
  // 放设置页而不是 Dock：7 项 Dock 已排满，再加会挤爆且打乱遥控焦点顺序。
  if (a.isTvDevice()) {

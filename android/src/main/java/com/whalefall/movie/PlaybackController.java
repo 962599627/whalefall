@@ -1006,9 +1006,22 @@ final class PlaybackController {
 
  static void minimizePlayback(MainActivity a) {
  if (a.playbackControls == null || a.miniMode) return;
+ if (a.playerOverlayAttached) {
+ minimizeOverlay(a);
+ return;
+ }
  boolean overDetail = a.expandedOverDetail;
  a.expandedOverDetail = false;
  a.miniMode = true;
+ // 1.9.386：过渡保护期（一帧后解除），避免过渡中的页面切换把播放器释放
+ a.miniTransitionGuard = true;
+ a.ui.post(
+ () -> {
+ a.miniTransitionGuard = false;
+ AppLog.i("Playback", "mini transition guard released");
+ });
+ // 1.9.378：旧安卓（SDK<24）小窗期保留输出 Surface，禁止解绑/重绑（libmedia_jni SIGSEGV）
+ if (HOLD_LEGACY_SURFACE && legacyMini()) setOutputHold(a, true);
  try {
  a.applyPageOrientation("mini-restore");
  } catch (Throwable ignored) {
@@ -1058,7 +1071,7 @@ final class PlaybackController {
  // 1.9.95：先恢复详情页，再建小窗，避免详情页 restore 抢走小窗焦点
  if (!overDetail && a.current != null) a.restore(a.current);
  // 1.9.58：由 MiniDetails 先测 hero 矩形再隐藏，保证小窗与海报区域一致
- a.miniDetails = new MiniDetails(a);
+ a.miniDetails = legacyMini() ? new MiniDetailsLegacy(a) : new MiniDetails(a);
  // 1.9.238：小窗恢复自检（尺寸=0/不可见时重算）
  a.ui.postDelayed(
  () -> {
@@ -1088,7 +1101,7 @@ final class PlaybackController {
  "restore after-expand rect="
  + (miniLayer.getWidth() + "x" + miniLayer.getHeight())
  + " visible="
- + (a.miniDetails != null && a.miniDetails.page != null && a.miniDetails.page.isShown())
+ + (a.miniDetails != null && a.miniDetails.pageShown())
  + " playing="
  + a.playing);
  },
@@ -1111,8 +1124,171 @@ final class PlaybackController {
  }
  }
 
+ /** 1.9.378：当前集在活动线路里的下标；详情页会重建 Episode 对象，indexOf 失效时按集名回退。 */
+ static int activeEpisodeIndex(MainActivity a) {
+ if (a == null || a.activeLine == null || a.activeEpisode == null) return -1;
+ java.util.List<Cms.Episode> episodes = a.activeLine.episodes;
+ if (episodes == null || episodes.isEmpty()) return -1;
+ int idx = episodes.indexOf(a.activeEpisode);
+ if (idx >= 0) return idx;
+ for (int i = 0; i < episodes.size(); i++) {
+ Cms.Episode candidate = episodes.get(i);
+ if (candidate != null && candidate.name != null && candidate.name.equals(a.activeEpisode.name))
+ return i;
+ }
+ return -1;
+ }
+
+ /** 1.9.378 试验开关：旧安卓小窗期是否保留 Surface（false = 走 1.9.287 原生解绑→重绑）。 */
+ static final boolean HOLD_LEGACY_SURFACE = false;
+
+ /** 1.9.378：旧安卓（SDK<24，如 MiBox4C / Android 6）小窗必须走 1.9.287 实现。 */
+ static boolean legacyMini() {
+ return android.os.Build.VERSION.SDK_INT < 24;
+ }
+
+ /** 1.9.378：旧安卓小窗/放大过渡期保留 VideoOutput 的 SurfaceTexture，禁止 detach 时 release。 */
+ private static void setOutputHold(MainActivity a, boolean hold) {
+ try {
+ if (a.playbackLayer == null) return;
+ View out = findTagged(a.playbackLayer, "video-output");
+ if (out instanceof VideoOutput) ((VideoOutput) out).holdSurface(hold);
+ } catch (Throwable ignored) {
+ }
+ }
+
+ /** 1.9.378：小窗叠加层残留清理（播放器右上角透明小块），按 tag 兜底。 */
+ private static void clearMiniResidue(MainActivity a) {
+ if (a == null || a.root == null) return;
+ int removed = 0;
+ for (String tag : MINI_RESIDUE_TAGS) {
+ for (int guard = 0; guard < 8; guard++) {
+ View stale = a.root.findViewWithTag(tag);
+ if (stale == null) break;
+ if (!(stale.getParent() instanceof ViewGroup)) break;
+ ((ViewGroup) stale.getParent()).removeView(stale);
+ removed++;
+ }
+ }
+ if (removed > 0) AppLog.i("Mini", "residue views removed=" + removed);
+ }
+
+ /** 1.9.378：小窗可能残留的叠加视图 tag（历史版本用过其中一部分）。 */
+ private static final String[] MINI_RESIDUE_TAGS = {
+ "mini-details",
+ "mini-video",
+ "mini-center-play",
+ "mini-play",
+ "mini-expand",
+ "mini-stop",
+ "mini-hint",
+ "mini-bar",
+ "mini-hit",
+ "mini-page"
+ };
+
+ /**
+ * 1.9.387：叠加层模式缩小窗。页面从未被销毁，这里只恢复页面可见性 + 缩放播放层，
+ * 不调用 renderReturn/renderPage（那是 detach 与解码输出尺寸变化的源头）。
+ */
+ private static void minimizeOverlay(MainActivity a) {
+ a.miniMode = true;
+ a.overlayMiniActive = true;
+ a.miniTransitionGuard = true;
+ a.ui.post(
+ () -> {
+ a.miniTransitionGuard = false;
+ });
+ showControls(a, false);
+ if (a.playbackControls != null && a.playbackControls.subtitle != null)
+ a.playbackControls.subtitle.setVisibility(View.GONE);
+ if (a.playbackControls != null && a.playbackControls.danmaku != null)
+ a.playbackControls.danmaku.setVisibility(View.GONE);
+ PlayerOverlay.showPage(a);
+ // 1.9.392：页面恢复可见后强制重新测量，否则右侧选集列高度为 0（集数网格不显示）
+ a.root.requestLayout();
+ a.root.invalidate();
+ // 播放页没有单独 render，current 回到详情页
+ if (a.current != null && a.current.player && !a.back.isEmpty()) {
+ a.current = a.back.pop();
+ }
+ if (a.scroll != null) a.scroll.scrollTo(0, 0);
+ if (a.current != null) a.restore(a.current);
+ // 1.9.392：先把播放层藏起来，等小窗尺寸/位置/缩放都算好再显示，避免「从左上角拖过去」
+ a.playbackLayer.setVisibility(View.INVISIBLE);
+ a.miniDetails = new MiniDetailsLegacy(a);
+ a.ui.postDelayed(
+ () -> {
+ if (!a.miniMode || a.miniDetails == null) return;
+ a.miniDetails.refreshRect();
+ // 1.9.392：小窗态把解码输出拉回铺满（缩放已在 scaleTo 里做，这里清掉任何残留缩放）
+ View out = findTagged(a.playbackLayer, "video-output");
+ if (out != null) {
+ out.setScaleX(1f);
+ out.setScaleY(1f);
+ out.setTranslationX(0f);
+ out.setTranslationY(0f);
+ out.setLayoutParams(new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+ }
+ // 1.9.392：位置/尺寸/缩放都就绪后再显示，避免看到从左上角拖动的过程
+ a.playbackLayer.setVisibility(View.VISIBLE);
+ // 1.9.392：页面被隐藏/恢复过一次，显式焦点链要重新接一遍
+ TvDetailLayout.wireDetailFocusChain(a);
+ },
+ 400);
+ if (a.player != null) {
+ try {
+ a.player.play();
+ a.playing = true;
+ } catch (Throwable ignored) {
+ }
+ }
+ AppLog.i("Mini", "enter overlay mini");
+ }
+
+ /** 1.9.387：叠加层模式放大：隐藏页面、缩放复位，不重建 root。 */
+ private static void expandOverlay(MainActivity a) {
+ a.miniMode = false;
+ a.overlayMiniActive = false;
+ a.expandedOverDetail = true;
+ a.miniTransitionGuard = true;
+ a.ui.post(
+ () -> {
+ a.miniTransitionGuard = false;
+ });
+ if (a.miniDetails != null) {
+ try {
+ a.miniDetails.remove();
+ } catch (Throwable ignored) {
+ }
+ a.miniDetails = null;
+ }
+ clearMiniResidue(a);
+ PlayerOverlay.hidePage(a);
+ UiCompat.setClipToOutline(a.playbackLayer, false);
+ a.playbackLayer.setElevation(0);
+ a.playbackLayer.setOutlineProvider(null);
+ a.playbackLayer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+ if (a.playbackControls != null) {
+ a.playbackControls.subtitle.setVisibility(View.VISIBLE);
+ a.playbackControls.danmaku.setVisibility(View.VISIBLE);
+ }
+ if (a.player != null) {
+ try {
+ a.player.setScaleMode(false);
+ } catch (Throwable ignored) {
+ }
+ }
+ showControls(a, true);
+ AppLog.i("Player", "expand overlay fullscreen");
+ }
+
  static void expandPlayback(MainActivity a) {
  if (!a.miniMode) return;
+ if (a.playerOverlayAttached) {
+ expandOverlay(a);
+ return;
+ }
  AppLog.i("Mini", "exit reason=expand");
  a.miniMode = false;
  // 1.9.235：放大到全屏 → 释放壁纸解码器
@@ -1129,6 +1305,11 @@ final class PlaybackController {
  }
  }
  a.expandedOverDetail = true;
+ a.miniTransitionGuard = true;
+ a.ui.post(
+ () -> {
+ a.miniTransitionGuard = false;
+ });
  // 1.9.275：确保全屏时播放层回到 root 并铺满（否则横屏看到选集页）
  try {
  if (a.playbackLayer.getParent() instanceof android.view.ViewGroup
@@ -1151,9 +1332,16 @@ final class PlaybackController {
  } catch (Throwable ignored) {
  }
  if (a.miniDetails != null) {
+ try {
  a.miniDetails.remove();
+ } catch (Throwable ignored) {
+ }
  a.miniDetails = null;
  }
+ // 1.9.378：小窗叠加层偶发未随 exit 移除，会在播放器右上角留下透明小块 → 按 tag 兜底清理
+ clearMiniResidue(a);
+ // 1.9.378：旧安卓放大后继续保留 Surface，不在放大瞬间解锁，避免多一次 setSurface 重绑
+
  int position = a.player == null ? 0 : a.player.getCurrentPosition();
  UiCompat.setClipToOutline(a.playbackLayer, false);
  a.playbackLayer.setElevation(0);
@@ -1385,7 +1573,7 @@ final class PlaybackController {
  a.playingBookmark.poster = v.poster;
  a.playingBookmark.line = a.activeLine.name;
  a.playingBookmark.episode = a.activeEpisode.name;
- a.playingBookmark.index = a.activeLine.episodes.indexOf(a.activeEpisode);
+ a.playingBookmark.index = Math.max(0, activeEpisodeIndex(a));
  a.playingBookmark.position = Math.max(0, initialResume);
  a.playingBookmark.duration = saved != null ? Math.max(0, saved.duration) : 0;
  a.playingBookmark.updated = System.currentTimeMillis();
@@ -1436,6 +1624,21 @@ final class PlaybackController {
  AppLog.i("Orient", "form=tablet page=player set=unspecified reason=enter-player");
  }
  }
+ // 1.9.387：旧安卓从详情页进播放器 → 叠加层模式：不换 root、不 detach 播放层，
+ // 解码输出用固定尺寸（小窗只缩放），这是这颗 Amlogic 硬解能连续出画的前提。
+ // 用返回栈判断「从详情页进播放器」：进播放页时 current 已是播放页，current.detail 靠不住
+ boolean fromDetail =
+ !a.back.isEmpty() && a.back.peek() != null && a.back.peek().detail;
+ boolean overlayPlayer = legacyMini() && a.root != null && fromDetail;
+ AppLog.i(
+ "Player",
+ "overlay candidate fromDetail=" + fromDetail + " root=" + (a.root != null) + " sdk="
+ + android.os.Build.VERSION.SDK_INT);
+ if (overlayPlayer) overlayPlayer = PlayerOverlay.attach(a, a.windowWidth(), a.windowHeight());
+ if (overlayPlayer) {
+ a.root.setTag("player-surface-overlay");
+ AppLog.i("Player", "page overlay=true");
+ } else {
  a.root = new FrameLayout(a);
  a.root.setBackgroundColor(Color.BLACK);
  a.root.setFocusable(true);
@@ -1444,10 +1647,11 @@ final class PlaybackController {
  a.scroll = null;
  lastPlayerLayoutW = -1;
  lastPlayerLayoutH = -1;
- VideoOutput surface = new VideoOutput(a, a.prefs.getInt(Prefs.VIDEO_OUTPUT, 0) == 1);
  a.playbackLayer = new FrameLayout(a);
  a.playbackLayer.setTag("playback-layer");
  a.root.addView(a.playbackLayer, new FrameLayout.LayoutParams(-1, -1));
+ }
+ VideoOutput surface = new VideoOutput(a, a.prefs.getInt(Prefs.VIDEO_OUTPUT, 0) == 1);
  a.playbackLayer.addView(surface, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
  a.playerChrome = new PlayerChrome(a, v, ep, "live".equals(s.key));
  // 1.7.10：进入播放页即按 loading 状态点亮加载动画（此前从未调用 setLoading(true)）
@@ -1522,7 +1726,7 @@ final class PlaybackController {
  }
  });
  });
- a.setContentView(a.root);
+ if (!overlayPlayer) a.setContentView(a.root);
  if (!a.isTvDevice()) a.root.requestApplyInsets();
  // 一次性诊断：首帧布局后记录 layer/surface/chrome 尺寸与安全区（播放页「卡片化」排查用）
  logPlaybackLayout(a, ticket, 0);
@@ -1548,6 +1752,7 @@ final class PlaybackController {
  + (a.player != null));
  if (ticket != a.generation) return;
  if (a.player != null) {
+ AppLog.i("Player", "bind surface valid=" + value.isValid() + " " + value);
  a.player.setSurface(value);
  return;
  }
@@ -1881,6 +2086,12 @@ final class PlaybackController {
 
  public void destroyed() {
  surfaceRevision++;
+ // 1.9.378：旧安卓小窗/放大过渡期禁止解绑 Surface；解绑后重绑会在 libmedia_jni SIGSEGV
+ if (HOLD_LEGACY_SURFACE && legacyMini() && (a.miniMode || a.expandedOverDetail) && a.player != null) {
+ AppLog.i(
+ "Player", "lifecycle pause surface=kept reason=legacy-mini revision=" + surfaceRevision);
+ return;
+ }
  AppLog.i(
  "Player",
  "lifecycle pause surface=detached revision=" + surfaceRevision);
@@ -2316,10 +2527,9 @@ final class PlaybackController {
  a.playingBookmark.duration = dur;
  }
  a.playingBookmark.updated = System.currentTimeMillis();
- // 1.9.334：写入前同步当前集，保证历史记录能显示看到第几集
+ // 1.9.334/1.9.378：写入前同步当前集（index 用容错回退，避免 -1 导致历史集数错乱）
  if (a.activeEpisode != null) a.playingBookmark.episode = a.activeEpisode.name;
- if (a.activeLine != null && a.activeEpisode != null)
- a.playingBookmark.index = a.activeLine.episodes.indexOf(a.activeEpisode);
+ a.playingBookmark.index = Math.max(0, activeEpisodeIndex(a));
  a.prefs
  .edit()
  .putString(
@@ -2360,10 +2570,9 @@ final class PlaybackController {
  a.playingBookmark.duration = dur;
  }
  a.playingBookmark.updated = now;
- // 1.9.334：同步当前集/线路，修复历史记录不显示第几集
+ // 1.9.334/1.9.378：同步当前集/线路（index 容错回退）
  if (a.activeEpisode != null) a.playingBookmark.episode = a.activeEpisode.name;
- if (a.activeLine != null && a.activeEpisode != null)
- a.playingBookmark.index = a.activeLine.episodes.indexOf(a.activeEpisode);
+ a.playingBookmark.index = Math.max(0, activeEpisodeIndex(a));
  a.prefs
  .edit()
  .putString(
@@ -2525,6 +2734,8 @@ final class PlaybackController {
  a.miniDetails = null;
  layers++;
  }
+ // 1.9.378：释放播放器前必须关闭旧安卓的 Surface 保留
+ setOutputHold(a, false);
  a.miniMode = false;
  a.expandedOverDetail = false;
  if (a.playbackLayer != null) {
@@ -2549,6 +2760,7 @@ final class PlaybackController {
  a.player = null;
  layers++;
  }
+ PlayerOverlay.detach(a);
  a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
  AppLog.i("Detail", "resume player=cleared layers=" + layers);
  a.ui.postDelayed(() -> UiAudit.audit(a, "player-exit"), 300);

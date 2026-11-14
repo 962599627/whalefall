@@ -150,7 +150,21 @@ public final class MainActivity extends Activity {
  });
  AppDialog appDialog;
  FrameLayout playbackLayer;
- MiniDetails miniDetails;
+ MiniWindow miniDetails;
+
+ /**
+ * 1.9.386：缩小窗/放大过渡保护期。过渡期间 current 可能还是旧页面，
+ * 不能让「非详情页就强制释放」把刚接管的播放器释放掉（真机日志：小窗刚建就 release）。
+ */
+ boolean miniTransitionGuard;
+
+ /** 1.9.387：叠加层模式下被隐藏的页面子 View（保持 attached，只改可见性）。 */
+ java.util.ArrayList<View> playerOverlayHidden;
+ int playerLayerBaseW, playerLayerBaseH;
+ /** 1.9.389：叠加层是否挂在 root 上（显式状态，不依赖 findViewWithTag）。 */
+ boolean playerOverlayAttached;
+ /** 1.9.389：当前是否处于叠加层小窗态（决定播放层用缩放还是 LayoutParams）。 */
+ boolean overlayMiniActive;
  boolean miniMode;
  /** 1.9.53：从小窗放大回全屏、但底下仍是详情页时使用（BACK 再缩回小窗）。 */
  boolean expandedOverDetail;
@@ -2032,7 +2046,8 @@ public final class MainActivity extends Activity {
  stopMagnet();
  // 1.9.167：只有详情页小窗/全屏浮层重建时保留播放器（其它页面一律释放）
  boolean keepPlayback =
- (miniMode || expandedOverDetail) && current != null && current.detail;
+ (miniMode || expandedOverDetail)
+ && (miniTransitionGuard || (current != null && current.detail));
  AppLog.i(
  "Player",
  "policy target="
@@ -3045,11 +3060,19 @@ public final class MainActivity extends Activity {
  showControls(false);
  return;
  }
- if (!miniMode && playbackControls != null && isTvDevice() && !isLive()) {
- // 1.9.109/1.9.114：TV 第二次 BACK → 回详情并缩左侧小窗（不得落首页）
+ // 1.9.374：只有「返回目标确实是详情页」才缩小窗；否则走正常释放，避免回首页还在后台播放
+ // 1.9.375：只有返回栈顶就是详情页才允许缩小窗（current.detail 在播放页也可能是 true，导致小窗落到首页）
+ boolean canMini =
+ !back.isEmpty() && back.peek() != null && back.peek().detail;
+ if (!miniMode && !isLive() && canMini) {
+ // 1.9.360：TV 第二次 BACK → 回详情并缩左侧小窗；不得先释放播放器
  AppLog.i(
  "Back",
- "page=player target=" + (back.isEmpty() ? "home" : "detail") + " stack=" + back.size());
+ "page=player target="
+ + (back.isEmpty() ? "home" : "detail")
+ + " stack="
+ + back.size()
+ + " tv=true action=mini");
  minimizePlayback();
  return;
  }
@@ -3080,6 +3103,17 @@ public final class MainActivity extends Activity {
  return;
  }
  if (miniMode) {
+ // 1.9.378：小窗态离开详情（回上一级/首页）必须先退出小窗状态再释放播放器。
+ // 否则 1.9.360 的「小窗过渡期禁止释放」会把 release 拦掉，导致回首页后台还在播放。
+ if (miniDetails != null) {
+ try {
+ miniDetails.remove();
+ } catch (Throwable ignored) {
+ }
+ miniDetails = null;
+ }
+ miniMode = false;
+ expandedOverDetail = false;
  releasePlaybackOnPageChange("back", false);
  // 页面切换不释放壁纸：由 applyWallpaper 在返回的页面 root 上幂等迁移/补齐
  if (!back.isEmpty()) back.pop();
@@ -3688,6 +3722,33 @@ public final class MainActivity extends Activity {
  * 但直播浮层仍然关闭，避免两路声音并存。
  */
  void releasePlaybackOnPageChange(String reason, boolean targetIsPlayer) {
+ // 1.9.367：释放来源日志
+ AppLog.i("Playback", "releaseOnPageChange reason=" + reason + " mini=" + miniMode);
+
+ // 1.9.386：缩小窗/放大过渡保护期内一律不释放（过渡完成后标志自动清除）
+ if (miniTransitionGuard) {
+ AppLog.i("Playback", "release skipped reason=mini-transition from=" + reason);
+ return;
+ }
+ // 1.9.360：小窗过渡期间禁止释放播放器（TV BACK 回详情会先走页面释放）
+ // 1.9.383：只有「目标页是详情页」才允许拦截；回首页/切 tab/换片等一律真释放，
+ // 否则小窗与后台播放会残留到其它页面（真机日志：blocked reason=mini from=page）。
+ if (miniMode && current != null && !current.player) {
+ if (current.detail) {
+ AppLog.i("Playback", "release blocked reason=mini from=" + reason);
+ return;
+ }
+ AppLog.i("Playback", "mini release forced target=non-detail from=" + reason);
+ miniMode = false;
+ expandedOverDetail = false;
+ if (miniDetails != null) {
+ try {
+ miniDetails.remove();
+ } catch (Throwable ignored) {
+ }
+ miniDetails = null;
+ }
+ }
  releaseLiveOnPageChange(reason);
  if (targetIsPlayer) return;
  boolean active =
@@ -4070,6 +4131,27 @@ public final class MainActivity extends Activity {
  @Override
  public boolean dispatchKeyEvent(KeyEvent event) {
  noteInteraction();
+ // 1.9.359：TV 小窗存在时，方向键从详情区回到小窗中央播放按钮（焦点兜底）
+ try {
+ if (miniMode
+ && playbackLayer != null
+ && event.getAction() == KeyEvent.ACTION_DOWN
+ && (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP
+ || event.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN)) {
+ View f = getCurrentFocus();
+ boolean insideMini =
+ f != null && isDescendantOf(playbackLayer, f);
+ if (!insideMini) {
+ View cp = playbackLayer.findViewWithTag("mini-center-play");
+ if (cp != null) {
+ cp.requestFocus();
+ AppLog.i("Mini", "focus fallback from=" + (f == null ? "null" : f.getClass().getSimpleName()));
+ return true;
+ }
+ }
+ }
+ } catch (Throwable ignored) {
+ }
  // 1.9.84：物理遥控/键盘方向键按下即进入焦点模式（isTvDevice 可能为 false）
  int pressed = event.getKeyCode();
  // 1.9.147：控制条隐藏时左右键直接快退/快进 10 秒（不唤出控制条、无需先聚焦进度条）
@@ -4265,6 +4347,37 @@ public final class MainActivity extends Activity {
  + "MB");
  }
 
+ /** 1.9.344：遍历当前视图树暂停/恢复 WebView 计时器（CSP 引擎常驻耗内存/CPU）。 */
+ private void pauseWebViews(boolean pause) {
+ try {
+ if (root == null) return;
+ java.util.ArrayDeque<View> stack = new java.util.ArrayDeque<>();
+ stack.push(root);
+ while (!stack.isEmpty()) {
+ View v = stack.pop();
+ if (v instanceof android.webkit.WebView) {
+ if (pause) ((android.webkit.WebView) v).pauseTimers();
+ else ((android.webkit.WebView) v).resumeTimers();
+ }
+ if (v instanceof android.view.ViewGroup) {
+ android.view.ViewGroup g = (android.view.ViewGroup) v;
+ for (int i = 0; i < g.getChildCount(); i++) stack.push(g.getChildAt(i));
+ }
+ }
+ } catch (Throwable ignored) {
+ }
+ }
+
+ /** 1.9.359：判断 view 是否在 parent 子树内。 */
+ private static boolean isDescendantOf(View parent, View child) {
+ View v = child;
+ while (v != null) {
+ if (v == parent) return true;
+ v = v.getParent() instanceof View ? (View) v.getParent() : null;
+ }
+ return false;
+ }
+
  private int pssMb() {
  try {
  android.app.ActivityManager am =
@@ -4400,6 +4513,8 @@ public final class MainActivity extends Activity {
 
  @Override
  protected void onPause() {
+ // 1.9.344：切后台暂停 WebView 计时器（CSP 引擎常驻占内存/CPU）
+ pauseWebViews(true);
  ui.removeCallbacks(focusAuditTask);
  ui.removeCallbacks(screensaverTask);
  savePlaybackHistory(true);
@@ -4409,6 +4524,7 @@ public final class MainActivity extends Activity {
 
  @Override
  protected void onResume() {
+ pauseWebViews(false);
  AdFilter.sync(this);
  // 1.9.301：每次回前台恢复全局色调（修复进程重启后 GLOBAL_TINT=0）
  applyGlassTint();

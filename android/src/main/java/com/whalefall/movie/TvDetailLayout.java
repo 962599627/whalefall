@@ -98,8 +98,10 @@ final class TvDetailLayout {
 
  // ---------------- 左栏：16:9 预览卡 + 片源·线路 ----------------
  int previewH = Math.round(leftW * 9f / 16f);
- leftCol.addView(
- buildPreview(a, listing, previewH), new LinearLayout.LayoutParams(-1, previewH));
+ View heroPreview = buildPreview(a, listing, previewH);
+ heroPreview.setId(android.view.View.generateViewId());
+ final int heroFocusId = heroPreview.getId();
+ leftCol.addView(heroPreview, new LinearLayout.LayoutParams(-1, previewH));
  View previewGap = new View(a);
  leftCol.addView(previewGap, new LinearLayout.LayoutParams(1, a.dp(16)));
  final LinearLayout lineList = a.vertical();
@@ -152,6 +154,7 @@ final class TvDetailLayout {
 
  // 简介：默认 4 行折叠 + 「展开完整简介 / 收起」44dp 可聚焦按钮
  final LinearLayout synopsisWrap = a.vertical();
+ synopsisWrap.setTag("synopsis-wrap-tv");
  LinearLayout.LayoutParams synopsisLp = new LinearLayout.LayoutParams(-1, -2);
  synopsisLp.topMargin = a.dp(10);
  rightCol.addView(synopsisWrap, synopsisLp);
@@ -252,6 +255,30 @@ final class TvDetailLayout {
  directorTv.getText().length() == 0 ? View.GONE : View.VISIBLE);
 
  populatePills(a, pillsRow, v);
+ // 1.9.343：简介按钮放在「共N集」右侧，点击隐藏/显示片名介绍
+ TextView introChip = a.text(" 简介", 13, Skin.TEXT_PRIMARY_T);
+ introChip.setPadding(a.dp(14), a.dp(4), a.dp(14), a.dp(4));
+ introChip.setFocusable(true);
+ introChip.setFocusableInTouchMode(true);
+ TvNav.focusRing(a, introChip, 999);
+ a.glass(introChip, 999);
+ introChip.setTag("detail-intro-chip");
+ introChip.setOnClickListener(
+ view -> {
+ if (a.root == null) return;
+ View actor = a.root.findViewWithTag("detail-actor");
+ View director = a.root.findViewWithTag("detail-director");
+ View wrap = a.root.findViewWithTag("synopsis-wrap-tv");
+ boolean hide = wrap == null || wrap.getVisibility() == View.VISIBLE;
+ int vis = hide ? View.GONE : View.VISIBLE;
+ if (wrap != null) wrap.setVisibility(vis);
+ if (actor != null) actor.setVisibility(vis);
+ if (director != null) director.setVisibility(vis);
+ introChip.setText(hide ? " 展开简介" : " 收起简介");
+ });
+ LinearLayout.LayoutParams introLp = new LinearLayout.LayoutParams(-2, -2);
+ introLp.leftMargin = a.dp(8);
+ pillsRow.addView(introChip, introLp);
  populateSynopsis(a, synopsisText, synopsisWrap, v);
 
  for (java.util.Iterator<Cms.Line> it = v.lines.iterator(); it.hasNext(); )
@@ -308,7 +335,7 @@ final class TvDetailLayout {
 
  // 左栏线路 + 右栏选集
  bindLineList(
- a, s, v, lineList, lineIndex, page, rebuildEpisodes);
+ a, s, v, lineList, lineIndex, page, rebuildEpisodes, heroFocusId);
  rebuildEpisodes[0].run();
 
  // 主播放按钮（首焦点）。续播语义（R3）：有书签优先续播（书签自带线路）；
@@ -363,6 +390,8 @@ final class TvDetailLayout {
  DetailScreen.populateTvRelatedSeasons(a, s, v, seasonsWrap);
  // 1.9.62：内容就绪后建立完整显式 nextFocus 链（不依赖几何默认）
  wireDetailFocusChain(a);
+ // 1.9.360：返回键 ↓ 直达小窗中央播放按钮（若已创建）
+
 
  // 焦点恢复：优先离开前 tag（线路/选集/操作/播放），否则主播放
  View saved = null;
@@ -518,7 +547,8 @@ final class TvDetailLayout {
  final LinearLayout lineList,
  final int[] lineIndex,
  final int[] page,
- final Runnable[] rebuildEpisodes) {
+ final Runnable[] rebuildEpisodes,
+ final int heroFocusId) {
  lineList.removeAllViews();
  TextView head = a.text("片源 · 线路", 15, MainActivity.WHITE);
  head.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -542,7 +572,7 @@ final class TvDetailLayout {
  lineIndex[0] = index;
  page[0] = 0;
  bindLineList(
- a, site, video, lineList, lineIndex, page, rebuildEpisodes);
+ a, site, video, lineList, lineIndex, page, rebuildEpisodes, heroFocusId);
  rebuildEpisodes[0].run();
  View next = lineList.findViewWithTag("detail-line:" + index);
  if (next != null) next.requestFocus();
@@ -556,6 +586,8 @@ final class TvDetailLayout {
  line.setMinHeight(a.dp(44));
  line.setMinimumHeight(a.dp(44));
  line.setPadding(a.dp(14), 0, a.dp(14), 0);
+ // 1.9.347：线路列表向上可回到海报焦点（修复第一次聚焦海报后再也回不去）
+ if (i == 0 && heroFocusId != 0) line.setNextFocusUpId(heroFocusId);
  line.setBackground(MobileDetailScreen.chipBg(a, 12f, selected));
  line.setTextColor(a.cardInk());
  line.setOnFocusChangeListener(
@@ -771,24 +803,14 @@ final class TvDetailLayout {
  });
  Button copy =
  actionButton(a, " 复制", "detail-act-copy", () -> ExtraPages.degrade(a, false));
- Button synopsis =
- actionButton(
- a,
- " 简介",
- "detail-act-synopsis",
- () -> {
- View t = a.root.findViewWithTag("synopsis-toggle");
- if (t != null) t.performClick();
- });
  Button favAct = actionButton(a, " 收藏", "detail-act-favorite", () -> {});
  LinearLayout row1 = a.row();
  row1.setGravity(Gravity.TOP);
  row1.addView(order, gridCell(a, true));
- row1.addView(synopsis, gridCell(a, false));
+ row1.addView(favAct, gridCell(a, false));
  LinearLayout row2 = a.row();
  row2.setGravity(Gravity.TOP);
- row2.addView(favAct, gridCell(a, true));
- row2.addView(copy, gridCell(a, false));
+ row2.addView(copy, gridCell(a, true));
  actionsWrap.addView(row1, new LinearLayout.LayoutParams(-1, -2));
  actionsWrap.addView(row2, new LinearLayout.LayoutParams(-1, -2));
  bindFavoriteAct(a, s, video, favAct);
@@ -915,6 +937,29 @@ final class TvDetailLayout {
  DetailScreen.glassNavButton(
  a, "展开完整简介 ›", "synopsis-toggle", false, () -> {});
  toggle.setTag("synopsis-toggle");
+ // 1.9.372：遥控焦点链——「展开完整简介」↓ 到操作区，↑ 回简介按钮
+ try {
+ if (toggle.getId() == View.NO_ID) toggle.setId(View.generateViewId());
+ final int toggleId = toggle.getId();
+ toggle.post(
+ () -> {
+ if (a.root == null) return;
+ View order = a.root.findViewWithTag("detail-act-order");
+ if (order != null) {
+ if (order.getId() == View.NO_ID) order.setId(View.generateViewId());
+ toggle.setNextFocusDownId(order.getId());
+ order.setNextFocusUpId(toggleId);
+ }
+ View introChip = a.root.findViewWithTag("detail-intro-chip");
+ if (introChip != null) {
+ if (introChip.getId() == View.NO_ID) introChip.setId(View.generateViewId());
+ introChip.setNextFocusDownId(toggleId);
+ toggle.setNextFocusUpId(introChip.getId());
+ }
+ AppLog.i("TvNav", "focus wire intro->toggle->actions");
+ });
+ } catch (Throwable ignored) {
+ }
  toggle.setOnClickListener(
  x -> {
  expanded[0] = !expanded[0];
@@ -983,7 +1028,40 @@ final class TvDetailLayout {
  }
  if (back != null) {
  if (fav != null) back.setNextFocusRightId(fav.getId());
- if (play != null) back.setNextFocusDownId(play.getId());
+ // 1.9.380：返回键 ↓ 直达详情主操作区（排序/收藏/复制），找不到再回播放按钮
+ View order = a.root.findViewWithTag("detail-act-order");
+ View mainActions = order != null ? order : a.root.findViewWithTag("detail-act-copy");
+ if (mainActions != null) {
+ if (mainActions.getId() == View.NO_ID) mainActions.setId(View.generateViewId());
+ back.setNextFocusDownId(mainActions.getId());
+ mainActions.setNextFocusUpId(back.getId());
+ AppLog.i(
+ "TvNav",
+ "focus wire back="
+ + back.getId()
+ + " down="
+ + mainActions.getId()
+ + " tag="
+ + mainActions.getTag());
+ } else if (play != null) {
+ back.setNextFocusDownId(play.getId());
+ }
+ }
+ // 1.9.380：简介 chip ↓ → 展开完整简介 → 操作区（不指向已删除视图）
+ View introChip = a.root.findViewWithTag("detail-intro-chip");
+ if (introChip != null) {
+ if (introChip.getId() == View.NO_ID) introChip.setId(View.generateViewId());
+ if (synopsis != null) {
+ introChip.setNextFocusDownId(synopsis.getId());
+ synopsis.setNextFocusUpId(introChip.getId());
+ } else if (play != null) {
+ introChip.setNextFocusDownId(play.getId());
+ }
+ View actOrder = a.root.findViewWithTag("detail-act-order");
+ if (actOrder != null && synopsis != null) {
+ if (actOrder.getId() == View.NO_ID) actOrder.setId(View.generateViewId());
+ synopsis.setNextFocusDownId(actOrder.getId());
+ }
  }
  for (int i = 0; i < lines.size(); i++) {
  View line = lines.get(i);

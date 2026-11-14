@@ -23,6 +23,8 @@ final class VideoOutput extends FrameLayout
 
  private Listener listener;
  private Surface current;
+ private SurfaceTexture boundTexture;
+ private boolean holdSurface;
  private final TextureView texture;
  private SurfaceView surfaceView;
  private Bitmap glassFrame;
@@ -42,13 +44,37 @@ final class VideoOutput extends FrameLayout
  texture.setSurfaceTextureListener(
  new TextureView.SurfaceTextureListener() {
  public void onSurfaceTextureAvailable(SurfaceTexture value, int w, int h) {
- ready(new Surface(value));
+ // 1.9.378：旧安卓小窗期保留同一个 SurfaceTexture，重挂时不重绑 Surface
+ AppLog.i(
+ "Mini",
+ "output available st="
+ + System.identityHashCode(value)
+ + " w=" + w + " h=" + h
+ + " held=" + holdSurface
+ + " sameBound=" + (boundTexture == value)
+ + " curValid=" + (current != null && current.isValid()));
+ if (holdSurface && boundTexture == value && current != null && current.isValid()) {
+ AppLog.i("Mini", "output reattach held=surface");
+ return;
+ }
+ boundTexture = value;
+ Surface fresh = new Surface(value);
+ AppLog.i("Mini", "output surface fresh valid=" + fresh.isValid() + " " + fresh);
+ ready(fresh);
  }
 
  public void onSurfaceTextureSizeChanged(
  SurfaceTexture value, int w, int h) {}
 
  public boolean onSurfaceTextureDestroyed(SurfaceTexture value) {
+ // 1.9.378：旧安卓小窗期 detach（返回详情换 root）必须保留 SurfaceTexture；
+ // 返回 false 表示由 App 继续持有，重挂时复用同一个，避免 setSurface 重绑崩溃。
+ AppLog.i("Mini", "output destroyed st=" + System.identityHashCode(value) + " held=" + holdSurface + " cur=" + current);
+ if (holdSurface) {
+ AppLog.i("Mini", "output detach held=surface");
+ return false;
+ }
+ boundTexture = null;
  gone();
  return true;
  }
@@ -71,6 +97,7 @@ final class VideoOutput extends FrameLayout
  SurfaceHolder holder, int format, int w, int h) {}
 
  public void surfaceDestroyed(SurfaceHolder holder) {
+ if (holdSurface) return;
  gone();
  }
  });
@@ -87,12 +114,26 @@ final class VideoOutput extends FrameLayout
  return current != null && current.isValid() ? current : null;
  }
 
+ /**
+ * 1.9.378：旧安卓小窗期保留输出 Surface：detach 时既不 release SurfaceTexture、也不回调
+ * {@link Listener#destroyed()}，重挂时复用同一个 SurfaceTexture。
+ *
+ * <p>只允许在小窗/放大过渡期打开；{@code PlaybackController.releasePlayer} 必须关闭，
+ * 否则播放器销毁后仍留着 SurfaceTexture 引用。
+ */
+ void holdSurface(boolean value) {
+ if (holdSurface == value) return;
+ holdSurface = value;
+ AppLog.i("Mini", "output hold=" + value + " sdk=" + Build.VERSION.SDK_INT);
+ }
+
  private void ready(Surface value) {
  current = value;
  if (listener != null) listener.available(value);
  }
 
  private void gone() {
+ boundTexture = null;
  frameGeneration++;
  glassFrame = null;
  framePending = false;

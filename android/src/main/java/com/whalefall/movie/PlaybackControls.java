@@ -1868,6 +1868,11 @@ final class PlaybackControls {
  return;
  }
  resizeRetry = 0;
+ // 1.9.387：叠加层模式下解码输出尺寸固定（改尺寸会让 Amlogic 硬解停帧），只复位缩放。
+ if (PlaybackController.legacyMini() && a.playerOverlayAttached) {
+ if (!a.miniMode) PlayerOverlay.reset(a);
+ return;
+ }
  int w = layer.getWidth(),
  h = layer.getHeight(),
  mode =
