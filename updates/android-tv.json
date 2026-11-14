@@ -10,15 +10,15 @@
   "sha256": "69360acc3d7b857878ec1f1a9c9ac5ca7ce99766a36afcc452c6a3e0dae7ee9f",
   "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-tv.apk",
   "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.342",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.407",
   "variants": [
     {
       "kind": "tv",
       "label": "TV / 盒子版（32位）",
-      "size": 37162647,
-      "sha256": "093a65d639573ea72e6f51df95e3264cecdb5d02254b1950570d7268d39234f9",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.342/WhaleFall-1.9.342-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.342/WhaleFall-1.9.342-android-tv.apk"
+      "size": 37174935,
+      "sha256": "69360acc3d7b857878ec1f1a9c9ac5ca7ce99766a36afcc452c6a3e0dae7ee9f",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-tv.apk"
     }
   ]
 }
