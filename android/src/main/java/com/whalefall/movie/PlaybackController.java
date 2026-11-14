@@ -1205,35 +1205,17 @@ final class PlaybackController {
  if (a.playbackControls != null && a.playbackControls.danmaku != null)
  a.playbackControls.danmaku.setVisibility(View.GONE);
  PlayerOverlay.showPage(a);
- // 1.9.392：页面恢复可见后强制重新测量，否则右侧选集列高度为 0（集数网格不显示）
- a.root.requestLayout();
- a.root.invalidate();
  // 播放页没有单独 render，current 回到详情页
  if (a.current != null && a.current.player && !a.back.isEmpty()) {
  a.current = a.back.pop();
  }
  if (a.scroll != null) a.scroll.scrollTo(0, 0);
  if (a.current != null) a.restore(a.current);
- // 1.9.392：先把播放层藏起来，等小窗尺寸/位置/缩放都算好再显示，避免「从左上角拖过去」
- a.playbackLayer.setVisibility(View.INVISIBLE);
  a.miniDetails = new MiniDetailsLegacy(a);
  a.ui.postDelayed(
  () -> {
  if (!a.miniMode || a.miniDetails == null) return;
  a.miniDetails.refreshRect();
- // 1.9.392：小窗态把解码输出拉回铺满（缩放已在 scaleTo 里做，这里清掉任何残留缩放）
- View out = findTagged(a.playbackLayer, "video-output");
- if (out != null) {
- out.setScaleX(1f);
- out.setScaleY(1f);
- out.setTranslationX(0f);
- out.setTranslationY(0f);
- out.setLayoutParams(new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
- }
- // 1.9.392：位置/尺寸/缩放都就绪后再显示，避免看到从左上角拖动的过程
- a.playbackLayer.setVisibility(View.VISIBLE);
- // 1.9.392：页面被隐藏/恢复过一次，显式焦点链要重新接一遍
- TvDetailLayout.wireDetailFocusChain(a);
  },
  400);
  if (a.player != null) {
