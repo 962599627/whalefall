@@ -143,14 +143,19 @@ final class UpdatePolicy {
  String file = primary.substring(primary.lastIndexOf('/') + 1);
  java.util.List<String> urls = new java.util.ArrayList<>();
  urls.add(primary);
- for (String mirror : MIRRORS) {
- String candidate = mirror + file;
- if (!urls.contains(candidate)) urls.add(candidate);
- }
+ // 1.9.339：GitHub 官方源优先，镜像最多再取 2 个，避免 9 个源反复重下
  if (github != null && !github.isEmpty()) {
  if (!variantUrl(github, version, kind, mobile) || !github.endsWith("/" + file))
  throw new IllegalArgumentException("Invalid release download URL");
  if (!urls.contains(github)) urls.add(github);
+ }
+ int mirrors = 0;
+ for (String mirror : MIRRORS) {
+ if (mirrors >= 2) break;
+ String candidate = mirror + file;
+ if (urls.contains(candidate)) continue;
+ urls.add(candidate);
+ mirrors++;
  }
  return urls.toArray(new String[0]);
  }

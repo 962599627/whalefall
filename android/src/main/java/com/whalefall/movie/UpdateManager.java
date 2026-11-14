@@ -517,6 +517,8 @@ final class UpdateManager {
  conn.getResponseCode(),
  conn.getHeaderField("Content-Range"),
  size);
+ // 1.9.339：已有进度但该源不支持断点续传 → 跳过，避免进度条从 0 重跑
+ if (offset > 0 && start == 0) throw new IOException("no-range");
  }
  long declared = conn.getContentLength();
  if (!unknownSize && declared > 0 && declared != size - start)

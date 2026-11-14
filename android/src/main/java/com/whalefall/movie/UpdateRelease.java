@@ -78,9 +78,15 @@ class UpdateRelease {
  long variantSize = item.getLong("size");
  String variantSha = item.getString("sha256");
  String variantUrl = item.getString("url");
+ try {
  UpdatePolicy.validateVariant(
  code, version, minSdk, variantSize, variantSha, variantUrl, channel, mobile,
  kind);
+ } catch (IllegalArgumentException bad) {
+ // 1.9.338：单个变体非法不应让整次检查失败，跳过该变体继续用其它包/主包
+ AppLog.i("Update", "skip invalid variant kind=" + kind + " err=" + bad.getMessage());
+ continue;
+ }
  list.add(
  new Variant(
  kind,
