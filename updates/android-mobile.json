@@ -23,10 +23,10 @@
     {
       "kind": "arm64",
       "label": "arm64 精简版",
-      "size": 33938797,
-      "sha256": "268ab68621b54e5264300d6926c6c7d5eeb0f07a931e02f2e89e382f01a1bf42",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-mobile-arm64-r8.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-mobile-arm64-r8.apk"
+      "size": 36498855,
+      "sha256": "d7723b9df28b5a183eaef51fa08d8475b141650b6e91aa49a6c305a78451c6e9",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-mobile-arm64.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.337/WhaleFall-1.9.337-android-mobile-arm64.apk"
     },
     {
       "kind": "r8",
