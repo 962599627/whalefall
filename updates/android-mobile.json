@@ -8,8 +8,8 @@
   "notes": "修复电视小窗冻帧/黑屏/中间态（叠加层：播放层不 detach、解码输出尺寸不变、同步摆位）；回首页与快速连点返回必定释放；小窗态纵向焦点恢复；选集格与首页分类条支持遥控聚焦；历史集数按容错回退。",
   "size": 33951085,
   "sha256": "2aa1d8dfee13be2dc03f46b394eb6403b8fc2c6e3fe977199662a1985f951fd0",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile-arm64-r8.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile-arm64-r8.apk",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile.apk",
   "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.407",
   "variants": [
     {
@@ -17,24 +17,24 @@
       "label": "手机 / 平板（通用）",
       "size": 33951085,
       "sha256": "2aa1d8dfee13be2dc03f46b394eb6403b8fc2c6e3fe977199662a1985f951fd0",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile-arm64-r8.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile-arm64-r8.apk"
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile.apk"
     },
     {
       "kind": "arm64",
       "label": "手机 / 平板（arm64）",
       "size": 33951085,
       "sha256": "2aa1d8dfee13be2dc03f46b394eb6403b8fc2c6e3fe977199662a1985f951fd0",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile-arm64-r8.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile-arm64-r8.apk"
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile.apk"
     },
     {
       "kind": "r8",
       "label": "手机 / 平板（arm64 + R8）",
       "size": 33951085,
       "sha256": "2aa1d8dfee13be2dc03f46b394eb6403b8fc2c6e3fe977199662a1985f951fd0",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile-arm64-r8.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile-arm64-r8.apk"
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-mobile.apk"
     }
   ]
 }
