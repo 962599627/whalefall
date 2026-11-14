@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.9.342",
-  "versionCode": 19342,
+  "versionName": "1.9.407",
+  "versionCode": 19407,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "同手机版：默认青瓷主题、简介按钮位置与隐藏逻辑、下载修复。",
-  "size": 37162647,
-  "sha256": "093a65d639573ea72e6f51df95e3264cecdb5d02254b1950570d7268d39234f9",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.342/WhaleFall-1.9.342-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.342/WhaleFall-1.9.342-android-tv.apk",
+  "notes": "修复电视小窗冻帧/黑屏/中间态（叠加层：播放层不 detach、解码输出尺寸不变、同步摆位）；回首页与快速连点返回必定释放；小窗态纵向焦点恢复；选集格与首页分类条支持遥控聚焦；历史集数按集名回退容错。",
+  "size": 37174935,
+  "sha256": "69360acc3d7b857878ec1f1a9c9ac5ca7ce99766a36afcc452c6a3e0dae7ee9f",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.407/WhaleFall-1.9.407-android-tv.apk",
   "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.342",
   "variants": [
     {
