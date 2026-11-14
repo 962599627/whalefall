@@ -597,6 +597,7 @@ final class MobileDetailScreen {
  lowerBody.addView(pillsRow, pillsRowLp);
 
  final TextView actorTv = a.text(actorLine(listing.actor), 12.5f, 0xffb9c7dd);
+ actorTv.setTag("detail-actor");
  actorTv.setTag("detail-actors");
  actorTv.setMaxLines(2);
  actorTv.setEllipsize(TextUtils.TruncateAt.END);
@@ -607,6 +608,7 @@ final class MobileDetailScreen {
  lowerBody.addView(actorTv, actorLp);
 
  final TextView directorTv = a.text(directorLine(listing.director), 12.5f, 0xffb9c7dd);
+ directorTv.setTag("detail-director");
  directorTv.setTag("detail-director");
  directorTv.setMaxLines(2);
  directorTv.setEllipsize(TextUtils.TruncateAt.END);
@@ -619,6 +621,7 @@ final class MobileDetailScreen {
  final Runnable[] toggleSynopsis = new Runnable[1];
 
  final LinearLayout synopsisWrap = a.vertical();
+ synopsisWrap.setTag("detail-synopsis-wrap");
  LinearLayout.LayoutParams synopsisLp = new LinearLayout.LayoutParams(-1, -2);
  synopsisLp.topMargin = a.dp(UiTokens.SP_10);
  lowerBody.addView(synopsisWrap, synopsisLp);
@@ -650,18 +653,6 @@ final class MobileDetailScreen {
  LinearLayout.LayoutParams dlLp = new LinearLayout.LayoutParams(-2, a.dp(34));
  dlLp.rightMargin = a.dp(8);
  actionRow.addView(downloadAct, dlLp);
-
- TextView synopsisAct =
- actionPill(
- a,
- " 简介",
- v -> {
- if (toggleSynopsis[0] != null) toggleSynopsis[0].run();
- });
- synopsisAct.setTag("detail-act-synopsis");
- LinearLayout.LayoutParams synLp = new LinearLayout.LayoutParams(-2, a.dp(34));
- synLp.rightMargin = a.dp(8);
- actionRow.addView(synopsisAct, synLp);
 
  TextView favAct = actionPill(a, " 收藏", v -> favTopBtn.performClick());
  favAct.setTag("detail-act-favorite");
@@ -1308,6 +1299,28 @@ final class MobileDetailScreen {
  if (i > 0) lp.leftMargin = a.dp(8);
  pillsRow.addView(pill, lp);
  }
+ // 1.9.342：简介按钮放在「共N集」右侧，点击隐藏/显示下方简介
+ TextView syn = a.text(" 简介", 11.5f, 0xffd9e3f2);
+ syn.setTypeface(null, Typeface.BOLD);
+ syn.setPadding(a.dp(11), a.dp(3), a.dp(11), a.dp(3));
+ a.glass(syn, 999);
+ syn.setTag("detail-act-synopsis");
+ syn.setOnClickListener(
+ view -> {
+ if (a.root == null) return;
+ View wrap = a.root.findViewWithTag("detail-synopsis-wrap");
+ View actor = a.root.findViewWithTag("detail-actor");
+ View director = a.root.findViewWithTag("detail-director");
+ boolean hide = wrap == null || wrap.getVisibility() == View.VISIBLE;
+ int vis = hide ? View.GONE : View.VISIBLE;
+ if (wrap != null) wrap.setVisibility(vis);
+ if (actor != null) actor.setVisibility(vis);
+ if (director != null) director.setVisibility(vis);
+ syn.setText(hide ? " 展开简介" : " 收起简介");
+ });
+ LinearLayout.LayoutParams synLp = new LinearLayout.LayoutParams(-2, -2);
+ synLp.leftMargin = a.dp(8);
+ pillsRow.addView(syn, synLp);
  }
 
  static void renderMobileEpisodes(

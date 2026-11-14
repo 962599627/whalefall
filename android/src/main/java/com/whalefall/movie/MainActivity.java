@@ -1182,7 +1182,7 @@ public final class MainActivity extends Activity {
  prefs = getSharedPreferences(privateMode ? "movie-private" : Prefs.FILE, MODE_PRIVATE);
  // 1.9.327：全新安装默认主题=樱夜（底 #3A1F2B / 选中 #FF8FB1 / 文字 #FFE3EC）；老用户保留原设置
  if (!prefs.contains("theme_key") && !prefs.contains("glass_color")) {
-  applyTheme("sakura-night", prefs);
+  applyTheme("celadon", prefs);
  }
  // 1.9.301：启动即恢复全局色调（此前只在保存/onResume 时设置）
  applyGlassTint();
@@ -1540,7 +1540,7 @@ public final class MainActivity extends Activity {
 
  /** 旧 glass_color / 任意 HEX → 最近预设（8 套）。 */
  static String migrateCardPreset(android.content.SharedPreferences p) {
-  String raw = p.getString("glass_color", "sakura-night");
+  String raw = p.getString("glass_color", "celadon");
   if ("custom".equals(raw)) return raw;
   for (String key : Skin.PRESET_KEYS) if (key.equals(raw)) return raw;
   int old = 0x1e3a5f;
