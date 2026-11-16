@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.9.496",
-  "versionCode": 19496,
+  "versionName": "1.9.504",
+  "versionCode": 19504,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "全面禁用 R8（R8 会导致插件加载原生崩溃）；搜索/体检不再闪退；崩溃记录含版本与系统退出原因；崩溃源自动黑名单；移除无效限流恢复全源搜索；手机与 TV 筛选焦点修复（标签↓进选项、选项↑回标签、左右链、清除按钮）。",
-  "size": 36519151,
-  "sha256": "98b094587f231998e12871333bc75b5374f27dd9f8ce0dd38a2f4310a4e5d850",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.496/WhaleFall-1.9.496-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.496/WhaleFall-1.9.496-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.496",
+  "notes": "回退详情页焦点改动（曾导致视频无法加载）；搜索/体检不闪退（非 R8）；崩溃记录含版本与退出原因；崩溃源黑名单；筛选焦点修复；更新安装双路径。",
+  "size": 36523247,
+  "sha256": "87d2b28d565dd25ab71b8fbe56085e3b5ca2fa2efcd4c2072e29b16d59170fd3",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.504/WhaleFall-1.9.504-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.504/WhaleFall-1.9.504-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.504",
   "variants": [
     {
       "kind": "mobile",
       "label": "手机 / 平板（arm64，非 R8）",
-      "size": 36519151,
-      "sha256": "98b094587f231998e12871333bc75b5374f27dd9f8ce0dd38a2f4310a4e5d850",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.496/WhaleFall-1.9.496-android-mobile.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.496/WhaleFall-1.9.496-android-mobile.apk"
+      "size": 36523247,
+      "sha256": "87d2b28d565dd25ab71b8fbe56085e3b5ca2fa2efcd4c2072e29b16d59170fd3",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.504/WhaleFall-1.9.504-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.504/WhaleFall-1.9.504-android-mobile.apk"
     }
   ]
 }
