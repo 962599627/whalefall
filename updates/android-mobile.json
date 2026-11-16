@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-mobile",
-  "versionName": "1.9.409",
-  "versionCode": 19409,
+  "versionName": "1.9.496",
+  "versionCode": 19496,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "minSdk 统一为 23，修复 App 内更新下载完成后校验失败静默重下；其余同 1.9.407：电视小窗冻帧/黑屏/中间态修复、快返释放、小窗纵向焦点、选集与首页分类条遥控聚焦、历史集数容错。",
-  "size": 33946805,
-  "sha256": "4210f3fdaa46d1b9b4e6b701a9f7ebdc413f8555f86289839a8726c977d83d1e",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.409/WhaleFall-1.9.409-android-mobile.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.409/WhaleFall-1.9.409-android-mobile.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.409",
+  "notes": "全面禁用 R8（R8 会导致插件加载原生崩溃）；搜索/体检不再闪退；崩溃记录含版本与系统退出原因；崩溃源自动黑名单；移除无效限流恢复全源搜索；手机与 TV 筛选焦点修复（标签↓进选项、选项↑回标签、左右链、清除按钮）。",
+  "size": 36519151,
+  "sha256": "98b094587f231998e12871333bc75b5374f27dd9f8ce0dd38a2f4310a4e5d850",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.496/WhaleFall-1.9.496-android-mobile.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.496/WhaleFall-1.9.496-android-mobile.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.496",
   "variants": [
     {
       "kind": "mobile",
-      "label": "手机 / 平板（arm64 + R8）",
-      "size": 33946805,
-      "sha256": "4210f3fdaa46d1b9b4e6b701a9f7ebdc413f8555f86289839a8726c977d83d1e",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.409/WhaleFall-1.9.409-android-mobile.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.409/WhaleFall-1.9.409-android-mobile.apk"
+      "label": "手机 / 平板（arm64，非 R8）",
+      "size": 36519151,
+      "sha256": "98b094587f231998e12871333bc75b5374f27dd9f8ce0dd38a2f4310a4e5d850",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.496/WhaleFall-1.9.496-android-mobile.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.496/WhaleFall-1.9.496-android-mobile.apk"
     }
   ]
 }
