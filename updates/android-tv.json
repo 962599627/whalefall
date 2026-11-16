@@ -1,24 +1,24 @@
 {
   "schema": 1,
   "platform": "android-tv",
-  "versionName": "1.9.496",
-  "versionCode": 19496,
+  "versionName": "1.9.504",
+  "versionCode": 19504,
   "minSdk": 23,
   "prerelease": false,
-  "notes": "全面禁用 R8（R8 会导致插件加载原生崩溃）；搜索/体检不再闪退；崩溃记录含版本与系统退出原因；崩溃源自动黑名单；移除无效限流恢复全源搜索；手机与 TV 筛选焦点修复（标签↓进选项、选项↑回标签、左右链、清除按钮）。",
+  "notes": "回退详情页焦点改动（曾导致视频无法加载）；搜索/体检不闪退（非 R8）；崩溃记录含版本与退出原因；崩溃源黑名单；筛选焦点修复；更新安装双路径。",
   "size": 37182943,
-  "sha256": "be4f4d2f9bfcdb3c3901dae3038759295a9c17cf26494f14fb1ca82c87f1ae70",
-  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.496/WhaleFall-1.9.496-android-tv.apk",
-  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.496/WhaleFall-1.9.496-android-tv.apk",
-  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.496",
+  "sha256": "c561df01ca19c064519a393c77811b0c51edb01a5df5594ca19b7d88aabe790c",
+  "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.504/WhaleFall-1.9.504-android-tv.apk",
+  "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.504/WhaleFall-1.9.504-android-tv.apk",
+  "release_url": "https://github.com/962599627/whalefall/releases/tag/whalefall-1.9.504",
   "variants": [
     {
       "kind": "tv",
       "label": "TV / 盒子版（非 R8）",
       "size": 37182943,
-      "sha256": "be4f4d2f9bfcdb3c3901dae3038759295a9c17cf26494f14fb1ca82c87f1ae70",
-      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.496/WhaleFall-1.9.496-android-tv.apk",
-      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.496/WhaleFall-1.9.496-android-tv.apk"
+      "sha256": "c561df01ca19c064519a393c77811b0c51edb01a5df5594ca19b7d88aabe790c",
+      "url": "https://gh-proxy.org/https://github.com/962599627/whalefall/releases/download/whalefall-1.9.504/WhaleFall-1.9.504-android-tv.apk",
+      "githubUrl": "https://github.com/962599627/whalefall/releases/download/whalefall-1.9.504/WhaleFall-1.9.504-android-tv.apk"
     }
   ]
 }
